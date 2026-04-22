@@ -271,6 +271,7 @@ export interface PrivateState {
   isQuestioner: boolean;
   canSubmitBlankGuess: boolean;
   blankGuessUsed: boolean;
+  nightActionSubmitted: boolean;
   questionerView?: Array<{
     playerId: string;
     role: PlayerRole;

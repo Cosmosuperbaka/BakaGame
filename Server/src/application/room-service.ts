@@ -1954,6 +1954,7 @@ export class RoomService {
         isQuestioner: false,
         canSubmitBlankGuess: false,
         blankGuessUsed: false,
+        nightActionSubmitted: false,
       };
     }
 
@@ -1964,6 +1965,7 @@ export class RoomService {
         isQuestioner: round.questionerPlayerId === player.id,
         canSubmitBlankGuess: false,
         blankGuessUsed: round.blankGuessUsed,
+        nightActionSubmitted: false,
         questionerView: Object.entries(round.assignments).map(([playerId, item]) => ({
           playerId,
           role: item.role,
@@ -1990,6 +1992,7 @@ export class RoomService {
       isQuestioner: false,
       canSubmitBlankGuess: state?.role === "blank" && !round.blankGuessUsed,
       blankGuessUsed: round.blankGuessUsed,
+      nightActionSubmitted: round.nightActions.some((action) => action.actorId === player.id),
     };
   }
 

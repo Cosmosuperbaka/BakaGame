@@ -440,6 +440,177 @@ test("玩家掉线后会等待出题人处理并可被淘汰移出", async () =>
   ).toBe("kicked");
 });
 
+test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作状态", async () => {
+  const { service } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "5556");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 5; index += 1) {
+    const connection = createConnection(service, `night-reset-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "5556",
+      payload: {
+        userName: `夜晚重提${index + 2}`,
+      },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[4];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  const participantConnections = [
+    host,
+    joined[0].connection,
+    joined[1].connection,
+    joined[2].connection,
+    joined[3].connection,
+  ];
+  const connectionByPlayerId = new Map<string, typeof host>([
+    [hostResult.playerId, host],
+    ...joined.map((item) => [item.joinResult.playerId, item.connection] as const),
+  ]);
+
+  for (const connection of participantConnections) {
+    await execute(service, connection, {
+      id: `desc-${connection.record.id}`,
+      type: "game.submitDescription",
+      payload: { text: "描述" },
+    });
+  }
+
+  await execute(service, questioner.connection, {
+    id: "to-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  let questionerState = getLastEventPayload<PrivateState>(
+    questioner.connection,
+    "game.privateState",
+  )!;
+  const eliminatedCivilian = questionerState.questionerView?.find(
+    (item) => item.role === "civilian",
+  );
+  const fallbackTarget = questionerState.questionerView?.find(
+    (item) => item.playerId !== eliminatedCivilian?.playerId,
+  );
+
+  expect(eliminatedCivilian).toBeDefined();
+  expect(fallbackTarget).toBeDefined();
+
+  for (const item of questionerState.questionerView ?? []) {
+    const voterConnection = connectionByPlayerId.get(item.playerId)!;
+    const targetId =
+      item.playerId === eliminatedCivilian!.playerId
+        ? fallbackTarget!.playerId
+        : eliminatedCivilian!.playerId;
+    await execute(service, voterConnection, {
+      id: `vote-${item.playerId}`,
+      type: "game.submitVote",
+      payload: { targetId },
+    });
+  }
+
+  await execute(service, questioner.connection, {
+    id: "resolve-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  let snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("night");
+
+  questionerState = getLastEventPayload<PrivateState>(questioner.connection, "game.privateState")!;
+  const aliveActors =
+    questionerState.questionerView?.filter(
+      (item) => item.alive && (item.role === "civilian" || item.role === "undercover"),
+    ) ?? [];
+
+  expect(aliveActors.length).toBeGreaterThanOrEqual(3);
+
+  const submittedActorId = aliveActors[0]!.playerId;
+  const disconnectedActorId = aliveActors.at(-1)!.playerId;
+  const submittedActorConnection = connectionByPlayerId.get(submittedActorId)!;
+  const disconnectedActorConnection = connectionByPlayerId.get(disconnectedActorId)!;
+
+  await execute(service, submittedActorConnection, {
+    id: "night-submit-before-reset",
+    type: "game.submitNightAction",
+    payload: { targetId: null },
+  });
+
+  let privateState = getLastEventPayload<PrivateState>(
+    submittedActorConnection,
+    "game.privateState",
+  );
+  expect(privateState?.nightActionSubmitted).toBe(true);
+
+  await service.unregisterConnection(disconnectedActorConnection.record.id);
+
+  snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(snapshot?.status.pendingDisconnectPlayerId).toBe(disconnectedActorId);
+
+  await execute(service, questioner.connection, {
+    id: "resolve-night-disconnect",
+    type: "game.resolveDisconnect",
+    payload: {
+      playerId: disconnectedActorId,
+      resolution: "eliminate",
+    },
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("night");
+
+  privateState = getLastEventPayload<PrivateState>(submittedActorConnection, "game.privateState");
+  expect(privateState?.nightActionSubmitted).toBe(false);
+
+  questionerState = getLastEventPayload<PrivateState>(questioner.connection, "game.privateState")!;
+  const remainingActors =
+    questionerState.questionerView?.filter(
+      (item) => item.alive && (item.role === "civilian" || item.role === "undercover"),
+    ) ?? [];
+
+  for (const actor of remainingActors) {
+    const actorConnection = connectionByPlayerId.get(actor.playerId)!;
+    await execute(service, actorConnection, {
+      id: `night-resubmit-${actor.playerId}`,
+      type: "game.submitNightAction",
+      payload: { targetId: null },
+    });
+  }
+
+  await execute(service, questioner.connection, {
+    id: "resolve-night-after-reset",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("daybreak");
+});
+
 test("掉线玩家可以通过同名重新加入恢复原席位", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "5560");

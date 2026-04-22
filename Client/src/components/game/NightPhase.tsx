@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ export function NightPhase() {
   const amAlive = me?.roundStatus === "alive";
   const role = privateState?.role;
 
-  const [acted, setActed] = useState(false);
+  const acted = privateState?.nightActionSubmitted ?? false;
 
   const canAct =
     amAlive && !isQuestioner && (role === "civilian" || role === "undercover");
@@ -35,7 +35,6 @@ export function NightPhase() {
     async (targetId?: string) => {
       try {
         await sendCommand("game.submitNightAction", { targetId: targetId ?? null });
-        setActed(true);
       } catch (e) {
         addToast((e as { message: string }).message, "error");
       }
