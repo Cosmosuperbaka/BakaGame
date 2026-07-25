@@ -1,9 +1,8 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Vote, FastForward } from "lucide-react";
+import { Vote, FastForward, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useGame } from "@/contexts/GameContext";
 
 export function VotingPhase() {
@@ -57,13 +56,15 @@ export function VotingPhase() {
     }
   }, [sendCommand, addToast]);
 
+  const targetPlayerName = targets.find((t) => t.id === votedId)?.name;
+
   return (
     <div className="space-y-6 max-w-lg mx-auto">
       <div className="text-center">
         <h2 className="text-2xl font-semibold">投票阶段</h2>
-        <p className="text-base text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           {votedId
-            ? "已投票，等待其他玩家..."
+            ? "已完成投票，等待其他玩家..."
             : amAlive && !isQuestioner
               ? "选择你要投出的玩家"
               : "等待玩家投票..."}
@@ -76,11 +77,11 @@ export function VotingPhase() {
             {targets.map((p) => (
               <Card
                 key={p.id}
-                className="cursor-pointer transition-[background,border-color] duration-150 hover:bg-primary/5 hover:border-primary/40"
+                className="cursor-pointer transition-all duration-150 hover:bg-primary/5 hover:border-primary/40 shadow-2xs"
                 onClick={() => handleVote(p.id)}
               >
                 <CardContent className="py-3.5 px-4 flex items-center justify-between">
-                  <span className="font-medium truncate">{p.name}</span>
+                  <span className="font-medium text-sm truncate">{p.name}</span>
                   <Vote className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
                 </CardContent>
               </Card>
@@ -94,22 +95,29 @@ export function VotingPhase() {
         </div>
       )}
 
+      {/* 提交选票后的优雅反馈卡片 */}
       {votedId && (
         <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="text-center"
+          className="flex items-center gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
         >
-          <Badge variant="outline" className="text-sm py-1.5 px-4">
-            已投票给：{targets.find((t) => t.id === votedId)?.name ?? "未知"}
-          </Badge>
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="text-sm font-medium">
+            已完成投票
+            {targetPlayerName && (
+              <span className="ml-2 font-normal text-xs text-muted-foreground">
+                ( 投给：{targetPlayerName} )
+              </span>
+            )}
+          </div>
         </motion.div>
       )}
 
       {isQuestioner && (
         <div className="text-center pt-2">
-          <Button onClick={handleAdvance} size="lg" className="gap-2">
+          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
             <FastForward className="h-4 w-4" /> 结算投票
           </Button>
         </div>
