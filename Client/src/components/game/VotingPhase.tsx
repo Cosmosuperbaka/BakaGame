@@ -16,11 +16,21 @@ export function VotingPhase() {
 
   const [votedId, setVotedId] = useState<string | null>(null);
 
-  const baseTargets = snapshot.players.filter(
-    (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId
+  const isTieBreak = snapshot.status.phase === "tieBreak";
+  const tieBreakCandidateIds = snapshot.descriptions
+    .filter((d) => d.kind === "tieBreak")
+    .map((d) => d.playerId);
+
+  const alivePlayers = snapshot.players.filter((p) => p.roundStatus === "alive");
+
+  const baseTargets = alivePlayers.filter(
+    (p) => p.id !== privateState?.playerId || snapshot.testMode
   );
+
   const targets =
-    baseTargets.length > 0
+    isTieBreak && tieBreakCandidateIds.length > 0
+      ? alivePlayers.filter((p) => tieBreakCandidateIds.includes(p.id))
+      : baseTargets.length > 0
       ? baseTargets
       : snapshot.testMode && amAlive && !isQuestioner && me
         ? [me]

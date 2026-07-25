@@ -86,7 +86,14 @@ export type ClientMessage =
     >
   | ClientEnvelope<"room.kick", { playerId: string }>
   | ClientEnvelope<"game.assignQuestioner", { playerId: string }>
-  | ClientEnvelope<"game.submitWords", { words: [string, string]; blankHint?: string }>
+  | ClientEnvelope<
+      "game.submitWords",
+      {
+        words: [string, string];
+        blankHint?: string;
+        manualRoles?: Record<string, PlayerRole>;
+      }
+    >
   | ClientEnvelope<"game.advancePhase", Record<string, never>>
   | ClientEnvelope<"game.submitDescription", { text: string }>
   | ClientEnvelope<"game.submitVote", { targetId: string }>

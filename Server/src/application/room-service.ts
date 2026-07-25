@@ -139,7 +139,12 @@ export class RoomService {
       case "game.assignQuestioner":
         return this.handleAssignQuestioner(connection, message.payload.playerId);
       case "game.submitWords":
-        return this.handleSubmitWords(connection, message.payload.words, message.payload.blankHint);
+        return this.handleSubmitWords(
+          connection,
+          message.payload.words,
+          message.payload.blankHint,
+          message.payload.manualRoles,
+        );
       case "game.advancePhase":
         return this.handleAdvancePhase(connection);
       case "game.submitDescription":
@@ -704,6 +709,7 @@ export class RoomService {
     connection: ConnectionRecord,
     words: [string, string],
     blankHint?: string,
+    manualRoles?: Record<string, PlayerRole>,
   ) {
     // 提交词语后，真正的身份分配与词语映射都在服务端一次性完成。
     const { room, player } = this.requireRoomPlayer(connection);
@@ -748,6 +754,7 @@ export class RoomService {
       words,
       blankHint ? normalizeWord(blankHint) : undefined,
       this.random,
+      manualRoles,
     );
 
     round.words = {
@@ -766,7 +773,11 @@ export class RoomService {
     round.blankGuessContext = undefined;
     this.touchRoom(room);
 
-    await this.options.wordBankRepository.savePair(words);
+    // 异步后台保存词库，避免阻塞 WebSocket 主流程
+    void this.options.wordBankRepository.savePair(words).catch((error) => {
+      console.error("词库异步保存失败", (error as Error).message);
+    });
+
     await this.log({
       type: "game.words_submitted",
       createdAt: this.now(),

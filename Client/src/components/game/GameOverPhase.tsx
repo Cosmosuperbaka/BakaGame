@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Check, History, ChevronDown } from "lucide-react";
+import { Trophy, Check, History, ChevronDown, BookOpen, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/contexts/GameContext";
@@ -16,6 +16,7 @@ export function GameOverPhase() {
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
   const [showDescriptions, setShowDescriptions] = useState(false);
+  const [showVotes, setShowVotes] = useState(true);
 
   const activePlayers = snapshot.players.filter((p) => p.membership === "active");
   const nonHostActive = activePlayers.filter((p) => !p.isHost);
@@ -23,7 +24,6 @@ export function GameOverPhase() {
   const allReady = canSoloRestart || (nonHostActive.length > 0 && nonHostActive.every((p) => p.isReady));
   const readyCount = nonHostActive.filter((p) => p.isReady).length;
 
-  // 房主自动准备，方便直接点"开始下一局"。
   useEffect(() => {
     if (isHost && me && !me.isReady) {
       sendCommand("player.setReady", { ready: true }).catch(() => {});
@@ -50,7 +50,7 @@ export function GameOverPhase() {
     return (
       <div className="text-center py-8">
         <h2 className="text-xl font-semibold">游戏结束</h2>
-        <p className="text-muted-foreground mt-2">等待结算数据...</p>
+        <p className="text-muted-foreground mt-2">等待战报数据...</p>
       </div>
     );
   }
@@ -72,12 +72,15 @@ export function GameOverPhase() {
       transition={{ duration: 0.25, ease: "easeOut" }}
       className="mx-auto max-w-2xl space-y-5"
     >
-      {/* 结算标题 */}
+      {/* 战报标题 */}
       <div className="flex items-center gap-4 rounded-xl border bg-muted/30 px-5 py-4">
         <Trophy className={cn("h-10 w-10 shrink-0", winnerTone)} />
         <div className="min-w-0 flex-1">
-          <div className={cn("text-xl font-semibold", winnerTone)}>
-            {WINNER_LABELS[summary.winner]}
+          <div className="flex items-center gap-2">
+            <span className={cn("text-xl font-semibold", winnerTone)}>
+              {WINNER_LABELS[summary.winner]}
+            </span>
+            <Badge variant="secondary" className="text-xs">战报结算</Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
             {summary.reason}
@@ -85,11 +88,43 @@ export function GameOverPhase() {
         </div>
       </div>
 
-      {/* 身份公布 + 得分（合并为一张紧凑表格） */}
+      {/* 词语揭秘全景卡片 */}
+      {summary.words && (
+        <section className="rounded-xl border overflow-hidden bg-muted/20 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <BookOpen className="h-4 w-4 text-primary" />
+            本局词语解密
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+              <div className="text-xs text-emerald-600 font-medium mb-1">平民词</div>
+              <div className="text-base font-bold text-emerald-700">
+                {summary.words.civilianWord}
+              </div>
+            </div>
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+              <div className="text-xs text-rose-600 font-medium mb-1">卧底词</div>
+              <div className="text-base font-bold text-rose-700">
+                {summary.words.undercoverWord}
+              </div>
+            </div>
+            {summary.words.blankHint && (
+              <div className="p-3 bg-slate-500/10 border border-slate-500/20 rounded-lg col-span-2 md:col-span-1">
+                <div className="text-xs text-slate-600 font-medium mb-1">白板提示</div>
+                <div className="text-base font-bold text-slate-700">
+                  {summary.words.blankHint}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 身份揭示与得分表格 */}
       <section className="rounded-xl border overflow-hidden">
-        <div className="px-4 py-2.5 border-b bg-muted/30">
+        <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            身份揭示
+            身份揭示与得分
           </h3>
         </div>
         <table className="w-full text-sm">
@@ -101,10 +136,10 @@ export function GameOverPhase() {
               );
               return (
                 <tr key={playerId} className="hover:bg-muted/20">
-                  <td className="px-4 py-2 font-medium">
+                  <td className="px-4 py-2.5 font-medium">
                     {player?.name ?? playerId}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2.5">
                     <Badge
                       variant="outline"
                       className={cn("text-[11px]", ROLE_COLORS[role])}
@@ -112,13 +147,13 @@ export function GameOverPhase() {
                       {ROLE_LABELS[role]}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2 text-right w-20">
-                    {award ? (
-                      <span className="text-emerald-600 font-medium">
-                        +{award.delta}
+                  <td className="px-4 py-2.5 text-right w-24">
+                    {award && award.delta > 0 ? (
+                      <span className="text-emerald-600 font-semibold">
+                        +{award.delta} 分
                       </span>
                     ) : (
-                      <span className="text-muted-foreground/60">—</span>
+                      <span className="text-muted-foreground/60">+0 分</span>
                     )}
                   </td>
                 </tr>
@@ -128,12 +163,71 @@ export function GameOverPhase() {
         </table>
       </section>
 
+      {/* 投票复盘明细 */}
+      {summary.voteHistory && summary.voteHistory.length > 0 && (
+        <section className="rounded-xl border overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowVotes((v) => !v)}
+            className="w-full px-4 py-2.5 border-b bg-muted/30 flex items-center gap-2 text-left hover:bg-muted/50 transition-colors"
+          >
+            <Vote className="h-4 w-4 text-primary" />
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+              投票明细战报
+            </h3>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition-transform duration-200",
+                showVotes && "rotate-180"
+              )}
+            />
+          </button>
+          <AnimatePresence initial={false}>
+            {showVotes && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="overflow-hidden p-4 space-y-3"
+              >
+                {summary.voteHistory.map((item, idx) => (
+                  <div key={idx} className="space-y-1.5 text-sm">
+                    <div className="font-semibold text-xs text-muted-foreground">
+                      第 {item.day} 天{item.tieBreak ? " (平票PK投票)" : " (正常投票)"}：
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {item.votes.map((v, vIdx) => {
+                        const voter = snapshot.players.find((p) => p.id === v.voterId);
+                        const target = snapshot.players.find((p) => p.id === v.targetId);
+                        return (
+                          <div
+                            key={vIdx}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-xs"
+                          >
+                            <span className="font-medium">{voter?.name ?? v.voterId}</span>
+                            <span className="text-muted-foreground">投给了</span>
+                            <Badge variant="outline" className="text-[11px] font-normal">
+                              {target?.name ?? v.targetId}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+      )}
+
       {/* 白板猜词记录 */}
       {summary.blankGuesses.length > 0 && (
         <section className="rounded-xl border overflow-hidden">
           <div className="px-4 py-2.5 border-b bg-muted/30">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              白板猜词
+              白板猜词记录
             </h3>
           </div>
           <div className="divide-y">
@@ -164,7 +258,7 @@ export function GameOverPhase() {
         </section>
       )}
 
-      {/* 描述复盘（可展开） */}
+      {/* 描述复盘 */}
       {summary.descriptions.length > 0 && (
         <section className="rounded-xl border overflow-hidden">
           <button
@@ -172,9 +266,9 @@ export function GameOverPhase() {
             onClick={() => setShowDescriptions((v) => !v)}
             className="w-full px-4 py-2.5 border-b bg-muted/30 flex items-center gap-2 text-left hover:bg-muted/50 transition-colors"
           >
-            <History className="h-3.5 w-3.5 text-muted-foreground" />
+            <History className="h-4 w-4 text-muted-foreground" />
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-              描述复盘
+              描述发言复盘
             </h3>
             <ChevronDown
               className={cn(
@@ -204,7 +298,7 @@ export function GameOverPhase() {
         </section>
       )}
 
-      {/* 下一局：房主看到"开始"，成员看到"准备" */}
+      {/* 下一局控制按钮 */}
       <div className="flex flex-col items-center gap-3 pt-2">
         {isHost ? (
           <Button
@@ -217,7 +311,7 @@ export function GameOverPhase() {
               ? "开始下一局"
               : allReady
               ? "开始下一局"
-              : `等待所有玩家准备 (${readyCount}/${nonHostActive.length})`}
+              : `等待在线玩家准备 (${readyCount}/${nonHostActive.length})`}
           </Button>
         ) : (
           me?.membership === "active" && (
