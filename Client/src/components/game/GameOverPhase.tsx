@@ -76,14 +76,11 @@ export function GameOverPhase() {
       <div className="flex items-center gap-4 rounded-xl border bg-muted/30 px-5 py-4">
         <Trophy className={cn("h-10 w-10 shrink-0", winnerTone)} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className={cn("text-xl font-semibold", winnerTone)}>
-              {WINNER_LABELS[summary.winner]}
-            </span>
-            <Badge variant="secondary" className="text-xs">战报结算</Badge>
-          </div>
+          <span className={cn("text-xl font-semibold", winnerTone)}>
+            {WINNER_LABELS[summary.winner]}
+          </span>
           <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
-            {summary.reason}
+            {summary.reason.replace(/（测试）/g, "").replace(/\(测试\)/g, "").trim()}
           </p>
         </div>
       </div>
@@ -124,16 +121,26 @@ export function GameOverPhase() {
       <section className="rounded-xl border overflow-hidden">
         <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            身份揭示与得分
+            身份揭示与得分统计
           </h3>
         </div>
         <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/10 text-xs text-muted-foreground">
+              <th className="px-4 py-2 text-left font-medium">玩家</th>
+              <th className="px-4 py-2 text-left font-medium">本局身份</th>
+              <th className="px-4 py-2 text-right font-medium">本局变动</th>
+              <th className="px-4 py-2 text-right font-medium">房间累计</th>
+            </tr>
+          </thead>
           <tbody className="divide-y">
             {summary.revealedRoles.map(({ playerId, role }) => {
               const player = snapshot.players.find((p) => p.id === playerId);
               const award = summary.awardedScores.find(
                 (s) => s.playerId === playerId
               );
+              const delta = award?.delta ?? 0;
+              const totalScore = player?.score ?? 0;
               return (
                 <tr key={playerId} className="hover:bg-muted/20">
                   <td className="px-4 py-2.5 font-medium">
@@ -147,14 +154,11 @@ export function GameOverPhase() {
                       {ROLE_LABELS[role]}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2.5 text-right w-24">
-                    {award && award.delta > 0 ? (
-                      <span className="text-emerald-600 font-semibold">
-                        +{award.delta} 分
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/60">+0 分</span>
-                    )}
+                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
+                    +{delta} 分
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-amber-600">
+                    {totalScore} 分
                   </td>
                 </tr>
               );

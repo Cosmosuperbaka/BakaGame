@@ -3,11 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Settings, Menu, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useGame } from "@/contexts/GameContext";
 import { getSavedUsername } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
-import { PHASE_LABELS } from "@/lib/helpers";
 import { PlayerList } from "@/components/room/PlayerList";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
@@ -133,7 +131,6 @@ export default function RoomPage() {
     );
   }
 
-  const phase = snapshot.status.phase;
   const started = snapshot.status.started;
 
   return (
@@ -151,9 +148,6 @@ export default function RoomPage() {
               测试
             </span>
           )}
-          <Badge variant="outline" className="text-xs py-0.5 px-2 shrink-0">
-            {PHASE_LABELS[phase]}
-          </Badge>
           {started && snapshot.status.day > 0 && (
             <span className="text-xs text-muted-foreground shrink-0">
               第{snapshot.status.day}天

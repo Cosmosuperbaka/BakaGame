@@ -50,7 +50,7 @@ export function AssignQuestionerPhase() {
               <SectionHeader
                 icon={<Eye className="h-3.5 w-3.5" />}
                 title="旁观玩家"
-                hint="推荐：正式玩家全员参战"
+                hint="推荐：玩家全员参战"
               />
               <CandidateGrid
                 candidates={spectatorCandidates}
@@ -60,11 +60,11 @@ export function AssignQuestionerPhase() {
             </section>
           )}
 
-          {/* 正式玩家区块 */}
+          {/* 玩家区块 */}
           <section>
             <SectionHeader
               icon={<UserCheck className="h-3.5 w-3.5" />}
-              title="正式玩家"
+              title="玩家"
               hint={
                 spectatorCandidates.length > 0 ? (
                   <span className="inline-flex items-center gap-1 text-amber-600">
