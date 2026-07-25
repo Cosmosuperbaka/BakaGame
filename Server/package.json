@@ -11,6 +11,7 @@
     "docs:openapi": "bun run src/scripts/export-openapi.ts"
   },
   "dependencies": {
+    "@bakagame/shared": "file:../packages/shared",
     "elysia": "^1.2.10"
   },
   "devDependencies": {

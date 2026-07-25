@@ -24,8 +24,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@bakagame/shared": ["../packages/shared/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../packages/shared/src/**/*"]
 }
