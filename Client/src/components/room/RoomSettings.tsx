@@ -133,9 +133,10 @@ export function RoomSettings({ open, onOpenChange }: Props) {
               </span>
             </div>
             {roleEditingDisabled && (
-              <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-md px-3 py-2 mb-3 leading-relaxed">
-                玩家不足 4 人，阵营人数暂不可调整。其它设置仍可保存。
-              </p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border rounded-lg p-3 mb-3">
+                <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span>当前玩家不足 4 人，阵营配置不可调整（开启对局需至少 4 名玩家）</span>
+              </div>
             )}
 
             <div className="flex items-center justify-between mb-3">

@@ -1,9 +1,8 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { Moon, Sword, FastForward, ShieldOff } from "lucide-react";
+import { Moon, Sword, FastForward, ShieldOff, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useGame } from "@/contexts/GameContext";
 
 export function NightPhase() {
@@ -53,9 +52,9 @@ export function NightPhase() {
   return (
     <div className="space-y-6 max-w-lg mx-auto">
       <div className="text-center">
-        <Moon className="h-16 w-16 mx-auto mb-3 text-indigo-400/80" />
+        <Moon className="h-14 w-14 mx-auto mb-3 text-indigo-500/80" />
         <h2 className="text-2xl font-semibold">夜晚降临</h2>
-        <p className="text-base text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           {canAct && !acted
             ? "你可以选择击杀一名玩家，或者什么都不做"
             : "等待夜晚结束..."}
@@ -68,11 +67,11 @@ export function NightPhase() {
             {targets.map((p) => (
               <Card
                 key={p.id}
-                className="cursor-pointer transition-[background,border-color] duration-150 hover:bg-rose-500/5 hover:border-rose-400/50"
+                className="cursor-pointer transition-all duration-150 hover:bg-rose-500/5 hover:border-rose-400/50 shadow-2xs"
                 onClick={() => handleNightAction(p.id)}
               >
                 <CardContent className="py-3.5 px-4 flex items-center justify-between">
-                  <span className="font-medium truncate">{p.name}</span>
+                  <span className="font-medium text-sm truncate">{p.name}</span>
                   <Sword className="h-4 w-4 text-rose-500 shrink-0 ml-2" />
                 </CardContent>
               </Card>
@@ -88,27 +87,32 @@ export function NightPhase() {
             className="w-full gap-2 h-10"
             onClick={() => handleNightAction()}
           >
-            <ShieldOff className="h-4 w-4" /> 什么都不做
+            <ShieldOff className="h-4 w-4 text-muted-foreground" /> 什么都不做
           </Button>
         </div>
       )}
 
+      {/* 提交行动后的优雅反馈卡片 */}
       {acted && (
         <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="text-center"
+          className="flex items-center gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
         >
-          <Badge variant="outline" className="py-1.5 px-4 text-sm">
-            已提交夜晚行动
-          </Badge>
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="text-sm font-medium">
+            已完成夜晚决策
+            <span className="ml-2 font-normal text-xs text-muted-foreground">
+              ( 静待天亮... )
+            </span>
+          </div>
         </motion.div>
       )}
 
       {isQuestioner && (
         <div className="text-center pt-2">
-          <Button onClick={handleAdvance} size="lg" className="gap-2">
+          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
             <FastForward className="h-4 w-4" /> 天亮了
           </Button>
         </div>
