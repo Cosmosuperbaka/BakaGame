@@ -1,19 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  RefreshCw,
-  Plus,
-  Lock,
-  Users,
-  Eye,
-} from "lucide-react";
+import { RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +14,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
+import { CreateRoomDialog } from "@/components/home/CreateRoomDialog";
 import { getSavedUsername, saveUsername } from "@/lib/cookie";
 import { PHASE_LABELS, randomRoomId } from "@/lib/helpers";
 import faviconUrl from "@/assets/favicon.png";
@@ -40,7 +33,6 @@ interface ChangelogData {
   entries: ChangelogEntry[];
 }
 
-// 列表项的进入动画：轻微位移 + 极短错开，避免齐刷刷的"AI 感"。
 const listItemVariants = {
   hidden: { opacity: 0, y: 6 },
   visible: (i: number) => ({
@@ -57,7 +49,13 @@ const listItemVariants = {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { state, createRoom, joinRoom, reconnectRoom, subscribeLobby, addToast } = useGame();
+  const rooms = useGameStore((state) => state.rooms);
+  const createRoom = useGameStore((state) => state.createRoom);
+  const joinRoom = useGameStore((state) => state.joinRoom);
+  const reconnectRoom = useGameStore((state) => state.reconnectRoom);
+  const subscribeLobby = useGameStore((state) => state.subscribeLobby);
+  const addToast = useGameStore((state) => state.addToast);
+
   const [userName, setUserName] = useState(getSavedUsername);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<RoomSummaryItem | null>(null);
@@ -66,12 +64,10 @@ export default function HomePage() {
   const [changelog, setChangelog] = useState<ChangelogData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // 静默保存用户名
   useEffect(() => {
     if (userName.trim()) saveUsername(userName.trim());
   }, [userName]);
 
-  // 获取更新日志
   useEffect(() => {
     fetch("/changelog.json")
       .then((r) => r.json())
@@ -79,7 +75,6 @@ export default function HomePage() {
       .catch(() => {});
   }, []);
 
-  // 手动刷新房间列表
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -91,7 +86,6 @@ export default function HomePage() {
     }
   }, [subscribeLobby, addToast]);
 
-  // 加入房间
   const handleJoinRoom = useCallback(
     async (room: RoomSummaryItem) => {
       if (!userName.trim()) {
@@ -131,7 +125,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* 标题区 — 仅标题 */}
       <header className="pt-16 md:pt-20 pb-6 md:pb-8 text-center px-6">
         <h1 className="text-5xl md:text-6xl font-bold tracking-tight flex items-center justify-center gap-4">
           Who is{" "}
@@ -143,9 +136,7 @@ export default function HomePage() {
         </h1>
       </header>
 
-      {/* 主内容区 */}
       <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-10">
-        {/* 操作栏 */}
         <div className="flex items-center gap-3 mb-5">
           <h2 className="text-xl font-semibold shrink-0">房间列表</h2>
           <div className="flex-1" />
@@ -171,10 +162,9 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {/* 房间列表 */}
         <div className="space-y-3">
           <AnimatePresence mode="popLayout" initial={false}>
-            {state.rooms.length === 0 ? (
+            {rooms.length === 0 ? (
               <motion.div
                 key="empty"
                 initial={{ opacity: 0 }}
@@ -186,7 +176,7 @@ export default function HomePage() {
                 暂无房间，点击上方按钮创建一个吧
               </motion.div>
             ) : (
-              state.rooms.map((room, i) => (
+              rooms.map((room, i) => (
                 <motion.div
                   key={room.roomId}
                   custom={i}
@@ -240,7 +230,6 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* 创建房间弹窗 — 无 roomId 字段，自动随机 */}
       <CreateRoomDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -261,7 +250,6 @@ export default function HomePage() {
         }}
       />
 
-      {/* 密码输入弹窗 */}
       <Dialog open={!!joinTarget} onOpenChange={() => setJoinTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -283,7 +271,6 @@ export default function HomePage() {
         </DialogContent>
       </Dialog>
 
-      {/* 版本信息弹窗 */}
       <Dialog open={versionOpen} onOpenChange={setVersionOpen}>
         <DialogContent>
           <DialogHeader>
@@ -314,105 +301,5 @@ export default function HomePage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-// ==================== 创建房间弹窗（无 roomId 字段） ====================
-
-function CreateRoomDialog({
-  open,
-  onOpenChange,
-  defaultName,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  defaultName: string;
-  onCreate: (params: {
-    name: string;
-    visibility: "public" | "private";
-    password?: string;
-    allowSpectators: boolean;
-  }) => Promise<void>;
-}) {
-  const [roomName, setRoomName] = useState(defaultName);
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const { addToast } = useGame();
-
-  useEffect(() => {
-    if (open) {
-      setRoomName(defaultName);
-      setIsPrivate(false);
-      setPassword("");
-      setAllowSpectators(true);
-    }
-  }, [open, defaultName]);
-
-  const handleCreate = async () => {
-    if (isPrivate && !password.trim()) {
-      addToast("私密房间需要设置密码", "error");
-      return;
-    }
-    setLoading(true);
-    try {
-      await onCreate({
-        name: roomName || "新房间",
-        visibility: isPrivate ? "private" : "public",
-        password: isPrivate ? password : undefined,
-        allowSpectators,
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>创建房间</DialogTitle>
-          <DialogDescription>设置房间参数</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <Label className="text-sm">房间名称</Label>
-            <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="输入房间名称" className="h-10" />
-          </div>
-          <div className="flex items-center justify-between py-1">
-            <Label className="text-sm">私密房间</Label>
-            <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-          </div>
-          <AnimatePresence>
-            {isPrivate && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="space-y-2 pb-1">
-                  <Label className="text-sm">房间密码</Label>
-                  <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="设置房间密码" className="h-10" />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div className="flex items-center justify-between py-1">
-            <Label className="text-sm">允许旁观</Label>
-            <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={handleCreate} disabled={loading}>
-            {loading ? "创建中..." : "创建"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
