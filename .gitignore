@@ -57,3 +57,5 @@ Server/build
 *.njsproj
 *.sln
 *.sw?
+
+word-bank.json
