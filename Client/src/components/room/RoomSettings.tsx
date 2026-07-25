@@ -129,12 +129,12 @@ export function RoomSettings({ open, onOpenChange }: Props) {
               <h4 className="text-sm font-semibold">阵营配置</h4>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Users className="h-3.5 w-3.5" />
-                {activePlayers} 名正式玩家
+                {activePlayers} 名玩家
               </span>
             </div>
             {roleEditingDisabled && (
               <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-md px-3 py-2 mb-3 leading-relaxed">
-                正式玩家不足 4 人，阵营人数暂不可调整。其它设置仍可保存。
+                玩家不足 4 人，阵营人数暂不可调整。其它设置仍可保存。
               </p>
             )}
 

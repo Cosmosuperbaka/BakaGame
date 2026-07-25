@@ -1392,7 +1392,7 @@ export class RoomService {
         break;
       }
       case "gameOver":
-        await this.finishRound(room, "good", "（测试）手动结束本局");
+        await this.finishRound(room, "good", "手动结束本局");
         this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
         this.publishRoomState(room);
         return { phase: "gameOver" as GamePhase };
@@ -2198,9 +2198,9 @@ export class RoomService {
       return;
     }
 
-    // 旁观者可以出题，因此只要正式玩家达到 4 人即可开局。
+    // 旁观者可以出题，因此只要玩家达到 4 人即可开局。
     if (activeCount < 4) {
-      throw new AppError("INSUFFICIENT_PLAYERS", "游戏至少需要 4 名正式玩家");
+      throw new AppError("INSUFFICIENT_PLAYERS", "游戏至少需要 4 名玩家");
     }
 
     if (!this.hasValidQuestionerCandidate(room)) {

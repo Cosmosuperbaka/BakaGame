@@ -220,7 +220,6 @@ export function initGameSocket() {
         currentStore.appendChat(evt.payload as ChatMessage);
         break;
       case "game.phaseChanged":
-        currentStore.addToast(phaseLabel((evt.payload as { phase: string }).phase));
         break;
       case "game.voteResult":
         currentStore.addToast("投票结果已公布");
@@ -279,20 +278,4 @@ export function initGameSocket() {
     unsubMsg();
     unsubStatus();
   };
-}
-
-function phaseLabel(phase: string): string {
-  const map: Record<string, string> = {
-    waiting: "等待中",
-    assigningQuestioner: "指定出题人",
-    wordSubmission: "出题阶段",
-    description: "描述阶段",
-    voting: "投票阶段",
-    tieBreak: "平票PK",
-    night: "夜晚阶段",
-    daybreak: "天亮了",
-    blankGuess: "白板猜词",
-    gameOver: "游戏结束",
-  };
-  return map[phase] ?? phase;
 }

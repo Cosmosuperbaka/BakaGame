@@ -106,7 +106,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 const VALUE_LABELS: Record<string, Record<string, string>> = {
   membership: {
-    active: "正式玩家",
+    active: "玩家",
     spectator: "旁观者",
     kicked: "已踢出",
   },
