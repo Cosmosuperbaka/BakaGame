@@ -1,8 +1,7 @@
-// 用户名 cookie 读写（静默保存）
+import { TEST_ROOM_ID } from "@/config/constants";
 
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
-const TEST_ROOM_ID = "Oblivionis";
 
 function normalizeSessionRoomId(roomId: string): string {
   const normalized = roomId.trim();
