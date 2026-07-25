@@ -155,6 +155,17 @@ export interface RoundSummary {
   }>;
   descriptions: DescriptionRecord[];
   blankGuesses: BlankGuessRecord[];
+  words?: {
+    pair: [string, string];
+    civilianWord: string;
+    undercoverWord: string;
+    blankHint?: string;
+  };
+  voteHistory?: Array<{
+    day: number;
+    tieBreak?: boolean;
+    votes: VoteRecord[];
+  }>;
 }
 
 // 单局游戏的全部运行态。

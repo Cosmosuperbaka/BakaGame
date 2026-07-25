@@ -4,6 +4,8 @@ import {
   type BlankGuessRecord,
   type GameRound,
   type NightActionRecord,
+  type PlayerRole,
+  type PlayerSide,
   type RoleConfig,
   type RoleLimits,
   type RoomRecord,
@@ -115,6 +117,7 @@ export const assignRoles = (
   pair: [string, string],
   blankHint: string | undefined,
   random: RandomSource,
+  manualRoles?: Record<string, PlayerRole>,
 ): {
   civilianWord: string;
   undercoverWord: string;
@@ -124,52 +127,86 @@ export const assignRoles = (
   // 出题人提交的是无序词对，真正的“平民词/卧底词”映射由服务端临时决定。
   const normalizedPair = normalizeWordPair(pair);
   const shuffledWords = shuffle([...normalizedPair], random);
-  const shuffledPlayers = shuffle(playerIds, random);
   const assignments: Record<string, RoundPlayerState> = {};
-
   const [civilianWord, undercoverWord] = shuffledWords;
-  let cursor = 0;
 
-  if (config.hasBlank) {
-    const playerId = shuffledPlayers[cursor];
-    assignments[playerId] = {
-      role: "blank",
-      side: "blank",
-      alive: true,
-    };
-    cursor += 1;
-  }
+  if (manualRoles) {
+    for (const pid of playerIds) {
+      if (!manualRoles[pid]) {
+        throw new AppError("INVALID_MANUAL_ROLES", "部分参赛玩家未指定身份");
+      }
+    }
+    const roles = playerIds.map((pid) => manualRoles[pid]);
+    const undercoverCount = roles.filter((r) => r === "undercover").length;
+    const angelCount = roles.filter((r) => r === "angel").length;
+    const blankCount = roles.filter((r) => r === "blank").length;
 
-  if (config.hasAngel) {
-    const playerId = shuffledPlayers[cursor];
-    assignments[playerId] = {
-      role: "angel",
-      side: "good",
-      word: civilianWord,
-      alive: true,
-    };
-    cursor += 1;
-  }
+    if (
+      undercoverCount !== config.undercoverCount ||
+      (config.hasAngel ? angelCount !== 1 : angelCount !== 0) ||
+      (config.hasBlank ? blankCount !== 1 : blankCount !== 0)
+    ) {
+      throw new AppError("INVALID_MANUAL_ROLES", "指定身份数量与当前局配置不符");
+    }
 
-  for (let index = 0; index < config.undercoverCount; index += 1) {
-    const playerId = shuffledPlayers[cursor];
-    assignments[playerId] = {
-      role: "undercover",
-      side: "undercover",
-      word: undercoverWord,
-      alive: true,
-    };
-    cursor += 1;
-  }
+    for (const pid of playerIds) {
+      const role = manualRoles[pid];
+      const side: PlayerSide =
+        role === "undercover" ? "undercover" : role === "blank" ? "blank" : "good";
+      const word =
+        role === "blank" ? undefined : role === "undercover" ? undercoverWord : civilianWord;
+      assignments[pid] = {
+        role,
+        side,
+        word,
+        alive: true,
+      };
+    }
+  } else {
+    const shuffledPlayers = shuffle(playerIds, random);
+    let cursor = 0;
 
-  for (; cursor < shuffledPlayers.length; cursor += 1) {
-    const playerId = shuffledPlayers[cursor];
-    assignments[playerId] = {
-      role: "civilian",
-      side: "good",
-      word: civilianWord,
-      alive: true,
-    };
+    if (config.hasBlank) {
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "blank",
+        side: "blank",
+        alive: true,
+      };
+      cursor += 1;
+    }
+
+    if (config.hasAngel) {
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "angel",
+        side: "good",
+        word: civilianWord,
+        alive: true,
+      };
+      cursor += 1;
+    }
+
+    for (let index = 0; index < config.undercoverCount; index += 1) {
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "undercover",
+        side: "undercover",
+        word: undercoverWord,
+        alive: true,
+      };
+      cursor += 1;
+    }
+
+    for (; cursor < shuffledPlayers.length; cursor += 1) {
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "civilian",
+        side: "good",
+        word: civilianWord,
+        alive: true,
+      };
+    }
   }
 
   if (blankHint) {
@@ -207,6 +244,25 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
     leaders,
     counts: Object.fromEntries(voteCounter),
   };
+};
+
+export const isVotingMathematicallyDetermined = (
+  votes: VoteRecord[],
+  totalVotersCount: number,
+): boolean => {
+  if (totalVotersCount === 0 || votes.length >= totalVotersCount) {
+    return true;
+  }
+  const voteCounter = new Map<string, number>();
+  for (const vote of votes) {
+    voteCounter.set(vote.targetId, (voteCounter.get(vote.targetId) ?? 0) + 1);
+  }
+  const counts = [...voteCounter.values()].sort((a, b) => b - a);
+  const maxVotes = counts[0] ?? 0;
+  const secondVotes = counts[1] ?? 0;
+  const remainingVotes = totalVotersCount - votes.length;
+
+  return maxVotes - secondVotes > remainingVotes;
 };
 
 export const resolveNightEliminations = (

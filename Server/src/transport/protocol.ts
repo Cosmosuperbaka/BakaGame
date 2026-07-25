@@ -238,6 +238,9 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
             optional: true,
             allowEmpty: true,
           }),
+          manualRoles: isObject(payload.manualRoles)
+            ? (payload.manualRoles as Record<string, PlayerRole>)
+            : undefined,
         },
       };
     case "game.advancePhase":

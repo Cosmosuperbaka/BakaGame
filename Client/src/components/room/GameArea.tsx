@@ -89,9 +89,12 @@ function PhaseContent() {
     case "wordSubmission":
       return <WordSubmissionPhase />;
     case "description":
-    case "tieBreak":
     case "daybreak":
       return <DescriptionPhase />;
+    case "tieBreak": {
+      const tieBreakStage = state.snapshot?.status.tieBreakStage;
+      return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
+    }
     case "voting":
       return <VotingPhase />;
     case "night":
