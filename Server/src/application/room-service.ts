@@ -41,11 +41,14 @@ import { EventLogger } from "../infrastructure/event-logger";
 import { WordBankRepository } from "../infrastructure/word-bank-repository";
 import { createEvent, type ClientMessage } from "../transport/protocol";
 
-const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
-const QUESTIONER_RECONNECT_TIMEOUT_MS = 60 * 1000;
-const CHAT_LIMIT = 200;
-// 测试模式用于预填 UI 的默认词对（仅跳转阶段时兜底使用）。
-const TEST_MODE_DEFAULT_WORD: [string, string] = ["苹果", "香蕉"];
+import {
+  ROOM_IDLE_TIMEOUT_MS,
+  QUESTIONER_RECONNECT_TIMEOUT_MS,
+  CHAT_LIMIT,
+  TEST_MODE_DEFAULT_WORD,
+} from "../config/constants";
+import { ConnectionRegistry } from "./connection-registry";
+import { RoomManager } from "./room-manager";
 
 export interface RoomServiceOptions {
   now?: () => number;
@@ -59,6 +62,8 @@ export class RoomService {
 
   private readonly rooms = new Map<string, RoomRecord>();
   private readonly connections = new Map<string, ConnectionRecord>();
+  private readonly connectionRegistry: ConnectionRegistry;
+  private readonly roomManager: RoomManager;
   private readonly now: () => number;
   private readonly random: RandomSource;
   private idCounter = 0;
@@ -71,10 +76,13 @@ export class RoomService {
         nextInt: (maxExclusive: number) =>
           Math.floor(Math.random() * Math.max(maxExclusive, 1)),
       } satisfies RandomSource);
+    this.connectionRegistry = new ConnectionRegistry();
+    this.roomManager = new RoomManager(this.connectionRegistry, this.now);
   }
 
   registerConnection(connection: ConnectionRecord): void {
     this.connections.set(connection.id, connection);
+    this.connectionRegistry.registerConnection(connection);
   }
 
   // 连接断开时只做连接解绑，真正的房间副作用统一交给 handlePlayerOffline。
@@ -86,6 +94,7 @@ export class RoomService {
     }
 
     this.connections.delete(connectionId);
+    this.connectionRegistry.unregisterConnection(connectionId);
 
     if (!connection.roomId || !connection.playerId) {
       return;

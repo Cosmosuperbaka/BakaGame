@@ -11,10 +11,10 @@
     "docs:openapi": "bun run src/scripts/export-openapi.ts"
   },
   "dependencies": {
-    "elysia": "latest"
+    "elysia": "^1.2.10"
   },
   "devDependencies": {
-    "bun-types": "latest",
+    "bun-types": "^1.2.2",
     "typescript": "^5.9.3"
   },
   "module": "src/index.ts"

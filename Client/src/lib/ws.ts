@@ -1,8 +1,14 @@
 import type { ServerMessage } from "@/types";
+import {
+  DEFAULT_SERVER_URL,
+  MAX_RECONNECT_DELAY_MS,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  CONNECT_WAIT_TIMEOUT_MS,
+} from "@/config/constants";
 
 // ==================== WebSocket 连接管理器 ====================
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:4850";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
 const WS_URL = SERVER_URL.replace(/^http/, "ws") + "/ws";
 
 type MessageHandler = (msg: ServerMessage) => void;
@@ -21,7 +27,7 @@ let pendingRequests = new Map<string, PendingRequest>();
 let reqCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_DELAY = 10000;
+const MAX_RECONNECT_DELAY = MAX_RECONNECT_DELAY_MS;
 let intentionalClose = false;
 
 // 等待连接就绪的 Promise 队列
@@ -117,7 +123,7 @@ export function isConnected(): boolean {
 }
 
 // 等待 WebSocket 连接就绪（已连接则立即返回）
-export function waitForConnection(timeoutMs = 8000): Promise<void> {
+export function waitForConnection(timeoutMs = CONNECT_WAIT_TIMEOUT_MS): Promise<void> {
   if (ws?.readyState === WebSocket.OPEN) {
     return Promise.resolve();
   }
@@ -148,7 +154,7 @@ export function send<T extends Record<string, unknown> = Record<string, unknown>
     }
 
     const id = `req-${++reqCounter}`;
-    const timeout = options?.timeout ?? 10000;
+    const timeout = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
     const timer = setTimeout(() => {
       pendingRequests.delete(id);
