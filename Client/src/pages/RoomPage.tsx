@@ -4,8 +4,9 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Settings, Menu, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/contexts/GameContext";
-import { getSavedUsername } from "@/lib/cookie";
+import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
+import { useGameStore } from "@/stores/useGameStore";
 import { PlayerList } from "@/components/room/PlayerList";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
@@ -27,9 +28,16 @@ export default function RoomPage() {
     }
   }, [joining, state.snapshot, state.roomId, navigate]);
 
-  // 进入房间时，先等连接就绪，再尝试重连/加入/创建
+  // 进入房间时，先等连接就绪，再尝试重连/加入/创建；测试房间为离线模式无需联网
   useEffect(() => {
     if (!roomId) return;
+
+    if (isTestRoomId(roomId)) {
+      useGameStore.getState().initTestRoomOffline();
+      setJoining(false);
+      return;
+    }
+
     // 如果已经在这个房间，不重复
     if (state.roomId === roomId && state.snapshot) {
       setJoining(false);

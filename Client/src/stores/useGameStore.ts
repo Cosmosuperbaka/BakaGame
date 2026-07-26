@@ -15,7 +15,10 @@ import type {
   ChatMessage,
   PublicPlayerView,
   RoundSummary,
+  GamePhase,
+  PlayerRole,
 } from "@/types";
+import { createMockTestRoomState, type TestPerspective } from "@/lib/mockData";
 
 export interface ToastItem {
   id: number;
@@ -32,6 +35,8 @@ export interface GameState {
   privateState: PrivateState | null;
   sessionConflictRoomId: string | null;
   toasts: ToastItem[];
+  testPerspective: TestPerspective;
+  testRole: PlayerRole;
 
   // Actions
   setConnected: (connected: boolean) => void;
@@ -46,6 +51,16 @@ export interface GameState {
   setSummary: (summary: RoundSummary) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
   removeToast: (id: number) => void;
+  initTestRoomOffline: (
+    phase?: GamePhase,
+    perspective?: TestPerspective,
+    role?: PlayerRole
+  ) => void;
+  jumpTestRoomPhase: (phase: GamePhase) => void;
+  setTestRoomPerspective: (
+    perspective: TestPerspective,
+    role?: PlayerRole
+  ) => void;
 
   // Async Business Actions
   subscribeLobby: () => Promise<void>;
@@ -138,6 +153,38 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
+
+  testPerspective: "player",
+  testRole: "civilian",
+
+  initTestRoomOffline: (phase = "waiting", perspective = "player", role = "civilian") => {
+    const { snapshot, privateState } = createMockTestRoomState(phase, perspective, role);
+    set({
+      roomId: "Oblivionis",
+      snapshot,
+      privateState,
+      testPerspective: perspective,
+      testRole: role,
+    });
+  },
+
+  jumpTestRoomPhase: (phase) => {
+    const { testPerspective, testRole } = get();
+    const { snapshot, privateState } = createMockTestRoomState(phase, testPerspective, testRole);
+    set({ snapshot, privateState });
+  },
+
+  setTestRoomPerspective: (perspective, role) => {
+    const currentPhase = get().snapshot?.status.phase ?? "waiting";
+    const newRole = role ?? get().testRole;
+    const { snapshot, privateState } = createMockTestRoomState(currentPhase, perspective, newRole);
+    set({
+      snapshot,
+      privateState,
+      testPerspective: perspective,
+      testRole: newRole,
+    });
+  },
 
   // 异步业务动作
   subscribeLobby: async () => {
