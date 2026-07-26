@@ -1,11 +1,13 @@
 import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronUp, FlaskConical, UserCog } from "lucide-react";
+import { ChevronUp, FlaskConical, UserCog, Eye, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import type { GamePhase, PlayerRole } from "@/types";
+import type { TestPerspective } from "@/lib/mockData";
 
 const PHASES: GamePhase[] = [
   "waiting",
@@ -22,55 +24,80 @@ const PHASES: GamePhase[] = [
 
 const ROLES: PlayerRole[] = ["civilian", "undercover", "angel", "blank"];
 
-// 仅在测试房间显示；提供"跳转阶段"和"切换身份"两组按钮。
 export function TestController() {
-  const { state, sendCommand, addToast } = useGame();
+  const { state, sendCommand } = useGame();
   const [open, setOpen] = useState(true);
+
   const snapshot = state.snapshot;
   const privateState = state.privateState;
-
   const currentPhase = snapshot?.status.phase;
-  const myRole = privateState?.role;
 
-  const jumpToPhase = useCallback(
+  const testRole = useGameStore((s) => s.testRole);
+
+  const isConnected = state.connected;
+
+  const handleJumpPhase = useCallback(
     async (phase: GamePhase) => {
+      if (!isConnected || snapshot?.roomId === "Oblivionis") {
+        useGameStore.getState().jumpTestRoomPhase(phase);
+        return;
+      }
       try {
         await sendCommand("test.jumpToPhase", { phase });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
+      } catch {
+        useGameStore.getState().jumpTestRoomPhase(phase);
       }
     },
-    [sendCommand, addToast]
+    [isConnected, snapshot?.roomId, sendCommand]
   );
 
-  const setMyRole = useCallback(
+  const handleSetPerspective = useCallback(
+    (perspective: TestPerspective) => {
+      useGameStore.getState().setTestRoomPerspective(perspective);
+    },
+    []
+  );
+
+  const handleSetRole = useCallback(
     async (role: PlayerRole) => {
+      if (!isConnected || snapshot?.roomId === "Oblivionis") {
+        useGameStore.getState().setTestRoomPerspective("player", role);
+        return;
+      }
       try {
         await sendCommand("test.setMyRole", { role });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
+      } catch {
+        useGameStore.getState().setTestRoomPerspective("player", role);
       }
     },
-    [sendCommand, addToast]
+    [isConnected, snapshot?.roomId, sendCommand]
   );
 
+  const currentPerspective: TestPerspective = privateState?.questionerView
+    ? privateState.isQuestioner
+      ? "questioner"
+      : "spectator"
+    : "player";
+
+  const activeRole = privateState?.role ?? testRole;
+
   return (
-    <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-10 pointer-events-none">
+    <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-30 pointer-events-none">
       <div className="flex justify-end pointer-events-auto">
         <motion.div
           layout
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg overflow-hidden w-full md:w-96 max-w-full"
+          className="rounded-xl border bg-background/95 backdrop-blur-md shadow-xl overflow-hidden w-full md:w-96 max-w-full"
         >
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm font-medium hover:bg-muted/40 transition-colors"
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/40 transition-colors"
           >
             <FlaskConical className="h-4 w-4 text-primary" />
-            <span>测试控制器</span>
-            <span className="text-xs text-muted-foreground font-normal ml-auto">
-              仅在 Oblivionis 房间可见
+            <span>离线测试控制器</span>
+            <span className="text-[11px] text-muted-foreground font-normal ml-auto">
+              测试房间
             </span>
             <ChevronUp
               className={cn(
@@ -89,7 +116,7 @@ export function TestController() {
                 className="overflow-hidden"
               >
                 <div className="px-4 pb-4 pt-1 space-y-3">
-                  <ControlGroup label="跳转到阶段">
+                  <ControlGroup label="跳转游戏阶段">
                     <div className="grid grid-cols-2 gap-1.5">
                       {PHASES.map((p) => (
                         <Button
@@ -97,7 +124,7 @@ export function TestController() {
                           variant={currentPhase === p ? "default" : "outline"}
                           size="sm"
                           className="h-7 text-xs justify-start"
-                          onClick={() => jumpToPhase(p)}
+                          onClick={() => handleJumpPhase(p)}
                         >
                           {PHASE_LABELS[p]}
                         </Button>
@@ -105,28 +132,53 @@ export function TestController() {
                     </div>
                   </ControlGroup>
 
-                  <ControlGroup label="切换我的身份" icon={<UserCog className="h-3.5 w-3.5" />}>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {ROLES.map((r) => (
-                        <Button
-                          key={r}
-                          variant={myRole === r ? "default" : "outline"}
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => setMyRole(r)}
-                        >
-                          {ROLE_LABELS[r]}
-                        </Button>
-                      ))}
+                  <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-blue-500" />}>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <Button
+                        variant={currentPerspective === "player" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => handleSetPerspective("player")}
+                      >
+                        玩家视角
+                      </Button>
+                      <Button
+                        variant={currentPerspective === "questioner" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => handleSetPerspective("questioner")}
+                      >
+                        <Shield className="h-3 w-3 text-purple-400" />
+                        出题人
+                      </Button>
+                      <Button
+                        variant={currentPerspective === "spectator" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => handleSetPerspective("spectator")}
+                      >
+                        旁观视角
+                      </Button>
                     </div>
-                    {!privateState || privateState.isQuestioner ? (
-                      <p className="text-[11px] text-muted-foreground mt-1.5">
-                        {privateState?.isQuestioner
-                          ? "出题人不能切换身份"
-                          : "尚未进入本局或无分配"}
-                      </p>
-                    ) : null}
                   </ControlGroup>
+
+                  {currentPerspective === "player" && (
+                    <ControlGroup label="切换玩家身份" icon={<UserCog className="h-3.5 w-3.5 text-emerald-500" />}>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {ROLES.map((r) => (
+                          <Button
+                            key={r}
+                            variant={activeRole === r ? "default" : "outline"}
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleSetRole(r)}
+                          >
+                            {ROLE_LABELS[r]}
+                          </Button>
+                        ))}
+                      </div>
+                    </ControlGroup>
+                  )}
                 </div>
               </motion.div>
             )}
