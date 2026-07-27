@@ -49,109 +49,6 @@ const EVENT_LABELS: Record<string, string> = {
   "room.updateSettings": "收到房间设置更新请求",
 };
 
-const FIELD_LABELS: Record<string, string> = {
-  allowSpectators: "允许旁观",
-  blankHint: "白板提示",
-  civilianWord: "平民词",
-  code: "错误码",
-  commit: "提交哈希",
-  connectionCount: "连接数",
-  connectionId: "连接",
-  counts: "票数统计",
-  day: "天数",
-  errorMessage: "错误信息",
-  errorName: "错误类型",
-  guessedWords: "猜词",
-  hasAngel: "天使",
-  hasBlank: "白板",
-  hostPlayerId: "房主",
-  joinedAs: "加入身份",
-  kickedPlayerId: "被踢玩家",
-  leaders: "最高票玩家",
-  listenAddress: "监听地址",
-  maxUndercoverCount: "最大卧底数",
-  membership: "席位",
-  name: "名称",
-  online: "在线",
-  onlineCount: "在线人数",
-  onlinePlayerCount: "在线玩家数",
-  phase: "阶段",
-  playerCount: "玩家数",
-  playerId: "玩家",
-  ready: "准备",
-  reason: "原因",
-  requestId: "请求",
-  resolution: "处理结果",
-  role: "角色",
-  roleConfig: "阵营配置",
-  roomCount: "房间数",
-  roomId: "房间",
-  serverUrl: "服务地址",
-  sessionToken: "会话令牌",
-  signal: "信号",
-  spectator: "旁观",
-  started: "已开局",
-  success: "成功",
-  targetId: "目标玩家",
-  targetPlayerId: "目标玩家",
-  tieBreak: "平票PK",
-  undercoverCount: "卧底数",
-  undercoverWord: "卧底词",
-  userName: "用户名",
-  version: "版本",
-  visibility: "可见性",
-  winner: "胜方",
-  words: "词语",
-};
-
-const VALUE_LABELS: Record<string, Record<string, string>> = {
-  membership: {
-    active: "玩家",
-    spectator: "旁观者",
-    kicked: "已踢出",
-  },
-  phase: {
-    waiting: "等待中",
-    assigningQuestioner: "指定出题人",
-    wordSubmission: "出题阶段",
-    description: "描述阶段",
-    voting: "投票阶段",
-    tieBreak: "平票PK",
-    night: "夜晚阶段",
-    daybreak: "天亮了",
-    blankGuess: "白板猜词",
-    gameOver: "游戏结束",
-  },
-  reason: {
-    empty: "房间内已无人在线",
-    idle_timeout: "房间闲置超时",
-  },
-  resolution: {
-    wait: "等待重连",
-    eliminate: "淘汰并踢出",
-  },
-  role: {
-    civilian: "平民",
-    undercover: "卧底",
-    angel: "天使",
-    blank: "白板",
-  },
-  signal: {
-    SIGINT: "控制台中断",
-    SIGTERM: "终止信号",
-  },
-  visibility: {
-    public: "公开",
-    private: "私密",
-  },
-  winner: {
-    good: "好人阵营",
-    undercover: "卧底阵营",
-    blank: "白板",
-    aborted: "中断",
-  },
-};
-
 const LEVEL_METHODS: Record<LogLevel, keyof LogOutput> = {
   INFO: "info",
   WARN: "warn",
@@ -185,64 +82,29 @@ const normalizeOutput = (output: LogOutputLike = defaultOutput): LogOutput => {
 
 const padNumber = (value: number, length = 2) => value.toString().padStart(length, "0");
 
+// 高精度耗时格式化（支持微秒 µs、毫秒 ms、秒 s，统一右对齐 13 位）
+export const formatDuration = (durationMs = 0): string => {
+  if (durationMs <= 0) {
+    return "      0.000µs";
+  }
+  if (durationMs < 1) {
+    const micros = (durationMs * 1000).toFixed(3);
+    return `${micros}µs`.padStart(13, " ");
+  }
+  if (durationMs < 1000) {
+    const millis = durationMs.toFixed(3);
+    return `${millis}ms`.padStart(13, " ");
+  }
+  const secs = (durationMs / 1000).toFixed(3);
+  return `${secs}s`.padStart(13, " ");
+};
+
+// 统一时间戳格式化 YYYY/MM/DD - HH:mm:ss
 const formatTimestamp = (createdAt: number) => {
   const date = new Date(createdAt);
 
-  return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${padNumber(date.getMilliseconds(), 3)}`;
+  return `${date.getFullYear()}/${padNumber(date.getMonth() + 1)}/${padNumber(date.getDate())} - ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}`;
 };
-
-const formatFieldName = (field: string) =>
-  FIELD_LABELS[field] ??
-  field
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replaceAll("-", "_");
-
-const formatScalar = (field: string, value: string | number | boolean | null | undefined) => {
-  if (value == null) {
-    return "空";
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "是" : "否";
-  }
-
-  if (typeof value === "number") {
-    return String(value);
-  }
-
-  return VALUE_LABELS[field]?.[value] ?? value;
-};
-
-const formatValue = (field: string, value: unknown): string => {
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return "[]";
-    }
-
-    return `[${value.map((item) => formatValue(field, item)).join(" / ")}]`;
-  }
-
-  if (isRecord(value)) {
-    const parts = Object.entries(value)
-      .filter(([, nestedValue]) => nestedValue !== undefined)
-      .map(
-        ([nestedKey, nestedValue]) =>
-          `${formatFieldName(nestedKey)}=${formatValue(nestedKey, nestedValue)}`,
-      );
-
-    return parts.length > 0 ? `{${parts.join(", ")}}` : "{}";
-  }
-
-  return formatScalar(field, value as string | number | boolean | null | undefined);
-};
-
-const formatContext = (context?: Record<string, unknown>) =>
-  !context
-    ? ""
-    : Object.entries(context)
-        .filter(([, value]) => value !== undefined)
-        .map(([field, value]) => `${formatFieldName(field)}=${formatValue(field, value)}`)
-        .join(", ");
 
 const getEventLevel = (entry: LogEntry): LogLevel => {
   switch (entry.type) {
@@ -268,53 +130,50 @@ export const describeError = (error: unknown): Record<string, unknown> => {
   };
 };
 
+// 系统日志列格式化
 export const formatSystemLog = ({
   level,
   message,
   createdAt,
   context,
+  durationMs = 0,
+  status,
 }: {
   level: LogLevel;
   message: string;
   createdAt: number;
   context?: Record<string, unknown>;
+  durationMs?: number;
+  status?: number;
 }) => {
-  const detail = formatContext(context);
+  const statusCode = status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
+  const timestampStr = formatTimestamp(createdAt);
+  const durationStr = formatDuration(durationMs);
+  const identifierStr = (
+    (context?.connectionId as string) ??
+    (context?.roomId as string) ??
+    (context?.playerId as string) ??
+    (context?.ip as string) ??
+    "system"
+  ).padStart(15, " ");
+  const actionStr = `SYS ${message}`;
 
-  return [
-    `[${formatTimestamp(createdAt)}]`,
-    `[${level}]`,
-    message,
-    detail ? `详情: ${detail}` : undefined,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}`;
 };
 
-export const formatLogEntry = (entry: LogEntry, level = getEventLevel(entry)): string => {
+// 领域事件日志列格式化
+export const formatLogEntry = (
+  entry: LogEntry & { durationMs?: number; status?: number },
+  level = getEventLevel(entry),
+): string => {
   const headline = EVENT_LABELS[entry.type] ?? entry.type;
-  const contextParts = [
-    entry.roomId ? `房间=${entry.roomId}` : undefined,
-    entry.playerId ? `玩家=${entry.playerId}` : undefined,
-  ].filter(Boolean);
+  const statusCode = entry.status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
+  const timestampStr = formatTimestamp(entry.createdAt);
+  const durationStr = formatDuration(entry.durationMs ?? 0);
+  const identifierStr = (entry.roomId ?? entry.playerId ?? "system").padStart(15, " ");
+  const actionStr = `EVENT ${entry.type} (${headline})`;
 
-  const detail =
-    entry.payload === undefined
-      ? ""
-      : isRecord(entry.payload)
-        ? formatContext(entry.payload)
-        : formatValue("payload", entry.payload);
-
-  return [
-    `[${formatTimestamp(entry.createdAt)}]`,
-    `[${level}]`,
-    headline,
-    `(${entry.type})`,
-    ...contextParts,
-    detail ? `详情: ${detail}` : undefined,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}`;
 };
 
 export class EventLogger {
@@ -353,6 +212,34 @@ export class EventLogger {
 
   error(message: string, context?: Record<string, unknown>) {
     this.emit("ERROR", message, context);
+  }
+
+  // 后端操作日志输出
+  logOperation({
+    status = 200,
+    durationMs = 0,
+    identifier = "system",
+    action,
+    level = "INFO",
+    createdAt = this.now(),
+  }: {
+    status?: number;
+    durationMs?: number;
+    identifier?: string;
+    action: string;
+    level?: LogLevel;
+    createdAt?: number;
+  }) {
+    const timestampStr = formatTimestamp(createdAt);
+    const durationStr = formatDuration(durationMs);
+    const idStr = identifier.padStart(15, " ");
+    const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}`;
+    this.output[LEVEL_METHODS[level]](line);
+  }
+
+  // 兼容别名
+  ginLog(options: Parameters<EventLogger["logOperation"]>[0]) {
+    this.logOperation(options);
   }
 
   async write(entry: LogEntry): Promise<void> {

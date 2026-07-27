@@ -60,7 +60,7 @@ process.on("SIGTERM", () => {
   });
 });
 
-logger.info("WhoIsFaker 服务已启动", {
+logger.info("BakaGame Server Powered by Elysia Started", {
   version: versionInfo.version,
   commit: versionInfo.commit,
   serverUrl: env.serverUrl,
