@@ -36,43 +36,52 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
         versionInfo,
       }),
     )
-    // ==================== 全局错误生命周期处理 ====================
-    .onError(({ code, error, set, path }) => {
-      if (isAppError(error)) {
-        logger.warn("HTTP 请求发生业务异常", {
-          path,
-          code: error.code,
-          errorMessage: error.message,
-        });
-        set.status = 400;
-        return {
-          error: {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-          },
-        };
-      }
-
-      if (code === "NOT_FOUND") {
-        set.status = 404;
-        return {
-          error: {
-            code: "NOT_FOUND",
-            message: "请求资源不存在",
-          },
-        };
-      }
-
-      logger.error("HTTP 请求发生未捕获异常", {
-        path,
-        ...describeError(error),
+    // ==================== 原生耗时记录派生 ====================
+    .derive(() => ({
+      startedAt: performance.now(),
+    }))
+    .onAfterHandle(({ request, path, set, startedAt }) => {
+      const durationMs = performance.now() - startedAt;
+      logger.logOperation({
+        status: set.status ? Number(set.status) : 200,
+        durationMs,
+        identifier: request.headers.get("x-forwarded-for") ?? "127.0.0.1",
+        action: `HTTP ${request.method} ${path}`,
       });
-      set.status = 500;
+    })
+    // ==================== 全局错误生命周期处理 ====================
+    .onError(({ code, error, set, path, request, startedAt }) => {
+      const durationMs = startedAt ? performance.now() - startedAt : 0;
+      let status = 500;
+      let errCode = "INTERNAL_ERROR";
+      let errMsg = "服务器内部错误";
+
+      if (isAppError(error)) {
+        status = 400;
+        set.status = 400;
+        errCode = error.code;
+        errMsg = error.message;
+      } else if (code === "NOT_FOUND") {
+        status = 404;
+        set.status = 404;
+        errCode = "NOT_FOUND";
+        errMsg = "请求资源不存在";
+      } else {
+        set.status = 500;
+      }
+
+      logger.logOperation({
+        status,
+        durationMs,
+        identifier: request?.headers?.get("x-forwarded-for") ?? "127.0.0.1",
+        action: `HTTP ${request?.method ?? "GET"} ${path}`,
+        level: status >= 500 ? "ERROR" : "WARN",
+      });
+
       return {
         error: {
-          code: "INTERNAL_ERROR",
-          message: "服务器内部错误",
+          code: errCode,
+          message: errMsg,
         },
       };
     })
@@ -118,20 +127,32 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
                   )
                 : incoming;
 
+        const startTime = performance.now();
         let parsedId = "unknown";
+        let parsedType = "raw";
 
         try {
           const parsed = parseClientMessage(raw);
           parsedId = parsed.id;
+          parsedType = parsed.type;
           const payload = await roomService.execute(connectionId, parsed);
+          const durationMs = performance.now() - startTime;
+          logger.logOperation({
+            status: 200,
+            durationMs,
+            identifier: connectionId,
+            action: `WS ${parsedType}`,
+          });
           ws.send(JSON.stringify(createAck(parsed, payload)));
         } catch (error) {
+          const durationMs = performance.now() - startTime;
           if (isAppError(error)) {
-            logger.warn("WebSocket 请求返回业务错误", {
-              connectionId,
-              requestId: parsedId,
-              code: error.code,
-              errorMessage: error.message,
+            logger.logOperation({
+              status: 400,
+              durationMs,
+              identifier: connectionId,
+              action: `WS ${parsedType}`,
+              level: "WARN",
             });
             ws.send(
               JSON.stringify(
@@ -141,10 +162,12 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
             return;
           }
 
-          logger.error("WebSocket 请求发生未捕获异常", {
-            connectionId,
-            requestId: parsedId,
-            ...describeError(error),
+          logger.logOperation({
+            status: 500,
+            durationMs,
+            identifier: connectionId,
+            action: `WS ${parsedType}`,
+            level: "ERROR",
           });
           ws.send(
             JSON.stringify(

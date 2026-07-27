@@ -16,7 +16,7 @@ import { createApp } from "../src/transport/app";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 
-test("事件日志输出为格式化语义化文本", async () => {
+test("事件日志输出为极简 GIN 风格格式化文本", async () => {
   const output: string[] = [];
   const logger = new EventLogger((message) => {
     output.push(message);
@@ -43,16 +43,14 @@ test("事件日志输出为格式化语义化文本", async () => {
 
   expect(output).toHaveLength(1);
   expect(output[0]).toBe(formatted);
-  expect(formatted).toContain("房间已创建");
-  expect(formatted).toContain("房间=1234");
-  expect(formatted).toContain("玩家=player_1");
-  expect(formatted).toContain("可见性=私密");
-  expect(formatted).toContain("允许旁观=是");
-  expect(formatted).toContain("阵营配置={卧底数=2, 天使=否, 白板=是}");
-  expect(formatted).not.toContain('{"type"');
+  expect(formatted).toContain("[BAKA]");
+  expect(formatted).toContain("200");
+  expect(formatted).toContain("EVENT room.created (房间已创建)");
+  expect(formatted).toContain("1234");
+  expect(formatted).not.toContain("详情:");
 });
 
-test("系统日志支持统一级别格式", () => {
+test("系统日志支持极简 GIN 风格状态码与列表格式", () => {
   const lines: string[] = [];
   const logger = new EventLogger({
     info: (message) => lines.push(message),
@@ -75,13 +73,12 @@ test("系统日志支持统一级别格式", () => {
     errorMessage: "boom",
   });
 
-  expect(lines[0]).toContain("[INFO]");
-  expect(lines[0]).toContain("WhoIsFaker 服务已启动");
-  expect(lines[0]).toContain("版本=1.1.0");
-  expect(lines[1]).toContain("[WARN]");
-  expect(lines[1]).toContain("信号=终止信号");
-  expect(lines[2]).toContain("[ERROR]");
-  expect(lines[2]).toContain("错误类型=TypeError");
+  expect(lines[0]).toContain("[BAKA]");
+  expect(lines[0]).toContain("200");
+  expect(lines[0]).toContain("SYS WhoIsFaker 服务已启动");
+  expect(lines[1]).toContain("400");
+  expect(lines[2]).toContain("500");
+  expect(lines[0]).not.toContain("详情:");
   expect(
     formatSystemLog({
       level: "WARN",
@@ -91,7 +88,7 @@ test("系统日志支持统一级别格式", () => {
         signal: "SIGTERM",
       },
     }),
-  ).toContain("[WARN]");
+  ).toContain("[BAKA]");
 });
 
 test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async () => {
