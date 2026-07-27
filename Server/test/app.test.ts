@@ -94,6 +94,49 @@ test("系统日志支持统一级别格式", () => {
   ).toContain("[WARN]");
 });
 
+test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async () => {
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 0,
+    gitCommit: "test-commit",
+    wordBankPath: ":memory:",
+  };
+  const roomService = new RoomService({
+    eventLogger: new EventLogger(),
+    wordBankRepository: new WordBankRepository(env.wordBankPath),
+  });
+  const logger = new EventLogger();
+  const { app } = createApp({
+    env,
+    roomService,
+    versionInfo: createVersionInfo(env.gitCommit),
+    logger,
+  });
+
+  const healthRes = await app.handle(new Request("http://localhost/health"));
+  expect(healthRes.status).toBe(200);
+  expect((await healthRes.json()).status).toBe("ok");
+
+  const versionRes = await app.handle(new Request("http://localhost/version"));
+  expect(versionRes.status).toBe(200);
+  expect((await versionRes.json()).commit).toBe("test-commit");
+
+  const optionsRes = await app.handle(
+    new Request("http://localhost/health", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:5173",
+        "Access-Control-Request-Method": "GET",
+      },
+    }),
+  );
+  expect(optionsRes.headers.get("access-control-allow-origin")).toBe(
+    "http://localhost:5173",
+  );
+});
+
 // 收集测试期间的 WebSocket 推送，便于按事件类型断言。
 const createSocketCollector = (socket: WebSocket) => {
   const queue: unknown[] = [];

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 
+import { RoomService } from "../src/application/room-service";
 import { AppError } from "../src/domain/errors";
 import { createVersionInfo } from "../src/config/version";
-import {
-  buildOpenApiDocument,
-  renderOpenApiHtml,
-} from "../src/transport/openapi";
+import { EventLogger } from "../src/infrastructure/event-logger";
+import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
+import { createApp } from "../src/transport/app";
 import {
   createAck,
   createErrorPacket,
@@ -168,20 +168,34 @@ test("协议解析会为非法消息抛出业务错误", () => {
   ).toThrow(AppError);
 });
 
-test("协议辅助包与 OpenAPI 页面可以正确生成", () => {
+test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async () => {
   const versionInfo = createVersionInfo("test");
-  const document = buildOpenApiDocument({
-    serverUrl: "http://127.0.0.1:4850",
-    versionInfo,
+  const logger = new EventLogger();
+  const roomService = new RoomService({
+    eventLogger: logger,
+    wordBankRepository: new WordBankRepository(":memory:"),
   });
-  const html = renderOpenApiHtml({
-    tag: "<script>alert(1)</script>",
+  const { app } = createApp({
+    env: {
+      clientUrl: "http://localhost:5173",
+      serverUrl: "http://127.0.0.1:4850",
+      serverListenHost: "127.0.0.1",
+      serverPort: 4850,
+      gitCommit: "test",
+      wordBankPath: ":memory:",
+    },
+    roomService,
+    versionInfo,
+    logger,
   });
 
+  const response = await app.handle(new Request("http://127.0.0.1:4850/openapi/json"));
+  expect(response.status).toBe(200);
+
+  const document = (await response.json()) as { paths: Record<string, unknown> };
   expect(document.paths["/health"]).toBeTruthy();
-  expect(document.paths["/openapi/json"]).toBeTruthy();
+  expect(document.paths["/version"]).toBeTruthy();
   expect(createAck({ id: "ack", type: "chat.send" }, { ok: true }).type).toBe("ack");
   expect(createErrorPacket("err", "CODE", "message").type).toBe("error");
   expect(createEvent("room.snapshot", {}).type).toBe("event");
-  expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
 });
