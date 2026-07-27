@@ -1,3 +1,4 @@
+import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
 import { RoomService } from "../application/room-service";
@@ -5,8 +6,9 @@ import type { AppEnv } from "../config/env";
 import type { VersionInfo } from "../config/version";
 import { isAppError } from "../domain/errors";
 import { describeError, EventLogger } from "../infrastructure/event-logger";
-import { buildOpenApiDocument, renderOpenApiHtml } from "./openapi";
+import { createSwaggerPlugin } from "./openapi";
 import { createAck, createErrorPacket, parseClientMessage } from "./protocol";
+import { systemRoutes } from "./routes/system";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -16,38 +18,67 @@ export interface AppDependencies {
 }
 
 export const createApp = ({ env, roomService, versionInfo, logger }: AppDependencies) => {
-  // ==================== HTTP / WebSocket 入口 ====================
-
-  const openApiDocument = buildOpenApiDocument({
-    serverUrl: env.serverUrl,
-    versionInfo,
-  });
   const decoder = new TextDecoder();
 
   const app = new Elysia()
-    .onAfterHandle(({ set }) => {
-      set.headers["access-control-allow-origin"] = env.clientUrl;
-      set.headers["access-control-allow-headers"] = "content-type";
-      set.headers["access-control-allow-methods"] = "GET,OPTIONS";
-      set.headers["access-control-allow-credentials"] = "true";
-    })
-    .options("/openapi", () => new Response(null, { status: 204 }))
-    .options("/openapi/json", () => new Response(null, { status: 204 }))
-    .get("/health", () => ({
-      status: "ok",
-      ...roomService.getHealthSnapshot(),
-    }))
-    .get("/version", () => versionInfo)
-    .get("/openapi/json", () => openApiDocument)
-    .get(
-      "/openapi",
-      () =>
-        new Response(renderOpenApiHtml(openApiDocument), {
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-          },
-        }),
+    // ==================== 原生插件与全局中间件 ====================
+    .use(
+      cors({
+        origin: env.clientUrl,
+        allowedHeaders: ["content-type"],
+        methods: ["GET", "OPTIONS"],
+        credentials: true,
+      }),
     )
+    .use(
+      createSwaggerPlugin({
+        serverUrl: env.serverUrl,
+        versionInfo,
+      }),
+    )
+    // ==================== 全局错误生命周期处理 ====================
+    .onError(({ code, error, set, path }) => {
+      if (isAppError(error)) {
+        logger.warn("HTTP 请求发生业务异常", {
+          path,
+          code: error.code,
+          errorMessage: error.message,
+        });
+        set.status = 400;
+        return {
+          error: {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        };
+      }
+
+      if (code === "NOT_FOUND") {
+        set.status = 404;
+        return {
+          error: {
+            code: "NOT_FOUND",
+            message: "请求资源不存在",
+          },
+        };
+      }
+
+      logger.error("HTTP 请求发生未捕获异常", {
+        path,
+        ...describeError(error),
+      });
+      set.status = 500;
+      return {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "服务器内部错误",
+        },
+      };
+    })
+    // ==================== 系统 HTTP 业务模块 ====================
+    .use(systemRoutes({ roomService, versionInfo }))
+    // ==================== WebSocket 入口 ====================
     .ws("/ws", {
       open(ws) {
         // 为每个连接建立独立的连接上下文，后续所有命令都靠它定位会话。
@@ -133,6 +164,5 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
 
   return {
     app,
-    openApiDocument,
   };
 };
