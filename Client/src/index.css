@@ -47,7 +47,7 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0.165 254);
-  --radius: 0.625rem;
+  --radius: 10px;
 }
 
 .dark {
@@ -70,7 +70,11 @@
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.551 0.13 254);
-  --radius: 0.625rem;
+  --radius: 10px;
+}
+
+html {
+  font-size: 120%;
 }
 
 @layer base {

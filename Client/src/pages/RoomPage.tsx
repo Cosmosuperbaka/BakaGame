@@ -182,7 +182,7 @@ export default function RoomPage() {
       </header>
 
       {/* 三栏布局 */}
-      <div className="flex-1 flex overflow-hidden relative p-2 md:p-3 gap-2 md:gap-3">
+      <div className="flex-1 flex overflow-hidden relative px-2 md:px-3 pb-2 md:pb-3 pt-0 gap-2 md:gap-3">
         {/* 左栏：玩家列表 */}
         <aside className="w-64 overflow-y-auto shrink-0 hidden md:flex flex-col bg-background rounded-xl border">
           <PlayerList
