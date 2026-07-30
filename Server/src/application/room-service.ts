@@ -143,6 +143,12 @@ export class RoomService {
         return this.handleSubmitNightAction(connection, message.payload.targetId);
       case "game.submitBlankGuess":
         return this.handleSubmitBlankGuess(connection, message.payload.words);
+      case "game.cancelVote":
+        return this.handleCancelVote(connection);
+      case "game.cancelNightAction":
+        return this.handleCancelNightAction(connection);
+      case "game.requestSupplement":
+        return this.handleRequestSupplement(connection, message.payload.playerIds);
       case "game.resolveDisconnect":
         return this.handleResolveDisconnect(
           connection,
@@ -803,6 +809,9 @@ export class RoomService {
         if (!this.isDescriptionComplete(round)) {
           throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
         }
+        if (round.supplement) {
+          throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
+        }
         round.phase = "voting";
         round.votes = [];
         break;
@@ -894,10 +903,24 @@ export class RoomService {
         throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
       }
 
-      round.descriptionSubmittedBy.push(player.id);
-      round.descriptions.push(
-        this.createDescription(player, normalized, "description", round.descriptionCycle),
-      );
+      // 补充发言优先于普通描述判断：若出题人已向该玩家发起补充请求且尚未完成，则走补充路径。
+      if (round.supplement && round.supplement.requestedPlayerIds.includes(player.id) && !round.supplement.donePlayers.includes(player.id)) {
+        round.supplement.donePlayers.push(player.id);
+        round.descriptions.push(
+          this.createDescription(player, normalized, "supplement", round.descriptionCycle, {
+            supplementIndex: round.supplement.index,
+          }),
+        );
+        // 所有被点名玩家均已完成补充，清空本轮补充请求。
+        if (round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length) {
+          round.supplement = undefined;
+        }
+      } else {
+        round.descriptionSubmittedBy.push(player.id);
+        round.descriptions.push(
+          this.createDescription(player, normalized, "description", round.descriptionCycle),
+        );
+      }
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
       if (!round.tieBreak.candidateIds.includes(player.id)) {
         throw new AppError("ACTION_FORBIDDEN", "只有平票玩家可以补充描述");
@@ -909,7 +932,9 @@ export class RoomService {
 
       round.tieBreak.descriptionsDone.push(player.id);
       round.descriptions.push(
-        this.createDescription(player, normalized, "tieBreak", round.descriptionCycle),
+        this.createDescription(player, normalized, "tieBreak", round.descriptionCycle, {
+          tieBreakIndex: round.tieBreakCount,
+        }),
       );
     } else {
       throw new AppError("INVALID_PHASE", "当前阶段不能提交描述");
@@ -926,6 +951,101 @@ export class RoomService {
     await this.runBots(room);
 
     return { submitted: true };
+  }
+
+  private async handleCancelVote(connection: ConnectionRecord) {
+    // 允许已投票玩家在主持人结算前撤销，防止误触。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+
+    if (round.phase === "voting") {
+      if (!round.votes.some((v) => v.voterId === player.id)) {
+        throw new AppError("ACTION_FORBIDDEN", "尚未投票，无需撤销");
+      }
+      round.votes = round.votes.filter((v) => v.voterId !== player.id);
+    } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "vote") {
+      if (!round.tieBreak.votes.some((v) => v.voterId === player.id)) {
+        throw new AppError("ACTION_FORBIDDEN", "尚未投票，无需撤销");
+      }
+      round.tieBreak.votes = round.tieBreak.votes.filter((v) => v.voterId !== player.id);
+    } else {
+      throw new AppError("INVALID_PHASE", "当前阶段不能撤销投票");
+    }
+
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    return { cancelled: true };
+  }
+
+  private async handleCancelNightAction(connection: ConnectionRecord) {
+    // 允许已提交夜晚操作的玩家在主持人推进前撤销。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+
+    if (round.phase !== "night") {
+      throw new AppError("INVALID_PHASE", "当前阶段不能撤销夜晚操作");
+    }
+
+    const hadAction = round.nightActions.some((a) => a.actorId === player.id);
+    if (!hadAction) {
+      throw new AppError("ACTION_FORBIDDEN", "尚未提交夜晚操作，无需撤销");
+    }
+
+    round.nightActions = round.nightActions.filter((a) => a.actorId !== player.id);
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    return { cancelled: true };
+  }
+
+  private async handleRequestSupplement(connection: ConnectionRecord, playerIds: string[]) {
+    // 出题人在本轮描述完成后、投票结算前，可点名若干玩家补充发言一次。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+
+    this.ensureQuestioner(round, player.id);
+
+    if (round.phase !== "description" && round.phase !== "voting") {
+      throw new AppError("INVALID_PHASE", "只能在发言或投票阶段发起补充");
+    }
+
+    if (round.phase === "description" && !this.isDescriptionComplete(round)) {
+      throw new AppError("PHASE_INCOMPLETE", "所有玩家完成描述后才能发起补充");
+    }
+
+    if (round.supplement) {
+      throw new AppError("ACTION_FORBIDDEN", "当前已有进行中的补充请求，请等待完成");
+    }
+
+    if (!playerIds.length) {
+      throw new AppError("INVALID_MESSAGE", "至少需要指定一名玩家补充发言");
+    }
+
+    // 校验所有被点名玩家均为存活的非出题人玩家。
+    for (const id of playerIds) {
+      const state = round.assignments[id];
+      if (!state?.alive) {
+        throw new AppError("INVALID_MESSAGE", `玩家 ${id} 不在局内或已出局，不能被要求补充`);
+      }
+      if (id === round.questionerPlayerId) {
+        throw new AppError("INVALID_MESSAGE", "出题人不能要求自己补充发言");
+      }
+    }
+
+    // 计算本局第几次补充（在所有轮次描述中找最大 supplementIndex + 1）。
+    const maxSuppIdx = round.descriptions.reduce(
+      (max, d) => (d.supplementIndex !== undefined && d.supplementIndex > max ? d.supplementIndex : max),
+      0,
+    );
+
+    round.supplement = {
+      index: maxSuppIdx + 1,
+      requestedPlayerIds: [...new Set(playerIds)],
+      donePlayers: [],
+    };
+
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    return { requested: true };
   }
 
   private async handleSubmitVote(connection: ConnectionRecord, targetId: string) {
@@ -1026,7 +1146,7 @@ export class RoomService {
       throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
     }
 
-    const canGuessActively = state.alive && round.phase !== "gameOver";
+    const canGuessActively = round.phase !== "gameOver";
     const canGuessPassively =
       round.phase === "blankGuess" && round.blankGuessContext?.playerId === player.id;
 
@@ -1454,6 +1574,7 @@ export class RoomService {
       day: 1,
       assignments: {},
       descriptionCycle: 0,
+      tieBreakCount: 0,
       descriptions: [],
       descriptionSubmittedBy: [],
       votes: [],
@@ -1513,6 +1634,7 @@ export class RoomService {
     });
 
     if (!tieBreak && leaders.length > 1) {
+      round.tieBreakCount += 1;
       round.phase = "tieBreak";
       round.tieBreak = {
         candidateIds: leaders,
@@ -1568,25 +1690,10 @@ export class RoomService {
     eliminatedIds: string[],
     resumePhase: Exclude<GamePhase, "assigningQuestioner" | "wordSubmission" | "blankGuess">,
   ): Promise<boolean> {
-    // 这里统一处理两种白板猜词入口：
-    // 1. 白板被淘汰后的被动猜词
-    // 2. 残局触发的最终猜词
+    // 白板被淘汰时不再阻塞游戏进程，玩家可通过悬浮按钮随时猜词（非阻塞）。
+    // 仅保留"残局触发"路径：其他阵营已满足胜负条件但白板仍存活时，进入阻塞猜词阶段。
     const round = this.requireRound(room);
     const blankPlayerId = getBlankPlayerId(round.assignments);
-
-    if (
-      blankPlayerId &&
-      eliminatedIds.includes(blankPlayerId) &&
-      !round.blankGuessUsed
-    ) {
-      round.phase = "blankGuess";
-      round.blankGuessContext = {
-        playerId: blankPlayerId,
-        reason: "eliminated",
-        resumePhase,
-      };
-      return true;
-    }
 
     const finalBlankGuess = shouldEnterFinalBlankGuess(round);
 
@@ -1601,6 +1708,10 @@ export class RoomService {
       return true;
     }
 
+    // 白板被淘汰但残局条件未触发：继续正常流程，白板玩家的 canSubmitBlankGuess 仍为 true。
+    void blankPlayerId;
+    void eliminatedIds;
+    void resumePhase;
     return false;
   }
 
@@ -1896,6 +2007,11 @@ export class RoomService {
         pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
         questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
         blankGuessPlayerId: room.round?.blankGuessContext?.playerId,
+        pendingSupplementPlayerIds: room.round?.supplement
+          ? room.round.supplement.requestedPlayerIds.filter(
+              (id) => !room.round!.supplement!.donePlayers.includes(id),
+            )
+          : undefined,
       },
       players: this.buildPublicPlayers(room),
       descriptions: room.round?.descriptions ?? [],
@@ -1995,6 +2111,10 @@ export class RoomService {
       canSubmitBlankGuess: state?.role === "blank" && !round.blankGuessUsed,
       blankGuessUsed: round.blankGuessUsed,
       nightActionSubmitted: round.nightActions.some((action) => action.actorId === player.id),
+      myCurrentVoteTargetId:
+        round.phase === "tieBreak"
+          ? round.tieBreak?.votes.find((v) => v.voterId === player.id)?.targetId
+          : round.votes.find((v) => v.voterId === player.id)?.targetId,
     };
   }
 
@@ -2288,6 +2408,7 @@ export class RoomService {
     text: string,
     kind: DescriptionRecord["kind"],
     cycle: number,
+    extra?: { tieBreakIndex?: number; supplementIndex?: number },
   ): DescriptionRecord {
     return {
       id: this.createId("description"),
@@ -2296,6 +2417,8 @@ export class RoomService {
       text,
       kind,
       cycle,
+      tieBreakIndex: extra?.tieBreakIndex,
+      supplementIndex: extra?.supplementIndex,
       createdAt: this.now(),
     };
   }
