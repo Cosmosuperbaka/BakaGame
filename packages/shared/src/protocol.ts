@@ -106,4 +106,7 @@ export type ClientMessage =
   | ClientEnvelope<"chat.send", { text: string }>
   | ClientEnvelope<"room.transferHost", { playerId: string }>
   | ClientEnvelope<"test.jumpToPhase", { phase: GamePhase }>
-  | ClientEnvelope<"test.setMyRole", { role: PlayerRole }>;
+  | ClientEnvelope<"test.setMyRole", { role: PlayerRole }>
+  | ClientEnvelope<"game.cancelVote", Record<string, never>>
+  | ClientEnvelope<"game.cancelNightAction", Record<string, never>>
+  | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>;

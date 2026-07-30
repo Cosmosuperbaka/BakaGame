@@ -30,7 +30,7 @@ export type PlayerRole = (typeof PLAYER_ROLES)[number];
 export type PlayerSide = "good" | "undercover" | "blank";
 export type RoomVisibility = "public" | "private";
 export type PlayerMembership = "active" | "spectator" | "kicked";
-export type DescriptionKind = "description" | "tieBreak";
+export type DescriptionKind = "description" | "tieBreak" | "supplement";
 export type TieBreakStage = "description" | "vote";
 export type DisconnectResolution = "wait" | "eliminate";
 export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
@@ -80,6 +80,10 @@ export interface DescriptionRecord {
   text: string;
   kind: DescriptionKind;
   cycle: number;
+  /** 平票 PK 轮次编号（kind=tieBreak 时存在），1-based。 */
+  tieBreakIndex?: number;
+  /** 补充发言轮次编号（kind=supplement 时存在），1-based。 */
+  supplementIndex?: number;
   createdAt: number;
 }
 
@@ -182,8 +186,19 @@ export interface GameRound {
   };
   assignments: Record<string, RoundPlayerState>;
   descriptionCycle: number;
+  /** 当前局已发生的平票 PK 次数，每次进入 tieBreak 时自增，用于区分多次平票列。 */
+  tieBreakCount: number;
   descriptions: DescriptionRecord[];
   descriptionSubmittedBy: string[];
+  /** 出题人发起的当前轮补充发言请求，补充完成后清空。 */
+  supplement?: {
+    /** 本局第几次补充，1-based。 */
+    index: number;
+    /** 被要求补充发言的玩家 ID 列表。 */
+    requestedPlayerIds: string[];
+    /** 已完成补充的玩家 ID 列表。 */
+    donePlayers: string[];
+  };
   votes: VoteRecord[];
   tieBreak?: TieBreakState;
   nightActions: NightActionRecord[];
@@ -263,6 +278,8 @@ export interface RoomSnapshot {
     pendingDisconnectPlayerId?: string;
     questionerReconnectDeadlineAt?: number;
     blankGuessPlayerId?: string;
+    /** 出题人发起补充发言时，尚未完成补充的玩家 ID 列表。 */
+    pendingSupplementPlayerIds?: string[];
   };
   players: PublicPlayerView[];
   descriptions: DescriptionRecord[];
@@ -283,6 +300,8 @@ export interface PrivateState {
   canSubmitBlankGuess: boolean;
   blankGuessUsed: boolean;
   nightActionSubmitted: boolean;
+  /** 当前玩家在本轮投票中已投出的目标玩家 ID（含平票 PK 阶段）。 */
+  myCurrentVoteTargetId?: string;
   questionerView?: Array<{
     playerId: string;
     role: PlayerRole;
