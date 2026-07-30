@@ -59,20 +59,27 @@ export function DescriptionTable({
     );
   }
 
-  // 整理描述为以玩家为行的矩阵表格
+  // 整理所有出现的玩家（按首次出现顺序）
   const playerNames = new Map<string, string>();
   for (const d of descriptions) {
-    playerNames.set(d.playerId, d.playerName);
+    if (!playerNames.has(d.playerId)) playerNames.set(d.playerId, d.playerName);
   }
 
-  const normalDescriptions = descriptions.filter((d) => d.kind === "description");
-  const maxCycle = Math.max(
-    ...normalDescriptions.map((d) => d.cycle),
-    1
+  const normalDescs = descriptions.filter((d) => d.kind === "description");
+  const maxCycle = normalDescs.length > 0 ? Math.max(...normalDescs.map((d) => d.cycle)) : 0;
+  const cycles = maxCycle > 0 ? Array.from({ length: maxCycle }, (_, i) => i + 1) : [];
+
+  // 平票 PK 列：每个不同的 tieBreakIndex 为独立一列。
+  const tieBreakDescs = descriptions.filter((d) => d.kind === "tieBreak");
+  const tieBreakIndices = [...new Set(tieBreakDescs.map((d) => d.tieBreakIndex ?? 1))].sort(
+    (a, b) => a - b
   );
 
-  const cycles = Array.from({ length: maxCycle }, (_, i) => i + 1);
-  const hasTieBreak = descriptions.some((d) => d.kind === "tieBreak");
+  // 补充发言列：每个不同的 supplementIndex 为独立一列。
+  const supplementDescs = descriptions.filter((d) => d.kind === "supplement");
+  const supplementIndices = [...new Set(supplementDescs.map((d) => d.supplementIndex ?? 1))].sort(
+    (a, b) => a - b
+  );
 
   return (
     <div className="rounded-xl border overflow-x-auto bg-card shadow-xs">
@@ -81,15 +88,26 @@ export function DescriptionTable({
           <tr>
             <th className="px-4 py-3 min-w-[100px] border-r">玩家</th>
             {cycles.map((c) => (
-              <th key={c} className="px-4 py-3 min-w-[140px] border-r">
+              <th key={`c-${c}`} className="px-4 py-3 min-w-[140px] border-r">
                 第 {c} 轮
               </th>
             ))}
-            {hasTieBreak && (
-              <th className="px-4 py-3 min-w-[140px] text-amber-600 dark:text-amber-500">
-                平票 PK
+            {tieBreakIndices.map((idx) => (
+              <th
+                key={`tb-${idx}`}
+                className="px-4 py-3 min-w-[140px] border-r text-amber-600 dark:text-amber-500"
+              >
+                平票{idx}
               </th>
-            )}
+            ))}
+            {supplementIndices.map((idx) => (
+              <th
+                key={`sup-${idx}`}
+                className="px-4 py-3 min-w-[140px] border-r text-sky-600 dark:text-sky-400"
+              >
+                补充{idx}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody className="divide-y text-foreground">
@@ -99,22 +117,41 @@ export function DescriptionTable({
                 {name}
               </td>
               {cycles.map((c) => {
-                const desc = normalDescriptions.find(
+                const desc = normalDescs.find(
                   (d) => d.playerId === playerId && d.cycle === c
                 );
                 return (
-                  <td key={c} className="px-4 py-3 border-r text-foreground/90 leading-relaxed">
+                  <td key={`c-${c}`} className="px-4 py-3 border-r text-foreground/90 leading-relaxed">
                     {desc ? desc.text : <span className="text-muted-foreground/40">—</span>}
                   </td>
                 );
               })}
-              {hasTieBreak && (
-                <td className="px-4 py-3 text-amber-950 dark:text-amber-100 font-medium leading-relaxed">
-                  {descriptions.find(
-                    (d) => d.playerId === playerId && d.kind === "tieBreak"
-                  )?.text ?? <span className="text-muted-foreground/40">—</span>}
-                </td>
-              )}
+              {tieBreakIndices.map((idx) => {
+                const desc = tieBreakDescs.find(
+                  (d) => d.playerId === playerId && (d.tieBreakIndex ?? 1) === idx
+                );
+                return (
+                  <td
+                    key={`tb-${idx}`}
+                    className="px-4 py-3 border-r text-amber-950 dark:text-amber-100 font-medium leading-relaxed"
+                  >
+                    {desc ? desc.text : <span className="text-muted-foreground/40">—</span>}
+                  </td>
+                );
+              })}
+              {supplementIndices.map((idx) => {
+                const desc = supplementDescs.find(
+                  (d) => d.playerId === playerId && (d.supplementIndex ?? 1) === idx
+                );
+                return (
+                  <td
+                    key={`sup-${idx}`}
+                    className="px-4 py-3 border-r text-sky-950 dark:text-sky-100 leading-relaxed"
+                  >
+                    {desc ? desc.text : <span className="text-muted-foreground/40">—</span>}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
