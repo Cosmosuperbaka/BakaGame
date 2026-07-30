@@ -69,6 +69,25 @@ export class ConnectionRegistry {
     }
   }
 
+  broadcastToAll(payload: unknown): void {
+    for (const conn of this.connections.values()) {
+      try {
+        conn.send(payload);
+      } catch {
+        // 忽略已断开连接
+      }
+    }
+  }
+
+  findConnectionByPlayerId(playerId: string): ConnectionRecord | undefined {
+    for (const connection of this.connections.values()) {
+      if (connection.playerId === playerId) {
+        return connection;
+      }
+    }
+    return undefined;
+  }
+
   get stats() {
     return {
       totalConnections: this.connections.size,
