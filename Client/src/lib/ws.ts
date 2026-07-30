@@ -85,6 +85,12 @@ export function connect(): void {
 
   ws.onclose = () => {
     ws = null;
+    // 断开时立即 reject 所有等待中的请求，避免调用方挂起到超时才感知断线。
+    for (const [id, pending] of pendingRequests) {
+      clearTimeout(pending.timer);
+      pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
+      pendingRequests.delete(id);
+    }
     statusHandlers.forEach((h) => h(false));
     if (!intentionalClose) {
       scheduleReconnect();
