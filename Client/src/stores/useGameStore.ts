@@ -9,7 +9,7 @@ import {
 import type {
   RoomSnapshot,
   PrivateState,
-  RoomSummaryItem,
+  RoomSummary,
   ServerMessage,
   EventPacket,
   ChatMessage,
@@ -29,7 +29,7 @@ export interface ToastItem {
 
 export interface GameState {
   connected: boolean;
-  rooms: RoomSummaryItem[];
+  rooms: RoomSummary[];
   roomId: string | null;
   sessionToken: string | null;
   snapshot: RoomSnapshot | null;
@@ -41,7 +41,7 @@ export interface GameState {
 
   // Actions
   setConnected: (connected: boolean) => void;
-  setRooms: (rooms: RoomSummaryItem[]) => void;
+  setRooms: (rooms: RoomSummary[]) => void;
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
   handleSessionConflict: (roomId: string) => void;
@@ -412,7 +412,7 @@ export function initGameSocket() {
 
     switch (evt.event) {
       case "lobby.rooms":
-        currentStore.setRooms(evt.payload as RoomSummaryItem[]);
+        currentStore.setRooms(evt.payload as RoomSummary[]);
         break;
       case "room.snapshot":
         currentStore.setSnapshot(evt.payload as RoomSnapshot);

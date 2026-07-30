@@ -4,15 +4,16 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 
 export function ChatPanel() {
-  const { state, sendCommand, addToast } = useGame();
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
+  const chat = useGameStore((s) => s.snapshot?.chat ?? []);
+  const myId = useGameStore((s) => s.privateState?.playerId);
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const chat = state.snapshot?.chat ?? [];
-  const myId = state.privateState?.playerId;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

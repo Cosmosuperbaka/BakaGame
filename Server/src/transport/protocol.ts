@@ -114,7 +114,7 @@ const parseManualRoles = (obj: Record<string, unknown>): Record<string, PlayerRo
 };
 
 export const parseClientMessage = (raw: unknown): ClientMessage => {
-  // 兼容字符串消息和运行时已解析对象。
+  // WebSocket 帧是字符串，测试直接传入已解析对象。
   const parsed =
     typeof raw === "string" ? (JSON.parse(raw) as unknown) : (raw as unknown);
 

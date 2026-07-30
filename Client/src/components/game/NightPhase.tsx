@@ -3,12 +3,13 @@ import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 
 export function NightPhase() {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot!;
-  const privateState = state.privateState;
+  const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";

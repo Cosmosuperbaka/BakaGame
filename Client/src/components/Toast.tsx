@@ -1,14 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 
 export function ToastContainer() {
-  const { state } = useGame();
+  const toasts = useGameStore((s) => s.toasts);
 
   return (
     <div className="fixed top-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm">
       <AnimatePresence initial={false}>
-        {state.toasts.map((t) => (
+        {toasts.map((t) => (
           <motion.div
             key={t.id}
             layout

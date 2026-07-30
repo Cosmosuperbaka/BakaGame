@@ -1,13 +1,15 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 
 export function AssignQuestionerPhase() {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot!;
-  const me = snapshot.players.find((p) => p.id === state.privateState?.playerId);
+  const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
+  const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
   const activeCandidates = snapshot.players.filter(

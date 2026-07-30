@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 
 interface Props {
   open: boolean;
@@ -21,8 +21,9 @@ interface Props {
 }
 
 export function RoomSettings({ open, onOpenChange }: Props) {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot;
+  const snapshot = useGameStore((s) => s.snapshot);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
 
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);

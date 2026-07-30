@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Check, History, ChevronDown, BookOpen, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import { DescriptionTable } from "./DescriptionHistory";
 
 export function GameOverPhase() {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot!;
-  const privateState = state.privateState;
+  const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const summary = snapshot.summary;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;

@@ -2,13 +2,14 @@ import { useCallback } from "react";
 import { AlertTriangle, Clock, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 
 // 出题人处理掉线玩家
 export function DisconnectHandler() {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot!;
-  const privateState = state.privateState;
+  const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const isQuestioner = privateState?.isQuestioner ?? false;
   const pendingId = snapshot.status.pendingDisconnectPlayerId;
   const pendingPlayer = snapshot.players.find((p) => p.id === pendingId);
