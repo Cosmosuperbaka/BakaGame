@@ -899,11 +899,7 @@ export class RoomService {
         throw new AppError("ACTION_FORBIDDEN", "当前玩家不能描述");
       }
 
-      if (round.descriptionSubmittedBy.includes(player.id)) {
-        throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
-      }
-
-      // 补充发言优先于普通描述判断：若出题人已向该玩家发起补充请求且尚未完成，则走补充路径。
+      // 补充发言优先：已描述过的玩家同样可以被出题人要求补充，须在普通描述重复检测前判断。
       if (round.supplement && round.supplement.requestedPlayerIds.includes(player.id) && !round.supplement.donePlayers.includes(player.id)) {
         round.supplement.donePlayers.push(player.id);
         round.descriptions.push(
@@ -916,6 +912,9 @@ export class RoomService {
           round.supplement = undefined;
         }
       } else {
+        if (round.descriptionSubmittedBy.includes(player.id)) {
+          throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
+        }
         round.descriptionSubmittedBy.push(player.id);
         round.descriptions.push(
           this.createDescription(player, normalized, "description", round.descriptionCycle),
@@ -1004,11 +1003,11 @@ export class RoomService {
 
     this.ensureQuestioner(round, player.id);
 
-    if (round.phase !== "description" && round.phase !== "voting") {
-      throw new AppError("INVALID_PHASE", "只能在发言或投票阶段发起补充");
+    if (round.phase !== "description") {
+      throw new AppError("INVALID_PHASE", "只能在发言阶段（所有人描述完成后）发起补充");
     }
 
-    if (round.phase === "description" && !this.isDescriptionComplete(round)) {
+    if (!this.isDescriptionComplete(round)) {
       throw new AppError("PHASE_INCOMPLETE", "所有玩家完成描述后才能发起补充");
     }
 
