@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Crown,
   WifiOff,
-  Bot,
+  MoreHorizontal,
   UserX,
   Eye,
   EyeOff,
@@ -15,6 +15,8 @@ import { useGame } from "@/contexts/GameContext";
 import { ROLE_LABELS, ROLE_COLORS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import type { PublicPlayerView, GamePhase, PrivateState } from "@/types";
+
+type PlayerMark = "none" | "suspect" | "safe";
 
 interface Props {
   players: PublicPlayerView[];
@@ -43,6 +45,17 @@ export function PlayerList({
   privateState,
 }: Props) {
   const { sendCommand, addToast } = useGame();
+
+  // 本地玩家标记：仅在该玩家自己的界面可见，不同步至服务端。
+  const [playerMarks, setPlayerMarks] = useState<Record<string, PlayerMark>>({});
+  const toggleMark = useCallback((playerId: string) => {
+    setPlayerMarks((prev) => {
+      const cur: PlayerMark = prev[playerId] ?? "none";
+      const next: PlayerMark =
+        cur === "none" ? "suspect" : cur === "suspect" ? "safe" : "none";
+      return { ...prev, [playerId]: next };
+    });
+  }, []);
 
   const handleKick = useCallback(
     async (playerId: string) => {
@@ -112,6 +125,8 @@ export function PlayerList({
               waitingPhase={waitingPhase}
               hideStatusWhenSpectator={false}
               privilegedRole={privilegedRoleMap.get(player.id)}
+              mark={playerMarks[player.id] ?? "none"}
+              onToggleMark={toggleMark}
               onKick={handleKick}
               onTransferHost={handleTransferHost}
             />
@@ -146,6 +161,8 @@ export function PlayerList({
                   waitingPhase={waitingPhase}
                   hideStatusWhenSpectator
                   privilegedRole={privilegedRoleMap.get(player.id)}
+                  mark={playerMarks[player.id] ?? "none"}
+                  onToggleMark={toggleMark}
                   onKick={handleKick}
                   onTransferHost={handleTransferHost}
                 />
@@ -177,6 +194,8 @@ function PlayerRow({
   waitingPhase,
   hideStatusWhenSpectator,
   privilegedRole,
+  mark,
+  onToggleMark,
   onKick,
   onTransferHost,
 }: {
@@ -187,6 +206,8 @@ function PlayerRow({
   waitingPhase: boolean;
   hideStatusWhenSpectator: boolean;
   privilegedRole?: PrivateState["role"];
+  mark: PlayerMark;
+  onToggleMark: (id: string) => void;
   onKick: (id: string) => void;
   onTransferHost: (id: string) => void;
 }) {
@@ -194,65 +215,76 @@ function PlayerRow({
   const statusInfo = getStatusPill(player, hideStatusWhenSpectator);
   const canHostActOn = isHost && hostActionsEnabled && player.id !== myPlayerId;
   const visibleRole = privilegedRole ?? player.revealedRole;
+  const isMe = player.id === myPlayerId;
 
   return (
     <motion.div
       layout="position"
       {...rowMotion}
       className={cn(
-        "relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm group transition-colors duration-150",
-        player.id === myPlayerId && "bg-primary/8 ring-1 ring-primary/15",
-        player.id !== myPlayerId && "hover:bg-muted/60",
+        "relative flex items-center gap-2 px-2 py-2 rounded-lg text-sm group transition-colors duration-150",
+        isMe && "bg-primary/8 ring-1 ring-primary/15",
+        !isMe && "hover:bg-muted/60",
         !player.online && "opacity-50"
       )}
       onBlur={() => setMenuOpen(false)}
     >
-      <div className="flex-1 min-w-0 flex items-center gap-1.5">
-        <span className="truncate font-medium text-sm">{player.name}</span>
+      {/* 本地标记点（仅自己可见，点击循环切换：无→疑→安全→无） */}
+      <button
+        type="button"
+        aria-label="切换标记"
+        className="w-4 h-4 shrink-0 flex items-center justify-center rounded-full"
+        onClick={(e) => { e.stopPropagation(); onToggleMark(player.id); }}
+      >
+        <span
+          className={cn(
+            "w-2 h-2 rounded-full transition-colors",
+            mark === "suspect" && "bg-orange-400",
+            mark === "safe" && "bg-emerald-400",
+            mark === "none" && "bg-transparent group-hover:bg-muted-foreground/20"
+          )}
+        />
+      </button>
+
+      {/* 左：玩家名 */}
+      <span className="truncate font-medium text-sm flex-1 min-w-0">{player.name}</span>
+
+      {/* 右：状态徽章区 */}
+      <div className="flex items-center gap-1 shrink-0">
         {player.isHost && (
-          <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-label="房主" />
-        )}
-        {player.isBot && (
-          <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-label="机器人" />
+          <Crown className="h-3.5 w-3.5 text-amber-500" aria-label="房主" />
         )}
         {!player.online && (
-          <WifiOff className="h-3.5 w-3.5 text-destructive shrink-0" aria-label="离线" />
+          <WifiOff className="h-3.5 w-3.5 text-destructive" aria-label="离线" />
         )}
         {statusInfo && (
-          <span className={cn("text-[11px] px-1.5 py-0.5 rounded shrink-0", statusInfo.className)}>
+          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", statusInfo.className)}>
             {statusInfo.label}
           </span>
         )}
         {visibleRole && (
-          <span
-            className={cn(
-              "text-[11px] font-semibold shrink-0",
-              ROLE_COLORS[visibleRole]
-            )}
-          >
+          <span className={cn("text-[11px] font-semibold", ROLE_COLORS[visibleRole])}>
             {ROLE_LABELS[visibleRole]}
           </span>
         )}
         {player.score > 0 && (
-          <span className="text-[11px] text-amber-600 font-medium shrink-0">
-            {player.score}分
+          <span className="text-[11px] text-amber-600 font-medium">{player.score}分</span>
+        )}
+        {waitingPhase && player.membership === "active" && (
+          <span
+            className={cn(
+              "text-[11px] px-1.5 py-0.5 rounded-full font-medium",
+              player.isReady
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {player.isReady ? "已准备" : "未准备"}
           </span>
         )}
       </div>
 
-      {waitingPhase && player.membership === "active" && (
-        <span
-          className={cn(
-            "text-[11px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
-            player.isReady
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-muted text-muted-foreground"
-          )}
-        >
-          {player.isReady ? "已准备" : "未准备"}
-        </span>
-      )}
-
+      {/* 操作按钮（房主可见，MoreHorizontal 触发菜单） */}
       {canHostActOn && (
         <div className="relative shrink-0">
           <Button
@@ -265,7 +297,7 @@ function PlayerRow({
             }}
             aria-label="玩家操作"
           >
-            <UserX className="h-3.5 w-3.5" />
+            <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
           <AnimatePresence>
             {menuOpen && (
@@ -280,10 +312,7 @@ function PlayerRow({
                   <button
                     type="button"
                     className="w-full text-left text-xs px-3 py-2 hover:bg-muted flex items-center gap-2 text-foreground"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onTransferHost(player.id);
-                    }}
+                    onClick={() => { setMenuOpen(false); onTransferHost(player.id); }}
                   >
                     <ArrowUpRightFromCircle className="h-3.5 w-3.5" />
                     转让房主
@@ -292,10 +321,7 @@ function PlayerRow({
                 <button
                   type="button"
                   className="w-full text-left text-xs px-3 py-2 hover:bg-muted flex items-center gap-2 text-destructive"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onKick(player.id);
-                  }}
+                  onClick={() => { setMenuOpen(false); onKick(player.id); }}
                 >
                   <UserX className="h-3.5 w-3.5" />
                   踢出房间
