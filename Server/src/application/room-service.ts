@@ -61,7 +61,6 @@ export class RoomService {
   // ==================== 房间与状态机总控 ====================
 
   private readonly rooms = new Map<string, RoomRecord>();
-  private readonly connections = new Map<string, ConnectionRecord>();
   private readonly connectionRegistry: ConnectionRegistry;
   private readonly roomManager: RoomManager;
   private readonly now: () => number;
@@ -81,22 +80,14 @@ export class RoomService {
   }
 
   registerConnection(connection: ConnectionRecord): void {
-    this.connections.set(connection.id, connection);
     this.connectionRegistry.registerConnection(connection);
   }
 
   // 连接断开时只做连接解绑，真正的房间副作用统一交给 handlePlayerOffline。
   async unregisterConnection(connectionId: string): Promise<void> {
-    const connection = this.connections.get(connectionId);
+    const connection = this.connectionRegistry.unregisterConnection(connectionId);
 
-    if (!connection) {
-      return;
-    }
-
-    this.connections.delete(connectionId);
-    this.connectionRegistry.unregisterConnection(connectionId);
-
-    if (!connection.roomId || !connection.playerId) {
+    if (!connection || !connection.roomId || !connection.playerId) {
       return;
     }
 
@@ -208,19 +199,17 @@ export class RoomService {
   }
 
   notifyShutdown(): void {
-    for (const connection of this.connections.values()) {
-      connection.send(
-        createEvent("server.shutdown", {
-          message: "服务器即将关闭，请稍后重新连接",
-        }),
-      );
-    }
+    this.connectionRegistry.broadcastToAll(
+      createEvent("server.shutdown", {
+        message: "服务器即将关闭，请稍后重新连接",
+      }),
+    );
   }
 
   getHealthSnapshot() {
     return {
       roomCount: this.rooms.size,
-      connectionCount: this.connections.size,
+      connectionCount: this.connectionRegistry.stats.totalConnections,
       onlinePlayerCount: [...this.rooms.values()].reduce(
         (sum, room) => sum + this.getOnlineCount(room),
         0,
@@ -1732,7 +1721,7 @@ export class RoomService {
     player.online = false;
     player.connectionId = undefined;
     player.lastSeenAt = this.now();
-    const connection = [...this.connections.values()].find((item) => item.playerId === player.id);
+    const connection = this.connectionRegistry.findConnectionByPlayerId(player.id);
 
     if (connection) {
       connection.playerId = undefined;
@@ -1850,11 +1839,7 @@ export class RoomService {
 
   private async closeRoom(room: RoomRecord, reason: string) {
     // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
-    for (const connection of this.connections.values()) {
-      if (connection.roomId !== room.id) {
-        continue;
-      }
-
+    for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
       connection.send(
         createEvent("room.closed", {
           roomId: room.id,
@@ -2020,11 +2005,7 @@ export class RoomService {
     // 每次状态变化都同时推送公共快照与当前连接的私有视图。
     const snapshot = this.buildRoomSnapshot(room);
 
-    for (const connection of this.connections.values()) {
-      if (connection.roomId !== room.id) {
-        continue;
-      }
-
+    for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
       connection.send(createEvent("room.snapshot", snapshot));
 
       if (connection.playerId) {
@@ -2040,21 +2021,13 @@ export class RoomService {
   }
 
   private publishLobby() {
-    const summaries = this.getRoomSummaries();
-
-    for (const connection of this.connections.values()) {
-      if (connection.lobbySubscribed) {
-        connection.send(createEvent("lobby.rooms", summaries));
-      }
-    }
+    this.connectionRegistry.broadcastToLobby(
+      createEvent("lobby.rooms", this.getRoomSummaries()),
+    );
   }
 
   private broadcastRoomEvent(room: RoomRecord, event: string, payload: unknown) {
-    for (const connection of this.connections.values()) {
-      if (connection.roomId === room.id) {
-        connection.send(createEvent(event, payload));
-      }
-    }
+    this.connectionRegistry.broadcastToRoom(room.id, createEvent(event, payload));
   }
 
   private attachConnection(
@@ -2535,17 +2508,11 @@ export class RoomService {
   }
 
   private getConnection(connectionId: string) {
-    const connection = this.connections.get(connectionId);
-
-    if (!connection) {
-      throw new AppError("CONNECTION_NOT_FOUND", "找不到连接上下文");
-    }
-
-    return connection;
+    return this.connectionRegistry.getConnection(connectionId);
   }
 
   private getConnectionByPlayer(playerId: string) {
-    return [...this.connections.values()].find((connection) => connection.playerId === playerId);
+    return this.connectionRegistry.findConnectionByPlayerId(playerId);
   }
 
   private getRoom(roomId: string) {
