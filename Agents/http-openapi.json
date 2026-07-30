@@ -1,0 +1,230 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "WhoIsFaker Backend HTTP API",
+    "description": "WhoIsFaker 后端辅助 HTTP 接口文档。实时业务通信通过 WebSocket /ws 完成。",
+    "version": "1.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4850"
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "服务状态与版本信息"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "roomCount": {
+                      "description": "活跃房间总数",
+                      "type": "number"
+                    },
+                    "connectionCount": {
+                      "description": "当前连接总数",
+                      "type": "number"
+                    },
+                    "onlinePlayerCount": {
+                      "description": "在线玩家总数",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "roomCount",
+                    "connectionCount",
+                    "onlinePlayerCount"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "roomCount": {
+                      "description": "活跃房间总数",
+                      "type": "number"
+                    },
+                    "connectionCount": {
+                      "description": "当前连接总数",
+                      "type": "number"
+                    },
+                    "onlinePlayerCount": {
+                      "description": "在线玩家总数",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "roomCount",
+                    "connectionCount",
+                    "onlinePlayerCount"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "roomCount": {
+                      "description": "活跃房间总数",
+                      "type": "number"
+                    },
+                    "connectionCount": {
+                      "description": "当前连接总数",
+                      "type": "number"
+                    },
+                    "onlinePlayerCount": {
+                      "description": "在线玩家总数",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "roomCount",
+                    "connectionCount",
+                    "onlinePlayerCount"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getHealth",
+        "tags": [
+          "System"
+        ],
+        "summary": "获取服务健康状态",
+        "description": "返回当前运行状况、房间数量、连接数和在线玩家数。"
+      }
+    },
+    "/version": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "description": "服务名称",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "版本号",
+                      "type": "string"
+                    },
+                    "commit": {
+                      "description": "Git Commit ID",
+                      "type": "string"
+                    },
+                    "buildTime": {
+                      "description": "构建时间 ISO 字符串",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version",
+                    "commit",
+                    "buildTime"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "description": "服务名称",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "版本号",
+                      "type": "string"
+                    },
+                    "commit": {
+                      "description": "Git Commit ID",
+                      "type": "string"
+                    },
+                    "buildTime": {
+                      "description": "构建时间 ISO 字符串",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version",
+                    "commit",
+                    "buildTime"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "description": "服务名称",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "版本号",
+                      "type": "string"
+                    },
+                    "commit": {
+                      "description": "Git Commit ID",
+                      "type": "string"
+                    },
+                    "buildTime": {
+                      "description": "构建时间 ISO 字符串",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version",
+                    "commit",
+                    "buildTime"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getVersion",
+        "tags": [
+          "System"
+        ],
+        "summary": "获取版本信息",
+        "description": "返回当前服务名称、版本号、 Git Commit 和构建时间。"
+      }
+    }
+  },
+  "components": {
+    "schemas": {}
+  }
+}
