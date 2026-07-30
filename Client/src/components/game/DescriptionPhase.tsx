@@ -4,14 +4,15 @@ import { Send, FastForward, MessageSquare, Plus, X, Check, Users } from "lucide-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { DisconnectHandler } from "@/components/game/DisconnectHandler";
 import { cn } from "@/lib/utils";
 
 export function DescriptionPhase() {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot!;
-  const privateState = state.privateState;
+  const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const phase = snapshot.status.phase;
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);

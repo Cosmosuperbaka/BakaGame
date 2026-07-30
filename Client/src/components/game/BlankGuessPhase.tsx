@@ -3,16 +3,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { HelpCircle, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 
 /**
  * 白板猜词浮动按钮：悬浮在游戏区右下角，随时可触发。
  * 只要白板角色还未猜词且游戏未结束，该按钮始终可见。
  */
 export function BlankGuessButton() {
-  const { state, sendCommand, addToast } = useGame();
-  const privateState = state.privateState;
-  const phase = state.snapshot?.status.phase;
+  const privateState = useGameStore((s) => s.privateState);
+  const phase = useGameStore((s) => s.snapshot?.status.phase);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
 
   const [open, setOpen] = useState(false);
   const [wordA, setWordA] = useState("");
@@ -126,8 +127,7 @@ export function BlankGuessButton() {
 
 /** 白板猜词阶段等待提示（供非白板玩家看到） */
 export function BlankGuessWaiting() {
-  const { state } = useGame();
-  const snapshot = state.snapshot!;
+  const snapshot = useGameStore((s) => s.snapshot)!;
   const blankGuessPlayerId = snapshot.status.blankGuessPlayerId;
   const guesserName =
     snapshot.players.find((p) => p.id === blankGuessPlayerId)?.name ?? "白板";

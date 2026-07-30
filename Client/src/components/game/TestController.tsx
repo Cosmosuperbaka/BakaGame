@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronUp, FlaskConical, UserCog, Eye, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useGame } from "@/contexts/GameContext";
 import { useGameStore } from "@/stores/useGameStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
@@ -25,16 +24,16 @@ const PHASES: GamePhase[] = [
 const ROLES: PlayerRole[] = ["civilian", "undercover", "angel", "blank"];
 
 export function TestController() {
-  const { state, sendCommand } = useGame();
   const [open, setOpen] = useState(true);
 
-  const snapshot = state.snapshot;
-  const privateState = state.privateState;
+  const snapshot = useGameStore((s) => s.snapshot);
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
   const currentPhase = snapshot?.status.phase;
 
   const testRole = useGameStore((s) => s.testRole);
 
-  const isConnected = state.connected;
+  const isConnected = useGameStore((s) => s.connected);
 
   const handleJumpPhase = useCallback(
     async (phase: GamePhase) => {

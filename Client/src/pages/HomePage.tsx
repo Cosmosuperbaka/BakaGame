@@ -19,7 +19,7 @@ import { CreateRoomDialog } from "@/components/home/CreateRoomDialog";
 import { getSavedUsername, saveUsername } from "@/lib/cookie";
 import { PHASE_LABELS, randomRoomId } from "@/lib/helpers";
 import faviconUrl from "@/assets/favicon.png";
-import type { RoomSummaryItem } from "@/types";
+import type { RoomSummary } from "@/types";
 
 interface ChangelogEntry {
   version: string;
@@ -58,7 +58,7 @@ export default function HomePage() {
 
   const [userName, setUserName] = useState(getSavedUsername);
   const [createOpen, setCreateOpen] = useState(false);
-  const [joinTarget, setJoinTarget] = useState<RoomSummaryItem | null>(null);
+  const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
   const [versionOpen, setVersionOpen] = useState(false);
   const [changelog, setChangelog] = useState<ChangelogData | null>(null);
@@ -87,7 +87,7 @@ export default function HomePage() {
   }, [subscribeLobby, addToast]);
 
   const handleJoinRoom = useCallback(
-    async (room: RoomSummaryItem) => {
+    async (room: RoomSummary) => {
       if (!userName.trim()) {
         addToast("请先设置用户名", "error");
         return;

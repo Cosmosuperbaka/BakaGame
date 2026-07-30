@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import type { PublicPlayerView, GamePhase, PrivateState } from "@/types";
@@ -44,7 +44,8 @@ export function PlayerList({
   allowSpectators,
   privateState,
 }: Props) {
-  const { sendCommand, addToast } = useGame();
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
 
   // 本地玩家标记：仅在该玩家自己的界面可见，不同步至服务端。
   const [playerMarks, setPlayerMarks] = useState<Record<string, PlayerMark>>({});

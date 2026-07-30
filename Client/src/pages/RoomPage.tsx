@@ -10,7 +10,6 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useGame } from "@/contexts/GameContext";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
 import { useGameStore } from "@/stores/useGameStore";
@@ -24,7 +23,15 @@ import { cn } from "@/lib/utils";
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const { state, createRoom, joinRoom, reconnectRoom, leaveRoom, addToast } = useGame();
+  const connected = useGameStore((s) => s.connected);
+  const storeRoomId = useGameStore((s) => s.roomId);
+  const snapshot = useGameStore((s) => s.snapshot);
+  const privateState = useGameStore((s) => s.privateState);
+  const createRoom = useGameStore((s) => s.createRoom);
+  const joinRoom = useGameStore((s) => s.joinRoom);
+  const reconnectRoom = useGameStore((s) => s.reconnectRoom);
+  const leaveRoom = useGameStore((s) => s.leaveRoom);
+  const addToast = useGameStore((s) => s.addToast);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [joining, setJoining] = useState(true);
   // 移动端侧栏
@@ -34,10 +41,10 @@ export default function RoomPage() {
 
   // 房间关闭后自动返回主页（room.closed 事件清空 roomId/snapshot）
   useEffect(() => {
-    if (!joining && !state.snapshot && !state.roomId) {
+    if (!joining && !snapshot && !storeRoomId) {
       navigate("/");
     }
-  }, [joining, state.snapshot, state.roomId, navigate]);
+  }, [joining, snapshot, storeRoomId, navigate]);
 
   // 进入房间时，先等连接就绪，再尝试重连/加入/创建；测试房间为离线模式无需联网
   useEffect(() => {
@@ -50,7 +57,7 @@ export default function RoomPage() {
     }
 
     // 如果已经在这个房间，不重复
-    if (state.roomId === roomId && state.snapshot) {
+    if (storeRoomId === roomId && snapshot) {
       setJoining(false);
       return;
     }
@@ -126,8 +133,6 @@ export default function RoomPage() {
     navigate("/");
   }, [leaveRoom, navigate]);
 
-  const snapshot = state.snapshot;
-  const privateState = state.privateState;
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
@@ -202,7 +207,7 @@ export default function RoomPage() {
 
         {/* 右段：断线状态 + 移动端切换 + 设置 */}
         <div className="flex items-center justify-end gap-1">
-          {!state.connected && (
+          {!connected && (
             <span className="text-xs text-destructive animate-pulse shrink-0 mr-1">断线中...</span>
           )}
           <div className="flex md:hidden gap-1">

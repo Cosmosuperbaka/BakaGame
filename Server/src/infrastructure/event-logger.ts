@@ -237,11 +237,6 @@ export class EventLogger {
     this.output[LEVEL_METHODS[level]](line);
   }
 
-  // 兼容别名
-  ginLog(options: Parameters<EventLogger["logOperation"]>[0]) {
-    this.logOperation(options);
-  }
-
   async write(entry: LogEntry): Promise<void> {
     const level = getEventLevel(entry);
     this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));

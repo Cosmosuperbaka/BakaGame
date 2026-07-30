@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import { WaitingPhase } from "@/components/game/WaitingPhase";
 import { AssignQuestionerPhase } from "@/components/game/AssignQuestionerPhase";
 import { WordSubmissionPhase } from "@/components/game/WordSubmissionPhase";
@@ -12,8 +12,7 @@ import { GameOverPhase } from "@/components/game/GameOverPhase";
 import { TestController } from "@/components/game/TestController";
 
 export function GameArea() {
-  const { state } = useGame();
-  const snapshot = state.snapshot;
+  const snapshot = useGameStore((s) => s.snapshot);
   const isTestRoom = snapshot?.testMode ?? false;
 
   if (!snapshot) return null;
@@ -48,8 +47,8 @@ export function GameArea() {
 }
 
 function PhaseContent() {
-  const { state } = useGame();
-  const phase = state.snapshot?.status.phase;
+  const phase = useGameStore((s) => s.snapshot?.status.phase);
+  const tieBreakStage = useGameStore((s) => s.snapshot?.status.tieBreakStage);
 
   switch (phase) {
     case "waiting":
@@ -61,10 +60,8 @@ function PhaseContent() {
     case "description":
     case "daybreak":
       return <DescriptionPhase />;
-    case "tieBreak": {
-      const tieBreakStage = state.snapshot?.status.tieBreakStage;
+    case "tieBreak":
       return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
-    }
     case "voting":
       return <VotingPhase />;
     case "night":

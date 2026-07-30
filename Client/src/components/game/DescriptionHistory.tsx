@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { X, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
 import type { DescriptionRecord } from "@/types";
 
 interface Props {
@@ -10,8 +10,7 @@ interface Props {
 }
 
 export function DescriptionHistoryView({ onClose }: Props) {
-  const { state } = useGame();
-  const snapshot = state.snapshot;
+  const snapshot = useGameStore((s) => s.snapshot);
   if (!snapshot) return null;
 
   return (
