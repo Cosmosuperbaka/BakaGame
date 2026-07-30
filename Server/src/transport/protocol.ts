@@ -101,6 +101,18 @@ const readWordPair = (value: unknown): [string, string] => {
   return [value[0], value[1]];
 };
 
+// manualRoles 每个值都必须是合法的 PlayerRole，仅做类型断言无法保证。
+const parseManualRoles = (obj: Record<string, unknown>): Record<string, PlayerRole> => {
+  const result: Record<string, PlayerRole> = {};
+  for (const [playerId, role] of Object.entries(obj)) {
+    if (!PLAYER_ROLES.includes(role as PlayerRole)) {
+      throw new AppError("INVALID_MESSAGE", `manualRoles 中存在无效角色值: ${String(role)}`);
+    }
+    result[playerId] = role as PlayerRole;
+  }
+  return result;
+};
+
 export const parseClientMessage = (raw: unknown): ClientMessage => {
   // 兼容字符串消息和运行时已解析对象。
   const parsed =
@@ -239,7 +251,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
             allowEmpty: true,
           }),
           manualRoles: isObject(payload.manualRoles)
-            ? (payload.manualRoles as Record<string, PlayerRole>)
+            ? parseManualRoles(payload.manualRoles)
             : undefined,
         },
       };
