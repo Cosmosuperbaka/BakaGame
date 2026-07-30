@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { Moon, Sword, FastForward, ShieldOff, CheckCircle2 } from "lucide-react";
+import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useGame } from "@/contexts/GameContext";
@@ -40,6 +40,14 @@ export function NightPhase() {
     },
     [sendCommand, addToast]
   );
+
+  const handleCancelNightAction = useCallback(async () => {
+    try {
+      await sendCommand("game.cancelNightAction", {});
+    } catch (e) {
+      addToast((e as { message: string }).message, "error");
+    }
+  }, [sendCommand, addToast]);
 
   const handleAdvance = useCallback(async () => {
     try {
@@ -92,21 +100,32 @@ export function NightPhase() {
         </div>
       )}
 
-      {/* 提交行动后的优雅反馈卡片 */}
-      {acted && (
+      {/* 提交行动后的优雅反馈卡片，支持撤销 */}
+      {canAct && acted && (
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="flex items-center gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
+          className="flex items-center justify-between gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
         >
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <div className="text-sm font-medium">
-            已完成夜晚决策
-            <span className="ml-2 font-normal text-xs text-muted-foreground">
-              ( 静待天亮... )
-            </span>
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="text-sm font-medium">
+              已完成夜晚决策
+              <span className="ml-2 font-normal text-xs text-muted-foreground">
+                ( 静待天亮... )
+              </span>
+            </div>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0"
+            onClick={handleCancelNightAction}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            撤销
+          </Button>
         </motion.div>
       )}
 

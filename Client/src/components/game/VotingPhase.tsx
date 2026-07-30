@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { Vote, FastForward, CheckCircle2 } from "lucide-react";
+import { Vote, FastForward, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useGame } from "@/contexts/GameContext";
@@ -13,7 +13,8 @@ export function VotingPhase() {
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
 
-  const [votedId, setVotedId] = useState<string | null>(null);
+  // 从服务端 privateState 中读取已投票对象（而非本地状态），保证刷新后一致。
+  const votedId = privateState?.myCurrentVoteTargetId ?? null;
 
   const isTieBreak = snapshot.status.phase === "tieBreak";
   const tieBreakCandidateIds = snapshot.descriptions
@@ -40,13 +41,20 @@ export function VotingPhase() {
     async (targetId: string) => {
       try {
         await sendCommand("game.submitVote", { targetId });
-        setVotedId(targetId);
       } catch (e) {
         addToast((e as { message: string }).message, "error");
       }
     },
     [sendCommand, addToast]
   );
+
+  const handleCancelVote = useCallback(async () => {
+    try {
+      await sendCommand("game.cancelVote", {});
+    } catch (e) {
+      addToast((e as { message: string }).message, "error");
+    }
+  }, [sendCommand, addToast]);
 
   const handleAdvance = useCallback(async () => {
     try {
@@ -56,7 +64,8 @@ export function VotingPhase() {
     }
   }, [sendCommand, addToast]);
 
-  const targetPlayerName = targets.find((t) => t.id === votedId)?.name;
+  const targetPlayerName = targets.find((t) => t.id === votedId)?.name
+    ?? snapshot.players.find((p) => p.id === votedId)?.name;
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">
@@ -95,23 +104,34 @@ export function VotingPhase() {
         </div>
       )}
 
-      {/* 提交选票后的优雅反馈卡片 */}
-      {votedId && (
+      {/* 提交选票后的优雅反馈卡片，支持撤销 */}
+      {amAlive && !isQuestioner && votedId && (
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="flex items-center gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
+          className="flex items-center justify-between gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
         >
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <div className="text-sm font-medium">
-            已完成投票
-            {targetPlayerName && (
-              <span className="ml-2 font-normal text-xs text-muted-foreground">
-                ( 投给：{targetPlayerName} )
-              </span>
-            )}
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="text-sm font-medium">
+              已完成投票
+              {targetPlayerName && (
+                <span className="ml-2 font-normal text-xs text-muted-foreground">
+                  ( 投给：{targetPlayerName} )
+                </span>
+              )}
+            </div>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0"
+            onClick={handleCancelVote}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            撤销
+          </Button>
         </motion.div>
       )}
 
