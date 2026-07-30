@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Settings, Menu, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  Settings,
+  Menu,
+  MessageSquare,
+  ChevronRight,
+  ChevronLeft,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/contexts/GameContext";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
@@ -11,6 +18,8 @@ import { PlayerList } from "@/components/room/PlayerList";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { RoomSettings } from "@/components/room/RoomSettings";
+import { DescriptionTable } from "@/components/game/DescriptionHistory";
+import { cn } from "@/lib/utils";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -20,6 +29,8 @@ export default function RoomPage() {
   const [joining, setJoining] = useState(true);
   // 移动端侧栏
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
+  // 左侧玩家面板：展开后显示描述历史
+  const [playerPanelExpanded, setPlayerPanelExpanded] = useState(false);
 
   // 房间关闭后自动返回主页（room.closed 事件清空 roomId/snapshot）
   useEffect(() => {
@@ -85,7 +96,6 @@ export default function RoomPage() {
         if (cancelled) return;
         const err = e as { code?: string; message?: string };
         if (err.code === "ROOM_NOT_FOUND") {
-          // 房间不存在，自动以此 roomId 创建（名称缺省用 "{user}的房间"）
           try {
             await createRoom({
               roomId,
@@ -117,7 +127,8 @@ export default function RoomPage() {
   }, [leaveRoom, navigate]);
 
   const snapshot = state.snapshot;
-  const me = snapshot?.players.find((p) => p.id === state.privateState?.playerId);
+  const privateState = state.privateState;
+  const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
   if (joining || !snapshot) {
@@ -140,60 +151,131 @@ export default function RoomPage() {
   }
 
   const started = snapshot.status.started;
+  const day = snapshot.status.day ?? 0;
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-muted/30">
-      {/* 顶部栏 — 合并游戏状态信息 */}
-      <header className="h-14 flex items-center px-4 lg:px-6 gap-3 shrink-0 bg-background">
-        <Button variant="ghost" size="icon" onClick={handleLeave} className="shrink-0">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+      {/* 顶部栏 — 三段式布局：左/中/右 */}
+      <header className="h-14 grid grid-cols-3 items-center px-4 lg:px-6 shrink-0 bg-background gap-2">
+        {/* 左段：返回 + 房间信息 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <Button variant="ghost" size="icon" onClick={handleLeave} className="shrink-0">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           <span className="text-base font-semibold truncate">{snapshot.name}</span>
-          <span className="text-xs text-muted-foreground">#{snapshot.roomId}</span>
+          <span className="text-xs text-muted-foreground shrink-0">#{snapshot.roomId}</span>
           {snapshot.testMode && (
-            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium shrink-0">
               测试
             </span>
           )}
-          {started && snapshot.status.day > 0 && (
-            <span className="text-xs text-muted-foreground shrink-0">
-              第{snapshot.status.day}天
+        </div>
+
+        {/* 中段：第N天 + 词语 pill */}
+        <div className="flex items-center justify-center gap-2">
+          {started && day > 0 && (
+            <span className="text-sm font-semibold text-muted-foreground shrink-0">
+              第 {day} 天
+            </span>
+          )}
+          {privateState?.isQuestioner && (
+            <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-2.5 py-0.5 rounded-md font-medium shrink-0">
+              出题人
+            </span>
+          )}
+          {privateState?.word && (
+            <span className="text-sm font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md shrink-0">
+              {privateState.word}
+            </span>
+          )}
+          {privateState?.angelWordOptions && (
+            <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
+              {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
+            </span>
+          )}
+          {privateState?.blankHint && (
+            <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
+              提示：{privateState.blankHint}
             </span>
           )}
         </div>
-        {!state.connected && (
-          <span className="text-xs text-destructive animate-pulse shrink-0">断线中...</span>
-        )}
-        {/* 移动端切换 */}
-        <div className="flex md:hidden gap-1">
-          <Button variant="ghost" size="icon" onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}>
-            <Menu className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}>
-            <MessageSquare className="h-5 w-5" />
-          </Button>
+
+        {/* 右段：断线状态 + 移动端切换 + 设置 */}
+        <div className="flex items-center justify-end gap-1">
+          {!state.connected && (
+            <span className="text-xs text-destructive animate-pulse shrink-0 mr-1">断线中...</span>
+          )}
+          <div className="flex md:hidden gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
+            >
+              <MessageSquare className="h-5 w-5" />
+            </Button>
+          </div>
+          {isHost && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className="shrink-0"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          )}
         </div>
-        {isHost && (
-          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} className="shrink-0">
-            <Settings className="h-5 w-5" />
-          </Button>
-        )}
       </header>
 
       {/* 三栏布局 */}
       <div className="flex-1 flex overflow-hidden relative px-2 md:px-3 pb-2 md:pb-3 pt-0 gap-2 md:gap-3">
-        {/* 左栏：玩家列表 */}
-        <aside className="w-64 overflow-y-auto shrink-0 hidden md:flex flex-col bg-background rounded-xl border">
-          <PlayerList
-            players={snapshot.players}
-            hostPlayerId={snapshot.hostPlayerId}
-            myPlayerId={state.privateState?.playerId}
-            isHost={isHost}
-            phase={snapshot.status.phase}
-            allowSpectators={snapshot.allowSpectators}
-            privateState={state.privateState}
-          />
+        {/* 左栏：玩家列表（可展开显示描述历史） */}
+        <aside
+          className={cn(
+            "shrink-0 hidden md:flex flex-col relative bg-background rounded-xl border transition-all duration-200",
+            playerPanelExpanded ? "w-[580px]" : "w-64"
+          )}
+        >
+          <div className="flex h-full overflow-hidden rounded-xl">
+            {/* 玩家列表列（固定宽度） */}
+            <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
+              <PlayerList
+                players={snapshot.players}
+                hostPlayerId={snapshot.hostPlayerId}
+                myPlayerId={privateState?.playerId}
+                isHost={isHost}
+                phase={snapshot.status.phase}
+                allowSpectators={snapshot.allowSpectators}
+                privateState={privateState}
+              />
+            </div>
+            {/* 描述历史列（展开时显示） */}
+            {playerPanelExpanded && (
+              <div className="flex-1 min-w-0 overflow-auto p-4">
+                <DescriptionTable descriptions={snapshot.descriptions} />
+              </div>
+            )}
+          </div>
+          {/* 展开/收起按钮，悬浮在右边框中点 */}
+          <button
+            type="button"
+            aria-label={playerPanelExpanded ? "收起历史" : "展开描述历史"}
+            onClick={() => setPlayerPanelExpanded((v) => !v)}
+            className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-background border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
+          >
+            {playerPanelExpanded ? (
+              <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </button>
         </aside>
 
         {/* 移动端玩家列表覆盖层 */}
@@ -208,11 +290,11 @@ export default function RoomPage() {
             <PlayerList
               players={snapshot.players}
               hostPlayerId={snapshot.hostPlayerId}
-              myPlayerId={state.privateState?.playerId}
+              myPlayerId={privateState?.playerId}
               isHost={isHost}
               phase={snapshot.status.phase}
               allowSpectators={snapshot.allowSpectators}
-              privateState={state.privateState}
+              privateState={privateState}
             />
           </motion.aside>
         )}
