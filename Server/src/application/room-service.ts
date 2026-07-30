@@ -48,7 +48,6 @@ import {
   TEST_MODE_DEFAULT_WORD,
 } from "../config/constants";
 import { ConnectionRegistry } from "./connection-registry";
-import { RoomManager } from "./room-manager";
 
 export interface RoomServiceOptions {
   now?: () => number;
@@ -62,7 +61,6 @@ export class RoomService {
 
   private readonly rooms = new Map<string, RoomRecord>();
   private readonly connectionRegistry: ConnectionRegistry;
-  private readonly roomManager: RoomManager;
   private readonly now: () => number;
   private readonly random: RandomSource;
   private idCounter = 0;
@@ -76,7 +74,6 @@ export class RoomService {
           Math.floor(Math.random() * Math.max(maxExclusive, 1)),
       } satisfies RandomSource);
     this.connectionRegistry = new ConnectionRegistry();
-    this.roomManager = new RoomManager(this.connectionRegistry, this.now);
   }
 
   registerConnection(connection: ConnectionRecord): void {
