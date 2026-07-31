@@ -192,7 +192,7 @@ export function createMockTestRoomState(
               { playerId: "player_e", delta: 0 },
             ],
             revealedRoles: [
-              { playerId: meId, role },
+              ...(!isQuestioner && !isSpectator ? [{ playerId: meId, role }] : []),
               { playerId: "player_b", role: "civilian" },
               { playerId: "player_c", role: "undercover" },
               { playerId: "player_d", role: "angel" },
@@ -228,7 +228,6 @@ export function createMockTestRoomState(
   const questionerView =
     isQuestioner || isSpectator
       ? [
-          { playerId: meId, role, side: (role === "undercover" ? "undercover" : role === "blank" ? "blank" : "good") as PlayerSide, alive: true },
           { playerId: "player_b", role: "civilian" as PlayerRole, side: "good" as PlayerSide, alive: true },
           { playerId: "player_c", role: "undercover" as PlayerRole, side: "undercover" as PlayerSide, alive: true },
           { playerId: "player_d", role: "angel" as PlayerRole, side: "good" as PlayerSide, alive: true },

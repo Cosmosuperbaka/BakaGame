@@ -917,8 +917,18 @@ test("旁观者在局内可以看到所有玩家身份", async () => {
 
   const privateState = getLastEventPayload<PrivateState>(spectator.connection, "game.privateState");
   expect(privateState?.isQuestioner).toBe(false);
+  expect(privateState?.role).toBeUndefined();
+  expect(privateState?.side).toBeUndefined();
+  expect(privateState?.word).toBeUndefined();
+  expect(privateState?.angelWordOptions).toBeUndefined();
+  expect(privateState?.blankHint).toBeUndefined();
   expect(privateState?.questionerView).toHaveLength(4);
   expect(privateState?.questionerView?.every((entry) => entry.role != null)).toBe(true);
+  expect(
+    privateState?.questionerView?.some(
+      (entry) => entry.playerId === spectator.joinResult.playerId,
+    ),
+  ).toBe(false);
 });
 
 test("天使只会看到无标签候选词，不会直接知道自己的身份词", async () => {

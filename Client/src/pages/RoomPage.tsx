@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ShieldCheck,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
@@ -136,6 +137,7 @@ export default function RoomPage() {
 
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
+  const isSpectator = me?.membership === "spectator";
 
   if (joining || !snapshot) {
     return (
@@ -202,17 +204,23 @@ export default function RoomPage() {
               出题人视角
             </span>
           )}
-          {privateInfoVisible && privateState?.word && (
+          {isSpectator && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200 shrink-0">
+              <Eye className="h-3.5 w-3.5" />
+              旁观视角
+            </span>
+          )}
+          {privateInfoVisible && !isSpectator && privateState?.word && (
             <span className="text-sm font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md shrink-0">
               {privateState.word}
             </span>
           )}
-          {privateInfoVisible && privateState?.angelWordOptions && (
+          {privateInfoVisible && !isSpectator && privateState?.angelWordOptions && (
             <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
               {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
             </span>
           )}
-          {privateInfoVisible && !privateState?.isQuestioner && privateState?.blankHint && (
+          {privateInfoVisible && !isSpectator && !privateState?.isQuestioner && privateState?.blankHint && (
             <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
               提示：{privateState.blankHint}
             </span>
