@@ -235,6 +235,26 @@ export function createMockTestRoomState(
         ]
       : undefined;
 
+  const privilegedActionPreview =
+    isQuestioner || isSpectator
+      ? {
+          votes:
+            phase === "voting" || phase === "tieBreak"
+              ? [
+                  { voterId: "player_b", targetId: "player_c" },
+                  { voterId: "player_c", targetId: "abstain" },
+                ]
+              : [],
+          nightActions:
+            phase === "night"
+              ? [
+                  { actorId: "player_b", targetId: "player_c" },
+                  { actorId: "player_c" },
+                ]
+              : [],
+        }
+      : undefined;
+
   const privateState: PrivateState = {
     playerId: meId,
     sessionToken: "mock_token",
@@ -258,6 +278,7 @@ export function createMockTestRoomState(
     blankGuessUsed: false,
     nightActionSubmitted: false,
     questionerView,
+    privilegedActionPreview,
   };
 
   return { snapshot, privateState };
