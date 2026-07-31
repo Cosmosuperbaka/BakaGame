@@ -155,8 +155,15 @@ export default function RoomPage() {
     );
   }
 
-  const started = snapshot.status.started;
   const day = snapshot.status.day ?? 0;
+  const dayVisible = [
+    "description",
+    "voting",
+    "tieBreak",
+    "night",
+    "blankGuess",
+    "gameOver",
+  ].includes(snapshot.status.phase);
   const privateInfoVisible = ![
     "waiting",
     "assigningQuestioner",
@@ -183,7 +190,7 @@ export default function RoomPage() {
 
         {/* 中段：第N天 + 词语 pill */}
         <div className="flex items-center justify-center gap-2">
-          {started && day > 0 && (
+          {dayVisible && day > 0 && (
             <span className="text-sm font-semibold text-muted-foreground shrink-0">
               第 {day} 天
             </span>
