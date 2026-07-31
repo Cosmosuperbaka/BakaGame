@@ -133,7 +133,7 @@ export function BlankGuessWaiting() {
     snapshot.players.find((p) => p.id === blankGuessPlayerId)?.name ?? "白板";
 
   return (
-    <div className="py-8 max-w-md mx-auto">
+    <div className="mx-auto max-w-md">
       <PhaseHeader
         icon={CircleHelp}
         title="白板猜词"

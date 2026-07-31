@@ -119,7 +119,7 @@ export function WordSubmissionPhase() {
 
   if (!isQuestioner) {
     return (
-      <div className="flex flex-col items-center py-16">
+      <div className="flex flex-col items-center">
         <PhaseHeader
           icon={PenLine}
           title="等待出题"
@@ -130,7 +130,7 @@ export function WordSubmissionPhase() {
   }
 
   return (
-    <div className="flex flex-col items-center gap-6 py-6 max-w-md mx-auto">
+    <div className="mx-auto flex max-w-md flex-col items-center gap-6">
       <PhaseHeader
         icon={PenLine}
         title="提交词语"
