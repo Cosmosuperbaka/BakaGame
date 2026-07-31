@@ -4,6 +4,7 @@ import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useGameStore } from "@/stores/useGameStore";
+import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 
 export function NightPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -69,6 +70,8 @@ export function NightPhase() {
             : "等待夜晚结束..."}
         </p>
       </div>
+
+      <PrivilegedActionPreview mode="night" />
 
       {canAct && !acted && (
         <div className="space-y-3">

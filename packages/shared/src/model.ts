@@ -114,6 +114,14 @@ export interface NightActionRecord {
   targetId?: string;
 }
 
+export interface PrivilegedActionPreview {
+  votes: VoteRecord[];
+  nightActions: Array<{
+    actorId: string;
+    targetId?: string;
+  }>;
+}
+
 // 白板猜词记录既用于结算，也用于前端展示历史。
 export interface BlankGuessRecord {
   playerId: string;
@@ -320,6 +328,8 @@ export interface PrivateState {
     side: PlayerSide;
     alive: boolean;
   }>;
+  /** 仅出题人和旁观者收到的当前投票与夜间行动预览。 */
+  privilegedActionPreview?: PrivilegedActionPreview;
 }
 
 // RoomService 注册到连接池里的最小连接抽象。

@@ -2110,6 +2110,13 @@ export class RoomService {
           side: item.side,
           alive: item.alive,
         })),
+        privilegedActionPreview: {
+          votes: round.phase === "tieBreak" ? (round.tieBreak?.votes ?? []) : round.votes,
+          nightActions: round.nightActions.map(({ actorId, targetId }) => ({
+            actorId,
+            targetId,
+          })),
+        },
       };
     }
 

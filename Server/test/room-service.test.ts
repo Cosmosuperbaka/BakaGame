@@ -588,6 +588,13 @@ test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作�
     "game.privateState",
   );
   expect(privateState?.nightActionSubmitted).toBe(true);
+  expect(privateState?.privilegedActionPreview).toBeUndefined();
+  questionerState = getLastEventPayload<PrivateState>(questioner.connection, "game.privateState")!;
+  expect(
+    questionerState.privilegedActionPreview?.nightActions.some(
+      (action) => action.actorId === submittedActorId && action.targetId === undefined,
+    ),
+  ).toBe(true);
 
   await service.unregisterConnection(disconnectedActorConnection.record.id);
 
@@ -872,7 +879,7 @@ test("旁观者不会阻塞准备且可以作为 4 名正式玩家房间的出�
 
 test("旁观者在局内可以看到所有玩家身份", async () => {
   const { service } = createTestContext();
-  const { host } = await createRoom(service, "5858");
+  const { host, result: hostResult } = await createRoom(service, "5858");
   const joined: JoinedPlayer[] = [];
 
   for (let index = 0; index < 5; index += 1) {
@@ -929,6 +936,40 @@ test("旁观者在局内可以看到所有玩家身份", async () => {
       (entry) => entry.playerId === spectator.joinResult.playerId,
     ),
   ).toBe(false);
+
+  const connectionByPlayerId = new Map<string, ReturnType<typeof createConnection>>([
+    [hostResult.playerId, host],
+    ...joined.map((item) => [item.joinResult.playerId, item.connection] as const),
+  ]);
+  for (const player of privateState?.questionerView ?? []) {
+    await execute(service, connectionByPlayerId.get(player.playerId)!, {
+      id: `view-desc-${player.playerId}`,
+      type: "game.submitDescription",
+      payload: { text: "身份预览测试描述" },
+    });
+  }
+  await execute(service, joined[3].connection, {
+    id: "view-to-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  await execute(service, host, {
+    id: "view-submit-vote",
+    type: "game.submitVote",
+    payload: { targetId: joined[0].joinResult.playerId },
+  });
+
+  const spectatorVotingState = getLastEventPayload<PrivateState>(
+    spectator.connection,
+    "game.privateState",
+  );
+  expect(spectatorVotingState?.privilegedActionPreview?.votes).toContainEqual({
+    voterId: hostResult.playerId,
+    targetId: joined[0].joinResult.playerId,
+  });
+  expect(
+    getLastEventPayload<PrivateState>(host, "game.privateState")?.privilegedActionPreview,
+  ).toBeUndefined();
 });
 
 test("天使只会看到无标签候选词，不会直接知道自己的身份词", async () => {

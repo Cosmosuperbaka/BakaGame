@@ -4,6 +4,7 @@ import { Vote, FastForward, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useGameStore } from "@/stores/useGameStore";
+import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 
 export function VotingPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -78,6 +79,8 @@ export function VotingPhase() {
               : "等待玩家投票..."}
         </p>
       </div>
+
+      <PrivilegedActionPreview mode="vote" />
 
       {amAlive && !isQuestioner && !votedId && (
         <div className="space-y-3">
