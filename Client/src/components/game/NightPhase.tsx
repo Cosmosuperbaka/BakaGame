@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
+import { PhaseHeader } from "./PhaseHeader";
 
 export function NightPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -61,15 +62,16 @@ export function NightPhase() {
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">
-      <div className="text-center">
-        <Moon className="h-14 w-14 mx-auto mb-3 text-indigo-500/80" />
-        <h2 className="text-2xl font-semibold">夜晚降临</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {canAct && !acted
+      <PhaseHeader
+        icon={Moon}
+        title="夜晚降临"
+        iconClassName="text-indigo-500"
+        description={
+          canAct && !acted
             ? "你可以选择击杀一名玩家，或者什么都不做"
-            : "等待夜晚结束..."}
-        </p>
-      </div>
+            : "等待夜晚结束..."
+        }
+      />
 
       <PrivilegedActionPreview mode="night" />
 

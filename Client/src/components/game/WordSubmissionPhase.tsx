@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
-import { Send, PenTool, Dices } from "lucide-react";
+import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -118,24 +119,23 @@ export function WordSubmissionPhase() {
 
   if (!isQuestioner) {
     return (
-      <div className="flex flex-col items-center gap-5 py-16 text-center">
-        <PenTool className="h-14 w-14 text-muted-foreground/30" />
-        <div>
-          <h2 className="text-xl font-semibold">等待出题</h2>
-          <p className="text-sm text-muted-foreground mt-1">出题人正在提交本局词语...</p>
-        </div>
+      <div className="flex flex-col items-center py-16">
+        <PhaseHeader
+          icon={PenLine}
+          title="等待出题"
+          description="出题人正在提交本局词语..."
+        />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col items-center gap-6 py-6 max-w-md mx-auto">
-      <div className="text-center">
-        <h2 className="text-xl font-semibold">提交词语</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          请分别指定【平民词】与【卧底词】
-        </p>
-      </div>
+      <PhaseHeader
+        icon={PenLine}
+        title="提交词语"
+        description="请分别指定【平民词】与【卧底词】"
+      />
 
       <div className="w-full space-y-4">
         <div className="space-y-1.5">

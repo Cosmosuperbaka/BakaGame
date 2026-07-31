@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useGameStore } from "@/stores/useGameStore";
+import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { cn } from "@/lib/utils";
 
 export function AssignQuestionerPhase() {
@@ -37,12 +38,11 @@ export function AssignQuestionerPhase() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: "easeOut" }}
     >
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold mb-1.5">指定出题人</h2>
-        <p className="text-sm text-muted-foreground">
-          {isHost ? "选择一名玩家作为本局的出题人" : "等待房主指定出题人..."}
-        </p>
-      </div>
+      <PhaseHeader
+        icon={UserCheck}
+        title="指定出题人"
+        description={isHost ? "选择一名玩家作为本局的出题人" : "等待房主指定出题人..."}
+      />
 
       {isHost && (
         <div className="w-full max-w-xl space-y-5">
