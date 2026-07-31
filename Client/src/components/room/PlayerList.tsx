@@ -1,41 +1,33 @@
-import { useCallback, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Crown,
-  WifiOff,
-  MoreHorizontal,
-  UserX,
-  Eye,
-  EyeOff,
-  ArrowUpRightFromCircle,
-} from "lucide-react";
+import { useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import * as Popover from "@radix-ui/react-popover";
+import { ArrowUpRightFromCircle, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGameStore } from "@/stores/useGameStore";
-import { ROLE_LABELS, ROLE_COLORS } from "@/lib/helpers";
+import { ROLE_COLORS, ROLE_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
-import type { PublicPlayerView, GamePhase, PrivateState } from "@/types";
+import { useGameStore } from "@/stores/useGameStore";
+import type { GamePhase, PlayerRole, PrivateState, PublicPlayerView, RoleConfig } from "@/types";
 
-type PlayerMark = "none" | "suspect" | "safe";
+export type PlayerMark = "unknown" | PlayerRole;
+export type PlayerMarks = Record<string, PlayerMark>;
 
-const ROLE_SHORT_LABELS: Record<NonNullable<PrivateState["role"]>, string> = {
+const roleButtonLabels: Record<PlayerMark, string> = {
+  unknown: "未",
   civilian: "民",
   undercover: "卧",
-  angel: "天",
   blank: "白",
+  angel: "天",
 };
 
-interface Props {
-  players: PublicPlayerView[];
-  hostPlayerId: string;
-  myPlayerId?: string;
-  isHost: boolean;
-  phase: GamePhase;
-  allowSpectators: boolean;
-  privateState?: PrivateState | null;
-}
+const roleDisplayLabels: Record<PlayerMark, string> = {
+  unknown: "未知",
+  civilian: "平民",
+  undercover: "卧底",
+  blank: "白板",
+  angel: "天使",
+};
 
-// 动画统一参数：较短时长 + easeOut 曲线，避免列表扰动。
 const rowMotion = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
@@ -43,333 +35,342 @@ const rowMotion = {
   transition: { duration: 0.18, ease: "easeOut" as const },
 };
 
-export function PlayerList({
-  players,
-  myPlayerId,
-  isHost,
-  phase,
-  allowSpectators,
-  privateState,
-}: Props) {
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+export interface PlayerListProps {
+  players: PublicPlayerView[];
+  hostPlayerId: string;
+  myPlayerId?: string;
+  isHost: boolean;
+  phase: GamePhase;
+  allowSpectators: boolean;
+  roleConfig: RoleConfig;
+  privateState?: PrivateState | null;
+  playerMarks: PlayerMarks;
+  onMarkChange: (playerId: string, mark: PlayerMark) => void;
+}
 
-  // 本地玩家标记：仅在该玩家自己的界面可见，不同步至服务端。
-  const [playerMarks, setPlayerMarks] = useState<Record<string, PlayerMark>>({});
-  const toggleMark = useCallback((playerId: string) => {
-    setPlayerMarks((prev) => {
-      const cur: PlayerMark = prev[playerId] ?? "none";
-      const next: PlayerMark =
-        cur === "none" ? "suspect" : cur === "suspect" ? "safe" : "none";
-      return { ...prev, [playerId]: next };
-    });
-  }, []);
+export function PlayerList(props: PlayerListProps) {
+  const {
+    players,
+    myPlayerId,
+    isHost,
+    phase,
+    allowSpectators,
+    roleConfig,
+    privateState,
+    playerMarks,
+    onMarkChange,
+  } = props;
+  const sendCommand = useGameStore((state) => state.sendCommand);
+  const addToast = useGameStore((state) => state.addToast);
+  const waitingPhase = phase === "waiting";
+  const me = players.find((player) => player.id === myPlayerId);
+  const isSpectator = me?.membership === "spectator";
+  const canMarkPlayers =
+    me?.membership === "active" &&
+    !privateState?.isQuestioner &&
+    !["waiting", "assigningQuestioner", "wordSubmission", "gameOver"].includes(phase);
+  const showSpectatorToggle = waitingPhase && allowSpectators && Boolean(me);
+  const roleByPlayerId = new Map(
+    (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role]),
+  );
+  const availableMarks: PlayerMark[] = [
+    "unknown",
+    "civilian",
+    "undercover",
+    ...(roleConfig.hasBlank ? (["blank"] as PlayerMark[]) : []),
+    ...(roleConfig.hasAngel ? (["angel"] as PlayerMark[]) : []),
+  ];
+
+  const activePlayers = players.filter(
+    (player) => player.membership === "active" && player.roundStatus !== "questioner",
+  );
+  const observers = players.filter(
+    (player) => player.membership === "spectator" || player.roundStatus === "questioner",
+  );
 
   const handleKick = useCallback(
     async (playerId: string) => {
       try {
         await sendCommand("room.kick", { playerId });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
+      } catch (error) {
+        addToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, addToast]
+    [addToast, sendCommand],
   );
 
   const handleTransferHost = useCallback(
     async (playerId: string) => {
       try {
         await sendCommand("room.transferHost", { playerId });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
+      } catch (error) {
+        addToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, addToast]
+    [addToast, sendCommand],
   );
 
   const handleSetSpectator = useCallback(
     async (spectator: boolean) => {
       try {
         await sendCommand("player.setSpectator", { spectator });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
+      } catch (error) {
+        addToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, addToast]
+    [addToast, sendCommand],
   );
 
-  const activePlayers = [...players]
-    .filter((p) => p.membership === "active")
-    .sort((a, b) => {
-      if (a.isHost !== b.isHost) return a.isHost ? -1 : 1;
-      return 0;
-    });
-
-  const spectators = players.filter((p) => p.membership === "spectator");
-
-  const me = players.find((p) => p.id === myPlayerId);
-  const isSpectator = me?.membership === "spectator";
-  const showSpectatorToggle = phase === "waiting" && allowSpectators && me;
-  const waitingPhase = phase === "waiting";
-  const hostActionsEnabled = waitingPhase || phase === "gameOver";
-  const privilegedRoleMap = new Map(
-    (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role])
+  const renderRow = (player: PublicPlayerView, hideSpectatorStatus: boolean) => (
+    <PlayerRow
+      key={player.id}
+      player={player}
+      myPlayerId={myPlayerId}
+      isHostViewer={isHost}
+      waitingPhase={waitingPhase}
+      hideSpectatorStatus={hideSpectatorStatus}
+      actualRole={roleByPlayerId.get(player.id)}
+      mark={playerMarks[player.id] ?? "unknown"}
+      canMark={Boolean(
+        canMarkPlayers &&
+          player.membership === "active" &&
+          player.roundStatus !== "questioner"
+      )}
+      availableMarks={availableMarks}
+      onMarkChange={onMarkChange}
+      onKick={handleKick}
+      onTransferHost={handleTransferHost}
+    />
   );
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex w-full flex-col gap-0.5 p-4">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
-          玩家 ({activePlayers.length})
-        </h3>
+      <div className="flex w-full flex-col gap-0.5 p-3">
+        <PlayerGroupTitle label="玩家" count={activePlayers.length} />
         <AnimatePresence initial={false} mode="popLayout">
-          {activePlayers.map((player) => (
-            <PlayerRow
-              key={player.id}
-              player={player}
-              myPlayerId={myPlayerId}
-              isHost={isHost}
-              hostActionsEnabled={hostActionsEnabled}
-              waitingPhase={waitingPhase}
-              hideStatusWhenSpectator={false}
-              privilegedRole={privilegedRoleMap.get(player.id)}
-              mark={playerMarks[player.id] ?? "none"}
-              onToggleMark={toggleMark}
-              onKick={handleKick}
-              onTransferHost={handleTransferHost}
-            />
-          ))}
+          {activePlayers.map((player) => renderRow(player, false))}
         </AnimatePresence>
-        {showSpectatorToggle && isSpectator && (
+
+        {showSpectatorToggle && isSpectator ? (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2 gap-1.5 text-xs text-muted-foreground justify-start"
+            className="mt-2 justify-start gap-1.5 text-xs text-muted-foreground"
             onClick={() => handleSetSpectator(false)}
           >
             <EyeOff className="h-3.5 w-3.5" />
             取消旁观
           </Button>
-        )}
+        ) : null}
 
-        {(spectators.length > 0 || (showSpectatorToggle && !isSpectator)) && (
+        {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
           <>
-            <div className="border-t border-border/60 my-3" />
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
-              旁观 ({spectators.length})
-            </h3>
+            <div className="my-3 h-px bg-border/60" />
+            <PlayerGroupTitle label="旁观" count={observers.length} />
             <AnimatePresence initial={false} mode="popLayout">
-              {spectators.map((player) => (
-                <PlayerRow
-                  key={player.id}
-                  player={player}
-                  myPlayerId={myPlayerId}
-                  isHost={isHost}
-                  hostActionsEnabled={hostActionsEnabled}
-                  waitingPhase={waitingPhase}
-                  hideStatusWhenSpectator
-                  privilegedRole={privilegedRoleMap.get(player.id)}
-                  mark={playerMarks[player.id] ?? "none"}
-                  onToggleMark={toggleMark}
-                  onKick={handleKick}
-                  onTransferHost={handleTransferHost}
-                />
-              ))}
+              {observers.map((player) => renderRow(player, true))}
             </AnimatePresence>
-            {showSpectatorToggle && !isSpectator && (
+            {showSpectatorToggle && !isSpectator ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="mt-2 gap-1.5 text-xs text-muted-foreground justify-start"
+                className="mt-2 justify-start gap-1.5 text-xs text-muted-foreground"
                 onClick={() => handleSetSpectator(true)}
               >
                 <Eye className="h-3.5 w-3.5" />
                 加入旁观
               </Button>
-            )}
+            ) : null}
           </>
-        )}
+        ) : null}
       </div>
     </ScrollArea>
   );
 }
 
-function PlayerRow({
-  player,
-  myPlayerId,
-  isHost,
-  hostActionsEnabled,
-  waitingPhase,
-  hideStatusWhenSpectator,
-  privilegedRole,
-  mark,
-  onToggleMark,
-  onKick,
-  onTransferHost,
-}: {
+function PlayerGroupTitle({ label, count }: { label: string; count: number }) {
+  return (
+    <h3 className="mb-2 px-2 text-xs font-semibold text-muted-foreground">
+      {label} ({count})
+    </h3>
+  );
+}
+
+export interface PlayerRowProps {
   player: PublicPlayerView;
   myPlayerId?: string;
-  isHost: boolean;
-  hostActionsEnabled: boolean;
+  isHostViewer: boolean;
   waitingPhase: boolean;
-  hideStatusWhenSpectator: boolean;
-  privilegedRole?: PrivateState["role"];
+  hideSpectatorStatus: boolean;
+  actualRole?: PlayerRole;
   mark: PlayerMark;
-  onToggleMark: (id: string) => void;
-  onKick: (id: string) => void;
-  onTransferHost: (id: string) => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const statusInfo = getStatusPill(player, hideStatusWhenSpectator);
-  const canHostActOn = isHost && hostActionsEnabled && player.id !== myPlayerId;
-  const visibleRole = privilegedRole ?? player.revealedRole;
-  const isMe = player.id === myPlayerId;
+  canMark: boolean;
+  availableMarks: PlayerMark[];
+  onMarkChange: (playerId: string, mark: PlayerMark) => void;
+  onKick: (playerId: string) => void;
+  onTransferHost: (playerId: string) => void;
+  embedded?: boolean;
+}
 
-  return (
+export function PlayerRow(props: PlayerRowProps) {
+  const {
+    player,
+    myPlayerId,
+    isHostViewer,
+    hideSpectatorStatus,
+    actualRole,
+    mark,
+    canMark,
+    availableMarks,
+    onMarkChange,
+    onKick,
+    onTransferHost,
+    embedded = false,
+  } = props;
+  const canHostActOn = isHostViewer && player.id !== myPlayerId;
+  const isMe = player.id === myPlayerId;
+  const isInteractive = canMark || canHostActOn;
+  const visibleRole = player.revealedRole ?? actualRole ?? (canMark ? mark : undefined);
+  const statusInfo = getStatusPill(player, hideSpectatorStatus);
+
+  const row = (
     <motion.div
       layout="position"
       {...rowMotion}
       className={cn(
-        "group relative flex min-h-10 w-full items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors duration-150",
-        isMe && "bg-primary/8 ring-1 ring-primary/15",
-        !isMe && "hover:bg-muted/60",
-        !player.online && "opacity-50"
+        "group flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
+        isMe ? "bg-primary/8 ring-1 ring-primary/15" : "hover:bg-muted/70",
+        !player.online && "opacity-50",
+        isInteractive && "cursor-pointer",
+        embedded && "rounded-none px-3",
       )}
-      onBlur={() => setMenuOpen(false)}
     >
-      {/* 本地标记（仅自己可见，点击循环切换：无→疑→安→无） */}
-      <button
-        type="button"
-        aria-label={`切换玩家标记，当前${mark === "suspect" ? "可疑" : mark === "safe" ? "安全" : "无标记"}`}
-        title={mark === "suspect" ? "可疑" : mark === "safe" ? "安全" : "添加标记"}
-        className={cn(
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors",
-          mark === "suspect" && "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
-          mark === "safe" && "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
-          mark === "none" && "border-transparent text-transparent group-hover:border-border group-hover:text-muted-foreground/50"
-        )}
-        onClick={(e) => { e.stopPropagation(); onToggleMark(player.id); }}
-      >
-        {mark === "suspect" ? "疑" : mark === "safe" ? "安" : "标"}
-      </button>
-
-      {/* 左：玩家名 */}
-      <span className="truncate font-medium text-sm flex-1 min-w-0">{player.name}</span>
-
-      {/* 右：状态徽章区 */}
-      <div className="flex items-center gap-1 shrink-0">
-        {player.isHost && (
-          <Crown className="h-3.5 w-3.5 text-amber-500" aria-label="房主" />
-        )}
-        {!player.online && (
-          <WifiOff className="h-3.5 w-3.5 text-destructive" aria-label="离线" />
-        )}
-        {statusInfo && (
-          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", statusInfo.className)}>
+      <span className="flex h-6 min-w-8 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 text-xs font-bold tabular-nums text-foreground">
+        {player.score}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{player.name}</span>
+      <span className="flex shrink-0 items-center gap-1">
+        {player.isHost ? <Crown className="h-3.5 w-3.5 text-amber-500" aria-label="房主" /> : null}
+        {!player.online ? <WifiOff className="h-3.5 w-3.5 text-destructive" aria-label="离线" /> : null}
+        {statusInfo ? (
+          <span className={cn("rounded px-1.5 py-0.5 text-[11px]", statusInfo.className)}>
             {statusInfo.label}
           </span>
-        )}
-        {visibleRole && (
-          <span
-            title={ROLE_LABELS[visibleRole]}
-            aria-label={`身份：${ROLE_LABELS[visibleRole]}`}
-            className={cn(
-              "flex h-5 w-5 items-center justify-center rounded border bg-background text-[10px] font-bold",
-              ROLE_COLORS[visibleRole]
-            )}
-          >
-            {ROLE_SHORT_LABELS[visibleRole]}
-          </span>
-        )}
-        {player.score > 0 && (
-          <span className="text-[11px] text-amber-600 font-medium">{player.score}分</span>
-        )}
-        {waitingPhase && player.membership === "active" && (
-          <span
-            className={cn(
-              "text-[11px] px-1.5 py-0.5 rounded-full font-medium",
-              player.isReady
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            {player.isReady ? "已准备" : "未准备"}
-          </span>
-        )}
-      </div>
-
-      {/* 固定宽度操作槽位，保证房主与其他玩家的条目对称。 */}
-      <div className="relative h-6 w-6 shrink-0">
-        {canHostActOn ? (
-          <>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen((v) => !v);
-            }}
-            aria-label="玩家操作"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-          <AnimatePresence>
-            {menuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -2 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -2 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
-                className="absolute right-0 top-7 z-20 min-w-[9rem] rounded-md border bg-popover shadow-md py-1"
-              >
-                {waitingPhase && player.membership !== "kicked" && (
-                  <button
-                    type="button"
-                    className="w-full text-left text-xs px-3 py-2 hover:bg-muted flex items-center gap-2 text-foreground"
-                    onClick={() => { setMenuOpen(false); onTransferHost(player.id); }}
-                  >
-                    <ArrowUpRightFromCircle className="h-3.5 w-3.5" />
-                    转让房主
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted flex items-center gap-2 text-destructive"
-                  onClick={() => { setMenuOpen(false); onKick(player.id); }}
-                >
-                  <UserX className="h-3.5 w-3.5" />
-                  踢出房间
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          </>
         ) : null}
-      </div>
+        {visibleRole ? <RoleDisplay role={visibleRole} /> : null}
+      </span>
     </motion.div>
+  );
+
+  if (!isInteractive) return row;
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>{row}</Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="right"
+          align="start"
+          sideOffset={8}
+          className="z-[80] w-64 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
+        >
+          {canMark ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-1" role="group" aria-label="身份标记">
+                {availableMarks.map((availableMark) => {
+                  const selected = mark === availableMark;
+                  return (
+                    <button
+                      key={availableMark}
+                      type="button"
+                      title={roleDisplayLabels[availableMark]}
+                      aria-label={roleDisplayLabels[availableMark]}
+                      aria-pressed={selected}
+                      onClick={() => onMarkChange(player.id, availableMark)}
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors",
+                        selected
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {roleButtonLabels[availableMark]}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-center text-xs font-medium text-muted-foreground">
+                当前：{roleDisplayLabels[mark]}
+              </div>
+            </div>
+          ) : null}
+
+          {canHostActOn ? (
+            <div className={cn("grid grid-cols-2 gap-2", canMark && "mt-3 border-t pt-3")}>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 rounded-md bg-muted px-2 py-2 text-xs font-medium hover:bg-muted/70"
+                onClick={() => onTransferHost(player.id)}
+              >
+                <ArrowUpRightFromCircle className="h-3.5 w-3.5" />
+                转移房主
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 rounded-md bg-destructive/10 px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/15"
+                onClick={() => onKick(player.id)}
+              >
+                <UserX className="h-3.5 w-3.5" />
+                踢出
+              </button>
+            </div>
+          ) : null}
+          <Popover.Arrow className="fill-popover" />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
-// 身份徽章：旁观区不再重复显示"旁观"；出题人/存活/死亡等仍然显示。
+function RoleDisplay({ role }: { role: PlayerMark }) {
+  return (
+    <span
+      className={cn(
+        "flex h-6 min-w-10 items-center justify-center rounded-md bg-muted px-1.5 text-[11px] font-semibold",
+        role === "unknown" ? "text-muted-foreground" : ROLE_COLORS[role],
+      )}
+    >
+      {role === "unknown" ? "未知" : ROLE_LABELS[role]}
+    </span>
+  );
+}
+
 function getStatusPill(
   player: PublicPlayerView,
-  hideSpectatorPill: boolean
+  hideSpectatorPill: boolean,
 ): { label: string; className: string } | null {
   switch (player.roundStatus) {
     case "questioner":
-      return { label: "出题", className: "bg-purple-100 text-purple-700" };
+      return { label: "出题", className: "bg-violet-100 text-violet-700" };
     case "alive":
-      return { label: "存活", className: "bg-emerald-100 text-emerald-700" };
-    case "dead":
-      return { label: "死亡", className: "bg-red-100 text-red-700" };
-    case "kicked":
-      return { label: "已踢出", className: "bg-red-100 text-red-700" };
-    case "spectator":
-      return hideSpectatorPill
-        ? null
-        : { label: "旁观", className: "bg-muted text-muted-foreground" };
-    default:
       return null;
+    case "dead":
+      return { label: "出局", className: "bg-red-100 text-red-700" };
+    case "kicked":
+      return { label: "踢出", className: "bg-red-100 text-red-700" };
+    case "spectator":
+      return hideSpectatorPill ? null : { label: "旁观", className: "bg-muted text-muted-foreground" };
+    default:
+      return waitingPhaseStatus(player, hideSpectatorPill);
   }
+}
+
+function waitingPhaseStatus(
+  player: PublicPlayerView,
+  hideSpectatorPill: boolean,
+): { label: string; className: string } | null {
+  if (hideSpectatorPill || player.membership !== "active") return null;
+  return player.isReady
+    ? { label: "准备", className: "bg-emerald-100 text-emerald-700" }
+    : { label: "未备", className: "bg-muted text-muted-foreground" };
 }

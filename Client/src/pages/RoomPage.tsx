@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import {
   ArrowLeft,
   Settings,
@@ -14,11 +14,16 @@ import { Button } from "@/components/ui/button";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
 import { useGameStore } from "@/stores/useGameStore";
-import { PlayerList } from "@/components/room/PlayerList";
+import {
+  PlayerList,
+  type PlayerMark,
+  type PlayerMarks,
+} from "@/components/room/PlayerList";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { RoomSettings } from "@/components/room/RoomSettings";
 import { DescriptionHistoryOverlay } from "@/components/game/DescriptionHistory";
+import type { PlayerRole } from "@/types";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -32,6 +37,7 @@ export default function RoomPage() {
   const joinRoom = useGameStore((s) => s.joinRoom);
   const reconnectRoom = useGameStore((s) => s.reconnectRoom);
   const leaveRoom = useGameStore((s) => s.leaveRoom);
+  const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
   const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -39,6 +45,10 @@ export default function RoomPage() {
   // 移动端侧栏
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
   const [descriptionHistoryOpen, setDescriptionHistoryOpen] = useState(false);
+  const [playerMarks, setPlayerMarks] = useState<PlayerMarks>({});
+  const [wordRevealActive, setWordRevealActive] = useState(false);
+  const [revealedWord, setRevealedWord] = useState<string>();
+  const lastRevealedWordRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!descriptionHistoryOpen) return;
@@ -145,9 +155,107 @@ export default function RoomPage() {
     navigate("/");
   }, [leaveRoom, navigate]);
 
+  const handleMarkChange = useCallback((playerId: string, mark: PlayerMark) => {
+    setPlayerMarks((current) => ({ ...current, [playerId]: mark }));
+  }, []);
+
+  const handleKick = useCallback(
+    async (playerId: string) => {
+      try {
+        await sendCommand("room.kick", { playerId });
+      } catch (error) {
+        addToast((error as { message?: string }).message ?? "踢出玩家失败", "error");
+      }
+    },
+    [addToast, sendCommand],
+  );
+
+  const handleTransferHost = useCallback(
+    async (playerId: string) => {
+      try {
+        await sendCommand("room.transferHost", { playerId });
+      } catch (error) {
+        addToast((error as { message?: string }).message ?? "转移房主失败", "error");
+      }
+    },
+    [addToast, sendCommand],
+  );
+
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
   const isSpectator = me?.membership === "spectator";
+  const phase = snapshot?.status.phase ?? "waiting";
+  const roleConfig = snapshot?.settings.roleConfig ?? {
+    undercoverCount: 1,
+    hasAngel: false,
+    hasBlank: false,
+  };
+  const canMarkPlayers =
+    me?.membership === "active" &&
+    !privateState?.isQuestioner &&
+    !["waiting", "assigningQuestioner", "wordSubmission", "gameOver"].includes(phase);
+  const availableMarks = useMemo<PlayerMark[]>(
+    () => [
+      "unknown",
+      "civilian",
+      "undercover",
+      ...(roleConfig.hasBlank ? (["blank"] as PlayerMark[]) : []),
+      ...(roleConfig.hasAngel ? (["angel"] as PlayerMark[]) : []),
+    ],
+    [roleConfig.hasAngel, roleConfig.hasBlank],
+  );
+  const actualRoleByPlayerId = useMemo(() => {
+    const roles = new Map<string, PlayerRole>();
+    for (const entry of privateState?.questionerView ?? []) roles.set(entry.playerId, entry.role);
+    for (const entry of snapshot?.summary?.revealedRoles ?? []) roles.set(entry.playerId, entry.role);
+    return roles;
+  }, [privateState?.questionerView, snapshot?.summary?.revealedRoles]);
+  const assignedWordText =
+    !isSpectator && !privateState?.isQuestioner
+      ? privateState?.word ??
+        (privateState?.angelWordOptions
+          ? `${privateState.angelWordOptions[0]} / ${privateState.angelWordOptions[1]}`
+          : privateState?.blankHint
+            ? `提示：${privateState.blankHint}`
+            : undefined)
+      : undefined;
+
+  useEffect(() => {
+    if (!assignedWordText) {
+      lastRevealedWordRef.current = undefined;
+      const resetTimer = window.setTimeout(() => {
+        setWordRevealActive(false);
+        setRevealedWord(undefined);
+      }, 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+    if (lastRevealedWordRef.current === assignedWordText) return;
+
+    lastRevealedWordRef.current = assignedWordText;
+    const startTimer = window.setTimeout(() => {
+      setRevealedWord(assignedWordText);
+      setWordRevealActive(true);
+    }, 0);
+    const finishTimer = window.setTimeout(() => setWordRevealActive(false), 3000);
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(finishTimer);
+    };
+  }, [assignedWordText]);
+
+  const playerRowContext = {
+    myPlayerId: privateState?.playerId,
+    isHostViewer: isHost,
+    waitingPhase: phase === "waiting",
+    hideSpectatorStatus: false,
+    canMark: Boolean(canMarkPlayers),
+    availableMarks,
+    onMarkChange: handleMarkChange,
+    onKick: handleKick,
+    onTransferHost: handleTransferHost,
+    actualRoleByPlayerId,
+    playerMarks,
+  };
 
   if (joining || !snapshot) {
     return (
@@ -184,7 +292,8 @@ export default function RoomPage() {
   ].includes(snapshot.status.phase);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-muted/30">
+    <LayoutGroup id="assigned-word-reveal">
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
       {/* 顶部栏 — 三段式布局：左/中/右 */}
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         {/* 左段：返回 + 房间信息 */}
@@ -204,32 +313,29 @@ export default function RoomPage() {
             </span>
           )}
           {privateState?.isQuestioner && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background shadow-sm shrink-0">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
               <ShieldCheck className="h-3.5 w-3.5" />
               出题人视角
             </span>
           )}
           {isSpectator && (
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200 shrink-0">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
               <Eye className="h-3.5 w-3.5" />
               旁观视角
             </span>
           )}
-          {privateInfoVisible && !isSpectator && privateState?.word && (
-            <span className="max-w-24 shrink truncate rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary sm:max-w-none sm:px-2.5 sm:text-sm">
-              {privateState.word}
-            </span>
-          )}
-          {privateInfoVisible && !isSpectator && privateState?.angelWordOptions && (
-            <span className="max-w-32 shrink truncate rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-400 sm:max-w-none sm:px-2.5 sm:text-sm">
-              {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
-            </span>
-          )}
-          {privateInfoVisible && !isSpectator && !privateState?.isQuestioner && privateState?.blankHint && (
-            <span className="max-w-32 shrink truncate rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-400 sm:max-w-none sm:px-2.5 sm:text-sm">
-              提示：{privateState.blankHint}
-            </span>
-          )}
+          {privateInfoVisible &&
+          assignedWordText &&
+          revealedWord === assignedWordText &&
+          !wordRevealActive ? (
+            <motion.span
+              layoutId="assigned-word"
+              transition={{ layout: { duration: 0.65, ease: [0.22, 1, 0.36, 1] } }}
+              className="max-w-32 shrink truncate rounded-md bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary sm:max-w-none sm:text-sm"
+            >
+              {assignedWordText}
+            </motion.span>
+          ) : null}
         </div>
 
         {/* 右段：断线状态 + 移动端切换 + 设置 */}
@@ -285,7 +391,7 @@ export default function RoomPage() {
       <div className="flex-1 flex overflow-hidden relative px-2 md:px-3 pb-2 md:pb-3 pt-0 gap-2 md:gap-3">
         {/* 玩家栏与游戏区共享覆盖层边界，历史展开时不改变布局宽度。 */}
         <section className="relative flex min-w-0 flex-1 gap-2 md:gap-3">
-          <aside className="relative hidden w-64 shrink-0 flex-col rounded-xl border bg-background md:flex">
+          <aside className="relative hidden w-64 shrink-0 flex-col rounded-xl border bg-card md:flex">
             <div className="flex h-full flex-col overflow-hidden rounded-xl">
               <PlayerList
                 players={snapshot.players}
@@ -295,6 +401,9 @@ export default function RoomPage() {
                 phase={snapshot.status.phase}
                 allowSpectators={snapshot.allowSpectators}
                 privateState={privateState}
+                roleConfig={roleConfig}
+                playerMarks={playerMarks}
+                onMarkChange={handleMarkChange}
               />
             </div>
             <button
@@ -302,7 +411,7 @@ export default function RoomPage() {
               title="发言历史"
               aria-label="打开发言历史"
               onClick={() => setDescriptionHistoryOpen(true)}
-              className="absolute -right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border bg-background shadow-sm transition-colors hover:bg-muted"
+            className="absolute -right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border bg-card shadow-sm transition-colors hover:bg-muted"
             >
               <History className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
@@ -315,7 +424,7 @@ export default function RoomPage() {
             animate={{ x: 0 }}
             exit={{ x: -280 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="absolute inset-y-0 left-0 w-72 bg-background border-r z-30 md:hidden shadow-xl overflow-y-auto flex flex-col"
+            className="absolute inset-y-0 left-0 w-72 bg-card border-r z-30 md:hidden shadow-xl overflow-y-auto flex flex-col"
           >
             <PlayerList
               players={snapshot.players}
@@ -325,13 +434,16 @@ export default function RoomPage() {
               phase={snapshot.status.phase}
               allowSpectators={snapshot.allowSpectators}
               privateState={privateState}
+              roleConfig={roleConfig}
+              playerMarks={playerMarks}
+              onMarkChange={handleMarkChange}
             />
           </motion.aside>
         )}
 
           {/* 中栏：游戏区 */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background">
-            <GameArea />
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+            <GameArea wordRevealText={wordRevealActive ? revealedWord : undefined} />
           </main>
 
           <AnimatePresence>
@@ -339,6 +451,7 @@ export default function RoomPage() {
               <DescriptionHistoryOverlay
                 players={snapshot.players}
                 descriptions={snapshot.descriptions}
+                playerRowContext={playerRowContext}
                 onClose={() => setDescriptionHistoryOpen(false)}
               />
             ) : null}
@@ -346,7 +459,7 @@ export default function RoomPage() {
         </section>
 
         {/* 右栏：聊天 */}
-        <aside className="w-80 overflow-hidden shrink-0 hidden lg:flex flex-col bg-background rounded-xl border">
+        <aside className="w-80 overflow-hidden shrink-0 hidden lg:flex flex-col bg-card rounded-xl border">
           <ChatPanel />
         </aside>
 
@@ -357,7 +470,7 @@ export default function RoomPage() {
             animate={{ x: 0 }}
             exit={{ x: 320 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="absolute inset-y-0 right-0 w-80 bg-background border-l z-30 lg:hidden shadow-xl flex flex-col"
+            className="absolute inset-y-0 right-0 w-80 bg-card border-l z-30 lg:hidden shadow-xl flex flex-col"
           >
             <ChatPanel />
           </motion.aside>
@@ -375,5 +488,6 @@ export default function RoomPage() {
       {/* 设置弹窗 */}
       <RoomSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
+    </LayoutGroup>
   );
 }
