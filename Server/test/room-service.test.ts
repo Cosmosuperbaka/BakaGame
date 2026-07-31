@@ -143,6 +143,10 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     questioner.connection,
     "game.privateState",
   );
+  let supplementSnapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(supplementSnapshot?.status.phase).toBe("description");
+  expect(supplementSnapshot?.status.speechMode).toBe("supplement");
+  expect(supplementSnapshot?.status.supplementIndex).toBe(1);
   expect(questionerState?.privilegedActionPreview?.votes).toHaveLength(4);
 
   let supplementBlockCode: string | undefined;
@@ -166,6 +170,10 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     questioner.connection,
     "game.privateState",
   );
+  supplementSnapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(supplementSnapshot?.status.phase).toBe("voting");
+  expect(supplementSnapshot?.status.speechMode).toBeUndefined();
+  expect(supplementSnapshot?.status.supplementIndex).toBeUndefined();
   expect(questionerState?.privilegedActionPreview?.votes).toHaveLength(4);
   expect(
     getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.descriptions.at(-1)?.kind,
@@ -1072,7 +1080,7 @@ test("天使只会看到无标签候选词，不会直接知道自己的身份�
   expect(angelPrivateState?.word).toBeUndefined();
 });
 
-test("游戏进行中房主不能踢人，结算后踢人不会重复结算分数", async () => {
+test("游戏进行中可以转移房主并踢出普通玩家", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "Oblivionis");
   const extra = createConnection(service, "Oblivionis-review-extra");
@@ -1089,38 +1097,68 @@ test("游戏进行中房主不能踢人，结算后踢人不会重复结算分�
     payload: { phase: "voting" },
   });
 
-  let errorCode: string | undefined;
-  try {
-    await execute(service, host, {
-      id: "kick-active",
-      type: "room.kick",
-      payload: { playerId: extraJoin.playerId },
-    });
-  } catch (error) {
-    errorCode = (error as { code?: string }).code;
-  }
-
-  expect(errorCode).toBe("ROUND_ACTIVE");
-
   await execute(service, host, {
-    id: "jump-game-over",
-    type: "test.jumpToPhase",
-    payload: { phase: "gameOver" },
-  });
-
-  const before = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
-  const scoresBefore = new Map(before?.players.map((player) => [player.id, player.score]));
-
-  await execute(service, host, {
-    id: "kick-after-game-over",
-    type: "room.kick",
+    id: "transfer-host-active",
+    type: "room.transferHost",
     payload: { playerId: extraJoin.playerId },
   });
 
-  const after = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
-  expect(after?.status.phase).toBe("gameOver");
-  expect(after?.players.find((player) => player.id === hostResult.playerId)?.score).toBe(
-    scoresBefore.get(hostResult.playerId),
+  let snapshot = getLastEventPayload<RoomSnapshot>(extra, "room.snapshot");
+  expect(snapshot?.hostPlayerId).toBe(extraJoin.playerId);
+
+  await execute(service, extra, {
+    id: "kick-active",
+    type: "room.kick",
+    payload: { playerId: hostResult.playerId },
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(extra, "room.snapshot");
+  expect(snapshot?.players.find((player) => player.id === hostResult.playerId)?.membership).toBe(
+    "kicked",
+  );
+});
+
+test("游戏中踢出出题人会中止本局", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  const questioner = createConnection(service, "Oblivionis-questioner");
+  const questionerJoin = (await execute(service, questioner, {
+    id: "questioner-join",
+    type: "room.join",
+    roomId: "Oblivionis",
+    payload: { userName: "出题人" },
+  })) as { playerId: string };
+
+  for (const connection of [host, questioner]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start-kick-questioner", type: "game.advancePhase", payload: {} });
+  await execute(service, host, {
+    id: "assign-kicked-questioner",
+    type: "game.assignQuestioner",
+    payload: { playerId: questionerJoin.playerId },
+  });
+  await execute(service, questioner, {
+    id: "words-before-kick",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, host, {
+    id: "kick-questioner",
+    type: "room.kick",
+    payload: { playerId: questionerJoin.playerId },
+  });
+
+  const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("gameOver");
+  expect(snapshot?.summary?.winner).toBe("aborted");
+  expect(snapshot?.players.find((player) => player.id === questionerJoin.playerId)?.membership).toBe(
+    "kicked",
   );
 });
 

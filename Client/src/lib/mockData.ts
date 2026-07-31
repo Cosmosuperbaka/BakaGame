@@ -20,6 +20,11 @@ export function createMockTestRoomState(
   const wordsAssigned = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
   const meId = "player_me";
+  const questionerId = ["waiting", "assigningQuestioner"].includes(phase)
+    ? undefined
+    : isQuestioner
+      ? meId
+      : "questioner_mock";
   const myName = isQuestioner ? "出题人 (你)" : isSpectator ? "旁观者 (你)" : "玩家 (你)";
 
   const players: PublicPlayerView[] = [
@@ -32,7 +37,7 @@ export function createMockTestRoomState(
       isHost: true,
       isBot: false,
       online: true,
-      roundStatus: isQuestioner
+      roundStatus: questionerId === meId
         ? "questioner"
         : isSpectator
         ? "spectator"
@@ -43,7 +48,7 @@ export function createMockTestRoomState(
     },
     {
       id: "player_b",
-      name: "玩家B (平民)",
+      name: "玩家B",
       score: 3,
       membership: "active",
       isReady: true,
@@ -55,7 +60,7 @@ export function createMockTestRoomState(
     },
     {
       id: "player_c",
-      name: "玩家C (卧底)",
+      name: "玩家C",
       score: 2,
       membership: "active",
       isReady: true,
@@ -67,7 +72,7 @@ export function createMockTestRoomState(
     },
     {
       id: "player_d",
-      name: "玩家D (天使)",
+      name: "玩家D",
       score: 4,
       membership: "active",
       isReady: true,
@@ -79,7 +84,7 @@ export function createMockTestRoomState(
     },
     {
       id: "player_e",
-      name: "玩家E (白板)",
+      name: "玩家E",
       score: 1,
       membership: "active",
       isReady: true,
@@ -89,13 +94,28 @@ export function createMockTestRoomState(
       roundStatus: phase === "waiting" ? "waiting" : "alive",
       revealedRole: phase === "gameOver" ? "blank" : undefined,
     },
+    ...(questionerId === "questioner_mock"
+      ? [
+          {
+            id: questionerId,
+            name: "出题人",
+            score: 0,
+            membership: "active" as const,
+            isReady: true,
+            isHost: false,
+            isBot: true,
+            online: true,
+            roundStatus: "questioner" as const,
+          },
+        ]
+      : []),
   ];
 
   const mockDescriptions: DescriptionRecord[] = [
     {
       id: "desc_1",
       playerId: "player_b",
-      playerName: "玩家B (平民)",
+      playerName: "玩家B",
       text: "一种十分常见的水果，红红的，口感酸甜鲜美。",
       kind: "description",
       cycle: 1,
@@ -104,7 +124,7 @@ export function createMockTestRoomState(
     {
       id: "desc_2",
       playerId: "player_c",
-      playerName: "玩家C (卧底)",
+      playerName: "玩家C",
       text: "外皮比较薄，可以直接切开吃或者拿去榨鲜果汁。",
       kind: "description",
       cycle: 1,
@@ -113,7 +133,7 @@ export function createMockTestRoomState(
     {
       id: "desc_3",
       playerId: "player_d",
-      playerName: "玩家D (天使)",
+      playerName: "玩家D",
       text: "富含丰富的维生素，西餐里经常用来做成美味的甜品烤派。",
       kind: "description",
       cycle: 1,
@@ -125,7 +145,7 @@ export function createMockTestRoomState(
     mockDescriptions.push({
       id: "desc_pk_1",
       playerId: "player_b",
-      playerName: "玩家B (平民)",
+      playerName: "玩家B",
       text: "我是平民！我的词是红色的水果，大家千万别投错！",
       kind: "tieBreak",
       cycle: 1,
@@ -151,15 +171,17 @@ export function createMockTestRoomState(
     status: {
       started: phase !== "waiting",
       phase,
+      speechMode:
+        phase === "description" ? "normal" : phase === "tieBreak" ? "tieBreak" : undefined,
       day: phase === "waiting" ? 0 : 1,
       descriptionOrder: players
         .filter(
           (player) =>
             player.roundStatus === "alive" &&
-            player.id !== (isQuestioner ? meId : "player_b"),
+            player.id !== questionerId,
         )
         .map((player) => player.id),
-      questionerPlayerId: isQuestioner ? meId : "player_b",
+      questionerPlayerId: questionerId,
       blankGuessPlayerId: phase === "blankGuess" ? "player_e" : undefined,
       tieBreakStage: phase === "tieBreak" ? "description" : undefined,
       tieBreakIndex: phase === "tieBreak" ? 1 : undefined,

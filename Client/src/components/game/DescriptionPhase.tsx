@@ -1,147 +1,173 @@
-import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Send, FastForward, MessageSquare, MessageSquareText, Scale, Users } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  FastForward,
+  MessageSquare,
+  MessageSquarePlus,
+  MessageSquareText,
+  Scale,
+  Send,
+  Users,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { useGameStore } from "@/stores/useGameStore";
 import { DisconnectHandler } from "@/components/game/DisconnectHandler";
-import { SupplementRequestControl } from "@/components/game/SupplementRequestControl";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
+import { SupplementRequestControl } from "@/components/game/SupplementRequestControl";
+import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
+import type { SpeechMode } from "@/types";
+
+const speechMeta = {
+  normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
+  supplement: { title: "补充发言", icon: MessageSquarePlus, tone: "text-sky-600" },
+  tieBreak: { title: "平票 PK", icon: Scale, tone: "text-amber-600" },
+} satisfies Record<SpeechMode, { title: string; icon: typeof MessageSquareText; tone: string }>;
 
 export function DescriptionPhase() {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
-  const phase = snapshot.status.phase;
-  const isQuestioner = privateState?.isQuestioner ?? false;
-  const me = snapshot.players.find((p) => p.id === privateState?.playerId);
-
+  const snapshot = useGameStore((state) => state.snapshot)!;
+  const privateState = useGameStore((state) => state.privateState);
+  const sendCommand = useGameStore((state) => state.sendCommand);
+  const addToast = useGameStore((state) => state.addToast);
   const [text, setText] = useState("");
 
-  const currentCycleDescriptions =
-    phase === "tieBreak"
-      ? snapshot.descriptions.filter(
-          (description) =>
-            description.kind === "tieBreak" &&
-            description.tieBreakIndex === snapshot.status.tieBreakIndex,
-        )
-      : snapshot.descriptions;
-  const submittedThisCycle = new Set(
-    snapshot.descriptions
-      .filter(
-        (description) =>
-          description.kind === "description" && description.cycle === snapshot.status.day,
-      )
-      .map((description) => description.playerId),
-  );
-  const waitingPlayers = (snapshot.status.descriptionOrder ?? [])
-    .map((playerId) => snapshot.players.find((player) => player.id === playerId))
-    .filter(
-      (player): player is (typeof snapshot.players)[number] =>
-        player !== undefined &&
-        player.roundStatus === "alive" &&
-        !submittedThisCycle.has(player.id),
-    );
-
+  const phase = snapshot.status.phase;
+  const mode: SpeechMode =
+    snapshot.status.speechMode ?? (phase === "tieBreak" ? "tieBreak" : "normal");
+  const meta = speechMeta[mode];
+  const isQuestioner = privateState?.isQuestioner ?? false;
+  const me = snapshot.players.find((player) => player.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
 
-  // pendingSupplementPlayerIds：本玩家是否被要求补充发言
-  const pendingSupplementPlayerIds = snapshot.status.pendingSupplementPlayerIds ?? [];
-  const isWaitingToSupplement = pendingSupplementPlayerIds.includes(me?.id ?? "");
+  const currentDescriptions = useMemo(() => {
+    if (mode === "tieBreak") {
+      return snapshot.descriptions.filter(
+        (description) =>
+          description.kind === "tieBreak" &&
+          description.tieBreakIndex === snapshot.status.tieBreakIndex,
+      );
+    }
+    if (mode === "supplement") {
+      return snapshot.descriptions.filter(
+        (description) =>
+          description.kind === "supplement" &&
+          description.supplementIndex === snapshot.status.supplementIndex,
+      );
+    }
+    return snapshot.descriptions.filter(
+      (description) =>
+        description.kind === "description" && description.cycle === snapshot.status.day,
+    );
+  }, [
+    mode,
+    snapshot.descriptions,
+    snapshot.status.day,
+    snapshot.status.supplementIndex,
+    snapshot.status.tieBreakIndex,
+  ]);
 
-  const canDescribe =
-    !isQuestioner &&
+  const submittedPlayerIds = useMemo(
+    () => new Set(currentDescriptions.map((description) => description.playerId)),
+    [currentDescriptions],
+  );
+
+  const waitingPlayerIds = useMemo(() => {
+    if (mode === "supplement") {
+      return snapshot.status.pendingSupplementPlayerIds ?? [];
+    }
+    if (mode === "tieBreak") {
+      return (snapshot.status.tieBreakCandidateIds ?? []).filter(
+        (playerId) => !submittedPlayerIds.has(playerId),
+      );
+    }
+    return (snapshot.status.descriptionOrder ?? []).filter(
+      (playerId) => !submittedPlayerIds.has(playerId),
+    );
+  }, [mode, snapshot.status, submittedPlayerIds]);
+
+  const waitingPlayers = waitingPlayerIds
+    .map((playerId) => snapshot.players.find((player) => player.id === playerId))
+    .filter((player): player is (typeof snapshot.players)[number] => player !== undefined);
+  const myId = privateState?.playerId ?? "";
+  const canSpeak =
     amAlive &&
-    (phase === "description" || phase === "tieBreak");
-
-  const tieBreakStage = snapshot.status.tieBreakStage;
+    !isQuestioner &&
+    !submittedPlayerIds.has(myId) &&
+    (mode === "normal" || waitingPlayerIds.includes(myId));
 
   const handleSubmit = useCallback(async () => {
-    if (!text.trim()) return;
+    const normalized = text.trim();
+    if (!normalized) return;
     try {
-      await sendCommand("game.submitDescription", { text: text.trim() });
+      await sendCommand("game.submitDescription", { text: normalized });
       setText("");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
+    } catch (error) {
+      addToast((error as { message: string }).message, "error");
     }
-  }, [text, sendCommand, addToast]);
+  }, [addToast, sendCommand, text]);
 
   const handleAdvance = useCallback(async () => {
     try {
       await sendCommand("game.advancePhase");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
+    } catch (error) {
+      addToast((error as { message: string }).message, "error");
     }
-  }, [sendCommand, addToast]);
+  }, [addToast, sendCommand]);
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      {snapshot.status.pendingDisconnectPlayerId && <DisconnectHandler />}
+    <div className="mx-auto max-w-2xl space-y-6">
+      {snapshot.status.pendingDisconnectPlayerId ? <DisconnectHandler /> : null}
 
-      <PhaseHeader
-        icon={phase === "tieBreak" ? Scale : MessageSquareText}
-        title={
-          phase === "tieBreak"
-            ? `平票 PK - ${tieBreakStage === "description" ? "补充描述" : "投票"}`
-            : "描述阶段"
-        }
-        description="请描述你的词语（不要直接说出词语）"
-        iconClassName={phase === "tieBreak" ? "text-amber-600" : undefined}
-      />
+      <PhaseHeader icon={meta.icon} title={meta.title} iconClassName={meta.tone} />
 
-      {phase === "description" && waitingPlayers.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
+      {waitingPlayers.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
           <Users className="h-4 w-4 shrink-0" />
-          <span className="font-medium">待发言：</span>
           {waitingPlayers.map((player, index) => (
             <Badge key={player.id} variant="secondary" className="font-normal">
               {index + 1}. {player.name}
             </Badge>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* 被要求补充发言的提示横幅 */}
-      {isWaitingToSupplement && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-sky-300/60 bg-sky-500/8 text-sky-800 dark:text-sky-300">
-          <MessageSquare className="h-4 w-4 shrink-0" />
-          <span className="text-sm font-medium">出题人要求你补充发言，请在下方输入</span>
+      {mode === "supplement" && waitingPlayerIds.includes(myId) ? (
+        <div className="flex items-center justify-center gap-2 rounded-md bg-sky-100 px-4 py-2.5 text-sky-800">
+          <MessageSquarePlus className="h-4 w-4 shrink-0" />
+          <span className="text-sm font-medium">轮到你补充发言</span>
         </div>
-      )}
+      ) : null}
 
-      {/* 当前描述列表 */}
       <div className="space-y-3">
-        <AnimatePresence>
-          {currentCycleDescriptions.map((d) => (
+        <AnimatePresence initial={false}>
+          {currentDescriptions.map((description) => (
             <motion.div
-              key={d.id}
+              key={description.id}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex items-start gap-3.5 p-4 rounded-xl bg-card border border-border/80 shadow-2xs text-foreground"
+              className="flex items-start gap-3.5 rounded-md bg-muted p-4 text-foreground"
             >
-              <div className="p-2 rounded-lg bg-primary/10 text-primary mt-0.5 shrink-0">
+              <div className="mt-0.5 shrink-0 rounded-md bg-background/70 p-2 text-primary">
                 <MessageSquare className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-foreground">{d.playerName}</span>
-                  {d.kind === "tieBreak" && (
-                    <Badge variant="outline" className="text-xs py-0 border-amber-500/40 text-amber-600">
-                      PK发言
-                    </Badge>
-                  )}
-                  {d.kind === "supplement" && (
-                    <Badge variant="outline" className="text-xs py-0 border-sky-400/40 text-sky-600">
-                      补充
-                    </Badge>
-                  )}
+                  <span className="text-sm font-semibold">{description.playerName}</span>
+                  {description.kind !== "description" ? (
+                    <span
+                      className={cn(
+                        "text-xs font-medium",
+                        description.kind === "tieBreak" ? "text-amber-700" : "text-sky-700",
+                      )}
+                    >
+                      {description.kind === "tieBreak" ? "PK 发言" : "补充"}
+                    </span>
+                  ) : null}
                 </div>
-                <p className="text-sm text-foreground/90 leading-relaxed mt-1.5 break-words font-normal">
-                  {d.text}
+                <p className="mt-1.5 break-words text-sm leading-relaxed text-foreground/90">
+                  {description.text}
                 </p>
               </div>
             </motion.div>
@@ -149,37 +175,34 @@ export function DescriptionPhase() {
         </AnimatePresence>
       </div>
 
-      {/* 输入框：普通描述或补充发言 */}
-      {(canDescribe || isWaitingToSupplement) && (
+      {canSpeak ? (
         <div className="flex gap-2">
           <Input
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={isWaitingToSupplement ? "输入补充发言..." : "输入你的描述..."}
-            className={cn("flex-1 h-10", isWaitingToSupplement && "border-sky-400/60 focus-visible:ring-sky-400/40")}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={mode === "supplement" ? "输入补充发言..." : "输入你的描述..."}
+            className="h-10 flex-1"
             maxLength={100}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            onKeyDown={(event) => event.key === "Enter" && handleSubmit()}
           />
-          <Button onClick={handleSubmit} className="gap-2 h-10 px-5" disabled={!text.trim()}>
-            <Send className="h-4 w-4" /> 发送
+          <Button onClick={handleSubmit} className="h-10 gap-2 px-5" disabled={!text.trim()}>
+            <Send className="h-4 w-4" />
+            发送
           </Button>
         </div>
-      )}
+      ) : null}
 
-      {/* 出题人操作区 */}
-      {isQuestioner && (
+      {isQuestioner && mode !== "supplement" ? (
         <div className="space-y-3 pt-2 text-center">
-          <SupplementRequestControl
-            canRequest={phase === "description" && waitingPlayers.length === 0}
-          />
-          <div className="flex items-center justify-center gap-2">
-            <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
-              <FastForward className="h-4 w-4" />
-              {phase === "description" ? "进入投票阶段" : "推进游戏"}
-            </Button>
-          </div>
+          {mode === "normal" ? (
+            <SupplementRequestControl canRequest={waitingPlayers.length === 0} />
+          ) : null}
+          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
+            <FastForward className="h-4 w-4" />
+            {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
+          </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

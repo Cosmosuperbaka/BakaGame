@@ -598,10 +598,6 @@ export class RoomService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
 
-    if (this.isRoundActive(room)) {
-      throw new AppError("ROUND_ACTIVE", "游戏进行中无法踢人");
-    }
-
     if (targetPlayerId === player.id) {
       throw new AppError("INVALID_KICK", "房主不能踢出自己");
     }
@@ -610,6 +606,10 @@ export class RoomService {
 
     if (!target) {
       throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
+    }
+
+    if (this.isRoundActive(room) && room.round?.questionerPlayerId === target.id) {
+      await this.finishRound(room, "aborted", "出题人被房主移出，本局中止");
     }
 
     await this.forceRemovePlayer(room, target.id, "房主已将其移出房间");
@@ -672,6 +672,7 @@ export class RoomService {
 
     round.questionerPlayerId = target.id;
     round.phase = "wordSubmission";
+    round.speechMode = undefined;
     this.touchRoom(room);
     this.appendSystemMessage(
       room,
@@ -758,6 +759,7 @@ export class RoomService {
     };
     round.assignments = assigned.assignments;
     round.phase = "description";
+    round.speechMode = "normal";
     round.descriptionCycle = 1;
     round.descriptionOrder = this.createDescriptionOrder(room);
     round.descriptionSubmittedBy = [];
@@ -806,7 +808,7 @@ export class RoomService {
     this.ensureQuestioner(round, player.id);
     this.ensurePhaseNotBlocked(round);
 
-    if (round.supplement && (phase === "description" || phase === "voting")) {
+    if (round.supplement && round.speechMode === "supplement") {
       throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
     }
 
@@ -828,6 +830,7 @@ export class RoomService {
           }
         }
         round.phase = "voting";
+        round.speechMode = undefined;
         round.votes = [];
         break;
       case "voting":
@@ -847,6 +850,7 @@ export class RoomService {
           }
 
           round.tieBreak.stage = "vote";
+          round.speechMode = undefined;
           round.tieBreak.votes = [];
         } else {
           if (!this.isVotingComplete(room, true)) {
@@ -903,9 +907,9 @@ export class RoomService {
       round.supplement?.requestedPlayerIds.includes(player.id) &&
       !round.supplement.donePlayers.includes(player.id);
 
-    // 补充发言优先：在描述或投票阶段，被点名且已经普通发言过的玩家仍可提交。
-    if (round.supplement && pendingSupplement) {
-      if (!state?.alive || (round.phase !== "description" && round.phase !== "voting")) {
+    // 补充发言优先：统一切换到 description/supplement 子状态后提交。
+    if (round.supplement && round.speechMode === "supplement" && pendingSupplement) {
+      if (!state?.alive || round.phase !== "description") {
         throw new AppError("ACTION_FORBIDDEN", "当前玩家不能补充发言");
       }
       round.supplement.donePlayers.push(player.id);
@@ -915,9 +919,12 @@ export class RoomService {
         }),
       );
       if (round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length) {
+        const resumePhase = round.supplement.resumePhase;
         round.supplement = undefined;
+        round.speechMode = resumePhase === "description" ? "normal" : undefined;
+        round.phase = resumePhase;
       }
-    } else if (round.phase === "description") {
+    } else if (round.phase === "description" && round.speechMode !== "supplement") {
       if (!state?.alive) {
         throw new AppError("ACTION_FORBIDDEN", "当前玩家不能描述");
       }
@@ -929,6 +936,7 @@ export class RoomService {
         this.createDescription(player, normalized, "description", round.descriptionCycle),
       );
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
+      round.speechMode = "tieBreak";
       if (!round.tieBreak.candidateIds.includes(player.id)) {
         throw new AppError("ACTION_FORBIDDEN", "只有平票玩家可以补充描述");
       }
@@ -1011,7 +1019,10 @@ export class RoomService {
 
     this.ensureQuestioner(round, player.id);
 
-    if (round.phase !== "description" && round.phase !== "voting") {
+    if (
+      (round.phase !== "description" || round.speechMode !== "normal") &&
+      round.phase !== "voting"
+    ) {
       throw new AppError("INVALID_PHASE", "只能在本轮描述完成后、正常投票结算前发起补充");
     }
 
@@ -1048,7 +1059,10 @@ export class RoomService {
       index: maxSuppIdx + 1,
       requestedPlayerIds: [...new Set(playerIds)],
       donePlayers: [],
+      resumePhase: round.phase,
     };
+    round.phase = "description";
+    round.speechMode = "supplement";
 
     this.touchRoom(room);
     this.publishRoomState(room);
@@ -1274,13 +1288,9 @@ export class RoomService {
   }
 
   private async handleTransferHost(connection: ConnectionRecord, targetPlayerId: string) {
-    // 房主手动转移：仅允许在未开局时进行，转移对象必须是房间内有效玩家。
+    // 房主手动转移：任意阶段均可转移给房间内未被踢出的成员。
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-
-    if (this.isRoundActive(room)) {
-      throw new AppError("ROUND_ACTIVE", "游戏进行中无法转移房主");
-    }
 
     if (targetPlayerId === player.id) {
       throw new AppError("INVALID_TARGET", "不能将房主转移给自己");
@@ -1431,6 +1441,7 @@ export class RoomService {
         break;
       case "description":
         round.phase = "description";
+        round.speechMode = "normal";
         round.descriptionCycle = Math.max(1, round.descriptionCycle);
         round.descriptionOrder = this.createDescriptionOrder(room);
         round.descriptionSubmittedBy = [];
@@ -1443,6 +1454,7 @@ export class RoomService {
         break;
       case "voting":
         round.phase = "voting";
+        round.speechMode = undefined;
         round.votes = [];
         round.tieBreak = undefined;
         round.nightActions = [];
@@ -1456,6 +1468,7 @@ export class RoomService {
           .map(([pid]) => pid)
           .slice(0, 2);
         round.phase = "tieBreak";
+        round.speechMode = "tieBreak";
         round.tieBreak = {
           candidateIds: alive,
           stage: "description",
@@ -1469,6 +1482,7 @@ export class RoomService {
       }
       case "night":
         round.phase = "night";
+        round.speechMode = undefined;
         round.nightActions = [];
         round.blankGuessUsed = false;
         round.blankGuessContext = undefined;
@@ -1492,6 +1506,7 @@ export class RoomService {
         }
 
         round.phase = "blankGuess";
+        round.speechMode = undefined;
         round.blankGuessUsed = false;
         round.blankGuessContext = {
           playerId: blankId,
@@ -1641,6 +1656,7 @@ export class RoomService {
     if (!tieBreak && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
       round.tieBreakCount += 1;
       round.phase = "tieBreak";
+      round.speechMode = "tieBreak";
       round.tieBreak = {
         candidateIds: leaders,
         stage: "description",
@@ -1690,6 +1706,7 @@ export class RoomService {
     }
 
     round.phase = "description";
+    round.speechMode = "normal";
     round.day += 1;
     round.descriptionCycle += 1;
     round.descriptionOrder = this.createDescriptionOrder(room);
@@ -1719,6 +1736,7 @@ export class RoomService {
 
     if (finalBlankGuess.shouldGuess && finalBlankGuess.blankPlayerId) {
       round.phase = "blankGuess";
+      round.speechMode = undefined;
       round.blankGuessContext = {
         playerId: finalBlankGuess.blankPlayerId,
         reason: "finale",
@@ -1760,6 +1778,7 @@ export class RoomService {
     }
 
     round.phase = nextPhase;
+    round.speechMode = nextPhase === "description" ? "normal" : undefined;
     round.tieBreak = undefined;
     round.votes = [];
     round.nightActions = [];
@@ -1799,6 +1818,7 @@ export class RoomService {
     }
 
     round.phase = "gameOver";
+    round.speechMode = undefined;
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
     round.blankGuessContext = undefined;
@@ -1918,6 +1938,9 @@ export class RoomService {
   private async forceRemovePlayer(room: RoomRecord, playerId: string, reason: string) {
     // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
     const player = room.players[playerId];
+    let preservedVotes: GameRound["votes"] | undefined;
+    let preservedNightActions: GameRound["nightActions"] | undefined;
+    let supplementStillActive = false;
 
     if (!player) {
       return;
@@ -1941,12 +1964,60 @@ export class RoomService {
     player.membership = "kicked";
     player.isReady = false;
     if (room.round) {
-      this.clearPendingDisconnect(room.round, player.id);
+      const round = room.round;
+      this.clearPendingDisconnect(round, player.id);
+      round.votes = round.votes.filter(
+        (vote) => vote.voterId !== player.id && vote.targetId !== player.id,
+      );
+      round.nightActions = round.nightActions.filter(
+        (action) => action.actorId !== player.id && action.targetId !== player.id,
+      );
+
+      if (round.tieBreak) {
+        round.tieBreak.votes = round.tieBreak.votes.filter(
+          (vote) => vote.voterId !== player.id && vote.targetId !== player.id,
+        );
+      }
+
+      if (round.supplement) {
+        round.supplement.requestedPlayerIds = round.supplement.requestedPlayerIds.filter(
+          (requestedPlayerId) => requestedPlayerId !== player.id,
+        );
+        round.supplement.donePlayers = round.supplement.donePlayers.filter(
+          (donePlayerId) => donePlayerId !== player.id,
+        );
+
+        if (
+          round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length
+        ) {
+          const resumePhase = round.supplement.resumePhase;
+          round.supplement = undefined;
+          round.phase = resumePhase;
+          round.speechMode = resumePhase === "description" ? "normal" : undefined;
+        }
+      }
+
+      preservedVotes = [...round.votes];
+      preservedNightActions = [...round.nightActions];
+      supplementStillActive = Boolean(round.supplement);
     }
 
     if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
       const resumePhase = this.getResumePhaseAfterForcedRemoval(room.round.phase);
       await this.applyEliminationAndMove(room, [player.id], reason, resumePhase);
+
+      if (!room.round.summary) {
+        if (resumePhase === "voting" || supplementStillActive) {
+          room.round.votes = preservedVotes ?? [];
+        }
+        if (resumePhase === "night") {
+          room.round.nightActions = preservedNightActions ?? [];
+        }
+        if (supplementStillActive) {
+          room.round.phase = "description";
+          room.round.speechMode = "supplement";
+        }
+      }
     }
 
     this.reassignHost(room);
@@ -2020,6 +2091,9 @@ export class RoomService {
       },
       status: {
         phase: room.round?.phase ?? "waiting",
+        speechMode: room.round?.speechMode,
+        speechResumePhase: room.round?.supplement?.resumePhase,
+        supplementIndex: room.round?.supplement?.index,
         started: Boolean(room.round),
         day: room.round?.day ?? 0,
         descriptionOrder: room.round?.descriptionOrder,
