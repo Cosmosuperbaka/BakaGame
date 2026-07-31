@@ -22,7 +22,14 @@ export function DescriptionPhase() {
   const [showSupplementSelector, setShowSupplementSelector] = useState(false);
   const [selectedSupplementIds, setSelectedSupplementIds] = useState<string[]>([]);
 
-  const currentCycleDescriptions = snapshot.descriptions;
+  const currentCycleDescriptions =
+    phase === "tieBreak"
+      ? snapshot.descriptions.filter(
+          (description) =>
+            description.kind === "tieBreak" &&
+            description.tieBreakIndex === snapshot.status.tieBreakIndex,
+        )
+      : snapshot.descriptions;
   const submittedThisCycle = new Set(
     snapshot.descriptions
       .filter(

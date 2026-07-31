@@ -241,6 +241,8 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   const leaders = getEventPayloads<{ leaders: string[] }>(host, "game.voteResult").at(-1)
     ?.leaders;
   expect(leaders).toHaveLength(2);
+  expect(snapshot?.status.tieBreakIndex).toBe(1);
+  expect(snapshot?.status.tieBreakCandidateIds?.toSorted()).toEqual(leaders?.toSorted());
 
   for (const candidateId of leaders ?? []) {
     await execute(service, connectionByPlayerId.get(candidateId)!, {

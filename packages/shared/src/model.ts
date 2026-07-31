@@ -279,6 +279,10 @@ export interface RoomSnapshot {
     descriptionOrder?: string[];
     questionerPlayerId?: string;
     tieBreakStage?: TieBreakStage;
+    /** 当前平票 PK 的编号，仅在 tieBreak 阶段存在。 */
+    tieBreakIndex?: number;
+    /** 当前平票 PK 的候选玩家。 */
+    tieBreakCandidateIds?: string[];
     pendingDisconnectPlayerId?: string;
     questionerReconnectDeadlineAt?: number;
     blankGuessPlayerId?: string;

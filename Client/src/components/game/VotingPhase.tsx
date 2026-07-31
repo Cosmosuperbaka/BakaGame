@@ -18,9 +18,7 @@ export function VotingPhase() {
   const votedId = privateState?.myCurrentVoteTargetId ?? null;
 
   const isTieBreak = snapshot.status.phase === "tieBreak";
-  const tieBreakCandidateIds = snapshot.descriptions
-    .filter((d) => d.kind === "tieBreak")
-    .map((d) => d.playerId);
+  const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
 
   const alivePlayers = snapshot.players.filter((p) => p.roundStatus === "alive");
 
