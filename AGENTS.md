@@ -160,7 +160,7 @@ For `game.requestSupplement`:
 
 `BlankGuessPhase.tsx` exports two components:
 
-- **`BlankGuessButton`** — a floating `absolute bottom-4 right-4 z-10` button visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver"`. Opens a modal overlay (`absolute inset-0 z-20`) for guessing both words. This is **non-blocking**: it overlays the current phase UI without replacing it.
+- **`BlankGuessButton`** — a prominent top-right button visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver"`. Opens a modal overlay above the game and test controller for guessing both words. This is **non-blocking**: it overlays the current phase UI without replacing it.
 - **`BlankGuessWaiting`** — shown to all players during the `blankGuess` phase while waiting for the blank player to guess.
 
 `GameArea.tsx` renders `<BlankGuessButton />` inside the outermost `relative` div so overlays position correctly. The `blankGuess` case in `PhaseContent` renders `<BlankGuessWaiting />`.
