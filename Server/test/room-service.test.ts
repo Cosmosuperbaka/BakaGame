@@ -329,8 +329,8 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   expect(snapshot?.status.phase).toBe("night");
 });
 
-test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
-  // 这个场景覆盖“白板被淘汰后进入被动猜词并独赢”的特殊规则。
+test("白板被淘汰后仍可主动猜词并独立获胜", async () => {
+  // 白板被淘汰不会阻塞正常流程，但仍保留一次主动猜词机会。
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "4444");
   const joined: JoinedPlayer[] = [];
@@ -400,9 +400,19 @@ test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
     Math.floor(descriptionOrder.length / 2),
   );
 
-  for (const connection of [host, ...joined.slice(0, 7).map((item) => item.connection)]) {
-    await execute(service, connection, {
-      id: `desc-${connection.record.id}`,
+  const participants = [
+    { connection: host, playerId: hostResult.playerId },
+    ...joined.slice(0, 7).map((item) => ({
+      connection: item.connection,
+      playerId: item.joinResult.playerId,
+    })),
+  ];
+  const blankPlayer = participants.find((item) => item.playerId === blankPlayerId)!;
+  const fallbackTargetId = participants.find((item) => item.playerId !== blankPlayerId)!.playerId;
+
+  for (const participant of participants) {
+    await execute(service, participant.connection, {
+      id: `desc-${participant.connection.record.id}`,
       type: "game.submitDescription",
       payload: { text: "描述" },
     });
@@ -414,16 +424,13 @@ test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
     payload: {},
   });
 
-  await execute(service, host, {
-    id: "vote-host",
-    type: "game.submitVote",
-    payload: { targetId: joined[0].joinResult.playerId },
-  });
-  for (const connection of joined.slice(0, 7).map((item) => item.connection)) {
-    await execute(service, connection, {
-      id: `vote-${connection.record.id}`,
+  for (const participant of participants) {
+    await execute(service, participant.connection, {
+      id: `vote-${participant.connection.record.id}`,
       type: "game.submitVote",
-      payload: { targetId: hostResult.playerId },
+      payload: {
+        targetId: participant.playerId === blankPlayerId ? fallbackTargetId : blankPlayerId!,
+      },
     });
   }
 
@@ -434,9 +441,14 @@ test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
   });
 
   let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
-  expect(snapshot?.status.phase).toBe("blankGuess");
+  const blankPrivateState = getLastEventPayload<PrivateState>(
+    blankPlayer.connection,
+    "game.privateState",
+  );
+  expect(snapshot?.status.phase).toBe("night");
+  expect(blankPrivateState?.canSubmitBlankGuess).toBe(true);
 
-  await execute(service, host, {
+  await execute(service, blankPlayer.connection, {
     id: "guess",
     type: "game.submitBlankGuess",
     payload: { words: ["香蕉", "苹果"] },
@@ -444,7 +456,7 @@ test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
 
   snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.summary?.winner).toBe("blank");
-  expect(snapshot?.players.find((player) => player.id === hostResult.playerId)?.score).toBe(2);
+  expect(snapshot?.players.find((player) => player.id === blankPlayerId)?.score).toBe(2);
 });
 
 test("玩家掉线后会等待出题人处理并可被淘汰移出", async () => {
@@ -1121,6 +1133,9 @@ test("游戏进行中可以转移房主并踢出普通玩家", async () => {
 test("游戏中踢出出题人会中止本局", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "Oblivionis");
+  const supportingPlayers = Array.from({ length: 3 }, (_, index) =>
+    createConnection(service, `Oblivionis-support-${index}`),
+  );
   const questioner = createConnection(service, "Oblivionis-questioner");
   const questionerJoin = (await execute(service, questioner, {
     id: "questioner-join",
@@ -1129,7 +1144,16 @@ test("游戏中踢出出题人会中止本局", async () => {
     payload: { userName: "出题人" },
   })) as { playerId: string };
 
-  for (const connection of [host, questioner]) {
+  for (const [index, connection] of supportingPlayers.entries()) {
+    await execute(service, connection, {
+      id: `support-join-${index}`,
+      type: "room.join",
+      roomId: "Oblivionis",
+      payload: { userName: `正式玩家${index + 2}` },
+    });
+  }
+
+  for (const connection of [host, ...supportingPlayers, questioner]) {
     await execute(service, connection, {
       id: `ready-${connection.record.id}`,
       type: "player.setReady",

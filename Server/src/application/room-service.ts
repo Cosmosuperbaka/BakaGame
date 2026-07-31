@@ -1939,7 +1939,6 @@ export class RoomService {
     // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
     const player = room.players[playerId];
     let preservedVotes: GameRound["votes"] | undefined;
-    let preservedNightActions: GameRound["nightActions"] | undefined;
     let supplementStillActive = false;
 
     if (!player) {
@@ -1998,7 +1997,6 @@ export class RoomService {
       }
 
       preservedVotes = [...round.votes];
-      preservedNightActions = [...round.nightActions];
       supplementStillActive = Boolean(round.supplement);
     }
 
@@ -2009,9 +2007,6 @@ export class RoomService {
       if (!room.round.summary) {
         if (resumePhase === "voting" || supplementStillActive) {
           room.round.votes = preservedVotes ?? [];
-        }
-        if (resumePhase === "night") {
-          room.round.nightActions = preservedNightActions ?? [];
         }
         if (supplementStillActive) {
           room.round.phase = "description";

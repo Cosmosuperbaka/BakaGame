@@ -237,6 +237,9 @@ export function PlayerRow(props: PlayerRowProps) {
     <motion.div
       layout="position"
       {...rowMotion}
+      role={isInteractive ? "button" : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `打开${player.name}的玩家操作` : undefined}
       className={cn(
         "group flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
         isMe ? "bg-primary/8 ring-1 ring-primary/15" : "hover:bg-muted/70",
@@ -269,10 +272,11 @@ export function PlayerRow(props: PlayerRowProps) {
       <Popover.Trigger asChild>{row}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          side="right"
+          side="bottom"
           align="start"
           sideOffset={8}
-          className="z-[80] w-64 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
+          collisionPadding={12}
+          className="z-[80] w-[min(16rem,calc(100vw-1.5rem))] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
         >
           {canMark ? (
             <div className="space-y-2">
