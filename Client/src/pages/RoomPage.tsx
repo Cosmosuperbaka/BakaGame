@@ -1,13 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   Settings,
   Menu,
   MessageSquare,
-  ChevronRight,
-  ChevronLeft,
+  History,
   ShieldCheck,
   Eye,
 } from "lucide-react";
@@ -19,11 +18,11 @@ import { PlayerList } from "@/components/room/PlayerList";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { RoomSettings } from "@/components/room/RoomSettings";
-import { DescriptionTable } from "@/components/game/DescriptionHistory";
-import { cn } from "@/lib/utils";
+import { DescriptionHistoryOverlay } from "@/components/game/DescriptionHistory";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
+  const offlineTestRoom = roomId ? isTestRoomId(roomId) : false;
   const navigate = useNavigate();
   const connected = useGameStore((s) => s.connected);
   const storeRoomId = useGameStore((s) => s.roomId);
@@ -34,12 +33,21 @@ export default function RoomPage() {
   const reconnectRoom = useGameStore((s) => s.reconnectRoom);
   const leaveRoom = useGameStore((s) => s.leaveRoom);
   const addToast = useGameStore((s) => s.addToast);
+  const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [joining, setJoining] = useState(true);
+  const [joining, setJoining] = useState(!alreadyInRoom);
   // 移动端侧栏
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
-  // 左侧玩家面板：展开后显示描述历史
-  const [playerPanelExpanded, setPlayerPanelExpanded] = useState(false);
+  const [descriptionHistoryOpen, setDescriptionHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!descriptionHistoryOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDescriptionHistoryOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [descriptionHistoryOpen]);
 
   // 房间关闭后自动返回主页（room.closed 事件清空 roomId/snapshot）
   useEffect(() => {
@@ -52,17 +60,19 @@ export default function RoomPage() {
   useEffect(() => {
     if (!roomId) return;
 
-    if (isTestRoomId(roomId)) {
+    if (offlineTestRoom) {
+      let cancelled = false;
       useGameStore.getState().initTestRoomOffline();
-      setJoining(false);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) setJoining(false);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     // 如果已经在这个房间，不重复
-    if (storeRoomId === roomId && snapshot) {
-      setJoining(false);
-      return;
-    }
+    if (alreadyInRoom) return;
 
     let cancelled = false;
 
@@ -176,25 +186,25 @@ export default function RoomPage() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-muted/30">
       {/* 顶部栏 — 三段式布局：左/中/右 */}
-      <header className="h-14 grid grid-cols-3 items-center px-4 lg:px-6 shrink-0 bg-background gap-2">
+      <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         {/* 左段：返回 + 房间信息 */}
         <div className="flex items-center gap-2 min-w-0">
           <Button variant="ghost" size="icon" onClick={handleLeave} className="shrink-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <span className="text-base font-semibold truncate">{snapshot.name}</span>
-          <span className="text-xs text-muted-foreground shrink-0">#{snapshot.roomId}</span>
+          <span className="hidden truncate text-base font-semibold md:block">{snapshot.name}</span>
+          <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
           {snapshot.testMode && (
-            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium shrink-0">
+            <span className="hidden shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 md:inline">
               测试
             </span>
           )}
         </div>
 
         {/* 中段：第N天 + 词语 pill */}
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
           {dayVisible && day > 0 && (
-            <span className="text-sm font-semibold text-muted-foreground shrink-0">
+            <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
               第 {day} 天
             </span>
           )}
@@ -211,31 +221,32 @@ export default function RoomPage() {
             </span>
           )}
           {privateInfoVisible && !isSpectator && privateState?.word && (
-            <span className="text-sm font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md shrink-0">
+            <span className="max-w-24 shrink truncate rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary sm:max-w-none sm:px-2.5 sm:text-sm">
               {privateState.word}
             </span>
           )}
           {privateInfoVisible && !isSpectator && privateState?.angelWordOptions && (
-            <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
+            <span className="max-w-32 shrink truncate rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-400 sm:max-w-none sm:px-2.5 sm:text-sm">
               {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
             </span>
           )}
           {privateInfoVisible && !isSpectator && !privateState?.isQuestioner && privateState?.blankHint && (
-            <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
+            <span className="max-w-32 shrink truncate rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-400 sm:max-w-none sm:px-2.5 sm:text-sm">
               提示：{privateState.blankHint}
             </span>
           )}
         </div>
 
         {/* 右段：断线状态 + 移动端切换 + 设置 */}
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-end gap-0 md:gap-1">
           {!connected && (
-            <span className="text-xs text-destructive animate-pulse shrink-0 mr-1">断线中...</span>
+            <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           )}
           <div className="flex md:hidden gap-1">
             <Button
               variant="ghost"
               size="icon"
+              className="h-9 w-9"
               onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
             >
               <Menu className="h-5 w-5" />
@@ -243,9 +254,23 @@ export default function RoomPage() {
             <Button
               variant="ghost"
               size="icon"
+              className="h-9 w-9"
               onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
             >
               <MessageSquare className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              title="发言历史"
+              aria-label="打开发言历史"
+              onClick={() => {
+                setMobilePanel("none");
+                setDescriptionHistoryOpen(true);
+              }}
+            >
+              <History className="h-5 w-5" />
             </Button>
           </div>
           {isHost && (
@@ -253,7 +278,7 @@ export default function RoomPage() {
               variant="ghost"
               size="icon"
               onClick={() => setSettingsOpen(true)}
-              className="shrink-0"
+              className="h-9 w-9 shrink-0 md:h-10 md:w-10"
             >
               <Settings className="h-5 w-5" />
             </Button>
@@ -263,16 +288,10 @@ export default function RoomPage() {
 
       {/* 三栏布局 */}
       <div className="flex-1 flex overflow-hidden relative px-2 md:px-3 pb-2 md:pb-3 pt-0 gap-2 md:gap-3">
-        {/* 左栏：玩家列表（可展开显示描述历史） */}
-        <aside
-          className={cn(
-            "shrink-0 hidden md:flex flex-col relative bg-background rounded-xl border transition-all duration-200",
-            playerPanelExpanded ? "w-[580px]" : "w-64"
-          )}
-        >
-          <div className="flex h-full overflow-hidden rounded-xl">
-            {/* 玩家列表列（固定宽度） */}
-            <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
+        {/* 玩家栏与游戏区共享覆盖层边界，历史展开时不改变布局宽度。 */}
+        <section className="relative flex min-w-0 flex-1 gap-2 md:gap-3">
+          <aside className="relative hidden w-64 shrink-0 flex-col rounded-xl border bg-background md:flex">
+            <div className="flex h-full flex-col overflow-hidden rounded-xl">
               <PlayerList
                 players={snapshot.players}
                 hostPlayerId={snapshot.hostPlayerId}
@@ -283,27 +302,16 @@ export default function RoomPage() {
                 privateState={privateState}
               />
             </div>
-            {/* 描述历史列（展开时显示） */}
-            {playerPanelExpanded && (
-              <div className="flex-1 min-w-0 overflow-auto p-4">
-                <DescriptionTable descriptions={snapshot.descriptions} />
-              </div>
-            )}
-          </div>
-          {/* 展开/收起按钮，悬浮在右边框中点 */}
-          <button
-            type="button"
-            aria-label={playerPanelExpanded ? "收起历史" : "展开描述历史"}
-            onClick={() => setPlayerPanelExpanded((v) => !v)}
-            className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-background border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
-          >
-            {playerPanelExpanded ? (
-              <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </button>
-        </aside>
+            <button
+              type="button"
+              title="发言历史"
+              aria-label="打开发言历史"
+              onClick={() => setDescriptionHistoryOpen(true)}
+              className="absolute -right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border bg-background shadow-sm transition-colors hover:bg-muted"
+            >
+              <History className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </aside>
 
         {/* 移动端玩家列表覆盖层 */}
         {mobilePanel === "players" && (
@@ -326,10 +334,21 @@ export default function RoomPage() {
           </motion.aside>
         )}
 
-        {/* 中栏：游戏区 */}
-        <main className="flex-1 overflow-hidden flex flex-col min-w-0 bg-background rounded-xl border">
-          <GameArea />
-        </main>
+          {/* 中栏：游戏区 */}
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background">
+            <GameArea />
+          </main>
+
+          <AnimatePresence>
+            {descriptionHistoryOpen ? (
+              <DescriptionHistoryOverlay
+                players={snapshot.players}
+                descriptions={snapshot.descriptions}
+                onClose={() => setDescriptionHistoryOpen(false)}
+              />
+            ) : null}
+          </AnimatePresence>
+        </section>
 
         {/* 右栏：聊天 */}
         <aside className="w-80 overflow-hidden shrink-0 hidden lg:flex flex-col bg-background rounded-xl border">

@@ -177,12 +177,9 @@ Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `
 - **Center** (`justify-center`): day counter (`第N天`) + a contextual pill (current word for civilians, angel word options, blank hint, or questioner badge)
 - **Right** (`justify-end`): disconnect, mobile panel toggles, settings
 
-**Aside (desktop)** is an extensible panel on the left:
-- Collapsed (default): `w-64`, shows `PlayerList` only.
-- Expanded: `w-[580px]`, shows `PlayerList` (fixed `w-64`, `border-r`) + `DescriptionTable` in the remaining space.
-- A `h-6 w-6` toggle button is anchored `absolute -right-3 top-1/2` on the panel's right edge.
+**Aside (desktop)** is a fixed `w-64` player panel. Its history button opens an absolute overlay across the player panel and game area without changing either column's width; the chat panel stays outside the overlay. The overlay dims the underlying controls, closes from its button/backdrop/`Escape`, and uses a sticky `w-64` player-name column so the original player panel becomes the table's first column. Mobile opens the same history overlay from the topbar.
 
-`DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement).
+`DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement). When `players` are supplied, all current player rows remain visible even if they have no description in a column.
 
 ## Tests
 
