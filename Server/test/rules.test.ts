@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   assignRoles,
+  computeVoteOutcome,
   createDefaultRoleConfig,
   evaluateBlankGuess,
   normalizeWordPair,
@@ -11,6 +12,18 @@ import {
 import type { GameRound } from "../src/domain/model";
 
 // ==================== 纯规则测试 ====================
+
+test("弃权票会单独统计且不会成为最高票玩家", () => {
+  const outcome = computeVoteOutcome([
+    { voterId: "voter-1", targetId: "abstain" },
+    { voterId: "voter-2", targetId: "player-1" },
+  ]);
+
+  expect(outcome.maxVotes).toBe(1);
+  expect(outcome.abstainCount).toBe(1);
+  expect(outcome.leaders).toEqual(["player-1"]);
+  expect(outcome.counts).toEqual({ abstain: 1, "player-1": 1 });
+});
 
 test("词对会修剪空白并按无序去重规则归一化", () => {
   expect(normalizeWordPair([" 狗 ", "猫"])).toHaveLength(2);

@@ -234,13 +234,15 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
   }
 
   const maxVotes = Math.max(...voteCounter.values(), 0);
+  const abstainCount = voteCounter.get("abstain") ?? 0;
   const leaders = [...voteCounter.entries()]
-    .filter(([, count]) => count === maxVotes)
+    .filter(([playerId, count]) => playerId !== "abstain" && count === maxVotes)
     .map(([playerId]) => playerId)
     .sort();
 
   return {
     maxVotes,
+    abstainCount,
     leaders,
     counts: Object.fromEntries(voteCounter),
   };
