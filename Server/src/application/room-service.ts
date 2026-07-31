@@ -812,6 +812,18 @@ export class RoomService {
         if (round.supplement) {
           throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
         }
+        {
+          const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
+          const isTwoPlayerUndercoverEndgame =
+            aliveStates.length === 2 &&
+            aliveStates.filter((state) => state.role === "undercover").length === 1 &&
+            aliveStates.filter((state) => state.role === "civilian").length === 1;
+
+          if (isTwoPlayerUndercoverEndgame) {
+            await this.finishRound(room, "undercover", "2人残局卧底胜");
+            break;
+          }
+        }
         round.phase = "voting";
         round.votes = [];
         break;
@@ -1632,7 +1644,7 @@ export class RoomService {
       },
     });
 
-    if (!tieBreak && leaders.length > 1) {
+    if (!tieBreak && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
       round.tieBreakCount += 1;
       round.phase = "tieBreak";
       round.tieBreak = {
@@ -2311,11 +2323,12 @@ export class RoomService {
     const round = this.requireRound(room);
     const voter = round.assignments[voterId];
     const target = round.assignments[targetId];
+    const isAbstain = targetId === "abstain";
 
     if (
       !voter?.alive ||
-      !target?.alive ||
-      (voterId === targetId && room.id !== ROOM_ID_TEST_MODE)
+      (!isAbstain && !target?.alive) ||
+      (!isAbstain && voterId === targetId && room.id !== ROOM_ID_TEST_MODE)
     ) {
       throw new AppError("INVALID_VOTE", "投票对象无效");
     }
@@ -2327,7 +2340,7 @@ export class RoomService {
         throw new AppError("INVALID_VOTE", "平票玩家不能参与第二轮投票");
       }
 
-      if (!candidates.includes(targetId)) {
+      if (!isAbstain && !candidates.includes(targetId)) {
         throw new AppError("INVALID_VOTE", "第二轮只能投给平票玩家");
       }
     }
