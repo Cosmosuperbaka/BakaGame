@@ -7,6 +7,7 @@ import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import { DescriptionTable } from "./DescriptionHistory";
+import { PhaseHeader } from "./PhaseHeader";
 
 export function GameOverPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -37,7 +38,7 @@ export function GameOverPhase() {
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [me?.isReady, sendCommand, addToast]);
+  }, [me, sendCommand, addToast]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -49,9 +50,8 @@ export function GameOverPhase() {
 
   if (!summary) {
     return (
-      <div className="text-center py-8">
-        <h2 className="text-xl font-semibold">游戏结束</h2>
-        <p className="text-muted-foreground mt-2">等待战报数据...</p>
+      <div className="py-8">
+        <PhaseHeader icon={Trophy} title="游戏结束" description="等待战报数据..." />
       </div>
     );
   }
@@ -73,18 +73,13 @@ export function GameOverPhase() {
       transition={{ duration: 0.25, ease: "easeOut" }}
       className="mx-auto max-w-2xl space-y-5"
     >
-      {/* 战报标题 */}
-      <div className="flex items-center gap-4 rounded-xl border bg-muted/30 px-5 py-4">
-        <Trophy className={cn("h-10 w-10 shrink-0", winnerTone)} />
-        <div className="min-w-0 flex-1">
-          <span className={cn("text-xl font-semibold", winnerTone)}>
-            {WINNER_LABELS[summary.winner]}
-          </span>
-          <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
-            {summary.reason.replace(/（测试）/g, "").replace(/\(测试\)/g, "").trim()}
-          </p>
-        </div>
-      </div>
+      <PhaseHeader
+        icon={Trophy}
+        title={WINNER_LABELS[summary.winner]}
+        titleClassName={winnerTone}
+        iconClassName={winnerTone}
+        description={summary.reason.replace(/（测试）/g, "").replace(/\(测试\)/g, "").trim()}
+      />
 
       {/* 词语揭秘全景卡片 */}
       {summary.words && (

@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Check, X, Gamepad2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { useGameStore } from "@/stores/useGameStore";
 
 export function WaitingPhase() {
@@ -32,7 +33,7 @@ export function WaitingPhase() {
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [me?.isReady, sendCommand, addToast]);
+  }, [me, sendCommand, addToast]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -44,14 +45,16 @@ export function WaitingPhase() {
 
   return (
     <div className="flex flex-col items-center gap-8 py-12">
-      <Gamepad2 className="h-16 w-16 text-muted-foreground/40" />
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold mb-2">等待玩家准备</h2>
-        <p className="text-base text-muted-foreground">
-          {canSoloStart
-            ? "测试房间支持单人开始"
-            : `${readyCount}/${nonHostActive.length} 名玩家已准备`}
-        </p>
+      <div>
+        <PhaseHeader
+          icon={Gamepad2}
+          title="等待玩家准备"
+          description={
+            canSoloStart
+              ? "测试房间支持单人开始"
+              : `${readyCount}/${nonHostActive.length} 名玩家已准备`
+          }
+        />
         {/* 进度条 — 真实状态变化驱动动画 */}
         <div className="w-48 h-1.5 bg-muted rounded-full mx-auto mt-4 overflow-hidden">
           <motion.div

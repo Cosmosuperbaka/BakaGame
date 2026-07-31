@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, FastForward, MessageSquare, Users } from "lucide-react";
+import { Send, FastForward, MessageSquare, MessageSquareText, Scale, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useGameStore } from "@/stores/useGameStore";
 import { DisconnectHandler } from "@/components/game/DisconnectHandler";
 import { SupplementRequestControl } from "@/components/game/SupplementRequestControl";
+import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { cn } from "@/lib/utils";
 
 export function DescriptionPhase() {
@@ -80,16 +81,16 @@ export function DescriptionPhase() {
     <div className="space-y-6 max-w-2xl mx-auto">
       {snapshot.status.pendingDisconnectPlayerId && <DisconnectHandler />}
 
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold">
-          {phase === "tieBreak"
+      <PhaseHeader
+        icon={phase === "tieBreak" ? Scale : MessageSquareText}
+        title={
+          phase === "tieBreak"
             ? `平票 PK - ${tieBreakStage === "description" ? "补充描述" : "投票"}`
-            : "描述阶段"}
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          请描述你的词语（不要直接说出词语）
-        </p>
-      </div>
+            : "描述阶段"
+        }
+        description="请描述你的词语（不要直接说出词语）"
+        iconClassName={phase === "tieBreak" ? "text-amber-600" : undefined}
+      />
 
       {phase === "description" && waitingPlayers.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">

@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { HelpCircle, Send, X } from "lucide-react";
+import { CircleHelp, HelpCircle, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGameStore } from "@/stores/useGameStore";
+import { PhaseHeader } from "@/components/game/PhaseHeader";
 
 /**
  * 白板猜词浮动按钮：悬浮在游戏区右下角，随时可触发。
@@ -132,12 +133,17 @@ export function BlankGuessWaiting() {
     snapshot.players.find((p) => p.id === blankGuessPlayerId)?.name ?? "白板";
 
   return (
-    <div className="text-center space-y-3 py-8 max-w-md mx-auto">
-      <HelpCircle className="h-14 w-14 mx-auto text-amber-400/60" />
-      <h2 className="text-xl font-semibold">白板猜词</h2>
-      <p className="text-sm text-muted-foreground">
-        等待 <span className="font-medium text-foreground">{guesserName}</span> 猜出两个词语...
-      </p>
+    <div className="py-8 max-w-md mx-auto">
+      <PhaseHeader
+        icon={CircleHelp}
+        title="白板猜词"
+        iconClassName="text-amber-600"
+        description={
+          <>
+            等待 <span className="font-medium text-foreground">{guesserName}</span> 猜出两个词语...
+          </>
+        }
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { SupplementRequestControl } from "./SupplementRequestControl";
+import { PhaseHeader } from "./PhaseHeader";
 
 export function VotingPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -71,16 +72,18 @@ export function VotingPhase() {
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold">投票阶段</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {votedId
+      <PhaseHeader
+        icon={Vote}
+        title={isTieBreak ? "平票 PK - 投票" : "投票阶段"}
+        iconClassName={isTieBreak ? "text-amber-600" : undefined}
+        description={
+          votedId
             ? "已完成投票，等待其他玩家..."
             : amAlive && !isQuestioner
               ? "选择你要投出的玩家"
-              : "等待玩家投票..."}
-        </p>
-      </div>
+              : "等待玩家投票..."
+        }
+      />
 
       <PrivilegedActionPreview mode="vote" />
 
