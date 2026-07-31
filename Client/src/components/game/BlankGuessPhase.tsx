@@ -43,16 +43,15 @@ export function BlankGuessButton() {
 
   return (
     <>
-      {/* 浮动触发按钮，始终可见 */}
-      <div className="absolute bottom-4 right-4 z-10">
+      {/* 固定在游戏区右上角，避开底部离线测试控制器。 */}
+      <div className="absolute right-3 top-3 z-30 md:right-5 md:top-5">
         <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 border-amber-400/50 text-amber-600 bg-background hover:bg-amber-50 dark:hover:bg-amber-950/30 shadow-sm"
+          variant="default"
+          className="h-11 gap-2 border border-foreground bg-foreground px-4 text-background shadow-md hover:bg-foreground/90"
           onClick={() => setOpen(true)}
         >
-          <HelpCircle className="h-3.5 w-3.5" />
-          猜词
+          <HelpCircle className="h-4 w-4" />
+          白板猜词
         </Button>
       </div>
 
@@ -64,7 +63,7 @@ export function BlankGuessButton() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute inset-0 z-20 bg-background/90 backdrop-blur-sm flex items-center justify-center"
+            className="absolute inset-0 z-50 bg-background/90 backdrop-blur-sm flex items-center justify-center"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
