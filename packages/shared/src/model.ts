@@ -30,6 +30,7 @@ export type PlayerSide = "good" | "undercover" | "blank";
 export type RoomVisibility = "public" | "private";
 export type PlayerMembership = "active" | "spectator" | "kicked";
 export type DescriptionKind = "description" | "tieBreak" | "supplement";
+export type SpeechMode = "normal" | "supplement" | "tieBreak";
 export type TieBreakStage = "description" | "vote";
 export type DisconnectResolution = "wait" | "eliminate";
 export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
@@ -188,6 +189,7 @@ export interface RoundSummary {
 export interface GameRound {
   id: string;
   phase: GamePhase;
+  speechMode?: SpeechMode;
   day: number;
   questionerPlayerId?: string;
   words?: {
@@ -212,6 +214,8 @@ export interface GameRound {
     requestedPlayerIds: string[];
     /** 已完成补充的玩家 ID 列表。 */
     donePlayers: string[];
+    /** 补充完成后恢复的阶段。 */
+    resumePhase: "description" | "voting";
   };
   votes: VoteRecord[];
   tieBreak?: TieBreakState;
@@ -285,6 +289,9 @@ export interface RoomSnapshot {
   };
   status: {
     phase: GamePhase;
+    speechMode?: SpeechMode;
+    speechResumePhase?: "description" | "voting";
+    supplementIndex?: number;
     started: boolean;
     day: number;
     /** 当前描述轮次的公开发言顺序。 */

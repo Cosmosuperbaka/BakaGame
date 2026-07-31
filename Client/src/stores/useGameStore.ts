@@ -322,9 +322,14 @@ function handleTestRoomCommand(
               ? "tieBreak"
               : "description",
           cycle: snapshot.status.day || 1,
-          supplementIndex: submittingSupplement ? 1 : undefined,
+          supplementIndex: submittingSupplement ? snapshot.status.supplementIndex : undefined,
           createdAt: Date.now(),
         };
+        const remainingSupplementPlayerIds = pendingSupplementPlayerIds.filter(
+          (playerId) => playerId !== privateState.playerId,
+        );
+        const supplementComplete = submittingSupplement && remainingSupplementPlayerIds.length === 0;
+        const resumePhase = snapshot.status.speechResumePhase ?? "description";
         set({
           snapshot: {
             ...snapshot,
@@ -332,9 +337,17 @@ function handleTestRoomCommand(
             status: submittingSupplement
               ? {
                   ...snapshot.status,
-                  pendingSupplementPlayerIds: pendingSupplementPlayerIds.filter(
-                    (playerId) => playerId !== privateState.playerId,
-                  ),
+                  phase: supplementComplete ? resumePhase : "description",
+                  speechMode: supplementComplete
+                    ? resumePhase === "description"
+                      ? "normal"
+                      : undefined
+                    : "supplement",
+                  speechResumePhase: supplementComplete ? undefined : resumePhase,
+                  supplementIndex: supplementComplete
+                    ? undefined
+                    : snapshot.status.supplementIndex,
+                  pendingSupplementPlayerIds: remainingSupplementPlayerIds,
                 }
               : snapshot.status,
           },
@@ -344,12 +357,24 @@ function handleTestRoomCommand(
     }
 
     case "game.requestSupplement": {
+      const requestedPlayerIds = [...new Set(payload.playerIds as string[])];
       set({
         snapshot: {
           ...snapshot,
           status: {
             ...snapshot.status,
-            pendingSupplementPlayerIds: [...new Set(payload.playerIds as string[])],
+            phase: "description",
+            speechMode: "supplement",
+            speechResumePhase: snapshot.status.phase === "voting" ? "voting" : "description",
+            supplementIndex:
+              snapshot.descriptions.reduce(
+                (maximum, description) =>
+                  description.kind === "supplement"
+                    ? Math.max(maximum, description.supplementIndex ?? 1)
+                    : maximum,
+                0,
+              ) + 1,
+            pendingSupplementPlayerIds: requestedPlayerIds,
           },
         },
       });
@@ -357,7 +382,27 @@ function handleTestRoomCommand(
     }
 
     case "game.submitVote": {
+      if (privateState) {
+        set({
+          privateState: {
+            ...privateState,
+            myCurrentVoteTargetId: payload.targetId as string,
+          },
+        });
+      }
       return { success: true, targetId: payload.targetId };
+    }
+
+    case "game.cancelVote": {
+      if (privateState) {
+        set({
+          privateState: {
+            ...privateState,
+            myCurrentVoteTargetId: undefined,
+          },
+        });
+      }
+      return { success: true };
     }
 
     case "game.submitNightAction": {
@@ -366,6 +411,18 @@ function handleTestRoomCommand(
           privateState: {
             ...privateState,
             nightActionSubmitted: true,
+          },
+        });
+      }
+      return { success: true };
+    }
+
+    case "game.cancelNightAction": {
+      if (privateState) {
+        set({
+          privateState: {
+            ...privateState,
+            nightActionSubmitted: false,
           },
         });
       }

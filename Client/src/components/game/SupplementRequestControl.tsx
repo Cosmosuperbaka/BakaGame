@@ -52,7 +52,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
     return supplementActive ? (
       <div className="flex items-center justify-center gap-2 text-xs text-sky-700 dark:text-sky-300">
         <MessageSquarePlus className="h-3.5 w-3.5" />
-        补充发言进行中，当前投票仍可撤销或修改
+        补充发言进行中，完成后恢复原阶段
       </div>
     ) : null;
   }
@@ -68,7 +68,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
             transition={{ duration: 0.18, ease: "easeOut" }}
             className="overflow-hidden"
           >
-            <div className="space-y-3 rounded-md border bg-background p-4 text-left">
+            <div className="space-y-3 rounded-md bg-muted p-4 text-left">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Users className="h-4 w-4 text-sky-600" />
