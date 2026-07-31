@@ -136,6 +136,8 @@ Minimum 4 players to start; `maxUndercoverCount = floor(playerCount / 4)`.
 
 `RoomSnapshot.status.pendingSupplementPlayerIds` lists players who have been asked to give a supplement but haven't spoken yet.
 
+`GameRound.speechMode` and `RoomSnapshot.status.speechMode` distinguish `normal`, `supplement`, and `tieBreak` speech without adding another top-level game phase. `status.supplementIndex` identifies the currently active supplement request so the client never confuses it with an earlier supplement column.
+
 ## New Server Commands
 
 | Command | Phase | Who | Description |
@@ -146,10 +148,11 @@ Minimum 4 players to start; `maxUndercoverCount = floor(playerCount / 4)`.
 
 For `game.requestSupplement`:
 - Allowed from `isDescriptionComplete` until the current normal vote resolves.
-- Votes remain active and can be changed while a supplement is pending; vote resolution is blocked.
+- The room switches to `description + supplement`; all clients leave the voting screen until the requested speeches finish.
+- Existing votes remain recorded, but voting, cancel-vote, and phase advancement are blocked while a supplement is pending.
 - Only one supplement request can be active at a time (`round.supplement` must be undefined).
-- The server tracks `round.supplement = { index, requestedPlayerIds, donePlayers }`.
-- When `donePlayers.length >= requestedPlayerIds.length`, supplement is cleared automatically.
+- The server tracks `round.supplement = { index, requestedPlayerIds, donePlayers, resumePhase }`.
+- When `donePlayers.length >= requestedPlayerIds.length`, supplement is cleared automatically and the room restores `resumePhase`.
 - In `handleSubmitDescription`, the supplement check runs **before** the `ALREADY_SUBMITTED` check so that players who already gave a normal description can still submit a supplement.
 
 ## Vote Undo (Client)
@@ -167,19 +170,25 @@ For `game.requestSupplement`:
 
 ## Player Marking (Local Only)
 
-Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `PlayerList.tsx`. They are never sent to the server and reset on page reload. The fixed-width mark control on the left displays `疑` or `安` with color as a secondary cue; click cycles none → suspect → safe → none. Every player row also reserves a fixed-width host-action slot so rows stay aligned before and after the game starts.
+Player marks (`"unknown" | PlayerRole`) are **pure React local state** owned by `RoomPage.tsx`. They are never sent to the server and reset on page reload. Only active non-questioner players can mark identities. A player row opens a popover whose first row contains circular one-character choices for unknown/civilian/undercover and only the optional roles enabled in the current room. The row itself always displays the selected identity as a compact two-character label. Questioners and spectators see server-provided real roles instead, and game-over rows replace marks with revealed roles.
+
+The host actions are in the same player-row popover below identity marks. Hosts may kick players or transfer host ownership during an active round. Kicking the current questioner aborts the round.
 
 ## RoomPage Layout
 
-**Topbar** uses `grid grid-cols-3` with three equal sections:
+**Topbar** uses a three-section responsive grid:
 
 - **Left**: back arrow, room name, room ID chip, test badge
-- **Center** (`justify-center`): day counter (`第N天`) + a contextual pill (current word for civilians, angel word options, blank hint, or questioner badge)
+- **Center** (`justify-center`): day counter (`第N天`) + a contextual pill (current word for civilians, angel word options, blank hint, questioner badge, or spectator badge)
 - **Right** (`justify-end`): disconnect, mobile panel toggles, settings
 
-**Aside (desktop)** is a fixed `w-64` player panel. Its history button opens an absolute overlay across the player panel and game area without changing either column's width; the chat panel stays outside the overlay. The overlay dims the underlying controls, closes from its button/backdrop/`Escape`, and uses a sticky `w-64` player-name column so the original player panel becomes the table's first column. Mobile opens the same history overlay from the topbar.
+When a player first receives a word, word options, or blank hint, `RoomPage` displays it in the center of `GameArea` for three seconds, then a shared-layout animation moves it into the topbar's center pill.
+
+**Aside (desktop)** is a fixed `w-64` player panel. Its history button expands an absolute history matrix across the player panel and game area without changing either column's width; the chat panel stays outside the overlay. The sticky `w-64` first column reuses the complete interactive `PlayerRow`, including score, host state, role display, and popover actions. Mobile opens the same history overlay from the topbar.
 
 `DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement). When `players` are supplied, all current player rows remain visible even if they have no description in a column.
+
+The room shell uses a light warm-yellow background. Player, game-action, and chat panels remain white; secondary rounded content blocks use a solid light gray. The client loads Noto Sans SC globally and hides scrollbar chrome without disabling scrolling.
 
 ## Tests
 
