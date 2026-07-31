@@ -151,6 +151,13 @@ export function createMockTestRoomState(
       started: phase !== "waiting",
       phase,
       day: phase === "waiting" ? 0 : 1,
+      descriptionOrder: players
+        .filter(
+          (player) =>
+            player.roundStatus === "alive" &&
+            player.id !== (isQuestioner ? meId : "player_b"),
+        )
+        .map((player) => player.id),
       questionerPlayerId: isQuestioner ? meId : "player_b",
       blankGuessPlayerId: phase === "blankGuess" ? "player_e" : undefined,
       tieBreakStage: phase === "tieBreak" ? "description" : undefined,

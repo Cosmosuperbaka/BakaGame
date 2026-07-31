@@ -23,6 +23,22 @@ export function DescriptionPhase() {
   const [selectedSupplementIds, setSelectedSupplementIds] = useState<string[]>([]);
 
   const currentCycleDescriptions = snapshot.descriptions;
+  const submittedThisCycle = new Set(
+    snapshot.descriptions
+      .filter(
+        (description) =>
+          description.kind === "description" && description.cycle === snapshot.status.day,
+      )
+      .map((description) => description.playerId),
+  );
+  const waitingPlayers = (snapshot.status.descriptionOrder ?? [])
+    .map((playerId) => snapshot.players.find((player) => player.id === playerId))
+    .filter(
+      (player): player is (typeof snapshot.players)[number] =>
+        player !== undefined &&
+        player.roundStatus === "alive" &&
+        !submittedThisCycle.has(player.id),
+    );
 
   const amAlive = me?.roundStatus === "alive";
 
@@ -102,6 +118,18 @@ export function DescriptionPhase() {
             : "请描述你的词语（不要直接说出词语）"}
         </p>
       </div>
+
+      {phase === "description" && waitingPlayers.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
+          <Users className="h-4 w-4 shrink-0" />
+          <span className="font-medium">待发言：</span>
+          {waitingPlayers.map((player, index) => (
+            <Badge key={player.id} variant="secondary" className="font-normal">
+              {index + 1}. {player.name}
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {/* 被要求补充发言的提示横幅 */}
       {isWaitingToSupplement && (

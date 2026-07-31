@@ -332,6 +332,25 @@ test("白板被淘汰后可以触发 blankGuess 并独立获胜", async () => {
     payload: { words: ["苹果", "香蕉"], blankHint: "水果" },
   });
 
+  const firstDescriptionSnapshot = getLastEventPayload<RoomSnapshot>(
+    questioner.connection,
+    "room.snapshot",
+  )!;
+  const firstQuestionerState = getLastEventPayload<PrivateState>(
+    questioner.connection,
+    "game.privateState",
+  )!;
+  const blankPlayerId = firstQuestionerState.questionerView?.find(
+    (item) => item.role === "blank",
+  )?.playerId;
+  const descriptionOrder = firstDescriptionSnapshot.status.descriptionOrder ?? [];
+
+  expect(descriptionOrder).toHaveLength(8);
+  expect(new Set(descriptionOrder).size).toBe(8);
+  expect(descriptionOrder.indexOf(blankPlayerId!)).toBeGreaterThanOrEqual(
+    Math.floor(descriptionOrder.length / 2),
+  );
+
   for (const connection of [host, ...joined.slice(0, 7).map((item) => item.connection)]) {
     await execute(service, connection, {
       id: `desc-${connection.record.id}`,

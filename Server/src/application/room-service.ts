@@ -32,6 +32,7 @@ import {
   normalizeWord,
   recordEliminations,
   resolveNightEliminations,
+  shuffle,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
   type RandomSource,
@@ -758,6 +759,7 @@ export class RoomService {
     round.assignments = assigned.assignments;
     round.phase = "description";
     round.descriptionCycle = 1;
+    round.descriptionOrder = this.createDescriptionOrder(room);
     round.descriptionSubmittedBy = [];
     round.votes = [];
     round.tieBreak = undefined;
@@ -863,6 +865,7 @@ export class RoomService {
         round.phase = "description";
         round.day += 1;
         round.descriptionCycle += 1;
+        round.descriptionOrder = this.createDescriptionOrder(room);
         round.descriptionSubmittedBy = [];
         round.votes = [];
         round.tieBreak = undefined;
@@ -1360,6 +1363,7 @@ export class RoomService {
       round.assignments = {};
       round.words = undefined;
       round.descriptionCycle = 0;
+      round.descriptionOrder = [];
       round.descriptions = [];
       round.descriptionSubmittedBy = [];
       round.votes = [];
@@ -1421,6 +1425,7 @@ export class RoomService {
         round.words = undefined;
         round.assignments = {};
         round.descriptionCycle = 0;
+        round.descriptionOrder = [];
         round.descriptions = [];
         round.descriptionSubmittedBy = [];
         round.votes = [];
@@ -1434,6 +1439,7 @@ export class RoomService {
       case "description":
         round.phase = "description";
         round.descriptionCycle = Math.max(1, round.descriptionCycle);
+        round.descriptionOrder = this.createDescriptionOrder(room);
         round.descriptionSubmittedBy = [];
         round.votes = [];
         round.tieBreak = undefined;
@@ -1585,6 +1591,7 @@ export class RoomService {
       day: 1,
       assignments: {},
       descriptionCycle: 0,
+      descriptionOrder: [],
       tieBreakCount: 0,
       descriptions: [],
       descriptionSubmittedBy: [],
@@ -2013,6 +2020,7 @@ export class RoomService {
         phase: room.round?.phase ?? "waiting",
         started: Boolean(room.round),
         day: room.round?.day ?? 0,
+        descriptionOrder: room.round?.descriptionOrder,
         questionerPlayerId: room.round?.questionerPlayerId,
         tieBreakStage: room.round?.tieBreak?.stage,
         pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
@@ -2397,6 +2405,24 @@ export class RoomService {
     return Object.entries(this.requireRound(room).assignments)
       .filter(([, state]) => state.alive)
       .map(([playerId]) => playerId);
+  }
+
+  private createDescriptionOrder(room: RoomRecord) {
+    const round = this.requireRound(room);
+    const order = shuffle(this.getAliveAssignedPlayerIds(room), this.random);
+
+    if (round.day === 1) {
+      const blankPlayerId = getBlankPlayerId(round.assignments);
+      const blankIndex = blankPlayerId ? order.indexOf(blankPlayerId) : -1;
+      const secondHalfStart = Math.floor(order.length / 2);
+
+      if (blankIndex >= 0 && blankIndex < secondHalfStart) {
+        const swapIndex = secondHalfStart + this.random.nextInt(order.length - secondHalfStart);
+        [order[blankIndex], order[swapIndex]] = [order[swapIndex], order[blankIndex]];
+      }
+    }
+
+    return order;
   }
 
   private replaceVote(votes: VoteRecord[], voterId: string, targetId: string): VoteRecord[] {
