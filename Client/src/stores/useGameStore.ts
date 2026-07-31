@@ -18,6 +18,7 @@ import type {
   GamePhase,
   PlayerRole,
   DescriptionRecord,
+  DaybreakNotice,
 } from "@/types";
 import { createMockTestRoomState, type TestPerspective } from "@/lib/mockData";
 
@@ -34,6 +35,7 @@ export interface GameState {
   sessionToken: string | null;
   snapshot: RoomSnapshot | null;
   privateState: PrivateState | null;
+  daybreakNotice: DaybreakNotice | null;
   sessionConflictRoomId: string | null;
   toasts: ToastItem[];
   testPerspective: TestPerspective;
@@ -47,6 +49,7 @@ export interface GameState {
   handleSessionConflict: (roomId: string) => void;
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
+  showDaybreakNotice: (notice: DaybreakNotice) => void;
   patchPlayer: (player: Partial<PublicPlayerView> & { id: string }) => void;
   appendChat: (message: ChatMessage) => void;
   setSummary: (summary: RoundSummary) => void;
@@ -80,6 +83,7 @@ export interface GameState {
 }
 
 let toastCounter = 0;
+let daybreakNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useGameStore = create<GameState>((set, get) => ({
   connected: false,
@@ -88,6 +92,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   sessionToken: null,
   snapshot: null,
   privateState: null,
+  daybreakNotice: null,
   sessionConflictRoomId: null,
   toasts: [],
 
@@ -101,6 +106,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       sessionToken: null,
       snapshot: null,
       privateState: null,
+      daybreakNotice: null,
       sessionConflictRoomId: null,
     }),
   handleSessionConflict: (roomId) =>
@@ -109,10 +115,19 @@ export const useGameStore = create<GameState>((set, get) => ({
       sessionToken: null,
       snapshot: null,
       privateState: null,
+      daybreakNotice: null,
       sessionConflictRoomId: roomId,
     }),
   setSnapshot: (snapshot) => set({ snapshot }),
   setPrivateState: (privateState) => set({ privateState }),
+  showDaybreakNotice: (notice) => {
+    if (daybreakNoticeTimer) clearTimeout(daybreakNoticeTimer);
+    set({ daybreakNotice: notice });
+    daybreakNoticeTimer = setTimeout(() => {
+      set({ daybreakNotice: null });
+      daybreakNoticeTimer = undefined;
+    }, 3000);
+  },
 
   patchPlayer: (player) =>
     set((state) => {
@@ -252,8 +267,7 @@ const NEXT_PHASE_MAP: Record<GamePhase, GamePhase> = {
   description: "voting",
   voting: "night",
   tieBreak: "voting",
-  night: "daybreak",
-  daybreak: "description",
+  night: "description",
   blankGuess: "gameOver",
   gameOver: "waiting",
 };
@@ -275,6 +289,19 @@ function handleTestRoomCommand(
       const currentPhase = snapshot.status.phase;
       const nextPhase = NEXT_PHASE_MAP[currentPhase] ?? "waiting";
       store.jumpTestRoomPhase(nextPhase);
+      if (currentPhase === "night") {
+        const nextSnapshot = get().snapshot;
+        if (nextSnapshot) {
+          const day = snapshot.status.day + 1;
+          set({
+            snapshot: {
+              ...nextSnapshot,
+              status: { ...nextSnapshot.status, day },
+            },
+          });
+          store.showDaybreakNotice({ day, eliminatedPlayerIds: [] });
+        }
+      }
       return { success: true, phase: nextPhase };
     }
 
@@ -429,6 +456,9 @@ export function initGameSocket() {
         currentStore.appendChat(evt.payload as ChatMessage);
         break;
       case "game.phaseChanged":
+        break;
+      case "game.daybreak":
+        currentStore.showDaybreakNotice(evt.payload as DaybreakNotice);
         break;
       case "game.voteResult":
         currentStore.addToast("投票结果已公布");

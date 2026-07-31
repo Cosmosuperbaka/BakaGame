@@ -9,7 +9,6 @@ export const PHASE_LABELS: Record<GamePhase, string> = {
   voting: "投票阶段",
   tieBreak: "平票PK",
   night: "夜晚阶段",
-  daybreak: "天亮了",
   blankGuess: "白板猜词",
   gameOver: "游戏结束",
 };

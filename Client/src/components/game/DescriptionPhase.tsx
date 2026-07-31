@@ -57,7 +57,7 @@ export function DescriptionPhase() {
   const canDescribe =
     !isQuestioner &&
     amAlive &&
-    (phase === "description" || phase === "tieBreak" || phase === "daybreak");
+    (phase === "description" || phase === "tieBreak");
 
   // 补充发言入口只在描述阶段对出题人开放
   const canRequestSupplement = isQuestioner && phase === "description" && !supplementActive;
@@ -115,14 +115,10 @@ export function DescriptionPhase() {
         <h2 className="text-2xl font-semibold">
           {phase === "tieBreak"
             ? `平票 PK - ${tieBreakStage === "description" ? "补充描述" : "投票"}`
-            : phase === "daybreak"
-              ? "天亮了"
-              : "描述阶段"}
+            : "描述阶段"}
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          {phase === "daybreak"
-            ? "夜晚结果已公布，进入新的一天"
-            : "请描述你的词语（不要直接说出词语）"}
+          请描述你的词语（不要直接说出词语）
         </p>
       </div>
 
@@ -300,7 +296,7 @@ export function DescriptionPhase() {
             )}
             <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
               <FastForward className="h-4 w-4" />
-              {phase === "description" || phase === "daybreak" ? "进入投票阶段" : "推进游戏"}
+              {phase === "description" ? "进入投票阶段" : "推进游戏"}
             </Button>
           </div>
         </div>

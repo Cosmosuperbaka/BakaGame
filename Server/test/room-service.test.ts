@@ -242,7 +242,9 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
     ?.leaders;
   expect(leaders).toHaveLength(2);
   expect(snapshot?.status.tieBreakIndex).toBe(1);
-  expect(snapshot?.status.tieBreakCandidateIds?.toSorted()).toEqual(leaders?.toSorted());
+  expect([...(snapshot?.status.tieBreakCandidateIds ?? [])].sort()).toEqual(
+    [...(leaders ?? [])].sort(),
+  );
 
   for (const candidateId of leaders ?? []) {
     await execute(service, connectionByPlayerId.get(candidateId)!, {
@@ -629,7 +631,11 @@ test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作�
   });
 
   snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
-  expect(snapshot?.status.phase).toBe("daybreak");
+  expect(snapshot?.status.phase).toBe("description");
+  expect(snapshot?.status.day).toBe(2);
+  expect(
+    getEventPayloads<{ day: number }>(questioner.connection, "game.daybreak").at(-1)?.day,
+  ).toBe(2);
 });
 
 test("掉线玩家可以通过同名重新加入恢复原席位", async () => {

@@ -16,7 +16,6 @@ const PHASES: GamePhase[] = [
   "voting",
   "tieBreak",
   "night",
-  "daybreak",
   "blankGuess",
   "gameOver",
 ];

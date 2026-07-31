@@ -861,16 +861,6 @@ export class RoomService {
         }
         await this.resolveNight(room);
         break;
-      case "daybreak":
-        round.phase = "description";
-        round.day += 1;
-        round.descriptionCycle += 1;
-        round.descriptionOrder = this.createDescriptionOrder(room);
-        round.descriptionSubmittedBy = [];
-        round.votes = [];
-        round.tieBreak = undefined;
-        round.nightActions = [];
-        break;
       default:
         throw new AppError("INVALID_PHASE", "当前阶段不能手动推进");
     }
@@ -1481,12 +1471,6 @@ export class RoomService {
         round.blankGuessContext = undefined;
         round.summary = undefined;
         break;
-      case "daybreak":
-        round.phase = "daybreak";
-        round.blankGuessUsed = false;
-        round.blankGuessContext = undefined;
-        round.summary = undefined;
-        break;
       case "blankGuess": {
         const blankId = getBlankPlayerId(round.assignments) ?? participantIds[0];
 
@@ -1675,7 +1659,6 @@ export class RoomService {
   private async resolveNight(room: RoomRecord) {
     // 夜晚结算会先产生淘汰结果，再决定是否插入白板猜词或直接结算胜负。
     const round = this.requireRound(room);
-    round.phase = "daybreak";
 
     const eliminatedIds = resolveNightEliminations(round, round.nightActions);
 
@@ -1700,7 +1683,23 @@ export class RoomService {
 
     if (winner) {
       await this.finishRound(room, winner, "夜晚结算后已满足胜利条件");
+      return;
     }
+
+    round.phase = "description";
+    round.day += 1;
+    round.descriptionCycle += 1;
+    round.descriptionOrder = this.createDescriptionOrder(room);
+    round.descriptionSubmittedBy = [];
+    round.votes = [];
+    round.tieBreak = undefined;
+    round.nightActions = [];
+    round.supplement = undefined;
+
+    this.broadcastRoomEvent(room, "game.daybreak", {
+      day: round.day,
+      eliminatedPlayerIds: eliminatedIds,
+    });
   }
 
   private async maybeEnterBlankGuess(
@@ -2596,7 +2595,6 @@ export class RoomService {
       phase === "description" ||
       phase === "voting" ||
       phase === "night" ||
-      phase === "daybreak" ||
       phase === "gameOver"
     ) {
       return phase;

@@ -12,7 +12,6 @@ export const GAME_PHASES = [
   "voting",
   "tieBreak",
   "night",
-  "daybreak",
   "blankGuess",
   "gameOver",
 ] as const;
@@ -101,6 +100,11 @@ export interface ChatMessage {
 export interface VoteRecord {
   voterId: string;
   targetId: string;
+}
+
+export interface DaybreakNotice {
+  day: number;
+  eliminatedPlayerIds: string[];
 }
 
 // 夜晚阶段只允许平民和卧底提交动作。
