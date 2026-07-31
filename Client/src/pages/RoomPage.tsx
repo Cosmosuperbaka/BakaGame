@@ -157,6 +157,11 @@ export default function RoomPage() {
 
   const started = snapshot.status.started;
   const day = snapshot.status.day ?? 0;
+  const privateInfoVisible = ![
+    "waiting",
+    "assigningQuestioner",
+    "wordSubmission",
+  ].includes(snapshot.status.phase);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-muted/30">
@@ -188,17 +193,17 @@ export default function RoomPage() {
               出题人
             </span>
           )}
-          {privateState?.word && (
+          {privateInfoVisible && privateState?.word && (
             <span className="text-sm font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md shrink-0">
               {privateState.word}
             </span>
           )}
-          {privateState?.angelWordOptions && (
+          {privateInfoVisible && privateState?.angelWordOptions && (
             <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
               {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
             </span>
           )}
-          {privateState?.blankHint && (
+          {privateInfoVisible && privateState?.blankHint && (
             <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
               提示：{privateState.blankHint}
             </span>
