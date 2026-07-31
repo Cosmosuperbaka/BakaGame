@@ -1,11 +1,26 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Send, PenTool, Dices } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useGameStore } from "@/stores/useGameStore";
+import { cn } from "@/lib/utils";
 import type { PlayerRole } from "@/types";
+
+const ROLE_SHORT_LABELS: Record<PlayerRole, string> = {
+  civilian: "民",
+  undercover: "卧",
+  angel: "天",
+  blank: "白",
+};
+
+const ROLE_FULL_LABELS: Record<PlayerRole, string> = {
+  civilian: "平民",
+  undercover: "卧底",
+  angel: "天使",
+  blank: "白板",
+};
 
 export function WordSubmissionPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -31,23 +46,51 @@ export function WordSubmissionPhase() {
 
   const [manualRoles, setManualRoles] = useState<Record<string, PlayerRole>>({});
 
-  useEffect(() => {
-    if (!isRandomRole && participants.length > 0) {
-      const initial: Record<string, PlayerRole> = {};
-      participants.forEach((p, idx) => {
-        if (idx < roleConfig.undercoverCount) {
-          initial[p.id] = "undercover";
-        } else if (hasBlank && idx === roleConfig.undercoverCount) {
-          initial[p.id] = "blank";
-        } else if (hasAngel && idx === roleConfig.undercoverCount + (hasBlank ? 1 : 0)) {
-          initial[p.id] = "angel";
-        } else {
-          initial[p.id] = "civilian";
-        }
-      });
-      setManualRoles(initial);
-    }
-  }, [isRandomRole, participants.length, roleConfig.undercoverCount, hasBlank, hasAngel]);
+  const availableRoles: PlayerRole[] = [
+    "civilian",
+    "undercover",
+    ...(hasAngel ? (["angel"] as PlayerRole[]) : []),
+    ...(hasBlank ? (["blank"] as PlayerRole[]) : []),
+  ];
+  const requiredRoleCounts: Record<PlayerRole, number> = {
+    civilian:
+      participants.length - roleConfig.undercoverCount - (hasAngel ? 1 : 0) - (hasBlank ? 1 : 0),
+    undercover: roleConfig.undercoverCount,
+    angel: hasAngel ? 1 : 0,
+    blank: hasBlank ? 1 : 0,
+  };
+  const assignedRoleCounts = Object.values(manualRoles).reduce<Record<PlayerRole, number>>(
+    (counts, assignedRole) => ({
+      ...counts,
+      [assignedRole]: counts[assignedRole] + 1,
+    }),
+    { civilian: 0, undercover: 0, angel: 0, blank: 0 },
+  );
+  const manualRoleCountsValid = availableRoles.every(
+    (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole],
+  );
+
+  const handleRandomRoleChange = (randomRole: boolean) => {
+    setIsRandomRole(randomRole);
+    if (randomRole) return;
+
+    const initialRoles: Record<string, PlayerRole> = {};
+    participants.forEach((participant, index) => {
+      if (index < roleConfig.undercoverCount) {
+        initialRoles[participant.id] = "undercover";
+      } else if (hasBlank && index === roleConfig.undercoverCount) {
+        initialRoles[participant.id] = "blank";
+      } else if (
+        hasAngel &&
+        index === roleConfig.undercoverCount + (hasBlank ? 1 : 0)
+      ) {
+        initialRoles[participant.id] = "angel";
+      } else {
+        initialRoles[participant.id] = "civilian";
+      }
+    });
+    setManualRoles(initialRoles);
+  };
 
   const handleSubmit = useCallback(async () => {
     if (!civilianWord.trim() || !undercoverWord.trim()) {
@@ -56,6 +99,10 @@ export function WordSubmissionPhase() {
     }
     if (hasBlank && !blankHint.trim()) {
       addToast("开启白板时需填写提示", "error");
+      return;
+    }
+    if (!isRandomRole && !manualRoleCountsValid) {
+      addToast("手动身份数量与房间配置不一致", "error");
       return;
     }
     try {
@@ -67,7 +114,7 @@ export function WordSubmissionPhase() {
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, sendCommand, addToast]);
+  }, [civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, manualRoleCountsValid, sendCommand, addToast]);
 
   if (!isQuestioner) {
     return (
@@ -131,39 +178,67 @@ export function WordSubmissionPhase() {
               <Dices className="h-4 w-4 text-primary" />
               <Label className="text-sm font-medium cursor-pointer">随机分配身份</Label>
             </div>
-            <Switch checked={isRandomRole} onCheckedChange={setIsRandomRole} />
+            <Switch checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
           </div>
 
           {!isRandomRole && (
-            <div className="space-y-2 bg-card p-3 rounded-lg border text-sm shadow-2xs">
-              <div className="text-xs text-muted-foreground font-medium mb-1">
-                指定身份（{roleConfig.undercoverCount} 卧底{hasAngel ? "、1 天使" : ""}{hasBlank ? "、1 白板" : ""}）
+            <div className="overflow-hidden rounded-md border bg-background text-sm">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/35 px-3 py-2.5 sm:grid-cols-4">
+                {availableRoles.map((availableRole) => {
+                  const valid =
+                    assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole];
+                  return (
+                    <div key={availableRole} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{ROLE_FULL_LABELS[availableRole]}</span>
+                      <span className={cn("font-semibold tabular-nums", valid ? "text-foreground" : "text-destructive")}>
+                        {assignedRoleCounts[availableRole]}/{requiredRoleCounts[availableRole]}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               {participants.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 py-1">
-                  <span className="font-medium text-xs truncate max-w-[130px]">{p.name}</span>
-                  <select
-                    value={manualRoles[p.id] ?? "civilian"}
-                    onChange={(e) =>
-                      setManualRoles((prev) => ({
-                        ...prev,
-                        [p.id]: e.target.value as PlayerRole,
-                      }))
-                    }
-                    className="h-7 rounded border bg-background px-2 text-xs"
-                  >
-                    <option value="civilian">平民</option>
-                    <option value="undercover">卧底</option>
-                    {hasAngel && <option value="angel">天使</option>}
-                    {hasBlank && <option value="blank">白板</option>}
-                  </select>
+                <div key={p.id} className="flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2 last:border-b-0">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{p.name}</span>
+                  <div className="inline-grid grid-flow-col gap-0.5 rounded-md border bg-muted/30 p-0.5" role="group" aria-label={`为 ${p.name} 分配身份`}>
+                    {availableRoles.map((availableRole) => {
+                      const selected = (manualRoles[p.id] ?? "civilian") === availableRole;
+                      return (
+                        <button
+                          key={availableRole}
+                          type="button"
+                          title={ROLE_FULL_LABELS[availableRole]}
+                          aria-label={ROLE_FULL_LABELS[availableRole]}
+                          aria-pressed={selected}
+                          onClick={() =>
+                            setManualRoles((previousRoles) => ({
+                              ...previousRoles,
+                              [p.id]: availableRole,
+                            }))
+                          }
+                          className={cn(
+                            "flex h-7 w-8 items-center justify-center rounded text-xs font-semibold transition-colors",
+                            selected
+                              ? "bg-foreground text-background shadow-sm"
+                              : "text-muted-foreground hover:bg-background hover:text-foreground",
+                          )}
+                        >
+                          {ROLE_SHORT_LABELS[availableRole]}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <Button className="w-full gap-2 h-10 mt-2" onClick={handleSubmit}>
+        <Button
+          className="w-full gap-2 h-10 mt-2"
+          onClick={handleSubmit}
+          disabled={!isRandomRole && !manualRoleCountsValid}
+        >
           <Send className="h-4 w-4" />
           确认提交
         </Button>
