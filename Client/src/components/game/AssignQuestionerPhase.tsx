@@ -33,7 +33,7 @@ export function AssignQuestionerPhase() {
 
   return (
     <motion.div
-      className="flex flex-col items-center gap-6 py-10"
+      className="flex flex-col items-center gap-6"
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: "easeOut" }}

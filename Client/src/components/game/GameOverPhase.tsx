@@ -83,7 +83,7 @@ export function GameOverPhase() {
 
       {/* 词语揭秘全景卡片 */}
       {summary.words && (
-        <section className="rounded-xl border overflow-hidden bg-muted/20 p-4 space-y-3">
+        <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <BookOpen className="h-4 w-4 text-primary" />
             本局词语解密
@@ -114,22 +114,22 @@ export function GameOverPhase() {
       )}
 
       {/* 身份揭示与得分表格 */}
-      <section className="rounded-xl border overflow-hidden">
-        <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
+      <section className="overflow-hidden rounded-md bg-muted">
+        <div className="flex items-center justify-between border-b border-background px-4 py-2.5">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             身份揭示与得分统计
           </h3>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b bg-muted/10 text-xs text-muted-foreground">
+            <tr className="border-b border-background text-xs text-muted-foreground">
               <th className="px-4 py-2 text-left font-medium">玩家</th>
               <th className="px-4 py-2 text-left font-medium">本局身份</th>
               <th className="px-4 py-2 text-right font-medium">本局变动</th>
               <th className="px-4 py-2 text-right font-medium">房间累计</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y divide-background">
             {summary.revealedRoles.map(({ playerId, role }) => {
               const player = snapshot.players.find((p) => p.id === playerId);
               const award = summary.awardedScores.find(
@@ -138,7 +138,7 @@ export function GameOverPhase() {
               const delta = award?.delta ?? 0;
               const totalScore = player?.score ?? 0;
               return (
-                <tr key={playerId} className="hover:bg-muted/20">
+                <tr key={playerId} className="hover:bg-background/50">
                   <td className="px-4 py-2.5 font-medium">
                     {player?.name ?? playerId}
                   </td>
@@ -151,10 +151,10 @@ export function GameOverPhase() {
                     </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
-                    +{delta} 分
+                    +{delta}
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold text-amber-600">
-                    {totalScore} 分
+                    {totalScore}
                   </td>
                 </tr>
               );
@@ -165,11 +165,11 @@ export function GameOverPhase() {
 
       {/* 投票复盘明细 */}
       {summary.voteHistory && summary.voteHistory.length > 0 && (
-        <section className="rounded-xl border overflow-hidden">
+        <section className="overflow-hidden rounded-md bg-muted">
           <button
             type="button"
             onClick={() => setShowVotes((v) => !v)}
-            className="w-full px-4 py-2.5 border-b bg-muted/30 flex items-center gap-2 text-left hover:bg-muted/50 transition-colors"
+            className="flex w-full items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
           >
             <Vote className="h-4 w-4 text-primary" />
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
@@ -224,13 +224,13 @@ export function GameOverPhase() {
 
       {/* 白板猜词记录 */}
       {summary.blankGuesses.length > 0 && (
-        <section className="rounded-xl border overflow-hidden">
-          <div className="px-4 py-2.5 border-b bg-muted/30">
+        <section className="overflow-hidden rounded-md bg-muted">
+          <div className="border-b border-background px-4 py-2.5">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               白板猜词记录
             </h3>
           </div>
-          <div className="divide-y">
+          <div className="divide-y divide-background">
             {summary.blankGuesses.map((g, i) => {
               const player = snapshot.players.find((p) => p.id === g.playerId);
               return (
@@ -260,11 +260,11 @@ export function GameOverPhase() {
 
       {/* 描述复盘 */}
       {summary.descriptions.length > 0 && (
-        <section className="rounded-xl border overflow-hidden">
+        <section className="overflow-hidden rounded-md bg-muted">
           <button
             type="button"
             onClick={() => setShowDescriptions((v) => !v)}
-            className="w-full px-4 py-2.5 border-b bg-muted/30 flex items-center gap-2 text-left hover:bg-muted/50 transition-colors"
+            className="flex w-full items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
           >
             <History className="h-4 w-4 text-muted-foreground" />
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">

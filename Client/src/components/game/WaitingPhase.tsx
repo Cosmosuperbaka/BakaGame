@@ -44,7 +44,7 @@ export function WaitingPhase() {
   }, [sendCommand, addToast]);
 
   return (
-    <div className="flex flex-col items-center gap-8 py-12">
+    <div className="flex flex-col items-center gap-8">
       <div>
         <PhaseHeader
           icon={Gamepad2}
