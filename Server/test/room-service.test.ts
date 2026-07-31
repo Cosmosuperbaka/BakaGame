@@ -135,6 +135,43 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   }
 
   await execute(service, questioner.connection, {
+    id: "request-supplement-during-vote",
+    type: "game.requestSupplement",
+    payload: { playerIds: [joined[1].joinResult.playerId] },
+  });
+  let questionerState = getLastEventPayload<PrivateState>(
+    questioner.connection,
+    "game.privateState",
+  );
+  expect(questionerState?.privilegedActionPreview?.votes).toHaveLength(4);
+
+  let supplementBlockCode: string | undefined;
+  try {
+    await execute(service, questioner.connection, {
+      id: "resolve-before-supplement",
+      type: "game.advancePhase",
+      payload: {},
+    });
+  } catch (error) {
+    supplementBlockCode = (error as { code?: string }).code;
+  }
+  expect(supplementBlockCode).toBe("PHASE_INCOMPLETE");
+
+  await execute(service, joined[1].connection, {
+    id: "submit-supplement-during-vote",
+    type: "game.submitDescription",
+    payload: { text: "投票阶段补充发言" },
+  });
+  questionerState = getLastEventPayload<PrivateState>(
+    questioner.connection,
+    "game.privateState",
+  );
+  expect(questionerState?.privilegedActionPreview?.votes).toHaveLength(4);
+  expect(
+    getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.descriptions.at(-1)?.kind,
+  ).toBe("supplement");
+
+  await execute(service, questioner.connection, {
     id: "resolve-vote",
     type: "game.advancePhase",
     payload: {},

@@ -309,22 +309,50 @@ function handleTestRoomCommand(
       const text = (payload.text as string) || "";
       if (text && privateState) {
         const me = snapshot.players.find((p) => p.id === privateState.playerId);
+        const pendingSupplementPlayerIds = snapshot.status.pendingSupplementPlayerIds ?? [];
+        const submittingSupplement = pendingSupplementPlayerIds.includes(privateState.playerId);
         const newDesc: DescriptionRecord = {
           id: `desc_${Date.now()}`,
           playerId: privateState.playerId,
           playerName: me?.name || "测试玩家",
           text,
-          kind: snapshot.status.phase === "tieBreak" ? "tieBreak" : "description",
+          kind: submittingSupplement
+            ? "supplement"
+            : snapshot.status.phase === "tieBreak"
+              ? "tieBreak"
+              : "description",
           cycle: snapshot.status.day || 1,
+          supplementIndex: submittingSupplement ? 1 : undefined,
           createdAt: Date.now(),
         };
         set({
           snapshot: {
             ...snapshot,
             descriptions: [...snapshot.descriptions, newDesc],
+            status: submittingSupplement
+              ? {
+                  ...snapshot.status,
+                  pendingSupplementPlayerIds: pendingSupplementPlayerIds.filter(
+                    (playerId) => playerId !== privateState.playerId,
+                  ),
+                }
+              : snapshot.status,
           },
         });
       }
+      return { success: true };
+    }
+
+    case "game.requestSupplement": {
+      set({
+        snapshot: {
+          ...snapshot,
+          status: {
+            ...snapshot.status,
+            pendingSupplementPlayerIds: [...new Set(payload.playerIds as string[])],
+          },
+        },
+      });
       return { success: true };
     }
 
@@ -406,7 +434,7 @@ function handleTestRoomCommand(
         set({
           snapshot: {
             ...snapshot,
-            settings: payload.settings as any,
+            settings: payload.settings as RoomSnapshot["settings"],
           },
         });
       }
