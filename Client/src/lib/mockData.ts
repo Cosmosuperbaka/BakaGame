@@ -247,8 +247,14 @@ export function createMockTestRoomState(
         : role === "angel"
         ? undefined
         : "苹果",
-    angelWordOptions: wordsAssigned && role === "angel" ? ["苹果", "红富士"] : undefined,
-    blankHint: wordsAssigned && (role === "blank" || isQuestioner) ? "常见水果" : undefined,
+    angelWordOptions:
+      wordsAssigned && !isQuestioner && !isSpectator && role === "angel"
+        ? ["苹果", "红富士"]
+        : undefined,
+    blankHint:
+      wordsAssigned && !isQuestioner && !isSpectator && role === "blank"
+        ? "常见水果"
+        : undefined,
     canSubmitBlankGuess: role === "blank" && phase === "description",
     blankGuessUsed: false,
     nightActionSubmitted: false,

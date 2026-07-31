@@ -8,6 +8,7 @@ import {
   MessageSquare,
   ChevronRight,
   ChevronLeft,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
@@ -196,8 +197,9 @@ export default function RoomPage() {
             </span>
           )}
           {privateState?.isQuestioner && (
-            <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-2.5 py-0.5 rounded-md font-medium shrink-0">
-              出题人
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background shadow-sm shrink-0">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              出题人视角
             </span>
           )}
           {privateInfoVisible && privateState?.word && (
@@ -210,7 +212,7 @@ export default function RoomPage() {
               {privateState.angelWordOptions[0]} / {privateState.angelWordOptions[1]}
             </span>
           )}
-          {privateInfoVisible && privateState?.blankHint && (
+          {privateInfoVisible && !privateState?.isQuestioner && privateState?.blankHint && (
             <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md shrink-0">
               提示：{privateState.blankHint}
             </span>
