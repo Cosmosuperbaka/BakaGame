@@ -113,7 +113,7 @@ Room ID `"Oblivionis"` (case-insensitive) is a special test room:
 
 ```
 waiting → assigningQuestioner → wordSubmission → description → voting
-  → tieBreak (if tied) → night → daybreak → description (next round)
+  → tieBreak (if tied) → night → description (next round; emits a transient daybreak notice)
   → blankGuess (if blank player triggered)
   → gameOver
 ```

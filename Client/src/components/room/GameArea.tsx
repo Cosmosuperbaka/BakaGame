@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useGameStore } from "@/stores/useGameStore";
 import { WaitingPhase } from "@/components/game/WaitingPhase";
@@ -13,6 +14,7 @@ import { TestController } from "@/components/game/TestController";
 
 export function GameArea() {
   const snapshot = useGameStore((s) => s.snapshot);
+  const daybreakNotice = useGameStore((s) => s.daybreakNotice);
   const isTestRoom = snapshot?.testMode ?? false;
 
   if (!snapshot) return null;
@@ -42,6 +44,26 @@ export function GameArea() {
 
       {/* 白板猜词浮动按钮（仅白板角色可见，始终可触发） */}
       <BlankGuessButton />
+
+      <AnimatePresence>
+        {daybreakNotice && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="absolute inset-0 z-40 flex items-center justify-center bg-background/94 backdrop-blur-sm pointer-events-none"
+          >
+            <div className="text-center">
+              <Sunrise className="h-14 w-14 mx-auto text-amber-500" />
+              <h2 className="mt-4 text-2xl font-semibold">天亮了</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                第 {daybreakNotice.day} 天开始
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -58,7 +80,6 @@ function PhaseContent() {
     case "wordSubmission":
       return <WordSubmissionPhase />;
     case "description":
-    case "daybreak":
       return <DescriptionPhase />;
     case "tieBreak":
       return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
