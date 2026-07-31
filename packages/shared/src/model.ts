@@ -186,6 +186,8 @@ export interface GameRound {
   };
   assignments: Record<string, RoundPlayerState>;
   descriptionCycle: number;
+  /** 当前描述轮次的随机发言顺序。 */
+  descriptionOrder: string[];
   /** 当前局已发生的平票 PK 次数，每次进入 tieBreak 时自增，用于区分多次平票列。 */
   tieBreakCount: number;
   descriptions: DescriptionRecord[];
@@ -273,6 +275,8 @@ export interface RoomSnapshot {
     phase: GamePhase;
     started: boolean;
     day: number;
+    /** 当前描述轮次的公开发言顺序。 */
+    descriptionOrder?: string[];
     questionerPlayerId?: string;
     tieBreakStage?: TieBreakStage;
     pendingDisconnectPlayerId?: string;
