@@ -162,6 +162,8 @@ export function createMockTestRoomState(
       questionerPlayerId: isQuestioner ? meId : "player_b",
       blankGuessPlayerId: phase === "blankGuess" ? "player_e" : undefined,
       tieBreakStage: phase === "tieBreak" ? "description" : undefined,
+      tieBreakIndex: phase === "tieBreak" ? 1 : undefined,
+      tieBreakCandidateIds: phase === "tieBreak" ? ["player_b", "player_c"] : undefined,
     },
     roleLimits: {
       maxUndercoverCount: 2,

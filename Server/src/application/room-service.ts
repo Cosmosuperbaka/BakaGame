@@ -2023,6 +2023,8 @@ export class RoomService {
         descriptionOrder: room.round?.descriptionOrder,
         questionerPlayerId: room.round?.questionerPlayerId,
         tieBreakStage: room.round?.tieBreak?.stage,
+        tieBreakIndex: room.round?.tieBreak ? room.round.tieBreakCount : undefined,
+        tieBreakCandidateIds: room.round?.tieBreak?.candidateIds,
         pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
         questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
         blankGuessPlayerId: room.round?.blankGuessContext?.playerId,
