@@ -167,7 +167,7 @@ For `game.requestSupplement`:
 
 ## Player Marking (Local Only)
 
-Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `PlayerList.tsx`. They are never sent to the server and reset on page reload. The mark indicator is a `w-4 h-4` dot on the left of each row; click cycles none → suspect (orange) → safe (emerald) → none.
+Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `PlayerList.tsx`. They are never sent to the server and reset on page reload. The fixed-width mark control on the left displays `疑` or `安` with color as a secondary cue; click cycles none → suspect → safe → none. Every player row also reserves a fixed-width host-action slot so rows stay aligned before and after the game starts.
 
 ## RoomPage Layout
 
