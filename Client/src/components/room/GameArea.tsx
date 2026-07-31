@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
 import { WaitingPhase } from "@/components/game/WaitingPhase";
 import { AssignQuestionerPhase } from "@/components/game/AssignQuestionerPhase";
@@ -12,7 +13,7 @@ import { BlankGuessButton, BlankGuessWaiting } from "@/components/game/BlankGues
 import { GameOverPhase } from "@/components/game/GameOverPhase";
 import { TestController } from "@/components/game/TestController";
 
-export function GameArea() {
+export function GameArea({ wordRevealText }: { wordRevealText?: string }) {
   const snapshot = useGameStore((s) => s.snapshot);
   const daybreakNotice = useGameStore((s) => s.daybreakNotice);
   const isTestRoom = snapshot?.testMode ?? false;
@@ -22,8 +23,8 @@ export function GameArea() {
   const phase = snapshot.status.phase;
 
   return (
-    <div className="relative flex flex-col h-full overflow-hidden">
-      <ScrollArea className="flex-1">
+    <div className={cn("relative flex h-full flex-col overflow-hidden", isTestRoom && "pb-16")}>
+      <ScrollArea className="min-h-0 flex-1">
         <div className="p-6 md:p-8">
           <AnimatePresence mode="wait">
             <motion.div
@@ -44,6 +45,18 @@ export function GameArea() {
 
       {/* 白板猜词浮动按钮（仅白板角色可见，始终可触发） */}
       <BlankGuessButton />
+
+      {wordRevealText ? (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-card/96 backdrop-blur-sm">
+          <motion.span
+            layoutId="assigned-word"
+            transition={{ layout: { duration: 0.65, ease: [0.22, 1, 0.36, 1] } }}
+            className="max-w-[80vw] rounded-md bg-muted px-8 py-5 text-center text-3xl font-bold text-foreground shadow-sm md:text-4xl"
+          >
+            {wordRevealText}
+          </motion.span>
+        </div>
+      ) : null}
 
       <AnimatePresence>
         {daybreakNotice && (
