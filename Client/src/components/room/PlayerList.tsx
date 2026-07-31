@@ -18,6 +18,13 @@ import type { PublicPlayerView, GamePhase, PrivateState } from "@/types";
 
 type PlayerMark = "none" | "suspect" | "safe";
 
+const ROLE_SHORT_LABELS: Record<NonNullable<PrivateState["role"]>, string> = {
+  civilian: "民",
+  undercover: "卧",
+  angel: "天",
+  blank: "白",
+};
+
 interface Props {
   players: PublicPlayerView[];
   hostPlayerId: string;
@@ -111,7 +118,7 @@ export function PlayerList({
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-4 flex flex-col gap-0.5">
+      <div className="flex w-full flex-col gap-0.5 p-4">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
           玩家 ({activePlayers.length})
         </h3>
@@ -223,28 +230,27 @@ function PlayerRow({
       layout="position"
       {...rowMotion}
       className={cn(
-        "relative flex items-center gap-2 px-2 py-2 rounded-lg text-sm group transition-colors duration-150",
+        "group relative flex min-h-10 w-full items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors duration-150",
         isMe && "bg-primary/8 ring-1 ring-primary/15",
         !isMe && "hover:bg-muted/60",
         !player.online && "opacity-50"
       )}
       onBlur={() => setMenuOpen(false)}
     >
-      {/* 本地标记点（仅自己可见，点击循环切换：无→疑→安全→无） */}
+      {/* 本地标记（仅自己可见，点击循环切换：无→疑→安→无） */}
       <button
         type="button"
-        aria-label="切换标记"
-        className="w-4 h-4 shrink-0 flex items-center justify-center rounded-full"
+        aria-label={`切换玩家标记，当前${mark === "suspect" ? "可疑" : mark === "safe" ? "安全" : "无标记"}`}
+        title={mark === "suspect" ? "可疑" : mark === "safe" ? "安全" : "添加标记"}
+        className={cn(
+          "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors",
+          mark === "suspect" && "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
+          mark === "safe" && "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
+          mark === "none" && "border-transparent text-transparent group-hover:border-border group-hover:text-muted-foreground/50"
+        )}
         onClick={(e) => { e.stopPropagation(); onToggleMark(player.id); }}
       >
-        <span
-          className={cn(
-            "w-2 h-2 rounded-full transition-colors",
-            mark === "suspect" && "bg-orange-400",
-            mark === "safe" && "bg-emerald-400",
-            mark === "none" && "bg-transparent group-hover:bg-muted-foreground/20"
-          )}
-        />
+        {mark === "suspect" ? "疑" : mark === "safe" ? "安" : "标"}
       </button>
 
       {/* 左：玩家名 */}
@@ -264,8 +270,15 @@ function PlayerRow({
           </span>
         )}
         {visibleRole && (
-          <span className={cn("text-[11px] font-semibold", ROLE_COLORS[visibleRole])}>
-            {ROLE_LABELS[visibleRole]}
+          <span
+            title={ROLE_LABELS[visibleRole]}
+            aria-label={`身份：${ROLE_LABELS[visibleRole]}`}
+            className={cn(
+              "flex h-5 w-5 items-center justify-center rounded border bg-background text-[10px] font-bold",
+              ROLE_COLORS[visibleRole]
+            )}
+          >
+            {ROLE_SHORT_LABELS[visibleRole]}
           </span>
         )}
         {player.score > 0 && (
@@ -285,9 +298,10 @@ function PlayerRow({
         )}
       </div>
 
-      {/* 操作按钮（房主可见，MoreHorizontal 触发菜单） */}
-      {canHostActOn && (
-        <div className="relative shrink-0">
+      {/* 固定宽度操作槽位，保证房主与其他玩家的条目对称。 */}
+      <div className="relative h-6 w-6 shrink-0">
+        {canHostActOn ? (
+          <>
           <Button
             variant="ghost"
             size="icon"
@@ -330,8 +344,9 @@ function PlayerRow({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-      )}
+          </>
+        ) : null}
+      </div>
     </motion.div>
   );
 }
