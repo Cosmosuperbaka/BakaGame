@@ -56,7 +56,7 @@ export default function RoomPage() {
     }
   }, [joining, snapshot, storeRoomId, navigate]);
 
-  // 进入房间时，先等连接就绪，再尝试重连/加入/创建；测试房间为离线模式无需联网
+  // 进入房间时，先等连接就绪，再尝试重连/加入/创建；本地模式无需联网
   useEffect(() => {
     if (!roomId) return;
 
@@ -194,11 +194,6 @@ export default function RoomPage() {
           </Button>
           <span className="hidden truncate text-base font-semibold md:block">{snapshot.name}</span>
           <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
-          {snapshot.testMode && (
-            <span className="hidden shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 md:inline">
-              测试
-            </span>
-          )}
         </div>
 
         {/* 中段：第N天 + 词语 pill */}

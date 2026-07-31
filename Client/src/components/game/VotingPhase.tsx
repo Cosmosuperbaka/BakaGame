@@ -38,7 +38,6 @@ export function VotingPhase() {
       : snapshot.testMode && amAlive && !isQuestioner && me
         ? [me]
         : [];
-  const soloShowcaseVote = targets.length === 1 && targets[0].id === me?.id;
 
   const handleVote = useCallback(
     async (targetId: string) => {
@@ -106,11 +105,6 @@ export function VotingPhase() {
               </Card>
             ))}
           </div>
-          {soloShowcaseVote && (
-            <p className="text-xs text-center text-muted-foreground">
-              测试模式下可对自己投票，用于完整展示单人界面。
-            </p>
-          )}
         </div>
       )}
 

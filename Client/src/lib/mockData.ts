@@ -20,7 +20,7 @@ export function createMockTestRoomState(
   const wordsAssigned = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
   const meId = "player_me";
-  const myName = isQuestioner ? "出题人 (你)" : isSpectator ? "旁观者 (你)" : "测试玩家 (你)";
+  const myName = isQuestioner ? "出题人 (你)" : isSpectator ? "旁观者 (你)" : "玩家 (你)";
 
   const players: PublicPlayerView[] = [
     {
@@ -135,7 +135,7 @@ export function createMockTestRoomState(
 
   const snapshot: RoomSnapshot = {
     roomId: "Oblivionis",
-    name: "离线测试房间",
+    name: "本地房间",
     visibility: "public",
     allowSpectators: true,
     hasPassword: false,

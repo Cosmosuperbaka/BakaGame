@@ -44,7 +44,7 @@ export function BlankGuessButton() {
 
   return (
     <>
-      {/* 固定在游戏区右上角，避开底部离线测试控制器。 */}
+      {/* 固定在游戏区右上角，避开底部阶段控制器。 */}
       <div className="absolute right-3 top-3 z-30 md:right-5 md:top-5">
         <Button
           variant="default"

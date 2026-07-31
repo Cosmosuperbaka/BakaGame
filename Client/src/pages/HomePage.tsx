@@ -198,11 +198,6 @@ export default function HomePage() {
                             {room.hasPassword && (
                               <Lock className="h-4 w-4 text-muted-foreground" />
                             )}
-                            {room.testMode && (
-                              <Badge variant="secondary" className="text-xs py-0.5">
-                                测试
-                              </Badge>
-                            )}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
                             房间号: {room.roomId}

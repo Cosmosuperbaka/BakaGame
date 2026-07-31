@@ -39,7 +39,7 @@ export function GameArea() {
         </div>
       </ScrollArea>
 
-      {/* 测试房间专用：底部悬浮控制器 */}
+      {/* 特殊房间使用的底部悬浮阶段控制器 */}
       {isTestRoom && <TestController />}
 
       {/* 白板猜词浮动按钮（仅白板角色可见，始终可触发） */}

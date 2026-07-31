@@ -31,7 +31,6 @@ export function NightPhase() {
       : snapshot.testMode && canAct && me
         ? [me]
         : [];
-  const soloShowcaseNight = targets.length === 1 && targets[0].id === me?.id;
 
   const handleNightAction = useCallback(
     async (targetId?: string) => {
@@ -91,11 +90,6 @@ export function NightPhase() {
               </Card>
             ))}
           </div>
-          {soloShowcaseNight && (
-            <p className="text-xs text-center text-muted-foreground">
-              测试模式下可选择自己，或直接跳过夜晚行动。
-            </p>
-          )}
           <Button
             variant="outline"
             className="w-full gap-2 h-10"
