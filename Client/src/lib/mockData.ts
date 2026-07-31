@@ -17,6 +17,7 @@ export function createMockTestRoomState(
 ): { snapshot: RoomSnapshot; privateState: PrivateState | null } {
   const isQuestioner = perspective === "questioner";
   const isSpectator = perspective === "spectator";
+  const wordsAssigned = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
   const meId = "player_me";
   const myName = isQuestioner ? "出题人 (你)" : isSpectator ? "旁观者 (你)" : "测试玩家 (你)";
@@ -239,13 +240,13 @@ export function createMockTestRoomState(
     isQuestioner,
     role: isQuestioner || isSpectator ? undefined : role,
     word:
-      isQuestioner || isSpectator || role === "blank"
+      !wordsAssigned || isQuestioner || isSpectator || role === "blank"
         ? undefined
         : role === "angel"
         ? undefined
         : "苹果",
-    angelWordOptions: role === "angel" ? ["苹果", "红富士"] : undefined,
-    blankHint: role === "blank" || isQuestioner ? "常见水果" : undefined,
+    angelWordOptions: wordsAssigned && role === "angel" ? ["苹果", "红富士"] : undefined,
+    blankHint: wordsAssigned && (role === "blank" || isQuestioner) ? "常见水果" : undefined,
     canSubmitBlankGuess: role === "blank" && phase === "description",
     blankGuessUsed: false,
     nightActionSubmitted: false,
