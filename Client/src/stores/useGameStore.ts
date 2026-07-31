@@ -314,7 +314,7 @@ function handleTestRoomCommand(
         const newDesc: DescriptionRecord = {
           id: `desc_${Date.now()}`,
           playerId: privateState.playerId,
-          playerName: me?.name || "测试玩家",
+          playerName: me?.name || "玩家",
           text,
           kind: submittingSupplement
             ? "supplement"
@@ -414,7 +414,7 @@ function handleTestRoomCommand(
         const chatMsg: ChatMessage = {
           id: `chat_${Date.now()}`,
           playerId: privateState.playerId,
-          playerName: me?.name || "测试玩家",
+          playerName: me?.name || "玩家",
           text,
           createdAt: Date.now(),
           system: false,
@@ -512,7 +512,7 @@ export function initGameSocket() {
         if (roomId && currentRoomId === roomId && isTestRoomId(roomId)) {
           clearSessionToken(roomId);
           currentStore.handleSessionConflict(roomId);
-          currentStore.addToast("当前标签页已切换为独立测试会话，正在重新加入", "info");
+          currentStore.addToast("当前标签页已切换为独立会话，正在重新加入", "info");
         } else {
           currentStore.addToast("您的连接已被新连接替代", "error");
         }

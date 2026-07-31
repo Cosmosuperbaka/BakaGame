@@ -51,7 +51,7 @@ export function WaitingPhase() {
           title="等待玩家准备"
           description={
             canSoloStart
-              ? "测试房间支持单人开始"
+              ? "已准备开始游戏"
               : `${readyCount}/${nonHostActive.length} 名玩家已准备`
           }
         />
@@ -80,9 +80,7 @@ export function WaitingPhase() {
           onClick={handleStart}
           className="text-base px-8"
         >
-          {canSoloStart
-            ? "开始单人测试"
-            : allReady
+          {allReady
             ? "开始游戏"
             : `等待所有玩家准备 (${readyCount}/${nonHostActive.length})`}
         </Button>

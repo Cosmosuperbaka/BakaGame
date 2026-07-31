@@ -93,13 +93,10 @@ export function TestController() {
             className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/40 transition-colors"
           >
             <FlaskConical className="h-4 w-4 text-primary" />
-            <span>离线测试控制器</span>
-            <span className="text-[11px] text-muted-foreground font-normal ml-auto">
-              测试房间
-            </span>
+            <span>阶段控制器</span>
             <ChevronUp
               className={cn(
-                "h-4 w-4 text-muted-foreground transition-transform duration-200",
+                "ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200",
                 !open && "rotate-180"
               )}
             />
