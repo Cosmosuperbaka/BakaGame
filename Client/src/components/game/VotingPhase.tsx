@@ -1,10 +1,12 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
-import { Vote, FastForward, CheckCircle2, Undo2 } from "lucide-react";
+import { Vote, FastForward, CheckCircle2, Undo2, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
+import { SupplementRequestControl } from "./SupplementRequestControl";
 
 export function VotingPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -82,6 +84,9 @@ export function VotingPhase() {
 
       <PrivilegedActionPreview mode="vote" />
 
+      {!isTieBreak && <SupplementRequestControl canRequest />}
+      {!isTieBreak && <VotingSupplementInput />}
+
       {amAlive && !isQuestioner && !votedId && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2.5">
@@ -144,6 +149,52 @@ export function VotingPhase() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function VotingSupplementInput() {
+  const [text, setText] = useState("");
+  const snapshot = useGameStore((state) => state.snapshot)!;
+  const privateState = useGameStore((state) => state.privateState);
+  const sendCommand = useGameStore((state) => state.sendCommand);
+  const addToast = useGameStore((state) => state.addToast);
+  const requested = (snapshot.status.pendingSupplementPlayerIds ?? []).includes(
+    privateState?.playerId ?? "",
+  );
+
+  if (!requested) return null;
+
+  const submitSupplement = async () => {
+    if (!text.trim()) return;
+    try {
+      await sendCommand("game.submitDescription", { text: text.trim() });
+      setText("");
+    } catch (error) {
+      addToast((error as { message: string }).message, "error");
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-sky-300 bg-sky-50/60 p-3 dark:border-sky-800 dark:bg-sky-950/20">
+      <div className="flex items-center gap-2 text-sm font-medium text-sky-800 dark:text-sky-200">
+        <MessageSquare className="h-4 w-4" />
+        出题人要求你补充发言
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={text}
+          maxLength={100}
+          placeholder="输入补充发言..."
+          className="h-10 flex-1 bg-background"
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => event.key === "Enter" && submitSupplement()}
+        />
+        <Button className="h-10 gap-1.5" disabled={!text.trim()} onClick={submitSupplement}>
+          <Send className="h-4 w-4" />
+          发送
+        </Button>
+      </div>
     </div>
   );
 }

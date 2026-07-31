@@ -142,10 +142,11 @@ Minimum 4 players to start; `maxUndercoverCount = floor(playerCount / 4)`.
 |---|---|---|---|
 | `game.cancelVote` | `voting` or `tieBreak(vote)` | any voter | Remove own vote; allows re-voting |
 | `game.cancelNightAction` | `night` | actor | Remove own night action |
-| `game.requestSupplement` | `description` (after all spoken) | questioner | Ask specific players for extra speech; payload `{ playerIds: string[] }` |
+| `game.requestSupplement` | completed `description` or `voting` | questioner | Ask specific players for extra speech; payload `{ playerIds: string[] }` |
 
 For `game.requestSupplement`:
-- Only allowed after `isDescriptionComplete` (all alive players have spoken).
+- Allowed from `isDescriptionComplete` until the current normal vote resolves.
+- Votes remain active and can be changed while a supplement is pending; vote resolution is blocked.
 - Only one supplement request can be active at a time (`round.supplement` must be undefined).
 - The server tracks `round.supplement = { index, requestedPlayerIds, donePlayers }`.
 - When `donePlayers.length >= requestedPlayerIds.length`, supplement is cleared automatically.
