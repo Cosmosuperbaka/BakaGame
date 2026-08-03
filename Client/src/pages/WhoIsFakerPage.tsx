@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
+import { ArrowLeft, RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,20 +18,7 @@ import { useGameStore } from "@/stores/useGameStore";
 import { CreateRoomDialog } from "@/components/home/CreateRoomDialog";
 import { getSavedUsername, saveUsername } from "@/lib/cookie";
 import { PHASE_LABELS, randomRoomId } from "@/lib/helpers";
-import faviconUrl from "@/assets/favicon.png";
 import type { RoomSummary } from "@/types";
-
-interface ChangelogEntry {
-  version: string;
-  date: string;
-  title: string;
-  content: string;
-}
-
-interface ChangelogData {
-  currentVersion: string;
-  entries: ChangelogEntry[];
-}
 
 const listItemVariants = {
   hidden: { opacity: 0, y: 6 },
@@ -47,7 +34,7 @@ const listItemVariants = {
   exit: { opacity: 0, transition: { duration: 0.15 } },
 };
 
-export default function HomePage() {
+export default function WhoIsFakerPage() {
   const navigate = useNavigate();
   const rooms = useGameStore((state) => state.rooms);
   const createRoom = useGameStore((state) => state.createRoom);
@@ -60,20 +47,11 @@ export default function HomePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
-  const [versionOpen, setVersionOpen] = useState(false);
-  const [changelog, setChangelog] = useState<ChangelogData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (userName.trim()) saveUsername(userName.trim());
   }, [userName]);
-
-  useEffect(() => {
-    fetch("/changelog.json")
-      .then((r) => r.json())
-      .then((data: ChangelogData) => setChangelog(data))
-      .catch(() => {});
-  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -94,7 +72,7 @@ export default function HomePage() {
       }
       const reconnected = await reconnectRoom(room.roomId);
       if (reconnected) {
-        navigate(`/room/${room.roomId}`);
+        navigate(`/whoisfaker/room/${room.roomId}`);
         return;
       }
       if (room.hasPassword) {
@@ -103,7 +81,7 @@ export default function HomePage() {
       } else {
         try {
           await joinRoom(room.roomId, userName.trim());
-          navigate(`/room/${room.roomId}`);
+          navigate(`/whoisfaker/room/${room.roomId}`);
         } catch (e) {
           addToast((e as { message: string }).message, "error");
         }
@@ -117,7 +95,7 @@ export default function HomePage() {
     try {
       await joinRoom(joinTarget.roomId, userName.trim(), joinPassword);
       setJoinTarget(null);
-      navigate(`/room/${joinTarget.roomId}`);
+      navigate(`/whoisfaker/room/${joinTarget.roomId}`);
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
@@ -125,15 +103,22 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="pt-16 md:pt-20 pb-6 md:pb-8 text-center px-6">
-        <h1 className="text-5xl md:text-6xl font-bold tracking-tight flex items-center justify-center gap-4">
-          Who is{" "}
-          <img
-            src={faviconUrl}
-            alt="Faker"
-            className="h-14 md:h-16 inline-block rounded-lg"
-          />
-        </h1>
+      <header className="pt-12 md:pt-16 pb-5 md:pb-6 px-6">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center gap-2 mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-muted-foreground -ml-2 h-8"
+              onClick={() => navigate("/")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              返回主页
+            </Button>
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Who is Faker</h1>
+          <p className="text-muted-foreground text-sm mt-1.5">谁是卧底 · 多人派对游戏</p>
+        </div>
       </header>
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-10">
@@ -238,7 +223,7 @@ export default function HomePage() {
             const rid = randomRoomId();
             await createRoom({ ...params, roomId: rid, userName: userName.trim() });
             setCreateOpen(false);
-            navigate(`/room/${rid}`);
+            navigate(`/whoisfaker/room/${rid}`);
           } catch (e) {
             addToast((e as { message: string }).message, "error");
           }
@@ -263,36 +248,6 @@ export default function HomePage() {
             <Button variant="outline" onClick={() => setJoinTarget(null)}>取消</Button>
             <Button onClick={handlePasswordJoin}>加入</Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={versionOpen} onOpenChange={setVersionOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>版本信息</DialogTitle>
-            <DialogDescription>WhoIsFaker 更新日志</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 text-sm max-h-[60vh] overflow-y-auto">
-            {changelog?.entries.map((entry, idx) => (
-              <div key={entry.version} className="space-y-2">
-                <div className="flex items-baseline gap-2">
-                  <strong className="text-foreground text-base">v{entry.version}</strong>
-                  <span className="text-muted-foreground text-xs">{entry.date}</span>
-                  <span className="text-muted-foreground">— {entry.title}</span>
-                </div>
-                <div
-                  className="text-muted-foreground [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-3 [&_ul]:space-y-0.5 [&_li]:text-sm [&_a]:text-primary [&_a]:underline"
-                  dangerouslySetInnerHTML={{ __html: entry.content }}
-                />
-                {idx < changelog.entries.length - 1 && (
-                  <div className="border-t my-3" />
-                )}
-              </div>
-            ))}
-            {!changelog && (
-              <div className="text-muted-foreground">加载中...</div>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </div>
