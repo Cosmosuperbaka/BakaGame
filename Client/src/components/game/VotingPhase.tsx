@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { listContainer, listItem, pressable, popover } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
@@ -74,27 +74,33 @@ export function VotingPhase() {
       <PrivilegedActionPreview mode="vote" />
 
       {amAlive && !isQuestioner && !votedId ? (
-        <div className="grid grid-cols-2 gap-2.5">
+        <motion.div
+          className="grid grid-cols-2 gap-2.5"
+          variants={listContainer(targets.length)}
+          initial="initial"
+          animate="animate"
+        >
           {targets.map((player) => (
-            <Card
+            <motion.button
               key={player.id}
-              className="cursor-pointer border-0 bg-muted shadow-none transition-colors hover:bg-muted/70"
+              type="button"
+              variants={listItem}
+              {...pressable}
+              className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-muted/70"
               onClick={() => handleVote(player.id)}
             >
-              <CardContent className="flex items-center justify-between px-4 py-3.5">
-                <span className="truncate text-sm font-medium">{player.name}</span>
-                <Vote className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
-              </CardContent>
-            </Card>
+              <span className="truncate text-sm font-medium">{player.name}</span>
+              <Vote className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+            </motion.button>
           ))}
-        </div>
+        </motion.div>
       ) : null}
 
       {amAlive && !isQuestioner && votedId ? (
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
+          variants={popover}
+          initial="initial"
+          animate="animate"
           className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-800"
         >
           <div className="flex items-center gap-3">
