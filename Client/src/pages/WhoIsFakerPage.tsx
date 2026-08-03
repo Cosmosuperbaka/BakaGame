@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { listItem, pressable, backdrop } from "@/lib/motion";
 import { ArrowLeft, RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,19 +21,6 @@ import { getSavedUsername, saveUsername } from "@/lib/cookie";
 import { PHASE_LABELS, randomRoomId } from "@/lib/helpers";
 import type { RoomSummary } from "@/types";
 
-const listItemVariants = {
-  hidden: { opacity: 0, y: 6 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: Math.min(i, 4) * 0.02,
-      duration: 0.22,
-      ease: [0.22, 1, 0.36, 1] as const,
-    },
-  }),
-  exit: { opacity: 0, transition: { duration: 0.15 } },
-};
 
 export default function WhoIsFakerPage() {
   const navigate = useNavigate();
@@ -152,24 +140,24 @@ export default function WhoIsFakerPage() {
             {rooms.length === 0 ? (
               <motion.div
                 key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                variants={backdrop}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="text-center py-20 text-muted-foreground text-base"
               >
                 暂无房间，点击上方按钮创建一个吧
               </motion.div>
             ) : (
-              rooms.map((room, i) => (
+              rooms.map((room) => (
                 <motion.div
                   key={room.roomId}
-                  custom={i}
-                  variants={listItemVariants}
-                  initial="hidden"
-                  animate="visible"
+                  variants={listItem}
+                  initial="initial"
+                  animate="animate"
                   exit="exit"
                   layout
+                  {...pressable}
                 >
                   <Card
                     className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm"
