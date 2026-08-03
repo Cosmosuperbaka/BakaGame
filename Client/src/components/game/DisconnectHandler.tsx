@@ -14,10 +14,9 @@ export function DisconnectHandler() {
   const pendingId = snapshot.status.pendingDisconnectPlayerId;
   const pendingPlayer = snapshot.players.find((p) => p.id === pendingId);
 
-  if (!pendingId || !pendingPlayer) return null;
-
   const handleResolve = useCallback(
     async (resolution: "wait" | "eliminate") => {
+      if (!pendingId) return;
       try {
         await sendCommand("game.resolveDisconnect", {
           playerId: pendingId,
@@ -29,6 +28,8 @@ export function DisconnectHandler() {
     },
     [pendingId, sendCommand, addToast]
   );
+
+  if (!pendingId || !pendingPlayer) return null;
 
   return (
     <Card className="border-amber-200 bg-amber-50">
