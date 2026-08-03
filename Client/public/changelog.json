@@ -1,6 +1,12 @@
 {
-  "currentVersion": "1.2.0",
+  "currentVersion": "1.3.0",
   "entries": [
+    {
+      "version": "1.3.0",
+      "date": "2026-08-02",
+      "title": "多游戏平台重构",
+      "content": "<ul><li>新增 BakaGame 主页，支持多游戏选择入口</li><li>WhoIsFaker 游戏迁移至 /whoisfaker 路由</li><li>预留 SongGuessr 与 AnimeCharacterGuessr 代码位置</li><li>首页底部新增版本号、更新日志与 Commit 历史展示</li><li>后端 API 路径统一至 /api/whoisfaker</li></ul>"
+    },
     {
       "version": "1.2.0",
       "date": "2026-04-12",
