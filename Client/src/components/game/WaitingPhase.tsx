@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Check, X, Gamepad2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { spring } from "@/lib/motion";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { useGameStore } from "@/stores/useGameStore";
 
@@ -67,7 +68,7 @@ export function WaitingPhase() {
                 ? `${(readyCount / nonHostActive.length) * 100}%`
                 : "0%",
             }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
+            transition={spring.settle}
           />
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { listContainer, listItem, pressable, popover } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
@@ -76,20 +76,26 @@ export function NightPhase() {
 
       {canAct && !acted && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2.5">
+          <motion.div
+            className="grid grid-cols-2 gap-2.5"
+            variants={listContainer(targets.length)}
+            initial="initial"
+            animate="animate"
+          >
             {targets.map((p) => (
-              <Card
+              <motion.button
                 key={p.id}
-                className="cursor-pointer transition-all duration-150 hover:bg-rose-500/5 hover:border-rose-400/50 shadow-2xs"
+                type="button"
+                variants={listItem}
+                {...pressable}
+                className="flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3.5 text-left transition-colors hover:border-rose-400/50 hover:bg-rose-500/5"
                 onClick={() => handleNightAction(p.id)}
               >
-                <CardContent className="py-3.5 px-4 flex items-center justify-between">
-                  <span className="font-medium text-sm truncate">{p.name}</span>
-                  <Sword className="h-4 w-4 text-rose-500 shrink-0 ml-2" />
-                </CardContent>
-              </Card>
+                <span className="truncate text-sm font-medium">{p.name}</span>
+                <Sword className="ml-2 h-4 w-4 shrink-0 text-rose-500" />
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
           <Button
             variant="outline"
             className="w-full gap-2 h-10"
@@ -103,10 +109,10 @@ export function NightPhase() {
       {/* 提交行动后的优雅反馈卡片，支持撤销 */}
       {canAct && acted && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-          className="flex items-center justify-between gap-3 p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 max-w-sm mx-auto"
+          variants={popover}
+          initial="initial"
+          animate="animate"
+          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-800 dark:text-emerald-300"
         >
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />

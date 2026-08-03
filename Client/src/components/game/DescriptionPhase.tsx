@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { listItem } from "@/lib/motion";
 import {
   FastForward,
   MessageSquare,
@@ -133,7 +134,7 @@ export function DescriptionPhase() {
       ) : null}
 
       {mode === "supplement" && waitingPlayerIds.includes(myId) ? (
-        <div className="flex items-center justify-center gap-2 rounded-md bg-sky-100 px-4 py-2.5 text-sky-800">
+        <div className="flex items-center justify-center gap-2 rounded-md bg-sky-500/10 px-4 py-2.5 text-sky-700 dark:text-sky-300">
           <MessageSquarePlus className="h-4 w-4 shrink-0" />
           <span className="text-sm font-medium">轮到你补充发言</span>
         </div>
@@ -144,9 +145,10 @@ export function DescriptionPhase() {
           {currentDescriptions.map((description) => (
             <motion.div
               key={description.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              variants={listItem}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               className="flex items-start gap-3.5 rounded-md bg-muted p-4 text-foreground"
             >
               <div className="mt-0.5 shrink-0 rounded-md bg-background/70 p-2 text-primary">
