@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Users } from "lucide-react";
 import {
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useGameStore } from "@/stores/useGameStore";
+import type { RoomSnapshot } from "@/types";
 
 interface Props {
   open: boolean;
@@ -22,30 +23,41 @@ interface Props {
 
 export function RoomSettings({ open, onOpenChange }: Props) {
   const snapshot = useGameStore((s) => s.snapshot);
+
+  if (!snapshot) return null;
+
+  // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>房间设置</DialogTitle>
+          <DialogDescription>修改房间配置（仅在未开局时生效）</DialogDescription>
+        </DialogHeader>
+        <SettingsForm snapshot={snapshot} onOpenChange={onOpenChange} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface SettingsFormProps {
+  snapshot: RoomSnapshot;
+  onOpenChange: (open: boolean) => void;
+}
+
+function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
 
-  const [name, setName] = useState("");
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [name, setName] = useState(snapshot.name);
+  const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(true);
-  const [undercoverCount, setUndercoverCount] = useState(1);
-  const [hasAngel, setHasAngel] = useState(false);
-  const [hasBlank, setHasBlank] = useState(false);
-
-  useEffect(() => {
-    if (snapshot && open) {
-      setName(snapshot.name);
-      setIsPrivate(snapshot.visibility === "private");
-      setAllowSpectators(snapshot.allowSpectators);
-      setUndercoverCount(snapshot.settings.roleConfig.undercoverCount);
-      setHasAngel(snapshot.settings.roleConfig.hasAngel);
-      setHasBlank(snapshot.settings.roleConfig.hasBlank);
-      setPassword("");
-    }
-  }, [snapshot, open]);
-
-  if (!snapshot) return null;
+  const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
+  const [undercoverCount, setUndercoverCount] = useState(
+    snapshot.settings.roleConfig.undercoverCount,
+  );
+  const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
+  const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
 
   const limits = snapshot.roleLimits;
   const activePlayers = snapshot.players.filter(
@@ -78,13 +90,8 @@ export function RoomSettings({ open, onOpenChange }: Props) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>房间设置</DialogTitle>
-          <DialogDescription>修改房间配置（仅在未开局时生效）</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-5">
+    <>
+      <div className="space-y-5">
           <div className="space-y-1.5">
             <Label>房间名称</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -217,13 +224,12 @@ export function RoomSettings({ open, onOpenChange }: Props) {
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSave}>保存</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          取消
+        </Button>
+        <Button onClick={handleSave}>保存</Button>
+      </DialogFooter>
+    </>
   );
 }
