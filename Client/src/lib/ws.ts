@@ -9,7 +9,7 @@ import {
 // ==================== WebSocket 连接管理器 ====================
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
-const WS_URL = SERVER_URL.replace(/^http/, "ws") + "/ws";
+const WS_URL = SERVER_URL.replace(/^http/, "ws") + "/api/whoisfaker/ws";
 
 type MessageHandler = (msg: ServerMessage) => void;
 type StatusHandler = (connected: boolean) => void;
@@ -23,7 +23,7 @@ interface PendingRequest {
 let ws: WebSocket | null = null;
 let messageHandlers: MessageHandler[] = [];
 let statusHandlers: StatusHandler[] = [];
-let pendingRequests = new Map<string, PendingRequest>();
+const pendingRequests: Map<string, PendingRequest> = new Map<string, PendingRequest>();
 let reqCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
