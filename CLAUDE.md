@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Mandatory: `/Agents` specifications
+
+**Before any work in this repository, read the specs in `Agents/` and follow them. They override default behavior.**
+
+| File | Scope | Must read before |
+|---|---|---|
+| `Agents/Spec.md` | Engineering constraints, framework usage, Git commit rules | Any change |
+| `Agents/Design.md` | Frontend design system, theme, layout, interaction rules | Any `Client/` change |
+| `Agents/versioning.md` | Version numbering + commit message format | Any commit or release |
+
+Non-negotiable rules distilled from those documents:
+
+- **Production quality only.** No demo/placeholder text, no design-style or theme names in UI copy or code comments.
+- **Framework-native first.** Prefer Elysia / React / Tailwind / Radix native capabilities over new dependencies or custom abstractions.
+- **Theme is global.** All styling derives from the semantic variables in `Client/src/index.css`. Never hardcode colors, radii, shadows, or fonts in business components.
+- **Atomic commits.** One self-contained change per commit, verified before committing.
+- **Commit message format:** `type(Game): 中文正文` — body in Chinese, **≤ 12 Chinese characters**; split the commit if longer. Game scope is `Faker` / `Song` / `CCB` / `Core`.
+- **Version format:** `V1.x.x(commit_hash)` — minor for large features, patch per bug-fix cycle.
+- When user instructions conflict with these documents, the newest explicit user instruction wins, and the affected spec file must be updated in the same session.
+
 ## Project
 
 BakaGame (server name: WhoIsFaker) is a real-time multiplayer party game — a digital "谁是卧底" (Who is the Undercover). All game state lives on the server and is pushed to clients over WebSocket. There is no REST API for game actions.
