@@ -1,8 +1,8 @@
 @import "@fontsource/libre-baskerville/400.css";
 @import "@fontsource/libre-baskerville/700.css";
-@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource-variable/noto-serif-sc";
+@import "@fontsource-variable/jetbrains-mono";
 @import "@fontsource-variable/lora";
-@import "@fontsource-variable/noto-sans-sc";
 @import "tailwindcss";
 
 @theme inline {
@@ -100,9 +100,9 @@
   --sidebar-accent-foreground: oklch(0.3760 0.0225 64.3434);
   --sidebar-border: oklch(0.8606 0.0321 84.5881);
   --sidebar-ring: oklch(0.6180 0.0778 65.5444);
-  --font-sans: "Libre Baskerville", "Noto Sans SC Variable", "Noto Sans SC", serif;
-  --font-serif: "Lora Variable", "Lora", "Noto Sans SC Variable", "Noto Sans SC", serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Libre Baskerville", "Noto Serif SC Variable", "Noto Serif SC", serif;
+  --font-serif: "Lora Variable", "Lora", "Noto Serif SC Variable", "Noto Serif SC", serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --radius: 0.25rem;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
   --shadow-xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
