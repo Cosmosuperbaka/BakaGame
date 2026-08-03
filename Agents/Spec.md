@@ -36,6 +36,8 @@
 - 同一需求包含多个可独立交付的功能时，应拆分为多个提交；彼此不可分割的配套修改应保留在同一提交中。
 - 提交前必须检查暂存区内容，确保没有纳入用户已有的无关改动、临时文件或生成物。
 - Commit Message 必须遵循 Angular 提交规范，格式为 `type(scope): 中文摘要`，其中摘要必须使用中文。
-- `type` 应根据变更性质选择 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore` 或 `revert`；`scope` 使用简短、稳定的英文模块名，确实不适用时可以省略。
+- `type` 应根据变更性质选择 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore` 或 `revert`。
+- `scope` 必须填写受影响游戏的缩写，取值为 `Faker`、`Song`、`CCB`，公共能力、基础设施与站点主页使用 `Core`。具体对应关系与版本号规范见 `Agents/versioning.md`。
+- 中文摘要不得超过 12 个中文字；超出时必须继续拆分提交，直到每条提交的摘要都满足该限制。
 - 存在正文或破坏性变更说明时，正文和说明也必须使用中文，并保持内容准确、简洁。
-- 示例：`feat(client): 增加投票撤销入口`、`fix(server): 修复补充发言期间提前结算`、`docs(agents): 更新工程提交约束`。
+- 示例：`feat(Faker): 增加投票撤销入口`、`fix(Faker): 修复提前结算`、`docs(Core): 更新提交约束`。
