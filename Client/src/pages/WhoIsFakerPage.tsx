@@ -172,7 +172,7 @@ export default function WhoIsFakerPage() {
                   layout
                 >
                   <Card
-                    className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:bg-primary/5 hover:border-primary/40"
+                    className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm"
                     onClick={() => handleJoinRoom(room)}
                   >
                     <CardContent className="py-4 px-5 flex items-center justify-between">
