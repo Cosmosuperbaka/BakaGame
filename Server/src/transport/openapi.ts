@@ -19,7 +19,7 @@ export const createSwaggerPlugin = ({ serverUrl, versionInfo }: OpenApiOptions) 
         title: "WhoIsFaker Backend HTTP API",
         version: versionInfo.version,
         description:
-          "WhoIsFaker 后端辅助 HTTP 接口文档。实时业务通信通过 WebSocket /ws 完成。",
+          "WhoIsFaker 后端辅助 HTTP 接口文档。实时业务通信通过 WebSocket /api/whoisfaker/ws 完成。",
       },
       servers: [
         {

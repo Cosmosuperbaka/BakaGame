@@ -88,7 +88,7 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
     // ==================== 系统 HTTP 业务模块 ====================
     .use(systemRoutes({ roomService, versionInfo }))
     // ==================== WebSocket 入口 ====================
-    .ws("/ws", {
+    .ws("/api/whoisfaker/ws", {
       open(ws) {
         // 为每个连接建立独立的连接上下文，后续所有命令都靠它定位会话。
         const connectionId = crypto.randomUUID();
