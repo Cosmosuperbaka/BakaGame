@@ -62,7 +62,7 @@ export default function RoomPage() {
   // 房间关闭后自动返回主页（room.closed 事件清空 roomId/snapshot）
   useEffect(() => {
     if (!joining && !snapshot && !storeRoomId) {
-      navigate("/");
+      navigate("/whoisfaker");
     }
   }, [joining, snapshot, storeRoomId, navigate]);
 
@@ -95,7 +95,7 @@ export default function RoomPage() {
       } catch {
         if (cancelled) return;
         addToast("连接服务器超时，请刷新重试", "error");
-        navigate("/");
+        navigate("/whoisfaker");
         return;
       }
 
@@ -114,7 +114,7 @@ export default function RoomPage() {
       const name = getSavedUsername();
       if (!name) {
         addToast("请先在主页设置用户名", "error");
-        navigate("/");
+        navigate("/whoisfaker");
         return;
       }
 
@@ -137,11 +137,11 @@ export default function RoomPage() {
           } catch (createErr) {
             if (cancelled) return;
             addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
-            navigate("/");
+            navigate("/whoisfaker");
           }
         } else {
           addToast(err.message ?? "加入房间失败", "error");
-          navigate("/");
+          navigate("/whoisfaker");
         }
       }
     };
@@ -152,7 +152,7 @@ export default function RoomPage() {
 
   const handleLeave = useCallback(async () => {
     await leaveRoom();
-    navigate("/");
+    navigate("/whoisfaker");
   }, [leaveRoom, navigate]);
 
   const handleMarkChange = useCallback((playerId: string, mark: PlayerMark) => {
