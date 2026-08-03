@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GameProvider } from "@/contexts/GameContext";
 import { ToastContainer } from "@/components/Toast";
@@ -21,6 +22,7 @@ function WhoIsFakerLayout() {
 function App() {
   return (
     <BrowserRouter>
+      <MotionConfig reducedMotion="user">
       <TooltipProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -32,6 +34,7 @@ function App() {
           <Route path="/animecharguessr/*" element={<AnimeCharacterGuessrPage />} />
         </Routes>
       </TooltipProvider>
+      </MotionConfig>
     </BrowserRouter>
   );
 }
