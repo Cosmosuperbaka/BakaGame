@@ -55,3 +55,5 @@ Server/build
 *.sw?
 
 word-bank.json
+# Generated at build time
+Client/public/commit-history.json
