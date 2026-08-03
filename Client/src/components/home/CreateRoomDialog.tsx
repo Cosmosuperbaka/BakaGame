@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,21 +32,33 @@ export function CreateRoomDialog({
   defaultName,
   onCreate,
 }: CreateRoomDialogProps) {
+  // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>创建房间</DialogTitle>
+          <DialogDescription>设置房间参数</DialogDescription>
+        </DialogHeader>
+        <CreateRoomForm
+          defaultName={defaultName}
+          onOpenChange={onOpenChange}
+          onCreate={onCreate}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type CreateRoomFormProps = Pick<CreateRoomDialogProps, "defaultName" | "onOpenChange" | "onCreate">;
+
+function CreateRoomForm({ defaultName, onOpenChange, onCreate }: CreateRoomFormProps) {
   const [roomName, setRoomName] = useState(defaultName);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [loading, setLoading] = useState(false);
   const addToast = useGameStore((state) => state.addToast);
-
-  useEffect(() => {
-    if (open) {
-      setRoomName(defaultName);
-      setIsPrivate(false);
-      setPassword("");
-      setAllowSpectators(true);
-    }
-  }, [open, defaultName]);
 
   const handleCreate = async () => {
     if (isPrivate && !password.trim()) {
@@ -67,13 +79,8 @@ export function CreateRoomDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>创建房间</DialogTitle>
-          <DialogDescription>设置房间参数</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-5">
+    <>
+      <div className="space-y-5">
           <div className="space-y-2">
             <Label className="text-sm">房间名称</Label>
             <Input
@@ -114,15 +121,14 @@ export function CreateRoomDialog({
             <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleCreate} disabled={loading}>
-            {loading ? "创建中..." : "创建"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          取消
+        </Button>
+        <Button onClick={handleCreate} disabled={loading}>
+          {loading ? "创建中..." : "创建"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
