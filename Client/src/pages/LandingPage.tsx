@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { listItem, listContainer, pressableStrong } from "@/lib/motion";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -87,7 +88,7 @@ function formatRelativeTime(dateStr: string): string {
   return `${Math.floor(months / 12)} 年前`;
 }
 
-function GameRow({ game, index }: { game: GameEntry; index: number }) {
+function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();
   const baseClass =
     "w-full flex items-center gap-5 rounded-xl border bg-card px-5 py-6 md:px-6 md:py-7 text-left";
@@ -119,19 +120,16 @@ function GameRow({ game, index }: { game: GameEntry; index: number }) {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04, duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-    >
+    <motion.div variants={listItem}>
       {game.available ? (
-        <button
+        <motion.button
           type="button"
           onClick={() => navigate(game.path)}
           className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-[3px]`}
+          {...pressableStrong}
         >
           {content}
-        </button>
+        </motion.button>
       ) : (
         <div aria-disabled="true" className={`${baseClass} opacity-60`}>
           {content}
@@ -198,9 +196,9 @@ export default function LandingPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="px-6 pt-20 pb-10 text-center md:pt-28 md:pb-12">
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          variants={listItem}
+          initial="initial"
+          animate="animate"
         >
           <h1 className="flex items-center justify-center gap-4 text-5xl font-bold tracking-tight md:text-6xl">
             Baka
@@ -212,11 +210,16 @@ export default function LandingPage() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 pb-12 md:px-10">
-        <div className="space-y-3">
-          {GAMES.map((game, i) => (
-            <GameRow key={game.id} game={game} index={i} />
+        <motion.div
+          className="space-y-3"
+          variants={listContainer(GAMES.length)}
+          initial="initial"
+          animate="animate"
+        >
+          {GAMES.map((game) => (
+            <GameRow key={game.id} game={game} />
           ))}
-        </div>
+        </motion.div>
       </main>
 
       <footer className="flex justify-center px-6 pb-10">
