@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { GitCommitHorizontal, ChevronDown, ChevronUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -12,9 +10,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import faviconUrl from "@/assets/favicon.png";
-
-// ==================== 类型定义 ====================
 
 interface ChangelogEntry {
   version: string;
@@ -36,32 +33,27 @@ interface CommitEntry {
 }
 
 interface CommitHistoryData {
-  generatedAt: string;
   currentVersion: string;
   currentCommit: string;
   commits: CommitEntry[];
 }
 
-// ==================== 游戏配置 ====================
-
-interface GameConfig {
+interface GameEntry {
   id: string;
   path: string;
   icon: string;
   name: string;
   nameEn: string;
-  description: string;
   available: boolean;
 }
 
-const GAMES: GameConfig[] = [
+const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
     icon: faviconUrl,
     name: "谁是 Faker",
-    nameEn: "Who is Faker",
-    description: "谁是卧底 · 多人派对社交推理游戏",
+    nameEn: "WhoIsFaker",
     available: true,
   },
   {
@@ -70,115 +62,119 @@ const GAMES: GameConfig[] = [
     icon: "",
     name: "猜歌",
     nameEn: "SongGuessr",
-    description: "听音乐片段，抢答猜歌名",
     available: false,
   },
   {
     id: "animecharguessr",
     path: "/animecharguessr",
     icon: "",
-    name: "猜番",
+    name: "猜角色",
     nameEn: "AnimeCharacterGuessr",
-    description: "根据线索猜动漫角色",
     available: false,
   },
 ];
 
-// ==================== 提交类型色彩映射 ====================
-
-const COMMIT_TYPE_COLORS: Record<string, string> = {
-  feat: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
-  fix: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  docs: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400",
-  style: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400",
-  refactor: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
-  test: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-  chore: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-  perf: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
-};
-
-function getCommitType(message: string): string {
-  const match = message.match(/^(\w+)[(:]/);
-  return match ? match[1] : "chore";
+// 把日期换算成中文相对时间
+function formatRelativeTime(dateStr: string): string {
+  const then = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(then.getTime())) return dateStr;
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
+  if (days <= 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days < 30) return `${days} 天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  return `${Math.floor(months / 12)} 年前`;
 }
 
-function getCommitTypeColor(type: string): string {
-  return COMMIT_TYPE_COLORS[type] ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
-}
-
-// ==================== 子组件 ====================
-
-function GameCard({ game, index }: { game: GameConfig; index: number }) {
+function GameRow({ game, index }: { game: GameEntry; index: number }) {
   const navigate = useNavigate();
+  const baseClass =
+    "w-full flex items-center gap-5 rounded-xl border bg-card px-5 py-6 md:px-6 md:py-7 text-left";
+
+  const content = (
+    <>
+      {game.icon ? (
+        <img
+          src={game.icon}
+          alt=""
+          aria-hidden="true"
+          className="h-14 w-14 shrink-0 rounded-lg md:h-16 md:w-16"
+        />
+      ) : (
+        <div className="h-14 w-14 shrink-0 rounded-lg bg-muted md:h-16 md:w-16" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xl font-semibold md:text-2xl">{game.name}</div>
+        <div className="mt-1 truncate text-sm text-muted-foreground">{game.nameEn}</div>
+      </div>
+      {game.available ? (
+        <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+      ) : (
+        <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+          即将推出
+        </Badge>
+      )}
+    </>
+  );
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ delay: index * 0.04, duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
     >
-      <Card
-        className={[
-          "relative overflow-hidden transition-[background,border-color,box-shadow] duration-150 h-full",
-          game.available
-            ? "cursor-pointer hover:bg-primary/5 hover:border-primary/40 hover:shadow-sm"
-            : "opacity-55 cursor-not-allowed select-none",
-        ].join(" ")}
-        onClick={game.available ? () => navigate(game.path) : undefined}
-      >
-        <CardContent className="p-5 flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-3">
-              {game.icon ? (
-                <img src={game.icon} alt={game.nameEn} className="h-9 w-9 rounded-lg shrink-0" />
-              ) : (
-                <div className="h-9 w-9 rounded-lg bg-muted shrink-0" />
-              )}
-              <div className="min-w-0">
-                <div className="font-semibold text-base leading-tight">{game.name}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{game.nameEn}</div>
-              </div>
-            </div>
-            {game.available ? (
-              <Badge variant="default" className="shrink-0 text-xs font-normal">在线</Badge>
-            ) : (
-              <Badge variant="outline" className="shrink-0 text-xs font-normal text-muted-foreground">
-                即将推出
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">{game.description}</p>
-        </CardContent>
-      </Card>
+      {game.available ? (
+        <button
+          type="button"
+          onClick={() => navigate(game.path)}
+          className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-[3px]`}
+        >
+          {content}
+        </button>
+      ) : (
+        <div aria-disabled="true" className={`${baseClass} opacity-60`}>
+          {content}
+        </div>
+      )}
     </motion.div>
   );
 }
 
-function CommitRow({ commit }: { commit: CommitEntry }) {
-  const type = getCommitType(commit.message);
-  const color = getCommitTypeColor(type);
+function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
+  if (commits.length === 0) {
+    return <div className="py-6 text-center text-sm text-muted-foreground">暂无提交记录</div>;
+  }
 
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b last:border-b-0">
-      <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0 mt-0.5 select-all">
-        {commit.hash}
-      </span>
-      <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 mt-0.5 ${color}`}>
-        {type}
-      </span>
-      <span className="text-sm min-w-0 break-words flex-1">{commit.message}</span>
-      <span className="text-xs text-muted-foreground shrink-0 mt-0.5">{commit.date}</span>
-    </div>
+    <ol className="relative ml-1 border-l">
+      {commits.map((commit) => (
+        <li key={commit.hash} className="relative pb-4 pl-5 last:pb-0">
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 -left-[4.5px] h-2 w-2 rounded-full bg-border"
+          />
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="min-w-0 text-sm break-words">{commit.message}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {formatRelativeTime(commit.date)}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-mono select-all">{commit.hash}</span>
+            <span aria-hidden="true">·</span>
+            <span className="truncate">{commit.author}</span>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
-
-// ==================== 主页面 ====================
 
 export default function LandingPage() {
   const [changelog, setChangelog] = useState<ChangelogData | null>(null);
   const [commitHistory, setCommitHistory] = useState<CommitHistoryData | null>(null);
-  const [changelogOpen, setChangelogOpen] = useState(false);
-  const [commitExpanded, setCommitExpanded] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   useEffect(() => {
     fetch("/changelog.json")
@@ -192,128 +188,91 @@ export default function LandingPage() {
       .catch(() => {});
   }, []);
 
-  const displayVersion = commitHistory?.currentVersion
-    ? `V${commitHistory.currentVersion}(${commitHistory.currentCommit ?? "dev"})`
-    : changelog?.currentVersion
-      ? `V${changelog.currentVersion}`
-      : null;
-
-  const visibleCommits = commitExpanded
-    ? (commitHistory?.commits ?? [])
-    : (commitHistory?.commits ?? []).slice(0, 5);
+  const version = commitHistory?.currentVersion ?? changelog?.currentVersion;
+  const commit = commitHistory?.currentCommit;
+  const versionLabel = version
+    ? `V${version}${commit ? `(${commit})` : ""}`
+    : null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* 页头 */}
-      <header className="pt-16 md:pt-24 pb-8 md:pb-10 text-center px-6">
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="px-6 pt-20 pb-10 text-center md:pt-28 md:pb-12">
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         >
-          <h1 className="text-5xl md:text-6xl font-bold tracking-tight flex items-center justify-center gap-4">
+          <h1 className="flex items-center justify-center gap-4 text-5xl font-bold tracking-tight md:text-6xl">
             Baka
-            <img
-              src={faviconUrl}
-              alt="BakaGame"
-              className="h-14 md:h-16 inline-block rounded-xl"
-            />
+            <img src={faviconUrl} alt="" aria-hidden="true" className="h-14 rounded-xl md:h-16" />
             Game
           </h1>
-          <p className="text-muted-foreground text-base mt-3">多人小游戏合集</p>
+          <p className="mt-3 text-base text-muted-foreground">多人小游戏合集</p>
         </motion.div>
       </header>
 
-      {/* 游戏卡片区 */}
-      <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-6 pb-12 md:px-10">
+        <div className="space-y-3">
           {GAMES.map((game, i) => (
-            <GameCard key={game.id} game={game} index={i} />
+            <GameRow key={game.id} game={game} index={i} />
           ))}
         </div>
       </main>
 
-      {/* 页脚：版本 + 更新日志 + Commit 历史 */}
-      <footer className="w-full max-w-3xl mx-auto px-6 md:px-10 pb-10 space-y-6">
-        <div className="border-t pt-6">
-          {/* 版本行 */}
-          <div className="flex items-center gap-3 mb-4">
-            {displayVersion && (
-              <span className="text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded">
-                {displayVersion}
-              </span>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground px-2"
-              onClick={() => setChangelogOpen(true)}
-            >
-              更新日志
-            </Button>
-          </div>
-
-          {/* Commit 历史 */}
-          {commitHistory && commitHistory.commits.length > 0 && (
-            <div className="rounded-xl border overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/40 border-b">
-                <GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground">Commit 历史</span>
-              </div>
-              <div className="px-4 divide-y">
-                {visibleCommits.map((commit) => (
-                  <CommitRow key={commit.hash} commit={commit} />
-                ))}
-              </div>
-              {(commitHistory.commits.length > 5) && (
-                <div className="px-4 py-2 border-t">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full h-7 text-xs text-muted-foreground gap-1"
-                    onClick={() => setCommitExpanded((v) => !v)}
-                  >
-                    {commitExpanded ? (
-                      <><ChevronUp className="h-3.5 w-3.5" />收起</>
-                    ) : (
-                      <><ChevronDown className="h-3.5 w-3.5" />展开全部 {commitHistory.commits.length} 条</>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      <footer className="flex justify-center px-6 pb-10">
+        {versionLabel && (
+          <button
+            type="button"
+            onClick={() => setInfoOpen(true)}
+            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-[3px]"
+          >
+            {versionLabel}
+          </button>
+        )}
       </footer>
 
-      {/* 更新日志弹窗 */}
-      <Dialog open={changelogOpen} onOpenChange={setChangelogOpen}>
-        <DialogContent>
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>更新日志</DialogTitle>
-            <DialogDescription>BakaGame 版本历史</DialogDescription>
+            <DialogTitle>{versionLabel ?? "版本信息"}</DialogTitle>
+            <DialogDescription>更新日志与提交历史</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 text-sm max-h-[60vh] overflow-y-auto">
-            {changelog?.entries.map((entry, idx) => (
-              <div key={entry.version} className="space-y-2">
-                <div className="flex items-baseline gap-2">
-                  <strong className="text-foreground text-base">V{entry.version}</strong>
-                  <span className="text-muted-foreground text-xs">{entry.date}</span>
-                  <span className="text-muted-foreground">— {entry.title}</span>
+          <Tabs defaultValue="changelog">
+            <TabsList className="w-full">
+              <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
+              <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
+            </TabsList>
+            <TabsContent value="changelog" className="mt-4 max-h-[55vh] overflow-y-auto">
+              {changelog ? (
+                <div className="space-y-5">
+                  {changelog.entries.map((entry) => (
+                    <div key={entry.version} className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <strong className="text-base">V{entry.version}</strong>
+                        <span className="text-xs text-muted-foreground">{entry.date}</span>
+                        <span className="min-w-0 truncate text-sm text-muted-foreground">
+                          {entry.title}
+                        </span>
+                      </div>
+                      <div
+                        className="text-sm text-muted-foreground [&_a]:text-primary [&_a]:underline [&_li]:text-sm [&_ul]:ml-3 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:space-y-0.5"
+                        dangerouslySetInnerHTML={{ __html: entry.content }}
+                      />
+                    </div>
+                  ))}
                 </div>
-                <div
-                  className="text-muted-foreground [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-3 [&_ul]:space-y-0.5 [&_li]:text-sm [&_a]:text-primary [&_a]:underline"
-                  dangerouslySetInnerHTML={{ __html: entry.content }}
-                />
-                {idx < changelog.entries.length - 1 && (
-                  <div className="border-t my-3" />
-                )}
-              </div>
-            ))}
-            {!changelog && (
-              <div className="text-muted-foreground">加载中...</div>
-            )}
-          </div>
+              ) : (
+                <div className="py-6 text-center text-sm text-muted-foreground">加载中...</div>
+              )}
+            </TabsContent>
+            <TabsContent value="commits" className="mt-4 max-h-[55vh] overflow-y-auto pr-1">
+              {commitHistory ? (
+                <CommitTimeline commits={commitHistory.commits} />
+              ) : (
+                <div className="py-6 text-center text-sm text-muted-foreground">加载中...</div>
+              )}
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
