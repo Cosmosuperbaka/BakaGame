@@ -41,6 +41,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  --color-panel: var(--panel);
+
   --font-sans: var(--font-sans);
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
@@ -100,6 +102,9 @@
   --sidebar-accent-foreground: oklch(0.3760 0.0225 64.3434);
   --sidebar-border: oklch(0.8606 0.0321 84.5881);
   --sidebar-ring: oklch(0.6180 0.0778 65.5444);
+  /* 房间页三个工作面板的表面色：比页面底色略暗，避免大面积高亮；
+     同时与 muted 保持可辨差值，使面板内的小块控件仍能浮起。 */
+  --panel: oklch(0.9430 0.0168 87.0000);
   --font-sans: "Libre Baskerville", "Noto Serif SC Variable", "Noto Serif SC", serif;
   --font-serif: "Lora Variable", "Lora", "Noto Serif SC Variable", "Noto Serif SC", serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
@@ -149,6 +154,7 @@
   --sidebar-accent-foreground: oklch(0.9239 0.0190 83.0636);
   --sidebar-border: oklch(0.3795 0.0181 57.1280);
   --sidebar-ring: oklch(0.7264 0.0581 66.6967);
+  --panel: oklch(0.3080 0.0148 58.0000);
   --radius: 0.25rem;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
   --shadow-xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
