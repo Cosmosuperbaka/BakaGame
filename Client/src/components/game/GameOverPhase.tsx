@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Check, History, ChevronDown, BookOpen, Vote } from "lucide-react";
+import { Trophy, Check, X, History, ChevronDown, BookOpen, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
@@ -66,13 +66,7 @@ export function GameOverPhase() {
           : "text-amber-600";
 
   return (
-    <motion.div
-      key="game-over"
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="mx-auto max-w-2xl space-y-5"
-    >
+    <div className="mx-auto max-w-2xl space-y-5">
       <PhaseHeader
         icon={Trophy}
         title={WINNER_LABELS[summary.winner]}
@@ -321,12 +315,12 @@ export function GameOverPhase() {
               onClick={handleReady}
               className="gap-2 min-w-[120px]"
             >
-              <Check className="h-4 w-4" />
+              {me.isReady ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
               {me.isReady ? "取消准备" : "准备下一局"}
             </Button>
           )
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
