@@ -1,13 +1,53 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Check, X, History, ChevronDown, BookOpen, Vote } from "lucide-react";
+import { Trophy, Check, X, ChevronDown, BookOpen, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/lib/helpers";
+import { collapsible, listContainer, listItem, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { DescriptionTable } from "./DescriptionHistory";
 import { PhaseHeader } from "./PhaseHeader";
+
+/**
+ * 折叠区标题。箭头以弹性过渡翻转，与内容展开同时发生，
+ * 使箭头方向读作展开状态本身，而不是一个独立的装饰。
+ */
+function DisclosureHeader({
+  icon,
+  label,
+  open,
+  onToggle,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      whileTap={{ scale: 0.995 }}
+      transition={spring.snap}
+      className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
+    >
+      {icon}
+      <h3 className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </h3>
+      <motion.span
+        aria-hidden="true"
+        className="inline-flex text-muted-foreground"
+        animate={{ rotate: open ? 180 : 0 }}
+        transition={spring.snap}
+      >
+        <ChevronDown className="h-4 w-4" />
+      </motion.span>
+    </motion.button>
+  );
+}
 
 export function GameOverPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
@@ -17,8 +57,8 @@ export function GameOverPhase() {
   const summary = snapshot.summary;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
-  const [showDescriptions, setShowDescriptions] = useState(false);
   const [showVotes, setShowVotes] = useState(true);
+  // showDescriptions removed — use the sidebar history panel instead
 
   const activePlayers = snapshot.players.filter((p) => p.membership === "active");
   const nonHostActive = activePlayers.filter((p) => !p.isHost);
@@ -83,20 +123,20 @@ export function GameOverPhase() {
             本局词语解密
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+            <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3">
               <div className="text-xs text-emerald-600 font-medium mb-1">平民词</div>
               <div className="text-base font-bold text-emerald-700">
                 {summary.words.civilianWord}
               </div>
             </div>
-            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+            <div className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3">
               <div className="text-xs text-rose-600 font-medium mb-1">卧底词</div>
               <div className="text-base font-bold text-rose-700">
                 {summary.words.undercoverWord}
               </div>
             </div>
             {summary.words.blankHint && (
-              <div className="p-3 bg-slate-500/10 border border-slate-500/20 rounded-lg col-span-2 md:col-span-1">
+              <div className="col-span-2 rounded-md border border-slate-500/20 bg-slate-500/10 p-3 md:col-span-1">
                 <div className="text-xs text-slate-600 font-medium mb-1">白板提示</div>
                 <div className="text-base font-bold text-slate-700">
                   {summary.words.blankHint}
@@ -123,7 +163,13 @@ export function GameOverPhase() {
               <th className="px-4 py-2 text-right font-medium">房间累计</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-background">
+          {/* 身份逐行揭示，让战报读作一次开牌而非整块出现 */}
+          <motion.tbody
+            className="divide-y divide-background"
+            variants={listContainer(summary.revealedRoles.length)}
+            initial="initial"
+            animate="animate"
+          >
             {summary.revealedRoles.map(({ playerId, role }) => {
               const player = snapshot.players.find((p) => p.id === playerId);
               const award = summary.awardedScores.find(
@@ -132,7 +178,7 @@ export function GameOverPhase() {
               const delta = award?.delta ?? 0;
               const totalScore = player?.score ?? 0;
               return (
-                <tr key={playerId} className="hover:bg-background/50">
+                <motion.tr key={playerId} variants={listItem} className="hover:bg-background/50">
                   <td className="px-4 py-2.5 font-medium">
                     {player?.name ?? playerId}
                   </td>
@@ -150,45 +196,37 @@ export function GameOverPhase() {
                   <td className="px-4 py-2.5 text-right font-semibold text-amber-600">
                     {totalScore}
                   </td>
-                </tr>
+                </motion.tr>
               );
             })}
-          </tbody>
+          </motion.tbody>
         </table>
       </section>
 
-      {/* 投票复盘明细 */}
+      {/* 投票复盘：按天顺序展示 */}
       {summary.voteHistory && summary.voteHistory.length > 0 && (
         <section className="overflow-hidden rounded-md bg-muted">
-          <button
-            type="button"
-            onClick={() => setShowVotes((v) => !v)}
-            className="flex w-full items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
-          >
-            <Vote className="h-4 w-4 text-primary" />
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-              投票明细战报
-            </h3>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-muted-foreground transition-transform duration-200",
-                showVotes && "rotate-180"
-              )}
-            />
-          </button>
+          <DisclosureHeader
+            icon={<Vote className="h-4 w-4 text-primary" />}
+            label="投票明细"
+            open={showVotes}
+            onToggle={() => setShowVotes((v) => !v)}
+          />
           <AnimatePresence initial={false}>
             {showVotes && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="overflow-hidden p-4 space-y-3"
+                variants={collapsible}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="space-y-3 overflow-hidden p-4"
               >
-                {summary.voteHistory.map((item, idx) => (
+                {[...summary.voteHistory]
+                  .sort((a, b) => a.day - b.day || (a.tieBreak ? 1 : 0) - (b.tieBreak ? 1 : 0))
+                  .map((item, idx) => (
                   <div key={idx} className="space-y-1.5 text-sm">
                     <div className="font-semibold text-xs text-muted-foreground">
-                      第 {item.day} 天{item.tieBreak ? " (平票PK投票)" : " (正常投票)"}：
+                      第 {item.day} 天{item.tieBreak ? " · 平票PK" : ""}：
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {item.votes.map((v, vIdx) => {
@@ -249,46 +287,6 @@ export function GameOverPhase() {
               );
             })}
           </div>
-        </section>
-      )}
-
-      {/* 描述复盘 */}
-      {summary.descriptions.length > 0 && (
-        <section className="overflow-hidden rounded-md bg-muted">
-          <button
-            type="button"
-            onClick={() => setShowDescriptions((v) => !v)}
-            className="flex w-full items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
-          >
-            <History className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-              描述发言复盘
-            </h3>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-muted-foreground transition-transform duration-200",
-                showDescriptions && "rotate-180"
-              )}
-            />
-          </button>
-          <AnimatePresence initial={false}>
-            {showDescriptions && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="overflow-hidden"
-              >
-                <div className="p-4">
-                  <DescriptionTable
-                    descriptions={summary.descriptions}
-                    compact
-                  />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </section>
       )}
 
