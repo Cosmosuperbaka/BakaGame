@@ -3,7 +3,7 @@ import type { GamePhase, PlayerRole, RoundWinner } from "@/types";
 // 阶段中文名
 export const PHASE_LABELS: Record<GamePhase, string> = {
   waiting: "等待中",
-  assigningQuestioner: "指定出题人",
+  assigningQuestioner: "指定主持人",
   wordSubmission: "出题阶段",
   description: "描述阶段",
   voting: "投票阶段",
