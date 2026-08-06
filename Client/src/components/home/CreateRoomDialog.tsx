@@ -10,14 +10,17 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import { collapsible } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
+import type { OriginPoint } from "@/lib/motion";
 
 export interface CreateRoomDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultName: string;
+  /** 触发按钮位置，弹窗由此展开 */
+  origin?: OriginPoint | null;
   onCreate: (params: {
     name: string;
     visibility: "public" | "private";
@@ -30,15 +33,15 @@ export function CreateRoomDialog({
   open,
   onOpenChange,
   defaultName,
+  origin,
   onCreate,
 }: CreateRoomDialogProps) {
   // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>创建房间</DialogTitle>
-          <DialogDescription>设置房间参数</DialogDescription>
         </DialogHeader>
         <CreateRoomForm
           defaultName={defaultName}
@@ -94,13 +97,13 @@ function CreateRoomForm({ defaultName, onOpenChange, onCreate }: CreateRoomFormP
             <Label className="text-sm">私密房间</Label>
             <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
           </div>
-          <AnimatePresence>
+          <AnimatePresence initial={false}>
             {isPrivate && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: "easeInOut" }}
+                variants={collapsible}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="overflow-hidden"
               >
                 <div className="space-y-2 pb-1">
