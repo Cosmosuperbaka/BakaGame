@@ -5,9 +5,22 @@ import { ArrowUpRightFromCircle, Crown, Eye, EyeOff, UserX, WifiOff } from "luci
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listContainer, listItem, popover, tappable } from "@/lib/motion";
+import {
+  DESCRIPTION_HEAD_TONES,
+  DESCRIPTION_TONES,
+  type DescriptionColumn,
+} from "@/lib/descriptionColumns";
+import { PendingSpeech } from "@/components/game/PendingSpeech";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
-import type { GamePhase, PlayerRole, PrivateState, PublicPlayerView, RoleConfig } from "@/types";
+import type {
+  DescriptionRecord,
+  GamePhase,
+  PlayerRole,
+  PrivateState,
+  PublicPlayerView,
+  RoleConfig,
+} from "@/types";
 
 export type PlayerMark = "unknown" | PlayerRole;
 export type PlayerMarks = Record<string, PlayerMark>;
@@ -40,7 +53,10 @@ const markTones: Record<PlayerMark, string> = {
 };
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-10";
+export const PLAYER_ROW_HEIGHT = "min-h-11";
+
+/** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
+const PLAYER_GROUP_TITLE_HEIGHT = "1.75rem";
 
 export interface PlayerListProps {
   players: PublicPlayerView[];
@@ -53,6 +69,22 @@ export interface PlayerListProps {
   privateState?: PrivateState | null;
   playerMarks: PlayerMarks;
   onMarkChange: (playerId: string, mark: PlayerMark) => void;
+  /** 结算后公开的身份，叠加在出题人视角之上 */
+  revealedRoles?: Map<string, PlayerRole>;
+  /**
+   * 展开发言历史时传入。
+   * 发言单元格直接渲染进玩家行内，对齐由 DOM 结构保证，
+   * 不依赖两侧各自复刻行高与间距。
+   */
+  history?: PlayerListHistory;
+}
+
+/** 玩家行右侧续接的发言列 */
+export interface PlayerListHistory {
+  columns: DescriptionColumn[];
+  byPlayer: Map<string, Map<string, DescriptionRecord>>;
+  /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
+  departedPlayers: PublicPlayerView[];
 }
 
 export function PlayerList(props: PlayerListProps) {
@@ -66,6 +98,8 @@ export function PlayerList(props: PlayerListProps) {
     privateState,
     playerMarks,
     onMarkChange,
+    revealedRoles,
+    history,
   } = props;
   const sendCommand = useGameStore((state) => state.sendCommand);
   const addToast = useGameStore((state) => state.addToast);
@@ -77,9 +111,13 @@ export function PlayerList(props: PlayerListProps) {
     !privateState?.isQuestioner &&
     !["waiting", "assigningQuestioner", "wordSubmission", "gameOver"].includes(phase);
   const showSpectatorToggle = waitingPhase && allowSpectators && Boolean(me);
+  // 出题人视角的身份，叠加结算后公开的身份。
   const roleByPlayerId = new Map(
     (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role]),
   );
+  if (revealedRoles) {
+    for (const [playerId, role] of revealedRoles) roleByPlayerId.set(playerId, role);
+  }
   const availableMarks: PlayerMark[] = [
     "unknown",
     "civilian",
@@ -128,67 +166,168 @@ export function PlayerList(props: PlayerListProps) {
     [addToast, sendCommand],
   );
 
-  const renderRow = (player: PublicPlayerView, hideSpectatorStatus: boolean) => (
-    <PlayerRow
-      key={player.id}
-      player={player}
-      myPlayerId={myPlayerId}
-      isHostViewer={isHost}
-      waitingPhase={waitingPhase}
-      hideSpectatorStatus={hideSpectatorStatus}
-      actualRole={roleByPlayerId.get(player.id)}
-      mark={playerMarks[player.id] ?? "unknown"}
-      canMark={Boolean(
-        canMarkPlayers &&
+  /**
+   * 渲染一行。展开发言历史时，玩家名与该行的发言单元格是同一个
+   * flex 行的两部分，因此天然等高对齐。
+   */
+  const renderRow = (
+    player: PublicPlayerView,
+    hideSpectatorStatus: boolean,
+    options?: { readOnly?: boolean },
+  ) => {
+    const rowProps: PlayerRowProps = {
+      player,
+      myPlayerId,
+      isHostViewer: isHost,
+      waitingPhase,
+      hideSpectatorStatus,
+      actualRole: roleByPlayerId.get(player.id),
+      mark: playerMarks[player.id] ?? "unknown",
+      canMark: Boolean(
+        !options?.readOnly &&
+          canMarkPlayers &&
           player.membership === "active" &&
           player.roundStatus !== "questioner",
-      )}
-      availableMarks={availableMarks}
-      onMarkChange={onMarkChange}
-      onKick={handleKick}
-      onTransferHost={handleTransferHost}
-    />
+      ),
+      availableMarks,
+      onMarkChange,
+      onKick: handleKick,
+      onTransferHost: handleTransferHost,
+    };
+
+    // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
+    if (!history) return <PlayerRow key={player.id} {...rowProps} />;
+
+    // 展开后由外层承担进出场，行内首列去掉自身动画以免双重变换。
+    return (
+      <motion.div
+        key={player.id}
+        variants={listItem}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        layout="position"
+        className="flex items-stretch"
+      >
+        <div className="w-64 shrink-0 border-r px-2">
+          <PlayerRow {...rowProps} embedded />
+        </div>
+        {history.columns.map((column) => (
+          <SpeechCell
+            key={column.key}
+            tone={column.tone}
+            description={history.byPlayer.get(player.id)?.get(column.key)}
+          />
+        ))}
+      </motion.div>
+    );
+  };
+
+  /** 分组标题行。展开历史时右侧续接列标题，与首列同高。 */
+  const renderGroupTitle = (label: string, count: number, withRule: boolean) => {
+    const title = <PlayerGroupTitle label={label} count={count} withRule={withRule} />;
+    if (!history) return title;
+    return (
+      <div className="flex items-stretch">
+        <div className="w-64 shrink-0 border-r px-2">{title}</div>
+        {history.columns.map((column) => (
+          <div
+            key={column.key}
+            className={cn(
+              "flex min-w-[200px] flex-1 items-center px-4 text-[11px] font-semibold tracking-wide",
+              withRule && "mt-4",
+              DESCRIPTION_HEAD_TONES[column.tone],
+            )}
+            style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
+          >
+            {/* 列标题只在第一组显示，第二组留空避免重复 */}
+            {withRule ? null : column.label}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const departed = history?.departedPlayers ?? [];
+
+  const body = (
+    <div
+      className="flex flex-col py-3"
+      style={{ minWidth: history ? 256 + history.columns.length * 200 : undefined }}
+    >
+      {renderGroupTitle("玩家", activePlayers.length, false)}
+      <motion.div
+        className="flex flex-col gap-px"
+        variants={listContainer(activePlayers.length)}
+        initial={false}
+        animate="animate"
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          {activePlayers.map((player) => renderRow(player, false))}
+        </AnimatePresence>
+      </motion.div>
+
+      {showSpectatorToggle && isSpectator ? (
+        <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+      ) : null}
+
+      {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
+        <>
+          {renderGroupTitle("旁观", observers.length, true)}
+          <motion.div
+            className="flex flex-col gap-px"
+            variants={listContainer(observers.length)}
+            initial={false}
+            animate="animate"
+          >
+            <AnimatePresence initial={false} mode="popLayout">
+              {observers.map((player) => renderRow(player, true))}
+            </AnimatePresence>
+          </motion.div>
+          {showSpectatorToggle && !isSpectator ? (
+            <SpectatorToggle spectator onToggle={handleSetSpectator} />
+          ) : null}
+        </>
+      ) : null}
+
+      {/* 已离场但本局有发言记录的玩家，只读展示 */}
+      {departed.length > 0 ? (
+        <>
+          {renderGroupTitle("已离场", departed.length, true)}
+          <div className="flex flex-col gap-px">
+            {departed.map((player) => renderRow(player, true, { readOnly: true }))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 
+  // 展开历史时纵向滚动交给外层共享容器，避免两侧各自滚动。
+  if (history) return body;
   return (
     <ScrollArea className="h-full">
-      <div className="flex w-full flex-col px-2 py-3">
-        <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-        <motion.div
-          className="flex flex-col gap-px"
-          variants={listContainer(activePlayers.length)}
-          initial={false}
-          animate="animate"
-        >
-          <AnimatePresence initial={false} mode="popLayout">
-            {activePlayers.map((player) => renderRow(player, false))}
-          </AnimatePresence>
-        </motion.div>
-
-        {showSpectatorToggle && isSpectator ? (
-          <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
-        ) : null}
-
-        {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
-          <>
-            <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-            <motion.div
-              className="flex flex-col gap-px"
-              variants={listContainer(observers.length)}
-              initial={false}
-              animate="animate"
-            >
-              <AnimatePresence initial={false} mode="popLayout">
-                {observers.map((player) => renderRow(player, true))}
-              </AnimatePresence>
-            </motion.div>
-            {showSpectatorToggle && !isSpectator ? (
-              <SpectatorToggle spectator onToggle={handleSetSpectator} />
-            ) : null}
-          </>
-        ) : null}
-      </div>
+      <div className="px-2">{body}</div>
     </ScrollArea>
+  );
+}
+
+/** 玩家行右侧的发言单元格 */
+function SpeechCell({
+  description,
+  tone,
+}: {
+  description?: DescriptionRecord;
+  tone: DescriptionColumn["tone"];
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-[200px] flex-1 items-center px-4 py-1.5 text-sm leading-relaxed",
+        DESCRIPTION_TONES[tone],
+      )}
+    >
+      {description ? <span className="break-words">{description.text}</span> : <PendingSpeech />}
+    </div>
   );
 }
 
@@ -222,7 +361,10 @@ export function PlayerGroupTitle({
   withRule?: boolean;
 }) {
   return (
-    <div className={cn("flex items-center gap-2 px-2", withRule ? "mt-4 mb-1.5" : "mb-1.5")}>
+    <div
+      className={cn("flex items-center gap-2 px-2", withRule && "mt-4")}
+      style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
+    >
       <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
         {label}
       </h3>
@@ -269,7 +411,7 @@ export function PlayerRow(props: PlayerRowProps) {
   } = props;
 
   const isMe = player.id === myPlayerId;
-  const canManage = isHostViewer && !isMe && waitingPhase;
+  const canManage = isHostViewer && !isMe;
   const interactive = canMark || canManage;
   const eliminated = player.roundStatus === "dead";
   const status = resolveStatus(player, waitingPhase, hideSpectatorStatus);
@@ -277,7 +419,7 @@ export function PlayerRow(props: PlayerRowProps) {
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-md py-1.5 pl-3 pr-2 text-left text-sm",
+        "relative flex w-full items-center gap-2 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && interactive && "hover:bg-accent/50",
@@ -288,9 +430,8 @@ export function PlayerRow(props: PlayerRowProps) {
       {isMe ? (
         <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
       ) : null}
-      <span className="w-4 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
-        {player.score}
-      </span>
+      {/* 状态标签居左，名字前 */}
+      {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
       <span
         className={cn(
           "min-w-0 flex-1 truncate font-medium",
@@ -299,15 +440,18 @@ export function PlayerRow(props: PlayerRowProps) {
       >
         {player.name}
       </span>
-      {!player.online ? (
-        <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-      ) : null}
+      {actualRole ? <RoleTag role={actualRole} /> : null}
+      {mark !== "unknown" ? <MarkChip mark={mark} /> : null}
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
-      {actualRole ? <RoleTag role={actualRole} /> : null}
-      {mark !== "unknown" ? <MarkChip mark={mark} /> : null}
-      {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
+      {!player.online ? (
+        <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
+      ) : null}
+      {/* 得分居右 */}
+      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+        {player.score}<span className="ml-0.5 text-[10px]">分</span>
+      </span>
     </div>
   );
 
@@ -332,7 +476,7 @@ export function PlayerRow(props: PlayerRowProps) {
         <Popover.Content
           side="right"
           align="center"
-          sideOffset={8}
+          sideOffset={6}
           collisionPadding={12}
           asChild
         >
@@ -340,22 +484,26 @@ export function PlayerRow(props: PlayerRowProps) {
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-[80] w-[13.5rem] rounded-md bg-popover p-1.5 text-popover-foreground shadow-lg"
+            className="z-[80] overflow-hidden rounded-md border bg-card text-card-foreground shadow-md"
           >
+            {/* 身份猜测行：与下方管理按钮等宽，无缝 */}
             {canMark ? (
-              <div className="flex items-stretch gap-1">
-                {availableMarks.map((option) => (
+              <div className="flex">
+                {availableMarks.map((option, idx) => (
                   <MarkButton
                     key={option}
                     option={option}
                     selected={mark === option}
+                    first={idx === 0}
+                    last={idx === availableMarks.length - 1}
                     onSelect={() => onMarkChange(player.id, option)}
                   />
                 ))}
               </div>
             ) : null}
+            {/* 管理操作：两行，无缝拼接 */}
             {canManage ? (
-              <div className={cn("flex items-stretch gap-1", canMark && "mt-1")}>
+              <div className={cn("flex flex-col", canMark && "border-t border-border/50")}>
                 <ManageButton
                   icon={<ArrowUpRightFromCircle className="h-3.5 w-3.5" />}
                   label="转移房主"
@@ -381,10 +529,14 @@ export function PlayerRow(props: PlayerRowProps) {
 function MarkButton({
   option,
   selected,
+  first,
+  last,
   onSelect,
 }: {
   option: PlayerMark;
   selected: boolean;
+  first?: boolean;
+  last?: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -394,9 +546,11 @@ function MarkButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex flex-1 items-center justify-center rounded py-1.5 text-sm font-semibold",
-        "ring-1 ring-inset ring-border transition-colors",
+        "flex flex-1 items-center justify-center py-2 text-sm font-semibold transition-colors",
+        "border-r border-border/50 last:border-r-0",
         selected ? markTones[option] : "text-muted-foreground hover:bg-accent/60",
+        first && "rounded-tl-[calc(var(--radius)-1px)]",
+        last && "rounded-tr-[calc(var(--radius)-1px)]",
       )}
     >
       {markGlyphs[option]}
@@ -417,20 +571,21 @@ function ManageButton({
 }) {
   return (
     <Popover.Close asChild>
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn(
-          "h-8 flex-1 gap-1.5 rounded text-xs font-medium ring-1 ring-inset ring-border",
-          destructive
-            ? "text-destructive hover:bg-destructive/10 hover:ring-destructive/40"
-            : "hover:bg-accent/70",
-        )}
+      <motion.button
+        type="button"
+        {...tappable}
         onClick={onClick}
+        className={cn(
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
+          "border-t border-border/50 first:border-t-0",
+          destructive
+            ? "text-destructive hover:bg-destructive/8"
+            : "text-foreground hover:bg-accent/60",
+        )}
       >
         {icon}
         {label}
-      </Button>
+      </motion.button>
     </Popover.Close>
   );
 }
@@ -496,7 +651,7 @@ function resolveStatus(
   waitingPhase: boolean,
   hideSpectatorStatus?: boolean,
 ): StatusInfo | null {
-  if (player.roundStatus === "questioner") return { label: "出题", tone: "violet" };
+  if (player.roundStatus === "questioner") return { label: "主持", tone: "violet" };
   if (player.roundStatus === "dead") return { label: "出局", tone: "red" };
   if (player.membership === "spectator" && !hideSpectatorStatus) return { label: "旁观", tone: "default" };
   if (waitingPhase) {

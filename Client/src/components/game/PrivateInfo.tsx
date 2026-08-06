@@ -27,7 +27,7 @@ export function PrivateInfo({ privateState }: Props) {
   if (!privateState.word && !privateState.angelWordOptions && !privateState.blankHint) return null;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 rounded-lg border bg-card/80 backdrop-blur-xs shadow-2xs">
+    <div className="flex items-center gap-3 rounded-md border bg-card/80 px-4 py-2 shadow-2xs backdrop-blur-xs">
       {privateState.word && (
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-primary shrink-0" />

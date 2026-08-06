@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useGameStore } from "@/stores/useGameStore";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
+import { listContainer, listItem, selectable } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export function AssignQuestionerPhase() {
@@ -32,16 +33,11 @@ export function AssignQuestionerPhase() {
   );
 
   return (
-    <motion.div
-      className="flex flex-col items-center gap-6"
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-    >
+    <div className="flex flex-col items-center gap-6">
       <PhaseHeader
         icon={UserCheck}
-        title="指定出题人"
-        description={isHost ? "选择一名玩家作为本局的出题人" : "等待房主指定出题人..."}
+        title="指定主持人"
+        description={isHost ? "选择一名玩家作为本局的主持人" : "等待房主指定主持人..."}
       />
 
       {isHost && (
@@ -84,7 +80,7 @@ export function AssignQuestionerPhase() {
           </section>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -118,20 +114,25 @@ function CandidateGrid({
   tone: "recommended" | "default";
 }) {
   if (candidates.length === 0) {
-    return (
-      <div className="text-xs text-muted-foreground px-1 py-3">暂无玩家</div>
-    );
+    return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+    <motion.div
+      className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+      variants={listContainer(candidates.length)}
+      initial="initial"
+      animate="animate"
+    >
       {candidates.map((p) => (
-        <button
+        <motion.button
           key={p.id}
           type="button"
+          variants={listItem}
+          {...selectable}
           onClick={() => onPick(p.id)}
           className={cn(
-            "rounded-lg border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150",
+            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150",
             "hover:border-primary/40 hover:bg-primary/5",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             tone === "recommended" && "border-primary/20 bg-primary/5"
@@ -139,14 +140,14 @@ function CandidateGrid({
         >
           <div className="flex items-center gap-1.5">
             {tone === "recommended" ? (
-              <Eye className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+              <Eye className="h-3.5 w-3.5 shrink-0 text-primary/70" />
             ) : (
-              <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
-            <span className="font-medium truncate">{p.name}</span>
+            <span className="truncate font-medium">{p.name}</span>
           </div>
-        </button>
+        </motion.button>
       ))}
-    </div>
+    </motion.div>
   );
 }
