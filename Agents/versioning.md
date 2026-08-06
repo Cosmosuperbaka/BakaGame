@@ -76,12 +76,17 @@ feat: 修复主页样式问题                                                  
       "version": "1.x.x",
       "date": "YYYY-MM-DD",
       "title": "简短描述",
-      "content": "<ul><li>...</li></ul>"
+      "content": "- 第一条\n- 第二条"
     }
   ]
 }
 ```
 
 - 每次 `minor` 版本递增时，在 `entries` 数组顶部追加一条新记录。
-- `content` 使用 HTML `<ul><li>` 语法，由人工维护。
+- `content` 使用纯文本轻量标记，由人工维护，**不写 HTML 标签**：
+  - 以 `-` 或 `*` 开头的行渲染为列表项
+  - 其余非空行渲染为段落
+  - 行内支持 `**加粗**`、`` `等宽` `` 和 `[文字](链接)`
+  - 换行用 `\n`
+- 解析由 `Client/src/lib/changelog.ts` 完成，渲染不使用 `dangerouslySetInnerHTML`。
 - `currentVersion` 与最新 entry 的 `version` 保持一致。
