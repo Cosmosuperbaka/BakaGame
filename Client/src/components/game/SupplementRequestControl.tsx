@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, MessageSquarePlus, Send, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { collapsible, spring, tappable } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 
@@ -58,17 +59,17 @@ export function SupplementRequestControl({ canRequest }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div>
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
+            variants={collapsible}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             className="overflow-hidden"
           >
-            <div className="space-y-3 rounded-md bg-muted p-4 text-left">
+            <div className="mb-3 space-y-3 rounded-md bg-muted p-4 text-left">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Users className="h-4 w-4 text-sky-600" />
@@ -82,21 +83,36 @@ export function SupplementRequestControl({ canRequest }: Props) {
                 {candidates.map((player) => {
                   const selected = selectedPlayerIds.includes(player.id);
                   return (
-                    <button
+                    <motion.button
                       key={player.id}
                       type="button"
+                      layout
+                      {...tappable}
                       aria-pressed={selected}
                       onClick={() => togglePlayer(player.id)}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                        "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
                         selected
-                          ? "border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
-                          : "text-muted-foreground hover:bg-muted",
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:bg-accent/50",
                       )}
                     >
-                      {selected && <Check className="h-3 w-3" />}
+                      <AnimatePresence initial={false}>
+                        {selected ? (
+                          <motion.span
+                            key="check"
+                            initial={{ width: 0, opacity: 0, scale: 0.6 }}
+                            animate={{ width: "0.75rem", opacity: 1, scale: 1 }}
+                            exit={{ width: 0, opacity: 0, scale: 0.6 }}
+                            transition={spring.snap}
+                            className="inline-flex shrink-0 overflow-hidden"
+                          >
+                            <Check className="h-3 w-3" />
+                          </motion.span>
+                        ) : null}
+                      </AnimatePresence>
                       {player.name}
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -119,11 +135,11 @@ export function SupplementRequestControl({ canRequest }: Props) {
 
       {supplementActive ? (
         <p className="text-center text-xs text-sky-700 dark:text-sky-300">
-          等待 {pendingPlayerIds.length} 名玩家完成补充发言，完成前不能结算投票
+          等待 {pendingPlayerIds.length} 名玩家完成补充发言
         </p>
       ) : canRequest && !open ? (
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
-          <MessageSquarePlus className="h-3.5 w-3.5" />
+        <Button size="lg" variant="outline" className="gap-2 px-6" onClick={() => setOpen(true)}>
+          <MessageSquarePlus className="h-4 w-4" />
           请求补充发言
         </Button>
       ) : null}
