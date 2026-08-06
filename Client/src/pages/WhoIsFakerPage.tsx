@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { listItem, pressable, backdrop } from "@/lib/motion";
+import { listItem, selectable, backdrop, spinner, spring, useOriginTracker } from "@/lib/motion";
 import { ArrowLeft, RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,8 @@ export default function WhoIsFakerPage() {
   const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const createOrigin = useOriginTracker();
+  const joinOrigin = useOriginTracker();
 
   useEffect(() => {
     if (userName.trim()) saveUsername(userName.trim());
@@ -53,7 +55,8 @@ export default function WhoIsFakerPage() {
   }, [subscribeLobby, addToast]);
 
   const handleJoinRoom = useCallback(
-    async (room: RoomSummary) => {
+    async (room: RoomSummary, event: React.MouseEvent<HTMLElement>) => {
+      joinOrigin.capture(event);
       if (!userName.trim()) {
         addToast("请先设置用户名", "error");
         return;
@@ -75,7 +78,8 @@ export default function WhoIsFakerPage() {
         }
       }
     },
-    [userName, joinRoom, reconnectRoom, navigate, addToast]
+    // joinOrigin.capture 是稳定的闭包，无需纳入依赖
+    [userName, joinRoom, reconnectRoom, navigate, addToast] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const handlePasswordJoin = useCallback(async () => {
@@ -104,8 +108,7 @@ export default function WhoIsFakerPage() {
               返回主页
             </Button>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Who is Faker</h1>
-          <p className="text-muted-foreground text-sm mt-1.5">谁是卧底 · 多人派对游戏</p>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Who is Faker</h1>
         </div>
       </header>
 
@@ -126,10 +129,25 @@ export default function WhoIsFakerPage() {
             className="h-9 w-9 shrink-0"
             onClick={handleRefresh}
             disabled={refreshing}
+            aria-label="刷新房间列表"
           >
-            <RefreshCw className={`h-4 w-4 transition-transform ${refreshing ? "animate-spin" : ""}`} />
+            {/* 刷新中持续旋转；结束时缓出停下，不做角度回弹 */}
+            <motion.span
+              className="inline-flex"
+              animate={refreshing ? spinner.animate : { rotate: 0 }}
+              transition={refreshing ? spinner.transition : spring.settle}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </motion.span>
           </Button>
-          <Button size="default" onClick={() => setCreateOpen(true)} className="gap-2 shrink-0">
+          <Button
+            size="default"
+            onClick={(event) => {
+              createOrigin.capture(event);
+              setCreateOpen(true);
+            }}
+            className="shrink-0 gap-2"
+          >
             <Plus className="h-4 w-4" />
             创建房间
           </Button>
@@ -157,11 +175,19 @@ export default function WhoIsFakerPage() {
                   animate="animate"
                   exit="exit"
                   layout
-                  {...pressable}
+                  {...selectable}
                 >
                   <Card
-                    className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm"
-                    onClick={() => handleJoinRoom(room)}
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    onClick={(event) => handleJoinRoom(room, event)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleJoinRoom(room, event as unknown as React.MouseEvent<HTMLElement>);
+                      }
+                    }}
                   >
                     <CardContent className="py-4 px-5 flex items-center justify-between">
                       <div className="flex items-center gap-4">
@@ -201,6 +227,7 @@ export default function WhoIsFakerPage() {
       <CreateRoomDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
+        origin={createOrigin.origin}
         defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
         onCreate={async (params) => {
           if (!userName.trim()) {
@@ -218,7 +245,11 @@ export default function WhoIsFakerPage() {
         }}
       />
 
-      <Dialog open={!!joinTarget} onOpenChange={() => setJoinTarget(null)}>
+      <Dialog
+        open={!!joinTarget}
+        onOpenChange={() => setJoinTarget(null)}
+        origin={joinOrigin.origin}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>输入房间密码</DialogTitle>
