@@ -288,18 +288,20 @@ function handleTestRoomCommand(
     case "game.advancePhase": {
       const currentPhase = snapshot.status.phase;
       const nextPhase = NEXT_PHASE_MAP[currentPhase] ?? "waiting";
+      const currentDay = snapshot.status.day;
       store.jumpTestRoomPhase(nextPhase);
-      if (currentPhase === "night") {
-        const nextSnapshot = get().snapshot;
-        if (nextSnapshot) {
-          const day = snapshot.status.day + 1;
-          set({
-            snapshot: {
-              ...nextSnapshot,
-              status: { ...nextSnapshot.status, day },
-            },
-          });
-          store.showDaybreakNotice({ day, eliminatedPlayerIds: [] });
+      // 保留当前天数（jumpTestRoomPhase 会重置为 1），仅夜晚→描述时加1
+      const nextSnapshot = get().snapshot;
+      if (nextSnapshot) {
+        const newDay = currentPhase === "night" ? currentDay + 1 : currentDay;
+        set({
+          snapshot: {
+            ...nextSnapshot,
+            status: { ...nextSnapshot.status, day: newDay },
+          },
+        });
+        if (currentPhase === "night") {
+          store.showDaybreakNotice({ day: newDay, eliminatedPlayerIds: [] });
         }
       }
       return { success: true, phase: nextPhase };
