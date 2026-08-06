@@ -13,26 +13,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { collapsible, duration, ease, spring, type OriginPoint } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import type { RoomSnapshot } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 设置按钮位置，弹窗由此展开 */
+  origin?: OriginPoint | null;
 }
 
-export function RoomSettings({ open, onOpenChange }: Props) {
+export function RoomSettings({ open, onOpenChange, origin }: Props) {
   const snapshot = useGameStore((s) => s.snapshot);
 
   if (!snapshot) return null;
 
   // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>房间设置</DialogTitle>
-          <DialogDescription>修改房间配置（仅在未开局时生效）</DialogDescription>
+          <DialogDescription>仅在未开局时生效</DialogDescription>
         </DialogHeader>
         <SettingsForm snapshot={snapshot} onOpenChange={onOpenChange} />
       </DialogContent>
@@ -45,6 +48,17 @@ interface SettingsFormProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/** 步进数字：沿增减方向滑入滑出，方向由 custom 传入 */
+const stepValue = {
+  initial: (direction: number) => ({ y: direction > 0 ? 14 : -14, opacity: 0 }),
+  animate: { y: 0, opacity: 1, transition: spring.snap },
+  exit: (direction: number) => ({
+    y: direction > 0 ? -14 : 14,
+    opacity: 0,
+    transition: { duration: duration.instant, ease: ease.inOut },
+  }),
+};
+
 function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
@@ -56,6 +70,8 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
   const [undercoverCount, setUndercoverCount] = useState(
     snapshot.settings.roleConfig.undercoverCount,
   );
+  // 记录最近一次步进方向，供数字进出动画取向
+  const [stepDirection, setStepDirection] = useState(1);
   const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
 
@@ -63,8 +79,8 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
   const activePlayers = snapshot.players.filter(
     (p) => p.membership === "active"
   ).length;
-  // 玩家不足 4 人（加出题人 5 人）时禁用身份编辑，但其它设置仍可保存。
-  const roleEditingDisabled = limits.maxUndercoverCount < 1;
+  // 玩家不足 4 人时阵营配置仍可调整（上限已由服务端退回 1），
+  // 不到 4 人无法开局本身就是约束，无需在设置界面重复提示。
 
   const handleSave = async () => {
     try {
@@ -104,10 +120,10 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
           <AnimatePresence initial={false}>
             {isPrivate && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
+                variants={collapsible}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="overflow-hidden"
               >
                 <div className="space-y-1.5 pt-1">
@@ -140,15 +156,9 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
                 {activePlayers} 名玩家
               </span>
             </div>
-            {roleEditingDisabled && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border rounded-lg p-3 mb-3">
-                <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span>当前玩家不足 4 人，阵营配置不可调整（开启对局需至少 4 名玩家）</span>
-              </div>
-            )}
 
             <div className="flex items-center justify-between mb-3">
-              <Label className={roleEditingDisabled ? "opacity-50" : ""}>
+              <Label>
                 卧底人数
               </Label>
               <div className="flex items-center gap-2">
@@ -156,37 +166,48 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
                   variant="outline"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() =>
-                    setUndercoverCount((c) => Math.max(1, c - 1))
-                  }
-                  disabled={roleEditingDisabled || undercoverCount <= 1}
+                  aria-label="减少卧底人数"
+                  onClick={() => {
+                    setStepDirection(-1);
+                    setUndercoverCount((c) => Math.max(1, c - 1));
+                  }}
+                  disabled={undercoverCount <= 1}
                 >
                   <Minus className="h-3 w-3" />
                 </Button>
-                <span className="w-6 text-center text-sm font-medium">
-                  {undercoverCount}
+                {/* 数字随增减方向进出，让步进读作推动而非替换 */}
+                <span className="relative flex h-5 w-6 items-center justify-center overflow-hidden">
+                  <AnimatePresence mode="popLayout" initial={false} custom={stepDirection}>
+                    <motion.span
+                      key={undercoverCount}
+                      custom={stepDirection}
+                      variants={stepValue}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="text-sm font-medium tabular-nums"
+                    >
+                      {undercoverCount}
+                    </motion.span>
+                  </AnimatePresence>
                 </span>
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() =>
+                  aria-label="增加卧底人数"
+                  onClick={() => {
+                    setStepDirection(1);
                     setUndercoverCount((c) =>
-                      Math.min(
-                        Math.max(1, limits.maxUndercoverCount),
-                        c + 1
-                      )
-                    )
-                  }
-                  disabled={
-                    roleEditingDisabled ||
-                    undercoverCount >= Math.max(1, limits.maxUndercoverCount)
-                  }
+                      Math.min(limits.maxUndercoverCount, c + 1)
+                    );
+                  }}
+                  disabled={undercoverCount >= limits.maxUndercoverCount}
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
                 <span className="text-xs text-muted-foreground min-w-[3.5rem]">
-                  上限 {Math.max(1, limits.maxUndercoverCount)}
+                  上限 {limits.maxUndercoverCount}
                 </span>
               </div>
             </div>
@@ -203,7 +224,7 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
               <Switch
                 checked={hasAngel}
                 onCheckedChange={setHasAngel}
-                disabled={roleEditingDisabled || !limits.canEnableAngel}
+                disabled={!limits.canEnableAngel}
               />
             </div>
 
@@ -219,7 +240,7 @@ function SettingsForm({ snapshot, onOpenChange }: SettingsFormProps) {
               <Switch
                 checked={hasBlank}
                 onCheckedChange={setHasBlank}
-                disabled={roleEditingDisabled || !limits.canEnableBlank}
+                disabled={!limits.canEnableBlank}
               />
             </div>
           </div>
