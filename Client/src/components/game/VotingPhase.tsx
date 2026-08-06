@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { listContainer, listItem, pressable, popover } from "@/lib/motion";
+import { listContainer, listItem, selectable, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
@@ -85,7 +85,7 @@ export function VotingPhase() {
               key={player.id}
               type="button"
               variants={listItem}
-              {...pressable}
+              {...selectable}
               className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-muted/70"
               onClick={() => handleVote(player.id)}
             >
@@ -98,26 +98,33 @@ export function VotingPhase() {
 
       {amAlive && !isQuestioner && votedId ? (
         <motion.div
-          variants={popover}
-          initial="initial"
-          animate="animate"
-          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-800"
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={spring.impulse}
+          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/30 bg-primary/10 px-4 py-3"
         >
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-            <div className="text-sm font-medium">
-              已完成投票
+          <div className="flex items-center gap-2.5">
+            <motion.span
+              className="inline-flex shrink-0"
+              initial={{ scale: 0.4, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ ...spring.impulse, delay: 0.06 }}
+            >
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+            </motion.span>
+            <div>
+              <div className="text-sm font-semibold text-foreground">已完成投票</div>
               {targetPlayerName ? (
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  投给 {targetPlayerName}
-                </span>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  投给 <span className="font-medium text-foreground">{targetPlayerName}</span>
+                </div>
               ) : null}
             </div>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            className="shrink-0 gap-1.5 text-xs"
             onClick={handleCancelVote}
           >
             <Undo2 className="h-3.5 w-3.5" />
@@ -127,7 +134,7 @@ export function VotingPhase() {
       ) : null}
 
       {isQuestioner ? (
-        <div className="space-y-3 pt-2 text-center">
+        <div className="flex items-center justify-center gap-3 pt-2">
           <SupplementRequestControl canRequest={!isTieBreak} />
           <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
             <FastForward className="h-4 w-4" />
