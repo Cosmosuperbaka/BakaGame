@@ -174,13 +174,14 @@ export function createMockTestRoomState(
       speechMode:
         phase === "description" ? "normal" : phase === "tieBreak" ? "tieBreak" : undefined,
       day: phase === "waiting" ? 0 : 1,
-      descriptionOrder: players
-        .filter(
+      // 已发言的 B/C/D 在前，未发言的自己与 E 在后，
+      // 便于在测试房查看顺序揭示与省略号占位两种状态。
+      descriptionOrder: ["player_b", "player_c", "player_d", meId, "player_e"].filter((id) =>
+        players.some(
           (player) =>
-            player.roundStatus === "alive" &&
-            player.id !== questionerId,
-        )
-        .map((player) => player.id),
+            player.id === id && player.roundStatus === "alive" && player.id !== questionerId,
+        ),
+      ),
       questionerPlayerId: questionerId,
       blankGuessPlayerId: phase === "blankGuess" ? "player_e" : undefined,
       tieBreakStage: phase === "tieBreak" ? "description" : undefined,
