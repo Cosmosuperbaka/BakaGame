@@ -1,6 +1,8 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
+import { motion, type HTMLMotionProps } from "framer-motion"
 import { cva, type VariantProps } from "class-variance-authority"
+import { pressable, pressableStrong } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
@@ -30,18 +32,44 @@ const buttonVariants = cva(
 )
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<HTMLMotionProps<"button">, "children">,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  children?: React.ReactNode
 }
 
+/**
+ * 按压反馈随变体分级：主要与危险操作幅度更大，确认感更强；
+ * link 是文本入口，只保留下划线，不做尺度变化。
+ * asChild 交由外层元素承担交互，此时不叠加动效避免双重缩放。
+ */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
+  ({ className, variant, size, asChild = false, disabled, ...props }, ref) => {
+    const classes = cn(buttonVariants({ variant, size, className }))
+
+    if (asChild) {
+      return (
+        <Slot
+          className={classes}
+          ref={ref}
+          {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+        />
+      )
+    }
+
+    const feedback =
+      variant === "link"
+        ? undefined
+        : variant === "default" || variant === "destructive"
+          ? pressableStrong
+          : pressable
+
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+      <motion.button
+        className={classes}
         ref={ref}
+        disabled={disabled}
+        {...(disabled ? undefined : feedback)}
         {...props}
       />
     )
