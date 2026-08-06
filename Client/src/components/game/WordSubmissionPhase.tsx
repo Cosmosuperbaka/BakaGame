@@ -1,10 +1,12 @@
 import { useState, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { collapsible, spring, tappable } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 import type { PlayerRole } from "@/types";
@@ -181,8 +183,15 @@ export function WordSubmissionPhase() {
             <Switch checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
           </div>
 
+          <AnimatePresence initial={false}>
           {!isRandomRole && (
-            <div className="overflow-hidden rounded-md border bg-background text-sm">
+            <motion.div
+              variants={collapsible}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="overflow-hidden rounded-md border bg-background text-sm"
+            >
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/35 px-3 py-2.5 sm:grid-cols-4">
                 {availableRoles.map((availableRole) => {
                   const valid =
@@ -204,9 +213,10 @@ export function WordSubmissionPhase() {
                     {availableRoles.map((availableRole) => {
                       const selected = (manualRoles[p.id] ?? "civilian") === availableRole;
                       return (
-                        <button
+                        <motion.button
                           key={availableRole}
                           type="button"
+                          {...tappable}
                           title={ROLE_FULL_LABELS[availableRole]}
                           aria-label={ROLE_FULL_LABELS[availableRole]}
                           aria-pressed={selected}
@@ -217,21 +227,30 @@ export function WordSubmissionPhase() {
                             }))
                           }
                           className={cn(
-                            "flex h-7 w-8 items-center justify-center rounded text-xs font-semibold transition-colors",
+                            "relative flex h-7 w-8 cursor-pointer items-center justify-center rounded-md text-xs font-semibold transition-colors",
                             selected
-                              ? "bg-foreground text-background shadow-sm"
+                              ? "text-background"
                               : "text-muted-foreground hover:bg-background hover:text-foreground",
                           )}
                         >
-                          {ROLE_SHORT_LABELS[availableRole]}
-                        </button>
+                          {/* 选中底块在同组内滑动，读作同一个指示器在移动 */}
+                          {selected ? (
+                            <motion.span
+                              layoutId={`manual-role-${p.id}`}
+                              transition={spring.snap}
+                              className="absolute inset-0 rounded-md bg-foreground shadow-sm"
+                            />
+                          ) : null}
+                          <span className="relative">{ROLE_SHORT_LABELS[availableRole]}</span>
+                        </motion.button>
                       );
                     })}
                   </div>
                 </div>
               ))}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
 
         <Button

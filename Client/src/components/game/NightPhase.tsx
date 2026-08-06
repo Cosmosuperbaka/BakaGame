@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { listContainer, listItem, pressable, popover } from "@/lib/motion";
+import { listContainer, listItem, selectable, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
@@ -87,8 +87,8 @@ export function NightPhase() {
                 key={p.id}
                 type="button"
                 variants={listItem}
-                {...pressable}
-                className="flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3.5 text-left transition-colors hover:border-rose-400/50 hover:bg-rose-500/5"
+                {...selectable}
+                className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-3.5 text-left transition-colors hover:border-rose-400/50 hover:bg-rose-500/5"
                 onClick={() => handleNightAction(p.id)}
               >
                 <span className="truncate text-sm font-medium">{p.name}</span>
@@ -109,13 +109,20 @@ export function NightPhase() {
       {/* 提交行动后的优雅反馈卡片，支持撤销 */}
       {canAct && acted && (
         <motion.div
-          variants={popover}
-          initial="initial"
-          animate="animate"
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={spring.impulse}
           className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-800 dark:text-emerald-300"
         >
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <motion.span
+              className="inline-flex shrink-0"
+              initial={{ scale: 0.4, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ ...spring.impulse, delay: 0.06 }}
+            >
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </motion.span>
             <div className="text-sm font-medium">
               已完成夜晚决策
               <span className="ml-2 font-normal text-xs text-muted-foreground">
