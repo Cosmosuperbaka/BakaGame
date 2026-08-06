@@ -170,6 +170,55 @@ html {
   font-size: 120%;
 }
 
+/* 纯 CSS 动效的共享曲线与时长，与 lib/motion.ts 保持同一套观感。
+   仅供无法接入 framer-motion 的场景使用（Radix data-state 浮层、开关滑块）。 */
+:root {
+  /* 对应 ease.out：起步快、收尾长 */
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 对应 ease.inOut：两端对称 */
+  --motion-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* 对应 spring.snap 的过冲观感：落位时略微越过再回收 */
+  --motion-ease-overshoot: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --motion-duration-instant: 0.12s;
+  --motion-duration-quick: 0.18s;
+  --motion-duration-base: 0.26s;
+}
+
+/* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
+   在此提供与 lib/motion.ts 同曲线的开合动画，保持全站节奏一致。 */
+@keyframes overlay-emerge {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes overlay-retract {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-radix-popper-content-wrapper] > [data-state="delayed-open"],
+  [data-radix-popper-content-wrapper] > [data-state="instant-open"],
+  [data-radix-popper-content-wrapper] > [data-state="open"] {
+    animation: overlay-emerge var(--motion-duration-quick) var(--motion-ease-out);
+  }
+  [data-radix-popper-content-wrapper] > [data-state="closed"] {
+    animation: overlay-retract var(--motion-duration-instant) var(--motion-ease-in-out);
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
