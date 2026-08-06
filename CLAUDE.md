@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|---|
 | `Agents/Spec.md` | Engineering constraints, framework usage, Git commit rules | Any change |
 | `Agents/Design.md` | Frontend design system, theme, layout, interaction rules | Any `Client/` change |
+| `Agents/Animation.md` | Motion choreography rules, motion tokens, 100% coverage requirement | Any animation or interactive component change |
 | `Agents/versioning.md` | Version numbering + commit message format | Any commit or release |
 
 Non-negotiable rules distilled from those documents:
@@ -184,6 +185,14 @@ For `game.requestSupplement`:
 
 `GameArea.tsx` renders `<BlankGuessButton />` inside the outermost `relative` div so overlays position correctly. The `blankGuess` case in `PhaseContent` renders `<BlankGuessWaiting />`.
 
+## Description Display (in-phase)
+
+`DescriptionPhase` renders the current round's speeches as a **two-column table** (player name / description), not as cards. All players due to speak this round are listed up front.
+
+Speeches reveal **in order**: if any earlier player in `descriptionOrder` has not submitted yet, later submissions stay hidden so early speakers can't influence others by racing ahead. Exceptions — the questioner and spectators see everything; you always see your own line. Hidden cells show `PendingSpeech` (an animated ellipsis), never a dash or blank.
+
+Speech order comes from `status.descriptionOrder` (normal), `status.tieBreakCandidateIds` (tieBreak), or `status.pendingSupplementPlayerIds` plus already-spoken players (supplement).
+
 ## Player Marking (Local Only)
 
 Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `PlayerList.tsx`. They are never sent to the server and reset on page reload. The mark indicator is a `w-4 h-4` dot on the left of each row; click cycles none → suspect (orange) → safe (emerald) → none.
@@ -193,15 +202,19 @@ Player marks (`"none" | "suspect" | "safe"`) are **pure React local state** in `
 **Topbar** uses `grid grid-cols-3` with three equal sections:
 
 - **Left**: back arrow, room name, room ID chip, test badge
-- **Center** (`justify-center`): day counter (`第N天`) + a contextual pill (current word for civilians, angel word options, blank hint, or questioner badge)
+- **Center** (`justify-center`): day counter (`第N天`), questioner/spectator badge, and a sized placeholder that the word chip docks into
+
+The word itself is rendered by `AssignedWord` (`Client/src/components/room/AssignedWord.tsx`) as a single `position: fixed` element that moves continuously between the game-area centre (revealed) and the topbar dock. There is no `layoutId` handoff between two elements — that was the cause of the old teleport.
 - **Right** (`justify-end`): disconnect, mobile panel toggles, settings
 
 **Aside (desktop)** is an extensible panel on the left:
 - Collapsed (default): `w-64`, shows `PlayerList` only.
-- Expanded: `w-[580px]`, shows `PlayerList` (fixed `w-64`, `border-r`) + `DescriptionTable` in the remaining space.
-- A `h-6 w-6` toggle button is anchored `absolute -right-3 top-1/2` on the panel's right edge.
+- Expanded: animates to full width. Speech cells are rendered **inside the player rows themselves** — each row is one flex line whose left half is the `PlayerRow` (`w-64`, `border-r`) and whose right half is the description cells. Row alignment is guaranteed by DOM structure, not by duplicating row heights on two sides. Pass the `history` prop to `PlayerList` to enable this.
+- An `h-8 w-8` toggle button straddles the panel's right border (`absolute -right-4 top-1/2`), using `PanelRightOpen` / `PanelRightClose`.
 
-`DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement).
+Column model lives in `Client/src/lib/descriptionColumns.ts` (`buildDescriptionColumns`), shared by the sidebar and the game-over report. Columns: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement).
+
+`DescriptionTable` (from `DescriptionHistory.tsx`) is the standalone table with its own player column — used only by the game-over report, where there is no adjacent player panel.
 
 ## Tests
 
