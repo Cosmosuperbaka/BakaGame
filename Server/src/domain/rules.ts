@@ -28,8 +28,9 @@ export const createDefaultRoleConfig = (): RoleConfig => ({
 });
 
 export const getRoomRoleLimits = (playerCount: number): RoleLimits => ({
-  // 上限随参与人数动态伸缩；当人数不足时 max 退回 0，UI 据此禁用编辑。
-  maxUndercoverCount: playerCount >= 4 ? Math.max(1, Math.floor(playerCount / 4)) : 0,
+  // 上限随参与人数动态伸缩。不足 4 人时上限退回 1，保留编辑能力；
+  // 游戏本身在人数检查阶段会阻止少于 4 人时开局。
+  maxUndercoverCount: Math.max(1, Math.floor(playerCount / 4)),
   canEnableAngel: playerCount >= 10,
   canEnableBlank: playerCount >= 8,
 });
