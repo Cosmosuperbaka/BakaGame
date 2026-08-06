@@ -4,7 +4,7 @@ import { ChevronUp, FlaskConical, UserCog, Eye, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/lib/helpers";
-import { cn } from "@/lib/utils";
+import { collapsible, spring } from "@/lib/motion";
 import type { GamePhase, PlayerRole } from "@/types";
 import type { TestPerspective } from "@/lib/mockData";
 
@@ -84,30 +84,35 @@ export function TestController() {
       <div className="flex justify-end pointer-events-auto">
         <motion.div
           layout
-          transition={{ duration: 0.2, ease: "easeOut" }}
-          className="rounded-xl border bg-background/95 backdrop-blur-md shadow-xl overflow-hidden w-full md:w-96 max-w-full"
+          transition={spring.settle}
+          className="w-full max-w-full overflow-hidden rounded-xl border bg-background/95 shadow-xl backdrop-blur-md md:w-96"
         >
-          <button
+          <motion.button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/40 transition-colors"
+            aria-expanded={open}
+            whileTap={{ scale: 0.995 }}
+            transition={spring.snap}
+            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
           >
             <FlaskConical className="h-4 w-4 text-primary" />
             <span>阶段控制器</span>
-            <ChevronUp
-              className={cn(
-                "ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200",
-                !open && "rotate-180"
-              )}
-            />
-          </button>
+            <motion.span
+              aria-hidden="true"
+              className="ml-auto inline-flex text-muted-foreground"
+              animate={{ rotate: open ? 0 : 180 }}
+              transition={spring.snap}
+            >
+              <ChevronUp className="h-4 w-4" />
+            </motion.span>
+          </motion.button>
           <AnimatePresence initial={false}>
             {open && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
+                variants={collapsible}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="overflow-hidden"
               >
                 <div className="px-4 pb-4 pt-1 space-y-3">

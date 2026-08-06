@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CircleHelp, HelpCircle, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { backdrop, emergeFromOrigin } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
 
@@ -60,18 +61,20 @@ export function BlankGuessButton() {
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute inset-0 z-50 bg-background/90 backdrop-blur-sm flex items-center justify-center"
+            variants={backdrop}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm"
           >
+            {/* 面板自右上角触发按钮方向展开，保持点击与浮层的因果 */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className="bg-card border rounded-xl p-6 shadow-lg max-w-sm w-full mx-4 space-y-4"
+              variants={emergeFromOrigin}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ transformOrigin: "85% 0%" }}
+              className="mx-4 w-full max-w-sm space-y-4 rounded-xl border bg-card p-6 shadow-lg"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
