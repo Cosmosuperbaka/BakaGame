@@ -1,23 +1,29 @@
 {
-  "currentVersion": "1.3.0",
+  "currentVersion": "1.3.1",
   "entries": [
+    {
+      "version": "1.3.1",
+      "date": "2026-08-06",
+      "title": "动效编舞与界面统一",
+      "content": "- 弹窗、房间设置与更新日志改为从触发按钮展开，关闭时收回原位\n- 词语揭示改为共享元素连续位移，不再瞬移到顶栏\n- 阶段切换收尾锁定缩放，消除文本像素抖动\n- 统一全站圆角，聊天框与发送按钮回归基线\n- 关闭按钮改为圆角矩形悬停态\n- 描述历史展开按钮移至玩家栏边框，去掉重复玩家列\n- 各阶段玩家描述改为表格，未轮到的发言以省略号占位\n- 更新日志改用纯文本书写，不再需要 HTML 标签"
+    },
     {
       "version": "1.3.0",
       "date": "2026-08-02",
       "title": "多游戏平台重构",
-      "content": "<ul><li>新增 BakaGame 主页，支持多游戏选择入口</li><li>WhoIsFaker 游戏迁移至 /whoisfaker 路由</li><li>预留 SongGuessr 与 AnimeCharacterGuessr 代码位置</li><li>首页底部新增版本号、更新日志与 Commit 历史展示</li><li>后端 API 路径统一至 /api/whoisfaker</li></ul>"
+      "content": "- 新增 BakaGame 主页，支持多游戏选择入口\n- WhoIsFaker 游戏迁移至 /whoisfaker 路由\n- 预留 SongGuessr 与 AnimeCharacterGuessr 代码位置\n- 首页底部新增版本号、更新日志与 Commit 历史展示\n- 后端 API 路径统一至 /api/whoisfaker"
     },
     {
       "version": "1.2.0",
       "date": "2026-04-12",
       "title": "UI 优化与问题修复",
-      "content": "<ul><li>现代化 UI 风格，优化整体布局</li><li>聊天消息改为气泡样式</li><li>修复弹窗动画缺失问题</li><li>修复通知不自动消失的问题</li><li>修复私密房间未设密码导致超时的问题</li><li>修复旁观模式切换时文字抖动</li><li>刷新按钮支持手动刷新房间列表</li><li>更新日志支持从 JSON 读取及 HTML 语法</li></ul>"
+      "content": "- 现代化 UI 风格，优化整体布局\n- 聊天消息改为气泡样式\n- 修复弹窗动画缺失问题\n- 修复通知不自动消失的问题\n- 修复私密房间未设密码导致超时的问题\n- 修复旁观模式切换时文字抖动\n- 刷新按钮支持手动刷新房间列表\n- 更新日志支持从 JSON 读取"
     },
     {
       "version": "1.1.0",
       "date": "2026-04-10",
       "title": "初始版本",
-      "content": "<ul><li>完整的谁是卧底 x 狼人杀游戏流程</li><li>支持平民、卧底、天使、白板四种阵营</li><li>描述、投票、平票PK、夜晚阶段</li><li>白板猜词系统</li><li>实时聊天功能</li><li>房间管理与旁观者模式</li></ul>"
+      "content": "- 完整的谁是卧底 x 狼人杀游戏流程\n- 支持平民、卧底、天使、白板四种阵营\n- 描述、投票、平票 PK、夜晚阶段\n- 白板猜词系统\n- 实时聊天功能\n- 房间管理与旁观者模式"
     }
   ]
 }

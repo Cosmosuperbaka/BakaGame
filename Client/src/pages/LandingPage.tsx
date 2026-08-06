@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { listItem, listContainer, pressableStrong } from "@/lib/motion";
+import {
+  listItem,
+  listContainer,
+  pressable,
+  selectable,
+  spring,
+  useOriginTracker,
+} from "@/lib/motion";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,10 +16,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import faviconUrl from "@/assets/favicon.png";
+import { parseChangelogContent, type InlineNode } from "@/lib/changelog";
 
 interface ChangelogEntry {
   version: string;
@@ -43,8 +49,10 @@ interface GameEntry {
   id: string;
   path: string;
   icon: string;
-  name: string;
-  nameEn: string;
+  /** 条目主标题 */
+  title: string;
+  /** 条目副标题；无副标题时省略 */
+  subtitle?: string;
   available: boolean;
 }
 
@@ -52,25 +60,23 @@ const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
-    icon: faviconUrl,
-    name: "谁是 Faker",
-    nameEn: "WhoIsFaker",
+    icon: "/assets/Faker.png",
+    title: "Who is Faker",
     available: true,
   },
   {
     id: "songguessr",
     path: "/songguessr",
-    icon: "",
-    name: "猜歌",
-    nameEn: "SongGuessr",
+    icon: "/assets/SongGuessr.gif",
+    title: "Song Guessr",
     available: false,
   },
   {
     id: "animecharguessr",
     path: "/animecharguessr",
-    icon: "",
-    name: "猜角色",
-    nameEn: "AnimeCharacterGuessr",
+    icon: "/assets/CCB.jpg",
+    title: "二刺猿笑传之猜猜呗",
+    subtitle: "Enhanced Edition",
     available: false,
   },
 ];
@@ -90,27 +96,34 @@ function formatRelativeTime(dateStr: string): string {
 
 function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();
+  const [entering, setEntering] = useState(false);
+
   const baseClass =
     "w-full flex items-center gap-5 rounded-xl border bg-card px-5 py-6 md:px-6 md:py-7 text-left";
 
   const content = (
     <>
-      {game.icon ? (
-        <img
-          src={game.icon}
-          alt=""
-          aria-hidden="true"
-          className="h-14 w-14 shrink-0 rounded-lg md:h-16 md:w-16"
-        />
-      ) : (
-        <div className="h-14 w-14 shrink-0 rounded-lg bg-muted md:h-16 md:w-16" />
-      )}
+      <img
+        src={game.icon}
+        alt=""
+        aria-hidden="true"
+        className="h-14 w-14 shrink-0 rounded-md object-cover md:h-16 md:w-16"
+      />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xl font-semibold md:text-2xl">{game.name}</div>
-        <div className="mt-1 truncate text-sm text-muted-foreground">{game.nameEn}</div>
+        <div className="truncate text-xl font-semibold md:text-2xl">{game.title}</div>
+        {game.subtitle ? (
+          <div className="mt-1 truncate text-sm text-muted-foreground">{game.subtitle}</div>
+        ) : null}
       </div>
       {game.available ? (
-        <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+        <motion.span
+          aria-hidden="true"
+          className="shrink-0 text-muted-foreground"
+          animate={{ x: entering ? 8 : 0, color: entering ? "var(--primary)" : undefined }}
+          transition={spring.snap}
+        >
+          <ArrowRight className="h-5 w-5" />
+        </motion.span>
       ) : (
         <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
           即将推出
@@ -119,23 +132,97 @@ function GameRow({ game }: { game: GameEntry }) {
     </>
   );
 
-  return (
-    <motion.div variants={listItem}>
-      {game.available ? (
-        <motion.button
-          type="button"
-          onClick={() => navigate(game.path)}
-          className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-[3px]`}
-          {...pressableStrong}
-        >
-          {content}
-        </motion.button>
-      ) : (
+  if (!game.available) {
+    return (
+      <motion.div variants={listItem}>
         <div aria-disabled="true" className={`${baseClass} opacity-60`}>
           {content}
         </div>
-      )}
+      </motion.div>
+    );
+  }
+
+  // 点击后先让箭头前移、条目微沉，动效落地再跳转，
+  // 使离开当前页读作这次点击的结果而非突然切换。
+  const handleEnter = () => {
+    if (entering) return;
+    setEntering(true);
+    window.setTimeout(() => navigate(game.path), 140);
+  };
+
+  return (
+    <motion.div variants={listItem}>
+      <motion.button
+        type="button"
+        onClick={handleEnter}
+        animate={entering ? { scale: 0.99 } : { scale: 1 }}
+        {...selectable}
+        className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
+      >
+        {content}
+      </motion.button>
     </motion.div>
+  );
+}
+
+function InlineContent({ nodes }: { nodes: InlineNode[] }) {
+  return (
+    <>
+      {nodes.map((node, index) => {
+        switch (node.kind) {
+          case "strong":
+            return (
+              <strong key={index} className="font-semibold text-foreground">
+                {node.text}
+              </strong>
+            );
+          case "code":
+            return (
+              <code key={index} className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">
+                {node.text}
+              </code>
+            );
+          case "link":
+            return (
+              <a
+                key={index}
+                href={node.href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-2"
+              >
+                {node.text}
+              </a>
+            );
+          default:
+            return <span key={index}>{node.text}</span>;
+        }
+      })}
+    </>
+  );
+}
+
+function ChangelogBody({ content }: { content: string }) {
+  const blocks = parseChangelogContent(content);
+
+  return (
+    <div className="space-y-2 text-sm text-muted-foreground">
+      {blocks.map((block, index) =>
+        block.kind === "list" ? (
+          <ul key={index} className="ml-4 list-outside list-disc space-y-1">
+            {block.items.map((item, itemIndex) => (
+              <li key={itemIndex} className="pl-0.5">
+                <InlineContent nodes={item} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p key={index}>
+            <InlineContent nodes={block.content} />
+          </p>
+        ),
+      )}
+    </div>
   );
 }
 
@@ -173,6 +260,7 @@ export default function LandingPage() {
   const [changelog, setChangelog] = useState<ChangelogData | null>(null);
   const [commitHistory, setCommitHistory] = useState<CommitHistoryData | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const { origin, capture } = useOriginTracker();
 
   useEffect(() => {
     fetch("/changelog.json")
@@ -194,19 +282,22 @@ export default function LandingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="px-6 pt-20 pb-10 text-center md:pt-28 md:pb-12">
-        <motion.div
+      <header className="px-6 pb-10 pt-20 text-center md:pb-12 md:pt-28">
+        <motion.h1
           variants={listItem}
           initial="initial"
           animate="animate"
+          className="flex items-center justify-center gap-4 text-5xl font-bold tracking-tight md:text-6xl"
         >
-          <h1 className="flex items-center justify-center gap-4 text-5xl font-bold tracking-tight md:text-6xl">
-            Baka
-            <img src={faviconUrl} alt="" aria-hidden="true" className="h-14 rounded-xl md:h-16" />
-            Game
-          </h1>
-          <p className="mt-3 text-base text-muted-foreground">多人小游戏合集</p>
-        </motion.div>
+          Baka
+          <img
+            src="/assets/logo.gif"
+            alt=""
+            aria-hidden="true"
+            className="h-14 rounded-md object-cover md:h-16"
+          />
+          Game
+        </motion.h1>
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 pb-12 md:px-10">
@@ -224,21 +315,24 @@ export default function LandingPage() {
 
       <footer className="flex justify-center px-6 pb-10">
         {versionLabel && (
-          <button
+          <motion.button
             type="button"
-            onClick={() => setInfoOpen(true)}
-            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-[3px]"
+            {...pressable}
+            onClick={(event) => {
+              capture(event);
+              setInfoOpen(true);
+            }}
+            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {versionLabel}
-          </button>
+          </motion.button>
         )}
       </footer>
 
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{versionLabel ?? "版本信息"}</DialogTitle>
-            <DialogDescription>更新日志与提交历史</DialogDescription>
           </DialogHeader>
           <Tabs defaultValue="changelog">
             <TabsList className="w-full">
@@ -257,10 +351,7 @@ export default function LandingPage() {
                           {entry.title}
                         </span>
                       </div>
-                      <div
-                        className="text-sm text-muted-foreground [&_a]:text-primary [&_a]:underline [&_li]:text-sm [&_ul]:ml-3 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:space-y-0.5"
-                        dangerouslySetInnerHTML={{ __html: entry.content }}
-                      />
+                      <ChangelogBody content={entry.content} />
                     </div>
                   ))}
                 </div>
