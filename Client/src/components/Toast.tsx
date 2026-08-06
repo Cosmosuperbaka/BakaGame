@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { duration, ease, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
 
@@ -12,12 +13,17 @@ export function ToastContainer() {
           <motion.div
             key={t.id}
             layout
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, x: 24, scale: 0.96 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{
+              opacity: 0,
+              x: 24,
+              scale: 0.97,
+              transition: { duration: duration.quick, ease: ease.inOut },
+            }}
+            transition={{ ...spring.swift, layout: spring.settle }}
             className={cn(
-              "pointer-events-auto rounded-lg px-4 py-3 text-sm shadow-md border backdrop-blur-sm",
+              "pointer-events-auto rounded-md border px-4 py-3 text-sm shadow-md backdrop-blur-sm",
               t.type === "error" &&
                 "bg-destructive/10 border-destructive/30 text-destructive",
               t.type === "success" &&
