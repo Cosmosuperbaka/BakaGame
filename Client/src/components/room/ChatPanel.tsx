@@ -4,8 +4,16 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { duration, ease, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
+
+/** 系统提示：无归属方，从中线撑开 */
+const systemMessage = {
+  initial: { opacity: 0, scaleY: 0.6 },
+  animate: { opacity: 1, scaleY: 1, transition: { duration: duration.base, ease: ease.out } },
+  exit: { opacity: 0, transition: { duration: duration.instant } },
+};
 
 export function ChatPanel() {
   const sendCommand = useGameStore((s) => s.sendCommand);
@@ -41,10 +49,11 @@ export function ChatPanel() {
                 return (
                   <motion.div
                     key={msg.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
-                    className="text-center text-xs text-muted-foreground/70 italic py-1"
+                    variants={systemMessage}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="py-1 text-center text-xs italic text-muted-foreground/70"
                   >
                     {msg.text}
                   </motion.div>
@@ -53,9 +62,12 @@ export function ChatPanel() {
               return (
                 <motion.div
                   key={msg.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  layout="position"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.94, transition: { duration: duration.instant } }}
+                  transition={spring.swift}
+                  style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex flex-col", isMe ? "items-end" : "items-start")}
                 >
                   <span className="text-[11px] text-muted-foreground/60 mb-0.5 px-1">
@@ -63,10 +75,10 @@ export function ChatPanel() {
                   </span>
                   <div
                     className={cn(
-                      "max-w-[85%] px-3 py-1.5 text-sm leading-relaxed rounded-2xl break-words",
+                      "max-w-[85%] break-words rounded-xl px-3 py-1.5 text-sm leading-relaxed",
                       isMe
-                        ? "bg-primary text-primary-foreground rounded-br-md"
-                        : "bg-muted text-foreground rounded-bl-md"
+                        ? "rounded-br-sm bg-primary text-primary-foreground"
+                        : "rounded-bl-sm bg-muted text-foreground"
                     )}
                   >
                     {msg.text}
@@ -78,16 +90,22 @@ export function ChatPanel() {
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
-      <div className="p-3 border-t flex gap-2 shrink-0">
+      <div className="flex shrink-0 gap-2 border-t p-3">
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="发送消息..."
-          className="flex-1 h-9 rounded-full px-4"
+          className="h-9 flex-1"
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           maxLength={200}
         />
-        <Button size="icon" className="h-9 w-9 shrink-0 rounded-full" onClick={handleSend}>
+        <Button
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={handleSend}
+          disabled={!text.trim()}
+          aria-label="发送消息"
+        >
           <Send className="h-4 w-4" />
         </Button>
       </div>
