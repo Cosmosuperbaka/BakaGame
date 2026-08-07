@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -18,17 +18,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { parseChangelogContent, type InlineNode } from "@/lib/changelog";
-
-interface ChangelogEntry {
-  version: string;
-  date: string;
-  title: string;
-  content: string;
-}
+import {
+  parseChangelogContent,
+  resolveLatestVersion,
+  sortEntriesByVersion,
+  type ChangelogContent,
+  type ChangelogEntry,
+  type InlineNode,
+} from "@/lib/changelog";
 
 interface ChangelogData {
-  currentVersion: string;
   entries: ChangelogEntry[];
 }
 
@@ -40,7 +39,6 @@ interface CommitEntry {
 }
 
 interface CommitHistoryData {
-  currentVersion: string;
   currentCommit: string;
   commits: CommitEntry[];
 }
@@ -81,14 +79,33 @@ const GAMES: GameEntry[] = [
   },
 ];
 
-// 把日期换算成中文相对时间
+/**
+ * 把时间戳换算成中文相对时间，精度随时间跨度递减：
+ * 一分钟内数秒，一小时内数分钟，一天内数小时，再往后数天/月/年。
+ *
+ * 只有日期没有时间的旧数据（YYYY-MM-DD）按当天零点解析，
+ * 这种输入本身没有秒级精度，最细只会落到「几小时前」。
+ */
 function formatRelativeTime(dateStr: string): string {
-  const then = new Date(`${dateStr}T00:00:00`);
+  const raw = dateStr.trim();
+  // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
+  const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
   if (Number.isNaN(then.getTime())) return dateStr;
-  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
-  if (days <= 0) return "今天";
-  if (days === 1) return "昨天";
+
+  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  // 时钟偏差或未来时间戳，不显示负数。
+  if (seconds < 0) return "刚刚";
+  if (seconds < 60) return `${seconds} 秒前`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+
+  const days = Math.floor(hours / 24);
   if (days < 30) return `${days} 天前`;
+
   const months = Math.floor(days / 30);
   if (months < 12) return `${months} 个月前`;
   return `${Math.floor(months / 12)} 年前`;
@@ -202,7 +219,7 @@ function InlineContent({ nodes }: { nodes: InlineNode[] }) {
   );
 }
 
-function ChangelogBody({ content }: { content: string }) {
+function ChangelogBody({ content }: { content: ChangelogContent }) {
   const blocks = parseChangelogContent(content);
 
   return (
@@ -274,11 +291,17 @@ export default function LandingPage() {
       .catch(() => {});
   }, []);
 
-  const version = commitHistory?.currentVersion ?? changelog?.currentVersion;
+  // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
+  // 也不依赖 entries 的书写顺序。
+  const entries = useMemo(
+    () => (changelog ? sortEntriesByVersion(changelog.entries) : []),
+    [changelog],
+  );
+  const version = useMemo(() => resolveLatestVersion(entries), [entries]);
   const commit = commitHistory?.currentCommit;
-  const versionLabel = version
-    ? `V${version}${commit ? `(${commit})` : ""}`
-    : null;
+  // 日志还没加载完或整个文件都没有条目时，版本号未知，用 ∞ 占位而不是留空，
+  // 免得徽章忽然出现造成跳动。
+  const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -314,25 +337,23 @@ export default function LandingPage() {
       </main>
 
       <footer className="flex justify-center px-6 pb-10">
-        {versionLabel && (
-          <motion.button
-            type="button"
-            {...pressable}
-            onClick={(event) => {
-              capture(event);
-              setInfoOpen(true);
-            }}
-            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            {versionLabel}
-          </motion.button>
-        )}
+        <motion.button
+          type="button"
+          {...pressable}
+          onClick={(event) => {
+            capture(event);
+            setInfoOpen(true);
+          }}
+          className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          {versionLabel}
+        </motion.button>
       </footer>
 
       <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{versionLabel ?? "版本信息"}</DialogTitle>
+            <DialogTitle>{versionLabel}</DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="changelog">
             <TabsList className="w-full">
@@ -342,7 +363,7 @@ export default function LandingPage() {
             <TabsContent value="changelog" className="mt-4 max-h-[55vh] overflow-y-auto">
               {changelog ? (
                 <div className="space-y-5">
-                  {changelog.entries.map((entry) => (
+                  {entries.map((entry) => (
                     <div key={entry.version} className="space-y-2">
                       <div className="flex items-baseline gap-2">
                         <strong className="text-base">V{entry.version}</strong>

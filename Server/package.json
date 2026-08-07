@@ -1,6 +1,7 @@
 {
   "name": "bakagame-server",
-  "version": "1.3.1",
+  "//": "version 已作废：npm 只接受 semver，填不了 ∞。服务端对外一律报 ∞（见 src/config/version.ts），用户可见版本号取 Client/public/changelog.json。",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
