@@ -55,6 +55,9 @@ const markTones: Record<PlayerMark, string> = {
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-11";
 
+/** 玩家列宽度（px）。分界线与最小宽度都由此推导，避免两处写死不同值。 */
+const PLAYER_COLUMN_WIDTH = 256;
+
 /** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
 const PLAYER_GROUP_TITLE_HEIGHT = "1.75rem";
 
@@ -209,7 +212,7 @@ export function PlayerList(props: PlayerListProps) {
         layout="position"
         className="flex items-stretch"
       >
-        <div className="w-64 shrink-0 border-r px-2">
+        <div className="w-64 shrink-0 px-2">
           <PlayerRow {...rowProps} embedded />
         </div>
         {history.columns.map((column) => (
@@ -229,7 +232,7 @@ export function PlayerList(props: PlayerListProps) {
     if (!history) return title;
     return (
       <div className="flex items-stretch">
-        <div className="w-64 shrink-0 border-r px-2">{title}</div>
+        <div className="w-64 shrink-0 px-2">{title}</div>
         {history.columns.map((column) => (
           <div
             key={column.key}
@@ -252,9 +255,18 @@ export function PlayerList(props: PlayerListProps) {
 
   const body = (
     <div
-      className="flex flex-col py-3"
-      style={{ minWidth: history ? 256 + history.columns.length * 200 : undefined }}
+      className={cn("relative flex flex-col py-3", history && "min-h-full")}
+      style={{ minWidth: history ? PLAYER_COLUMN_WIDTH + history.columns.length * 200 : undefined }}
     >
+      {/* 玩家列与发言列的分界线。整列贯穿到底，不随最后一行结束，
+          否则行间距与列表末尾的空白处会把线断开。 */}
+      {history ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 w-px bg-border"
+          style={{ left: PLAYER_COLUMN_WIDTH }}
+        />
+      ) : null}
       {renderGroupTitle("玩家", activePlayers.length, false)}
       <motion.div
         className="flex flex-col gap-px"
