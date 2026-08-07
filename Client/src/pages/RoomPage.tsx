@@ -417,10 +417,11 @@ export default function RoomPage() {
             </div>
           </motion.aside>
 
-          {/* 游戏区 */}
+          {/* 游戏区。`isolate` 使揭词背板、天亮提示等区内浮层只在游戏区内部
+              分层，不会越过玩家面板去盖住骑缝的展开按钮。 */}
           <main
             ref={stageRef}
-            className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel"
+            className="isolate flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel"
           >
             <GameArea wordRevealed={wordRevealed} />
           </main>
