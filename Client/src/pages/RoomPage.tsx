@@ -3,13 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Settings,
+  History,
   Menu,
   MessageSquare,
   ShieldCheck,
   Eye,
-  PanelRightOpen,
-  PanelRightClose,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
@@ -320,11 +321,7 @@ export default function RoomPage() {
                 aria-expanded={mobilePanel === "history"}
                 onClick={() => setMobilePanel(mobilePanel === "history" ? "none" : "history")}
               >
-                {mobilePanel === "history" ? (
-                  <PanelRightClose className="h-5 w-5" />
-                ) : (
-                  <PanelRightOpen className="h-5 w-5" />
-                )}
+                <History className="h-5 w-5" />
               </Button>
             )}
             <Button
@@ -390,13 +387,13 @@ export default function RoomPage() {
                   aria-expanded={historyOpen}
                   onClick={() => setHistoryOpen(!historyOpen)}
                   {...iconTappable}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-secondary text-secondary-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {/* 展开时显示收起（←），收起时显示展开（→），符合用户直觉 */}
+                  {/* 箭头指向面板将要移动的方向：收起时向右展开，展开时向左收回 */}
                   {historyOpen ? (
-                    <PanelRightClose className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4" />
                   ) : (
-                    <PanelRightOpen className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4" />
                   )}
                 </motion.button>
               </motion.div>
