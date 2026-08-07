@@ -1345,7 +1345,11 @@ export class RoomService {
         round.summary = undefined;
         break;
       case "blankGuess": {
-        const blankId = getBlankPlayerId(round.assignments) ?? participantIds[0];
+        // 优先使用已有白板玩家；若不存在则选非调用者，避免调用者看到猜词界面。
+        const blankId =
+          getBlankPlayerId(round.assignments) ??
+          participantIds.find((id) => id !== player.id) ??
+          participantIds[0];
 
         if (blankId && round.assignments[blankId]) {
           round.assignments[blankId] = {
