@@ -553,7 +553,7 @@ export function PlayerRow(props: PlayerRowProps) {
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-[80] overflow-hidden rounded-md border bg-card text-card-foreground shadow-md"
+            className="z-[80] overflow-hidden rounded-md border bg-secondary text-secondary-foreground shadow-md"
           >
             {/* 身份猜测行：与下方管理按钮等宽，无缝 */}
             {canMark ? (
@@ -572,7 +572,9 @@ export function PlayerRow(props: PlayerRowProps) {
             ) : null}
             {/* 管理操作：两行，无缝拼接 */}
             {canManage ? (
-              <div className={cn("flex flex-col", canMark && "border-t border-border/50")}>
+              <div
+              className={cn("flex flex-col", canMark && "border-t border-secondary-foreground/15")}
+            >
                 <ManageButton
                   icon={<ArrowUpRightFromCircle className="h-3.5 w-3.5" />}
                   label="转移房主"
@@ -616,8 +618,10 @@ function MarkButton({
       onClick={onSelect}
       className={cn(
         "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
-        "border-r border-border/50 last:border-r-0",
-        selected ? roleTones[option].solid : "text-muted-foreground hover:bg-accent/60",
+        "border-r border-secondary-foreground/15 last:border-r-0",
+        selected
+          ? roleTones[option].solid
+          : "text-secondary-foreground/80 hover:bg-accent hover:text-accent-foreground",
         first && "rounded-tl-[calc(var(--radius)-1px)]",
         last && "rounded-tr-[calc(var(--radius)-1px)]",
       )}
@@ -646,10 +650,10 @@ function ManageButton({
         onClick={onClick}
         className={cn(
           "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
-          "border-t border-border/50 first:border-t-0",
+          "border-t border-secondary-foreground/15 first:border-t-0",
           destructive
-            ? "text-destructive hover:bg-destructive/8"
-            : "text-foreground hover:bg-accent/60",
+            ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            : "text-secondary-foreground hover:bg-accent hover:text-accent-foreground",
         )}
       >
         {icon}
