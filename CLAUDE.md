@@ -110,7 +110,11 @@ config/          ← env.ts, constants.ts, version.ts
 
 Single Zustand store: `useGameStore` (`Client/src/stores/useGameStore.ts`). Holds public snapshot, per-player private state, session token, and all async actions. `GameContext.tsx` initialises the WS connection on mount.
 
-Routing (React Router v7): `/` → `HomePage` (lobby), `/room/:roomId` → `RoomPage`.
+Routing (React Router v7): `/` → `LandingPage`, `/whoisfaker` → lobby, `/whoisfaker/room/:roomId` → `RoomPage`. Both levels have a catch-all `*`: an unknown `/whoisfaker/…` path redirects to the lobby, anything else to the landing page — never leave a mistyped URL on a blank screen.
+
+Room IDs are validated client-side before connecting, via `isValidRoomId` from `@bakagame/shared` (four digits, or the test-room ID case-insensitively). The server's `ensureRoomId` uses the same function — keep the rule in one place.
+
+`RoomPage` entry order: wait for the socket → try `room.reconnect` → if no saved username, **show the name dialog and stay on the page** (a shared link must not bounce a first-time visitor to the lobby) → `room.join` → on `ROOM_NOT_FOUND`, create the room. While the dialog is open there is no snapshot, so `needsName` must be excluded from the "room closed, go back to lobby" effect.
 
 Client path alias: `@/` → `Client/src/`.
 
@@ -132,6 +136,8 @@ Room ID `"Oblivionis"` (case-insensitive) is a special test room. It follows **e
 - **Client**: every `TestController` action is a real command to the server; failures surface as toasts. There is no local mock data and no client-side interception.
 
 Bots follow the same membership rules as humans: added before a round they join as players, added mid-round they can only spectate.
+
+`test.jumpToPhase` checks the player count **before** calling `startRound`, so a rejected jump leaves the room in `waiting` rather than half-started. It also never clears an existing `questionerPlayerId` — only a jump to `wordSubmission` reassigns the questioner to the caller; every other jump keeps whoever already holds the seat.
 
 ## Game State Machine
 
