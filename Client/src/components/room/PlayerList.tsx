@@ -62,11 +62,23 @@ const roleTones: Record<PlayerMark, { solid: string; outline: string }> = {
 };
 
 /**
- * 身份徽章的共同尺寸。宽度固定为双字所需，
- * 使各行行首对齐，不因身份名不同而错位。
+ * 状态徽章配色。与身份徽章同为实底：
+ * 低透明度底色下准备、等待这类高频状态几乎看不出来。
  */
-const ROLE_BADGE_BASE =
-  "inline-flex h-5 w-[2.9rem] shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
+const statusTones: Record<StatusInfo["tone"], string> = {
+  default: "bg-secondary text-secondary-foreground",
+  emerald: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950",
+  violet: "bg-violet-600 text-white dark:bg-violet-500 dark:text-violet-950",
+  red: "bg-red-600 text-white dark:bg-red-500 dark:text-red-950",
+  amber: "bg-amber-500 text-white dark:text-amber-950",
+};
+
+/**
+ * 行首徽章的共同几何。身份、主持与准备状态共用同一套尺寸与字重，
+ * 宽度固定为双字所需，使各行行首严格对齐。
+ */
+const BADGE_BASE =
+  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-11";
@@ -655,7 +667,7 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
   const tone = roleTones[role];
   return (
     <span
-      className={cn(ROLE_BADGE_BASE, predicted ? cn("border border-dashed", tone.outline) : tone.solid)}
+      className={cn(BADGE_BASE, predicted ? cn("border border-dashed", tone.outline) : tone.solid)}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}
@@ -668,24 +680,9 @@ interface StatusInfo {
   tone: "default" | "emerald" | "violet" | "red" | "amber";
 }
 
+/** 主持、出局、旁观与准备状态。与身份徽章同尺寸同实底，行首一致。 */
 function StatusPill({ label, tone }: StatusInfo) {
-  const styles: Record<StatusInfo["tone"], string> = {
-    default: "bg-muted text-muted-foreground",
-    emerald: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    violet: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
-    red: "bg-red-500/15 text-red-700 dark:text-red-300",
-    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-[10px] font-medium leading-none",
-        styles[tone],
-      )}
-    >
-      {label}
-    </span>
-  );
+  return <span className={cn(BADGE_BASE, statusTones[tone])}>{label}</span>;
 }
 
 function resolveStatus(
