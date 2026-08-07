@@ -12,7 +12,16 @@ import {
   Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getSavedUsername } from "@/lib/cookie";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { getSavedUsername, saveUsername } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
 import {
   backdrop,
@@ -34,7 +43,7 @@ import { buildDescriptionColumns } from "@/lib/descriptionColumns";
 import { AssignedWord } from "@/components/room/AssignedWord";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
-import type { PlayerRole, PublicPlayerView } from "@/types";
+import { isValidRoomId, type PlayerRole, type PublicPlayerView } from "@/types";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -51,6 +60,9 @@ export default function RoomPage() {
   const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
 
   const [joining, setJoining] = useState(!alreadyInRoom);
+  // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
+  const [needsName, setNeedsName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat" | "history">("none");
   const [historyOpen, setHistoryOpen] = useState(false);
   // 延迟清除：宽度动画收回期间保持 history prop，避免 PlayerList 瞬间膨胀
@@ -79,16 +91,57 @@ export default function RoomPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [historyOpen]);
 
-  // 房间关闭后自动返回大厅
+  // 房间关闭后自动返回大厅。等用户填名字的这段时间同样没有 snapshot，
+  // 但那是正常状态，不能当成房间已关闭。
   useEffect(() => {
-    if (!joining && !snapshot && !storeRoomId) navigate("/whoisfaker");
-  }, [joining, snapshot, storeRoomId, navigate]);
+    if (!joining && !needsName && !snapshot && !storeRoomId) navigate("/whoisfaker");
+  }, [joining, needsName, snapshot, storeRoomId, navigate]);
+
+  /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
+  const enterWithName = useCallback(
+    async (name: string) => {
+      if (!roomId) return;
+      setJoining(true);
+      try {
+        await joinRoom(roomId, name);
+        setJoining(false);
+      } catch (e) {
+        const err = e as { code?: string; message?: string };
+        if (err.code === "ROOM_NOT_FOUND") {
+          try {
+            await createRoom({
+              roomId,
+              name: `${name}的房间`,
+              visibility: "public",
+              allowSpectators: true,
+              userName: name,
+            });
+            setJoining(false);
+          } catch (createErr) {
+            addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
+            navigate("/whoisfaker");
+          }
+        } else {
+          addToast(err.message ?? "加入房间失败", "error");
+          navigate("/whoisfaker");
+        }
+      }
+    },
+    [roomId, joinRoom, createRoom, addToast, navigate],
+  );
 
   // 进入房间：等待连接、尝试重连/加入/创建
   useEffect(() => {
     if (!roomId) return;
 
     if (alreadyInRoom) return;
+
+    // 房间号非法就不必连服务器、更不必先问名字，直接退回大厅。
+    if (!isValidRoomId(roomId)) {
+      addToast("房间号无效，请检查链接", "error");
+      navigate("/whoisfaker", { replace: true });
+      return;
+    }
 
     let cancelled = false;
     const tryEnter = async () => {
@@ -109,36 +162,30 @@ export default function RoomPage() {
 
       const name = getSavedUsername();
       if (!name) {
-        addToast("请先在主页设置用户名", "error");
-        navigate("/whoisfaker");
+        // 停在房间页把弹窗交给用户，别让分享链接直接把人弹回大厅。
+        setJoining(false);
+        setNameDraft("");
+        setNeedsName(true);
         return;
       }
 
-      try {
-        await joinRoom(roomId, name);
-        if (!cancelled) setJoining(false);
-      } catch (e) {
-        if (cancelled) return;
-        const err = e as { code?: string; message?: string };
-        if (err.code === "ROOM_NOT_FOUND") {
-          try {
-            await createRoom({ roomId, name: `${name}的房间`, visibility: "public", allowSpectators: true, userName: name });
-            if (!cancelled) setJoining(false);
-          } catch (createErr) {
-            if (cancelled) return;
-            addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
-            navigate("/whoisfaker");
-          }
-        } else {
-          addToast(err.message ?? "加入房间失败", "error");
-          navigate("/whoisfaker");
-        }
-      }
+      if (!cancelled) await enterWithName(name);
     };
 
     tryEnter();
     return () => { cancelled = true; };
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleConfirmName = useCallback(async () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      addToast("请输入用户名", "error");
+      return;
+    }
+    saveUsername(name);
+    setNeedsName(false);
+    await enterWithName(name);
+  }, [nameDraft, addToast, enterWithName]);
 
   const handleLeave = useCallback(async () => {
     await leaveRoom();
@@ -229,22 +276,62 @@ export default function RoomPage() {
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
-  // 加载中或等待加入
-  if (joining || !snapshot) {
+  // 加载中、等待加入，或等用户填名字
+  if (joining || needsName || !snapshot) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: duration.base, ease: ease.out }}
-          className="flex flex-col items-center gap-3"
-        >
+        {!needsName && (
           <motion.div
-            className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
-            {...spinner}
-          />
-          <span className="text-sm text-muted-foreground">正在加入房间...</span>
-        </motion.div>
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: duration.base, ease: ease.out }}
+            className="flex flex-col items-center gap-3"
+          >
+            <motion.div
+              className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
+              {...spinner}
+            />
+            <span className="text-sm text-muted-foreground">正在加入房间...</span>
+          </motion.div>
+        )}
+
+        <Dialog
+          open={needsName}
+          onOpenChange={(open) => {
+            // 关掉弹窗等于放弃进房，回大厅。
+            if (!open) {
+              setNeedsName(false);
+              navigate("/whoisfaker");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>设置用户名</DialogTitle>
+              <DialogDescription>
+                进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleConfirmName();
+              }}
+              placeholder="用户名"
+              maxLength={20}
+            />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => navigate("/whoisfaker")}>
+                返回大厅
+              </Button>
+              <Button onClick={handleConfirmName} disabled={!nameDraft.trim()}>
+                进入房间
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
