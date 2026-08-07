@@ -20,17 +20,15 @@ export function VotingPhase() {
   const isTieBreak = snapshot.status.phase === "tieBreak";
   const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
   const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
-  const baseTargets = alivePlayers.filter(
-    (player) => player.id !== privateState?.playerId || snapshot.testMode,
-  );
+  // 自己永远不在投票目标里，测试房间也一样：测试房要复现真实规则。
+  const baseTargets = alivePlayers.filter((player) => player.id !== privateState?.playerId);
   const targets =
     isTieBreak && tieBreakCandidateIds.length > 0
-      ? alivePlayers.filter((player) => tieBreakCandidateIds.includes(player.id))
-      : baseTargets.length > 0
-        ? baseTargets
-        : snapshot.testMode && amAlive && !isQuestioner && me
-          ? [me]
-          : [];
+      ? alivePlayers.filter(
+          (player) =>
+            tieBreakCandidateIds.includes(player.id) && player.id !== privateState?.playerId,
+        )
+      : baseTargets;
 
   const handleVote = useCallback(
     async (targetId: string) => {

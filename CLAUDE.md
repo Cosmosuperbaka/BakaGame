@@ -126,9 +126,12 @@ Client path alias: `@/` → `Client/src/`.
 
 ## Test Mode
 
-Room ID `"Oblivionis"` (case-insensitive) is a special test room:
-- **Server**: bypasses minimum-player checks, allows solo play, accepts `test.jumpToPhase` and `test.setMyRole` commands.
-- **Client**: `sendCommand` intercepts calls locally using mock data — no server required. The `TestController` component provides phase-jumping and role-switching UI.
+Room ID `"Oblivionis"` (case-insensitive) is a special test room. It follows **exactly the same rules** as a normal room — it does not bypass player-count checks and there is no solo play.
+
+- **Server**: accepts the extra commands `test.jumpToPhase`, `test.setMyRole`, `test.addBot`, `test.removeBot`. Bots are real server-side players: they occupy roles, speak, and vote. Reaching a phase still requires a legal roster, so fill the room with bots first.
+- **Client**: every `TestController` action is a real command to the server; failures surface as toasts. There is no local mock data and no client-side interception.
+
+Bots follow the same membership rules as humans: added before a round they join as players, added mid-round they can only spectate.
 
 ## Game State Machine
 
@@ -139,9 +142,11 @@ waiting → assigningQuestioner → wordSubmission → description → voting
   → gameOver
 ```
 
-Roles: `civilian`, `undercover`, `angel` (10+ players), `blank` (8+ players).  
-Win conditions: `good` (all undercoverers eliminated), `undercover` (outnumber civilians), `blank` (guesses both words correctly), `aborted`.  
-Minimum 4 players to start; `maxUndercoverCount = floor(playerCount / 4)`.
+Win conditions: `good` (all undercoverers eliminated), `undercover` (outnumber civilians), `blank` (guesses both words correctly), `aborted`.
+
+**Participant count is the basis for every role rule.** The questioner does not play, so participants = active players minus the questioner (an online spectator can take the questioner seat instead, leaving all active players in the game). Roles: `civilian`, `undercover`, `angel` (10+ participants), `blank` (8+ participants); `maxUndercoverCount = max(1, floor(participantCount / 4))`.
+
+A round needs **4 participants plus 1 questioner**: 5 active players, or 4 active players when an online spectator hosts. `getParticipantCount` is the single source of truth — never count `players.length` directly for a role decision.
 
 ## Description Records
 
@@ -180,7 +185,7 @@ For `game.requestSupplement`:
 
 `BlankGuessPhase.tsx` exports two components:
 
-- **`BlankGuessButton`** — a floating `absolute bottom-4 right-4 z-10` button visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver"`. Opens a modal overlay (`absolute inset-0 z-20`) for guessing both words. This is **non-blocking**: it overlays the current phase UI without replacing it.
+- **`BlankGuessButton`** — a floating button pinned to the game area's **top-right** (`absolute right-3 top-3 z-30`, `md:right-5 md:top-5`) so it never collides with the bottom phase controller. Visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver"`. It is the blank player's primary action, so it uses `Button`'s `default` variant at `size="lg"` — do not hand-roll a tinted low-opacity style, which disappears against the warm paper background. Opens a modal overlay (`absolute inset-0 z-20`) for guessing both words. This is **non-blocking**: it overlays the current phase UI without replacing it.
 - **`BlankGuessWaiting`** — shown to all players during the `blankGuess` phase while waiting for the blank player to guess.
 
 `GameArea.tsx` renders `<BlankGuessButton />` inside the outermost `relative` div so overlays position correctly. The `blankGuess` case in `PhaseContent` renders `<BlankGuessWaiting />`.

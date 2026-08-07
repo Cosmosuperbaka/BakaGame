@@ -55,6 +55,26 @@ const readBoolean = (value: unknown, field: string): boolean => {
   return value;
 };
 
+const readPositiveInt = (
+  value: unknown,
+  field: string,
+  options?: { optional?: boolean },
+): number | undefined => {
+  if (value == null) {
+    if (options?.optional) {
+      return undefined;
+    }
+
+    throw new AppError("INVALID_MESSAGE", `${field} 必须为正整数`);
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new AppError("INVALID_MESSAGE", `${field} 必须为正整数`);
+  }
+
+  return value;
+};
+
 const readVisibility = (value: unknown): RoomVisibility => {
   if (value !== "public" && value !== "private") {
     throw new AppError("INVALID_MESSAGE", "visibility 必须为 public 或 private");
@@ -361,6 +381,27 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         payload: { role: role as PlayerRole },
       };
     }
+    case "test.addBot":
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: {
+          count: readPositiveInt(payload.count, "payload.count", { optional: true }),
+        },
+      };
+    case "test.removeBot":
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: {
+          playerId: readString(payload.playerId, "payload.playerId", { optional: true }),
+          count: readPositiveInt(payload.count, "payload.count", { optional: true }),
+        },
+      };
     default:
       throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }

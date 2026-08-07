@@ -107,6 +107,8 @@ export type ClientMessage =
   | ClientEnvelope<"room.transferHost", { playerId: string }>
   | ClientEnvelope<"test.jumpToPhase", { phase: GamePhase }>
   | ClientEnvelope<"test.setMyRole", { role: PlayerRole }>
+  | ClientEnvelope<"test.addBot", { count?: number }>
+  | ClientEnvelope<"test.removeBot", { playerId?: string; count?: number }>
   | ClientEnvelope<"game.cancelVote", Record<string, never>>
   | ClientEnvelope<"game.cancelNightAction", Record<string, never>>
   | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>;

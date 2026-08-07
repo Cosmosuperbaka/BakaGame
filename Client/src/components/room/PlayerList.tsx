@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowUpRightFromCircle, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
+import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listContainer, listItem, popover, tappable } from "@/lib/motion";
@@ -489,7 +489,8 @@ export function PlayerRow(props: PlayerRowProps) {
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && interactive && "hover:bg-accent/50",
-        !player.online && "opacity-60",
+        // 机器人没有连接，但不是「掉线」，不该被压暗
+        !player.online && !player.isBot && "opacity-60",
         interactive && "cursor-pointer",
       )}
     >
@@ -514,7 +515,10 @@ export function PlayerRow(props: PlayerRowProps) {
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
-      {!player.online ? (
+      {/* 机器人标注为人机，而不是复用断线图标 */}
+      {player.isBot ? (
+        <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
+      ) : !player.online ? (
         <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
       ) : null}
       {/* 得分居右 */}

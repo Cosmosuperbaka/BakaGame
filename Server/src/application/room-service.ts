@@ -47,6 +47,9 @@ import {
   QUESTIONER_RECONNECT_TIMEOUT_MS,
   CHAT_LIMIT,
   TEST_MODE_DEFAULT_WORD,
+  TEST_MODE_MAX_PLAYERS,
+  BOT_NAME_SUFFIXES,
+  BOT_DESCRIPTION_TEMPLATES,
 } from "../config/constants";
 import { ConnectionRegistry } from "./connection-registry";
 
@@ -164,6 +167,14 @@ export class RoomService {
         return this.handleTestJumpToPhase(connection, message.payload.phase);
       case "test.setMyRole":
         return this.handleTestSetMyRole(connection, message.payload.role);
+      case "test.addBot":
+        return this.handleTestAddBot(connection, message.payload.count ?? 1);
+      case "test.removeBot":
+        return this.handleTestRemoveBot(
+          connection,
+          message.payload.playerId,
+          message.payload.count ?? 1,
+        );
       default:
         throw new AppError("UNSUPPORTED_COMMAND", "暂不支持的命令");
     }
@@ -648,27 +659,16 @@ export class RoomService {
 
     // 旁观者出题 → 正式玩家全员参战；正式玩家出题 → 扣掉自身名额。
     const participantCount = this.getParticipantCount(room, target.id);
-    const allowSoloTestQuestioner =
-      room.id === ROOM_ID_TEST_MODE &&
-      target.membership === "active" &&
-      participantCount === 0 &&
-      target.id === player.id;
 
     // 正式玩家担任出题人时若人数不够，自动把卧底数夹到上限（而不是直接拒绝）。
-    if (target.membership === "active" && !allowSoloTestQuestioner) {
+    if (target.membership === "active") {
       room.settings.roleConfig = this.clampRoleConfig(
         room.settings.roleConfig,
         participantCount,
       );
     }
 
-    if (!allowSoloTestQuestioner) {
-      validateRoleConfig(
-        room.settings.roleConfig,
-        participantCount,
-        room.id === ROOM_ID_TEST_MODE,
-      );
-    }
+    validateRoleConfig(room.settings.roleConfig, participantCount);
 
     round.questionerPlayerId = target.id;
     round.phase = "wordSubmission";
@@ -728,15 +728,7 @@ export class RoomService {
       throw new AppError("INSUFFICIENT_PLAYERS", "缺少可参与游戏的玩家");
     }
 
-    const allowSoloTestSubmission = room.id === ROOM_ID_TEST_MODE && participantIds.length === 1;
-
-    if (!allowSoloTestSubmission) {
-      validateRoleConfig(
-        room.settings.roleConfig,
-        participantIds.length,
-        room.id === ROOM_ID_TEST_MODE,
-      );
-    }
+    validateRoleConfig(room.settings.roleConfig, participantIds.length);
 
     if (room.settings.roleConfig.hasBlank && !normalizeWord(blankHint ?? "")) {
       throw new AppError("BLANK_HINT_REQUIRED", "开启白板时必须填写提示");
@@ -1122,10 +1114,8 @@ export class RoomService {
     if (targetId) {
       const targetState = round.assignments[targetId];
 
-      if (
-        !targetState?.alive ||
-        (targetId === player.id && room.id !== ROOM_ID_TEST_MODE)
-      ) {
+      // 不能刀自己，测试房间同样适用。
+      if (!targetState?.alive || targetId === player.id) {
         throw new AppError("INVALID_TARGET", "夜晚目标无效");
       }
     }
@@ -1335,7 +1325,8 @@ export class RoomService {
     if (target === "waiting") {
       room.round = undefined;
       for (const p of Object.values(room.players)) {
-        p.isReady = false;
+        // 机器人保持已准备：它们无法自己勾选。
+        p.isReady = p.isBot;
       }
       this.touchRoom(room);
       this.broadcastRoomEvent(room, "game.phaseChanged", {
@@ -1386,8 +1377,9 @@ export class RoomService {
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
 
-    if (target !== "wordSubmission" && participantIds.length === 0) {
-      throw new AppError("INSUFFICIENT_PLAYERS", "测试房间至少需要 1 名正式玩家");
+    // 与真实房间同规则：对局需要 4 名参战玩家。
+    if (participantIds.length < 4) {
+      throw new AppError("INSUFFICIENT_PLAYERS", "对局需要 4 名参战玩家，请先添加机器人");
     }
 
     if (
@@ -1400,12 +1392,8 @@ export class RoomService {
         room.settings.roleConfig,
         participantIds.length,
       );
-      const effectiveConfig: RoleConfig = {
-        ...config,
-        undercoverCount: Math.max(1, Math.min(config.undercoverCount || 1, participantIds.length)),
-        hasAngel: participantIds.length >= 2 && config.hasAngel,
-        hasBlank: participantIds.length >= 2 && config.hasBlank,
-      };
+      // clampRoleConfig 已按真实人数上限夹过天使/白板，这里不再额外放宽。
+      const effectiveConfig: RoleConfig = config;
       const assigned = assignRoles(
         participantIds,
         effectiveConfig,
@@ -1489,16 +1477,15 @@ export class RoomService {
         round.summary = undefined;
         break;
       case "blankGuess": {
-        const blankId = getBlankPlayerId(round.assignments) ?? participantIds[0];
+        // 不改任何人的身份：白板猜词是白板本人的阶段，
+        // 其他人只看到等待提示。没开白板就没有这个阶段可跳。
+        const blankId = getBlankPlayerId(round.assignments);
 
-        if (blankId && round.assignments[blankId]) {
-          round.assignments[blankId] = {
-            ...round.assignments[blankId],
-            role: "blank",
-            side: "blank",
-            word: undefined,
-            alive: true,
-          };
+        if (!blankId) {
+          throw new AppError(
+            "INVALID_PHASE",
+            "本局没有白板，请先在房间设置里开启白板并重新开局",
+          );
         }
 
         if (round.words && !round.words.blankHint) {
@@ -1525,6 +1512,8 @@ export class RoomService {
 
     this.touchRoom(room);
     this.broadcastPhaseAndPublish(room);
+    // 跳转后让机器人补齐新阶段的提交，否则出题人永远推不动。
+    await this.runBots(room);
     return { phase: round.phase };
   }
 
@@ -1574,6 +1563,114 @@ export class RoomService {
     this.touchRoom(room);
     this.publishRoomState(room);
     return { role };
+  }
+
+  /**
+   * 测试房间：批量补入机器人玩家。
+   * 机器人是真实的 PlayerRecord，走与真人完全相同的规则校验，
+   * 只是没有连接、由 runBots 代为提交发言/投票/夜晚行动。
+   */
+  private async handleTestAddBot(connection: ConnectionRecord, count: number) {
+    const { room } = this.requireRoomPlayer(connection);
+    this.ensureTestRoom(room);
+
+    const added: string[] = [];
+
+    for (let index = 0; index < count; index += 1) {
+      if (this.getActivePlayerIds(room).length >= TEST_MODE_MAX_PLAYERS) {
+        break;
+      }
+
+      const bot = this.createPlayer(this.pickBotName(room), true);
+      bot.isReady = true;
+      // 与真人加入同规则：局内加入只能旁观，下一局才参战。
+      bot.membership = this.isRoundActive(room) ? "spectator" : "active";
+      room.players[bot.id] = bot;
+      added.push(bot.id);
+      this.broadcastRoomEvent(room, "room.playerChanged", {
+        roomId: room.id,
+        action: "joined",
+        playerId: bot.id,
+        name: bot.name,
+      });
+    }
+
+    if (added.length === 0) {
+      throw new AppError("ROOM_FULL", `测试房间最多 ${TEST_MODE_MAX_PLAYERS} 名玩家`);
+    }
+
+    // 人数变了，阵营配置的上限也跟着变，必须重新夹一次。
+    this.normalizeRoomRoleConfig(room);
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    await this.runBots(room);
+
+    return { added };
+  }
+
+  /** 测试房间：移除机器人。未指定 playerId 时从最后加入的开始移除。 */
+  private async handleTestRemoveBot(
+    connection: ConnectionRecord,
+    playerId: string | undefined,
+    count: number,
+  ) {
+    const { room } = this.requireRoomPlayer(connection);
+    this.ensureTestRoom(room);
+
+    const bots = Object.values(room.players).filter((player) => player.isBot);
+    const targets = playerId
+      ? bots.filter((bot) => bot.id === playerId)
+      : bots.slice(-count);
+
+    if (targets.length === 0) {
+      throw new AppError("PLAYER_NOT_FOUND", "没有可移除的机器人");
+    }
+
+    // 走与房主踢人完全相同的路径：局内淘汰、房主改选、阵营夹取、人数不足中止
+    // 全都由 forceRemovePlayer 负责，机器人不再有独立的移除逻辑。
+    for (const bot of targets) {
+      await this.forceRemovePlayer(room, bot.id, "kicked");
+    }
+
+    // 机器人被踢后只是标记为 kicked，测试房间要真正腾出名额，因此彻底删除记录。
+    for (const bot of targets) {
+      delete room.players[bot.id];
+    }
+
+    this.reassignHost(room);
+    this.normalizeRoomRoleConfig(room);
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    await this.runBots(room);
+
+    return { removed: targets.map((bot) => bot.id) };
+  }
+
+  private ensureTestRoom(room: RoomRecord) {
+    if (room.id !== ROOM_ID_TEST_MODE) {
+      throw new AppError("FORBIDDEN", "仅测试房间允许管理机器人");
+    }
+  }
+
+  /** 机器人取「机器人A」这类不重名的名字，便于在玩家列里区分。 */
+  private pickBotName(room: RoomRecord) {
+    const used = new Set(Object.values(room.players).map((player) => player.name));
+
+    for (const suffix of BOT_NAME_SUFFIXES) {
+      const candidate = `机器人${suffix}`;
+
+      if (!used.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    let index = BOT_NAME_SUFFIXES.length + 1;
+
+    while (used.has(`机器人${index}`)) {
+      index += 1;
+    }
+
+    return `机器人${index}`;
   }
 
   private broadcastPhaseAndPublish(room: RoomRecord) {
@@ -1835,7 +1932,7 @@ export class RoomService {
     };
 
     for (const player of Object.values(room.players)) {
-      // 结算后所有玩家统一重置为"未准备"，由房主（以及其他玩家）显式勾选下一局。
+      // 结算后统一重置为"未准备"：战报页只能返回主页，重新进房再准备。
       player.isReady = false;
     }
 
@@ -2086,6 +2183,7 @@ export class RoomService {
       },
       status: {
         phase: room.round?.phase ?? "waiting",
+        roundId: room.round?.id,
         speechMode: room.round?.speechMode,
         speechResumePhase: room.round?.supplement?.resumePhase,
         supplementIndex: room.round?.supplement?.index,
@@ -2214,6 +2312,8 @@ export class RoomService {
         round.phase === "tieBreak"
           ? round.tieBreak?.votes.find((v) => v.voterId === player.id)?.targetId
           : round.votes.find((v) => v.voterId === player.id)?.targetId,
+      myCurrentNightTargetId: round.nightActions.find((action) => action.actorId === player.id)
+        ?.targetId,
     };
   }
 
@@ -2323,20 +2423,8 @@ export class RoomService {
     return this.getAssignableQuestionerCandidates(room).some((candidate) => {
       const participantCount = this.getParticipantCount(room, candidate.id);
 
-      if (
-        room.id === ROOM_ID_TEST_MODE &&
-        candidate.membership === "active" &&
-        participantCount === 0
-      ) {
-        return true;
-      }
-
       try {
-        validateRoleConfig(
-          room.settings.roleConfig,
-          participantCount,
-          room.id === ROOM_ID_TEST_MODE,
-        );
+        validateRoleConfig(room.settings.roleConfig, participantCount);
         return true;
       } catch {
         return false;
@@ -2379,17 +2467,18 @@ export class RoomService {
       (player) => player.membership === "active",
     ).length;
 
-    if (room.id === ROOM_ID_TEST_MODE) {
-      if (activeCount < 1) {
-        throw new AppError("INSUFFICIENT_PLAYERS", "测试模式至少需要一名玩家");
-      }
+    // 对局需要 4 名参战玩家，出题人不参战：
+    // 有在线旁观者时旁观出题，4 名正式玩家即可；否则需正式玩家中出一人，至少 5 名。
+    const hasOnlineSpectator = Object.values(room.players).some(
+      (player) => player.membership === "spectator" && player.online,
+    );
+    const requiredActive = hasOnlineSpectator ? 4 : 5;
 
-      return;
-    }
-
-    // 旁观者可以出题，因此只要玩家达到 4 人即可开局。
-    if (activeCount < 4) {
-      throw new AppError("INSUFFICIENT_PLAYERS", "游戏至少需要 4 名玩家");
+    if (activeCount < requiredActive) {
+      throw new AppError(
+        "INSUFFICIENT_PLAYERS",
+        hasOnlineSpectator ? "游戏至少需要 4 名玩家" : "游戏至少需要 4 名玩家和 1 名出题人",
+      );
     }
 
     if (!this.hasValidQuestionerCandidate(room)) {
@@ -2413,11 +2502,8 @@ export class RoomService {
     const target = round.assignments[targetId];
     const isAbstain = targetId === "abstain";
 
-    if (
-      !voter?.alive ||
-      (!isAbstain && !target?.alive) ||
-      (!isAbstain && voterId === targetId && room.id !== ROOM_ID_TEST_MODE)
-    ) {
+    // 不能投自己，测试房间同样适用：测试房要复现真实规则。
+    if (!voter?.alive || (!isAbstain && !target?.alive) || (!isAbstain && voterId === targetId)) {
       throw new AppError("INVALID_VOTE", "投票对象无效");
     }
 
@@ -2701,7 +2787,6 @@ export class RoomService {
         validateRoleConfig(
           room.settings.roleConfig,
           this.getParticipantCount(room, round.questionerPlayerId),
-          room.id === ROOM_ID_TEST_MODE,
         );
       } catch {
         await this.finishRound(room, "aborted", "当前人数不足，系统已取消本局");
@@ -2862,9 +2947,188 @@ export class RoomService {
     return Boolean(room.round && room.round.phase !== "gameOver");
   }
 
-  // 测试模式已改为"手动跳转阶段 + 手动切换身份"，不再自动运行机器人；保留空实现避免大面积改调用点。
-  private async runBots(_room: RoomRecord) {
-    return;
+  /**
+   * 机器人补齐当前阶段所有必需的提交。
+   *
+   * 机器人不走 execute 分支（它们没有连接），而是直接改 round 状态，
+   * 但改的都是与真人命令完全相同的字段，因此
+   * isDescriptionComplete / isVotingComplete / isNightActionComplete
+   * 这些既有判定对机器人和真人是同一套逻辑。
+   *
+   * 只补「阻塞推进」的提交，不代替出题人推进阶段：
+   * 测试房间要能停在每个阶段观察 UI。
+   */
+  private async runBots(room: RoomRecord) {
+    const round = room.round;
+
+    if (!round || round.phase === "gameOver") {
+      return;
+    }
+
+    const bots = Object.values(room.players).filter(
+      (player) => player.isBot && round.assignments[player.id]?.alive,
+    );
+
+    if (bots.length === 0) {
+      return;
+    }
+
+    let changed = false;
+
+    for (const bot of bots) {
+      // 补充发言优先，与 handleSubmitDescription 的判定顺序保持一致。
+      if (
+        round.supplement &&
+        round.speechMode === "supplement" &&
+        round.supplement.requestedPlayerIds.includes(bot.id) &&
+        !round.supplement.donePlayers.includes(bot.id)
+      ) {
+        round.supplement.donePlayers.push(bot.id);
+        round.descriptions.push(
+          this.createDescription(bot, this.pickBotDescription(round, bot.id), "supplement", round.descriptionCycle, {
+            supplementIndex: round.supplement.index,
+          }),
+        );
+        changed = true;
+        continue;
+      }
+
+      if (
+        round.phase === "description" &&
+        round.speechMode !== "supplement" &&
+        !round.descriptionSubmittedBy.includes(bot.id)
+      ) {
+        round.descriptionSubmittedBy.push(bot.id);
+        round.descriptions.push(
+          this.createDescription(bot, this.pickBotDescription(round, bot.id), "description", round.descriptionCycle),
+        );
+        changed = true;
+        continue;
+      }
+
+      if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
+        if (
+          round.tieBreak.candidateIds.includes(bot.id) &&
+          !round.tieBreak.descriptionsDone.includes(bot.id)
+        ) {
+          round.tieBreak.descriptionsDone.push(bot.id);
+          round.descriptions.push(
+            this.createDescription(bot, this.pickBotDescription(round, bot.id), "tieBreak", round.descriptionCycle, {
+              tieBreakIndex: round.tieBreakCount,
+            }),
+          );
+          changed = true;
+        }
+
+        continue;
+      }
+
+      if (round.phase === "voting" || (round.phase === "tieBreak" && round.tieBreak?.stage === "vote")) {
+        const tieBreak = round.phase === "tieBreak";
+        const votes = tieBreak ? round.tieBreak!.votes : round.votes;
+
+        // 平票 PK 中候选人本人不参与投票，与 ensureCanVote 一致。
+        if (tieBreak && round.tieBreak!.candidateIds.includes(bot.id)) {
+          continue;
+        }
+
+        if (votes.some((vote) => vote.voterId === bot.id)) {
+          continue;
+        }
+
+        const targetId = this.pickBotVoteTarget(room, round, bot.id, tieBreak);
+
+        if (tieBreak) {
+          round.tieBreak!.votes = this.replaceVote(votes, bot.id, targetId);
+        } else {
+          round.votes = this.replaceVote(votes, bot.id, targetId);
+        }
+
+        changed = true;
+        continue;
+      }
+
+      if (round.phase === "night") {
+        const state = round.assignments[bot.id];
+
+        // 只有平民和卧底有夜晚行动，天使/白板不参与也不被等待。
+        if (state.role !== "civilian" && state.role !== "undercover") {
+          continue;
+        }
+
+        if (round.nightActions.some((action) => action.actorId === bot.id)) {
+          continue;
+        }
+
+        // 平民刀人会刀死自己，所以机器人平民一律不行动；
+        // 卧底才去刀一个非自己的存活目标。
+        const targetId =
+          state.role === "undercover" ? this.pickBotNightTarget(room, round, bot.id) : undefined;
+
+        round.nightActions = this.replaceNightAction(round.nightActions, bot.id, {
+          actorId: bot.id,
+          actorRole: state.role,
+          targetId,
+        });
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    // 补充发言可能因机器人的提交而完成，需要按真人路径收尾并回到原阶段。
+    if (
+      round.supplement &&
+      round.speechMode === "supplement" &&
+      round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length
+    ) {
+      const resumePhase = round.supplement.resumePhase;
+      round.supplement = undefined;
+      round.speechMode = resumePhase === "description" ? "normal" : undefined;
+      round.phase = resumePhase;
+    }
+
+    this.touchRoom(room);
+    this.publishRoomState(room);
+  }
+
+  /** 机器人发言文案：按玩家在本局的位置轮换模板，读起来不至于全场雷同。 */
+  private pickBotDescription(round: GameRound, botId: string) {
+    const ids = Object.keys(round.assignments).sort();
+    const index = Math.max(ids.indexOf(botId), 0) + round.descriptionCycle;
+    return BOT_DESCRIPTION_TEMPLATES[index % BOT_DESCRIPTION_TEMPLATES.length];
+  }
+
+  /** 机器人投票：在合法目标里随机取一个，取不到就弃票。 */
+  private pickBotVoteTarget(
+    room: RoomRecord,
+    round: GameRound,
+    botId: string,
+    tieBreak: boolean,
+  ): string {
+    const candidates = tieBreak
+      ? (round.tieBreak?.candidateIds ?? []).filter((id) => round.assignments[id]?.alive)
+      : this.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
+
+    if (candidates.length === 0) {
+      return "abstain";
+    }
+
+    return candidates[this.random.nextInt(candidates.length)] ?? "abstain";
+  }
+
+  /** 机器人卧底的夜晚目标：随机一个非自己的存活玩家。 */
+  private pickBotNightTarget(room: RoomRecord, round: GameRound, botId: string) {
+    void round;
+    const candidates = this.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
+
+    if (candidates.length === 0) {
+      return undefined;
+    }
+
+    return candidates[this.random.nextInt(candidates.length)];
   }
 
   private async log(entry: LogEntry) {
