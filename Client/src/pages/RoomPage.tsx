@@ -26,6 +26,7 @@ import {
 } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import {
+  PLAYER_COLUMN_WIDTH,
   PlayerList,
   type PlayerListHistory,
   type PlayerMark,
@@ -359,14 +360,18 @@ export default function RoomPage() {
         <section className="relative flex min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
 
           {/* 布局占位：使游戏区不因 aside 展开而收缩 */}
-          <div className="hidden w-64 shrink-0 md:block" aria-hidden="true" />
+          <div
+            className="hidden shrink-0 md:block"
+            style={{ width: PLAYER_COLUMN_WIDTH }}
+            aria-hidden="true"
+          />
 
           {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
           <motion.aside
             className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-xl border bg-panel md:flex"
             initial={false}
             animate={{
-              width: historyOpen ? "100%" : "16rem",
+              width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
               boxShadow: historyOpen ? "var(--shadow-xl)" : "var(--shadow-2xs)",
             }}
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
