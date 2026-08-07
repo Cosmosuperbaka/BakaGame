@@ -1,6 +1,7 @@
 import { AppError } from "./errors";
 import {
   ROOM_ID_TEST_MODE,
+  isValidRoomId,
   type BlankGuessRecord,
   type GameRound,
   type NightActionRecord,
@@ -412,14 +413,14 @@ export const evaluateBlankGuess = (
 };
 
 export const ensureRoomId = (roomId: string): string => {
-  // 普通房间号要求四位数字，测试模式放行特殊字符串（大小写不敏感）。
+  // 校验规则来自 shared 的 isValidRoomId，客户端路由用的是同一份。
   const normalized = roomId.trim();
 
   if (normalized.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()) {
     return ROOM_ID_TEST_MODE;
   }
 
-  if (!/^\d{4}$/.test(normalized)) {
+  if (!isValidRoomId(normalized)) {
     throw new AppError("INVALID_ROOM_ID", "房间号必须为四位数字");
   }
 

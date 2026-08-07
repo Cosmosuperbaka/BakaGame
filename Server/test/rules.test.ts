@@ -4,12 +4,28 @@ import {
   assignRoles,
   computeVoteOutcome,
   createDefaultRoleConfig,
+  ensureRoomId,
   evaluateBlankGuess,
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
 } from "../src/domain/rules";
-import type { GameRound } from "../src/domain/model";
+import { isValidRoomId, type GameRound } from "../src/domain/model";
+
+test("房间号校验：四位数字与测试房间号合法，其余一律拒绝", () => {
+  for (const valid of ["0000", "1234", "9999", "Oblivionis", "oblivionis", " 1234 "]) {
+    expect(isValidRoomId(valid)).toBe(true);
+    expect(() => ensureRoomId(valid)).not.toThrow();
+  }
+
+  for (const invalid of ["", "12", "12345", "abcd", "12a4", "room", "１２３４"]) {
+    expect(isValidRoomId(invalid)).toBe(false);
+    expect(() => ensureRoomId(invalid)).toThrow();
+  }
+
+  // 测试房间号统一归一成标准大小写，避免同房间分裂成两间。
+  expect(ensureRoomId("oblivionis")).toBe("Oblivionis");
+});
 
 // ==================== 纯规则测试 ====================
 

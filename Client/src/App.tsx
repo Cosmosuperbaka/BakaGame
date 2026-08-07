@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GameProvider } from "@/contexts/GameContext";
@@ -29,9 +29,13 @@ function App() {
           <Route path="/whoisfaker" element={<WhoIsFakerLayout />}>
             <Route index element={<WhoIsFakerPage />} />
             <Route path="room/:roomId" element={<RoomPage />} />
+            {/* 子路径打错时退回本游戏大厅，而不是留在空白页 */}
+            <Route path="*" element={<Navigate to="/whoisfaker" replace />} />
           </Route>
           <Route path="/songguessr/*" element={<SongGuessrPage />} />
           <Route path="/animecharguessr/*" element={<AnimeCharacterGuessrPage />} />
+          {/* 其余无法识别的路径一律回落地页 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </TooltipProvider>
       </MotionConfig>

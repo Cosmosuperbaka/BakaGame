@@ -1,7 +1,18 @@
 // ==================== 全局常量与类型模型 ====================
 
-// 特殊房间号：进入单人测试模式，服务端会自动补齐 Bot。
+// 特殊房间号：进入测试模式，可用阶段控制器跳转、手动增减 Bot。
+// 规则与普通房间完全一致，不会自动补人。
 export const ROOM_ID_TEST_MODE = "Oblivionis";
+
+/**
+ * 房间号是否合法：普通房间为四位数字，测试房间号大小写不敏感。
+ * 服务端 ensureRoomId 与客户端路由校验共用这一份规则。
+ */
+export const isValidRoomId = (roomId: string): boolean => {
+  const normalized = roomId.trim();
+  if (normalized.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()) return true;
+  return /^\d{4}$/.test(normalized);
+};
 
 // 游戏主状态机的阶段定义。
 export const GAME_PHASES = [
