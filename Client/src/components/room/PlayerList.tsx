@@ -25,17 +25,8 @@ import type {
 export type PlayerMark = "unknown" | PlayerRole;
 export type PlayerMarks = Record<string, PlayerMark>;
 
-/** 身份预测按钮上的单字 */
-const markGlyphs: Record<PlayerMark, string> = {
-  unknown: "？",
-  civilian: "好",
-  undercover: "坏",
-  blank: "白",
-  angel: "天",
-};
-
-/** 身份预测的完整名称，用于可访问名称与提示 */
-const markNames: Record<PlayerMark, string> = {
+/** 身份徽章上的双字，身份标与身份预测共用 */
+const roleLabels: Record<PlayerMark, string> = {
   unknown: "未知",
   civilian: "平民",
   undercover: "卧底",
@@ -43,14 +34,39 @@ const markNames: Record<PlayerMark, string> = {
   angel: "天使",
 };
 
-/** 身份预测选中态的配色 */
-const markTones: Record<PlayerMark, string> = {
-  unknown: "bg-muted-foreground/80 text-background",
-  civilian: "bg-blue-600 text-white",
-  undercover: "bg-red-600 text-white",
-  blank: "bg-stone-500 text-white",
-  angel: "bg-amber-500 text-white",
+/**
+ * 身份配色。已确认的身份用实底，预测用同色系描边，
+ * 两者一眼可分，不靠位置区分。
+ */
+const roleTones: Record<PlayerMark, { solid: string; outline: string }> = {
+  unknown: {
+    solid: "bg-muted text-muted-foreground",
+    outline: "border-border text-muted-foreground",
+  },
+  civilian: {
+    solid: "bg-blue-600 text-white dark:bg-blue-500",
+    outline: "border-blue-500/60 text-blue-700 dark:text-blue-300",
+  },
+  undercover: {
+    solid: "bg-red-600 text-white dark:bg-red-500",
+    outline: "border-red-500/60 text-red-700 dark:text-red-300",
+  },
+  blank: {
+    solid: "bg-stone-500 text-white dark:bg-stone-400 dark:text-stone-950",
+    outline: "border-stone-400/70 text-stone-600 dark:text-stone-300",
+  },
+  angel: {
+    solid: "bg-amber-500 text-white dark:text-amber-950",
+    outline: "border-amber-500/60 text-amber-700 dark:text-amber-300",
+  },
 };
+
+/**
+ * 身份徽章的共同尺寸。宽度固定为双字所需，
+ * 使各行行首对齐，不因身份名不同而错位。
+ */
+const ROLE_BADGE_BASE =
+  "inline-flex h-5 w-[2.9rem] shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-11";
@@ -442,7 +458,7 @@ export function PlayerRow(props: PlayerRowProps) {
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-2 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
+        "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && interactive && "hover:bg-accent/50",
@@ -453,7 +469,12 @@ export function PlayerRow(props: PlayerRowProps) {
       {isMe ? (
         <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
       ) : null}
-      {/* 状态标签居左，名字前 */}
+      {/* 身份与状态全部落在名字之前：已知身份优先，其次自己的预测 */}
+      {actualRole ? (
+        <RoleBadge role={actualRole} />
+      ) : mark !== "unknown" ? (
+        <RoleBadge role={mark} predicted />
+      ) : null}
       {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
       <span
         className={cn(
@@ -463,8 +484,6 @@ export function PlayerRow(props: PlayerRowProps) {
       >
         {player.name}
       </span>
-      {actualRole ? <RoleTag role={actualRole} /> : null}
-      {mark !== "unknown" ? <MarkChip mark={mark} /> : null}
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
@@ -565,18 +584,18 @@ function MarkButton({
   return (
     <motion.button
       {...tappable}
-      aria-label={markNames[option]}
+      aria-label={roleLabels[option]}
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex flex-1 items-center justify-center py-2 text-sm font-semibold transition-colors",
+        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
         "border-r border-border/50 last:border-r-0",
-        selected ? markTones[option] : "text-muted-foreground hover:bg-accent/60",
+        selected ? roleTones[option].solid : "text-muted-foreground hover:bg-accent/60",
         first && "rounded-tl-[calc(var(--radius)-1px)]",
         last && "rounded-tr-[calc(var(--radius)-1px)]",
       )}
     >
-      {markGlyphs[option]}
+      {roleLabels[option]}
     </motion.button>
   );
 }
@@ -613,38 +632,18 @@ function ManageButton({
   );
 }
 
-function MarkChip({ mark }: { mark: PlayerMark }) {
+/**
+ * 身份徽章。`predicted` 为本人的猜测，用描边表达“尚未确认”；
+ * 实底表示出题人视角或结算后公开的真实身份。
+ */
+function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
+  const tone = roleTones[role];
   return (
     <span
-      className={cn(
-        "shrink-0 rounded px-1 py-px text-[10px] font-semibold leading-none",
-        markTones[mark],
-      )}
-      aria-label={markNames[mark]}
+      className={cn(ROLE_BADGE_BASE, predicted ? cn("border border-dashed", tone.outline) : tone.solid)}
+      aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
-      {markGlyphs[mark]}
-    </span>
-  );
-}
-
-function RoleTag({ role }: { role: PlayerRole }) {
-  const label: Record<PlayerRole, string> = {
-    civilian: "民",
-    undercover: "卧",
-    blank: "白",
-    angel: "天",
-  };
-  const tone: Record<PlayerRole, string> = {
-    civilian: "text-blue-600 bg-blue-50",
-    undercover: "text-red-600 bg-red-50",
-    blank: "text-stone-500 bg-stone-100",
-    angel: "text-amber-600 bg-amber-50",
-  };
-  return (
-    <span
-      className={cn("shrink-0 rounded px-1.5 py-px text-[10px] font-semibold leading-none", tone[role])}
-    >
-      {label[role]}
+      {roleLabels[role]}
     </span>
   );
 }
@@ -657,13 +656,18 @@ interface StatusInfo {
 function StatusPill({ label, tone }: StatusInfo) {
   const styles: Record<StatusInfo["tone"], string> = {
     default: "bg-muted text-muted-foreground",
-    emerald: "bg-emerald-100 text-emerald-700",
-    violet: "bg-violet-100 text-violet-700",
-    red: "bg-red-100 text-red-600",
-    amber: "bg-amber-100 text-amber-700",
+    emerald: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    violet: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+    red: "bg-red-500/15 text-red-700 dark:text-red-300",
+    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   };
   return (
-    <span className={cn("shrink-0 rounded px-1.5 py-px text-[10px] font-medium leading-none", styles[tone])}>
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-[10px] font-medium leading-none",
+        styles[tone],
+      )}
+    >
       {label}
     </span>
   );
