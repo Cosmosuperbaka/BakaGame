@@ -27,13 +27,17 @@ export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
 export interface RoleConfig {
   undercoverCount: number;
   hasAngel: boolean;
+  angelCount?: number;
   hasBlank: boolean;
+  blankCount?: number;
 }
 
 export interface RoleLimits {
   maxUndercoverCount: number;
   canEnableAngel: boolean;
+  maxAngelCount: number;
   canEnableBlank: boolean;
+  maxBlankCount: number;
 }
 
 export interface DescriptionRecord {
