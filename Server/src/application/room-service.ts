@@ -1496,9 +1496,11 @@ export class RoomService {
         round.summary = undefined;
         break;
       case "blankGuess": {
-        // 不改任何人的身份：白板猜词是白板本人的阶段，
-        // 其他人只看到等待提示。没开白板就没有这个阶段可跳。
-        const blankId = getBlankPlayerId(round.assignments);
+        // 优先使用已有白板玩家；若不存在则选非调用者，避免调用者看到猜词界面。
+        const blankId =
+          getBlankPlayerId(round.assignments) ??
+          participantIds.find((id) => id !== player.id) ??
+          participantIds[0];
 
         if (!blankId) {
           throw new AppError(
@@ -2460,7 +2462,13 @@ export class RoomService {
         Math.min(config.undercoverCount || 1, limits.maxUndercoverCount),
       ),
       hasAngel: limits.canEnableAngel && config.hasAngel,
+      angelCount: limits.canEnableAngel && config.hasAngel
+        ? Math.max(1, Math.min(config.angelCount ?? 1, limits.maxAngelCount))
+        : 1,
       hasBlank: limits.canEnableBlank && config.hasBlank,
+      blankCount: limits.canEnableBlank && config.hasBlank
+        ? Math.max(1, Math.min(config.blankCount ?? 1, limits.maxBlankCount))
+        : 1,
     };
   }
 
