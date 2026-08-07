@@ -374,23 +374,32 @@ export default function RoomPage() {
             }}
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
           >
-            {/* 展开/收起按钮：仅在游戏开始后显示 */}
+            {/* 展开/收起按钮：仅在游戏开始后显示。
+                收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
+                否则会落到 section 的裁切区外被切掉。 */}
             {showHistoryToggle && (
-              <motion.button
-                type="button"
-                aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
-                aria-expanded={historyOpen}
-                onClick={() => setHistoryOpen(!historyOpen)}
-                {...iconTappable}
-                className="absolute -right-4 top-1/2 z-40 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <motion.div
+                className="absolute top-1/2 z-40 -translate-y-1/2"
+                initial={false}
+                animate={{ right: historyOpen ? "0.5rem" : "-1rem" }}
+                transition={spring.settle}
               >
-                {/* 展开时显示收起（←），收起时显示展开（→），符合用户直觉 */}
-                {historyOpen ? (
-                  <PanelRightClose className="h-4 w-4" />
-                ) : (
-                  <PanelRightOpen className="h-4 w-4" />
-                )}
-              </motion.button>
+                <motion.button
+                  type="button"
+                  aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
+                  aria-expanded={historyOpen}
+                  onClick={() => setHistoryOpen(!historyOpen)}
+                  {...iconTappable}
+                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {/* 展开时显示收起（←），收起时显示展开（→），符合用户直觉 */}
+                  {historyOpen ? (
+                    <PanelRightClose className="h-4 w-4" />
+                  ) : (
+                    <PanelRightOpen className="h-4 w-4" />
+                  )}
+                </motion.button>
+              </motion.div>
             )}
 
             <div className="min-h-0 flex-1 overflow-auto rounded-xl">
