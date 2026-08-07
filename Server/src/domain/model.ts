@@ -39,14 +39,18 @@ export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
 export interface RoleConfig {
   undercoverCount: number;
   hasAngel: boolean;
+  angelCount?: number; // 天使人数，默认 1
   hasBlank: boolean;
+  blankCount?: number; // 白板人数，默认 1
 }
 
 // 根据当前人数动态推导出的阵营上限。
 export interface RoleLimits {
   maxUndercoverCount: number;
   canEnableAngel: boolean;
+  maxAngelCount: number;
   canEnableBlank: boolean;
+  maxBlankCount: number;
 }
 
 // 房间基础设置，前端编辑房间时主要围绕这一组字段。

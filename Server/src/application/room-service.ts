@@ -2148,7 +2148,13 @@ export class RoomService {
         Math.min(config.undercoverCount || 1, limits.maxUndercoverCount),
       ),
       hasAngel: limits.canEnableAngel && config.hasAngel,
+      angelCount: limits.canEnableAngel && config.hasAngel
+        ? Math.max(1, Math.min(config.angelCount ?? 1, limits.maxAngelCount))
+        : 1,
       hasBlank: limits.canEnableBlank && config.hasBlank,
+      blankCount: limits.canEnableBlank && config.hasBlank
+        ? Math.max(1, Math.min(config.blankCount ?? 1, limits.maxBlankCount))
+        : 1,
     };
   }
 
