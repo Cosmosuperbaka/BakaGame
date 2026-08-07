@@ -6,6 +6,9 @@
  *   - 其余非空行是段落
  *   - 行内支持 `**加粗**`、`` `等宽` `` 和 `[文字](链接)`
  *
+ * content 可以写成字符串，也可以写成字符串数组——数组的每一项就是一行，
+ * 于是 JSON 里的换行等于日志里的换行，不必把整段挤进一行再插 `\n`。
+ *
  * 解析结果为结构化节点，由渲染层转成 React 元素，
  * 不使用 dangerouslySetInnerHTML。
  */
@@ -51,11 +54,63 @@ function parseInline(source: string): InlineNode[] {
   return nodes;
 }
 
-export function parseChangelogContent(content: string): BlockNode[] {
+/** 正文来源：单串（内含 \n）或每项一行的数组。 */
+export type ChangelogContent = string | string[];
+
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  title: string;
+  content: ChangelogContent;
+}
+
+/** 把 "1.2.3" 拆成可比较的数字元组；缺位补 0，非数字段按 0 处理。 */
+const parseVersion = (version: string): number[] =>
+  version
+    .trim()
+    .replace(/^[vV]/, "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10) || 0);
+
+/** 语义化版本比较：a 比 b 新则为正。逐段按数字比，避免 1.10.0 被判小于 1.9.0。 */
+export function compareVersions(a: string, b: string): number {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  const length = Math.max(left.length, right.length);
+
+  for (let i = 0; i < length; i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * 取更新日志里的最新版本号：按版本号大小选，不依赖数组顺序，
+ * 也不需要另外维护一个 currentVersion 字段。
+ */
+export function resolveLatestVersion(entries: readonly ChangelogEntry[]): string | undefined {
+  if (entries.length === 0) return undefined;
+  return entries.reduce(
+    (latest, entry) => (compareVersions(entry.version, latest) > 0 ? entry.version : latest),
+    entries[0].version,
+  );
+}
+
+/** 更新日志按版本号从新到旧排序，JSON 里的书写顺序不影响展示。 */
+export function sortEntriesByVersion<T extends ChangelogEntry>(entries: readonly T[]): T[] {
+  return [...entries].sort((a, b) => compareVersions(b.version, a.version));
+}
+
+/** 把两种写法归一成行数组；数组项自身仍可包含换行。 */
+const toLines = (content: ChangelogContent): string[] =>
+  (Array.isArray(content) ? content : [content]).flatMap((chunk) => chunk.split(/\r?\n/));
+
+export function parseChangelogContent(content: ChangelogContent): BlockNode[] {
   const blocks: BlockNode[] = [];
   let list: InlineNode[][] | null = null;
 
-  for (const rawLine of content.split(/\r?\n/)) {
+  for (const rawLine of toLines(content)) {
     const line = rawLine.trim();
     if (!line) {
       list = null;
