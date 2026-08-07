@@ -1337,19 +1337,41 @@ export class RoomService {
       return { phase: "waiting" as GamePhase };
     }
 
+    const activeIds = Object.values(room.players)
+      .filter((p) => p.membership === "active")
+      .map((p) => p.id);
+    const useCallerAsQuestioner = target === "wordSubmission";
+
+    // 出题人：跳到出题阶段时由调用者担任，其余情况保持本局已确定的人，
+    // 没有则维持未指定——跳转不负责替玩家选出题人。
+    const plannedQuestionerId = useCallerAsQuestioner
+      ? player.id
+      : room.round?.questionerPlayerId;
+    const plannedParticipants = plannedQuestionerId
+      ? activeIds.filter((id) => id !== plannedQuestionerId)
+      : activeIds;
+
+    // 人数校验必须在建 round 之前：否则单人也能跳「指定主持人」，
+    // startRound 已经把游戏开起来，只是后面的分支才拒绝。
+    // 出题人不参战，所以除了 4 名参战，还要留出他的位置——除非出题人是旁观者。
+    const questionerIsSpectator = plannedQuestionerId
+      ? room.players[plannedQuestionerId]?.membership === "spectator"
+      : false;
+    const enoughActive = questionerIsSpectator
+      ? activeIds.length >= 4
+      : activeIds.length >= 5;
+
+    if (!enoughActive || plannedParticipants.length < 4) {
+      throw new AppError("INSUFFICIENT_PLAYERS", "对局需要 4 名参战玩家，请先添加机器人");
+    }
+
     // 确保 round 存在。
     if (!room.round) {
       await this.startRound(room);
     }
 
     const round = this.requireRound(room);
-    const activeIds = Object.values(room.players)
-      .filter((p) => p.membership === "active")
-      .map((p) => p.id);
-    const useCallerAsQuestioner = target === "wordSubmission";
-    const participantIds = useCallerAsQuestioner
-      ? activeIds.filter((id) => id !== player.id)
-      : activeIds;
+    const participantIds = plannedParticipants;
 
     if (target === "assigningQuestioner") {
       round.questionerPlayerId = undefined;
@@ -1373,14 +1395,11 @@ export class RoomService {
       return { phase: round.phase };
     }
 
-    round.questionerPlayerId = useCallerAsQuestioner ? player.id : undefined;
+    // 出题人一旦确定就保持到本局结束：跳转不是换人，不能把已有出题人清成
+    // undefined，否则出完题跳下一阶段，出题人就退化成普通玩家。
+    round.questionerPlayerId = plannedQuestionerId;
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
-
-    // 与真实房间同规则：对局需要 4 名参战玩家。
-    if (participantIds.length < 4) {
-      throw new AppError("INSUFFICIENT_PLAYERS", "对局需要 4 名参战玩家，请先添加机器人");
-    }
 
     if (
       target !== "wordSubmission" &&
