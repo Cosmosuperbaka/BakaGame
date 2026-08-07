@@ -80,7 +80,9 @@ export function DescriptionTable({
 
   const cellPad = compact ? "px-3 py-2" : "px-4 py-3";
   const headColumns: DescriptionColumn[] =
-    columns.length > 0 ? columns : [{ key: "empty", label: "暂无发言", tone: "default" }];
+    columns.length > 0
+      ? columns
+      : [{ key: "empty", label: "暂无发言", tone: "default", expectedPlayerIds: new Set<string>() }];
   const minWidth = 256 + headColumns.length * 180;
 
   return (
@@ -152,9 +154,11 @@ export function DescriptionTable({
                     DESCRIPTION_TONES[column.tone],
                   )}
                 >
-                  {byPlayer.get(player.id)?.get(column.key)?.text ?? (
-                    <span className="text-muted-foreground/40">—</span>
-                  )}
+                  {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
+                  {byPlayer.get(player.id)?.get(column.key)?.text ??
+                    (column.expectedPlayerIds.has(player.id) ? (
+                      <span className="text-muted-foreground/40">—</span>
+                    ) : null)}
                 </td>
               ))}
             </tr>

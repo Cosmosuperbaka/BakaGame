@@ -206,7 +206,7 @@ export default function RoomPage() {
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo<PlayerListHistory>(() => {
     const descriptions = snapshot?.descriptions ?? [];
-    const { columns, byPlayer } = buildDescriptionColumns(descriptions);
+    const { columns, byPlayer } = buildDescriptionColumns(descriptions, snapshot?.status);
     const present = new Set((snapshot?.players ?? []).map((player) => player.id));
     const departed = new Map<string, PublicPlayerView>();
     for (const record of descriptions) {
@@ -224,7 +224,7 @@ export default function RoomPage() {
       });
     }
     return { columns, byPlayer, departedPlayers: [...departed.values()] };
-  }, [snapshot?.descriptions, snapshot?.players]);
+  }, [snapshot?.descriptions, snapshot?.players, snapshot?.status]);
 
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);

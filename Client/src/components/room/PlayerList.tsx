@@ -220,6 +220,7 @@ export function PlayerList(props: PlayerListProps) {
             key={column.key}
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
+            expected={column.expectedPlayerIds.has(player.id)}
           />
         ))}
       </motion.div>
@@ -323,13 +324,19 @@ export function PlayerList(props: PlayerListProps) {
   );
 }
 
-/** 玩家行右侧的发言单元格 */
+/**
+ * 玩家行右侧的发言单元格。
+ * 只有本列确实该发言的玩家才在未提交时显示等待占位；
+ * 出题人、旁观者与本列无需发言的玩家留空。
+ */
 function SpeechCell({
   description,
   tone,
+  expected,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
+  expected: boolean;
 }) {
   return (
     <div
@@ -338,7 +345,11 @@ function SpeechCell({
         DESCRIPTION_TONES[tone],
       )}
     >
-      {description ? <span className="break-words">{description.text}</span> : <PendingSpeech />}
+      {description ? (
+        <span className="break-words">{description.text}</span>
+      ) : expected ? (
+        <PendingSpeech />
+      ) : null}
     </div>
   );
 }
