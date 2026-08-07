@@ -61,12 +61,8 @@ export const normalizeWordPair = (values: [string, string]): [string, string] =>
   ];
 };
 
-// 校验阵营配置是否符合当前人数和测试模式约束。
-export const validateRoleConfig = (
-  config: RoleConfig,
-  playerCount: number,
-  testMode: boolean,
-): void => {
+// 校验阵营配置是否符合当前人数约束。测试房间与真实房间同规则。
+export const validateRoleConfig = (config: RoleConfig, playerCount: number): void => {
   const limits = getRoomRoleLimits(playerCount);
   const specialCount =
     config.undercoverCount + (config.hasAngel ? 1 : 0) + (config.hasBlank ? 1 : 0);
@@ -90,7 +86,7 @@ export const validateRoleConfig = (
     throw new AppError("INVALID_ROLE_CONFIG", "当前人数不足以开启白板");
   }
 
-  if (!testMode && civilianCount < 1) {
+  if (civilianCount < 1) {
     throw new AppError("INVALID_ROLE_CONFIG", "至少需要保留一名平民");
   }
 };

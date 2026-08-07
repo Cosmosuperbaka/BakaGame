@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Check, X, ChevronDown, BookOpen, Vote } from "lucide-react";
+import { Trophy, ChevronDown, BookOpen, Home, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
@@ -51,42 +52,17 @@ function DisclosureHeader({
 
 export function GameOverPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const leaveRoom = useGameStore((s) => s.leaveRoom);
+  const navigate = useNavigate();
   const summary = snapshot.summary;
-  const me = snapshot.players.find((p) => p.id === privateState?.playerId);
-  const isHost = me?.isHost ?? false;
   const [showVotes, setShowVotes] = useState(true);
-  // showDescriptions removed — use the sidebar history panel instead
 
-  const activePlayers = snapshot.players.filter((p) => p.membership === "active");
-  const nonHostActive = activePlayers.filter((p) => !p.isHost);
-  const canSoloRestart = snapshot.testMode && isHost && nonHostActive.length === 0;
-  const allReady = canSoloRestart || (nonHostActive.length > 0 && nonHostActive.every((p) => p.isReady));
-  const readyCount = nonHostActive.filter((p) => p.isReady).length;
-
-  useEffect(() => {
-    if (isHost && me && !me.isReady) {
-      sendCommand("player.setReady", { ready: true }).catch(() => {});
-    }
-  }, [isHost, me, sendCommand]);
-
-  const handleReady = useCallback(async () => {
-    try {
-      await sendCommand("player.setReady", { ready: !me?.isReady });
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
-  }, [me, sendCommand, addToast]);
-
-  const handleStart = useCallback(async () => {
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
-  }, [sendCommand, addToast]);
+  // 结算看完就离开房间回到主页。准备状态已由服务端在结算时统一重置，
+  // 想再来一局就重新进房间，不在战报页直接开下一局。
+  const handleBackHome = useCallback(async () => {
+    await leaveRoom();
+    navigate("/whoisfaker");
+  }, [leaveRoom, navigate]);
 
   if (!summary) {
     return (
@@ -290,34 +266,12 @@ export function GameOverPhase() {
         </section>
       )}
 
-      {/* 下一局控制按钮 */}
+      {/* 战报看完后统一回主页 */}
       <div className="flex flex-col items-center gap-3 pt-2">
-        {isHost ? (
-          <Button
-            size="lg"
-            disabled={!allReady}
-            onClick={handleStart}
-            className="text-base px-8"
-          >
-            {canSoloRestart
-              ? "开始下一局"
-              : allReady
-              ? "开始下一局"
-              : `等待在线玩家准备 (${readyCount}/${nonHostActive.length})`}
-          </Button>
-        ) : (
-          me?.membership === "active" && (
-            <Button
-              variant={me.isReady ? "outline" : "default"}
-              size="lg"
-              onClick={handleReady}
-              className="gap-2 min-w-[120px]"
-            >
-              {me.isReady ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-              {me.isReady ? "取消准备" : "准备下一局"}
-            </Button>
-          )
-        )}
+        <Button size="lg" onClick={handleBackHome} className="gap-2 px-8 text-base">
+          <Home className="h-4 w-4" />
+          返回主页
+        </Button>
       </div>
     </div>
   );

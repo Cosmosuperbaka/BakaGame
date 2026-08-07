@@ -1,12 +1,14 @@
 import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronUp, FlaskConical, UserCog, Eye, Shield } from "lucide-react";
+import { ChevronUp, FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/lib/helpers";
 import { collapsible, spring } from "@/lib/motion";
 import type { GamePhase, PlayerRole } from "@/types";
-import type { TestPerspective } from "@/lib/mockData";
+
+/** 观察视角。测试房间通过真实的旁观/出题人指令切换，不再本地伪造。 */
+type TestPerspective = "player" | "questioner" | "spectator";
 
 const PHASES: GamePhase[] = [
   "waiting",
@@ -28,56 +30,59 @@ export function TestController() {
   const snapshot = useGameStore((s) => s.snapshot);
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const currentPhase = snapshot?.status.phase;
 
-  const testRole = useGameStore((s) => s.testRole);
-
-  const isConnected = useGameStore((s) => s.connected);
-
-  const handleJumpPhase = useCallback(
-    async (phase: GamePhase) => {
-      if (!isConnected || snapshot?.roomId === "Oblivionis") {
-        useGameStore.getState().jumpTestRoomPhase(phase);
-        return;
-      }
+  // 所有控制都走真实指令，失败就报错，不再退回本地伪造状态：
+  // 测试房间的意义就是复现服务端规则。
+  const run = useCallback(
+    async (type: string, payload?: Record<string, unknown>) => {
       try {
-        await sendCommand("test.jumpToPhase", { phase });
-      } catch {
-        useGameStore.getState().jumpTestRoomPhase(phase);
+        await sendCommand(type, payload);
+      } catch (error) {
+        addToast((error as { message?: string }).message ?? "操作失败", "error");
       }
     },
-    [isConnected, snapshot?.roomId, sendCommand]
+    [addToast, sendCommand],
   );
 
-  const handleSetPerspective = useCallback(
-    (perspective: TestPerspective) => {
-      useGameStore.getState().setTestRoomPerspective(perspective);
-    },
-    []
+  const handleJumpPhase = useCallback(
+    (phase: GamePhase) => run("test.jumpToPhase", { phase }),
+    [run],
   );
 
   const handleSetRole = useCallback(
-    async (role: PlayerRole) => {
-      if (!isConnected || snapshot?.roomId === "Oblivionis") {
-        useGameStore.getState().setTestRoomPerspective("player", role);
-        return;
-      }
-      try {
-        await sendCommand("test.setMyRole", { role });
-      } catch {
-        useGameStore.getState().setTestRoomPerspective("player", role);
-      }
-    },
-    [isConnected, snapshot?.roomId, sendCommand]
+    (role: PlayerRole) => run("test.setMyRole", { role }),
+    [run],
   );
 
-  const currentPerspective: TestPerspective = privateState?.questionerView
-    ? privateState.isQuestioner
-      ? "questioner"
-      : "spectator"
-    : "player";
+  const me = snapshot?.players.find((player) => player.id === privateState?.playerId);
+  const botCount = snapshot?.players.filter((player) => player.isBot).length ?? 0;
 
-  const activeRole = privateState?.role ?? testRole;
+  const currentPerspective: TestPerspective = privateState?.isQuestioner
+    ? "questioner"
+    : me?.membership === "spectator"
+      ? "spectator"
+      : "player";
+
+  /**
+   * 视角切换用真实指令表达：
+   * 旁观走 player.setSpectator，出题人走 game.assignQuestioner。
+   * 两者都只能在对应阶段生效，失败时给出服务端的原因。
+   */
+  const handleSetPerspective = useCallback(
+    async (perspective: TestPerspective) => {
+      if (perspective === "questioner") {
+        if (!privateState) return;
+        await run("game.assignQuestioner", { playerId: privateState.playerId });
+        return;
+      }
+      await run("player.setSpectator", { spectator: perspective === "spectator" });
+    },
+    [privateState, run],
+  );
+
+  const activeRole = privateState?.role;
 
   return (
     <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-30 pointer-events-none">
@@ -179,6 +184,38 @@ export function TestController() {
                       </div>
                     </ControlGroup>
                   )}
+
+                  <ControlGroup
+                    label="测试人机"
+                    icon={<Bot className="h-3.5 w-3.5 text-sky-500" />}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 flex-1 gap-1 text-xs"
+                        aria-label="移除一个测试人机"
+                        disabled={botCount === 0}
+                        onClick={() => run("test.removeBot", { count: 1 })}
+                      >
+                        <Minus className="h-3 w-3" />
+                        减一个
+                      </Button>
+                      <span className="w-10 text-center text-sm font-medium tabular-nums">
+                        {botCount}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 flex-1 gap-1 text-xs"
+                        aria-label="添加一个测试人机"
+                        onClick={() => run("test.addBot", { count: 1 })}
+                      >
+                        <Plus className="h-3 w-3" />
+                        加一个
+                      </Button>
+                    </div>
+                  </ControlGroup>
                 </div>
               </motion.div>
             )}

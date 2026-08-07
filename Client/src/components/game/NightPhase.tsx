@@ -18,19 +18,17 @@ export function NightPhase() {
   const role = privateState?.role;
 
   const acted = privateState?.nightActionSubmitted ?? false;
+  const actionTargetName = snapshot.players.find(
+    (p) => p.id === privateState?.myCurrentNightTargetId,
+  )?.name;
 
   const canAct =
     amAlive && !isQuestioner && (role === "civilian" || role === "undercover");
 
-  const baseTargets = snapshot.players.filter(
-    (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId
+  // 自己永远不是夜晚目标，测试房间也一样。
+  const targets = snapshot.players.filter(
+    (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId,
   );
-  const targets =
-    baseTargets.length > 0
-      ? baseTargets
-      : snapshot.testMode && canAct && me
-        ? [me]
-        : [];
 
   const handleNightAction = useCallback(
     async (targetId?: string) => {
@@ -106,34 +104,40 @@ export function NightPhase() {
         </div>
       )}
 
-      {/* 提交行动后的优雅反馈卡片，支持撤销 */}
+      {/* 提交行动后的反馈卡片，与投票阶段同一套结构与配色 */}
       {canAct && acted && (
         <motion.div
           initial={{ opacity: 0, scale: 0.94 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={spring.impulse}
-          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-800 dark:text-emerald-300"
+          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/30 bg-primary/10 px-4 py-3"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <motion.span
               className="inline-flex shrink-0"
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ ...spring.impulse, delay: 0.06 }}
             >
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="h-5 w-5 text-primary" />
             </motion.span>
-            <div className="text-sm font-medium">
-              已完成夜晚决策
-              <span className="ml-2 font-normal text-xs text-muted-foreground">
-                ( 静待天亮... )
-              </span>
+            <div>
+              <div className="text-sm font-semibold text-foreground">已完成夜晚决策</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {actionTargetName ? (
+                  <>
+                    目标 <span className="font-medium text-foreground">{actionTargetName}</span>
+                  </>
+                ) : (
+                  "本回合不行动"
+                )}
+              </div>
             </div>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0"
+            className="shrink-0 gap-1.5 text-xs"
             onClick={handleCancelNightAction}
           >
             <Undo2 className="h-3.5 w-3.5" />

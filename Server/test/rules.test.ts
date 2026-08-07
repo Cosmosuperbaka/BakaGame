@@ -39,7 +39,6 @@ test("阵营配置会校验人数上限", () => {
         hasBlank: false,
       },
       4,
-      false,
     ),
   ).toThrow();
 });

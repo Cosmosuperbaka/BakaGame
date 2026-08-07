@@ -15,12 +15,8 @@ import type {
   ChatMessage,
   PublicPlayerView,
   RoundSummary,
-  GamePhase,
-  PlayerRole,
-  DescriptionRecord,
   DaybreakNotice,
 } from "@/types";
-import { createMockTestRoomState, type TestPerspective } from "@/lib/mockData";
 
 export interface ToastItem {
   id: number;
@@ -38,8 +34,6 @@ export interface GameState {
   daybreakNotice: DaybreakNotice | null;
   sessionConflictRoomId: string | null;
   toasts: ToastItem[];
-  testPerspective: TestPerspective;
-  testRole: PlayerRole;
 
   // Actions
   setConnected: (connected: boolean) => void;
@@ -55,16 +49,6 @@ export interface GameState {
   setSummary: (summary: RoundSummary) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
   removeToast: (id: number) => void;
-  initTestRoomOffline: (
-    phase?: GamePhase,
-    perspective?: TestPerspective,
-    role?: PlayerRole
-  ) => void;
-  jumpTestRoomPhase: (phase: GamePhase) => void;
-  setTestRoomPerspective: (
-    perspective: TestPerspective,
-    role?: PlayerRole
-  ) => void;
 
   // Async Business Actions
   subscribeLobby: () => Promise<void>;
@@ -170,37 +154,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
 
-  testPerspective: "player",
-  testRole: "civilian",
-
-  initTestRoomOffline: (phase = "waiting", perspective = "player", role = "civilian") => {
-    const { snapshot, privateState } = createMockTestRoomState(phase, perspective, role);
-    set({
-      roomId: "Oblivionis",
-      snapshot,
-      privateState,
-      testPerspective: perspective,
-      testRole: role,
-    });
-  },
-
-  jumpTestRoomPhase: (phase) => {
-    const { testPerspective, testRole } = get();
-    const { snapshot, privateState } = createMockTestRoomState(phase, testPerspective, testRole);
-    set({ snapshot, privateState });
-  },
-
-  setTestRoomPerspective: (perspective, role) => {
-    const currentPhase = get().snapshot?.status.phase ?? "waiting";
-    const newRole = role ?? get().testRole;
-    const { snapshot, privateState } = createMockTestRoomState(currentPhase, perspective, newRole);
-    set({
-      snapshot,
-      privateState,
-      testPerspective: perspective,
-      testRole: newRole,
-    });
-  },
 
   // 异步业务动作
   subscribeLobby: async () => {
@@ -250,272 +203,12 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   sendCommand: async (type, payload = {}) => {
     const { roomId, sessionToken } = get();
-    if (roomId && isTestRoomId(roomId)) {
-      return handleTestRoomCommand(type, payload, get, set);
-    }
     return ws.send(type, payload, {
       roomId: roomId ?? undefined,
       sessionToken: sessionToken ?? undefined,
     });
   },
 }));
-
-const NEXT_PHASE_MAP: Record<GamePhase, GamePhase> = {
-  waiting: "assigningQuestioner",
-  assigningQuestioner: "wordSubmission",
-  wordSubmission: "description",
-  description: "voting",
-  voting: "night",
-  tieBreak: "voting",
-  night: "description",
-  blankGuess: "gameOver",
-  gameOver: "waiting",
-};
-
-function handleTestRoomCommand(
-  type: string,
-  payload: Record<string, unknown>,
-  get: () => GameState,
-  set: (partial: Partial<GameState> | ((state: GameState) => Partial<GameState>)) => void
-): Record<string, unknown> {
-  const store = get();
-  const snapshot = store.snapshot;
-  const privateState = store.privateState;
-
-  if (!snapshot) return { success: true };
-
-  switch (type) {
-    case "game.advancePhase": {
-      const currentPhase = snapshot.status.phase;
-      const nextPhase = NEXT_PHASE_MAP[currentPhase] ?? "waiting";
-      const currentDay = snapshot.status.day;
-      store.jumpTestRoomPhase(nextPhase);
-      // 保留当前天数（jumpTestRoomPhase 会重置为 1），仅夜晚→描述时加1
-      const nextSnapshot = get().snapshot;
-      if (nextSnapshot) {
-        const newDay = currentPhase === "night" ? currentDay + 1 : currentDay;
-        set({
-          snapshot: {
-            ...nextSnapshot,
-            status: { ...nextSnapshot.status, day: newDay },
-          },
-        });
-        if (currentPhase === "night") {
-          store.showDaybreakNotice({ day: newDay, eliminatedPlayerIds: [] });
-        }
-      }
-      return { success: true, phase: nextPhase };
-    }
-
-    case "game.submitDescription": {
-      const text = (payload.text as string) || "";
-      if (text && privateState) {
-        const me = snapshot.players.find((p) => p.id === privateState.playerId);
-        const pendingSupplementPlayerIds = snapshot.status.pendingSupplementPlayerIds ?? [];
-        const submittingSupplement = pendingSupplementPlayerIds.includes(privateState.playerId);
-        const newDesc: DescriptionRecord = {
-          id: `desc_${Date.now()}`,
-          playerId: privateState.playerId,
-          playerName: me?.name || "玩家",
-          text,
-          kind: submittingSupplement
-            ? "supplement"
-            : snapshot.status.phase === "tieBreak"
-              ? "tieBreak"
-              : "description",
-          cycle: snapshot.status.day || 1,
-          supplementIndex: submittingSupplement ? snapshot.status.supplementIndex : undefined,
-          createdAt: Date.now(),
-        };
-        const remainingSupplementPlayerIds = pendingSupplementPlayerIds.filter(
-          (playerId) => playerId !== privateState.playerId,
-        );
-        const supplementComplete = submittingSupplement && remainingSupplementPlayerIds.length === 0;
-        const resumePhase = snapshot.status.speechResumePhase ?? "description";
-        set({
-          snapshot: {
-            ...snapshot,
-            descriptions: [...snapshot.descriptions, newDesc],
-            status: submittingSupplement
-              ? {
-                  ...snapshot.status,
-                  phase: supplementComplete ? resumePhase : "description",
-                  speechMode: supplementComplete
-                    ? resumePhase === "description"
-                      ? "normal"
-                      : undefined
-                    : "supplement",
-                  speechResumePhase: supplementComplete ? undefined : resumePhase,
-                  supplementIndex: supplementComplete
-                    ? undefined
-                    : snapshot.status.supplementIndex,
-                  pendingSupplementPlayerIds: remainingSupplementPlayerIds,
-                }
-              : snapshot.status,
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "game.requestSupplement": {
-      const requestedPlayerIds = [...new Set(payload.playerIds as string[])];
-      set({
-        snapshot: {
-          ...snapshot,
-          status: {
-            ...snapshot.status,
-            phase: "description",
-            speechMode: "supplement",
-            speechResumePhase: snapshot.status.phase === "voting" ? "voting" : "description",
-            supplementIndex:
-              snapshot.descriptions.reduce(
-                (maximum, description) =>
-                  description.kind === "supplement"
-                    ? Math.max(maximum, description.supplementIndex ?? 1)
-                    : maximum,
-                0,
-              ) + 1,
-            pendingSupplementPlayerIds: requestedPlayerIds,
-          },
-        },
-      });
-      return { success: true };
-    }
-
-    case "game.submitVote": {
-      if (privateState) {
-        set({
-          privateState: {
-            ...privateState,
-            myCurrentVoteTargetId: payload.targetId as string,
-          },
-        });
-      }
-      return { success: true, targetId: payload.targetId };
-    }
-
-    case "game.cancelVote": {
-      if (privateState) {
-        set({
-          privateState: {
-            ...privateState,
-            myCurrentVoteTargetId: undefined,
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "game.submitNightAction": {
-      if (privateState) {
-        set({
-          privateState: {
-            ...privateState,
-            nightActionSubmitted: true,
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "game.cancelNightAction": {
-      if (privateState) {
-        set({
-          privateState: {
-            ...privateState,
-            nightActionSubmitted: false,
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "game.submitBlankGuess": {
-      if (privateState) {
-        set({
-          privateState: {
-            ...privateState,
-            blankGuessUsed: true,
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "game.submitWords": {
-      store.jumpTestRoomPhase("description");
-      return { success: true };
-    }
-
-    case "game.assignQuestioner": {
-      store.jumpTestRoomPhase("wordSubmission");
-      return { success: true };
-    }
-
-    case "player.setReady": {
-      if (privateState) {
-        const ready = payload.ready as boolean;
-        const players = snapshot.players.map((p) =>
-          p.id === privateState.playerId ? { ...p, isReady: ready } : p
-        );
-        set({
-          snapshot: { ...snapshot, players },
-        });
-      }
-      return { success: true };
-    }
-
-    case "chat.send": {
-      const text = (payload.text as string) || "";
-      if (text && privateState) {
-        const me = snapshot.players.find((p) => p.id === privateState.playerId);
-        const chatMsg: ChatMessage = {
-          id: `chat_${Date.now()}`,
-          playerId: privateState.playerId,
-          playerName: me?.name || "玩家",
-          text,
-          createdAt: Date.now(),
-          system: false,
-        };
-        set({
-          snapshot: {
-            ...snapshot,
-            chat: [...snapshot.chat, chatMsg],
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "room.updateSettings": {
-      if (payload.settings) {
-        set({
-          snapshot: {
-            ...snapshot,
-            settings: payload.settings as RoomSnapshot["settings"],
-          },
-        });
-      }
-      return { success: true };
-    }
-
-    case "test.jumpToPhase": {
-      const phase = (payload.phase as GamePhase) || "waiting";
-      store.jumpTestRoomPhase(phase);
-      return { success: true };
-    }
-
-    case "test.setMyRole": {
-      const role = (payload.role as PlayerRole) || "civilian";
-      store.setTestRoomPerspective("player", role);
-      return { success: true };
-    }
-
-    default:
-      return { success: true };
-  }
-}
 
 // 初始化全局 WS 事件监听与重连联动
 export function initGameSocket() {

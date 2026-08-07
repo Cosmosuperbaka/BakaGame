@@ -45,11 +45,12 @@ export function BlankGuessButton() {
 
   return (
     <>
-      {/* 固定在游戏区右上角，避开底部阶段控制器。 */}
+      {/* 固定在游戏区右上角，避开底部阶段控制器。
+          白板猜词是该玩家的主要操作，用 default 变体拿足对比度，不自造配色。 */}
       <div className="absolute right-3 top-3 z-30 md:right-5 md:top-5">
         <Button
-          variant="default"
-          className="h-11 gap-2 border border-foreground bg-foreground px-4 text-background shadow-md hover:bg-foreground/90"
+          size="lg"
+          className="gap-2 shadow-md"
           onClick={() => setOpen(true)}
         >
           <HelpCircle className="h-4 w-4" />
@@ -74,7 +75,7 @@ export function BlankGuessButton() {
               animate="animate"
               exit="exit"
               style={{ transformOrigin: "85% 0%" }}
-              className="mx-4 w-full max-w-sm space-y-4 rounded-xl border bg-card p-6 shadow-lg"
+              className="mx-4 w-full max-w-sm space-y-4 rounded-xl border bg-panel p-6 shadow-lg"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -90,9 +91,7 @@ export function BlankGuessButton() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
-                请猜出好人阵营和卧底阵营的词语，不需要区分顺序。
-              </p>
+              <p className="text-sm text-muted-foreground">猜出两个词，不分顺序。</p>
               <div className="space-y-2">
                 <Input
                   value={wordA}

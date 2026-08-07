@@ -289,6 +289,8 @@ export interface RoomSnapshot {
   };
   status: {
     phase: GamePhase;
+    /** 本局的唯一标识。局外为 undefined；换局必变，客户端据此清空跨局状态（如身份预测）。 */
+    roundId?: string;
     speechMode?: SpeechMode;
     speechResumePhase?: "description" | "voting";
     supplementIndex?: number;
@@ -329,6 +331,8 @@ export interface PrivateState {
   nightActionSubmitted: boolean;
   /** 当前玩家在本轮投票中已投出的目标玩家 ID（含平票 PK 阶段）。 */
   myCurrentVoteTargetId?: string;
+  /** 当前玩家本次夜晚已选择的目标玩家 ID；已提交但选择「不行动」时为 undefined。 */
+  myCurrentNightTargetId?: string;
   questionerView?: Array<{
     playerId: string;
     role: PlayerRole;

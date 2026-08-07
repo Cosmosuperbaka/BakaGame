@@ -1103,6 +1103,13 @@ test("游戏进行中可以转移房主并踢出普通玩家", async () => {
     payload: { userName: "复查玩家" },
   })) as { playerId: string };
 
+  // 测试房间与真实房间同规则：4 名正式玩家起步，用机器人补足。
+  await execute(service, host, {
+    id: "add-bots",
+    type: "test.addBot",
+    payload: { count: 2 },
+  });
+
   await execute(service, host, {
     id: "jump-voting",
     type: "test.jumpToPhase",
@@ -1205,11 +1212,36 @@ test("Oblivionis 测试房间不含机器人、不进大厅、不自动清理", 
   expect(afterSnapshot?.roomId).toBe("Oblivionis");
 });
 
-test("测试房间支持单人通过 test.jumpToPhase 直接切换阶段", async () => {
-  // 单人测试房间也应能直接预填分配，方便逐个阶段验收 UI。
+test("测试房间单人不能跳转阶段，补足机器人后可以", async () => {
+  // 测试房间与真实房间同规则：不足 4 名正式玩家不能开局。
   const { service } = createTestContext();
   const { host } = await createRoom(service, "Oblivionis");
 
+  let errorCode: string | undefined;
+  try {
+    await execute(service, host, {
+      id: "jump-solo",
+      type: "test.jumpToPhase",
+      payload: { phase: "voting" },
+    });
+  } catch (error) {
+    errorCode = (error as { code?: string }).code;
+  }
+
+  expect(errorCode).toBe("INSUFFICIENT_PLAYERS");
+
+  // 上一次失败的跳转已经建好 round，此时加机器人只能进旁观（与真人同规则），
+  // 因此先回等待阶段，再补机器人才能参战。
+  await execute(service, host, {
+    id: "back-waiting",
+    type: "test.jumpToPhase",
+    payload: { phase: "waiting" },
+  });
+  await execute(service, host, {
+    id: "add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
   await execute(service, host, {
     id: "jump-voting",
     type: "test.jumpToPhase",
@@ -1225,10 +1257,16 @@ test("测试房间支持单人通过 test.jumpToPhase 直接切换阶段", async
   expect(privateState?.role).toBeDefined();
 });
 
-test("测试房间单人时可以指定自己为出题人并提交词语进入描述阶段", async () => {
+test("指定自己为出题人后始终保持出题人身份，不会退化成玩家", async () => {
   const { service } = createTestContext();
   const { host, result } = await createRoom(service, "Oblivionis");
 
+  // 5 名正式玩家：房主出题，4 个机器人参战。
+  await execute(service, host, {
+    id: "add-bots",
+    type: "test.addBot",
+    payload: { count: 4 },
+  });
   await execute(service, host, {
     id: "ready-host",
     type: "player.setReady",
@@ -1253,12 +1291,10 @@ test("测试房间单人时可以指定自己为出题人并提交词语进入�
   const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
   const privateState = getLastEventPayload<PrivateState>(host, "game.privateState");
   expect(snapshot?.status.phase).toBe("description");
-  expect(snapshot?.status.questionerPlayerId).toBeUndefined();
-  expect(snapshot?.players.find((player) => player.id === result.playerId)?.roundStatus).toBe(
-    "alive",
-  );
-  expect(privateState?.isQuestioner).toBe(false);
-  expect(privateState?.word).toBeDefined();
+  // 出题人必须仍是自己，且不参与对局、不持有词语。
+  expect(snapshot?.status.questionerPlayerId).toBe(result.playerId);
+  expect(privateState?.isQuestioner).toBe(true);
+  expect(privateState?.word).toBeUndefined();
 });
 
 test("房间会在无人在线或闲置超时后被清理", async () => {

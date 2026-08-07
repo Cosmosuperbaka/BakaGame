@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  Settings,
   History,
   Menu,
   MessageSquare,
@@ -13,7 +12,7 @@ import {
   Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getSavedUsername, isTestRoomId } from "@/lib/cookie";
+import { getSavedUsername } from "@/lib/cookie";
 import { waitForConnection } from "@/lib/ws";
 import {
   backdrop,
@@ -22,7 +21,6 @@ import {
   iconTappable,
   spinner,
   spring,
-  useOriginTracker,
 } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import {
@@ -36,12 +34,10 @@ import { buildDescriptionColumns } from "@/lib/descriptionColumns";
 import { AssignedWord } from "@/components/room/AssignedWord";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
-import { RoomSettings } from "@/components/room/RoomSettings";
 import type { PlayerRole, PublicPlayerView } from "@/types";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
-  const offlineTestRoom = roomId ? isTestRoomId(roomId) : false;
   const navigate = useNavigate();
   const connected = useGameStore((s) => s.connected);
   const storeRoomId = useGameStore((s) => s.roomId);
@@ -54,20 +50,20 @@ export default function RoomPage() {
   const addToast = useGameStore((s) => s.addToast);
   const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [joining, setJoining] = useState(!alreadyInRoom);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat" | "history">("none");
   const [historyOpen, setHistoryOpen] = useState(false);
   // 延迟清除：宽度动画收回期间保持 history prop，避免 PlayerList 瞬间膨胀
   const [historyRendered, setHistoryRendered] = useState(false);
   const [playerMarks, setPlayerMarks] = useState<PlayerMarks>({});
+  // 身份预测归属于「本局」，用 roundId 作归属标记，换局时在渲染期直接丢弃。
+  const [marksRoundId, setMarksRoundId] = useState<string | undefined>(undefined);
   // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
   const [wordRevealed, setWordRevealed] = useState(false);
   const [dockSize, setDockSize] = useState({ width: 0, height: 0 });
   const hasRevealedThisGameRef = useRef(false);
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
-  const settingsOrigin = useOriginTracker();
 
   // 展开：立即渲染；收起：等动画结束后再移除列，避免 PlayerList 瞬间膨胀
   useEffect(() => {
@@ -91,13 +87,6 @@ export default function RoomPage() {
   // 进入房间：等待连接、尝试重连/加入/创建
   useEffect(() => {
     if (!roomId) return;
-
-    if (offlineTestRoom) {
-      let cancelled = false;
-      useGameStore.getState().initTestRoomOffline();
-      queueMicrotask(() => { if (!cancelled) setJoining(false); });
-      return () => { cancelled = true; };
-    }
 
     if (alreadyInRoom) return;
 
@@ -164,6 +153,7 @@ export default function RoomPage() {
   const isHost = me?.isHost ?? false;
   const isSpectator = me?.membership === "spectator";
   const phase = snapshot?.status.phase ?? "waiting";
+  const roundId = snapshot?.status.roundId;
   const day = snapshot?.status.day ?? 0;
   const roleConfig = snapshot?.settings.roleConfig ?? { undercoverCount: 1, hasAngel: false, hasBlank: false };
 
@@ -189,6 +179,14 @@ export default function RoomPage() {
   useEffect(() => {
     if (phase === "waiting") hasRevealedThisGameRef.current = false;
   }, [phase]);
+
+  // 身份预测是「本局」的推理笔记，换局必须清空，否则会跨局继承到新身份上。
+  // 以服务端下发的 roundId 为准：它在每次开局时重新生成。
+  // 在渲染期比对并重置，避免 effect 里 setState 造成的级联渲染。
+  if (marksRoundId !== roundId) {
+    setMarksRoundId(roundId);
+    setPlayerMarks({});
+  }
 
   // 仅第一天描述阶段揭示词语，且每局只触发一次
   useEffect(() => {
@@ -336,20 +334,6 @@ export default function RoomPage() {
               <MessageSquare className="h-5 w-5" />
             </Button>
           </div>
-          {isHost && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="房间设置"
-              onClick={(event) => {
-                settingsOrigin.capture(event);
-                setSettingsOpen(true);
-              }}
-              className="h-9 w-9 shrink-0 md:h-10 md:w-10"
-            >
-              <Settings className="h-5 w-5" />
-            </Button>
-          )}
         </div>
       </header>
 
@@ -530,11 +514,6 @@ export default function RoomPage() {
         />
       ) : null}
 
-      <RoomSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        origin={settingsOrigin.origin}
-      />
     </div>
   );
 }
