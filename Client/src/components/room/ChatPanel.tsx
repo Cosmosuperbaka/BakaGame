@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { duration, ease, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
+import { STICKER_PREFIX } from "@/lib/stickers";
 import { cn } from "@/lib/utils";
-import { EmojiPicker, STICKER_PREFIX } from "@/components/room/EmojiPicker";
+import { EmojiPicker } from "@/components/room/EmojiPicker";
 
 /** 系统提示：无归属方，从中线撑开 */
 const systemMessage = {
@@ -89,25 +90,26 @@ export function ChatPanel() {
                   <span className="text-[11px] text-muted-foreground/60 mb-0.5 px-1">
                     {msg.playerName}
                   </span>
-                  {isSticker ? (
-                    <img
-                      src={stickerPath!}
-                      alt="贴纸"
-                      draggable={false}
-                      className="w-20 h-20 object-contain rounded-lg"
-                    />
-                  ) : (
-                    <div
-                      className={cn(
-                        "max-w-[85%] px-3 py-1.5 text-sm leading-relaxed rounded-2xl break-words",
-                        isMe
-                          ? "bg-primary text-primary-foreground rounded-br-md"
-                          : "bg-muted text-foreground rounded-bl-md"
-                      )}
-                    >
-                      {msg.text}
-                    </div>
-                  )}
+                  <div
+                    className={cn(
+                      "max-w-[85%] break-words rounded-xl text-sm leading-relaxed",
+                      isSticker ? "p-1.5" : "px-3 py-1.5",
+                      isMe
+                        ? "rounded-br-sm bg-primary text-primary-foreground"
+                        : "rounded-bl-sm bg-muted text-foreground"
+                    )}
+                  >
+                    {isSticker ? (
+                      <img
+                        src={stickerPath!}
+                        alt="表情"
+                        draggable={false}
+                        className="h-20 w-20 object-contain"
+                      />
+                    ) : (
+                      msg.text
+                    )}
+                  </div>
                 </motion.div>
               );
             })}
@@ -128,8 +130,10 @@ export function ChatPanel() {
         <Button
           size="icon"
           variant="ghost"
-          className="h-9 w-9 shrink-0 rounded-full text-muted-foreground"
+          className="shrink-0 text-muted-foreground"
           onClick={() => setPickerOpen((v) => !v)}
+          aria-label="发送表情"
+          aria-expanded={pickerOpen}
         >
           <Smile className="h-5 w-5" />
         </Button>
@@ -137,7 +141,7 @@ export function ChatPanel() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="发送消息..."
-          className="flex-1 h-9 rounded-full px-4"
+          className="flex-1"
           onKeyDown={(e) => {
             if (e.key === "Enter") handleSend();
             if (e.key === "Escape") setPickerOpen(false);
@@ -146,7 +150,7 @@ export function ChatPanel() {
         />
         <Button
           size="icon"
-          className="h-9 w-9 shrink-0"
+          className="shrink-0"
           onClick={handleSend}
           disabled={!text.trim()}
           aria-label="发送消息"
