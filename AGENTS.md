@@ -8,15 +8,19 @@ BakaGame (server name: WhoIsFaker) is a real-time multiplayer party game — a d
 
 ## Workspace Structure
 
-Three independent packages — **no root-level package.json or shared scripts**:
+Two independent packages — **no root-level package.json or shared scripts**:
 
 | Package | Runtime | Location |
 |---|---|---|
 | `WhoIsFaker_Server` | Bun | `Server/` |
 | `whoisfaker-client` | Node / npm | `Client/` |
-| `@bakagame/shared` | (no build) | `packages/shared/` |
 
-`@bakagame/shared` has no build step — it exports raw `.ts` source files. Both Server and Client import from it directly; bundlers handle transpilation.
+**Shared definitions live in `Server/src/shared/`** (`model.ts` + `protocol.ts`), the single copy used by both sides. There is no `@bakagame/shared` npm package and no `packages/` directory — the server is deployed by mounting only `Server/` as the app root, so anything it imports must sit inside that directory.
+
+- Server imports it by relative path (`../shared`), re-exported through `Server/src/domain/model.ts`.
+- Client keeps the `@bakagame/shared` specifier, mapped in **two** places that must stay in sync: `Client/tsconfig.app.json` `paths` (for `tsc`) and `Client/vite.config.ts` `resolve.alias` (for the bundler). Vite does not read tsconfig paths, so editing only one silently breaks the build.
+
+Never reintroduce a `file:../packages/...` dependency: npm/bun turn it into a symlink to an absolute host path, which dangles on the deploy target (`ENOENT reading .../node_modules/@bakagame/shared`).
 
 ## Commands
 
@@ -39,10 +43,7 @@ npm run lint         # eslint .
 npm run preview
 ```
 
-### Shared (`cd packages/shared`)
-```bash
-npm run check        # tsc --noEmit
-```
+Shared definitions have no package of their own; the server's `bun run check` and the client build type-check them in place.
 
 ## Environment Variables
 
@@ -63,7 +64,7 @@ VITE_SERVER_URL=http://localhost:4850
 
 ### Communication Protocol
 
-All WebSocket messages use a typed envelope defined in `packages/shared/src/protocol.ts`:
+All WebSocket messages use a typed envelope defined in `Server/src/shared/protocol.ts`:
 
 - **Client → Server**: `{ id, type, roomId?, sessionToken?, payload }`
 - **Server → Client**: one of three shapes:
