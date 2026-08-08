@@ -20,7 +20,7 @@ Non-negotiable rules distilled from those documents:
 - **Theme is global.** All styling derives from the semantic variables in `Client/src/index.css`. Never hardcode colors, radii, shadows, or fonts in business components.
 - **Atomic commits.** One self-contained change per commit, verified before committing.
 - **Commit message format:** `type(Game): 中文正文` — body in Chinese, **≤ 12 Chinese characters**; split the commit if longer. Game scope is `Faker` / `Song` / `CCB` / `Core`.
-- **Version format:** `V1.x.x(commit_hash)` — minor for large features, patch per bug-fix cycle.
+- **Version format:** `V1.x.x` — minor for large features, patch per bug-fix cycle.
 - When user instructions conflict with these documents, the newest explicit user instruction wins, and the affected spec file must be updated in the same session.
 
 ## Project
@@ -73,7 +73,6 @@ Shared definitions have no package of their own; the server's `bun run check` an
 CLIENT_URL=http://localhost:5173
 SERVER_URL=http://localhost:4850
 SERVER_PORT=4850
-GIT_COMMIT=dev
 ```
 
 `Client/.env` (see `.env.example`):
