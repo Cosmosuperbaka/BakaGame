@@ -93,6 +93,13 @@ const readRoleConfig = (value: unknown): RoleConfig => {
   const hasAngel = value.hasAngel;
   const hasBlank = value.hasBlank;
 
+  if ("angelCount" in value || "blankCount" in value) {
+    throw new AppError(
+      "INVALID_MESSAGE",
+      "天使与白板最多各一人，请移除人数配置字段",
+    );
+  }
+
   if (
     typeof undercoverCount !== "number" ||
     !Number.isInteger(undercoverCount) ||
@@ -101,25 +108,10 @@ const readRoleConfig = (value: unknown): RoleConfig => {
     throw new AppError("INVALID_MESSAGE", "undercoverCount 必须为非负整数");
   }
 
-  const angelCount = value.angelCount;
-  const blankCount = value.blankCount;
-
   return {
     undercoverCount,
     hasAngel: readBoolean(hasAngel, "hasAngel"),
-    angelCount:
-      angelCount == null
-        ? undefined
-        : typeof angelCount === "number" && Number.isInteger(angelCount) && angelCount >= 1
-          ? angelCount
-          : (() => { throw new AppError("INVALID_MESSAGE", "angelCount 必须为正整数"); })(),
     hasBlank: readBoolean(hasBlank, "hasBlank"),
-    blankCount:
-      blankCount == null
-        ? undefined
-        : typeof blankCount === "number" && Number.isInteger(blankCount) && blankCount >= 1
-          ? blankCount
-          : (() => { throw new AppError("INVALID_MESSAGE", "blankCount 必须为正整数"); })(),
   };
 };
 

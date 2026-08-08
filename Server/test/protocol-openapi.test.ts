@@ -183,6 +183,24 @@ test("协议解析会为非法消息抛出业务错误", () => {
   ).toThrow(AppError);
 });
 
+test("协议拒绝已移除的特殊角色人数配置", () => {
+  expect(() =>
+    parseClientMessage({
+      id: "legacy-role-count",
+      type: "room.updateSettings",
+      payload: {
+        roleConfig: {
+          undercoverCount: 2,
+          hasAngel: true,
+          angelCount: 2,
+          hasBlank: true,
+          blankCount: 2,
+        },
+      },
+    }),
+  ).toThrow(AppError);
+});
+
 test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async () => {
   const logger = new EventLogger();
   const roomService = new RoomService({

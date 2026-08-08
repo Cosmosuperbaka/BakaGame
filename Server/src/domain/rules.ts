@@ -33,9 +33,7 @@ export const getRoomRoleLimits = (playerCount: number): RoleLimits => ({
   // 游戏本身在人数检查阶段会阻止少于 4 人时开局。
   maxUndercoverCount: Math.max(1, Math.floor(playerCount / 4)),
   canEnableAngel: playerCount >= 10,
-  maxAngelCount: playerCount >= 10 ? Math.max(1, Math.floor(playerCount / 10)) : 0,
   canEnableBlank: playerCount >= 8,
-  maxBlankCount: playerCount >= 8 ? Math.max(1, Math.floor(playerCount / 8)) : 0,
 });
 
 // 用户名只做轻量修剪，唯一性由房间层保证。
@@ -67,8 +65,8 @@ export const normalizeWordPair = (values: [string, string]): [string, string] =>
 // 校验阵营配置是否符合当前人数约束。测试房间与真实房间同规则。
 export const validateRoleConfig = (config: RoleConfig, playerCount: number): void => {
   const limits = getRoomRoleLimits(playerCount);
-  const effectiveAngelCount = config.hasAngel ? (config.angelCount ?? 1) : 0;
-  const effectiveBlankCount = config.hasBlank ? (config.blankCount ?? 1) : 0;
+  const effectiveAngelCount = config.hasAngel ? 1 : 0;
+  const effectiveBlankCount = config.hasBlank ? 1 : 0;
   const specialCount = config.undercoverCount + effectiveAngelCount + effectiveBlankCount;
   const civilianCount = playerCount - specialCount;
 
@@ -86,20 +84,8 @@ export const validateRoleConfig = (config: RoleConfig, playerCount: number): voi
     throw new AppError("INVALID_ROLE_CONFIG", "当前人数不足以开启天使");
   }
 
-  if (config.hasAngel && effectiveAngelCount > limits.maxAngelCount) {
-    throw new AppError("INVALID_ROLE_CONFIG", "天使人数超出上限", {
-      maxAngelCount: limits.maxAngelCount,
-    });
-  }
-
   if (config.hasBlank && !limits.canEnableBlank) {
     throw new AppError("INVALID_ROLE_CONFIG", "当前人数不足以开启白板");
-  }
-
-  if (config.hasBlank && effectiveBlankCount > limits.maxBlankCount) {
-    throw new AppError("INVALID_ROLE_CONFIG", "白板人数超出上限", {
-      maxBlankCount: limits.maxBlankCount,
-    });
   }
 
   if (civilianCount < 1) {
@@ -154,8 +140,8 @@ export const assignRoles = (
     const angelCount = roles.filter((r) => r === "angel").length;
     const blankCount = roles.filter((r) => r === "blank").length;
 
-    const expectedAngelCount = config.hasAngel ? (config.angelCount ?? 1) : 0;
-    const expectedBlankCount = config.hasBlank ? (config.blankCount ?? 1) : 0;
+    const expectedAngelCount = config.hasAngel ? 1 : 0;
+    const expectedBlankCount = config.hasBlank ? 1 : 0;
 
     if (
       undercoverCount !== config.undercoverCount ||
@@ -183,30 +169,24 @@ export const assignRoles = (
     let cursor = 0;
 
     if (config.hasBlank) {
-      const count = config.blankCount ?? 1;
-      for (let i = 0; i < count; i += 1) {
-        const playerId = shuffledPlayers[cursor];
-        assignments[playerId] = {
-          role: "blank",
-          side: "blank",
-          alive: true,
-        };
-        cursor += 1;
-      }
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "blank",
+        side: "blank",
+        alive: true,
+      };
+      cursor += 1;
     }
 
     if (config.hasAngel) {
-      const count = config.angelCount ?? 1;
-      for (let i = 0; i < count; i += 1) {
-        const playerId = shuffledPlayers[cursor];
-        assignments[playerId] = {
-          role: "angel",
-          side: "good",
-          word: civilianWord,
-          alive: true,
-        };
-        cursor += 1;
-      }
+      const playerId = shuffledPlayers[cursor];
+      assignments[playerId] = {
+        role: "angel",
+        side: "good",
+        word: civilianWord,
+        alive: true,
+      };
+      cursor += 1;
     }
 
     for (let index = 0; index < config.undercoverCount; index += 1) {

@@ -6,6 +6,7 @@ import {
   createDefaultRoleConfig,
   ensureRoomId,
   evaluateBlankGuess,
+  getRoomRoleLimits,
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
@@ -55,6 +56,61 @@ test("阵营配置会校验人数上限", () => {
         hasBlank: false,
       },
       4,
+    ),
+  ).toThrow();
+});
+
+test("天使与白板在任意房间人数下都只会各分配一人", () => {
+  const playerIds = Array.from({ length: 20 }, (_, index) => `p${index + 1}`);
+  const limits = getRoomRoleLimits(playerIds.length);
+  const result = assignRoles(
+    playerIds,
+    {
+      undercoverCount: 5,
+      hasAngel: true,
+      hasBlank: true,
+    },
+    ["苹果", "香蕉"],
+    "水果",
+    {
+      nextInt: (maxExclusive: number) => maxExclusive - 1,
+    },
+  );
+  const roles = Object.values(result.assignments).map((assignment) => assignment.role);
+
+  expect(limits).toEqual({
+    maxUndercoverCount: 5,
+    canEnableAngel: true,
+    canEnableBlank: true,
+  });
+  expect(roles.filter((role) => role === "angel")).toHaveLength(1);
+  expect(roles.filter((role) => role === "blank")).toHaveLength(1);
+});
+
+test("手动身份不能绕过单天使单白板约束", () => {
+  const playerIds = Array.from({ length: 12 }, (_, index) => `p${index + 1}`);
+  const manualRoles = Object.fromEntries(
+    playerIds.map((playerId) => [playerId, "civilian"]),
+  ) as Record<string, "civilian" | "undercover" | "angel" | "blank">;
+  manualRoles.p1 = "undercover";
+  manualRoles.p2 = "undercover";
+  manualRoles.p3 = "undercover";
+  manualRoles.p4 = "angel";
+  manualRoles.p5 = "angel";
+  manualRoles.p6 = "blank";
+
+  expect(() =>
+    assignRoles(
+      playerIds,
+      {
+        undercoverCount: 3,
+        hasAngel: true,
+        hasBlank: true,
+      },
+      ["苹果", "香蕉"],
+      "水果",
+      { nextInt: (maxExclusive: number) => maxExclusive - 1 },
+      manualRoles,
     ),
   ).toThrow();
 });
