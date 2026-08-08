@@ -488,7 +488,7 @@ export function PlayerRow(props: PlayerRowProps) {
         "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
-        !isMe && interactive && "hover:bg-accent/50",
+        !isMe && "transition-colors hover:bg-accent/50",
         // 机器人没有连接，但不是「掉线」，不该被压暗
         !player.online && !player.isBot && "opacity-60",
         interactive && "cursor-pointer",

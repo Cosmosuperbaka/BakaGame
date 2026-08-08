@@ -218,8 +218,8 @@ export default function RoomPage() {
     !isSpectator && !privateState?.isQuestioner
       ? privateState?.word ??
         (privateState?.angelWordOptions
-          ? `${privateState.angelWordOptions[0]} / ${privateState.angelWordOptions[1]}`
-          : privateState?.blankHint ? `提示：${privateState.blankHint}` : undefined)
+          ? `天使：${privateState.angelWordOptions[0]}/${privateState.angelWordOptions[1]}`
+          : privateState?.blankHint ? `白板提示：${privateState.blankHint}` : undefined)
       : undefined;
 
   // 重置揭词标记——新局开始时（phase 回到 waiting）清除
