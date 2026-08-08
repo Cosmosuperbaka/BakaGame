@@ -10,21 +10,13 @@ function normalizeSessionRoomId(roomId: string): string {
     : normalized;
 }
 
-export function isTestRoomId(roomId: string): boolean {
-  return normalizeSessionRoomId(roomId) === TEST_ROOM_ID;
+function getSessionKey(roomId: string): string {
+  return SESSION_PREFIX + normalizeSessionRoomId(roomId);
 }
 
 function getSessionStorage(): Storage | null {
   try {
     return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-function getLocalStorage(): Storage | null {
-  try {
-    return window.localStorage;
   } catch {
     return null;
   }
@@ -47,63 +39,24 @@ export function saveUsername(name: string): void {
 }
 
 export function getSessionToken(roomId: string): string | null {
-  const normalizedRoomId = normalizeSessionRoomId(roomId);
-  const storageKey = SESSION_PREFIX + normalizedRoomId;
-  const sessionStorage = getSessionStorage();
-  const localStorage = getLocalStorage();
-
-  const sessionToken = sessionStorage?.getItem(storageKey);
-  if (sessionToken) {
-    return sessionToken;
+  try {
+    return getSessionStorage()?.getItem(getSessionKey(roomId)) ?? null;
+  } catch {
+    return null;
   }
-
-  const legacyToken =
-    localStorage?.getItem(storageKey) ??
-    (normalizedRoomId === roomId ? null : localStorage?.getItem(SESSION_PREFIX + roomId)) ??
-    null;
-
-  if (legacyToken && sessionStorage) {
-    sessionStorage.setItem(storageKey, legacyToken);
-    localStorage?.removeItem(storageKey);
-    if (normalizedRoomId !== roomId) {
-      localStorage?.removeItem(SESSION_PREFIX + roomId);
-    }
-  }
-
-  return legacyToken;
 }
 
 export function saveSessionToken(roomId: string, token: string): void {
-  const normalizedRoomId = normalizeSessionRoomId(roomId);
-  const storageKey = SESSION_PREFIX + normalizedRoomId;
-  const sessionStorage = getSessionStorage();
-  const localStorage = getLocalStorage();
-
   try {
-    sessionStorage?.setItem(storageKey, token);
-    localStorage?.removeItem(storageKey);
-    if (normalizedRoomId !== roomId) {
-      localStorage?.removeItem(SESSION_PREFIX + roomId);
-      sessionStorage?.removeItem(SESSION_PREFIX + roomId);
-    }
+    getSessionStorage()?.setItem(getSessionKey(roomId), token);
   } catch {
     // 忽略
   }
 }
 
 export function clearSessionToken(roomId: string): void {
-  const normalizedRoomId = normalizeSessionRoomId(roomId);
-  const storageKey = SESSION_PREFIX + normalizedRoomId;
-  const sessionStorage = getSessionStorage();
-  const localStorage = getLocalStorage();
-
   try {
-    sessionStorage?.removeItem(storageKey);
-    localStorage?.removeItem(storageKey);
-    if (normalizedRoomId !== roomId) {
-      sessionStorage?.removeItem(SESSION_PREFIX + roomId);
-      localStorage?.removeItem(SESSION_PREFIX + roomId);
-    }
+    getSessionStorage()?.removeItem(getSessionKey(roomId));
   } catch {
     // 忽略
   }
