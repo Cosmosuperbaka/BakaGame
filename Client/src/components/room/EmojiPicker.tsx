@@ -16,6 +16,7 @@ export interface StickerItem {
 export interface StickerPack {
   name: string;
   preview: string;   // 标签栏展示的代表图
+  animated: boolean;  // 整包是否为动图，决定标签栏角标
   items: StickerItem[];
 }
 
@@ -44,6 +45,7 @@ export const STICKER_PACKS: StickerPack[] = [
   {
     name: MUJICA_PACK,
     preview: `${BASE}/${MUJICA_PACK}/[${MUJICA_PACK}_wink].png`,
+    animated: false,
     items: mujicaKeys.map((key) => ({
       key,
       label: key,
@@ -54,6 +56,7 @@ export const STICKER_PACKS: StickerPack[] = [
   {
     name: YEYUAN_PACK,
     preview: `${BASE}/${YEYUAN_PACK}/[${YEYUAN_PACK}_鼓掌].gif`,
+    animated: true,
     items: yeyuanKeys.map((key) => ({
       key,
       label: key,
@@ -111,14 +114,6 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                   title={item.label}
                 >
                   <div className="relative w-full aspect-square">
-                    {item.animated && (
-                      <span
-                        className="absolute top-0.5 right-0.5 z-10 text-[8px] leading-none px-1 py-0.5 rounded-full font-semibold pointer-events-none"
-                        style={{ background: "#ff4d79", color: "#fff" }}
-                      >
-                        动图
-                      </span>
-                    )}
                     <img
                       src={item.path}
                       alt={item.label}
@@ -154,6 +149,14 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                   draggable={false}
                   className="w-7 h-7 object-contain"
                 />
+                {p.animated && (
+                  <span
+                    className="absolute top-0 right-0 z-10 text-[7px] leading-none px-0.5 py-[1px] rounded-bl rounded-tr font-semibold pointer-events-none"
+                    style={{ background: "#ff4d79", color: "#fff" }}
+                  >
+                    动图
+                  </span>
+                )}
               </button>
             ))}
           </div>
