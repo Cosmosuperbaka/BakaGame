@@ -17,7 +17,8 @@
 - 主题变量包含颜色、`--radius`、`--shadow-*`、`--font-sans/serif/mono` 与 `--tracking-*`，业务组件只能引用这些变量派生出的 Tailwind 语义类，不得在组件内重新定义同类基础值。
 - 需要调整全局观感时，应修改 `index.css` 中的主题变量，并同步更新本文件，不在业务组件中做局部覆盖。
 - 通用交互组件优先复用 `Client/src/components/ui/`，其底层 Radix UI 行为不得被无故绕过或重复实现。
-- 图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符代替已有的标准图标。
+- 界面图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符代替已有的标准图标。
+- 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
 - 条件类名使用项目现有的 `cn` 工具，组件变体沿用 `class-variance-authority`。
 - 动效使用项目已有的 `framer-motion`，只用于状态切换、列表变化、面板进入退出和必要反馈。
 - 动效令牌统一维护于 `Client/src/lib/motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
@@ -79,7 +80,7 @@
 - 点击可用条目后先让箭头前移、条目微沉，动效落地再跳转，使离开当前页读作这次点击的结果。
 - 未上线的游戏入口保持相同尺寸与结构，通过降低不透明度和“即将推出”徽章表达不可用，且不可点击、不获取焦点。
 - 页脚自上而下为外部链接行与版本号，居中排列。版本号点击后在弹窗中分标签展示更新日志与提交历史，不在页面主体常驻展开这两块内容。
-- 外部链接（社群、代码仓库、作者主页）实现为一排 `h-8 w-8` 纯图标链接，取 `text-muted-foreground` 并以 `Tooltip` 提供名称，同时保留 `aria-label`。链接在新标签打开并带 `rel="noreferrer"`，按压反馈取 `iconTappable`。不加文字标签，不做彩色品牌底色，也不把外部链接放进页面主体。
+- 外部链接（社群、代码仓库、作者主页）实现为一排 `h-8 w-8` 纯图标链接，使用对应平台的品牌图标（见第 2 节），取 `text-muted-foreground` 并以 `Tooltip` 提供名称，同时保留 `aria-label`。链接在新标签打开并带 `rel="noreferrer"`，按压反馈取 `iconTappable`。不加文字标签，不做彩色品牌底色，也不把外部链接放进页面主体。
 - `changelog.json` 的 `content` 用纯文本书写：`-` 开头为列表项，行内支持 `**加粗**`、`` `等宽` `` 与 `[文字](链接)`，由 `lib/changelog.ts` 解析成结构化节点后渲染。禁止写 HTML 标签，也禁止使用 `dangerouslySetInnerHTML`。
 - 提交历史使用时间线式列表：单条包含提交信息、短哈希、作者和相对时间，保持单色克制表现，不按提交类型铺设彩色标签。
 
