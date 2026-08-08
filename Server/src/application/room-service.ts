@@ -3110,7 +3110,7 @@ export class RoomService {
         // 平民刀人会刀死自己，所以机器人平民一律不行动；
         // 卧底才去刀一个非自己的存活目标。
         const targetId =
-          state.role === "undercover" ? this.pickBotNightTarget(room, round, bot.id) : undefined;
+          state.role === "undercover" ? this.pickBotNightTarget(room, bot.id) : undefined;
 
         round.nightActions = this.replaceNightAction(round.nightActions, bot.id, {
           actorId: bot.id,
@@ -3167,8 +3167,7 @@ export class RoomService {
   }
 
   /** 机器人卧底的夜晚目标：随机一个非自己的存活玩家。 */
-  private pickBotNightTarget(room: RoomRecord, round: GameRound, botId: string) {
-    void round;
+  private pickBotNightTarget(room: RoomRecord, botId: string) {
     const candidates = this.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
 
     if (candidates.length === 0) {
