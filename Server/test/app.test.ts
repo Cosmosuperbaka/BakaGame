@@ -257,10 +257,10 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
       (payload) =>
         Boolean(payload) &&
         (payload as { type?: string }).type === "error" &&
-        (payload as { error?: { code?: string } }).error?.code === "INTERNAL_ERROR",
+        (payload as { error?: { code?: string } }).error?.code === "INVALID_MESSAGE",
     )) as { error: { code: string } };
 
-    expect(invalidMessageError.error.code).toBe("INTERNAL_ERROR");
+    expect(invalidMessageError.error.code).toBe("INVALID_MESSAGE");
     socket.close();
   } finally {
     await started.stop(true);

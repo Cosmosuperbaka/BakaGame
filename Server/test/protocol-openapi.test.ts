@@ -162,6 +162,15 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
 });
 
 test("协议解析会为非法消息抛出业务错误", () => {
+  let malformedJsonError: unknown;
+  try {
+    parseClientMessage("not-json");
+  } catch (error) {
+    malformedJsonError = error;
+  }
+  expect(malformedJsonError).toBeInstanceOf(AppError);
+  expect((malformedJsonError as AppError).code).toBe("INVALID_MESSAGE");
+
   expect(() =>
     parseClientMessage(
       JSON.stringify({
