@@ -11,11 +11,7 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "noEmit": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@bakagame/shared": ["../packages/shared/src/index.ts"]
-    }
+    "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../packages/shared/src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

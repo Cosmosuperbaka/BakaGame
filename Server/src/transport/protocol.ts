@@ -12,7 +12,7 @@ import {
   type PlayerRole,
   type RoleConfig,
   type RoomVisibility,
-} from "@bakagame/shared";
+} from "../shared";
 
 export type { AckPacket, ErrorPacket, EventPacket, ClientMessage, ClientEnvelope };
 

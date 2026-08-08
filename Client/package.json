@@ -11,7 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@bakagame/shared": "file:../packages/shared",
     "@fontsource-variable/jetbrains-mono": "5.2.8",
     "@fontsource-variable/lora": "5.2.6",
     "@fontsource-variable/noto-sans-sc": "^5.3.0",
