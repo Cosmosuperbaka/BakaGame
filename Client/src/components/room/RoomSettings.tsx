@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Users } from "lucide-react";
 import {
@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useGame } from "@/contexts/GameContext";
+import { useGameStore } from "@/stores/useGameStore";
+import type { RoomSnapshot } from "@/types";
 
 interface Props {
   open: boolean;
@@ -21,8 +22,9 @@ interface Props {
 }
 
 export function RoomSettings({ open, onOpenChange }: Props) {
-  const { state, sendCommand, addToast } = useGame();
-  const snapshot = state.snapshot;
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
+  const snapshot = useGameStore((s) => s.snapshot);
 
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
@@ -34,8 +36,12 @@ export function RoomSettings({ open, onOpenChange }: Props) {
   const [hasBlank, setHasBlank] = useState(false);
   const [blankCount, setBlankCount] = useState(1);
 
-  useEffect(() => {
-    if (snapshot && open) {
+  // 每次打开时用当前房间设置重置表单。在渲染期比对上一次的开合状态，
+  // 而不是放进 effect，避免打开瞬间先渲染一帧旧值再级联重渲染。
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && snapshot) {
       setName(snapshot.name);
       setIsPrivate(snapshot.visibility === "private");
       setAllowSpectators(snapshot.allowSpectators);
@@ -46,13 +52,13 @@ export function RoomSettings({ open, onOpenChange }: Props) {
       setBlankCount(snapshot.settings.roleConfig.blankCount ?? 1);
       setPassword("");
     }
-  }, [snapshot, open]);
+  }
 
   if (!snapshot) return null;
 
   const limits = snapshot.roleLimits;
   const activePlayers = snapshot.players.filter(
-    (p) => p.membership === "active"
+    (p: RoomSnapshot["players"][number]) => p.membership === "active"
   ).length;
   // 玩家不足 4 人（加出题人 5 人）时禁用身份编辑，但其它设置仍可保存。
   const roleEditingDisabled = limits.maxUndercoverCount < 1;

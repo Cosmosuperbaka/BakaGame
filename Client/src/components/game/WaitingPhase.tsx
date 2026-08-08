@@ -237,6 +237,90 @@ function HostWaitingPanel({
   );
 }
 
+/* ── 人数步进器 ──────────────────────────────────────────── */
+
+interface CountStepperProps {
+  value: number;
+  max: number;
+  label: string;
+  onChange: (next: number) => void;
+}
+
+function CountStepper({ value, max, label, onChange }: CountStepperProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        disabled={value <= 1}
+        aria-label={`减少${label}`}
+      >
+        <Minus className="h-3 w-3" />
+      </Button>
+      <span className="w-5 text-center text-sm font-medium tabular-nums">{value}</span>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        aria-label={`增加${label}`}
+      >
+        <Plus className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+/* ── 阵营开关行：开启后可继续配置人数 ─────────────────────── */
+
+interface RoleToggleRowProps {
+  title: string;
+  enabled: boolean;
+  onEnabledChange: (next: boolean) => void;
+  canEnable: boolean;
+  unavailableHint: string;
+  count: number;
+  max: number;
+  onCountChange: (next: number) => void;
+}
+
+function RoleToggleRow({
+  title, enabled, onEnabledChange, canEnable, unavailableHint, count, max, onCountChange,
+}: RoleToggleRowProps) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <Label className={cn("text-xs", !canEnable && "opacity-50")}>{title}</Label>
+        {!canEnable && <span className="text-xs text-muted-foreground">{unavailableHint}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <AnimatePresence initial={false}>
+          {enabled && canEnable && max > 1 && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: "auto", opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={spring.swift}
+              className="flex items-center overflow-hidden"
+            >
+              <CountStepper value={count} max={max} label={`${title}人数`} onChange={onCountChange} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <Switch
+          checked={enabled}
+          onCheckedChange={onEnabledChange}
+          disabled={!canEnable}
+          aria-label={title}
+        />
+      </div>
+    </div>
+  );
+}
+
 /* ── 行内设置表单（房主） ────────────────────────────────── */
 
 interface InlineSettingsProps {
@@ -251,7 +335,13 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
   const [undercoverCount, setUndercoverCount] = useState(snapshot.settings.roleConfig.undercoverCount);
+  const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
+  const [angelCount, setAngelCount] = useState(snapshot.settings.roleConfig.angelCount ?? 1);
+  const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
+  const [blankCount, setBlankCount] = useState(snapshot.settings.roleConfig.blankCount ?? 1);
   const limits = snapshot.roleLimits;
+  const maxAngelCount = Math.max(1, limits.maxAngelCount);
+  const maxBlankCount = Math.max(1, limits.maxBlankCount);
 
   const handleSave = async () => {
     try {
@@ -262,8 +352,10 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
         allowSpectators,
         roleConfig: {
           undercoverCount: Math.max(1, Math.min(undercoverCount, limits.maxUndercoverCount)),
-          hasAngel: limits.canEnableAngel && snapshot.settings.roleConfig.hasAngel,
-          hasBlank: limits.canEnableBlank && snapshot.settings.roleConfig.hasBlank,
+          hasAngel: limits.canEnableAngel && hasAngel,
+          angelCount: Math.max(1, Math.min(angelCount, maxAngelCount)),
+          hasBlank: limits.canEnableBlank && hasBlank,
+          blankCount: Math.max(1, Math.min(blankCount, maxBlankCount)),
         },
       });
       addToast("设置已保存", "success");
@@ -305,18 +397,35 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
       <div className="flex items-center justify-between">
         <Label className="text-xs">卧底人数</Label>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="h-7 w-7"
-            onClick={() => setUndercoverCount((c) => Math.max(1, c - 1))}
-            disabled={undercoverCount <= 1}
-          ><Minus className="h-3 w-3" /></Button>
-          <span className="w-5 text-center text-sm font-medium tabular-nums">{undercoverCount}</span>
-          <Button variant="outline" size="icon" className="h-7 w-7"
-            onClick={() => setUndercoverCount((c) => Math.min(limits.maxUndercoverCount, c + 1))}
-            disabled={undercoverCount >= limits.maxUndercoverCount}
-          ><Plus className="h-3 w-3" /></Button>
+          <CountStepper
+            value={undercoverCount}
+            max={limits.maxUndercoverCount}
+            label="卧底人数"
+            onChange={setUndercoverCount}
+          />
           <span className="text-xs text-muted-foreground">上限 {limits.maxUndercoverCount}</span>
         </div>
       </div>
+      <RoleToggleRow
+        title="天使"
+        enabled={hasAngel}
+        onEnabledChange={setHasAngel}
+        canEnable={limits.canEnableAngel}
+        unavailableHint="10 人开启"
+        count={angelCount}
+        max={maxAngelCount}
+        onCountChange={setAngelCount}
+      />
+      <RoleToggleRow
+        title="白板"
+        enabled={hasBlank}
+        onEnabledChange={setHasBlank}
+        canEnable={limits.canEnableBlank}
+        unavailableHint="8 人开启"
+        count={blankCount}
+        max={maxBlankCount}
+        onCountChange={setBlankCount}
+      />
       <Button size="sm" onClick={handleSave} className="w-full">保存设置</Button>
     </div>
   );
@@ -330,8 +439,8 @@ function SettingsPreview({ snapshot }: { snapshot: RoomSnapshot }) {
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
     `${cfg.undercoverCount} 名卧底`,
-    ...(cfg.hasAngel ? ["含天使"] : []),
-    ...(cfg.hasBlank ? ["含白板"] : []),
+    ...(cfg.hasAngel ? [`${cfg.angelCount ?? 1} 名天使`] : []),
+    ...(cfg.hasBlank ? [`${cfg.blankCount ?? 1} 名白板`] : []),
   ];
   return (
     <div className="flex flex-wrap justify-center gap-2">
