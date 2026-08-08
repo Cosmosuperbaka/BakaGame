@@ -48,6 +48,42 @@ test("大厅订阅后会收到房间列表更新", async () => {
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.roomId).toBe("1111");
 });
 
+test("房间设置变更事件不会广播私房密码", async () => {
+  const { service } = createTestContext();
+  const host = createConnection(service, "settings-host");
+  await execute(service, host, {
+    id: "create-private",
+    type: "room.create",
+    payload: {
+      roomId: "1010",
+      name: "私房",
+      visibility: "private",
+      password: "old-password",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  });
+  const guest = createConnection(service, "settings-guest");
+  await execute(service, guest, {
+    id: "join-private",
+    type: "room.join",
+    roomId: "1010",
+    payload: { userName: "玩家", password: "old-password" },
+  });
+
+  await execute(service, host, {
+    id: "change-password",
+    type: "room.updateSettings",
+    payload: { password: "new-password" },
+  });
+
+  const event = getLastEventPayload<{
+    settings: Record<string, unknown>;
+  }>(guest, "room.settingsChanged");
+  expect(event?.settings.password).toBeUndefined();
+  expect(event?.settings.visibility).toBe("private");
+});
+
 test("常规流程可以完整进入好人胜利结算", async () => {
   // 这个场景覆盖：建房 -> 开局 -> 指定出题人 -> 提交词语 -> 描述 -> 投票 -> 结算。
   const { service } = createTestContext();
