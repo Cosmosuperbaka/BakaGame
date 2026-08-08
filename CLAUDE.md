@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `Agents/Spec.md` | Engineering constraints, framework usage, Git commit rules | Any change |
 | `Agents/Design.md` | Frontend design system, theme, layout, interaction rules | Any `Client/` change |
 | `Agents/Animation.md` | Motion choreography rules, motion tokens, 100% coverage requirement | Any animation or interactive component change |
+| `Agents/Deployment.md` | Production proxy and application security boundary | Any deployment or infrastructure change |
 | `Agents/versioning.md` | Version numbering + commit message format | Any commit or release |
 
 Non-negotiable rules distilled from those documents:

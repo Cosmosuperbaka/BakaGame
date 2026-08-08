@@ -59,6 +59,14 @@ SERVER_PORT=4850
 VITE_SERVER_URL=http://localhost:4850
 ```
 
+## Production Deployment
+
+The Bun server is deployed behind a reverse proxy or edge gateway. TLS termination, source-based
+rate limits, concurrent WebSocket connection quotas, message-size limits, bandwidth limits, and
+connection timeouts belong to that boundary; do not expose the Bun port directly to the internet.
+See `Agents/Deployment.md` for the required controls and the division between proxy protection and
+application validation.
+
 ## Architecture
 
 ### Communication Protocol
