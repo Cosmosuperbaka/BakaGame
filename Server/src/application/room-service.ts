@@ -45,6 +45,7 @@ import { createEvent, type ClientMessage } from "../transport/protocol";
 import {
   ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
+  HOST_RECONNECT_TIMEOUT_MS,
   CHAT_LIMIT,
   TEST_MODE_DEFAULT_WORD,
   TEST_MODE_MAX_PLAYERS,
@@ -200,6 +201,13 @@ export class RoomService {
         });
         await this.closeRoom(room, "idle_timeout");
         continue;
+      }
+
+      if (
+        room.hostReconnectDeadlineAt !== undefined &&
+        currentTime >= room.hostReconnectDeadlineAt
+      ) {
+        await this.transferHostAfterDisconnect(room);
       }
 
       if (
@@ -1999,12 +2007,20 @@ export class RoomService {
     }
 
     const round = room.round;
+    const wasHost = room.hostPlayerId === player.id;
+
+    if (wasHost) {
+      if (reason === "leave") {
+        room.hostPlayerId = "";
+        room.hostReconnectDeadlineAt = undefined;
+      } else {
+        room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
+      }
+    }
 
     if (!round || round.phase === "gameOver") {
       // 房主显式离开时，无条件把身份交给下一位玩家；这样下一局不会卡在没人能操控的状态。
-      const wasHost = room.hostPlayerId === player.id;
-
-      if (player.score === 0 && !player.isBot) {
+      if (reason === "leave" && player.score === 0 && !player.isBot) {
         delete room.players[player.id];
       }
 
@@ -2013,7 +2029,9 @@ export class RoomService {
         room.hostPlayerId = "";
       }
 
-      this.reassignHost(room);
+      if (wasHost && reason === "leave") {
+        this.reassignHost(room);
+      }
       this.normalizeRoomRoleConfig(room);
       this.touchRoom(room);
       if (this.getOnlineCount(room) === 0) {
@@ -2034,6 +2052,10 @@ export class RoomService {
         roomId: room.id,
         playerId,
       });
+    }
+
+    if (wasHost && reason === "leave") {
+      this.reassignHost(room);
     }
 
     this.touchRoom(room);
@@ -2697,6 +2719,10 @@ export class RoomService {
       room.round.questionerReconnectDeadlineAt = undefined;
     }
 
+    if (room.hostPlayerId === player.id) {
+      room.hostReconnectDeadlineAt = undefined;
+    }
+
     this.touchRoom(room);
     this.appendSystemMessage(room, options.appendMessage);
 
@@ -2943,6 +2969,51 @@ export class RoomService {
     if (nextHost) {
       room.hostPlayerId = nextHost.id;
     }
+  }
+
+  private async transferHostAfterDisconnect(room: RoomRecord) {
+    const previousHostId = room.hostPlayerId;
+    const previousHost = room.players[previousHostId];
+
+    if (!previousHost || previousHost.online || previousHost.membership === "kicked") {
+      room.hostReconnectDeadlineAt = undefined;
+      return;
+    }
+
+    const nextHost = Object.values(room.players)
+      .filter(
+        (player) =>
+          player.membership === "active" && player.online && !player.isBot,
+      )
+      .sort((left, right) => left.joinedAt - right.joinedAt)[0];
+
+    if (!nextHost) {
+      return;
+    }
+
+    room.hostReconnectDeadlineAt = undefined;
+    room.hostPlayerId = nextHost.id;
+    this.touchRoom(room);
+    this.appendSystemMessage(room, `${previousHost.name} 断线超时，房主已转移给 ${nextHost.name}`);
+
+    await this.log({
+      type: "room.host_transferred",
+      createdAt: this.now(),
+      roomId: room.id,
+      payload: {
+        previousHostId,
+        nextHostId: nextHost.id,
+        reason: "disconnect_timeout",
+      },
+    });
+
+    this.broadcastRoomEvent(room, "room.playerChanged", {
+      roomId: room.id,
+      action: "host_changed",
+      playerId: nextHost.id,
+    });
+    this.publishRoomState(room);
+    this.publishLobby();
   }
 
   private isRoundActive(room: RoomRecord) {
