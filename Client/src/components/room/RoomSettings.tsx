@@ -193,7 +193,7 @@ export function RoomSettings({ open, onOpenChange }: Props) {
                 天使
                 {!limits.canEnableAngel && (
                   <span className="text-[10px] text-muted-foreground ml-1">
-                    (10 人开启)
+                    (8 人开启)
                   </span>
                 )}
               </Label>

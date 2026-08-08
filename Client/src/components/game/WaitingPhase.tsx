@@ -387,7 +387,7 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
         enabled={hasAngel}
         onEnabledChange={setHasAngel}
         canEnable={limits.canEnableAngel}
-        unavailableHint="10 人开启"
+        unavailableHint="8 人开启"
       />
       <RoleToggleRow
         title="白板"

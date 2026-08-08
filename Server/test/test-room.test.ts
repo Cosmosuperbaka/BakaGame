@@ -246,7 +246,7 @@ test("卧底数上限按参战人数计算，机器人增减后同步", async ()
   const { service } = createTestContext();
   const { host } = await createTestRoom(service, 3);
 
-  // 4 名正式玩家、无旁观 → 出题人占掉 1 个名额，参战 3 人 → 上限 max(1, floor(3/4)) = 1。
+  // 4 名正式玩家、无旁观 → 出题人占掉 1 个名额，参战 3 人 → 上限 max(1, ceil(3/4)) = 1。
   expect(snapshotOf(host).roleLimits.maxUndercoverCount).toBe(1);
 
   await execute(service, host, {
@@ -255,7 +255,7 @@ test("卧底数上限按参战人数计算，机器人增减后同步", async ()
     payload: { count: 5 },
   });
 
-  // 9 名正式玩家 → 参战 8 人 → 上限 floor(8/4) = 2。
+  // 9 名正式玩家 → 参战 8 人 → 上限 ceil(8/4) = 2。
   const grown = snapshotOf(host);
   expect(grown.players).toHaveLength(9);
   expect(grown.roleLimits.maxUndercoverCount).toBe(2);

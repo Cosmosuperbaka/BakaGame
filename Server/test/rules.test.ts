@@ -115,6 +115,20 @@ test("手动身份不能绕过单天使单白板约束", () => {
   ).toThrow();
 });
 
+test("天使从 8 人开启且卧底上限按四分之一向上取整", () => {
+  expect(getRoomRoleLimits(7)).toEqual({
+    maxUndercoverCount: 2,
+    canEnableAngel: false,
+    canEnableBlank: false,
+  });
+  expect(getRoomRoleLimits(8)).toEqual({
+    maxUndercoverCount: 2,
+    canEnableAngel: true,
+    canEnableBlank: true,
+  });
+  expect(getRoomRoleLimits(9).maxUndercoverCount).toBe(3);
+});
+
 test("角色分配在固定随机源下具有稳定顺序", () => {
   const result = assignRoles(
     ["p1", "p2", "p3", "p4"],

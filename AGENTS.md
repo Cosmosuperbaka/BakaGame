@@ -136,7 +136,7 @@ Roles: `civilian`, `undercover`, `angel` (10+ participants), `blank` (8+ partici
 
 Win conditions: `good` (all undercoverers eliminated), `undercover` (outnumber civilians), `blank` (guesses both words correctly), `aborted`.
 
-A round needs at least 4 participants plus 1 questioner. Participants are active players excluding the questioner; an online spectator may serve as questioner. `maxUndercoverCount = max(1, floor(participantCount / 4))`.
+A round needs at least 4 participants plus 1 questioner. Participants are active players excluding the questioner; an online spectator may serve as questioner. `maxUndercoverCount = max(1, ceil(participantCount / 4))`.
 
 ## Description Records
 
