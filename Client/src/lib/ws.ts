@@ -28,7 +28,6 @@ let reqCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = MAX_RECONNECT_DELAY_MS;
-let intentionalClose = false;
 
 // 等待连接就绪的 Promise 队列
 let connectResolvers: Array<() => void> = [];
@@ -41,8 +40,6 @@ export function connect(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
-
-  intentionalClose = false;
 
   try {
     ws = new WebSocket(WS_URL);
@@ -92,9 +89,7 @@ export function connect(): void {
       pendingRequests.delete(id);
     }
     statusHandlers.forEach((h) => h(false));
-    if (!intentionalClose) {
-      scheduleReconnect();
-    }
+    scheduleReconnect();
   };
 
   ws.onerror = () => {
@@ -110,22 +105,6 @@ function scheduleReconnect(): void {
     reconnectTimer = null;
     connect();
   }, delay);
-}
-
-export function disconnect(): void {
-  intentionalClose = true;
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  if (ws) {
-    ws.close();
-    ws = null;
-  }
-}
-
-export function isConnected(): boolean {
-  return ws?.readyState === WebSocket.OPEN;
 }
 
 // 等待 WebSocket 连接就绪（已连接则立即返回）
