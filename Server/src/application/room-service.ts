@@ -1496,11 +1496,8 @@ export class RoomService {
         round.summary = undefined;
         break;
       case "blankGuess": {
-        // 优先使用已有白板玩家；若不存在则选非调用者，避免调用者看到猜词界面。
-        const blankId =
-          getBlankPlayerId(round.assignments) ??
-          participantIds.find((id) => id !== player.id) ??
-          participantIds[0];
+        // 只认本局真实的白板。没有白板时直接拒绝，不把任何人临时改成白板。
+        const blankId = getBlankPlayerId(round.assignments);
 
         if (!blankId) {
           throw new AppError(
