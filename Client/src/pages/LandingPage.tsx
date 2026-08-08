@@ -96,7 +96,7 @@ interface ExternalLink {
 const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: faQq },
   { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: faGithub },
-  { href: "https://space.bilibili.com/354780713", label: "哔哩哔哩主页", icon: faBilibili },
+  { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
 /**
