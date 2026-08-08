@@ -53,6 +53,11 @@ import {
   BOT_DESCRIPTION_TEMPLATES,
 } from "../config/constants";
 import { ConnectionRegistry } from "./connection-registry";
+import type { CommandHandler } from "./handlers/command-handler";
+import { createGameCommandHandler } from "./handlers/game-command-handler";
+import { createPlayerCommandHandler } from "./handlers/player-command-handler";
+import { createRoomCommandHandler } from "./handlers/room-command-handler";
+import { createTestCommandHandler } from "./handlers/test-command-handler";
 
 export interface RoomServiceOptions {
   now?: () => number;
@@ -68,6 +73,7 @@ export class RoomService {
   private readonly connectionRegistry: ConnectionRegistry;
   private readonly now: () => number;
   private readonly random: RandomSource;
+  private readonly commandHandlers: CommandHandler[];
   private idCounter = 0;
 
   constructor(private readonly options: RoomServiceOptions) {
@@ -79,6 +85,69 @@ export class RoomService {
           Math.floor(Math.random() * Math.max(maxExclusive, 1)),
       } satisfies RandomSource);
     this.connectionRegistry = new ConnectionRegistry();
+    this.commandHandlers = [
+      createRoomCommandHandler({
+        subscribeRooms: (connection) => {
+          connection.lobbySubscribed = true;
+          this.publishLobby();
+          return { subscribed: true };
+        },
+        create: (connection, message) => this.handleRoomCreate(connection, message),
+        join: (connection, message) => this.handleRoomJoin(connection, message),
+        reconnect: (connection, message) => this.handleRoomReconnect(connection, message),
+        leave: (connection) => this.handleRoomLeave(connection),
+        updateSettings: (connection, payload) =>
+          this.handleUpdateSettings(connection, payload),
+        kick: (connection, playerId) => this.handleKick(connection, playerId),
+        transferHost: (connection, playerId) =>
+          this.handleTransferHost(connection, playerId),
+        sendChat: (connection, text) => this.handleChat(connection, text),
+      }),
+      createPlayerCommandHandler({
+        rename: (connection, name) => this.handleRename(connection, name),
+        setSpectator: (connection, spectator) =>
+          this.handleSetSpectator(connection, spectator),
+        setReady: (connection, ready) => this.handleSetReady(connection, ready),
+      }),
+      createGameCommandHandler({
+        assignQuestioner: (connection, playerId) =>
+          this.handleAssignQuestioner(connection, playerId),
+        submitWords: (connection, payload) =>
+          this.handleSubmitWords(
+            connection,
+            payload.words,
+            payload.blankHint,
+            payload.manualRoles,
+          ),
+        advancePhase: (connection) => this.handleAdvancePhase(connection),
+        submitDescription: (connection, text) =>
+          this.handleSubmitDescription(connection, text),
+        submitVote: (connection, targetId) =>
+          this.handleSubmitVote(connection, targetId),
+        submitNightAction: (connection, targetId) =>
+          this.handleSubmitNightAction(connection, targetId),
+        submitBlankGuess: (connection, words) =>
+          this.handleSubmitBlankGuess(connection, words),
+        cancelVote: (connection) => this.handleCancelVote(connection),
+        cancelNightAction: (connection) => this.handleCancelNightAction(connection),
+        requestSupplement: (connection, playerIds) =>
+          this.handleRequestSupplement(connection, playerIds),
+        resolveDisconnect: (connection, payload) =>
+          this.handleResolveDisconnect(
+            connection,
+            payload.playerId,
+            payload.resolution,
+          ),
+      }),
+      createTestCommandHandler({
+        jumpToPhase: (connection, phase) =>
+          this.handleTestJumpToPhase(connection, phase),
+        setMyRole: (connection, role) => this.handleTestSetMyRole(connection, role),
+        addBot: (connection, count) => this.handleTestAddBot(connection, count),
+        removeBot: (connection, playerId, count) =>
+          this.handleTestRemoveBot(connection, playerId, count),
+      }),
+    ];
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -105,80 +174,15 @@ export class RoomService {
   async execute(connectionId: string, message: ClientMessage): Promise<unknown> {
     // 所有命令都从这里进入，方便统一做连接上下文解析与后续审计。
     const connection = this.getConnection(connectionId);
+    const handler = this.commandHandlers.find((candidate) =>
+      candidate.canHandle(message.type),
+    );
 
-    switch (message.type) {
-      case "lobby.subscribeRooms":
-        connection.lobbySubscribed = true;
-        this.publishLobby();
-        return { subscribed: true };
-      case "room.create":
-        return this.handleRoomCreate(connection, message);
-      case "room.join":
-        return this.handleRoomJoin(connection, message);
-      case "room.reconnect":
-        return this.handleRoomReconnect(connection, message);
-      case "room.leave":
-        return this.handleRoomLeave(connection);
-      case "player.rename":
-        return this.handleRename(connection, message.payload.name);
-      case "player.setSpectator":
-        return this.handleSetSpectator(connection, message.payload.spectator);
-      case "player.setReady":
-        return this.handleSetReady(connection, message.payload.ready);
-      case "room.updateSettings":
-        return this.handleUpdateSettings(connection, message.payload);
-      case "room.kick":
-        return this.handleKick(connection, message.payload.playerId);
-      case "game.assignQuestioner":
-        return this.handleAssignQuestioner(connection, message.payload.playerId);
-      case "game.submitWords":
-        return this.handleSubmitWords(
-          connection,
-          message.payload.words,
-          message.payload.blankHint,
-          message.payload.manualRoles,
-        );
-      case "game.advancePhase":
-        return this.handleAdvancePhase(connection);
-      case "game.submitDescription":
-        return this.handleSubmitDescription(connection, message.payload.text);
-      case "game.submitVote":
-        return this.handleSubmitVote(connection, message.payload.targetId);
-      case "game.submitNightAction":
-        return this.handleSubmitNightAction(connection, message.payload.targetId);
-      case "game.submitBlankGuess":
-        return this.handleSubmitBlankGuess(connection, message.payload.words);
-      case "game.cancelVote":
-        return this.handleCancelVote(connection);
-      case "game.cancelNightAction":
-        return this.handleCancelNightAction(connection);
-      case "game.requestSupplement":
-        return this.handleRequestSupplement(connection, message.payload.playerIds);
-      case "game.resolveDisconnect":
-        return this.handleResolveDisconnect(
-          connection,
-          message.payload.playerId,
-          message.payload.resolution,
-        );
-      case "chat.send":
-        return this.handleChat(connection, message.payload.text);
-      case "room.transferHost":
-        return this.handleTransferHost(connection, message.payload.playerId);
-      case "test.jumpToPhase":
-        return this.handleTestJumpToPhase(connection, message.payload.phase);
-      case "test.setMyRole":
-        return this.handleTestSetMyRole(connection, message.payload.role);
-      case "test.addBot":
-        return this.handleTestAddBot(connection, message.payload.count ?? 1);
-      case "test.removeBot":
-        return this.handleTestRemoveBot(
-          connection,
-          message.payload.playerId,
-          message.payload.count ?? 1,
-        );
-      default:
-        throw new AppError("UNSUPPORTED_COMMAND", "暂不支持的命令");
+    if (!handler) {
+      throw new AppError("UNSUPPORTED_COMMAND", "暂不支持的命令");
     }
+
+    return handler.execute(connection, message);
   }
 
   async runHousekeeping(): Promise<void> {
