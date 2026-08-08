@@ -32,9 +32,7 @@ export function RoomSettings({ open, onOpenChange }: Props) {
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [undercoverCount, setUndercoverCount] = useState(1);
   const [hasAngel, setHasAngel] = useState(false);
-  const [angelCount, setAngelCount] = useState(1);
   const [hasBlank, setHasBlank] = useState(false);
-  const [blankCount, setBlankCount] = useState(1);
 
   // 每次打开时用当前房间设置重置表单。在渲染期比对上一次的开合状态，
   // 而不是放进 effect，避免打开瞬间先渲染一帧旧值再级联重渲染。
@@ -47,9 +45,7 @@ export function RoomSettings({ open, onOpenChange }: Props) {
       setAllowSpectators(snapshot.allowSpectators);
       setUndercoverCount(snapshot.settings.roleConfig.undercoverCount);
       setHasAngel(snapshot.settings.roleConfig.hasAngel);
-      setAngelCount(snapshot.settings.roleConfig.angelCount ?? 1);
       setHasBlank(snapshot.settings.roleConfig.hasBlank);
-      setBlankCount(snapshot.settings.roleConfig.blankCount ?? 1);
       setPassword("");
     }
   }
@@ -76,9 +72,7 @@ export function RoomSettings({ open, onOpenChange }: Props) {
             Math.min(undercoverCount, Math.max(1, limits.maxUndercoverCount))
           ),
           hasAngel: limits.canEnableAngel && hasAngel,
-          angelCount: Math.max(1, Math.min(angelCount, Math.max(1, limits.maxAngelCount))),
           hasBlank: limits.canEnableBlank && hasBlank,
-          blankCount: Math.max(1, Math.min(blankCount, Math.max(1, limits.maxBlankCount))),
         },
       });
       onOpenChange(false);
@@ -203,53 +197,11 @@ export function RoomSettings({ open, onOpenChange }: Props) {
                   </span>
                 )}
               </Label>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={hasAngel}
-                  onCheckedChange={setHasAngel}
-                  disabled={roleEditingDisabled || !limits.canEnableAngel}
-                />
-                <AnimatePresence initial={false}>
-                  {hasAngel && limits.canEnableAngel && limits.maxAngelCount > 1 && (
-                    <motion.div
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
-                      className="overflow-hidden flex items-center gap-1"
-                    >
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setAngelCount((c) => Math.max(1, c - 1))}
-                        disabled={roleEditingDisabled || angelCount <= 1}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-5 text-center text-sm font-medium">
-                        {angelCount}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() =>
-                          setAngelCount((c) =>
-                            Math.min(Math.max(1, limits.maxAngelCount), c + 1)
-                          )
-                        }
-                        disabled={
-                          roleEditingDisabled ||
-                          angelCount >= Math.max(1, limits.maxAngelCount)
-                        }
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              <Switch
+                checked={hasAngel}
+                onCheckedChange={setHasAngel}
+                disabled={roleEditingDisabled || !limits.canEnableAngel}
+              />
             </div>
 
             <div className="flex items-center justify-between">
@@ -261,53 +213,11 @@ export function RoomSettings({ open, onOpenChange }: Props) {
                   </span>
                 )}
               </Label>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={hasBlank}
-                  onCheckedChange={setHasBlank}
-                  disabled={roleEditingDisabled || !limits.canEnableBlank}
-                />
-                <AnimatePresence initial={false}>
-                  {hasBlank && limits.canEnableBlank && limits.maxBlankCount > 1 && (
-                    <motion.div
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
-                      className="overflow-hidden flex items-center gap-1"
-                    >
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setBlankCount((c) => Math.max(1, c - 1))}
-                        disabled={roleEditingDisabled || blankCount <= 1}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-5 text-center text-sm font-medium">
-                        {blankCount}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() =>
-                          setBlankCount((c) =>
-                            Math.min(Math.max(1, limits.maxBlankCount), c + 1)
-                          )
-                        }
-                        disabled={
-                          roleEditingDisabled ||
-                          blankCount >= Math.max(1, limits.maxBlankCount)
-                        }
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              <Switch
+                checked={hasBlank}
+                onCheckedChange={setHasBlank}
+                disabled={roleEditingDisabled || !limits.canEnableBlank}
+              />
             </div>
           </div>
         </div>
