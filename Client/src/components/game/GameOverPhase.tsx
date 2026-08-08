@@ -67,7 +67,7 @@ export function GameOverPhase() {
   if (!summary) {
     return (
       <div className="py-8">
-        <PhaseHeader icon={Trophy} title="游戏结束" description="等待战报数据..." />
+        <PhaseHeader icon={Trophy} title="游戏结束" />
       </div>
     );
   }
@@ -88,7 +88,6 @@ export function GameOverPhase() {
         title={WINNER_LABELS[summary.winner]}
         titleClassName={winnerTone}
         iconClassName={winnerTone}
-        description={summary.reason.replace(/（测试）/g, "").replace(/\(测试\)/g, "").trim()}
       />
 
       {/* 词语揭秘全景卡片 */}

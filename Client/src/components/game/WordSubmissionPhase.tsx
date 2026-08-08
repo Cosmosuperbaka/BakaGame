@@ -125,7 +125,6 @@ export function WordSubmissionPhase() {
         <PhaseHeader
           icon={PenLine}
           title="等待出题"
-          description="出题人正在提交本局词语..."
         />
       </div>
     );
@@ -136,7 +135,6 @@ export function WordSubmissionPhase() {
       <PhaseHeader
         icon={PenLine}
         title="提交词语"
-        description="请分别指定【平民词】与【卧底词】"
       />
 
       <div className="w-full space-y-4">
