@@ -742,7 +742,7 @@ test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作�
   ).toBe(2);
 });
 
-test("掉线玩家可以通过同名重新加入恢复原席位", async () => {
+test("掉线玩家只能通过 session token 恢复原席位", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "5560");
   const connection = createConnection(service, "rejoin-original");
@@ -795,18 +795,36 @@ test("掉线玩家可以通过同名重新加入恢复原席位", async () => {
   let snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
   expect(snapshot?.status.pendingDisconnectPlayerId).toBe(joinResult.playerId);
 
+  const takeover = createConnection(service, "rejoin-takeover");
+  let takeoverErrorCode: string | undefined;
+
+  try {
+    await execute(service, takeover, {
+      id: "join-same-name",
+      type: "room.join",
+      roomId: "5560",
+      payload: {
+        userName: "回归玩家",
+      },
+    });
+  } catch (error) {
+    takeoverErrorCode = (error as { code?: string }).code;
+  }
+
+  expect(takeoverErrorCode).toBe("NAME_CONFLICT");
+
   const reconnect = createConnection(service, "rejoin-new");
   const reclaimed = (await execute(service, reconnect, {
-    id: "join-same-name",
-    type: "room.join",
-    roomId: "5560",
+    id: "reconnect-with-token",
+    type: "room.reconnect",
     payload: {
-      userName: "回归玩家",
+      roomId: "5560",
+      sessionToken: joinResult.sessionToken,
     },
   })) as { playerId: string; sessionToken: string };
 
   expect(reclaimed.playerId).toBe(joinResult.playerId);
-  expect(reclaimed.sessionToken).not.toBe(joinResult.sessionToken);
+  expect(reclaimed.sessionToken).toBe(joinResult.sessionToken);
 
   snapshot = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
   expect(snapshot?.status.pendingDisconnectPlayerId).toBeUndefined();
