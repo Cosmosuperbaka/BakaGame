@@ -4,7 +4,6 @@ import {
   saveSessionToken,
   getSessionToken,
   clearSessionToken,
-  isTestRoomId,
 } from "@/lib/cookie";
 import type {
   RoomSnapshot,
@@ -31,7 +30,6 @@ export interface GameState {
   snapshot: RoomSnapshot | null;
   privateState: PrivateState | null;
   daybreakNotice: DaybreakNotice | null;
-  sessionConflictRoomId: string | null;
   toasts: ToastItem[];
 
   // Actions
@@ -39,7 +37,6 @@ export interface GameState {
   setRooms: (rooms: RoomSummary[]) => void;
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
-  handleSessionConflict: (roomId: string) => void;
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
@@ -75,13 +72,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   snapshot: null,
   privateState: null,
   daybreakNotice: null,
-  sessionConflictRoomId: null,
   toasts: [],
 
   setConnected: (connected) => set({ connected }),
   setRooms: (rooms) => set({ rooms }),
   joinRoomState: (roomId, sessionToken) =>
-    set({ roomId, sessionToken, sessionConflictRoomId: null }),
+    set({ roomId, sessionToken }),
   leaveRoomState: () =>
     set({
       roomId: null,
@@ -89,16 +85,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       snapshot: null,
       privateState: null,
       daybreakNotice: null,
-      sessionConflictRoomId: null,
-    }),
-  handleSessionConflict: (roomId) =>
-    set({
-      roomId: null,
-      sessionToken: null,
-      snapshot: null,
-      privateState: null,
-      daybreakNotice: null,
-      sessionConflictRoomId: roomId,
     }),
   setSnapshot: (snapshot) => set({ snapshot }),
   setPrivateState: (privateState) => set({ privateState }),
@@ -243,15 +229,12 @@ export function initGameSocket() {
       case "session.replaced": {
         const payload = evt.payload as { roomId?: string };
         const roomId = payload.roomId;
-        const currentRoomId = currentStore.roomId;
 
-        if (roomId && currentRoomId === roomId && isTestRoomId(roomId)) {
+        if (roomId && currentStore.roomId === roomId) {
           clearSessionToken(roomId);
-          currentStore.handleSessionConflict(roomId);
-          currentStore.addToast("当前标签页已切换为独立会话，正在重新加入", "info");
-        } else {
-          currentStore.addToast("您的连接已被新连接替代", "error");
+          currentStore.leaveRoomState();
         }
+        currentStore.addToast("您的连接已被新标签页替代", "error");
         break;
       }
       case "server.shutdown":
