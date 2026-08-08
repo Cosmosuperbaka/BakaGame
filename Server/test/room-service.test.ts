@@ -84,6 +84,154 @@ test("房间设置变更事件不会广播私房密码", async () => {
   expect(event?.settings.visibility).toBe("private");
 });
 
+test("玩家改名会规范化名称并广播最新快照", async () => {
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "1212");
+
+  const response = await execute(service, host, {
+    id: "rename",
+    type: "player.rename",
+    payload: { name: "  新房主  " },
+  });
+
+  expect(response).toEqual({ name: "新房主" });
+  expect(
+    getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.players.find(
+      (player) => player.id === result.playerId,
+    )?.name,
+  ).toBe("新房主");
+  expect(
+    getLastEventPayload<{ action: string; name: string }>(host, "room.playerChanged"),
+  ).toMatchObject({ action: "renamed", name: "新房主" });
+});
+
+test("玩家改名会拒绝空名称和房间内重名", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "1313");
+  const guest = createConnection(service, "rename-guest");
+  await execute(service, guest, {
+    id: "join",
+    type: "room.join",
+    roomId: "1313",
+    payload: { userName: "现有玩家" },
+  });
+
+  for (const [name, expectedCode] of [
+    ["   ", "INVALID_NAME"],
+    ["  现有玩家  ", "NAME_CONFLICT"],
+  ] as const) {
+    let errorCode: string | undefined;
+    try {
+      await execute(service, host, {
+        id: `rename-${expectedCode}`,
+        type: "player.rename",
+        payload: { name },
+      });
+    } catch (error) {
+      errorCode = (error as { code?: string }).code;
+    }
+    expect(errorCode).toBe(expectedCode);
+  }
+
+  expect(
+    getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.players.find(
+      (player) => player.id === host.record.playerId,
+    )?.name,
+  ).toBe("房主");
+});
+
+test("切换为旁观者会清除准备状态并收紧角色配置", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "1414");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 7; index += 1) {
+    const connection = createConnection(service, `role-limit-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "1414",
+      payload: { userName: `角色玩家${index + 2}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  await execute(service, host, {
+    id: "enable-blank",
+    type: "room.updateSettings",
+    payload: {
+      roleConfig: { undercoverCount: 2, hasAngel: false, hasBlank: true },
+    },
+  });
+  await execute(service, joined[6].connection, {
+    id: "ready-before-spectating",
+    type: "player.setReady",
+    payload: { ready: true },
+  });
+  await execute(service, joined[6].connection, {
+    id: "become-spectator",
+    type: "player.setSpectator",
+    payload: { spectator: true },
+  });
+
+  const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  const player = snapshot?.players.find((entry) => entry.id === joined[6].joinResult.playerId);
+  expect(player?.membership).toBe("spectator");
+  expect(player?.isReady).toBe(false);
+  expect(snapshot?.roleLimits.canEnableBlank).toBe(false);
+  expect(snapshot?.settings.roleConfig.hasBlank).toBe(false);
+});
+
+test("对局开始后不能切换旁观或准备状态", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "1515");
+  const players = [host];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `active-round-${index}`);
+    await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "1515",
+      payload: { userName: `开局玩家${index + 2}` },
+    });
+    players.push(connection);
+  }
+  for (const connection of players) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+  await execute(service, host, {
+    id: "start",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  for (const message of [
+    {
+      id: "spectate-during-round",
+      type: "player.setSpectator",
+      payload: { spectator: true },
+    },
+    {
+      id: "ready-during-round",
+      type: "player.setReady",
+      payload: { ready: false },
+    },
+  ] as const) {
+    let errorCode: string | undefined;
+    try {
+      await execute(service, host, message);
+    } catch (error) {
+      errorCode = (error as { code?: string }).code;
+    }
+    expect(errorCode).toBe("ROUND_ACTIVE");
+  }
+});
+
 test("常规流程可以完整进入好人胜利结算", async () => {
   // 这个场景覆盖：建房 -> 开局 -> 指定出题人 -> 提交词语 -> 描述 -> 投票 -> 结算。
   const { service } = createTestContext();

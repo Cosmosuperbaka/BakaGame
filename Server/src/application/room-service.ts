@@ -104,10 +104,18 @@ export class RoomService {
         sendChat: (connection, text) => this.handleChat(connection, text),
       }),
       createPlayerCommandHandler({
-        rename: (connection, name) => this.handleRename(connection, name),
-        setSpectator: (connection, spectator) =>
-          this.handleSetSpectator(connection, spectator),
-        setReady: (connection, ready) => this.handleSetReady(connection, ready),
+        now: () => this.now(),
+        requireRoomPlayer: (connection) => this.requireRoomPlayer(connection),
+        ensureUniqueName: (room, name, exceptPlayerId) =>
+          this.ensureUniqueName(room, name, exceptPlayerId),
+        isRoundActive: (room) => this.isRoundActive(room),
+        normalizeRoleConfig: (room) => this.normalizeRoomRoleConfig(room),
+        touchRoom: (room) => this.touchRoom(room),
+        log: (entry) => this.log(entry),
+        broadcastRoomEvent: (room, event, payload) =>
+          this.broadcastRoomEvent(room, event, payload),
+        publishRoomState: (room) => this.publishRoomState(room),
+        publishLobby: () => this.publishLobby(),
       }),
       createGameCommandHandler({
         assignQuestioner: (connection, playerId) =>
@@ -413,116 +421,6 @@ export class RoomService {
     await this.handlePlayerOffline(room, player.id, "leave");
 
     return { left: true };
-  }
-
-  private async handleRename(connection: ConnectionRecord, nextName: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    const normalized = normalizeName(nextName);
-
-    if (!normalized) {
-      throw new AppError("INVALID_NAME", "用户名不能为空");
-    }
-
-    if (player.name === normalized) {
-      return { name: player.name };
-    }
-
-    this.ensureUniqueName(room, normalized, player.id);
-    player.name = normalized;
-    player.lastSeenAt = this.now();
-    this.touchRoom(room);
-
-    await this.log({
-      type: "player.renamed",
-      createdAt: this.now(),
-      roomId: room.id,
-      playerId: player.id,
-      payload: {
-        name: player.name,
-      },
-    });
-
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "renamed",
-      playerId: player.id,
-      name: player.name,
-    });
-    this.publishRoomState(room);
-    return { name: player.name };
-  }
-
-  private async handleSetSpectator(connection: ConnectionRecord, spectator: boolean) {
-    // 阵营切换只允许发生在局外，避免游戏中角色池被动态篡改。
-    const { room, player } = this.requireRoomPlayer(connection);
-
-    if (player.membership === "kicked") {
-      throw new AppError("PLAYER_KICKED", "该玩家已被移出房间");
-    }
-
-    if (this.isRoundActive(room)) {
-      throw new AppError("ROUND_ACTIVE", "游戏进行中无法切换阵营");
-    }
-
-    if (spectator && !room.settings.allowSpectators) {
-      throw new AppError("SPECTATOR_DISABLED", "当前房间不允许旁观");
-    }
-
-    player.membership = spectator ? "spectator" : "active";
-    player.isReady = false;
-    this.normalizeRoomRoleConfig(room);
-    this.touchRoom(room);
-
-    await this.log({
-      type: "player.membership_changed",
-      createdAt: this.now(),
-      roomId: room.id,
-      playerId: player.id,
-      payload: {
-        membership: player.membership,
-      },
-    });
-
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "membership_changed",
-      playerId: player.id,
-      membership: player.membership,
-    });
-    this.publishRoomState(room);
-    this.publishLobby();
-
-    return { membership: player.membership };
-  }
-
-  private async handleSetReady(connection: ConnectionRecord, ready: boolean) {
-    const { room, player } = this.requireRoomPlayer(connection);
-
-    if (this.isRoundActive(room)) {
-      throw new AppError("ROUND_ACTIVE", "游戏进行中无法切换准备状态");
-    }
-
-    player.isReady = ready;
-    this.touchRoom(room);
-
-    await this.log({
-      type: "player.ready_changed",
-      createdAt: this.now(),
-      roomId: room.id,
-      playerId: player.id,
-      payload: {
-        ready,
-      },
-    });
-
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "ready_changed",
-      playerId: player.id,
-      ready,
-    });
-    this.publishRoomState(room);
-    return { ready };
   }
 
   private async handleUpdateSettings(
