@@ -13,7 +13,6 @@ import type {
   ServerMessage,
   EventPacket,
   ChatMessage,
-  PublicPlayerView,
   RoundSummary,
   DaybreakNotice,
 } from "@/types";
@@ -44,7 +43,6 @@ export interface GameState {
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
-  patchPlayer: (player: Partial<PublicPlayerView> & { id: string }) => void;
   appendChat: (message: ChatMessage) => void;
   setSummary: (summary: RoundSummary) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
@@ -112,15 +110,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       daybreakNoticeTimer = undefined;
     }, 3000);
   },
-
-  patchPlayer: (player) =>
-    set((state) => {
-      if (!state.snapshot) return state;
-      const players = state.snapshot.players.map((p) =>
-        p.id === player.id ? { ...p, ...player } : p
-      );
-      return { snapshot: { ...state.snapshot, players } };
-    }),
 
   appendChat: (message) =>
     set((state) => {
@@ -227,11 +216,6 @@ export function initGameSocket() {
       case "game.privateState":
         currentStore.setPrivateState(evt.payload as PrivateState);
         break;
-      case "room.playerChanged": {
-        const p = evt.payload as Partial<PublicPlayerView> & { id: string };
-        currentStore.patchPlayer(p);
-        break;
-      }
       case "chat.message":
         currentStore.appendChat(evt.payload as ChatMessage);
         break;
