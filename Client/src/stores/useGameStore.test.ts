@@ -1,0 +1,116 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ServerMessage } from "@/types";
+
+const wsMock = vi.hoisted(() => ({
+  send: vi.fn(),
+  connect: vi.fn(),
+  messageHandlers: [] as Array<(message: ServerMessage) => void>,
+  statusHandlers: [] as Array<(connected: boolean) => void>,
+}));
+
+vi.mock("@/lib/ws", () => ({
+  send: wsMock.send,
+  connect: wsMock.connect,
+  onMessage: (handler: (message: ServerMessage) => void) => {
+    wsMock.messageHandlers.push(handler);
+    return () => {
+      wsMock.messageHandlers = wsMock.messageHandlers.filter((entry) => entry !== handler);
+    };
+  },
+  onStatus: (handler: (connected: boolean) => void) => {
+    wsMock.statusHandlers.push(handler);
+    return () => {
+      wsMock.statusHandlers = wsMock.statusHandlers.filter((entry) => entry !== handler);
+    };
+  },
+}));
+
+import { getSessionToken, saveSessionToken } from "@/lib/cookie";
+import { initGameSocket, useGameStore } from "./useGameStore";
+
+const initialState = useGameStore.getState();
+
+describe("game store integration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    wsMock.send.mockReset();
+    wsMock.connect.mockReset();
+    wsMock.messageHandlers = [];
+    wsMock.statusHandlers = [];
+    useGameStore.setState(initialState, true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("persists a newly created room session in the current tab", async () => {
+    wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
+
+    await useGameStore.getState().createRoom({
+      roomId: "1234",
+      name: "测试房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+    });
+
+    expect(wsMock.send).toHaveBeenCalledWith("room.create", expect.objectContaining({
+      roomId: "1234",
+      userName: "房主",
+    }));
+    expect(getSessionToken("1234")).toBe("created-token");
+    expect(useGameStore.getState()).toMatchObject({
+      roomId: "1234",
+      sessionToken: "created-token",
+    });
+  });
+
+  it("clears a stale token after reconnect fails", async () => {
+    saveSessionToken("2345", "stale-token");
+    wsMock.send.mockRejectedValue({ code: "SESSION_NOT_FOUND" });
+
+    await expect(useGameStore.getState().reconnectRoom("2345")).resolves.toBe(false);
+    expect(getSessionToken("2345")).toBeNull();
+    expect(useGameStore.getState().roomId).toBeNull();
+  });
+
+  it("subscribes and restores the active session after socket reconnection", async () => {
+    wsMock.send.mockResolvedValue({});
+    useGameStore.getState().joinRoomState("3456", "live-token");
+    const dispose = initGameSocket();
+
+    wsMock.statusHandlers[0](true);
+    await Promise.resolve();
+
+    expect(useGameStore.getState().connected).toBe(true);
+    expect(wsMock.send).toHaveBeenCalledWith("lobby.subscribeRooms");
+    expect(wsMock.send).toHaveBeenCalledWith("room.reconnect", {
+      roomId: "3456",
+      sessionToken: "live-token",
+    });
+    dispose();
+    expect(wsMock.messageHandlers).toHaveLength(0);
+    expect(wsMock.statusHandlers).toHaveLength(0);
+  });
+
+  it("drops local authority when another tab replaces the session", () => {
+    saveSessionToken("4567", "replaced-token");
+    useGameStore.getState().joinRoomState("4567", "replaced-token");
+    initGameSocket();
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "session.replaced",
+      payload: { roomId: "4567" },
+    });
+
+    expect(getSessionToken("4567")).toBeNull();
+    expect(useGameStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+    expect(useGameStore.getState().toasts.at(-1)).toMatchObject({
+      text: "您的连接已被新标签页替代",
+      type: "error",
+    });
+  });
+});
