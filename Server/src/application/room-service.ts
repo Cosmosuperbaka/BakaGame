@@ -536,6 +536,7 @@ export class RoomService {
     });
     this.publishRoomState(room);
     this.publishLobby();
+    await this.runBots(room);
 
     return { playerId: target.id };
   }
@@ -689,11 +690,17 @@ export class RoomService {
   }
 
   private async handleAdvancePhase(connection: ConnectionRecord) {
-    // waiting/gameOver 由房主开局，进行中阶段由出题人推进。
+    // waiting 由房主开局；gameOver 先退回等待房间，避免跳过下一局准备环节。
     const { room, player } = this.requireRoomPlayer(connection);
     const phase = room.round?.phase ?? "waiting";
 
-    if (phase === "waiting" || phase === "gameOver") {
+    if (phase === "gameOver") {
+      this.ensureHost(room, player.id);
+      this.returnRoomToWaiting(room);
+      return { phase: "waiting" as GamePhase };
+    }
+
+    if (phase === "waiting") {
       this.ensureHost(room, player.id);
       this.ensureAllReady(room);
       this.ensureMinimumPlayers(room);
@@ -866,19 +873,16 @@ export class RoomService {
   }
 
   private async handleCancelVote(connection: ConnectionRecord) {
-    // 允许已投票玩家在主持人结算前撤销，防止误触。
+    // 撤销设计为幂等操作：客户端重试或快速连点时仍会收到最新私有状态。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
+    let cancelled = false;
 
     if (round.phase === "voting") {
-      if (!round.votes.some((v) => v.voterId === player.id)) {
-        throw new AppError("ACTION_FORBIDDEN", "尚未投票，无需撤销");
-      }
+      cancelled = round.votes.some((v) => v.voterId === player.id);
       round.votes = round.votes.filter((v) => v.voterId !== player.id);
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "vote") {
-      if (!round.tieBreak.votes.some((v) => v.voterId === player.id)) {
-        throw new AppError("ACTION_FORBIDDEN", "尚未投票，无需撤销");
-      }
+      cancelled = round.tieBreak.votes.some((v) => v.voterId === player.id);
       round.tieBreak.votes = round.tieBreak.votes.filter((v) => v.voterId !== player.id);
     } else {
       throw new AppError("INVALID_PHASE", "当前阶段不能撤销投票");
@@ -886,7 +890,7 @@ export class RoomService {
 
     this.touchRoom(room);
     this.publishRoomState(room);
-    return { cancelled: true };
+    return { cancelled };
   }
 
   private async handleCancelNightAction(connection: ConnectionRecord) {
@@ -898,15 +902,11 @@ export class RoomService {
       throw new AppError("INVALID_PHASE", "当前阶段不能撤销夜晚操作");
     }
 
-    const hadAction = round.nightActions.some((a) => a.actorId === player.id);
-    if (!hadAction) {
-      throw new AppError("ACTION_FORBIDDEN", "尚未提交夜晚操作，无需撤销");
-    }
-
+    const cancelled = round.nightActions.some((a) => a.actorId === player.id);
     round.nightActions = round.nightActions.filter((a) => a.actorId !== player.id);
     this.touchRoom(room);
     this.publishRoomState(room);
-    return { cancelled: true };
+    return { cancelled };
   }
 
   private async handleRequestSupplement(connection: ConnectionRecord, playerIds: string[]) {
@@ -1228,17 +1228,7 @@ export class RoomService {
     }
 
     if (target === "waiting") {
-      room.round = undefined;
-      for (const p of Object.values(room.players)) {
-        // 机器人保持已准备：它们无法自己勾选。
-        p.isReady = p.isBot;
-      }
-      this.touchRoom(room);
-      this.broadcastRoomEvent(room, "game.phaseChanged", {
-        roomId: room.id,
-        phase: "waiting",
-      });
-      this.publishRoomState(room);
+      this.returnRoomToWaiting(room);
       return { phase: "waiting" as GamePhase };
     }
 
@@ -1647,6 +1637,22 @@ export class RoomService {
     this.publishRoomState(room);
   }
 
+  private returnRoomToWaiting(room: RoomRecord) {
+    room.round = undefined;
+    for (const player of Object.values(room.players)) {
+      // 机器人无法自行点击准备；旁观者则始终不参与准备计数。
+      player.isReady = player.membership === "active" && player.isBot;
+    }
+
+    this.touchRoom(room);
+    this.broadcastRoomEvent(room, "game.phaseChanged", {
+      roomId: room.id,
+      phase: "waiting",
+    });
+    this.publishRoomState(room);
+    this.publishLobby();
+  }
+
   private async resolveVoting(room: RoomRecord, tieBreak: boolean) {
     // 这个方法只负责“投票结算”，真正的胜负判断交给后续统一淘汰流程。
     const round = this.requireRound(room);
@@ -1776,7 +1782,7 @@ export class RoomService {
     room: RoomRecord,
     eliminatedIds: string[],
     reason: string,
-    nextPhase: Exclude<GamePhase, "assigningQuestioner" | "wordSubmission" | "blankGuess">,
+    nextPhase: Exclude<GamePhase, "assigningQuestioner" | "wordSubmission">,
   ) {
     // 所有“有人出局”的阶段都汇总到这里，统一做淘汰、白板插入和胜负判断。
     const round = this.requireRound(room);
@@ -1985,6 +1991,8 @@ export class RoomService {
     // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
     const player = room.players[playerId];
     let preservedVotes: GameRound["votes"] | undefined;
+    let preservedNightActions: GameRound["nightActions"] | undefined;
+    let preservedTieBreak: GameRound["tieBreak"] | undefined;
     let supplementStillActive = false;
 
     if (!player) {
@@ -2017,8 +2025,20 @@ export class RoomService {
       round.nightActions = round.nightActions.filter(
         (action) => action.actorId !== player.id && action.targetId !== player.id,
       );
+      round.descriptionOrder = round.descriptionOrder.filter(
+        (descriptionPlayerId) => descriptionPlayerId !== player.id,
+      );
+      round.descriptionSubmittedBy = round.descriptionSubmittedBy.filter(
+        (submittedPlayerId) => submittedPlayerId !== player.id,
+      );
 
       if (round.tieBreak) {
+        round.tieBreak.candidateIds = round.tieBreak.candidateIds.filter(
+          (candidateId) => candidateId !== player.id,
+        );
+        round.tieBreak.descriptionsDone = round.tieBreak.descriptionsDone.filter(
+          (donePlayerId) => donePlayerId !== player.id,
+        );
         round.tieBreak.votes = round.tieBreak.votes.filter(
           (vote) => vote.voterId !== player.id && vote.targetId !== player.id,
         );
@@ -2043,16 +2063,37 @@ export class RoomService {
       }
 
       preservedVotes = [...round.votes];
+      preservedNightActions = round.nightActions.map((action) => ({ ...action }));
+      preservedTieBreak = round.tieBreak
+        ? {
+            ...round.tieBreak,
+            candidateIds: [...round.tieBreak.candidateIds],
+            descriptionsDone: [...round.tieBreak.descriptionsDone],
+            votes: round.tieBreak.votes.map((vote) => ({ ...vote })),
+          }
+        : undefined;
       supplementStillActive = Boolean(round.supplement);
     }
 
     if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
-      const resumePhase = this.getResumePhaseAfterForcedRemoval(room.round.phase);
+      const previousPhase = room.round.phase;
+      const resumePhase =
+        previousPhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
+          ? "night"
+          : this.getResumePhaseAfterForcedRemoval(previousPhase);
       await this.applyEliminationAndMove(room, [player.id], reason, resumePhase);
 
       if (!room.round.summary) {
         if (resumePhase === "voting" || supplementStillActive) {
           room.round.votes = preservedVotes ?? [];
+        }
+        if (resumePhase === "night") {
+          room.round.nightActions = preservedNightActions ?? [];
+        }
+        if (resumePhase === "tieBreak" && preservedTieBreak) {
+          room.round.tieBreak = preservedTieBreak;
+          room.round.speechMode =
+            preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
         }
         if (supplementStillActive) {
           room.round.phase = "description";
@@ -2670,15 +2711,13 @@ export class RoomService {
 
   private getResumePhaseAfterForcedRemoval(
     phase: GamePhase,
-  ): Exclude<GamePhase, "assigningQuestioner" | "wordSubmission" | "blankGuess"> {
-    if (phase === "tieBreak") {
-      return "voting";
-    }
-
+  ): Exclude<GamePhase, "assigningQuestioner" | "wordSubmission"> {
     if (
       phase === "description" ||
       phase === "voting" ||
+      phase === "tieBreak" ||
       phase === "night" ||
+      phase === "blankGuess" ||
       phase === "gameOver"
     ) {
       return phase;
