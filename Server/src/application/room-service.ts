@@ -2943,24 +2943,29 @@ export class RoomService {
   }
 
   private reassignHost(room: RoomRecord) {
-    // 现任房主仍在且未被踢出 → 保留；否则按加入顺序挑一位活跃玩家作为新房主。
-    if (
-      room.hostPlayerId &&
-      room.players[room.hostPlayerId] &&
-      room.players[room.hostPlayerId].membership !== "kicked"
-    ) {
+    const candidates = Object.values(room.players).filter(
+      (player) => player.membership !== "kicked",
+    );
+    const current = room.hostPlayerId ? room.players[room.hostPlayerId] : undefined;
+    // 机器人不会操作房间：房主落在机器人身上，等于没人能开局、改设置或踢人。
+    const botHoldsHostWhileHumanWaits =
+      Boolean(current?.isBot) && candidates.some((player) => !player.isBot);
+
+    // 现任房主仍在且未被踢出 → 保留。唯一例外是机器人占着房主而还有真人可接手。
+    if (current && current.membership !== "kicked" && !botHoldsHostWhileHumanWaits) {
       return;
     }
 
-    const nextHost = Object.values(room.players)
-      .filter((player) => player.membership !== "kicked")
-      // 优先在线玩家：避免把房主塞给一个已掉线的人。
-      .sort((left, right) => {
-        if (left.online !== right.online) {
-          return left.online ? -1 : 1;
-        }
-        return left.joinedAt - right.joinedAt;
-      })[0];
+    const nextHost = [...candidates].sort((left, right) => {
+      // 真人优先，其次在线玩家：避免把房主塞给机器人或已掉线的人。
+      if (left.isBot !== right.isBot) {
+        return left.isBot ? 1 : -1;
+      }
+      if (left.online !== right.online) {
+        return left.online ? -1 : 1;
+      }
+      return left.joinedAt - right.joinedAt;
+    })[0];
 
     if (nextHost) {
       room.hostPlayerId = nextHost.id;

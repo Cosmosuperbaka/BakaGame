@@ -1137,6 +1137,56 @@ test("游戏进行中可以转移房主并踢出普通玩家", async () => {
   );
 });
 
+test("正式房间转移房主后原房主踢掉新房主，房主交给剩下的人", async () => {
+  const { service } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "2222");
+
+  const second = createConnection(service, "2222-second");
+  const secondJoin = (await execute(service, second, {
+    id: "second-join",
+    type: "room.join",
+    roomId: "2222",
+    payload: { userName: "二号" },
+  })) as { playerId: string };
+
+  const third = createConnection(service, "2222-third");
+  const thirdJoin = (await execute(service, third, {
+    id: "third-join",
+    type: "room.join",
+    roomId: "2222",
+    payload: { userName: "三号" },
+  })) as { playerId: string };
+
+  // 房主交给二号，二号再把原房主踢掉；房主必须仍落在二号身上。
+  await execute(service, host, {
+    id: "transfer-to-second",
+    type: "room.transferHost",
+    payload: { playerId: secondJoin.playerId },
+  });
+  expect(getLastEventPayload<RoomSnapshot>(second, "room.snapshot")?.hostPlayerId).toBe(
+    secondJoin.playerId,
+  );
+
+  await execute(service, second, {
+    id: "kick-old-host",
+    type: "room.kick",
+    payload: { playerId: hostResult.playerId },
+  });
+  expect(getLastEventPayload<RoomSnapshot>(second, "room.snapshot")?.hostPlayerId).toBe(
+    secondJoin.playerId,
+  );
+
+  // 二号自己离开后，房主交给仅剩的三号，不悬空在已离开的人身上。
+  await execute(service, second, {
+    id: "second-leave",
+    type: "room.leave",
+    payload: {},
+  });
+
+  const snapshot = getLastEventPayload<RoomSnapshot>(third, "room.snapshot");
+  expect(snapshot?.hostPlayerId).toBe(thirdJoin.playerId);
+});
+
 test("游戏中踢出出题人会中止本局", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "Oblivionis");

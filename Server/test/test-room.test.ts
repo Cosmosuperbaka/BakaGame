@@ -69,6 +69,34 @@ test("房主转给机器人后移除该机器人，房主自动转移给仍在�
   expect(snapshot.hostPlayerId).toBe(playerId);
 });
 
+test("房主落在机器人身上时，名单一变就交回真人", async () => {
+  const { service } = createTestContext();
+  const { host, playerId } = await createTestRoom(service, 2);
+  const before = snapshotOf(host);
+  const botA = before.players.find((player) => player.name === "机器人A")!.id;
+  const botB = before.players.find((player) => player.name === "机器人B")!.id;
+
+  await execute(service, host, {
+    id: "transfer",
+    type: "room.transferHost",
+    payload: { playerId: botA },
+  });
+  expect(snapshotOf(host).hostPlayerId).toBe(botA);
+
+  // 界面上的「减一个」不带 playerId，服务端取末尾的机器人B。
+  // 房主停在机器人A上会锁死房间：机器人不会开局，真人又因非房主拿不到管理操作。
+  await execute(service, host, {
+    id: "remove-tail",
+    type: "test.removeBot",
+    payload: { count: 1 },
+  });
+
+  const after = snapshotOf(host);
+  expect(after.players.some((player) => player.id === botB)).toBe(false);
+  expect(after.players.some((player) => player.id === botA)).toBe(true);
+  expect(after.hostPlayerId).toBe(playerId);
+});
+
 test("游戏进行中加入的机器人进旁观，不进玩家列", async () => {
   const { service } = createTestContext();
   const { host } = await createTestRoom(service, 4);
