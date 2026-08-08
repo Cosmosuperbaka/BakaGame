@@ -13,6 +13,11 @@ import {
 import { PendingSpeech } from "@/components/game/PendingSpeech";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
+import {
+  buildKnownRoleMap,
+  resolveStatus,
+  type StatusInfo,
+} from "./playerPresentation";
 import type {
   DescriptionRecord,
   GamePhase,
@@ -149,13 +154,8 @@ export function PlayerList(props: PlayerListProps) {
     !privateState?.isQuestioner &&
     !["waiting", "assigningQuestioner", "wordSubmission", "gameOver"].includes(phase);
   const showSpectatorToggle = waitingPhase && allowSpectators && Boolean(me);
-  // 出题人视角的身份，叠加结算后公开的身份。
-  const roleByPlayerId = new Map(
-    (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role]),
-  );
-  if (revealedRoles) {
-    for (const [playerId, role] of revealedRoles) roleByPlayerId.set(playerId, role);
-  }
+  // 出题人视角、死亡公开身份和局后结算身份统一汇入同一份显示真值。
+  const roleByPlayerId = buildKnownRoleMap(players, privateState, revealedRoles);
   const availableMarks: PlayerMark[] = [
     "unknown",
     "civilian",
@@ -681,27 +681,7 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
   );
 }
 
-interface StatusInfo {
-  label: string;
-  tone: "default" | "emerald" | "violet" | "red" | "amber";
-}
-
 /** 主持、出局、旁观与准备状态。与身份徽章同尺寸同实底，行首一致。 */
 function StatusPill({ label, tone }: StatusInfo) {
   return <span className={cn(BADGE_BASE, statusTones[tone])}>{label}</span>;
-}
-
-function resolveStatus(
-  player: PublicPlayerView,
-  waitingPhase: boolean,
-  hideSpectatorStatus?: boolean,
-): StatusInfo | null {
-  if (player.roundStatus === "questioner") return { label: "主持", tone: "violet" };
-  if (player.roundStatus === "dead") return { label: "出局", tone: "red" };
-  if (player.membership === "spectator" && !hideSpectatorStatus) return { label: "旁观", tone: "default" };
-  if (waitingPhase) {
-    if (player.isReady) return { label: "准备", tone: "emerald" };
-    return { label: "等待", tone: "default" };
-  }
-  return null;
 }
