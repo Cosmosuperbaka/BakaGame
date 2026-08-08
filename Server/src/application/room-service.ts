@@ -328,16 +328,6 @@ export class RoomService {
     const room = this.getRoom(roomId);
 
     this.ensurePasswordMatch(room, message.payload.password);
-    const reclaimedPlayer = await this.tryReclaimOfflinePlayer(
-      room,
-      connection,
-      message.payload.userName,
-    );
-
-    if (reclaimedPlayer) {
-      return reclaimedPlayer;
-    }
-
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
@@ -402,7 +392,6 @@ export class RoomService {
 
     return this.restorePlayerConnection(room, player, connection, {
       appendMessage: `${player.name} 已重新连接`,
-      rotateSessionToken: false,
     });
   }
 
@@ -2690,47 +2679,14 @@ export class RoomService {
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
 
-  private async tryReclaimOfflinePlayer(
-    room: RoomRecord,
-    connection: ConnectionRecord,
-    requestedName: string,
-  ) {
-    const normalizedName = normalizeName(requestedName);
-
-    if (!normalizedName) {
-      throw new AppError("INVALID_NAME", "用户名不能为空");
-    }
-
-    const existingPlayer = Object.values(room.players).find(
-      (player) =>
-        player.name === normalizedName &&
-        !player.online &&
-        player.membership !== "kicked",
-    );
-
-    if (!existingPlayer) {
-      return undefined;
-    }
-
-    return this.restorePlayerConnection(room, existingPlayer, connection, {
-      appendMessage: `${existingPlayer.name} 已恢复连接`,
-      rotateSessionToken: true,
-    });
-  }
-
   private async restorePlayerConnection(
     room: RoomRecord,
     player: PlayerRecord,
     connection: ConnectionRecord,
     options: {
       appendMessage: string;
-      rotateSessionToken: boolean;
     },
   ) {
-    if (options.rotateSessionToken) {
-      player.sessionToken = this.createSessionToken();
-    }
-
     this.attachConnection(room, player, connection);
 
     if (room.round) {
@@ -2749,7 +2705,6 @@ export class RoomService {
       createdAt: this.now(),
       roomId: room.id,
       playerId: player.id,
-      payload: options.rotateSessionToken ? { joinedAs: "reclaim" } : undefined,
     });
 
     this.broadcastRoomEvent(room, "room.playerChanged", {
