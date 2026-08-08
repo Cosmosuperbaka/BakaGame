@@ -25,6 +25,8 @@ pnpm-lock.yaml
 dist
 dist-ssr
 coverage
+playwright-report
+test-results
 Client/dist
 Server/.next/
 Server/out/
