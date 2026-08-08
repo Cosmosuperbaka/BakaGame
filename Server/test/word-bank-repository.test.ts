@@ -27,3 +27,25 @@ test("词库只保存二维词语数组且会去重", async () => {
     rmSync(tempDir, { force: true, recursive: true });
   }
 });
+
+test("并发保存不同词对时不会互相覆盖", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "word-bank-concurrent-"));
+
+  try {
+    const repository = new WordBankRepository(join(tempDir, "word-bank.json"));
+    await Promise.all([
+      repository.savePair(["猫", "狗"]),
+      repository.savePair(["苹果", "香蕉"]),
+    ]);
+
+    const content = JSON.parse(
+      readFileSync(join(tempDir, "word-bank.json"), "utf8"),
+    ) as string[][];
+
+    expect(content).toHaveLength(2);
+    expect(content).toContainEqual(["狗", "猫"]);
+    expect(content).toContainEqual(["苹果", "香蕉"]);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
