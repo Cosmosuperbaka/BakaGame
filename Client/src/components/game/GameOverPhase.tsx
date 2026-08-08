@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, ChevronDown, BookOpen, Home, Vote } from "lucide-react";
+import { Trophy, ChevronDown, BookOpen, Home, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
@@ -52,17 +52,30 @@ function DisclosureHeader({
 
 export function GameOverPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
+  const privateState = useGameStore((s) => s.privateState);
+  const sendCommand = useGameStore((s) => s.sendCommand);
+  const addToast = useGameStore((s) => s.addToast);
   const leaveRoom = useGameStore((s) => s.leaveRoom);
   const navigate = useNavigate();
   const summary = snapshot.summary;
   const [showVotes, setShowVotes] = useState(true);
+  const [returning, setReturning] = useState(false);
+  const isHost = snapshot.hostPlayerId === privateState?.playerId;
 
-  // 结算看完就离开房间回到主页。准备状态已由服务端在结算时统一重置，
-  // 想再来一局就重新进房间，不在战报页直接开下一局。
   const handleBackHome = useCallback(async () => {
     await leaveRoom();
     navigate("/whoisfaker");
   }, [leaveRoom, navigate]);
+
+  const handleReturnToWaiting = useCallback(async () => {
+    setReturning(true);
+    try {
+      await sendCommand("game.advancePhase");
+    } catch (error) {
+      addToast((error as { message?: string }).message ?? "返回房间失败", "error");
+      setReturning(false);
+    }
+  }, [addToast, sendCommand]);
 
   if (!summary) {
     return (
@@ -265,8 +278,21 @@ export function GameOverPhase() {
         </section>
       )}
 
-      {/* 战报看完后统一回主页 */}
+      {/* 房主可让全房回到等待阶段；任何人仍可主动离开。 */}
       <div className="flex flex-col items-center gap-3 pt-2">
+        {isHost ? (
+          <Button
+            size="lg"
+            onClick={handleReturnToWaiting}
+            disabled={returning}
+            className="gap-2 px-8 text-base"
+          >
+            <RotateCcw className="h-4 w-4" />
+            {returning ? "正在返回…" : "返回房间等待"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">等待房主返回房间，或直接返回主页</p>
+        )}
         <Button size="lg" onClick={handleBackHome} className="gap-2 px-8 text-base">
           <Home className="h-4 w-4" />
           返回主页

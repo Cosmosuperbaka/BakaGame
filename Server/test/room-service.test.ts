@@ -30,6 +30,26 @@ const createRoom = async (
   return { host, result };
 };
 
+const joinPlayers = async (
+  service: ReturnType<typeof createTestContext>["service"],
+  roomId: string,
+  count: number,
+  prefix: string,
+): Promise<JoinedPlayer[]> => {
+  const joined: JoinedPlayer[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const connection = createConnection(service, `${roomId}-${prefix}-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `${prefix}-join-${index}`,
+      type: "room.join",
+      roomId,
+      payload: { userName: `${prefix}${index + 1}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+  return joined;
+};
+
 // ==================== 房间与状态机集成测试 ====================
 
 test("大厅订阅后会收到房间列表更新", async () => {
@@ -708,7 +728,7 @@ test("玩家掉线后会等待出题人处理并可被淘汰移出", async () =>
   ).toBe("kicked");
 });
 
-test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作状态", async () => {
+test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚动作", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "5556");
   const joined: JoinedPlayer[] = [];
@@ -859,7 +879,7 @@ test("夜晚中途有人被淘汰后，其余玩家会收到重提夜晚动作�
   expect(snapshot?.status.phase).toBe("night");
 
   privateState = getLastEventPayload<PrivateState>(submittedActorConnection, "game.privateState");
-  expect(privateState?.nightActionSubmitted).toBe(false);
+  expect(privateState?.nightActionSubmitted).toBe(true);
 
   questionerState = getLastEventPayload<PrivateState>(questioner.connection, "game.privateState")!;
   const remainingActors =
@@ -1791,5 +1811,273 @@ test("服务关闭通知会广播到所有连接", () => {
 
   expect(getLastEventPayload<{ message: string }>(connection, "server.shutdown")?.message).toContain(
     "服务器即将关闭",
+  );
+});
+
+test("结算后房主可以让全房返回等待阶段", async () => {
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "Oblivionis");
+  await execute(service, host, {
+    id: "waiting-add-bots",
+    type: "test.addBot",
+    payload: { count: 4 },
+  });
+  await execute(service, host, {
+    id: "waiting-jump-over",
+    type: "test.jumpToPhase",
+    payload: { phase: "gameOver" },
+  });
+
+  await execute(service, host, {
+    id: "return-to-waiting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status).toMatchObject({ phase: "waiting", started: false, day: 0 });
+  expect(snapshot?.summary).toBeUndefined();
+  expect(snapshot?.players.find((player) => player.id === result.playerId)?.isReady).toBe(false);
+  expect(snapshot?.players.filter((player) => player.isBot).every((player) => player.isReady)).toBe(
+    true,
+  );
+
+  await execute(service, host, {
+    id: "host-ready-again",
+    type: "player.setReady",
+    payload: { ready: true },
+  });
+  await execute(service, host, {
+    id: "start-next-round",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("assigningQuestioner");
+});
+
+test("撤销投票和夜晚动作会同步清空私有状态并允许重新提交", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  const [player] = await joinPlayers(service, "Oblivionis", 1, "撤回玩家");
+  await execute(service, host, {
+    id: "cancel-add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
+  await execute(service, host, {
+    id: "cancel-jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "cancel-submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, host, {
+    id: "cancel-jump-voting",
+    type: "test.jumpToPhase",
+    payload: { phase: "voting" },
+  });
+
+  const voteTarget = getLastEventPayload<RoomSnapshot>(player.connection, "room.snapshot")?.players.find(
+    (entry) => entry.roundStatus === "alive" && entry.id !== player.joinResult.playerId,
+  );
+  expect(voteTarget).toBeDefined();
+  await execute(service, player.connection, {
+    id: "submit-vote-before-cancel",
+    type: "game.submitVote",
+    payload: { targetId: voteTarget!.id },
+  });
+  expect(
+    getLastEventPayload<PrivateState>(player.connection, "game.privateState")
+      ?.myCurrentVoteTargetId,
+  ).toBe(voteTarget!.id);
+
+  await execute(service, player.connection, {
+    id: "cancel-vote",
+    type: "game.cancelVote",
+    payload: {},
+  });
+  expect(
+    getLastEventPayload<PrivateState>(player.connection, "game.privateState")
+      ?.myCurrentVoteTargetId,
+  ).toBeUndefined();
+  expect(
+    getLastEventPayload<PrivateState>(host, "game.privateState")?.privilegedActionPreview?.votes.some(
+      (vote) => vote.voterId === player.joinResult.playerId,
+    ),
+  ).toBe(false);
+  expect(
+    await execute(service, player.connection, {
+      id: "cancel-vote-again",
+      type: "game.cancelVote",
+      payload: {},
+    }),
+  ).toEqual({ cancelled: false });
+
+  await execute(service, player.connection, {
+    id: "submit-vote-again",
+    type: "game.submitVote",
+    payload: { targetId: voteTarget!.id },
+  });
+
+  await execute(service, host, {
+    id: "cancel-jump-night",
+    type: "test.jumpToPhase",
+    payload: { phase: "night" },
+  });
+  await execute(service, player.connection, {
+    id: "submit-night-before-cancel",
+    type: "game.submitNightAction",
+    payload: { targetId: null },
+  });
+  expect(
+    getLastEventPayload<PrivateState>(player.connection, "game.privateState")
+      ?.nightActionSubmitted,
+  ).toBe(true);
+
+  await execute(service, player.connection, {
+    id: "cancel-night",
+    type: "game.cancelNightAction",
+    payload: {},
+  });
+  const cancelledNight = getLastEventPayload<PrivateState>(
+    player.connection,
+    "game.privateState",
+  );
+  expect(cancelledNight?.nightActionSubmitted).toBe(false);
+  expect(cancelledNight?.myCurrentNightTargetId).toBeUndefined();
+  expect(
+    getLastEventPayload<PrivateState>(host, "game.privateState")?.privilegedActionPreview?.nightActions.some(
+      (action) => action.actorId === player.joinResult.playerId,
+    ),
+  ).toBe(false);
+  expect(
+    await execute(service, player.connection, {
+      id: "cancel-night-again",
+      type: "game.cancelNightAction",
+      payload: {},
+    }),
+  ).toEqual({ cancelled: false });
+
+  await execute(service, player.connection, {
+    id: "submit-night-again",
+    type: "game.submitNightAction",
+    payload: { targetId: null },
+  });
+  expect(
+    getLastEventPayload<PrivateState>(player.connection, "game.privateState")
+      ?.nightActionSubmitted,
+  ).toBe(true);
+});
+
+test("踢出待发言玩家会从当前描述顺序移除且不阻塞推进", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  const humans = await joinPlayers(service, "Oblivionis", 2, "发言玩家");
+  await execute(service, host, {
+    id: "description-add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
+  await execute(service, host, {
+    id: "description-jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "description-submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  const target = humans.find(
+    ({ connection }) =>
+      getLastEventPayload<PrivateState>(connection, "game.privateState")?.role === "civilian",
+  );
+  const remaining = humans.find((item) => item !== target);
+  expect(target).toBeDefined();
+  expect(remaining).toBeDefined();
+
+  await execute(service, remaining!.connection, {
+    id: "remaining-description",
+    type: "game.submitDescription",
+    payload: { text: "剩余玩家发言" },
+  });
+  await execute(service, host, {
+    id: "kick-pending-description",
+    type: "room.kick",
+    payload: { playerId: target!.joinResult.playerId },
+  });
+
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("description");
+  expect(snapshot?.status.descriptionOrder).not.toContain(target!.joinResult.playerId);
+  await execute(service, host, {
+    id: "advance-after-description-kick",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("voting");
+});
+
+test("夜晚踢人会保留其他有效动作并让机器人补齐缺失动作", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  const humans = await joinPlayers(service, "Oblivionis", 2, "夜晚玩家");
+  await execute(service, host, {
+    id: "night-kick-add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
+  await execute(service, host, {
+    id: "night-kick-jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "night-kick-submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, host, {
+    id: "night-kick-jump-night",
+    type: "test.jumpToPhase",
+    payload: { phase: "night" },
+  });
+
+  const target = humans.find(
+    ({ connection }) =>
+      getLastEventPayload<PrivateState>(connection, "game.privateState")?.role === "civilian",
+  );
+  const actor = humans.find((item) => item !== target);
+  expect(target).toBeDefined();
+  expect(actor).toBeDefined();
+
+  await execute(service, actor!.connection, {
+    id: "night-action-before-kick",
+    type: "game.submitNightAction",
+    payload: { targetId: null },
+  });
+  await execute(service, host, {
+    id: "kick-during-night",
+    type: "room.kick",
+    payload: { playerId: target!.joinResult.playerId },
+  });
+
+  expect(
+    getLastEventPayload<PrivateState>(actor!.connection, "game.privateState")
+      ?.nightActionSubmitted,
+  ).toBe(true);
+  await execute(service, host, {
+    id: "advance-after-night-kick",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.status.phase).toBe(
+    "description",
   );
 });
