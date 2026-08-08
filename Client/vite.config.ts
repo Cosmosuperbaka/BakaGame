@@ -192,6 +192,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // 共享定义唯一副本在 Server/src/shared/：服务端部署时只挂载 Server 目录，
+      // 定义必须落在其内部才能被解析。这里显式指向它，不再经由 node_modules 链接。
+      '@bakagame/shared': path.resolve(__dirname, '../Server/src/shared/index.ts'),
     },
   },
 })
