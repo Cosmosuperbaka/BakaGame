@@ -40,6 +40,10 @@ Default port: `4850`. Requires Bun — uses `Bun.env`, `Bun.sleep`, `bun:test`.
 npm run dev          # Vite dev server → http://localhost:5173
 npm run build        # tsc -b && vite build
 npm run lint         # eslint .
+npm test             # Vitest unit/integration/regression tests
+npm run test:coverage
+npm run test:e2e     # Playwright; starts Server + Vite automatically
+npm run verify       # lint + coverage + build + E2E
 npm run preview
 ```
 
@@ -200,13 +204,13 @@ The room shell uses a light warm-yellow background. Player, game-action, and cha
 
 ## Tests
 
-All tests are under `Server/test/` using `bun:test`. To run a single file:
+Backend tests are under `Server/test/` using `bun:test`. To run a single file:
 ```bash
 bun test test/rules.test.ts
 ```
 
-Key test files: `rules.test.ts` (pure domain logic), `room-service.test.ts` (service unit tests), `app.test.ts` (HTTP + WS integration), `protocol-openapi.test.ts` (protocol conformance).
+Key backend test files: `rules.test.ts` (pure domain logic), `connection-registry.test.ts` (connection unit tests), `room-service.test.ts` (service/state-machine integration and regressions), `app.test.ts` (HTTP + WS integration), `protocol-openapi.test.ts` (protocol conformance).
 
 When adding fields to `GameRound` in the shared model, update all fixture objects in `rules.test.ts` accordingly (TypeScript will error otherwise).
 
-No frontend tests exist.
+Frontend Vitest files live beside source as `Client/src/**/*.test.{ts,tsx}`. Playwright tests live in `Client/e2e/`. Vitest intentionally only collects tests under `src`, so Playwright specs are never executed by both runners. See `Agents/Testing.md` for the complete test matrix and verification workflow.
