@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -34,22 +34,20 @@ import {
   type ChangelogEntry,
   type InlineNode,
 } from "@/lib/changelog";
+// 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
+// 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
+import changelogData from "@/data/changelog.json";
+import commitHistory from "virtual:commit-history";
 
 interface ChangelogData {
   entries: ChangelogEntry[];
 }
 
-interface CommitEntry {
-  hash: string;
-  message: string;
-  date: string;
-  author: string;
-}
+// JSON 直接 import 时结构由内容推断，这里锚定成契约类型，
+// 手写日志漏字段或写错类型在构建期就会报错。
+const changelog: ChangelogData = changelogData;
 
-interface CommitHistoryData {
-  currentCommit: string;
-  commits: CommitEntry[];
-}
+type CommitEntry = (typeof commitHistory.commits)[number];
 
 interface GameEntry {
   id: string;
@@ -315,33 +313,15 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
 }
 
 export default function LandingPage() {
-  const [changelog, setChangelog] = useState<ChangelogData | null>(null);
-  const [commitHistory, setCommitHistory] = useState<CommitHistoryData | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
 
-  useEffect(() => {
-    fetch("/changelog.json")
-      .then((r) => r.json())
-      .then((data: ChangelogData) => setChangelog(data))
-      .catch(() => {});
-
-    fetch("/commit-history.json")
-      .then((r) => r.json())
-      .then((data: CommitHistoryData) => setCommitHistory(data))
-      .catch(() => {});
-  }, []);
-
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
   // 也不依赖 entries 的书写顺序。
-  const entries = useMemo(
-    () => (changelog ? sortEntriesByVersion(changelog.entries) : []),
-    [changelog],
-  );
+  const entries = useMemo(() => sortEntriesByVersion(changelog.entries), []);
   const version = useMemo(() => resolveLatestVersion(entries), [entries]);
-  const commit = commitHistory?.currentCommit;
-  // 日志还没加载完或整个文件都没有条目时，版本号未知，用 ∞ 占位而不是留空，
-  // 免得徽章忽然出现造成跳动。
+  // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
+  const commit = commitHistory.currentCommit;
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
 
   return (
@@ -411,8 +391,9 @@ export default function LandingPage() {
               <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
             </TabsList>
+            {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态 */}
             <TabsContent value="changelog" className="mt-4 max-h-[55vh] overflow-y-auto">
-              {changelog ? (
+              {entries.length > 0 ? (
                 <div className="space-y-5">
                   {entries.map((entry) => (
                     <div key={entry.version} className="space-y-2">
@@ -428,15 +409,11 @@ export default function LandingPage() {
                   ))}
                 </div>
               ) : (
-                <div className="py-6 text-center text-sm text-muted-foreground">加载中...</div>
+                <div className="py-6 text-center text-sm text-muted-foreground">暂无更新日志</div>
               )}
             </TabsContent>
             <TabsContent value="commits" className="mt-4 max-h-[55vh] overflow-y-auto pr-1">
-              {commitHistory ? (
-                <CommitTimeline commits={commitHistory.commits} />
-              ) : (
-                <div className="py-6 text-center text-sm text-muted-foreground">加载中...</div>
-              )}
+              <CommitTimeline commits={commitHistory.commits} />
             </TabsContent>
           </Tabs>
         </DialogContent>
