@@ -270,25 +270,6 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
   };
 };
 
-export const isVotingMathematicallyDetermined = (
-  votes: VoteRecord[],
-  totalVotersCount: number,
-): boolean => {
-  if (totalVotersCount === 0 || votes.length >= totalVotersCount) {
-    return true;
-  }
-  const voteCounter = new Map<string, number>();
-  for (const vote of votes) {
-    voteCounter.set(vote.targetId, (voteCounter.get(vote.targetId) ?? 0) + 1);
-  }
-  const counts = [...voteCounter.values()].sort((a, b) => b - a);
-  const maxVotes = counts[0] ?? 0;
-  const secondVotes = counts[1] ?? 0;
-  const remainingVotes = totalVotersCount - votes.length;
-
-  return maxVotes - secondVotes > remainingVotes;
-};
-
 export const resolveNightEliminations = (
   round: GameRound,
   actions: NightActionRecord[],
