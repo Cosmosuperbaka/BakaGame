@@ -833,6 +833,32 @@ test("掉线玩家只能通过 session token 恢复原席位", async () => {
   expect(privateState?.word).toBeDefined();
 });
 
+test("同一 session token 的新连接会替换旧连接", async () => {
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "5561");
+  const replacement = createConnection(service, "replacement");
+
+  const reconnected = (await execute(service, replacement, {
+    id: "replace-session",
+    type: "room.reconnect",
+    payload: {
+      roomId: "5561",
+      sessionToken: result.sessionToken,
+    },
+  })) as { playerId: string; sessionToken: string };
+
+  expect(reconnected.playerId).toBe(result.playerId);
+  expect(reconnected.sessionToken).toBe(result.sessionToken);
+  expect(getLastEventPayload<{ roomId: string }>(host, "session.replaced")).toEqual({
+    roomId: "5561",
+  });
+  expect(host.closed).toEqual([{ code: 4001, reason: "session_replaced" }]);
+  expect(host.record.roomId).toBeUndefined();
+  expect(host.record.playerId).toBeUndefined();
+  expect(replacement.record.roomId).toBe("5561");
+  expect(replacement.record.playerId).toBe(result.playerId);
+});
+
 test("预分配阶段的多名掉线玩家会按顺序进入待处理队列", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "5566");
