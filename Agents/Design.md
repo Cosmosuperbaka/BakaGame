@@ -31,7 +31,7 @@
 - 次要区域使用 `bg-muted`、`bg-accent/40` 或 `text-muted-foreground` 降低层级；`accent` 适用于悬停态和轻量强调块。
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
-- 面板之上的就近弹出层用 `bg-secondary`，比面板更深一档，从暖白底色里立起来。`bg-card` 明度 0.9914，几乎是纯白，不作浮层底色。浮层内的分隔线与次要文字随之取 `secondary-foreground` 的透明度档，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
+- 面板之上的就近弹出层（表情选择器、玩家操作菜单、阶段控制器等）统一用 `bg-background/95` 配 `backdrop-blur-md` 和一层轻边框，靠模糊与阴影从面板里立起来，而不是靠加深底色。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
 - 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。
 - 状态色仅用于真实业务状态，并保持项目现有含义：红色表示危险、失败、断线或淘汰；绿色表示成功、安全、存活或完成；琥珀色表示提示、特殊词语或测试状态；紫色表示出题人；天蓝色表示补充发言相关状态。
 - 状态不能只靠颜色传达，必须同时配合文字、图标、边框或形状中的至少一种。
