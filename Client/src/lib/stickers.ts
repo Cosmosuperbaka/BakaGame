@@ -1,4 +1,5 @@
-// 聊天表情包数据。与 EmojiPicker 组件分离，避免同一文件混合导出组件与常量。
+// 聊天表情包清单。内容由 vite.config.ts 的 sticker-manifest 插件扫描
+// Client/public/emojis/ 生成，这里只负责取回并做防御性校验，不写死任何包名或表情名。
 
 /** 贴纸消息前缀，用于识别聊天消息是贴纸而非普通文本 */
 export const STICKER_PREFIX = "@@sticker@@";
@@ -7,56 +8,75 @@ export interface StickerItem {
   key: string;
   label: string;
   path: string;
+  /** 该表情自身是否为动图。同一个包里可能混装动图与静图。 */
+  animated: boolean;
 }
 
 export interface StickerPack {
+  /** 取自 info.txt 的 `# 名称：`，缺失时退化为目录名 */
   name: string;
-  /** 标签栏展示的代表图 */
+  /** 目录名，用作稳定的 React key */
+  dir: string;
+  /** 标签栏展示的代表图，取排序后的首个表情 */
   preview: string;
-  /** 整包是否为动图，决定标签栏角标 */
+  /** 整包都是动图时为真；混装包为假，此时只在具体表情上标角标 */
   animated: boolean;
   items: StickerItem[];
 }
 
-const BASE = "/emojis";
+const MANIFEST_URL = "/sticker-manifest.json";
 
-const MUJICA_PACK = "mujica夜愿华章表情包";
-const YEYUAN_PACK = "夜愿华章表情包";
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
-const mujicaKeys = [
-  "wink", "五冠王", "伸懒腰", "分你一半", "加个好友",
-  "呐喊", "哟豁", "哦", "哭哭", "唱歌",
-  "坏坏", "害羞", "小祥", "开门", "思考",
-  "恭敬", "抱抱", "接电话", "撩发", "是秘密哦",
-  "没收", "点赞", "真谄媚啊", "难道说", "雨天",
-];
+const readItem = (raw: unknown): StickerItem | null => {
+  if (!isRecord(raw)) return null;
+  const { key, label, path, animated } = raw;
+  if (typeof key !== "string" || typeof path !== "string" || !key || !path) return null;
 
-const yeyuanKeys = [
-  "wink", "不可以", "伸手", "再见", "叫我吗",
-  "哇", "喜极而泣", "帅气抹脸", "张望", "摇摇",
-  "摘墨镜", "生气", "豪饮", "领域展开", "鼓掌",
-];
-
-/** 按包名与扩展名批量生成条目路径 */
-function buildItems(pack: string, keys: string[], ext: string): StickerItem[] {
-  return keys.map((key) => ({
+  return {
     key,
-    label: key,
-    path: `${BASE}/${pack}/[${pack}_${key}].${ext}`,
-  }));
-}
+    label: typeof label === "string" && label ? label : key,
+    path,
+    animated: animated === true,
+  };
+};
 
-export const STICKER_PACKS: StickerPack[] = [
-  {
-    name: MUJICA_PACK,
-    preview: `${BASE}/${MUJICA_PACK}/[${MUJICA_PACK}_wink].png`,
-    animated: false,
-    items: buildItems(MUJICA_PACK, mujicaKeys, "png"),
-  },
-  {
-    name: YEYUAN_PACK,
-    preview: `${BASE}/${YEYUAN_PACK}/[${YEYUAN_PACK}_鼓掌].gif`,
-    animated: true,
-    items: buildItems(YEYUAN_PACK, yeyuanKeys, "gif"),
-  },
-];
+const readPack = (raw: unknown): StickerPack | null => {
+  if (!isRecord(raw)) return null;
+  const { name, dir, preview, animated, items } = raw;
+  if (typeof dir !== "string" || !dir) return null;
+
+  const parsedItems = Array.isArray(items)
+    ? items.map(readItem).filter((item): item is StickerItem => item !== null)
+    : [];
+
+  if (parsedItems.length === 0) return null;
+
+  return {
+    name: typeof name === "string" && name ? name : dir,
+    dir,
+    preview: typeof preview === "string" && preview ? preview : parsedItems[0].path,
+    // 清单已算过，但混装包必须为假，因此再按条目兜底一次。
+    animated: animated === true && parsedItems.every((item) => item.animated),
+    items: parsedItems,
+  };
+};
+
+/**
+ * 取回表情包清单。清单缺失或格式异常时返回空数组，
+ * 由调用方展示空态，不抛错打断聊天面板。
+ */
+export async function loadStickerPacks(): Promise<StickerPack[]> {
+  try {
+    const response = await fetch(MANIFEST_URL);
+    if (!response.ok) return [];
+
+    const payload: unknown = await response.json();
+    if (!isRecord(payload) || !Array.isArray(payload.packs)) return [];
+
+    return payload.packs.map(readPack).filter((pack): pack is StickerPack => pack !== null);
+  } catch {
+    return [];
+  }
+}

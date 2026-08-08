@@ -57,3 +57,4 @@ Server/build
 word-bank.json
 # Generated at build time
 Client/public/commit-history.json
+Client/public/sticker-manifest.json
