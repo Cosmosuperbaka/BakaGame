@@ -10,8 +10,13 @@ import {
   spring,
   useOriginTracker,
 } from "@/lib/motion";
-import { ArrowRight, GitBranch, Tv, Users } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+// 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
+import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
+import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
+import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -85,13 +90,13 @@ const GAMES: GameEntry[] = [
 interface ExternalLink {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: IconDefinition;
 }
 
 const EXTERNAL_LINKS: ExternalLink[] = [
-  { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: Users },
-  { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: GitBranch },
-  { href: "https://space.bilibili.com/354780713", label: "哔哩哔哩主页", icon: Tv },
+  { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: faQq },
+  { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: faGithub },
+  { href: "https://space.bilibili.com/354780713", label: "哔哩哔哩主页", icon: faBilibili },
 ];
 
 /**
@@ -198,8 +203,6 @@ function GameRow({ game }: { game: GameEntry }) {
 }
 
 function FooterLink({ link }: { link: ExternalLink }) {
-  const Icon = link.icon;
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -212,7 +215,7 @@ function FooterLink({ link }: { link: ExternalLink }) {
           {...iconTappable}
           className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          <Icon className="h-4 w-4" />
+          <FontAwesomeIcon icon={link.icon} className="h-4 w-4" />
         </motion.a>
       </TooltipTrigger>
       <TooltipContent>{link.label}</TooltipContent>
