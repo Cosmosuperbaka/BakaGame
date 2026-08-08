@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import { normalizeWordPair } from "../domain/rules";
 
 export class WordBankRepository {
+  private writeQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly filePath: string) {}
 
   async readAll(): Promise<Array<[string, string]>> {
@@ -35,6 +37,15 @@ export class WordBankRepository {
   }
 
   async savePair(pair: [string, string]): Promise<Array<[string, string]>> {
+    const operation = this.writeQueue.then(() => this.savePairUnlocked(pair));
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async savePairUnlocked(pair: [string, string]): Promise<Array<[string, string]>> {
     // 词库文件只保存二维词语数组，不写入任何额外元数据。
     const normalizedPair = normalizeWordPair(pair);
     const allPairs = await this.readAll();
