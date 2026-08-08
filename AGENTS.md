@@ -111,15 +111,17 @@ Client path alias: `@/` → `Client/src/`.
 
 **Typed errors**: `AppError` with a `code` string (e.g. `"ROOM_NOT_FOUND"`, `"INVALID_PHASE"`) is used uniformly throughout the server. The transport layer converts them to `ErrorPacket`.
 
-**Session persistence**: session tokens are stored in cookies (keyed by `roomId`) via `Client/src/lib/cookie.ts` for reconnect after page refresh. On reconnect, the client auto-attempts `room.reconnect`.
+**Session persistence**: session tokens are stored in the current tab's `sessionStorage` (keyed by `roomId`) via `Client/src/lib/cookie.ts`; usernames alone use `localStorage`. Refreshing the same tab can reconnect, while a new tab starts without the old token. On reconnect, the client auto-attempts `room.reconnect`.
 
 **Code comments in Chinese**: all business-logic comments in the server are in Simplified Chinese. Match this convention when adding comments.
 
 ## Test Mode
 
-Room ID `"Oblivionis"` (case-insensitive) is a special test room:
-- **Server**: bypasses minimum-player checks, allows solo play, accepts `test.jumpToPhase` and `test.setMyRole` commands.
-- **Client**: `sendCommand` intercepts calls locally using mock data — no server required. The `TestController` component provides phase-jumping and role-switching UI.
+Room ID `"Oblivionis"` (case-insensitive) is a special test room. It follows the same player-count, role, voting, and night-action rules as a normal room.
+
+- **Server**: accepts `test.jumpToPhase`, `test.setMyRole`, `test.addBot`, and `test.removeBot`. Bots are real server-side players that occupy roles, speak, and vote.
+- **Client**: every `TestController` action sends a real command to the server. There is no local mock state or command interception.
+- Fill the room with bots before jumping to phases that require a legal roster. Bots added during an active round become spectators.
 
 ## Game State Machine
 
@@ -130,9 +132,11 @@ waiting → assigningQuestioner → wordSubmission → description → voting
   → gameOver
 ```
 
-Roles: `civilian`, `undercover`, `angel` (10+ players), `blank` (8+ players).  
-Win conditions: `good` (all undercoverers eliminated), `undercover` (outnumber civilians), `blank` (guesses both words correctly), `aborted`.  
-Minimum 4 players to start; `maxUndercoverCount = floor(playerCount / 4)`.
+Roles: `civilian`, `undercover`, `angel` (10+ participants), `blank` (8+ participants).
+
+Win conditions: `good` (all undercoverers eliminated), `undercover` (outnumber civilians), `blank` (guesses both words correctly), `aborted`.
+
+A round needs at least 4 participants plus 1 questioner. Participants are active players excluding the questioner; an online spectator may serve as questioner. `maxUndercoverCount = max(1, floor(participantCount / 4))`.
 
 ## Description Records
 
