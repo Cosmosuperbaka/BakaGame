@@ -4,12 +4,14 @@ import { motion } from "framer-motion";
 import {
   listItem,
   listContainer,
+  iconTappable,
   pressable,
   selectable,
   spring,
   useOriginTracker,
 } from "@/lib/motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, GitBranch, Tv, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -18,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   parseChangelogContent,
   resolveLatestVersion,
@@ -77,6 +80,18 @@ const GAMES: GameEntry[] = [
     subtitle: "Enhanced Edition",
     available: false,
   },
+];
+
+interface ExternalLink {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const EXTERNAL_LINKS: ExternalLink[] = [
+  { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: Users },
+  { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: GitBranch },
+  { href: "https://space.bilibili.com/354780713", label: "哔哩哔哩主页", icon: Tv },
 ];
 
 /**
@@ -179,6 +194,29 @@ function GameRow({ game }: { game: GameEntry }) {
         {content}
       </motion.button>
     </motion.div>
+  );
+}
+
+function FooterLink({ link }: { link: ExternalLink }) {
+  const Icon = link.icon;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <motion.a
+          href={link.href}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={link.label}
+          variants={listItem}
+          {...iconTappable}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Icon className="h-4 w-4" />
+        </motion.a>
+      </TooltipTrigger>
+      <TooltipContent>{link.label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -336,7 +374,17 @@ export default function LandingPage() {
         </motion.div>
       </main>
 
-      <footer className="flex justify-center px-6 pb-10">
+      <footer className="flex flex-col items-center gap-3 px-6 pb-10">
+        <motion.div
+          className="flex items-center gap-1"
+          variants={listContainer(EXTERNAL_LINKS.length)}
+          initial="initial"
+          animate="animate"
+        >
+          {EXTERNAL_LINKS.map((link) => (
+            <FooterLink key={link.href} link={link} />
+          ))}
+        </motion.div>
         <motion.button
           type="button"
           {...pressable}
