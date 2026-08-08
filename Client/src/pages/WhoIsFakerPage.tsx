@@ -113,14 +113,14 @@ export default function WhoIsFakerPage() {
       </header>
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-10">
-        <div className="flex items-center gap-3 mb-5">
-          <h2 className="text-xl font-semibold shrink-0">房间列表</h2>
-          <div className="flex-1" />
+        <div className="mb-5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 md:flex">
+          <h2 className="col-span-3 shrink-0 text-xl font-semibold md:col-auto">房间列表</h2>
+          <div className="hidden flex-1 md:block" />
           <Input
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
             placeholder="用户名"
-            className="w-32 md:w-40 h-9 text-sm"
+            className="h-9 min-w-0 w-full text-sm md:w-40"
             maxLength={20}
           />
           <Button

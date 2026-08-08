@@ -262,14 +262,14 @@ export default function LandingPage() {
           variants={listItem}
           initial="initial"
           animate="animate"
-          className="flex items-center justify-center gap-4 text-5xl font-bold tracking-tight md:text-6xl"
+          className="flex items-center justify-center gap-2 text-4xl font-bold tracking-tight sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl"
         >
           Baka
           <img
             src="/assets/logo.gif"
             alt=""
             aria-hidden="true"
-            className="h-14 rounded-md object-cover md:h-16"
+            className="h-12 rounded-md object-cover sm:h-14 md:h-16"
           />
           Game
         </motion.h1>
