@@ -24,7 +24,6 @@ export interface StickerPack {
   items: StickerItem[];
 }
 
-const MANIFEST_URL = "/sticker-manifest.json";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -64,15 +63,15 @@ const readPack = (raw: unknown): StickerPack | null => {
 };
 
 /**
- * 取回表情包清单。清单缺失或格式异常时返回空数组，
- * 由调用方展示空态，不抛错打断聊天面板。
+ * 取回表情包清单。清单在构建期定型，用动态 import 加载：
+ * 数据随分包产物带 hash，新增表情包后文件名即变，不会被 CDN 的长期缓存挡住；
+ * 同时保持按需加载，未打开过表情面板的用户不必下载整份清单。
+ *
+ * 格式异常时返回空数组，由调用方展示空态，不抛错打断聊天面板。
  */
 export async function loadStickerPacks(): Promise<StickerPack[]> {
   try {
-    const response = await fetch(MANIFEST_URL);
-    if (!response.ok) return [];
-
-    const payload: unknown = await response.json();
+    const { default: payload } = await import("virtual:sticker-manifest");
     if (!isRecord(payload) || !Array.isArray(payload.packs)) return [];
 
     return payload.packs.map(readPack).filter((pack): pack is StickerPack => pack !== null);

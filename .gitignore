@@ -59,5 +59,3 @@ Server/build
 *.sw?
 
 word-bank.json
-# Generated at build time
-Client/public/sticker-manifest.json

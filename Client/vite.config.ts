@@ -4,7 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import fs from 'fs'
 
-// ==================== Vite 插件：扫描表情包目录生成 sticker-manifest.json ====================
+// ==================== Vite 插件：扫描表情包目录生成清单 ====================
+// 以虚拟模块提供数据，随 JS 产物一同带 hash：
+// 落到 public/ 的固定文件名会被 CDN 按不变资源长期缓存，新增表情包后老用户取不到。
 
 const STICKER_EXTENSIONS = ['.gif', '.png', '.apng', '.webp', '.jpg', '.jpeg']
 
@@ -64,72 +66,80 @@ function parseInfoFile(packDir: string) {
   return { displayName, order }
 }
 
+const STICKER_MANIFEST_ID = 'virtual:sticker-manifest'
+
 function stickerManifestPlugin() {
+  const resolvedId = '\0' + STICKER_MANIFEST_ID
+
+  function collect() {
+    const publicDir = path.resolve(__dirname, 'public')
+    const emojiDir = path.join(publicDir, 'emojis')
+
+    let packs: unknown[] = []
+
+    try {
+      packs = fs
+        .readdirSync(emojiDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => {
+          const packDir = path.join(emojiDir, entry.name)
+          const { displayName, order } = parseInfoFile(packDir)
+
+          const items = fs
+            .readdirSync(packDir, { withFileTypes: true })
+            .filter((file) => file.isFile())
+            .filter((file) => STICKER_EXTENSIONS.includes(path.extname(file.name).toLowerCase()))
+            .map((file) => {
+              const ext = path.extname(file.name).toLowerCase()
+              const base = path.basename(file.name, path.extname(file.name))
+              // 文件名形如 `[包名_表情名]`，去掉方括号后取下划线之后的部分作表情名。
+              const inner = base.replace(/^\[/, '').replace(/\]$/, '')
+              const underscore = inner.indexOf('_')
+              const key = (underscore >= 0 ? inner.slice(underscore + 1) : inner).trim()
+
+              return {
+                key,
+                label: key,
+                path: `/emojis/${encodeURIComponent(entry.name)}/${encodeURIComponent(file.name)}`,
+                animated: detectAnimated(path.join(packDir, file.name), ext),
+              }
+            })
+            // info.txt 里列出的按其顺序排在前，未列出的按名称追加在后。
+            .sort((left, right) => {
+              const leftIndex = order.indexOf(left.key)
+              const rightIndex = order.indexOf(right.key)
+              if (leftIndex !== rightIndex) {
+                if (leftIndex < 0) return 1
+                if (rightIndex < 0) return -1
+                return leftIndex - rightIndex
+              }
+              return left.key.localeCompare(right.key, 'zh-Hans-CN')
+            })
+
+          return {
+            name: displayName || entry.name,
+            dir: entry.name,
+            // 代表图取排序后的首个表情，保证每个包的标签图稳定且互不相同。
+            preview: items[0]?.path ?? '',
+            // 整包都是动图时才在标签上打角标；混装包只在具体表情上标。
+            animated: items.length > 0 && items.every((item) => item.animated),
+            items,
+          }
+        })
+        .filter((pack) => (pack.items as unknown[]).length > 0)
+    } catch { /* 目录不存在时输出空清单，前端表情按钮自然为空 */ }
+
+    return { generatedAt: new Date().toISOString(), packs }
+  }
+
   return {
     name: 'sticker-manifest',
-    buildStart() {
-      const publicDir = path.resolve(__dirname, 'public')
-      const emojiDir = path.join(publicDir, 'emojis')
-      const outFile = path.join(publicDir, 'sticker-manifest.json')
-
-      let packs: unknown[] = []
-
-      try {
-        packs = fs
-          .readdirSync(emojiDir, { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => {
-            const packDir = path.join(emojiDir, entry.name)
-            const { displayName, order } = parseInfoFile(packDir)
-
-            const items = fs
-              .readdirSync(packDir, { withFileTypes: true })
-              .filter((file) => file.isFile())
-              .filter((file) => STICKER_EXTENSIONS.includes(path.extname(file.name).toLowerCase()))
-              .map((file) => {
-                const ext = path.extname(file.name).toLowerCase()
-                const base = path.basename(file.name, path.extname(file.name))
-                // 文件名形如 `[包名_表情名]`，去掉方括号后取下划线之后的部分作表情名。
-                const inner = base.replace(/^\[/, '').replace(/\]$/, '')
-                const underscore = inner.indexOf('_')
-                const key = (underscore >= 0 ? inner.slice(underscore + 1) : inner).trim()
-
-                return {
-                  key,
-                  label: key,
-                  path: `/emojis/${encodeURIComponent(entry.name)}/${encodeURIComponent(file.name)}`,
-                  animated: detectAnimated(path.join(packDir, file.name), ext),
-                }
-              })
-              // info.txt 里列出的按其顺序排在前，未列出的按名称追加在后。
-              .sort((left, right) => {
-                const leftIndex = order.indexOf(left.key)
-                const rightIndex = order.indexOf(right.key)
-                if (leftIndex !== rightIndex) {
-                  if (leftIndex < 0) return 1
-                  if (rightIndex < 0) return -1
-                  return leftIndex - rightIndex
-                }
-                return left.key.localeCompare(right.key, 'zh-Hans-CN')
-              })
-
-            return {
-              name: displayName || entry.name,
-              dir: entry.name,
-              // 代表图取排序后的首个表情，保证每个包的标签图稳定且互不相同。
-              preview: items[0]?.path ?? '',
-              // 整包都是动图时才在标签上打角标；混装包只在具体表情上标。
-              animated: items.length > 0 && items.every((item) => item.animated),
-              items,
-            }
-          })
-          .filter((pack) => (pack.items as unknown[]).length > 0)
-      } catch { /* 目录不存在时输出空清单，前端表情按钮自然为空 */ }
-
-      fs.writeFileSync(
-        outFile,
-        JSON.stringify({ generatedAt: new Date().toISOString(), packs }, null, 2)
-      )
+    resolveId(id: string) {
+      return id === STICKER_MANIFEST_ID ? resolvedId : null
+    },
+    load(id: string) {
+      if (id !== resolvedId) return null
+      return `export default ${JSON.stringify(collect())}`
     },
   }
 }
