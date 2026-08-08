@@ -24,7 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   parseChangelogContent,
@@ -34,10 +33,8 @@ import {
   type ChangelogEntry,
   type InlineNode,
 } from "@/lib/changelog";
-// 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
-// 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
+// 更新日志在构建期随 JS 产物发布，避免 public/ 固定 URL 的长期缓存问题。
 import changelogData from "@/data/changelog.json";
-import commitHistory from "virtual:commit-history";
 
 interface ChangelogData {
   entries: ChangelogEntry[];
@@ -46,8 +43,6 @@ interface ChangelogData {
 // JSON 直接 import 时结构由内容推断，这里锚定成契约类型，
 // 手写日志漏字段或写错类型在构建期就会报错。
 const changelog: ChangelogData = changelogData;
-
-type CommitEntry = (typeof commitHistory.commits)[number];
 
 interface GameEntry {
   id: string;
@@ -96,38 +91,6 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: faGithub },
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
-
-/**
- * 把时间戳换算成中文相对时间，精度随时间跨度递减：
- * 一分钟内数秒，一小时内数分钟，一天内数小时，再往后数天/月/年。
- *
- * 只有日期没有时间的旧数据（YYYY-MM-DD）按当天零点解析，
- * 这种输入本身没有秒级精度，最细只会落到「几小时前」。
- */
-function formatRelativeTime(dateStr: string): string {
-  const raw = dateStr.trim();
-  // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
-  const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
-  if (Number.isNaN(then.getTime())) return dateStr;
-
-  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
-  // 时钟偏差或未来时间戳，不显示负数。
-  if (seconds < 0) return "刚刚";
-  if (seconds < 60) return `${seconds} 秒前`;
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} 天前`;
-
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} 个月前`;
-  return `${Math.floor(months / 12)} 年前`;
-}
 
 function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();
@@ -282,36 +245,6 @@ function ChangelogBody({ content }: { content: ChangelogContent }) {
   );
 }
 
-function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
-  if (commits.length === 0) {
-    return <div className="py-6 text-center text-sm text-muted-foreground">暂无提交记录</div>;
-  }
-
-  return (
-    <ol className="relative ml-1 border-l">
-      {commits.map((commit) => (
-        <li key={commit.hash} className="relative pb-4 pl-5 last:pb-0">
-          <span
-            aria-hidden="true"
-            className="absolute top-1.5 -left-[4.5px] h-2 w-2 rounded-full bg-border"
-          />
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="min-w-0 text-sm break-words">{commit.message}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatRelativeTime(commit.date)}
-            </span>
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono select-all">{commit.hash}</span>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{commit.author}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export default function LandingPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
@@ -320,9 +253,7 @@ export default function LandingPage() {
   // 也不依赖 entries 的书写顺序。
   const entries = useMemo(() => sortEntriesByVersion(changelog.entries), []);
   const version = useMemo(() => resolveLatestVersion(entries), [entries]);
-  // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
-  const commit = commitHistory.currentCommit;
-  const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
+  const versionLabel = `V${version ?? "∞"}`;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -386,13 +317,7 @@ export default function LandingPage() {
           <DialogHeader>
             <DialogTitle>{versionLabel}</DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="changelog">
-            <TabsList className="w-full">
-              <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
-              <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
-            </TabsList>
-            {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态 */}
-            <TabsContent value="changelog" className="mt-4 max-h-[55vh] overflow-y-auto">
+          <div className="mt-4 max-h-[55vh] overflow-y-auto">
               {entries.length > 0 ? (
                 <div className="space-y-5">
                   {entries.map((entry) => (
@@ -411,11 +336,7 @@ export default function LandingPage() {
               ) : (
                 <div className="py-6 text-center text-sm text-muted-foreground">暂无更新日志</div>
               )}
-            </TabsContent>
-            <TabsContent value="commits" className="mt-4 max-h-[55vh] overflow-y-auto pr-1">
-              <CommitTimeline commits={commitHistory.commits} />
-            </TabsContent>
-          </Tabs>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
