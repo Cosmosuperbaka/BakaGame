@@ -150,8 +150,14 @@ const parseManualRoles = (obj: Record<string, unknown>): Record<string, PlayerRo
 
 export const parseClientMessage = (raw: unknown): ClientMessage => {
   // WebSocket 帧是字符串，测试直接传入已解析对象。
-  const parsed =
-    typeof raw === "string" ? (JSON.parse(raw) as unknown) : (raw as unknown);
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      throw new AppError("INVALID_MESSAGE", "消息必须为合法 JSON");
+    }
+  }
 
   if (!isObject(parsed)) {
     throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
