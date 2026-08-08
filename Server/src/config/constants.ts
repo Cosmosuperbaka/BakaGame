@@ -6,6 +6,9 @@ export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 /** 出题人断线重连超时时间（60秒） */
 export const QUESTIONER_RECONNECT_TIMEOUT_MS = 60 * 1000;
 
+/** 房主断线重连超时时间（60秒） */
+export const HOST_RECONNECT_TIMEOUT_MS = 60 * 1000;
+
 /** 房间聊天记录最大保留条数 */
 export const CHAT_LIMIT = 200;
 

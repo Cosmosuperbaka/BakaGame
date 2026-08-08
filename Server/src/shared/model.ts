@@ -251,6 +251,8 @@ export interface RoomRecord {
   id: string;
   settings: RoomSettings;
   hostPlayerId: string;
+  /** 房主断线后的重连宽限期，过期后才自动转移房主。 */
+  hostReconnectDeadlineAt?: number;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;

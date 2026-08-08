@@ -1221,6 +1221,131 @@ test("游戏进行中可以转移房主并踢出普通玩家", async () => {
   );
 });
 
+test("房主断线满 60 秒后转移给最早在线的正式玩家", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "2121");
+  const spectator = createConnection(service, "2121-spectator");
+  const spectatorJoin = (await execute(service, spectator, {
+    id: "spectator-join",
+    type: "room.join",
+    roomId: "2121",
+    payload: { userName: "旁观者" },
+  })) as { playerId: string };
+  await execute(service, spectator, {
+    id: "become-spectator",
+    type: "player.setSpectator",
+    payload: { spectator: true },
+  });
+
+  advanceTime(1);
+  const player = createConnection(service, "2121-player");
+  const playerJoin = (await execute(service, player, {
+    id: "player-join",
+    type: "room.join",
+    roomId: "2121",
+    payload: { userName: "正式玩家" },
+  })) as { playerId: string };
+
+  await service.unregisterConnection(host.record.id);
+  advanceTime(60 * 1000 - 1);
+  await service.runHousekeeping();
+  expect(getLastEventPayload<RoomSnapshot>(player, "room.snapshot")?.hostPlayerId).toBe(
+    hostResult.playerId,
+  );
+
+  advanceTime(1);
+  await service.runHousekeeping();
+  const snapshot = getLastEventPayload<RoomSnapshot>(player, "room.snapshot");
+  expect(snapshot?.hostPlayerId).toBe(playerJoin.playerId);
+  expect(snapshot?.hostPlayerId).not.toBe(spectatorJoin.playerId);
+});
+
+test("房主在宽限期内凭令牌重连会取消自动转移", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host, result } = await createRoom(service, "2323");
+  const player = createConnection(service, "2323-player");
+  await execute(service, player, {
+    id: "player-join",
+    type: "room.join",
+    roomId: "2323",
+    payload: { userName: "候选房主" },
+  });
+
+  await service.unregisterConnection(host.record.id);
+  advanceTime(60 * 1000 - 1);
+  const reconnectedHost = createConnection(service, "2323-reconnected-host");
+  await execute(service, reconnectedHost, {
+    id: "host-reconnect",
+    type: "room.reconnect",
+    payload: {
+      roomId: "2323",
+      sessionToken: result.sessionToken,
+    },
+  });
+
+  advanceTime(1);
+  await service.runHousekeeping();
+  expect(
+    getLastEventPayload<RoomSnapshot>(reconnectedHost, "room.snapshot")?.hostPlayerId,
+  ).toBe(result.playerId);
+});
+
+test("宽限期到达时没有正式玩家会在其加入后继续转移", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host } = await createRoom(service, "2525");
+  const spectator = createConnection(service, "2525-spectator");
+  await execute(service, spectator, {
+    id: "spectator-join",
+    type: "room.join",
+    roomId: "2525",
+    payload: { userName: "旁观者" },
+  });
+  await execute(service, spectator, {
+    id: "become-spectator",
+    type: "player.setSpectator",
+    payload: { spectator: true },
+  });
+
+  await service.unregisterConnection(host.record.id);
+  advanceTime(60 * 1000);
+  await service.runHousekeeping();
+
+  const player = createConnection(service, "2525-player");
+  const playerJoin = (await execute(service, player, {
+    id: "player-join",
+    type: "room.join",
+    roomId: "2525",
+    payload: { userName: "后来玩家" },
+  })) as { playerId: string };
+  await service.runHousekeeping();
+
+  expect(getLastEventPayload<RoomSnapshot>(player, "room.snapshot")?.hostPlayerId).toBe(
+    playerJoin.playerId,
+  );
+});
+
+test("房主显式离开时无需等待宽限期即可转移", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "2424");
+  const player = createConnection(service, "2424-player");
+  const playerJoin = (await execute(service, player, {
+    id: "player-join",
+    type: "room.join",
+    roomId: "2424",
+    payload: { userName: "接任玩家" },
+  })) as { playerId: string };
+
+  await execute(service, host, {
+    id: "host-leave",
+    type: "room.leave",
+    payload: {},
+  });
+
+  expect(getLastEventPayload<RoomSnapshot>(player, "room.snapshot")?.hostPlayerId).toBe(
+    playerJoin.playerId,
+  );
+});
+
 test("正式房间转移房主后原房主踢掉新房主，房主交给剩下的人", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "2222");
