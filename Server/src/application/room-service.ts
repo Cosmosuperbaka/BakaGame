@@ -2157,8 +2157,92 @@ export class RoomService {
     };
   }
 
+  /**
+   * 统一描述、补充发言与平票 PK 的当前发言状态。
+   * 提交状态可以公开，但内容只会按顺序公开连续完成的前缀。
+   */
+  private getCurrentSpeechState(round: GameRound) {
+    if (
+      round.phase === "description" &&
+      round.speechMode === "supplement" &&
+      round.supplement
+    ) {
+      return {
+        order: round.supplement.requestedPlayerIds,
+        submittedPlayerIds: round.supplement.donePlayers,
+        matches: (description: DescriptionRecord) =>
+          description.kind === "supplement" &&
+          description.supplementIndex === round.supplement?.index,
+      };
+    }
+
+    if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
+      return {
+        order: round.tieBreak.candidateIds,
+        submittedPlayerIds: round.tieBreak.descriptionsDone,
+        matches: (description: DescriptionRecord) =>
+          description.kind === "tieBreak" &&
+          description.tieBreakIndex === round.tieBreakCount,
+      };
+    }
+
+    if (round.phase === "description") {
+      return {
+        order: round.descriptionOrder,
+        submittedPlayerIds: round.descriptionSubmittedBy,
+        matches: (description: DescriptionRecord) =>
+          description.kind === "description" &&
+          description.cycle === round.descriptionCycle,
+      };
+    }
+
+    return undefined;
+  }
+
+  private buildPublicDescriptions(round: GameRound | undefined): DescriptionRecord[] {
+    if (!round) {
+      return [];
+    }
+
+    const speechState = this.getCurrentSpeechState(round);
+
+    if (!speechState) {
+      return round.descriptions;
+    }
+
+    const submitted = new Set(speechState.submittedPlayerIds);
+    const revealed = new Set<string>();
+
+    for (const playerId of speechState.order) {
+      if (!submitted.has(playerId)) {
+        break;
+      }
+      revealed.add(playerId);
+    }
+
+    const historical = round.descriptions.filter((description) => !speechState.matches(description));
+    const currentByPlayer = new Map(
+      round.descriptions
+        .filter((description) => speechState.matches(description))
+        .map((description) => [description.playerId, description]),
+    );
+
+    return [
+      ...historical,
+      ...speechState.order.flatMap((playerId) => {
+        if (!revealed.has(playerId)) {
+          return [];
+        }
+        const description = currentByPlayer.get(playerId);
+        return description ? [description] : [];
+      }),
+    ];
+  }
+
   private buildRoomSnapshot(room: RoomRecord): RoomSnapshot {
     // 快照是前端渲染主数据源，尽量保证“一包就够渲染当前房间”。
+    const speechState = room.round ? this.getCurrentSpeechState(room.round) : undefined;
+
     return {
       roomId: room.id,
       name: room.settings.name,
@@ -2180,6 +2264,10 @@ export class RoomService {
         started: Boolean(room.round),
         day: room.round?.day ?? 0,
         descriptionOrder: room.round?.descriptionOrder,
+        speechOrder: speechState ? [...speechState.order] : undefined,
+        submittedSpeechPlayerIds: speechState
+          ? [...speechState.submittedPlayerIds]
+          : undefined,
         questionerPlayerId: room.round?.questionerPlayerId,
         tieBreakStage: room.round?.tieBreak?.stage,
         tieBreakIndex: room.round?.tieBreak ? room.round.tieBreakCount : undefined,
@@ -2194,7 +2282,7 @@ export class RoomService {
           : undefined,
       },
       players: this.buildPublicPlayers(room),
-      descriptions: room.round?.descriptions ?? [],
+      descriptions: this.buildPublicDescriptions(room.round),
       chat: room.chat,
       summary: room.round?.summary,
     };

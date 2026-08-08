@@ -314,6 +314,10 @@ export interface RoomSnapshot {
     day: number;
     /** 当前描述轮次的公开发言顺序。 */
     descriptionOrder?: string[];
+    /** 当前发言子阶段的完整顺序，普通描述、补充发言与平票 PK 共用。 */
+    speechOrder?: string[];
+    /** 当前发言子阶段已经提交的玩家；仅公开提交状态，不提前公开发言内容。 */
+    submittedSpeechPlayerIds?: string[];
     questionerPlayerId?: string;
     tieBreakStage?: TieBreakStage;
     /** 当前平票 PK 的编号，仅在 tieBreak 阶段存在。 */

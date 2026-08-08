@@ -39,13 +39,15 @@ describe("description column model", () => {
     expect(model.byPlayer.get("p1")?.get("sup-1")?.id).toBe("supplement-1");
   });
 
-  it("adds pending players only to the active supplement index", () => {
+  it("keeps the full active speech order even when an early submission is still hidden", () => {
     const status: SpeechStatus = {
       phase: "description",
       started: true,
       day: 2,
       speechMode: "supplement",
       supplementIndex: 3,
+      speechOrder: ["p1", "p2", "p3"],
+      submittedSpeechPlayerIds: ["p1"],
       pendingSupplementPlayerIds: ["p2", "p3"],
     };
 
@@ -59,7 +61,7 @@ describe("description column model", () => {
       new Set(["p1"]),
     );
     expect(model.columns.find(({ key }) => key === "sup-3")?.expectedPlayerIds).toEqual(
-      new Set(["p2", "p3"]),
+      new Set(["p1", "p2", "p3"]),
     );
   });
 

@@ -128,22 +128,24 @@ export function DescriptionPhase() {
   ]);
 
   const submittedPlayerIds = useMemo(
-    () => new Set(currentDescriptions.map((description) => description.playerId)),
-    [currentDescriptions],
+    () =>
+      new Set(
+        snapshot.status.submittedSpeechPlayerIds ??
+          currentDescriptions.map((description) => description.playerId),
+      ),
+    [currentDescriptions, snapshot.status.submittedSpeechPlayerIds],
   );
 
   const waitingPlayerIds = useMemo(() => {
-    if (mode === "supplement") {
-      return snapshot.status.pendingSupplementPlayerIds ?? [];
-    }
-    if (mode === "tieBreak") {
-      return (snapshot.status.tieBreakCandidateIds ?? []).filter(
-        (playerId) => !submittedPlayerIds.has(playerId),
-      );
-    }
-    return (snapshot.status.descriptionOrder ?? []).filter(
-      (playerId) => !submittedPlayerIds.has(playerId),
-    );
+    const order =
+      snapshot.status.speechOrder ??
+      (mode === "supplement"
+        ? snapshot.status.pendingSupplementPlayerIds
+        : mode === "tieBreak"
+          ? snapshot.status.tieBreakCandidateIds
+          : snapshot.status.descriptionOrder) ??
+      [];
+    return order.filter((playerId) => !submittedPlayerIds.has(playerId));
   }, [mode, snapshot.status, submittedPlayerIds]);
 
   const waitingPlayers = waitingPlayerIds
@@ -152,19 +154,12 @@ export function DescriptionPhase() {
   const myId = privateState?.playerId ?? "";
 
   /**
-   * 本轮应当发言的玩家顺序。
-   * 普通轮用服务端下发的 descriptionOrder；PK 与补充发言用各自的候选名单，
-   * 并按已提交记录的先后补齐顺序，保证顺序稳定。
+   * 三种发言阶段统一使用服务端下发的顺序，确保所有客户端看到同一行序。
    */
   const speechOrder = useMemo<string[]>(() => {
-    if (mode === "supplement") {
-      const pending = snapshot.status.pendingSupplementPlayerIds ?? [];
-      const spoken = currentDescriptions.map((description) => description.playerId);
-      return [...new Set([...spoken, ...pending])];
-    }
-    if (mode === "tieBreak") {
-      return snapshot.status.tieBreakCandidateIds ?? [];
-    }
+    if (snapshot.status.speechOrder) return snapshot.status.speechOrder;
+    if (mode === "supplement") return snapshot.status.pendingSupplementPlayerIds ?? [];
+    if (mode === "tieBreak") return snapshot.status.tieBreakCandidateIds ?? [];
     const order = snapshot.status.descriptionOrder ?? [];
     if (order.length > 0) return order;
     // 顺序缺失时退回为存活玩家，避免表格为空。
@@ -174,19 +169,15 @@ export function DescriptionPhase() {
           player.roundStatus === "alive" && player.id !== snapshot.status.questionerPlayerId,
       )
       .map((player) => player.id);
-  }, [mode, snapshot.status, snapshot.players, currentDescriptions]);
+  }, [mode, snapshot.status, snapshot.players]);
 
   /**
-   * 逐行构建表格。发言按顺序揭示：只要前面还有人没提交，
-   * 后面已提交的内容也先不公开，避免抢跑影响其他玩家判断。
-   * 出题人与旁观者看到全部内容，本人始终能看到自己那一句。
+   * 服务端已经只下发顺序连续完成的公开前缀；客户端不再为任何身份开后门。
    */
   const speechRows = useMemo<SpeechRow[]>(() => {
     const textByPlayer = new Map(
       currentDescriptions.map((description) => [description.playerId, description.text]),
     );
-    const seesAll = isQuestioner || me?.membership === "spectator";
-    let blocked = false;
 
     return speechOrder.map((playerId) => {
       const player =
@@ -205,13 +196,10 @@ export function DescriptionPhase() {
 
       const text = textByPlayer.get(playerId);
       const isMe = playerId === myId;
-      // 顺序一旦断开，后续行即便已提交也保持折起。
-      const visible = text !== undefined && (seesAll || isMe || !blocked);
-      if (text === undefined) blocked = true;
 
-      return { player, text: visible ? text : undefined, isMe };
+      return { player, text, isMe };
     });
-  }, [speechOrder, currentDescriptions, snapshot.players, isQuestioner, me?.membership, myId]);
+  }, [speechOrder, currentDescriptions, snapshot.players, myId]);
   const canSpeak =
     amAlive &&
     !isQuestioner &&

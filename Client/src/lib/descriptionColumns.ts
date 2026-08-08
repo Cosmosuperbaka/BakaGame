@@ -38,18 +38,21 @@ function pendingColumn(status: SpeechStatus): { key: string; playerIds: string[]
   if (mode === "supplement") {
     return {
       key: `sup-${status.supplementIndex ?? 1}`,
-      playerIds: status.pendingSupplementPlayerIds ?? [],
+      playerIds: status.speechOrder ?? status.pendingSupplementPlayerIds ?? [],
     };
   }
   if (mode === "tieBreak") {
     if (status.tieBreakStage !== "description") return null;
     return {
       key: `tie-${status.tieBreakIndex ?? 1}`,
-      playerIds: status.tieBreakCandidateIds ?? [],
+      playerIds: status.speechOrder ?? status.tieBreakCandidateIds ?? [],
     };
   }
   if (status.phase !== "description") return null;
-  return { key: `cycle-${status.day}`, playerIds: status.descriptionOrder ?? [] };
+  return {
+    key: `cycle-${status.day}`,
+    playerIds: status.speechOrder ?? status.descriptionOrder ?? [],
+  };
 }
 
 /**
