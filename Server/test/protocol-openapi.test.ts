@@ -130,6 +130,14 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
       roomId: "1234",
       payload: { text: "你好" },
     },
+    { id: "20", type: "game.cancelVote", roomId: "1234", payload: {} },
+    { id: "21", type: "game.cancelNightAction", roomId: "1234", payload: {} },
+    {
+      id: "22",
+      type: "game.requestSupplement",
+      roomId: "1234",
+      payload: { playerIds: ["p1", "p2"] },
+    },
   ] as const;
 
   for (const message of messages) {
@@ -139,11 +147,19 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
   }
 
   const objectParsed = parseClientMessage({
-    id: "20",
+    id: "23",
     type: "game.resolveDisconnect",
     payload: { playerId: "p5", resolution: "eliminate" },
   });
   expect(objectParsed.type).toBe("game.resolveDisconnect");
+
+  expect(() =>
+    parseClientMessage({
+      id: "invalid-array",
+      type: "game.requestSupplement",
+      payload: { playerIds: ["p1", 2] },
+    }),
+  ).toThrow(AppError);
 });
 
 test("协议解析会为非法消息抛出业务错误", () => {

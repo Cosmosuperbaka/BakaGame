@@ -136,6 +136,14 @@ const readWordPair = (value: unknown): [string, string] => {
   return [value[0], value[1]];
 };
 
+const readStringArray = (value: unknown, field: string): string[] => {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串数组`);
+  }
+
+  return value;
+};
+
 // manualRoles 每个值都必须是合法的 PlayerRole，仅做类型断言无法保证。
 const parseManualRoles = (obj: Record<string, unknown>): Record<string, PlayerRole> => {
   const result: Record<string, PlayerRole> = {};
@@ -328,6 +336,18 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         roomId,
         sessionToken,
         payload: { words: readWordPair(payload.words) },
+      };
+    case "game.cancelVote":
+      return { id, type, roomId, sessionToken, payload: {} };
+    case "game.cancelNightAction":
+      return { id, type, roomId, sessionToken, payload: {} };
+    case "game.requestSupplement":
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: { playerIds: readStringArray(payload.playerIds, "payload.playerIds") },
       };
     case "game.resolveDisconnect": {
       const resolution = readString(payload.resolution, "payload.resolution")!;
