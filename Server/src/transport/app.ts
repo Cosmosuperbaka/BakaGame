@@ -3,7 +3,6 @@ import { Elysia } from "elysia";
 
 import { RoomService } from "../application/room-service";
 import type { AppEnv } from "../config/env";
-import type { VersionInfo } from "../config/version";
 import { isAppError } from "../domain/errors";
 import { describeError, EventLogger } from "../infrastructure/event-logger";
 import { createSwaggerPlugin } from "./openapi";
@@ -13,11 +12,10 @@ import { systemRoutes } from "./routes/system";
 export interface AppDependencies {
   env: AppEnv;
   roomService: RoomService;
-  versionInfo: VersionInfo;
   logger: EventLogger;
 }
 
-export const createApp = ({ env, roomService, versionInfo, logger }: AppDependencies) => {
+export const createApp = ({ env, roomService, logger }: AppDependencies) => {
   const decoder = new TextDecoder();
 
   const app = new Elysia()
@@ -33,7 +31,6 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
     .use(
       createSwaggerPlugin({
         serverUrl: env.serverUrl,
-        versionInfo,
       }),
     )
     // ==================== 原生耗时记录派生 ====================
@@ -86,7 +83,7 @@ export const createApp = ({ env, roomService, versionInfo, logger }: AppDependen
       };
     })
     // ==================== 系统 HTTP 业务模块 ====================
-    .use(systemRoutes({ roomService, versionInfo }))
+    .use(systemRoutes({ roomService }))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       open(ws) {

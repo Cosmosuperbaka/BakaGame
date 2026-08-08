@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 
 import { RoomService } from "../application/room-service";
 import { readEnv } from "../config/env";
-import { createVersionInfo } from "../config/version";
 import { EventLogger } from "../infrastructure/event-logger";
 import { WordBankRepository } from "../infrastructure/word-bank-repository";
 import { createApp } from "../transport/app";
@@ -12,7 +11,6 @@ import { createApp } from "../transport/app";
 
 const run = async () => {
   const env = readEnv();
-  const versionInfo = createVersionInfo(env.gitCommit);
   const logger = new EventLogger();
   const roomService = new RoomService({
     eventLogger: logger,
@@ -22,7 +20,6 @@ const run = async () => {
   const { app } = createApp({
     env,
     roomService,
-    versionInfo,
     logger,
   });
 

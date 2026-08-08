@@ -7,7 +7,6 @@ export interface AppEnv {
   serverUrl: string;
   serverListenHost: string;
   serverPort: number;
-  gitCommit: string;
   wordBankPath: string;
 }
 
@@ -42,7 +41,6 @@ export const readEnv = (): AppEnv => {
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
-    gitCommit: Bun.env.GIT_COMMIT ?? "dev",
     wordBankPath: resolve(process.cwd(), "storage/word-bank.json"),
   };
 };

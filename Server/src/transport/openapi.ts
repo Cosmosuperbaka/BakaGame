@@ -1,15 +1,12 @@
 import { swagger } from "@elysiajs/swagger";
 
-import type { VersionInfo } from "../config/version";
-
 export interface OpenApiOptions {
   serverUrl: string;
-  versionInfo: VersionInfo;
 }
 
 // ==================== OpenAPI Swagger 插件构建 ====================
 
-export const createSwaggerPlugin = ({ serverUrl, versionInfo }: OpenApiOptions) =>
+export const createSwaggerPlugin = ({ serverUrl }: OpenApiOptions) =>
   swagger({
     provider: "swagger-ui",
     path: "/openapi",
@@ -17,7 +14,7 @@ export const createSwaggerPlugin = ({ serverUrl, versionInfo }: OpenApiOptions) 
       openapi: "3.1.0",
       info: {
         title: "WhoIsFaker Backend HTTP API",
-        version: versionInfo.version,
+        version: "unversioned",
         description:
           "WhoIsFaker 后端辅助 HTTP 接口文档。实时业务通信通过 WebSocket /api/whoisfaker/ws 完成。",
       },

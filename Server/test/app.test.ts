@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { RoomService } from "../src/application/room-service";
 import type { AppEnv } from "../src/config/env";
-import { createVersionInfo } from "../src/config/version";
 import {
   EventLogger,
   formatLogEntry,
@@ -97,7 +96,6 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 0,
-    gitCommit: "test-commit",
     wordBankPath: ":memory:",
   };
   const roomService = new RoomService({
@@ -108,17 +106,12 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
   const { app } = createApp({
     env,
     roomService,
-    versionInfo: createVersionInfo(env.gitCommit),
     logger,
   });
 
   const healthRes = await app.handle(new Request("http://localhost/health"));
   expect(healthRes.status).toBe(200);
   expect((await healthRes.json()).status).toBe("ok");
-
-  const versionRes = await app.handle(new Request("http://localhost/version"));
-  expect(versionRes.status).toBe(200);
-  expect((await versionRes.json()).commit).toBe("test-commit");
 
   const optionsRes = await app.handle(
     new Request("http://localhost/health", {
@@ -177,7 +170,6 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 0,
-    gitCommit: "test",
     wordBankPath: join(tempDir, "word-bank.json"),
   };
   const roomService = new RoomService({
@@ -188,7 +180,6 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
   const { app } = createApp({
     env,
     roomService,
-    versionInfo: createVersionInfo(env.gitCommit),
     logger,
   });
   const started = app.listen({
@@ -203,12 +194,9 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
 
   try {
     const health = await fetch(`http://127.0.0.1:${port}/health`);
-    const version = await fetch(`http://127.0.0.1:${port}/version`);
 
     expect(health.ok).toBe(true);
-    expect(version.ok).toBe(true);
     expect((await health.json()).status).toBe("ok");
-    expect((await version.json()).commit).toBe("test");
 
     const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`);
     await new Promise<void>((resolve, reject) => {
