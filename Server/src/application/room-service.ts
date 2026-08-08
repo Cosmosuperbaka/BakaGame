@@ -595,7 +595,12 @@ export class RoomService {
 
     this.broadcastRoomEvent(room, "room.settingsChanged", {
       roomId: room.id,
-      settings: room.settings,
+      settings: {
+        name: room.settings.name,
+        visibility: room.settings.visibility,
+        allowSpectators: room.settings.allowSpectators,
+        roleConfig: room.settings.roleConfig,
+      },
     });
     this.publishRoomState(room);
     this.publishLobby();
