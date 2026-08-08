@@ -210,7 +210,7 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     expect((await health.json()).status).toBe("ok");
     expect((await version.json()).commit).toBe("test");
 
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`);
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
       socket.addEventListener(
