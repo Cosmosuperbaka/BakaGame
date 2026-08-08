@@ -37,7 +37,6 @@ export function AssignQuestionerPhase() {
       <PhaseHeader
         icon={UserCheck}
         title="指定主持人"
-        description={isHost ? "选择一名玩家作为本局的主持人" : "等待房主指定主持人..."}
       />
 
       {isHost && (

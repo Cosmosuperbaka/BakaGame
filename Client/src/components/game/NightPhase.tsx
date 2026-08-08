@@ -63,11 +63,6 @@ export function NightPhase() {
         icon={Moon}
         title="夜晚降临"
         iconClassName="text-indigo-500"
-        description={
-          canAct && !acted
-            ? "你可以选择击杀一名玩家，或者什么都不做"
-            : "等待夜晚结束..."
-        }
       />
 
       <PrivilegedActionPreview mode="night" />

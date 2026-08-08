@@ -129,22 +129,12 @@ export function BlankGuessButton() {
 
 /** 白板猜词阶段等待提示（供非白板玩家看到） */
 export function BlankGuessWaiting() {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const blankGuessPlayerId = snapshot.status.blankGuessPlayerId;
-  const guesserName =
-    snapshot.players.find((p) => p.id === blankGuessPlayerId)?.name ?? "白板";
-
   return (
     <div className="mx-auto max-w-md">
       <PhaseHeader
         icon={CircleHelp}
         title="白板猜词"
         iconClassName="text-amber-600"
-        description={
-          <>
-            等待 <span className="font-medium text-foreground">{guesserName}</span> 猜出两个词语...
-          </>
-        }
       />
     </div>
   );

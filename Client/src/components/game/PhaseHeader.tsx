@@ -1,12 +1,9 @@
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
   icon: LucideIcon;
   title: string;
-  /** 兼容现有调用；阶段副标题不再渲染。 */
-  description?: ReactNode;
   iconClassName?: string;
   titleClassName?: string;
 }
