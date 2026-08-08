@@ -1823,7 +1823,7 @@ export class RoomService {
       },
     });
 
-    if (await this.maybeEnterBlankGuess(room, eliminatedIds, "description")) {
+    if (this.maybeEnterBlankGuess(room)) {
       return;
     }
 
@@ -1851,16 +1851,10 @@ export class RoomService {
     });
   }
 
-  private async maybeEnterBlankGuess(
-    room: RoomRecord,
-    eliminatedIds: string[],
-    resumePhase: Exclude<GamePhase, "assigningQuestioner" | "wordSubmission" | "blankGuess">,
-  ): Promise<boolean> {
+  private maybeEnterBlankGuess(room: RoomRecord): boolean {
     // 白板被淘汰时不再阻塞游戏进程，玩家可通过悬浮按钮随时猜词（非阻塞）。
     // 仅保留"残局触发"路径：其他阵营已满足胜负条件但白板仍存活时，进入阻塞猜词阶段。
     const round = this.requireRound(room);
-    const blankPlayerId = getBlankPlayerId(round.assignments);
-
     const finalBlankGuess = shouldEnterFinalBlankGuess(round);
 
     if (finalBlankGuess.shouldGuess && finalBlankGuess.blankPlayerId) {
@@ -1876,9 +1870,6 @@ export class RoomService {
     }
 
     // 白板被淘汰但残局条件未触发：继续正常流程，白板玩家的 canSubmitBlankGuess 仍为 true。
-    void blankPlayerId;
-    void eliminatedIds;
-    void resumePhase;
     return false;
   }
 
@@ -1895,7 +1886,7 @@ export class RoomService {
       recordEliminations(round.assignments, eliminatedIds, reason, this.now());
     }
 
-    if (await this.maybeEnterBlankGuess(room, eliminatedIds, nextPhase)) {
+    if (this.maybeEnterBlankGuess(room)) {
       return;
     }
 
