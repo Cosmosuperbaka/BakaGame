@@ -224,6 +224,10 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("gameOver");
   expect(snapshot?.summary?.winner).toBe("good");
+  expect(snapshot?.summary?.words?.civilianWord).toBeTruthy();
+  expect(snapshot?.summary?.words?.undercoverWord).toBeTruthy();
+  expect(snapshot?.summary?.voteHistory).toHaveLength(1);
+  expect(snapshot?.summary?.voteHistory?.[0]?.votes).toHaveLength(4);
   expect(snapshot?.players.find((player) => player.id === hostResult.playerId)?.score).toBe(0);
   expect(
     snapshot?.players.find((player) => player.id === joined[0].joinResult.playerId)?.score,

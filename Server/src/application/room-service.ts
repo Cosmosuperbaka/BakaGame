@@ -761,6 +761,7 @@ export class RoomService {
     round.descriptionOrder = this.createDescriptionOrder(room);
     round.descriptionSubmittedBy = [];
     round.votes = [];
+    round.voteHistory = [];
     round.tieBreak = undefined;
     round.nightActions = [];
     round.blankGuessContext = undefined;
@@ -1388,6 +1389,7 @@ export class RoomService {
       round.descriptions = [];
       round.descriptionSubmittedBy = [];
       round.votes = [];
+      round.voteHistory = [];
       round.tieBreak = undefined;
       round.nightActions = [];
       round.blankGuessUsed = false;
@@ -1444,6 +1446,7 @@ export class RoomService {
         round.descriptions = [];
         round.descriptionSubmittedBy = [];
         round.votes = [];
+        round.voteHistory = [];
         round.tieBreak = undefined;
         round.nightActions = [];
         round.blankGuessUsed = false;
@@ -1718,6 +1721,7 @@ export class RoomService {
       descriptions: [],
       descriptionSubmittedBy: [],
       votes: [],
+      voteHistory: [],
       nightActions: [],
       blankGuessUsed: false,
       blankGuessRecords: [],
@@ -1748,6 +1752,11 @@ export class RoomService {
     // 这个方法只负责“投票结算”，真正的胜负判断交给后续统一淘汰流程。
     const round = this.requireRound(room);
     const votes = tieBreak ? round.tieBreak?.votes ?? [] : round.votes;
+    round.voteHistory.push({
+      day: round.day,
+      tieBreak,
+      votes: votes.map((vote) => ({ ...vote })),
+    });
     const fallbackCandidates = tieBreak
       ? round.tieBreak?.candidateIds ?? []
       : this.getAliveAssignedPlayerIds(room);
@@ -1952,6 +1961,19 @@ export class RoomService {
       })),
       descriptions: [...round.descriptions],
       blankGuesses: [...round.blankGuessRecords],
+      words: round.words
+        ? {
+            pair: [...round.words.pair] as [string, string],
+            civilianWord: round.words.civilianWord,
+            undercoverWord: round.words.undercoverWord,
+            blankHint: round.words.blankHint,
+          }
+        : undefined,
+      voteHistory: round.voteHistory.map((entry) => ({
+        day: entry.day,
+        tieBreak: entry.tieBreak,
+        votes: entry.votes.map((vote) => ({ ...vote })),
+      })),
     };
 
     for (const player of Object.values(room.players)) {

@@ -147,6 +147,12 @@ export interface BlankGuessRecord {
   reason: "active" | "eliminated" | "finale";
 }
 
+export interface VoteHistoryRecord {
+  day: number;
+  tieBreak?: boolean;
+  votes: VoteRecord[];
+}
+
 // 某个玩家在当前局内的运行时状态。
 export interface RoundPlayerState {
   role: PlayerRole;
@@ -193,11 +199,7 @@ export interface RoundSummary {
     undercoverWord: string;
     blankHint?: string;
   };
-  voteHistory?: Array<{
-    day: number;
-    tieBreak?: boolean;
-    votes: VoteRecord[];
-  }>;
+  voteHistory?: VoteHistoryRecord[];
 }
 
 // 单局游戏的全部运行态。
@@ -233,6 +235,7 @@ export interface GameRound {
     resumePhase: "description" | "voting";
   };
   votes: VoteRecord[];
+  voteHistory: VoteHistoryRecord[];
   tieBreak?: TieBreakState;
   nightActions: NightActionRecord[];
   blankGuessUsed: boolean;
