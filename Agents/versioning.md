@@ -66,11 +66,10 @@ feat: 修复主页样式问题                                                  
 
 ## changelog.json 维护说明
 
-`Client/public/changelog.json` 存储用户可见的更新日志，格式：
+`Client/src/data/changelog.json` 存储用户可见的更新日志，格式：
 
 ```json
 {
-  "currentVersion": "1.x.x",
   "entries": [
     {
       "version": "1.x.x",
@@ -89,4 +88,15 @@ feat: 修复主页样式问题                                                  
   - 行内支持 `**加粗**`、`` `等宽` `` 和 `[文字](链接)`
   - 换行用 `\n`
 - 解析由 `Client/src/lib/changelog.ts` 完成，渲染不使用 `dangerouslySetInnerHTML`。
-- `currentVersion` 与最新 entry 的 `version` 保持一致。
+- 展示版本号取 `entries` 里的最大版本号，与书写顺序和 `package.json` 无关。
+
+### 更新日志与提交历史不得放进 `public/`
+
+两份数据都必须随 JS 产物带 hash 发布，不能作为 `public/` 下的固定 URL 资源：
+
+- 更新日志由 `Client/src/data/changelog.json` 直接 `import`。
+- 提交历史由 `vite.config.ts` 的 `commit-history` 插件以虚拟模块 `virtual:commit-history` 注入，类型声明在 `Client/src/vite-env.d.ts`。
+
+原因：`public/` 下的文件名不带 hash，而 CDN（EdgeOne Pages）会给静态资源发 `Cache-Control: max-age=31536000, immutable`。`immutable` 使浏览器在有效期内完全不发请求，已访问过的用户会长期停留在旧内容上。改为随 JS 打包后，内容变化即文件名变化，而入口 HTML 是 `max-age=0, must-revalidate`，更新可立即生效。
+
+两份数据因此在构建期定型，前端不存在加载中状态，不要为它们添加异步加载或占位文案。
