@@ -252,6 +252,69 @@ test("对局开始后不能切换旁观或准备状态", async () => {
   }
 });
 
+test("正式房间提前提交的描述只按发言顺序公开", async () => {
+  const { service } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "1616");
+  const joined = await joinPlayers(service, "1616", 4, "顺序玩家");
+  const allConnections = [host, ...joined.map((item) => item.connection)];
+
+  for (const connection of allConnections) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  const connectionByPlayerId = new Map<string, typeof host>([
+    [hostResult.playerId, host],
+    ...joined.map((item) => [item.joinResult.playerId, item.connection] as const),
+  ]);
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  const order = snapshot.status.speechOrder ?? [];
+  expect(order).toEqual(snapshot.status.descriptionOrder ?? []);
+  expect(order).toHaveLength(4);
+
+  await execute(service, connectionByPlayerId.get(order[1])!, {
+    id: "submit-second-first",
+    type: "game.submitDescription",
+    payload: { text: "第二位提前提交" },
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.status.submittedSpeechPlayerIds).toEqual([order[1]]);
+  expect(snapshot.descriptions).toEqual([]);
+
+  await execute(service, connectionByPlayerId.get(order[0])!, {
+    id: "submit-first-after",
+    type: "game.submitDescription",
+    payload: { text: "第一位随后提交" },
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.descriptions.map((description) => description.playerId)).toEqual([
+    order[0],
+    order[1],
+  ]);
+  expect(snapshot.descriptions.map((description) => description.text)).toEqual([
+    "第一位随后提交",
+    "第二位提前提交",
+  ]);
+});
+
 test("常规流程可以完整进入好人胜利结算", async () => {
   // 这个场景覆盖：建房 -> 开局 -> 指定出题人 -> 提交词语 -> 描述 -> 投票 -> 结算。
   const { service } = createTestContext();
@@ -341,7 +404,9 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   await execute(service, questioner.connection, {
     id: "request-supplement-during-vote",
     type: "game.requestSupplement",
-    payload: { playerIds: [joined[1].joinResult.playerId] },
+    payload: {
+      playerIds: [joined[1].joinResult.playerId, joined[2].joinResult.playerId],
+    },
   });
   let questionerState = getLastEventPayload<PrivateState>(
     questioner.connection,
@@ -365,10 +430,26 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   }
   expect(supplementBlockCode).toBe("PHASE_INCOMPLETE");
 
-  await execute(service, joined[1].connection, {
-    id: "submit-supplement-during-vote",
+  await execute(service, joined[2].connection, {
+    id: "submit-later-supplement-first",
     type: "game.submitDescription",
-    payload: { text: "投票阶段补充发言" },
+    payload: { text: "后序玩家提前补充" },
+  });
+  supplementSnapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(supplementSnapshot?.status.phase).toBe("description");
+  expect(supplementSnapshot?.status.submittedSpeechPlayerIds).toEqual([
+    joined[2].joinResult.playerId,
+  ]);
+  expect(
+    supplementSnapshot?.descriptions.some(
+      (description) => description.kind === "supplement",
+    ),
+  ).toBe(false);
+
+  await execute(service, joined[1].connection, {
+    id: "submit-earlier-supplement-after",
+    type: "game.submitDescription",
+    payload: { text: "前序玩家随后补充" },
   });
   questionerState = getLastEventPayload<PrivateState>(
     questioner.connection,
@@ -499,13 +580,29 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
     [...(leaders ?? [])].sort(),
   );
 
-  for (const candidateId of leaders ?? []) {
-    await execute(service, connectionByPlayerId.get(candidateId)!, {
-      id: `tie-desc-${candidateId}`,
-      type: "game.submitDescription",
-      payload: { text: "补充描述" },
-    });
-  }
+  const tieOrder = snapshot?.status.speechOrder ?? [];
+  expect(tieOrder).toEqual(snapshot?.status.tieBreakCandidateIds ?? []);
+  await execute(service, connectionByPlayerId.get(tieOrder[1])!, {
+    id: "tie-desc-second-first",
+    type: "game.submitDescription",
+    payload: { text: "第二位提前 PK 描述" },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.descriptions.some((description) => description.kind === "tieBreak")).toBe(
+    false,
+  );
+
+  await execute(service, connectionByPlayerId.get(tieOrder[0])!, {
+    id: "tie-desc-first-after",
+    type: "game.submitDescription",
+    payload: { text: "第一位随后 PK 描述" },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(
+    snapshot?.descriptions
+      .filter((description) => description.kind === "tieBreak")
+      .map((description) => description.playerId),
+  ).toEqual(tieOrder);
 
   await execute(service, questioner.connection, {
     id: "to-tie-vote",
