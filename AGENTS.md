@@ -52,7 +52,6 @@ Shared definitions have no package of their own; the server's `bun run check` an
 CLIENT_URL=http://localhost:5173
 SERVER_URL=http://localhost:4850
 SERVER_PORT=4850
-GIT_COMMIT=dev
 ```
 
 `Client/.env` (see `.env.example`):
@@ -81,7 +80,7 @@ transport/       ← Elysia app, WS handler, request parsing, packet factories
 application/     ← RoomService (routes all commands), RoomManager, ConnectionRegistry
 domain/          ← rules.ts (pure functions), model.ts (re-exports shared), errors.ts
 infrastructure/  ← word-bank-repository.ts, event-logger.ts
-config/          ← env.ts, constants.ts, version.ts
+config/          ← env.ts, constants.ts
 ```
 
 `RoomService` (`Server/src/application/room-service.ts`) is the core — it holds all rooms and connections in memory and routes every incoming command. All state is **in-memory only**; no database. `runHousekeeping()` runs on a 10-second interval for idle room cleanup and questioner-reconnect timeout.

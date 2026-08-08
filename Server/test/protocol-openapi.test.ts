@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 
 import { RoomService } from "../src/application/room-service";
 import { AppError } from "../src/domain/errors";
-import { createVersionInfo } from "../src/config/version";
 import { EventLogger } from "../src/infrastructure/event-logger";
 import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
 import { createApp } from "../src/transport/app";
@@ -185,7 +184,6 @@ test("协议解析会为非法消息抛出业务错误", () => {
 });
 
 test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async () => {
-  const versionInfo = createVersionInfo("test");
   const logger = new EventLogger();
   const roomService = new RoomService({
     eventLogger: logger,
@@ -197,11 +195,9 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       serverUrl: "http://127.0.0.1:4850",
       serverListenHost: "127.0.0.1",
       serverPort: 4850,
-      gitCommit: "test",
       wordBankPath: ":memory:",
     },
     roomService,
-    versionInfo,
     logger,
   });
 
@@ -210,7 +206,7 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
 
   const document = (await response.json()) as { paths: Record<string, unknown> };
   expect(document.paths["/health"]).toBeTruthy();
-  expect(document.paths["/version"]).toBeTruthy();
+  expect(document.paths["/version"]).toBeUndefined();
   expect(createAck({ id: "ack", type: "chat.send" }, { ok: true }).type).toBe("ack");
   expect(createErrorPacket("err", "CODE", "message").type).toBe("error");
   expect(createEvent("room.snapshot", {}).type).toBe("event");
