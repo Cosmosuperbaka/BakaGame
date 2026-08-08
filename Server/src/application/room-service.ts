@@ -1873,7 +1873,7 @@ export class RoomService {
     };
 
     for (const player of Object.values(room.players)) {
-      // 结算后统一重置为"未准备"：战报页只能返回主页，重新进房再准备。
+      // 结算后统一重置为“未准备”，房主返回等待阶段后由全员重新确认。
       player.isReady = false;
     }
 

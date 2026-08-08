@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ServerMessage } from "@/types";
+import type { RoomSnapshot, RoundSummary, ServerMessage } from "@/types";
 
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),
@@ -30,6 +30,52 @@ import { getSessionToken, saveSessionToken } from "@/lib/cookie";
 import { initGameSocket, useGameStore } from "./useGameStore";
 
 const initialState = useGameStore.getState();
+
+const roundSummary: RoundSummary = {
+  winner: "good",
+  reason: "测试结算",
+  awardedScores: [],
+  revealedRoles: [],
+  descriptions: [],
+  blankGuesses: [],
+  words: {
+    pair: ["苹果", "香蕉"],
+    civilianWord: "苹果",
+    undercoverWord: "香蕉",
+  },
+};
+
+const gameOverSnapshot = (roundId: string, summary?: RoundSummary): RoomSnapshot => ({
+  roomId: "5678",
+  name: "结算房间",
+  visibility: "public",
+  allowSpectators: true,
+  hasPassword: false,
+  hostPlayerId: "host",
+  testMode: false,
+  roleLimits: {
+    maxUndercoverCount: 1,
+    canEnableAngel: false,
+    canEnableBlank: false,
+  },
+  settings: {
+    roleConfig: {
+      undercoverCount: 1,
+      hasAngel: false,
+      hasBlank: false,
+    },
+  },
+  status: {
+    phase: "gameOver",
+    roundId,
+    started: true,
+    day: 1,
+  },
+  players: [],
+  descriptions: [],
+  chat: [],
+  summary,
+});
 
 describe("game store integration", () => {
   beforeEach(() => {
@@ -112,5 +158,18 @@ describe("game store integration", () => {
       text: "您的连接已被新标签页替代",
       type: "error",
     });
+  });
+
+  it("keeps the current round summary when a transient game-over snapshot omits it", () => {
+    useGameStore.getState().setSnapshot(gameOverSnapshot("round-1", roundSummary));
+    useGameStore.getState().setSnapshot(gameOverSnapshot("round-1"));
+
+    expect(useGameStore.getState().snapshot?.summary).toEqual(roundSummary);
+
+    useGameStore.getState().setSummary(null);
+    expect(useGameStore.getState().snapshot?.summary).toEqual(roundSummary);
+
+    useGameStore.getState().setSnapshot(gameOverSnapshot("round-2"));
+    expect(useGameStore.getState().snapshot?.summary).toBeUndefined();
   });
 });

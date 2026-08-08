@@ -41,7 +41,7 @@ export interface GameState {
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
   appendChat: (message: ChatMessage) => void;
-  setSummary: (summary: RoundSummary) => void;
+  setSummary: (summary: RoundSummary | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
   removeToast: (id: number) => void;
 
@@ -86,7 +86,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       privateState: null,
       daybreakNotice: null,
     }),
-  setSnapshot: (snapshot) => set({ snapshot }),
+  setSnapshot: (snapshot) =>
+    set((state) => {
+      const previousSnapshot = state.snapshot;
+      const previousSummary =
+        snapshot.status.phase === "gameOver" &&
+        !snapshot.summary &&
+        previousSnapshot &&
+        previousSnapshot.status.roundId === snapshot.status.roundId
+          ? previousSnapshot.summary
+          : undefined;
+
+      return {
+        snapshot: previousSummary ? { ...snapshot, summary: previousSummary } : snapshot,
+      };
+    }),
   setPrivateState: (privateState) => set({ privateState }),
   showDaybreakNotice: (notice) => {
     if (daybreakNoticeTimer) clearTimeout(daybreakNoticeTimer);
@@ -110,7 +124,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setSummary: (summary) =>
     set((state) => {
-      if (!state.snapshot) return state;
+      if (!state.snapshot || !summary) return state;
       return { snapshot: { ...state.snapshot, summary } };
     }),
 
@@ -214,7 +228,7 @@ export function initGameSocket() {
         currentStore.addToast("投票结果已公布");
         break;
       case "game.roundSummary":
-        currentStore.setSummary(evt.payload as RoundSummary);
+        currentStore.setSummary(evt.payload as RoundSummary | null);
         break;
       case "game.disconnectDecisionRequested":
         currentStore.addToast("有玩家掉线，等待出题人处理", "info");

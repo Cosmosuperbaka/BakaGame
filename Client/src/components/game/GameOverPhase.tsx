@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, ChevronDown, BookOpen, Home, RotateCcw, Vote } from "lucide-react";
+import { Trophy, ChevronDown, BookOpen, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
@@ -55,17 +54,10 @@ export function GameOverPhase() {
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
-  const leaveRoom = useGameStore((s) => s.leaveRoom);
-  const navigate = useNavigate();
   const summary = snapshot.summary;
   const [showVotes, setShowVotes] = useState(true);
   const [returning, setReturning] = useState(false);
   const isHost = snapshot.hostPlayerId === privateState?.playerId;
-
-  const handleBackHome = useCallback(async () => {
-    await leaveRoom();
-    navigate("/whoisfaker");
-  }, [leaveRoom, navigate]);
 
   const handleReturnToWaiting = useCallback(async () => {
     setReturning(true);
@@ -79,8 +71,15 @@ export function GameOverPhase() {
 
   if (!summary) {
     return (
-      <div className="py-8">
+      <div className="mx-auto max-w-2xl space-y-5 py-8">
         <PhaseHeader icon={Trophy} title="游戏结束" />
+        <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <BookOpen className="h-4 w-4 text-primary" />
+            本局词语解密
+          </div>
+          <p className="text-sm text-muted-foreground">结算数据同步中…</p>
+        </section>
       </div>
     );
   }
@@ -104,12 +103,12 @@ export function GameOverPhase() {
       />
 
       {/* 词语揭秘全景卡片 */}
-      {summary.words && (
-        <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            <BookOpen className="h-4 w-4 text-primary" />
-            本局词语解密
-          </div>
+      <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <BookOpen className="h-4 w-4 text-primary" />
+          本局词语解密
+        </div>
+        {summary.words ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
             <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3">
               <div className="text-xs text-emerald-600 font-medium mb-1">平民词</div>
@@ -132,8 +131,10 @@ export function GameOverPhase() {
               </div>
             )}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="text-sm text-muted-foreground">本局在出题前结束，没有可解密的词语。</p>
+        )}
+      </section>
 
       {/* 身份揭示与得分表格 */}
       <section className="overflow-hidden rounded-md bg-muted">
@@ -278,7 +279,7 @@ export function GameOverPhase() {
         </section>
       )}
 
-      {/* 房主可让全房回到等待阶段；任何人仍可主动离开。 */}
+      {/* 房主可让全房回到等待阶段。 */}
       <div className="flex flex-col items-center gap-3 pt-2">
         {isHost ? (
           <Button
@@ -291,12 +292,8 @@ export function GameOverPhase() {
             {returning ? "正在返回…" : "返回房间等待"}
           </Button>
         ) : (
-          <p className="text-sm text-muted-foreground">等待房主返回房间，或直接返回主页</p>
+          <p className="text-sm text-muted-foreground">等待房主返回房间</p>
         )}
-        <Button size="lg" onClick={handleBackHome} className="gap-2 px-8 text-base">
-          <Home className="h-4 w-4" />
-          返回主页
-        </Button>
       </div>
     </div>
   );
