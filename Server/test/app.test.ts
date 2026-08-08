@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -158,13 +158,19 @@ const createSocketCollector = (socket: WebSocket) => {
     });
 };
 
-test("HTTP 与 WebSocket 路由可以联通", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-app-"));
-
-  afterEach(() => {
-    rmSync(tempDir, { force: true, recursive: true });
+const openSocket = async (port: number) => {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`);
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener("open", () => resolve(), { once: true });
+    socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), {
+      once: true,
+    });
   });
+  return socket;
+};
 
+const startTestServer = () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-app-"));
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
     serverUrl: "http://127.0.0.1",
@@ -176,11 +182,10 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     eventLogger: new EventLogger(),
     wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
-  const logger = new EventLogger();
   const { app } = createApp({
     env,
     roomService,
-    logger,
+    logger: new EventLogger(),
   });
   const started = app.listen({
     hostname: env.serverListenHost,
@@ -189,8 +194,21 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
   const port = started.server?.port;
 
   if (!port) {
+    rmSync(tempDir, { force: true, recursive: true });
     throw new Error("未能获取测试端口");
   }
+
+  return {
+    port,
+    stop: async () => {
+      await started.stop(true);
+      rmSync(tempDir, { force: true, recursive: true });
+    },
+  };
+};
+
+test("HTTP 与 WebSocket 路由可以联通", async () => {
+  const { port, stop } = startTestServer();
 
   try {
     const health = await fetch(`http://127.0.0.1:${port}/health`);
@@ -198,17 +216,7 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     expect(health.ok).toBe(true);
     expect((await health.json()).status).toBe("ok");
 
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`);
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener(
-        "error",
-        () => reject(new Error("WebSocket 打开失败")),
-        {
-          once: true,
-        },
-      );
-    });
+    const socket = await openSocket(port);
     const waitForSocketMessage = createSocketCollector(socket);
 
     socket.send(
@@ -252,6 +260,14 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
 
     expect(snapshot.payload.roomId).toBe("8888");
 
+    const populatedHealth = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(await populatedHealth.json()).toMatchObject({
+      status: "ok",
+      roomCount: 1,
+      connectionCount: 1,
+      onlinePlayerCount: 1,
+    });
+
     socket.send("not-json");
     const invalidMessageError = (await waitForSocketMessage(
       (payload) =>
@@ -263,6 +279,6 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     expect(invalidMessageError.error.code).toBe("INVALID_MESSAGE");
     socket.close();
   } finally {
-    await started.stop(true);
+    await stop();
   }
 });
