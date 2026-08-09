@@ -909,6 +909,65 @@ test("已提交描述的玩家掉线不暂停游戏，进入投票后才要求�
   expect(voting?.status.pendingDisconnectPlayerId).toBe(joined[0].joinResult.playerId);
 });
 
+test("同阶段第二名掉线玩家在前一位被处理后仍会被要求抉择", async () => {
+  // 按需暂停最危险的失败形态是死锁：推进因「仍有玩家未提交」被拒，
+  // 却没有人被要求处理那次掉线。这里锁住「队列不会漏人」。
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "5560");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `dual-disc-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "5560",
+      payload: { userName: `双掉线${index + 2}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 两名尚未发言的玩家同时掉线：都需要抉择，按顺序排队。
+  await service.unregisterConnection(joined[0].connection.record.id);
+  await service.unregisterConnection(joined[1].connection.record.id);
+
+  const queued = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(queued?.status.pendingDisconnectPlayerId).toBe(joined[0].joinResult.playerId);
+
+  // 处理掉第一位之后，第二位必须立刻浮出来，不能被漏掉。
+  await execute(service, questioner.connection, {
+    id: "resolve-first",
+    type: "game.resolveDisconnect",
+    payload: { playerId: joined[0].joinResult.playerId, resolution: "eliminate" },
+  });
+
+  expect(
+    getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot")?.status
+      .pendingDisconnectPlayerId,
+  ).toBe(joined[1].joinResult.playerId);
+});
+
 test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚动作", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "5556");
