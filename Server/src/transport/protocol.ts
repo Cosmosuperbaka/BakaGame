@@ -128,6 +128,23 @@ const readWordPair = (value: unknown): [string, string] => {
   return [value[0], value[1]];
 };
 
+/**
+ * 猜词草稿。与 readWordPair 的区别是允许空串：
+ * 白板边想边改，任一格暂时为空都是正常的输入过程。
+ */
+const readDraftPair = (value: unknown): [string, string] => {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    typeof value[0] !== "string" ||
+    typeof value[1] !== "string"
+  ) {
+    throw new AppError("INVALID_MESSAGE", "words 必须为长度为 2 的字符串数组");
+  }
+
+  return [value[0], value[1]];
+};
+
 const readStringArray = (value: unknown, field: string): string[] => {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串数组`);
@@ -334,6 +351,25 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         roomId,
         sessionToken,
         payload: { words: readWordPair(payload.words) },
+      };
+    case "game.enterBlankGuess":
+      return { id, type, roomId, sessionToken, payload: {} };
+    case "game.updateBlankGuessDraft":
+      // 草稿允许留空：白板一边想一边删，不该被当成非法输入。
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: { words: readDraftPair(payload.words) },
+      };
+    case "game.reviewBlankGuess":
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: { approve: readBoolean(payload.approve, "payload.approve") },
       };
     case "game.cancelVote":
       return { id, type, roomId, sessionToken, payload: {} };

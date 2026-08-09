@@ -333,10 +333,11 @@ test("卧底数上限按参战人数计算，机器人增减后同步", async ()
   expect(shrunk.roleLimits.canEnableBlank).toBe(false);
 });
 
-test("白板猜中后本局立即结束，白板获胜", async () => {
-  const { service } = createTestContext();
-  const { host, playerId } = await createTestRoom(service, 4);
-
+/** 让房主成为白板并停在描述阶段，用于猜词相关用例。 */
+const prepareBlank = async (
+  service: ReturnType<typeof createTestContext>["service"],
+  host: ReturnType<typeof createConnection>,
+) => {
   await execute(service, host, {
     id: "jump-desc",
     type: "test.jumpToPhase",
@@ -347,9 +348,45 @@ test("白板猜中后本局立即结束，白板获胜", async () => {
     type: "test.setMyRole",
     payload: { role: "blank" },
   });
+};
 
-  // 白板可以在描述阶段主动猜词，不必等到 blankGuess 阶段。
-  expect(privateOf(host).canSubmitBlankGuess).toBe(true);
+test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束", async () => {
+  const { service } = createTestContext();
+  const { host, playerId } = await createTestRoom(service, 4);
+  await prepareBlank(service, host);
+
+  // 未进入阻塞阶段时不能直接提交，必须先发起猜词。
+  let earlyError: string | undefined;
+  try {
+    await execute(service, host, {
+      id: "guess-too-early",
+      type: "game.submitBlankGuess",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+  } catch (error) {
+    earlyError = (error as { code?: string }).code;
+  }
+  expect(earlyError).toBe("ACTION_FORBIDDEN");
+
+  await execute(service, host, {
+    id: "enter",
+    type: "game.enterBlankGuess",
+    payload: {},
+  });
+
+  // 阶段切到 blankGuess，全房都能看到是谁、因何进入。
+  const entered = snapshotOf(host);
+  expect(entered.status.phase).toBe("blankGuess");
+  expect(entered.status.blankGuessPlayerId).toBe(playerId);
+  expect(entered.status.blankGuessReason).toBe("active");
+
+  // 输入草稿实时广播，其他人能看到白板正在猜什么。
+  await execute(service, host, {
+    id: "draft",
+    type: "game.updateBlankGuessDraft",
+    payload: { words: ["苹", ""] },
+  });
+  expect(snapshotOf(host).status.blankGuessDraft).toEqual(["苹", ""]);
 
   const result = (await execute(service, host, {
     id: "guess",
@@ -358,7 +395,6 @@ test("白板猜中后本局立即结束，白板获胜", async () => {
   })) as { success: boolean };
 
   expect(result.success).toBe(true);
-
   const finished = snapshotOf(host);
   expect(finished.status.phase).toBe("gameOver");
   expect(finished.summary?.winner).toBe("blank");
@@ -367,14 +403,98 @@ test("白板猜中后本局立即结束，白板获胜", async () => {
   ).toBe(2);
 });
 
-test("白板主动猜错不结束游戏，但机会用尽", async () => {
+test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async () => {
+  const { service } = createTestContext();
+  // 房主当白板，出题人另找一名真人，这样才有人能裁定。
+  const { host } = await createTestRoom(service, 4);
+
+  const questioner = createConnection(service, "review-questioner");
+  const questionerJoin = (await execute(service, questioner, {
+    id: "join-questioner",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "主持人" },
+  })) as { playerId: string };
+
+  await execute(service, questioner, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, questioner, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, host, {
+    id: "be-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+  expect(snapshotOf(host).status.questionerPlayerId).toBe(questionerJoin.playerId);
+
+  await execute(service, host, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+
+  // 「香焦」只差一字，自动比对判否，但阶段不结束、机会已消耗。
+  const wrong = (await execute(service, host, {
+    id: "near-miss",
+    type: "game.submitBlankGuess",
+    payload: { words: ["苹果", "香焦"] },
+  })) as { success: boolean; pendingReview: boolean };
+
+  expect(wrong.success).toBe(false);
+  expect(wrong.pendingReview).toBe(true);
+  const waiting = snapshotOf(host);
+  expect(waiting.status.phase).toBe("blankGuess");
+  expect(waiting.status.blankGuessPendingReview).toBe(true);
+  expect(privateOf(host).blankGuessUsed).toBe(true);
+
+  // 只有出题人能裁定。
+  let forbidden: string | undefined;
+  try {
+    await execute(service, host, {
+      id: "self-review",
+      type: "game.reviewBlankGuess",
+      payload: { approve: true },
+    });
+  } catch (error) {
+    forbidden = (error as { code?: string }).code;
+  }
+  expect(forbidden).toBe("FORBIDDEN");
+
+  await execute(service, questioner, {
+    id: "approve",
+    type: "game.reviewBlankGuess",
+    payload: { approve: true },
+  });
+
+  const finished = snapshotOf(host);
+  expect(finished.status.phase).toBe("gameOver");
+  expect(finished.summary?.winner).toBe("blank");
+  expect(finished.summary?.blankGuesses.at(-1)?.approvedByQuestioner).toBe(true);
+});
+
+test("主持人判错时回到原阶段继续游戏，机会不再返还", async () => {
   const { service } = createTestContext();
   const { host } = await createTestRoom(service, 4);
 
-  await execute(service, host, {
-    id: "jump-desc",
+  const questioner = createConnection(service, "reject-questioner");
+  await execute(service, questioner, {
+    id: "join-questioner",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "主持人" },
+  });
+
+  await execute(service, questioner, {
+    id: "jump-words",
     type: "test.jumpToPhase",
-    payload: { phase: "description" },
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, questioner, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
   });
   await execute(service, host, {
     id: "be-blank",
@@ -382,14 +502,21 @@ test("白板主动猜错不结束游戏，但机会用尽", async () => {
     payload: { role: "blank" },
   });
 
-  const result = (await execute(service, host, {
+  await execute(service, host, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+  await execute(service, host, {
     id: "wrong-guess",
     type: "game.submitBlankGuess",
     payload: { words: ["西瓜", "菠萝"] },
-  })) as { success: boolean };
+  });
+  await execute(service, questioner, {
+    id: "reject",
+    type: "game.reviewBlankGuess",
+    payload: { approve: false },
+  });
 
-  expect(result.success).toBe(false);
+  // 回到发起猜词时的阶段，游戏继续；机会已经用掉，不能再猜。
   expect(snapshotOf(host).status.phase).toBe("description");
+  expect(snapshotOf(host).status.blankGuessPlayerId).toBeUndefined();
   expect(privateOf(host).blankGuessUsed).toBe(true);
   expect(privateOf(host).canSubmitBlankGuess).toBe(false);
 });

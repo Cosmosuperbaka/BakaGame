@@ -634,8 +634,9 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   expect(snapshot?.status.phase).toBe("night");
 });
 
-test("白板被淘汰后仍可主动猜词并独立获胜", async () => {
-  // 白板被淘汰不会阻塞正常流程，但仍保留一次主动猜词机会。
+test("白板被淘汰后仍可自行发起猜词并独立获胜", async () => {
+  // 被淘汰不自动触发猜词，白板自己决定何时用掉这一次机会；
+  // 一旦发起就进入阻塞阶段，全房停下来等这次猜词。
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "4444");
   const joined: JoinedPlayer[] = [];
@@ -752,6 +753,17 @@ test("白板被淘汰后仍可主动猜词并独立获胜", async () => {
   );
   expect(snapshot?.status.phase).toBe("night");
   expect(blankPrivateState?.canSubmitBlankGuess).toBe(true);
+
+  // 发起猜词把夜晚打断，全房进入阻塞的猜词阶段。
+  await execute(service, blankPlayer.connection, {
+    id: "enter-guess",
+    type: "game.enterBlankGuess",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("blankGuess");
+  expect(snapshot?.status.blankGuessPlayerId).toBe(blankPlayerId);
+  expect(snapshot?.status.blankGuessReason).toBe("active");
 
   await execute(service, blankPlayer.connection, {
     id: "guess",
