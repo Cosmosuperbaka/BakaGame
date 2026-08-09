@@ -1336,6 +1336,17 @@ test("旁观者在局内可以看到所有玩家身份", async () => {
   expect(privateState?.angelWordOptions).toBeUndefined();
   expect(privateState?.blankHint).toBeUndefined();
   expect(privateState?.questionerView).toHaveLength(4);
+
+  // 已能看到全部身份的视角才拿到全局词语；参战玩家仍只知道自己那一个。
+  expect(privateState?.globalWords).toEqual({
+    civilianWord: expect.any(String),
+    undercoverWord: expect.any(String),
+    blankHint: undefined,
+  });
+  expect(
+    getLastEventPayload<PrivateState>(joined[3].connection, "game.privateState")?.globalWords,
+  ).toEqual(privateState?.globalWords);
+  expect(getLastEventPayload<PrivateState>(host, "game.privateState")?.globalWords).toBeUndefined();
   expect(privateState?.questionerView?.every((entry) => entry.role != null)).toBe(true);
   expect(
     privateState?.questionerView?.some(

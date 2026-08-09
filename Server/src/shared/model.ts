@@ -356,6 +356,15 @@ export interface PrivateState {
   canSubmitBlankGuess: boolean;
   blankGuessUsed: boolean;
   nightActionSubmitted: boolean;
+  /**
+   * 本局的全部词语。只发给已经能看到全部身份的出题人与旁观者，
+   * 出局玩家仍留在场上交流，因此不在此列。
+   */
+  globalWords?: {
+    civilianWord: string;
+    undercoverWord: string;
+    blankHint?: string;
+  };
   /** 当前玩家在本轮投票中已投出的目标玩家 ID（含平票 PK 阶段）。 */
   myCurrentVoteTargetId?: string;
   /** 当前玩家本次夜晚已选择的目标玩家 ID；已提交但选择「不行动」时为 undefined。 */

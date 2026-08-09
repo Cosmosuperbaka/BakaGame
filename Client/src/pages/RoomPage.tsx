@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  BookOpen,
   History,
   Menu,
   MessageSquare,
@@ -293,6 +294,8 @@ export default function RoomPage() {
 
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  // 全局词语只发给主持人与旁观者，因此这里无需再判断视角。
+  const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
@@ -387,6 +390,22 @@ export default function RoomPage() {
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
               <Eye className="h-3.5 w-3.5" />旁观视角
             </span>
+          )}
+          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
+          {globalWords && (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
+                </span>
+              </span>
+              {globalWords.blankHint && (
+                <span className="hidden min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex">
+                  <span className="truncate">白板：{globalWords.blankHint}</span>
+                </span>
+              )}
+            </>
           )}
           {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
               此处只占位撑开顶栏空间，避免停靠时挤动相邻元素。 */}

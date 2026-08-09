@@ -2360,6 +2360,13 @@ export class RoomService {
         canSubmitBlankGuess: false,
         blankGuessUsed: round.blankGuessUsed,
         nightActionSubmitted: false,
+        globalWords: round.words
+          ? {
+              civilianWord: round.words.civilianWord,
+              undercoverWord: round.words.undercoverWord,
+              blankHint: round.words.blankHint,
+            }
+          : undefined,
         questionerView: Object.entries(round.assignments).map(([playerId, item]) => ({
           playerId,
           role: item.role,
