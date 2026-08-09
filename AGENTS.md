@@ -115,6 +115,10 @@ Client path alias: `@/` → `Client/src/`.
 
 **Code comments in Chinese**: all business-logic comments in the server are in Simplified Chinese. Match this convention when adding comments.
 
+**Disconnects pause on demand**: an offline player only blocks the round when the current phase is still waiting on *them*. `shouldQueueDisconnectForDecision` asks that question per phase — speech phases reuse `getCurrentSpeechState` (covering normal/supplement/tie-break in one place), voting checks the vote list, night checks `nightActions`, `blankGuess` only blocks for the guesser. A player who already submitted is ignored. Because they may block a *later* phase, every phase transition calls `requeuePendingDisconnects`, which re-enqueues them and re-broadcasts `game.disconnectDecisionRequested`. The questioner is exempt — they go through the reconnect deadline instead.
+
+**Test room survives an empty room**: auto-close on "nobody online" is gated by `shouldAutoCloseWhenEmpty`, which exempts `ROOM_ID_TEST_MODE`. This gate must be applied at *all three* sites (`runHousekeeping` plus both `handlePlayerOffline` branches) — otherwise the last player refreshing the page deletes the room being debugged. On `room.closed` the client clears the stored session token and sets `roomClosedAt`, which drives the redirect back to the lobby; never infer closure from "no snapshot", since that also matches initial mount.
+
 ## Test Mode
 
 Room ID `"Oblivionis"` (case-insensitive) is a special test room. It follows the same player-count, role, voting, and night-action rules as a normal room.
@@ -161,6 +165,11 @@ A round needs at least 4 participants plus 1 questioner. Participants are active
 | `game.cancelVote` | `voting` or `tieBreak(vote)` | any voter | Remove own vote; allows re-voting |
 | `game.cancelNightAction` | `night` | actor | Remove own night action |
 | `game.requestSupplement` | completed `description` or `voting` | questioner | Ask specific players for extra speech; payload `{ playerIds: string[] }` |
+| `game.enterBlankGuess` | `description`/`voting`/`tieBreak`/`night` | blank player | Enter the blocking blank-guess phase; one attempt only |
+| `game.updateBlankGuessDraft` | `blankGuess` | the guesser | Broadcast in-progress input; payload `{ words: [string, string] }` (empty strings allowed) |
+| `game.reviewBlankGuess` | `blankGuess` with `pendingReview` | questioner | Adjudicate a near-miss; payload `{ approve: boolean }` |
+
+A vote of `targetId: ABSTAIN_TARGET_ID` (`"abstain"`, exported from `shared`) is a completed vote: it counts toward "everyone has voted" but adds to no player's tally. If abstentions reach the highest tally, the round goes to tie-break.
 
 For `game.requestSupplement`:
 - Allowed from `isDescriptionComplete` until the current normal vote resolves.
@@ -177,12 +186,27 @@ For `game.requestSupplement`:
 
 ## Blank Player UX
 
-`BlankGuessPhase.tsx` exports two components:
+Blank guessing is a **blocking phase**: the whole room stops and watches. The blank player gets exactly one attempt.
 
-- **`BlankGuessButton`** — a prominent top-right button visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver"`. Opens a modal overlay above the game and test controller for guessing both words. This is **non-blocking**: it overlays the current phase UI without replacing it.
-- **`BlankGuessWaiting`** — shown to all players during the `blankGuess` phase while waiting for the blank player to guess.
+`BlankGuessPhase.tsx` exports:
 
-`GameArea.tsx` renders `<BlankGuessButton />` inside the outermost `relative` div so overlays position correctly. The `blankGuess` case in `PhaseContent` renders `<BlankGuessWaiting />`.
+- **`BlankGuessButton`** — top-right entry point, visible whenever `canSubmitBlankGuess && !blankGuessUsed && phase !== "gameOver" && phase !== "blankGuess"`. Clicking opens a confirmation dialog (one attempt only, everyone will watch), which then sends `game.enterBlankGuess`.
+- **`BlankGuessStage`** — the `blankGuess` phase content. Dispatches on `status.blankGuessPlayerId === privateState.playerId`: the guesser gets the input UI, everyone else the spectate/adjudicate UI.
+
+Live state is public in `RoomSnapshot.status`, because watching the guess unfold is the point of the phase:
+
+| Field | Meaning |
+|---|---|
+| `blankGuessPlayerId` | who is guessing |
+| `blankGuessReason` | `"active"` (self-initiated) / `"eliminated"` / `"finale"` (endgame while still alive) |
+| `blankGuessDraft` | the guesser's in-progress input, throttled to ~220ms per push |
+| `blankGuessPendingReview` | automatic comparison failed; blocked awaiting questioner adjudication |
+
+The **real word pair is never** in the public snapshot — it reaches the questioner only via `privateState.globalWords`.
+
+Adjudication exists because exact-match comparison kills near-misses (`香蕉` vs `香焦`). On a mismatch the server does *not* declare failure: it records the attempt (the one attempt is spent either way), sets `pendingReview`, and keeps the phase blocked until the questioner sends `game.reviewBlankGuess`. `approve: true` rewrites the record (`success`, `approvedByQuestioner`) and finishes the round as a blank win; `approve: false` falls through to the original failure path — `deferredWinner` if the endgame deferred one, otherwise back to `resumePhase`.
+
+Elimination no longer auto-triggers a guess. `maybeEnterBlankGuess` only handles the finale case; otherwise the blank player decides when to spend the attempt.
 
 ## Player Marking (Local Only)
 
