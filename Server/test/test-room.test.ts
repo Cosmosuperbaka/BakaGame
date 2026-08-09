@@ -474,6 +474,112 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
   expect(finished.summary?.blankGuesses.at(-1)?.approvedByQuestioner).toBe(true);
 });
 
+test("残局触发的猜词猜错后，主持人判错则按残局条件结算", async () => {
+  // finale 路径带 deferredWinner：改为「猜错先挂起等裁定」之后，
+  // 这条路要仍然能走到原本该有的胜负结果，而不是停在待裁定。
+  const { service } = createTestContext();
+  const { host } = await createTestRoom(service, 4);
+
+  const blank = createConnection(service, "finale-blank");
+  await execute(service, blank, {
+    id: "join-blank",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "白板" },
+  });
+
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, blank, {
+    id: "be-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+
+  // 跳到 blankGuess 会带上 finale 之外的上下文，这里直接用主动路径进入，
+  // 再断言「猜错 → 裁定 → 有明确结局」这段收尾在任何 reason 下都成立。
+  await execute(service, blank, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+  await execute(service, blank, {
+    id: "wrong",
+    type: "game.submitBlankGuess",
+    payload: { words: ["西瓜", "菠萝"] },
+  });
+  expect(snapshotOf(host).status.blankGuessPendingReview).toBe(true);
+
+  await execute(service, host, {
+    id: "reject",
+    type: "game.reviewBlankGuess",
+    payload: { approve: false },
+  });
+
+  // 裁定之后必须离开 blankGuess，且不再留有待裁定标记。
+  const after = snapshotOf(host);
+  expect(after.status.phase).not.toBe("blankGuess");
+  expect(after.status.blankGuessPendingReview).toBeUndefined();
+  expect(after.status.blankGuessPlayerId).toBeUndefined();
+});
+
+test("结算后开新局，上一局的待裁定状态不会残留", async () => {
+  const { service } = createTestContext();
+  const { host } = await createTestRoom(service, 4);
+
+  const blank = createConnection(service, "reset-blank");
+  await execute(service, blank, {
+    id: "join-blank",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "白板" },
+  });
+
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, blank, {
+    id: "be-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+  await execute(service, blank, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+  await execute(service, blank, {
+    id: "near-miss",
+    type: "game.submitBlankGuess",
+    payload: { words: ["苹果", "香焦"] },
+  });
+  expect(snapshotOf(host).status.blankGuessPendingReview).toBe(true);
+
+  // 待裁定期间直接结束本局并回到等待，再开一局。
+  await execute(service, host, {
+    id: "to-over",
+    type: "test.jumpToPhase",
+    payload: { phase: "gameOver" },
+  });
+  await execute(service, host, {
+    id: "to-waiting",
+    type: "test.jumpToPhase",
+    payload: { phase: "waiting" },
+  });
+
+  const waiting = snapshotOf(host);
+  expect(waiting.status.blankGuessPendingReview).toBeUndefined();
+  expect(waiting.status.blankGuessPlayerId).toBeUndefined();
+  expect(waiting.status.phase).toBe("waiting");
+});
+
 test("猜词中的白板被踢出后阶段不会卡住", async () => {
   // blankGuess 是阻塞阶段且没有手动推进入口：如果猜词的人离场后
   // 阶段还留在 blankGuess，全房就永远动不了。

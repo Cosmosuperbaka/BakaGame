@@ -90,7 +90,7 @@ const BADGE_BASE =
   "inline-flex shrink-0 items-center justify-center rounded bg-background/75 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-9";
+export const PLAYER_ROW_HEIGHT = "min-h-10";
 
 /**
  * 玩家列宽度。分界线、行内首列与面板宽度都由此推导。
