@@ -21,6 +21,7 @@ import {
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
 import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
+import { ROLE_COLORS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
 import {
@@ -50,35 +51,15 @@ const roleLabels: Record<PlayerMark, string> = {
 };
 
 /**
- * 身份配色。饱和实底在暖色纸质底上过于跳脸，因此改为
- * 低饱和色底 + 深同色系文字 + 同色边框：对比度由文字深浅取得，
- * 不靠底色艳度。预测态换成虚线描边、不铺底，读作“尚未确认”。
+ * 与投票预览里的身份标签使用同一套纯文字配色。
+ * 浅色卡片底承载标签，不再额外绘制彩色边框。
  */
-const roleTones: Record<PlayerMark, { solid: string; outline: string }> = {
-  unknown: {
-    solid: "border-border bg-muted text-muted-foreground",
-    outline: "border-border text-muted-foreground",
-  },
-  civilian: {
-    solid:
-      "border-sky-800/25 bg-sky-800/12 text-sky-900 dark:border-sky-300/25 dark:bg-sky-300/15 dark:text-sky-200",
-    outline: "border-sky-800/50 text-sky-900 dark:border-sky-300/45 dark:text-sky-200",
-  },
-  undercover: {
-    solid:
-      "border-red-900/25 bg-red-900/12 text-red-900 dark:border-red-300/25 dark:bg-red-300/15 dark:text-red-200",
-    outline: "border-red-900/50 text-red-900 dark:border-red-300/45 dark:text-red-200",
-  },
-  blank: {
-    solid:
-      "border-stone-700/25 bg-stone-700/12 text-stone-800 dark:border-stone-300/25 dark:bg-stone-300/15 dark:text-stone-200",
-    outline: "border-stone-700/50 text-stone-800 dark:border-stone-300/45 dark:text-stone-200",
-  },
-  angel: {
-    solid:
-      "border-amber-800/25 bg-amber-700/14 text-amber-900 dark:border-amber-300/25 dark:bg-amber-300/15 dark:text-amber-200",
-    outline: "border-amber-800/50 text-amber-900 dark:border-amber-300/45 dark:text-amber-200",
-  },
+const roleTones: Record<PlayerMark, string> = {
+  unknown: "text-muted-foreground",
+  civilian: ROLE_COLORS.civilian,
+  undercover: ROLE_COLORS.undercover,
+  blank: ROLE_COLORS.blank,
+  angel: ROLE_COLORS.angel,
 };
 
 /**
@@ -93,28 +74,23 @@ const roleSelectedTones: Record<PlayerMark, string> = {
   angel: "bg-amber-800 text-white dark:bg-amber-700",
 };
 
-/** 状态徽章配色。与身份徽章同一套做法，保持行首观感统一。 */
+/** 状态标签沿用投票预览的浅底彩字语言。 */
 const statusTones: Record<StatusInfo["tone"], string> = {
-  default: "border-border bg-muted text-muted-foreground",
-  emerald:
-    "border-emerald-800/25 bg-emerald-800/12 text-emerald-900 dark:border-emerald-300/25 dark:bg-emerald-300/15 dark:text-emerald-200",
-  violet:
-    "border-violet-900/25 bg-violet-900/12 text-violet-900 dark:border-violet-300/25 dark:bg-violet-300/15 dark:text-violet-200",
-  red: "border-red-900/25 bg-red-900/12 text-red-900 dark:border-red-300/25 dark:bg-red-300/15 dark:text-red-200",
-  amber:
-    "border-amber-800/25 bg-amber-700/14 text-amber-900 dark:border-amber-300/25 dark:bg-amber-300/15 dark:text-amber-200",
+  default: "text-muted-foreground",
+  emerald: "text-emerald-600",
+  violet: "text-purple-600",
+  red: "text-red-600",
+  amber: "text-amber-600",
 };
 
 /**
- * 行首徽章的共同几何。身份、主持与准备状态共用同一套尺寸与字重，
- * 宽度固定为双字所需，使各行行首严格对齐。
- * 一层边框由所有档位共用，实底与描边档才不会出现宽度差。
+ * 几何参数直接复用投票预览标签：内容自适应宽度、无边框、小圆角。
  */
 const BADGE_BASE =
-  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center rounded bg-background/75 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-11";
+export const PLAYER_ROW_HEIGHT = "min-h-9";
 
 /**
  * 玩家列宽度。分界线、行内首列与面板宽度都由此推导。
@@ -138,7 +114,7 @@ const speechGridTemplate = (columnCount: number) =>
   `${PLAYER_COLUMN_WIDTH} repeat(${columnCount}, minmax(${SPEECH_COLUMN_MIN_WIDTH}px, max-content))`;
 
 /** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
-const PLAYER_GROUP_TITLE_HEIGHT = "1.75rem";
+const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
 export interface PlayerListProps {
   players: PublicPlayerView[];
@@ -326,7 +302,7 @@ export function PlayerList(props: PlayerListProps) {
             key={column.key}
             className={cn(
               "flex items-center whitespace-nowrap px-4 text-[11px] font-semibold tracking-wide",
-              withRule && "mt-4",
+              withRule && "mt-3",
               DESCRIPTION_HEAD_TONES[column.tone],
             )}
             style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
@@ -351,7 +327,7 @@ export function PlayerList(props: PlayerListProps) {
   const body = (
     <div
       className={cn(
-        "relative py-3",
+        "relative py-2",
         history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col",
       )}
       style={
@@ -502,7 +478,7 @@ export function PlayerGroupTitle({
 }) {
   return (
     <div
-      className={cn("flex items-center gap-2 px-2", withRule && "mt-4")}
+      className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
       <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -559,7 +535,7 @@ export function PlayerRow(props: PlayerRowProps) {
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
+        "relative flex w-full items-center gap-1 rounded-md py-1 pl-2.5 pr-2 text-left text-sm",
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && "transition-colors hover:bg-accent/50",
@@ -569,7 +545,7 @@ export function PlayerRow(props: PlayerRowProps) {
       )}
     >
       {isMe ? (
-        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
       ) : null}
       {/* 身份与状态全部落在名字之前：已知身份优先，其次自己的预测 */}
       {actualRole ? (
@@ -743,15 +719,11 @@ function ManageButton({
   );
 }
 
-/**
- * 身份徽章。`predicted` 为本人的猜测，用描边表达“尚未确认”；
- * 实底表示出题人视角或结算后公开的真实身份。
- */
+/** 身份标签；预测身份使用略淡底色，真实身份沿用投票预览的标准底色。 */
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
-  const tone = roleTones[role];
   return (
     <span
-      className={cn(BADGE_BASE, predicted ? cn("border-dashed", tone.outline) : tone.solid)}
+      className={cn(BADGE_BASE, roleTones[role], predicted && "bg-background/50")}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}
