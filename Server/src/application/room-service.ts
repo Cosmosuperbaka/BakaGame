@@ -775,6 +775,8 @@ export class RoomService {
     }
 
     this.touchRoom(room);
+    // 新阶段可能开始等待某个此前被放过的掉线玩家，这里补上暂停。
+    this.requeuePendingDisconnects(room);
     await this.log({
       type: "game.phase_changed",
       createdAt: this.now(),
@@ -860,6 +862,8 @@ export class RoomService {
     }
 
     this.touchRoom(room);
+    // 补充发言完成会直接切回原阶段，同样要重新检查掉线玩家。
+    this.requeuePendingDisconnects(room);
     await this.log({
       type: "game.description_submitted",
       createdAt: this.now(),
@@ -1589,6 +1593,8 @@ export class RoomService {
   }
 
   private broadcastPhaseAndPublish(room: RoomRecord) {
+    // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
+    this.requeuePendingDisconnects(room);
     this.broadcastRoomEvent(room, "game.phaseChanged", {
       roomId: room.id,
       phase: room.round?.phase ?? "waiting",
@@ -2788,16 +2794,87 @@ export class RoomService {
     };
   }
 
+  /**
+   * 掉线玩家是否需要立刻暂停游戏、等出题人抉择。
+   *
+   * 判定标准是「当前阶段还在等这个人操作吗」：已经交过描述、投过票的玩家
+   * 掉线不影响本阶段推进，暂停只会白等。这类玩家在下一个需要其操作的阶段
+   * 由 requeuePendingDisconnects 重新入队。
+   */
   private shouldQueueDisconnectForDecision(round: GameRound, player: PlayerRecord) {
     if (player.membership !== "active") {
       return false;
     }
 
+    // 这两个阶段还没有分配身份，也没有「已提交」的概念，只能一律暂停。
     if (round.phase === "assigningQuestioner" || round.phase === "wordSubmission") {
       return true;
     }
 
-    return Boolean(round.assignments[player.id]?.alive);
+    if (!round.assignments[player.id]?.alive) {
+      return false;
+    }
+
+    switch (round.phase) {
+      case "description": {
+        // 普通描述、补充发言与平票 PK 共用同一份发言状态，不另写判定。
+        const speech = this.getCurrentSpeechState(round);
+        if (!speech) return false;
+        return (
+          speech.order.includes(player.id) && !speech.submittedPlayerIds.includes(player.id)
+        );
+      }
+      case "voting":
+        return !round.votes.some((vote) => vote.voterId === player.id);
+      case "tieBreak": {
+        if (round.tieBreak?.stage === "description") {
+          const speech = this.getCurrentSpeechState(round);
+          if (!speech) return false;
+          return (
+            speech.order.includes(player.id) && !speech.submittedPlayerIds.includes(player.id)
+          );
+        }
+        // PK 投票阶段候选人本人不投票，因此不必等他。
+        if (round.tieBreak?.candidateIds.includes(player.id)) return false;
+        return !(round.tieBreak?.votes ?? []).some((vote) => vote.voterId === player.id);
+      }
+      case "night": {
+        const role = round.assignments[player.id]?.role;
+        if (role !== "civilian" && role !== "undercover") return false;
+        return !round.nightActions.some((action) => action.actorId === player.id);
+      }
+      case "blankGuess":
+        // 只有正在猜词的白板本人会卡住这个阶段。
+        return round.blankGuessContext?.playerId === player.id;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * 阶段推进后重新检查掉线玩家：上一阶段被放过的人，
+   * 到了需要他操作的阶段就必须在这里补上暂停，否则会永远无人过问。
+   */
+  private requeuePendingDisconnects(room: RoomRecord) {
+    const round = room.round;
+
+    if (!round || round.phase === "gameOver") {
+      return;
+    }
+
+    for (const player of Object.values(room.players)) {
+      if (player.online || player.isBot) continue;
+      if (round.pendingDisconnectPlayerIds.includes(player.id)) continue;
+      // 出题人掉线走重连倒计时，不并入待抉择队列。
+      if (round.questionerPlayerId === player.id) continue;
+      if (!this.shouldQueueDisconnectForDecision(round, player)) continue;
+
+      this.enqueuePendingDisconnect(round, player.id);
+      this.broadcastRoomEvent(room, "game.disconnectDecisionRequested", {
+        roomId: room.id,
+        playerId: player.id,
+      });
+    }
   }
 
   private enqueuePendingDisconnect(round: GameRound, playerId: string) {

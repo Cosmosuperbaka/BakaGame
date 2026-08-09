@@ -825,6 +825,78 @@ test("玩家掉线后会等待出题人处理并可被淘汰移出", async () =>
   ).toBe("kicked");
 });
 
+test("已提交描述的玩家掉线不暂停游戏，进入投票后才要求抉择", async () => {
+  // 掉线暂停的意义是「不能没有这个人的操作」。已经交过描述的玩家掉线
+  // 不影响本阶段推进，暂停只会白等；但到了需要他投票的阶段就必须补上。
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "5557");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `late-disc-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "5557",
+      payload: { userName: `按需暂停${index + 2}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 全部参战玩家交完描述，其中一位随后掉线。
+  for (const entry of [
+    { connection: host, id: "host" },
+    ...joined.slice(0, 3).map((item, index) => ({ connection: item.connection, id: `p${index}` })),
+  ]) {
+    await execute(service, entry.connection, {
+      id: `desc-${entry.id}`,
+      type: "game.submitDescription",
+      payload: { text: "一种常见的水果" },
+    });
+  }
+
+  await service.unregisterConnection(joined[0].connection.record.id);
+
+  // 描述已交齐，本阶段不需要他了，因此不该暂停。
+  expect(
+    getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot")?.status
+      .pendingDisconnectPlayerId,
+  ).toBeUndefined();
+
+  // 出题人得以正常推进到投票。
+  await execute(service, questioner.connection, {
+    id: "to-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  // 投票需要他，此时才要求出题人抉择。
+  const voting = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(voting?.status.phase).toBe("voting");
+  expect(voting?.status.pendingDisconnectPlayerId).toBe(joined[0].joinResult.playerId);
+});
+
 test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚动作", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "5556");
