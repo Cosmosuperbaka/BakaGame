@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DisconnectHandler } from "@/components/game/DisconnectHandler";
-import { PendingSpeech } from "@/components/game/PendingSpeech";
+import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { SupplementRequestControl } from "@/components/game/SupplementRequestControl";
 import { useGameStore } from "@/stores/useGameStore";
@@ -29,6 +29,8 @@ interface SpeechRow {
   player: PublicPlayerView;
   /** 已提交且顺序已到，可以公开 */
   text?: string;
+  /** 已提交但顺序未到，内容仍需折起 */
+  submitted: boolean;
   /** 本人本轮发言，用于高亮自己那一行 */
   isMe: boolean;
 }
@@ -197,9 +199,9 @@ export function DescriptionPhase() {
       const text = textByPlayer.get(playerId);
       const isMe = playerId === myId;
 
-      return { player, text, isMe };
+      return { player, text, submitted: submittedPlayerIds.has(playerId), isMe };
     });
-  }, [speechOrder, currentDescriptions, snapshot.players, myId]);
+  }, [speechOrder, currentDescriptions, snapshot.players, myId, submittedPlayerIds]);
   const canSpeak =
     amAlive &&
     !isQuestioner &&
@@ -305,7 +307,7 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ player, text, isMe }) => (
+        {rows.map(({ player, text, submitted, isMe }) => (
           <tr
             key={player.id}
             className={cn("border-b border-border/60 align-top", isMe && "bg-primary/5")}
@@ -335,13 +337,14 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
                   </motion.span>
                 ) : (
                   <motion.span
-                    key="pending"
+                    key={submitted ? "submitted" : "pending"}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0, transition: { duration: duration.instant } }}
                     className="block"
                   >
-                    <PendingSpeech />
+                    {/* 已提交只是还没轮到公开，与「还在等这位玩家」是两种状态 */}
+                    {submitted ? <SubmittedSpeech /> : <PendingSpeech />}
                   </motion.span>
                 )}
               </AnimatePresence>

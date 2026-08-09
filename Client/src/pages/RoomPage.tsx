@@ -39,7 +39,7 @@ import {
   type PlayerMark,
   type PlayerMarks,
 } from "@/components/room/PlayerList";
-import { buildDescriptionColumns } from "@/lib/descriptionColumns";
+import { buildDescriptionColumns, pendingColumn } from "@/lib/descriptionColumns";
 import { AssignedWord } from "@/components/room/AssignedWord";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
@@ -257,10 +257,12 @@ export default function RoomPage() {
     };
   }, [phase, day, assignedWordText]);
 
+  const speechStatus = snapshot?.status;
+
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo<PlayerListHistory>(() => {
     const descriptions = snapshot?.descriptions ?? [];
-    const { columns, byPlayer } = buildDescriptionColumns(descriptions, snapshot?.status);
+    const { columns, byPlayer } = buildDescriptionColumns(descriptions, speechStatus);
     const present = new Set((snapshot?.players ?? []).map((player) => player.id));
     const departed = new Map<string, PublicPlayerView>();
     for (const record of descriptions) {
@@ -277,8 +279,17 @@ export default function RoomPage() {
         roundStatus: "waiting",
       });
     }
-    return { columns, byPlayer, departedPlayers: [...departed.values()] };
-  }, [snapshot?.descriptions, snapshot?.players, snapshot?.status]);
+    // 进行中那一列里已提交但顺序未到的玩家：格子显示对勾而不是等待占位。
+    const active = speechStatus ? pendingColumn(speechStatus) : null;
+
+    return {
+      columns,
+      byPlayer,
+      departedPlayers: [...departed.values()],
+      submittedColumnKey: active?.key,
+      submittedPlayerIds: new Set(speechStatus?.submittedSpeechPlayerIds ?? []),
+    };
+  }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
 
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);

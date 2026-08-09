@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { ellipsisDot } from "@/lib/motion";
+import { Check } from "lucide-react";
+import { ellipsisDot, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 const DOTS = [0, 1, 2];
@@ -32,5 +33,25 @@ export function PendingSpeech({
         />
       ))}
     </span>
+  );
+}
+
+/**
+ * 已提交但顺序未到、内容尚未公开的发言。
+ * 与 PendingSpeech 相对：这里等待的是揭示时机，不是这位玩家本人，
+ * 因此用一次落位的对勾表示「这一句已经有了」，不再播等待动画。
+ */
+export function SubmittedSpeech({ className }: { className?: string }) {
+  return (
+    <motion.span
+      className={cn("inline-flex items-center align-middle text-emerald-700 dark:text-emerald-400", className)}
+      role="status"
+      aria-label="已提交发言"
+      initial={{ scale: 0.4, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={spring.impulse}
+    >
+      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+    </motion.span>
   );
 }
