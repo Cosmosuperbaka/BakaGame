@@ -2250,6 +2250,9 @@ export class RoomService {
     // 猜词的白板被移除后没人能推进阻塞阶段，必须就地收束。
     await this.resolveAbandonedBlankGuess(room);
     await this.maybeAbortRoundAfterRosterChange(room);
+    // 移除玩家可能改变阶段或补充发言状态，其他掉线玩家的待决状态要跟着重算：
+    // 否则推进会因「仍有玩家未提交」被拒，却没有人被要求处理那次掉线。
+    this.requeuePendingDisconnects(room);
 
     await this.log({
       type: "player.kicked",
