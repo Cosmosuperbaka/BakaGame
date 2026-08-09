@@ -4,6 +4,7 @@ import {
   buildDescriptionColumns,
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
+  descriptionCellShade,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
 import { PlayerRow, type PlayerMarks, type PlayerRowProps } from "@/components/room/PlayerList";
@@ -82,19 +83,20 @@ export function DescriptionTable({
   const headColumns: DescriptionColumn[] =
     columns.length > 0
       ? columns
-      : [{ key: "empty", label: "暂无发言", tone: "default", expectedPlayerIds: new Set<string>() }];
-  const minWidth = 256 + headColumns.length * 180;
+      : [
+          {
+            key: "empty",
+            label: "暂无发言",
+            tone: "default",
+            index: 0,
+            expectedPlayerIds: new Set<string>(),
+          },
+        ];
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
-        <colgroup>
-          <col style={{ width: 256 }} />
-          {headColumns.map((column) => (
-            <col key={column.key} />
-          ))}
-        </colgroup>
-
+      {/* table-auto 让每列按本列最长的一句取宽，不再统一均分 */}
+      <table className="w-full table-auto border-collapse text-left text-sm">
         <thead className="text-xs font-semibold text-muted-foreground">
           <tr>
             <th className="sticky left-0 top-0 z-30 w-64 min-w-64 max-w-64 border-b border-r bg-panel px-4 py-3">
@@ -107,7 +109,7 @@ export function DescriptionTable({
               <th
                 key={column.key}
                 className={cn(
-                  "sticky top-0 z-20 min-w-[180px] border-b border-r bg-panel px-4 py-3",
+                  "sticky top-0 z-20 min-w-[180px] whitespace-nowrap border-b border-r bg-panel px-4 py-3",
                   DESCRIPTION_HEAD_TONES[column.tone],
                 )}
               >
@@ -118,7 +120,7 @@ export function DescriptionTable({
         </thead>
 
         <tbody className="divide-y divide-background text-foreground">
-          {rows.map((player) => (
+          {rows.map((player, rowIndex) => (
             <tr key={player.id} className="hover:bg-accent/20">
               <td className="sticky left-0 z-10 w-64 min-w-64 max-w-64 border-r bg-panel p-0">
                 {playerRowContext ? (
@@ -149,9 +151,10 @@ export function DescriptionTable({
                 <td
                   key={column.key}
                   className={cn(
-                    "border-r text-sm leading-relaxed",
+                    "whitespace-nowrap border-r text-sm leading-relaxed",
                     cellPad,
                     DESCRIPTION_TONES[column.tone],
+                    descriptionCellShade(rowIndex, column.index),
                   )}
                 >
                   {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}

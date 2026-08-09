@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { DescriptionRecord } from "@/types";
 
-import { buildDescriptionColumns, type SpeechStatus } from "./descriptionColumns";
+import {
+  buildDescriptionColumns,
+  descriptionCellShade,
+  type SpeechStatus,
+} from "./descriptionColumns";
 
 const description = (
   id: string,
@@ -37,6 +41,14 @@ describe("description column model", () => {
       { key: "sup-1", label: "补充 1" },
     ]);
     expect(model.byPlayer.get("p1")?.get("sup-1")?.id).toBe("supplement-1");
+    // 列序在三类列全部展开后才连续编号，表格据此计算棋盘格底色。
+    expect(model.columns.map(({ index }) => index)).toEqual([0, 1, 2]);
+  });
+
+  it("shades cells as a checkerboard so rows and columns both stay traceable", () => {
+    expect(descriptionCellShade(0, 0)).toBe(descriptionCellShade(1, 1));
+    expect(descriptionCellShade(0, 1)).toBe(descriptionCellShade(1, 0));
+    expect(descriptionCellShade(0, 0)).not.toBe(descriptionCellShade(0, 1));
   });
 
   it("keeps the full active speech order even when an early submission is still hidden", () => {
