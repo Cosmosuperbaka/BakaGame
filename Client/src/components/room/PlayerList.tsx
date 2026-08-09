@@ -8,6 +8,7 @@ import { listContainer, listItem, popover, tappable } from "@/lib/motion";
 import {
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
+  descriptionCellShade,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
 import { PendingSpeech } from "@/components/game/PendingSpeech";
@@ -95,8 +96,19 @@ export const PLAYER_ROW_HEIGHT = "min-h-11";
  */
 export const PLAYER_COLUMN_WIDTH = "16rem";
 
-/** 单个发言列的最小宽度（px），与单元格上的 min-w 保持一致 */
+/** 单个发言列的最小宽度（px） */
 const SPEECH_COLUMN_MIN_WIDTH = 200;
+
+/**
+ * 发言列的列宽由整列最长的一句决定：`max-content` 取本列所有格子的最大需求宽度，
+ * `minmax` 保证短列也不会窄到不可读。
+ *
+ * 列宽必须跨行一致，因此宽度只能由**同一个** grid 计算。玩家行各自是一层
+ * 包裹容器，靠 `grid-template-columns: subgrid` 继承外层的列轨道，
+ * 而不是各自再算一遍 —— 否则每行会按自己那一句单独取宽，列就对不齐了。
+ */
+const speechGridTemplate = (columnCount: number) =>
+  `${PLAYER_COLUMN_WIDTH} repeat(${columnCount}, minmax(${SPEECH_COLUMN_MIN_WIDTH}px, max-content))`;
 
 /** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
 const PLAYER_GROUP_TITLE_HEIGHT = "1.75rem";
@@ -211,6 +223,7 @@ export function PlayerList(props: PlayerListProps) {
   const renderRow = (
     player: PublicPlayerView,
     hideSpectatorStatus: boolean,
+    rowIndex: number,
     options?: { readOnly?: boolean },
   ) => {
     const rowProps: PlayerRowProps = {
@@ -237,6 +250,7 @@ export function PlayerList(props: PlayerListProps) {
     if (!history) return <PlayerRow key={player.id} {...rowProps} />;
 
     // 展开后由外层承担进出场，行内首列去掉自身动画以免双重变换。
+    // 列轨道继承自外层 grid，保证同一列在所有行上等宽。
     return (
       <motion.div
         key={player.id}
@@ -245,9 +259,9 @@ export function PlayerList(props: PlayerListProps) {
         animate="animate"
         exit="exit"
         layout="position"
-        className="flex items-stretch"
+        className="col-span-full grid grid-cols-subgrid items-stretch"
       >
-        <div className="shrink-0 px-2" style={{ width: PLAYER_COLUMN_WIDTH }}>
+        <div className="px-2">
           <PlayerRow {...rowProps} embedded />
         </div>
         {history.columns.map((column) => (
@@ -256,6 +270,7 @@ export function PlayerList(props: PlayerListProps) {
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
             expected={column.expectedPlayerIds.has(player.id)}
+            shade={descriptionCellShade(rowIndex, column.index)}
           />
         ))}
       </motion.div>
@@ -267,15 +282,13 @@ export function PlayerList(props: PlayerListProps) {
     const title = <PlayerGroupTitle label={label} count={count} withRule={withRule} />;
     if (!history) return title;
     return (
-      <div className="flex items-stretch">
-        <div className="shrink-0 px-2" style={{ width: PLAYER_COLUMN_WIDTH }}>
-          {title}
-        </div>
+      <div className="col-span-full grid grid-cols-subgrid items-stretch">
+        <div className="px-2">{title}</div>
         {history.columns.map((column) => (
           <div
             key={column.key}
             className={cn(
-              "flex min-w-[200px] flex-1 items-center px-4 text-[11px] font-semibold tracking-wide",
+              "flex items-center whitespace-nowrap px-4 text-[11px] font-semibold tracking-wide",
               withRule && "mt-4",
               DESCRIPTION_HEAD_TONES[column.tone],
             )}
@@ -290,15 +303,25 @@ export function PlayerList(props: PlayerListProps) {
   };
 
   const departed = history?.departedPlayers ?? [];
+  // 展开历史时分组容器只负责纵向排布，列轨道由最外层 grid 统一持有。
+  const groupClass = history
+    ? "col-span-full grid grid-cols-subgrid gap-y-px"
+    : "flex flex-col gap-px";
+  // 斑马纹按整张表连续计数，跨分组也不会在交界处出现两行同色。
+  const observerRowOffset = activePlayers.length;
+  const departedRowOffset = observerRowOffset + observers.length;
 
   const body = (
     <div
-      className={cn("relative flex flex-col py-3", history && "min-h-full")}
-      style={{
-        minWidth: history
-          ? `calc(${PLAYER_COLUMN_WIDTH} + ${history.columns.length * SPEECH_COLUMN_MIN_WIDTH}px)`
-          : undefined,
-      }}
+      className={cn(
+        "relative py-3",
+        history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col",
+      )}
+      style={
+        history
+          ? { gridTemplateColumns: speechGridTemplate(history.columns.length) }
+          : undefined
+      }
     >
       {/* 玩家列与发言列的分界线。整列贯穿到底，不随最后一行结束，
           否则行间距与列表末尾的空白处会把线断开。
@@ -313,13 +336,13 @@ export function PlayerList(props: PlayerListProps) {
       ) : null}
       {renderGroupTitle("玩家", activePlayers.length, false)}
       <motion.div
-        className="flex flex-col gap-px"
+        className={groupClass}
         variants={listContainer(activePlayers.length)}
         initial={false}
         animate="animate"
       >
         <AnimatePresence initial={false} mode="popLayout">
-          {activePlayers.map((player) => renderRow(player, false))}
+          {activePlayers.map((player, index) => renderRow(player, false, index))}
         </AnimatePresence>
       </motion.div>
 
@@ -331,13 +354,15 @@ export function PlayerList(props: PlayerListProps) {
         <>
           {renderGroupTitle("旁观", observers.length, true)}
           <motion.div
-            className="flex flex-col gap-px"
+            className={groupClass}
             variants={listContainer(observers.length)}
             initial={false}
             animate="animate"
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {observers.map((player) => renderRow(player, true))}
+              {observers.map((player, index) =>
+                renderRow(player, true, observerRowOffset + index),
+              )}
             </AnimatePresence>
           </motion.div>
           {showSpectatorToggle && !isSpectator ? (
@@ -350,8 +375,10 @@ export function PlayerList(props: PlayerListProps) {
       {departed.length > 0 ? (
         <>
           {renderGroupTitle("已离场", departed.length, true)}
-          <div className="flex flex-col gap-px">
-            {departed.map((player) => renderRow(player, true, { readOnly: true }))}
+          <div className={groupClass}>
+            {departed.map((player, index) =>
+              renderRow(player, true, departedRowOffset + index, { readOnly: true }),
+            )}
           </div>
         </>
       ) : null}
@@ -376,20 +403,25 @@ function SpeechCell({
   description,
   tone,
   expected,
+  shade,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
   expected: boolean;
+  /** 棋盘格底色，由所在行列的奇偶决定 */
+  shade?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex min-w-[200px] flex-1 items-center px-4 py-1.5 text-sm leading-relaxed",
+        "flex items-center px-4 py-1.5 text-sm leading-relaxed",
         DESCRIPTION_TONES[tone],
+        shade,
       )}
     >
+      {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
-        <span className="break-words">{description.text}</span>
+        <span className="whitespace-nowrap">{description.text}</span>
       ) : expected ? (
         <PendingSpeech />
       ) : null}

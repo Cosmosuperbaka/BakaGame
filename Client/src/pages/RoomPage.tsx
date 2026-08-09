@@ -470,7 +470,7 @@ export default function RoomPage() {
                   aria-expanded={historyOpen}
                   onClick={() => setHistoryOpen(!historyOpen)}
                   {...iconTappable}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-secondary text-secondary-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-background/95 text-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {/* 箭头指向面板将要移动的方向：收起时向右展开，展开时向左收回 */}
                   {historyOpen ? (

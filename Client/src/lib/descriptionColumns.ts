@@ -5,6 +5,8 @@ export interface DescriptionColumn {
   key: string;
   label: string;
   tone: "default" | "amber" | "sky";
+  /** 在整张表中的列序号，0-based。表格据此给奇偶列上交替底色。 */
+  index: number;
   /**
    * 本列应当发言的玩家。
    * 出题人、旁观者、已出局以及本列未被点名的玩家不在其中，
@@ -121,7 +123,8 @@ export function buildDescriptionColumns(
       tone: "sky" as const,
       expectedPlayerIds: expectFor(`sup-${index}`),
     })),
-  ];
+    // 列序在三类列全部展开后才确定，因此统一在这里补齐。
+  ].map((column, index) => ({ ...column, index }));
 
   const byPlayer = new Map<string, Map<string, DescriptionRecord>>();
   for (const record of descriptions) {
@@ -133,16 +136,28 @@ export function buildDescriptionColumns(
   return { columns, byPlayer };
 }
 
-/** 发言单元格的文字色，与列标题保持同一套语义。 */
+/**
+ * 发言内容一律用正文色：发言本身是同一类信息，
+ * 列的种类由列标题表达，不靠正文变色区分。
+ */
 export const DESCRIPTION_TONES: Record<DescriptionColumn["tone"], string> = {
   default: "text-foreground",
-  amber: "text-amber-700 dark:text-amber-400",
-  sky: "text-sky-700 dark:text-sky-300",
+  amber: "text-foreground",
+  sky: "text-foreground",
 };
 
-/** 列标题的文字色。 */
+/** 列标题的文字色，用于区分轮次、平票与补充三类列。 */
 export const DESCRIPTION_HEAD_TONES: Record<DescriptionColumn["tone"], string> = {
   default: "text-muted-foreground",
   amber: "text-amber-700 dark:text-amber-400",
   sky: "text-sky-700 dark:text-sky-300",
 };
+
+/**
+ * 表格的交替底色。行与列各自奇偶叠加成棋盘格，
+ * 使横向跨列与纵向跨行都有落点可循。
+ * 底色取极低透明度的前景色，在暖白纸底与深色底上都只是轻微明暗差，
+ * 不引入新的色相。
+ */
+export const descriptionCellShade = (rowIndex: number, columnIndex: number): string =>
+  (rowIndex + columnIndex) % 2 === 0 ? "bg-foreground/[0.035]" : "";
