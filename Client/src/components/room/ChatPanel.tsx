@@ -274,7 +274,7 @@ export function ChatPanel() {
           ref={inputRef}
           value={text}
           onChange={handleChange}
-          placeholder="发送消息，@ 可提及玩家"
+          placeholder="请输入文本"
           className="flex-1"
           aria-expanded={candidates.length > 0}
           onKeyDown={(e) => {
