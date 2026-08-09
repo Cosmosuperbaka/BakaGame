@@ -1,7 +1,16 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
+import {
+  ArrowUpRightFromCircle,
+  Bot,
+  Crown,
+  Eye,
+  EyeOff,
+  Skull,
+  UserX,
+  WifiOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listContainer, listItem, popover, tappable } from "@/lib/motion";
@@ -41,50 +50,68 @@ const roleLabels: Record<PlayerMark, string> = {
 };
 
 /**
- * 身份配色。已确认的身份用实底，预测用同色系描边，
- * 两者一眼可分，不靠位置区分。
+ * 身份配色。饱和实底在暖色纸质底上过于跳脸，因此改为
+ * 低饱和色底 + 深同色系文字 + 同色边框：对比度由文字深浅取得，
+ * 不靠底色艳度。预测态换成虚线描边、不铺底，读作“尚未确认”。
  */
 const roleTones: Record<PlayerMark, { solid: string; outline: string }> = {
   unknown: {
-    solid: "bg-muted text-muted-foreground",
+    solid: "border-border bg-muted text-muted-foreground",
     outline: "border-border text-muted-foreground",
   },
   civilian: {
-    solid: "bg-blue-600 text-white dark:bg-blue-500",
-    outline: "border-blue-500/60 text-blue-700 dark:text-blue-300",
+    solid:
+      "border-sky-800/25 bg-sky-800/12 text-sky-900 dark:border-sky-300/25 dark:bg-sky-300/15 dark:text-sky-200",
+    outline: "border-sky-800/50 text-sky-900 dark:border-sky-300/45 dark:text-sky-200",
   },
   undercover: {
-    solid: "bg-red-600 text-white dark:bg-red-500",
-    outline: "border-red-500/60 text-red-700 dark:text-red-300",
+    solid:
+      "border-red-900/25 bg-red-900/12 text-red-900 dark:border-red-300/25 dark:bg-red-300/15 dark:text-red-200",
+    outline: "border-red-900/50 text-red-900 dark:border-red-300/45 dark:text-red-200",
   },
   blank: {
-    solid: "bg-stone-500 text-white dark:bg-stone-400 dark:text-stone-950",
-    outline: "border-stone-400/70 text-stone-600 dark:text-stone-300",
+    solid:
+      "border-stone-700/25 bg-stone-700/12 text-stone-800 dark:border-stone-300/25 dark:bg-stone-300/15 dark:text-stone-200",
+    outline: "border-stone-700/50 text-stone-800 dark:border-stone-300/45 dark:text-stone-200",
   },
   angel: {
-    solid: "bg-amber-500 text-white dark:text-amber-950",
-    outline: "border-amber-500/60 text-amber-700 dark:text-amber-300",
+    solid:
+      "border-amber-800/25 bg-amber-700/14 text-amber-900 dark:border-amber-300/25 dark:bg-amber-300/15 dark:text-amber-200",
+    outline: "border-amber-800/50 text-amber-900 dark:border-amber-300/45 dark:text-amber-200",
   },
 };
 
 /**
- * 状态徽章配色。与身份徽章同为实底：
- * 低透明度底色下准备、等待这类高频状态几乎看不出来。
+ * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
+ * 半透明色底会被它吃掉，所以这里单独给一套实底。
  */
+const roleSelectedTones: Record<PlayerMark, string> = {
+  unknown: "bg-muted-foreground/85 text-background",
+  civilian: "bg-sky-800 text-white dark:bg-sky-700",
+  undercover: "bg-red-900 text-white dark:bg-red-800",
+  blank: "bg-stone-700 text-white dark:bg-stone-600",
+  angel: "bg-amber-800 text-white dark:bg-amber-700",
+};
+
+/** 状态徽章配色。与身份徽章同一套做法，保持行首观感统一。 */
 const statusTones: Record<StatusInfo["tone"], string> = {
-  default: "bg-secondary text-secondary-foreground",
-  emerald: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950",
-  violet: "bg-violet-600 text-white dark:bg-violet-500 dark:text-violet-950",
-  red: "bg-red-600 text-white dark:bg-red-500 dark:text-red-950",
-  amber: "bg-amber-500 text-white dark:text-amber-950",
+  default: "border-border bg-muted text-muted-foreground",
+  emerald:
+    "border-emerald-800/25 bg-emerald-800/12 text-emerald-900 dark:border-emerald-300/25 dark:bg-emerald-300/15 dark:text-emerald-200",
+  violet:
+    "border-violet-900/25 bg-violet-900/12 text-violet-900 dark:border-violet-300/25 dark:bg-violet-300/15 dark:text-violet-200",
+  red: "border-red-900/25 bg-red-900/12 text-red-900 dark:border-red-300/25 dark:bg-red-300/15 dark:text-red-200",
+  amber:
+    "border-amber-800/25 bg-amber-700/14 text-amber-900 dark:border-amber-300/25 dark:bg-amber-300/15 dark:text-amber-200",
 };
 
 /**
  * 行首徽章的共同几何。身份、主持与准备状态共用同一套尺寸与字重，
  * 宽度固定为双字所需，使各行行首严格对齐。
+ * 一层边框由所有档位共用，实底与描边档才不会出现宽度差。
  */
 const BADGE_BASE =
-  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
+  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-11";
@@ -559,6 +586,10 @@ export function PlayerRow(props: PlayerRowProps) {
       >
         {player.name}
       </span>
+      {/* 出局与房主、掉线同属玩家标记，共用名字之后这一处图标位 */}
+      {eliminated ? (
+        <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+      ) : null}
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
@@ -669,7 +700,7 @@ function MarkButton({
         "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
         "border-r last:border-r-0",
         selected
-          ? roleTones[option].solid
+          ? roleSelectedTones[option]
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         first && "rounded-tl-[calc(var(--radius)-1px)]",
         last && "rounded-tr-[calc(var(--radius)-1px)]",
@@ -720,7 +751,7 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
   const tone = roleTones[role];
   return (
     <span
-      className={cn(BADGE_BASE, predicted ? cn("border border-dashed", tone.outline) : tone.solid)}
+      className={cn(BADGE_BASE, predicted ? cn("border-dashed", tone.outline) : tone.solid)}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}
