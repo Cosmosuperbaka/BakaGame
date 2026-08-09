@@ -26,6 +26,19 @@ describe("player list presentation", () => {
     expect(buildKnownRoleMap([deadPlayer]).get(deadPlayer.id)).toBe("undercover");
   });
 
+  it("leaves the leading badge slot empty for eliminated players", () => {
+    // 出局改用名字之后的骷髅图标表达，行首不再占一枚徽章。
+    const deadPlayer = createPlayer({ roundStatus: "dead", revealedRole: "civilian" });
+
+    expect(resolveStatus(deadPlayer, false, false)).toBeNull();
+  });
+
+  it("keeps the questioner badge even after elimination checks", () => {
+    const questioner = createPlayer({ roundStatus: "questioner" });
+
+    expect(resolveStatus(questioner, false, false)).toEqual({ label: "主持", tone: "violet" });
+  });
+
   it("never renders readiness for spectators", () => {
     const spectator = createPlayer({
       membership: "spectator",
