@@ -1736,6 +1736,49 @@ test("Oblivionis 测试房间不含机器人、不进大厅、不自动清理", 
   expect(afterSnapshot?.roomId).toBe("Oblivionis");
 });
 
+test("测试房间最后一人掉线后仍然保留，可凭令牌回到原席位", async () => {
+  // 刷新页面会先断开旧连接。此时测试房如果被当成空房清掉，
+  // 正在调试的房间状态就一起丢了。
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "Oblivionis");
+
+  await service.unregisterConnection(host.record.id);
+
+  const rejoin = createConnection(service, "oblivionis-rejoin");
+  await execute(service, rejoin, {
+    id: "reconnect-test-room",
+    type: "room.reconnect",
+    payload: { roomId: "Oblivionis", sessionToken: result.sessionToken },
+  });
+
+  const snapshot = getLastEventPayload<RoomSnapshot>(rejoin, "room.snapshot");
+  expect(snapshot?.roomId).toBe("Oblivionis");
+  expect(getEventPayloads(host, "room.closed")).toHaveLength(0);
+});
+
+test("正式房间最后一人掉线仍然立即回收，令牌不再有效", async () => {
+  // 与测试房间相对：正式房间没人在线就该回收，重连也拿不回原席位。
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "8123");
+
+  await service.unregisterConnection(host.record.id);
+  expect(service.getRoomSummaries()).toHaveLength(0);
+
+  const rejoin = createConnection(service, "8123-rejoin");
+  let errorCode: string | undefined;
+  try {
+    await execute(service, rejoin, {
+      id: "reconnect-closed-room",
+      type: "room.reconnect",
+      payload: { roomId: "8123", sessionToken: result.sessionToken },
+    });
+  } catch (error) {
+    errorCode = (error as { code?: string }).code;
+  }
+
+  expect(errorCode).toBe("ROOM_NOT_FOUND");
+});
+
 test("测试房间单人不能跳转阶段，补足机器人后可以", async () => {
   // 测试房间与真实房间同规则：不足 4 名正式玩家不能开局。
   const { service } = createTestContext();

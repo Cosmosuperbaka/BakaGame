@@ -57,6 +57,7 @@ export default function RoomPage() {
   const reconnectRoom = useGameStore((s) => s.reconnectRoom);
   const leaveRoom = useGameStore((s) => s.leaveRoom);
   const addToast = useGameStore((s) => s.addToast);
+  const roomClosedAt = useGameStore((s) => s.roomClosedAt);
   const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
 
   const [joining, setJoining] = useState(!alreadyInRoom);
@@ -91,7 +92,13 @@ export default function RoomPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [historyOpen]);
 
-  // 房间关闭后自动返回大厅。等用户填名字的这段时间同样没有 snapshot，
+  // 房间被服务端关闭或席位被替换：这是一个明确的事件，无论当前是否正在加入
+  // 都必须立刻退回大厅，否则加入流程中被关闭会一直停在加载态。
+  useEffect(() => {
+    if (roomClosedAt) navigate("/whoisfaker", { replace: true });
+  }, [roomClosedAt, navigate]);
+
+  // 主动离开等其它原因导致的脱离房间。等用户填名字的这段时间同样没有 snapshot，
   // 但那是正常状态，不能当成房间已关闭。
   useEffect(() => {
     if (!joining && !needsName && !snapshot && !storeRoomId) navigate("/whoisfaker");
