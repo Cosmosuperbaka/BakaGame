@@ -35,7 +35,7 @@ function columnKeyOf(record: DescriptionRecord): string {
  * 当前正在进行的发言列及其应发言名单。
  * 只有处于发言阶段时才有值；投票、夜晚等阶段没有待提交的格子。
  */
-function pendingColumn(status: SpeechStatus): { key: string; playerIds: string[] } | null {
+export function pendingColumn(status: SpeechStatus): { key: string; playerIds: string[] } | null {
   const mode = status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : undefined);
   if (mode === "supplement") {
     return {

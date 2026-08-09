@@ -11,7 +11,7 @@ import {
   descriptionCellShade,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
-import { PendingSpeech } from "@/components/game/PendingSpeech";
+import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
 import {
@@ -140,6 +140,12 @@ export interface PlayerListHistory {
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
   /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
   departedPlayers: PublicPlayerView[];
+  /**
+   * 进行中那一列里已提交但尚未公开的玩家。
+   * 这些格子显示对勾而不是等待占位 —— 内容已经有了，等的只是揭示时机。
+   */
+  submittedColumnKey?: string;
+  submittedPlayerIds?: Set<string>;
 }
 
 export function PlayerList(props: PlayerListProps) {
@@ -270,6 +276,10 @@ export function PlayerList(props: PlayerListProps) {
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
             expected={column.expectedPlayerIds.has(player.id)}
+            submitted={
+              column.key === history.submittedColumnKey &&
+              Boolean(history.submittedPlayerIds?.has(player.id))
+            }
             shade={descriptionCellShade(rowIndex, column.index)}
           />
         ))}
@@ -403,11 +413,14 @@ function SpeechCell({
   description,
   tone,
   expected,
+  submitted,
   shade,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
   expected: boolean;
+  /** 已提交但顺序未到，内容仍折起 */
+  submitted?: boolean;
   /** 棋盘格底色，由所在行列的奇偶决定 */
   shade?: string;
 }) {
@@ -422,6 +435,8 @@ function SpeechCell({
       {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
         <span className="whitespace-nowrap">{description.text}</span>
+      ) : submitted ? (
+        <SubmittedSpeech />
       ) : expected ? (
         <PendingSpeech />
       ) : null}
