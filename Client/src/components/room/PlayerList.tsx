@@ -87,7 +87,7 @@ const statusTones: Record<StatusInfo["tone"], string> = {
  * 几何参数直接复用投票预览标签：内容自适应宽度、无边框、小圆角。
  */
 const BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center rounded bg-background/75 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center rounded bg-card px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-10";
@@ -723,7 +723,7 @@ function ManageButton({
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
   return (
     <span
-      className={cn(BADGE_BASE, roleTones[role], predicted && "bg-background/50")}
+      className={cn(BADGE_BASE, roleTones[role], predicted && "bg-card/70")}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}
