@@ -1,4 +1,4 @@
-# 由 https://bili-emoji-downloader-vue.vercel.app/?keyword=Mujica&tabBar=0 导出，项目地址: https://github.com/magicFeirl/bili-emoji-downloader-vue
+# 由 https://bili-emoji-downloader-vue.vercel.app/?keyword=Ave&tabBar=0 导出，项目地址: https://github.com/magicFeirl/bili-emoji-downloader-vue
 # 表情包版权归原作者所有
 # 名称：Ave Mujica
 # 购买地址: https://www.bilibili.com/blackboard/activity-Mz9T5bO5Q3.html?id=1744614814001&type=equity-link-collect-home&part=card
