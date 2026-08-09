@@ -17,7 +17,7 @@ import type {
   RoundWinner,
   VoteRecord,
 } from "../domain/model";
-import { ROOM_ID_TEST_MODE } from "../domain/model";
+import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../domain/model";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -2586,7 +2586,7 @@ export class RoomService {
     const round = this.requireRound(room);
     const voter = round.assignments[voterId];
     const target = round.assignments[targetId];
-    const isAbstain = targetId === "abstain";
+    const isAbstain = targetId === ABSTAIN_TARGET_ID;
 
     // 不能投自己，测试房间同样适用：测试房要复现真实规则。
     if (!voter?.alive || (!isAbstain && !target?.alive) || (!isAbstain && voterId === targetId)) {
@@ -3217,10 +3217,10 @@ export class RoomService {
       : this.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
 
     if (candidates.length === 0) {
-      return "abstain";
+      return ABSTAIN_TARGET_ID;
     }
 
-    return candidates[this.random.nextInt(candidates.length)] ?? "abstain";
+    return candidates[this.random.nextInt(candidates.length)] ?? ABSTAIN_TARGET_ID;
   }
 
   /** 机器人卧底的夜晚目标：随机一个非自己的存活玩家。 */

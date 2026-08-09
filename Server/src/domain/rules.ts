@@ -1,5 +1,6 @@
 import { AppError } from "./errors";
 import {
+  ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
   isValidRoomId,
   type BlankGuessRecord,
@@ -236,9 +237,9 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
   }
 
   const maxVotes = Math.max(...voteCounter.values(), 0);
-  const abstainCount = voteCounter.get("abstain") ?? 0;
+  const abstainCount = voteCounter.get(ABSTAIN_TARGET_ID) ?? 0;
   const leaders = [...voteCounter.entries()]
-    .filter(([playerId, count]) => playerId !== "abstain" && count === maxVotes)
+    .filter(([playerId, count]) => playerId !== ABSTAIN_TARGET_ID && count === maxVotes)
     .map(([playerId]) => playerId)
     .sort();
 
