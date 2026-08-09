@@ -474,6 +474,101 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
   expect(finished.summary?.blankGuesses.at(-1)?.approvedByQuestioner).toBe(true);
 });
 
+test("猜词中的白板被踢出后阶段不会卡住", async () => {
+  // blankGuess 是阻塞阶段且没有手动推进入口：如果猜词的人离场后
+  // 阶段还留在 blankGuess，全房就永远动不了。
+  const { service } = createTestContext();
+  const { host } = await createTestRoom(service, 4);
+
+  const blank = createConnection(service, "abandon-blank");
+  const blankJoin = (await execute(service, blank, {
+    id: "join-blank",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "白板" },
+  })) as { playerId: string };
+
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, blank, {
+    id: "be-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+
+  await execute(service, blank, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+  expect(snapshotOf(host).status.phase).toBe("blankGuess");
+
+  // 房主把正在猜词的人踢出去。
+  await execute(service, host, {
+    id: "kick-blank",
+    type: "room.kick",
+    payload: { playerId: blankJoin.playerId },
+  });
+
+  const after = snapshotOf(host);
+  expect(after.status.phase).not.toBe("blankGuess");
+  expect(after.status.blankGuessPlayerId).toBeUndefined();
+});
+
+test("待裁定时主持人被踢出，本局不会卡在待裁定", async () => {
+  // pendingReview 只能由出题人推进。出题人一走，若阶段仍停在待裁定，
+  // 全房同样再没有出口。
+  const { service } = createTestContext();
+  const { host } = await createTestRoom(service, 4);
+
+  const questioner = createConnection(service, "gone-questioner");
+  const questionerJoin = (await execute(service, questioner, {
+    id: "join-questioner",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "主持人" },
+  })) as { playerId: string };
+
+  await execute(service, questioner, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, questioner, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  await execute(service, host, {
+    id: "be-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+
+  await execute(service, host, { id: "enter", type: "game.enterBlankGuess", payload: {} });
+  await execute(service, host, {
+    id: "near-miss",
+    type: "game.submitBlankGuess",
+    payload: { words: ["苹果", "香焦"] },
+  });
+  expect(snapshotOf(host).status.blankGuessPendingReview).toBe(true);
+
+  // 房主把出题人踢掉（踢出题人本身会中止本局）。
+  await execute(service, host, {
+    id: "kick-questioner",
+    type: "room.kick",
+    payload: { playerId: questionerJoin.playerId },
+  });
+
+  const after = snapshotOf(host);
+  expect(after.status.blankGuessPendingReview).toBeUndefined();
+  expect(after.status.phase).not.toBe("blankGuess");
+});
+
 test("主持人判错时回到原阶段继续游戏，机会不再返还", async () => {
   const { service } = createTestContext();
   const { host } = await createTestRoom(service, 4);

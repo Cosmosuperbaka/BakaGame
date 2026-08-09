@@ -2247,6 +2247,8 @@ export class RoomService {
     this.reassignHost(room);
     this.normalizeRoomRoleConfig(room);
     this.touchRoom(room);
+    // 猜词的白板被移除后没人能推进阻塞阶段，必须就地收束。
+    await this.resolveAbandonedBlankGuess(room);
     await this.maybeAbortRoundAfterRosterChange(room);
 
     await this.log({
@@ -3039,6 +3041,41 @@ export class RoomService {
     }
 
     return "gameOver";
+  }
+
+  /**
+   * 猜词的白板离场后收束阻塞阶段。
+   *
+   * blankGuess 只能由白板本人提交、或出题人裁定来推进，两者都没了就再没有
+   * 出口，全房会永远停在这一阶段。所以离场时必须就地结束：残局条件已定的
+   * 按该条件结算，否则退回发起猜词时的阶段继续游戏。
+   */
+  private async resolveAbandonedBlankGuess(room: RoomRecord) {
+    const round = room.round;
+
+    if (round?.phase !== "blankGuess" || !round.blankGuessContext) {
+      return;
+    }
+
+    const guesser = room.players[round.blankGuessContext.playerId];
+    const stillPlaying =
+      guesser?.membership === "active" && round.assignments[guesser.id] !== undefined;
+
+    if (stillPlaying) {
+      return;
+    }
+
+    const { deferredWinner, resumePhase } = round.blankGuessContext;
+    round.blankGuessContext = undefined;
+
+    if (deferredWinner) {
+      await this.finishRound(room, deferredWinner, "白板已离场，系统按残局条件结算");
+      return;
+    }
+
+    round.phase = resumePhase ?? "gameOver";
+    round.speechMode = round.phase === "description" ? "normal" : undefined;
+    this.appendSystemMessage(room, "白板已离场，本次猜词作废，游戏继续");
   }
 
   private async maybeAbortRoundAfterRosterChange(room: RoomRecord) {
