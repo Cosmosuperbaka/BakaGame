@@ -160,6 +160,38 @@ describe("game store integration", () => {
     });
   });
 
+  it("clears the session token and flags closure when the room is closed", () => {
+    saveSessionToken("5678", "closed-token");
+    useGameStore.getState().joinRoomState("5678", "closed-token");
+    initGameSocket();
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "room.closed",
+      payload: { roomId: "5678", reason: "empty" },
+    });
+
+    // 令牌必须一起清掉，否则下次进房会去重连一个已被删除的房间。
+    expect(getSessionToken("5678")).toBeNull();
+    expect(useGameStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+    // 房间页据此退回大厅，而不是靠「没有快照」这种同时匹配初次挂载的推断。
+    expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+  });
+
+  it("flags closure so a replaced session also leaves the room page", () => {
+    saveSessionToken("6789", "taken-token");
+    useGameStore.getState().joinRoomState("6789", "taken-token");
+    initGameSocket();
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "session.replaced",
+      payload: { roomId: "6789" },
+    });
+
+    expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+  });
+
   it("keeps the current round summary when a transient game-over snapshot omits it", () => {
     useGameStore.getState().setSnapshot(gameOverSnapshot("round-1", roundSummary));
     useGameStore.getState().setSnapshot(gameOverSnapshot("round-1"));

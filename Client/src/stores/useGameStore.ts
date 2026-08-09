@@ -31,12 +31,18 @@ export interface GameState {
   privateState: PrivateState | null;
   daybreakNotice: DaybreakNotice | null;
   toasts: ToastItem[];
+  /**
+   * 房间被服务端关闭的时刻。房间页据此立刻退回大厅：
+   * 关闭是一次明确的服务端事件，不能靠「没有快照」这种同时也匹配初次挂载的推断来判断。
+   */
+  roomClosedAt: number | null;
 
   // Actions
   setConnected: (connected: boolean) => void;
   setRooms: (rooms: RoomSummary[]) => void;
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
+  markRoomClosed: () => void;
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
@@ -73,11 +79,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   privateState: null,
   daybreakNotice: null,
   toasts: [],
+  roomClosedAt: null,
 
   setConnected: (connected) => set({ connected }),
   setRooms: (rooms) => set({ rooms }),
   joinRoomState: (roomId, sessionToken) =>
-    set({ roomId, sessionToken }),
+    set({ roomId, sessionToken, roomClosedAt: null }),
   leaveRoomState: () =>
     set({
       roomId: null,
@@ -86,6 +93,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       privateState: null,
       daybreakNotice: null,
     }),
+  markRoomClosed: () => set({ roomClosedAt: Date.now() }),
   setSnapshot: (snapshot) =>
     set((state) => {
       const previousSnapshot = state.snapshot;
@@ -236,10 +244,16 @@ export function initGameSocket() {
       case "room.expiring":
         currentStore.addToast("房间即将因超时关闭", "error");
         break;
-      case "room.closed":
+      case "room.closed": {
+        // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
+        const payload = evt.payload as { roomId?: string };
+        const closedRoomId = payload.roomId ?? currentStore.roomId;
+        if (closedRoomId) clearSessionToken(closedRoomId);
         currentStore.leaveRoomState();
+        currentStore.markRoomClosed();
         currentStore.addToast("房间已关闭", "error");
         break;
+      }
       case "session.replaced": {
         const payload = evt.payload as { roomId?: string };
         const roomId = payload.roomId;
@@ -247,6 +261,8 @@ export function initGameSocket() {
         if (roomId && currentStore.roomId === roomId) {
           clearSessionToken(roomId);
           currentStore.leaveRoomState();
+          // 席位已被新标签页接管，本标签页同样必须退回大厅。
+          currentStore.markRoomClosed();
         }
         currentStore.addToast("您的连接已被新标签页替代", "error");
         break;

@@ -201,7 +201,7 @@ export class RoomService {
       // 测试房间不参与闲置/空房自动清理，方便开发者随时回来继续调试。
       const isTestRoom = room.id === ROOM_ID_TEST_MODE;
 
-      if (!isTestRoom && this.getOnlineCount(room) === 0) {
+      if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
         await this.closeRoom(room, "empty");
         continue;
       }
@@ -1942,7 +1942,7 @@ export class RoomService {
       }
       this.normalizeRoomRoleConfig(room);
       this.touchRoom(room);
-      if (this.getOnlineCount(room) === 0) {
+      if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
         await this.closeRoom(room, "empty");
       } else {
         this.publishRoomState(room);
@@ -1979,12 +1979,20 @@ export class RoomService {
       action: reason,
       playerId,
     });
-    if (this.getOnlineCount(room) === 0) {
+    if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
       await this.closeRoom(room, "empty");
     } else {
       this.publishRoomState(room);
       this.publishLobby();
     }
+  }
+
+  /**
+   * 空房是否应当自动关闭。测试房间要能在最后一人刷新页面后仍然存在，
+   * 否则每次刷新都会丢掉正在调试的房间状态。
+   */
+  private shouldAutoCloseWhenEmpty(room: RoomRecord) {
+    return room.id !== ROOM_ID_TEST_MODE;
   }
 
   private async forceRemovePlayer(room: RoomRecord, playerId: string, reason: string) {
