@@ -37,13 +37,13 @@ describe("player row presentation", () => {
 
     expect(screen.getByLabelText("平民")).toHaveClass(
       "rounded",
-      "bg-background/75",
+      "bg-card",
       "px-1.5",
       "py-0.5",
       "text-blue-600",
     );
     expect(screen.getByLabelText("平民")).not.toHaveClass("border");
-    expect(screen.getByText("准备")).toHaveClass("bg-background/75", "text-emerald-600");
-    expect(screen.getByText("测试玩家").parentElement).toHaveClass("min-h-9", "gap-1", "py-1");
+    expect(screen.getByText("准备")).toHaveClass("bg-card", "text-emerald-600");
+    expect(screen.getByText("测试玩家").parentElement).toHaveClass("min-h-10", "gap-1", "py-1");
   });
 });
