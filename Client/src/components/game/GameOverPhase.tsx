@@ -7,6 +7,7 @@ import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/lib/helpers";
 import { collapsible, listContainer, listItem, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "./PhaseHeader";
 
 /**
@@ -220,6 +221,7 @@ export function GameOverPhase() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {item.votes.map((v, vIdx) => {
                         const voter = snapshot.players.find((p) => p.id === v.voterId);
+                        const abstained = v.targetId === ABSTAIN_TARGET_ID;
                         const target = snapshot.players.find((p) => p.id === v.targetId);
                         return (
                           <div
@@ -227,9 +229,11 @@ export function GameOverPhase() {
                             className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-xs"
                           >
                             <span className="font-medium">{voter?.name ?? v.voterId}</span>
-                            <span className="text-muted-foreground">投给了</span>
+                            <span className="text-muted-foreground">
+                              {abstained ? "选择了" : "投给了"}
+                            </span>
                             <Badge variant="outline" className="text-[11px] font-normal">
-                              {target?.name ?? v.targetId}
+                              {abstained ? "弃票" : (target?.name ?? v.targetId)}
                             </Badge>
                           </div>
                         );

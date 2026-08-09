@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import type { PrivateState, RoomSnapshot } from "../src/domain/model";
-import { ROOM_ID_TEST_MODE } from "../src/domain/model";
+import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../src/domain/model";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./helpers";
 
 // ==================== 测试房间与真实规则一致性 ====================
@@ -210,6 +210,65 @@ test("测试房间不能投自己，与普通房间同规则", async () => {
   }
 
   expect(errorCode).toBe("INVALID_VOTE");
+});
+
+test("投票阶段可以弃票，弃票记入已投并能正常结算", async () => {
+  const { service } = createTestContext();
+  // 房主当出题人，5 个机器人参战；另加一名真人负责弃票。
+  const { host, playerId } = await createTestRoom(service, 5);
+
+  const voter = createConnection(service, "abstain-voter");
+  await execute(service, voter, {
+    id: "join-voter",
+    type: "room.join",
+    roomId: ROOM_ID_TEST_MODE,
+    payload: { userName: "弃票者" },
+  });
+
+  await execute(service, voter, {
+    id: "voter-ready",
+    type: "player.setReady",
+    payload: { ready: true },
+  });
+  await execute(service, host, {
+    id: "host-ready",
+    type: "player.setReady",
+    payload: { ready: true },
+  });
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId },
+  });
+  await execute(service, host, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 机器人进入描述阶段即补齐发言，真人还要自己说一句才算齐。
+  await execute(service, voter, {
+    id: "voter-describe",
+    type: "game.submitDescription",
+    payload: { text: "一种常见的水果" },
+  });
+  await execute(service, host, { id: "to-vote", type: "game.advancePhase", payload: {} });
+  expect(snapshotOf(host).status.phase).toBe("voting");
+
+  await execute(service, voter, {
+    id: "abstain",
+    type: "game.submitVote",
+    payload: { targetId: ABSTAIN_TARGET_ID },
+  });
+
+  // 弃票也是一次完成的投票：私有状态要能回显，否则客户端无法显示「已弃票」。
+  expect(privateOf(voter).myCurrentVoteTargetId).toBe(ABSTAIN_TARGET_ID);
+
+  // 全员已投，出题人应当能直接结算，而不是卡在「仍有玩家尚未投票」。
+  // 弃票不计入任何人的得票，因此出局者只能是被机器人投出来的那位。
+  await execute(service, host, { id: "resolve", type: "game.advancePhase", payload: {} });
+  expect(snapshotOf(host).status.phase).not.toBe("voting");
 });
 
 test("测试房间夜晚不能刀自己", async () => {
