@@ -136,6 +136,11 @@ export class RoomService {
           this.handleSubmitNightAction(connection, targetId),
         submitBlankGuess: (connection, words) =>
           this.handleSubmitBlankGuess(connection, words),
+        enterBlankGuess: (connection) => this.handleEnterBlankGuess(connection),
+        updateBlankGuessDraft: (connection, words) =>
+          this.handleUpdateBlankGuessDraft(connection, words),
+        reviewBlankGuess: (connection, approve) =>
+          this.handleReviewBlankGuess(connection, approve),
         cancelVote: (connection) => this.handleCancelVote(connection),
         cancelNightAction: (connection) => this.handleCancelNightAction(connection),
         requestSupplement: (connection, playerIds) =>
@@ -1066,23 +1071,26 @@ export class RoomService {
       throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
     }
 
-    const canGuessActively = round.phase !== "gameOver";
-    const canGuessPassively =
-      round.phase === "blankGuess" && round.blankGuessContext?.playerId === player.id;
-
-    if (!canGuessActively && !canGuessPassively) {
+    // 猜词已改为阻塞阶段：必须先进入 blankGuess，且只有本人能提交。
+    if (round.phase !== "blankGuess" || round.blankGuessContext?.playerId !== player.id) {
       throw new AppError("ACTION_FORBIDDEN", "当前不能进行白板猜词");
+    }
+
+    if (round.blankGuessContext.pendingReview) {
+      throw new AppError("ACTION_FORBIDDEN", "本次猜词正在等待主持人裁定");
     }
 
     const guess = evaluateBlankGuess(
       round,
       words,
       this.now(),
-      canGuessPassively ? round.blankGuessContext?.reason ?? "eliminated" : "active",
+      round.blankGuessContext.reason,
     );
 
+    // 机会在提交这一刻就消耗掉，裁定只决定这一次算不算猜中。
     round.blankGuessUsed = true;
     round.blankGuessRecords.push(guess);
+    round.blankGuessContext.draft = undefined;
     this.touchRoom(room);
 
     await this.log({
@@ -1097,24 +1105,143 @@ export class RoomService {
 
     if (guess.success) {
       await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
-    } else if (round.phase === "blankGuess") {
-      if (round.blankGuessContext?.deferredWinner) {
-        await this.finishRound(
-          room,
-          round.blankGuessContext.deferredWinner,
-          "白板猜测失败，系统按残局条件结算",
-        );
-      } else if (round.blankGuessContext?.resumePhase) {
-        round.phase = round.blankGuessContext.resumePhase;
-        round.blankGuessContext = undefined;
-      }
+    } else {
+      // 自动比对只认完全一致。细微差异交由主持人裁定，阶段继续阻塞。
+      round.blankGuessContext.pendingReview = { words: guess.guessedWords };
+      this.appendSystemMessage(room, `${player.name} 的猜词未完全匹配，等待主持人裁定`);
     }
 
     this.publishRoomState(room);
     this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
     await this.runBots(room);
 
-    return { success: guess.success };
+    return { success: guess.success, pendingReview: !guess.success };
+  }
+
+  private async handleEnterBlankGuess(connection: ConnectionRecord) {
+    // 白板主动猜词：先把房间切进阻塞阶段，其他人一起等这一次猜词。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+    const state = round.assignments[player.id];
+
+    if (!state || state.role !== "blank") {
+      throw new AppError("ACTION_FORBIDDEN", "只有白板可以猜词");
+    }
+
+    if (round.blankGuessUsed) {
+      throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
+    }
+
+    if (round.phase === "blankGuess") {
+      throw new AppError("INVALID_PHASE", "已经处于白板猜词阶段");
+    }
+
+    // 只有已经发过词、且还没结算的阶段才能中途插入猜词。
+    const resumePhase = round.phase;
+
+    if (
+      resumePhase !== "description" &&
+      resumePhase !== "voting" &&
+      resumePhase !== "tieBreak" &&
+      resumePhase !== "night"
+    ) {
+      throw new AppError("INVALID_PHASE", "当前阶段不能进入白板猜词");
+    }
+
+    this.ensurePhaseNotBlocked(round);
+
+    round.blankGuessContext = {
+      playerId: player.id,
+      reason: "active",
+      resumePhase,
+    };
+    round.phase = "blankGuess";
+    round.speechMode = undefined;
+
+    this.touchRoom(room);
+    this.appendSystemMessage(room, `${player.name} 发起了白板猜词`);
+
+    await this.log({
+      type: "game.blank_guess_entered",
+      createdAt: this.now(),
+      roomId: room.id,
+      playerId: player.id,
+      payload: { reason: "active" },
+    });
+
+    this.broadcastPhaseAndPublish(room);
+    return { phase: round.phase };
+  }
+
+  private async handleUpdateBlankGuessDraft(
+    connection: ConnectionRecord,
+    words: [string, string],
+  ) {
+    // 猜词过程本身是这一阶段的看点，草稿实时广播给全房。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+
+    if (round.phase !== "blankGuess" || round.blankGuessContext?.playerId !== player.id) {
+      throw new AppError("ACTION_FORBIDDEN", "当前不能更新猜词内容");
+    }
+
+    if (round.blankGuessContext.pendingReview) {
+      throw new AppError("ACTION_FORBIDDEN", "本次猜词正在等待主持人裁定");
+    }
+
+    round.blankGuessContext.draft = words;
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    return { updated: true };
+  }
+
+  private async handleReviewBlankGuess(connection: ConnectionRecord, approve: boolean) {
+    // 自动比对只认完全一致，主持人在此纠正细微差异导致的误判。
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+    this.ensureQuestioner(round, player.id);
+
+    const pending = round.blankGuessContext?.pendingReview;
+
+    if (round.phase !== "blankGuess" || !pending) {
+      throw new AppError("ACTION_FORBIDDEN", "当前没有待裁定的白板猜词");
+    }
+
+    round.blankGuessContext!.pendingReview = undefined;
+    const record = round.blankGuessRecords.at(-1);
+
+    await this.log({
+      type: "game.blank_guess_reviewed",
+      createdAt: this.now(),
+      roomId: room.id,
+      playerId: player.id,
+      payload: { approve },
+    });
+
+    if (approve) {
+      if (record) {
+        record.success = true;
+        record.approvedByQuestioner = true;
+      }
+      await this.finishRound(room, "blank", "白板猜词经主持人判定有效，获得胜利");
+    } else if (round.blankGuessContext?.deferredWinner) {
+      await this.finishRound(
+        room,
+        round.blankGuessContext.deferredWinner,
+        "白板猜测失败，系统按残局条件结算",
+      );
+    } else if (round.blankGuessContext?.resumePhase) {
+      round.phase = round.blankGuessContext.resumePhase;
+      round.blankGuessContext = undefined;
+      this.appendSystemMessage(room, "白板猜词未通过，游戏继续");
+    }
+
+    this.touchRoom(room);
+    this.broadcastPhaseAndPublish(room);
+    this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
+    await this.runBots(room);
+
+    return { approved: approve };
   }
 
   private async handleResolveDisconnect(
@@ -1416,7 +1543,7 @@ export class RoomService {
         round.blankGuessUsed = false;
         round.blankGuessContext = {
           playerId: blankId,
-          reason: "eliminated",
+          reason: "active",
           resumePhase: "description",
         };
         round.summary = undefined;
@@ -1763,8 +1890,9 @@ export class RoomService {
   }
 
   private maybeEnterBlankGuess(room: RoomRecord): boolean {
-    // 白板被淘汰时不再阻塞游戏进程，玩家可通过悬浮按钮随时猜词（非阻塞）。
-    // 仅保留"残局触发"路径：其他阵营已满足胜负条件但白板仍存活时，进入阻塞猜词阶段。
+    // 被淘汰不自动触发猜词：白板自己决定何时用掉这一次机会（game.enterBlankGuess）。
+    // 这里只保留「残局触发」：其他阵营已满足胜负条件但白板仍存活时，
+    // 在结算前强制补一次猜词。
     const round = this.requireRound(room);
     const finalBlankGuess = shouldEnterFinalBlankGuess(round);
 
@@ -2289,6 +2417,11 @@ export class RoomService {
         pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
         questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
         blankGuessPlayerId: room.round?.blankGuessContext?.playerId,
+        blankGuessReason: room.round?.blankGuessContext?.reason,
+        blankGuessDraft: room.round?.blankGuessContext?.draft,
+        blankGuessPendingReview: room.round?.blankGuessContext?.pendingReview
+          ? true
+          : undefined,
         pendingSupplementPlayerIds: room.round?.supplement
           ? room.round.supplement.requestedPlayerIds.filter(
               (id) => !room.round!.supplement!.donePlayers.includes(id),
@@ -2404,6 +2537,8 @@ export class RoomService {
           ? round.words?.blankHint
           : undefined,
       isQuestioner: false,
+      // 只表示「还有猜词机会」。是否已在阻塞阶段由公共快照的
+      // blankGuessPlayerId 表达，客户端据此决定显示入口还是输入界面。
       canSubmitBlankGuess: state?.role === "blank" && !round.blankGuessUsed,
       blankGuessUsed: round.blankGuessUsed,
       nightActionSubmitted: round.nightActions.some((action) => action.actorId === player.id),

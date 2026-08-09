@@ -10,7 +10,7 @@ import { WordSubmissionPhase } from "@/components/game/WordSubmissionPhase";
 import { DescriptionPhase } from "@/components/game/DescriptionPhase";
 import { VotingPhase } from "@/components/game/VotingPhase";
 import { NightPhase } from "@/components/game/NightPhase";
-import { BlankGuessButton, BlankGuessWaiting } from "@/components/game/BlankGuessPhase";
+import { BlankGuessButton, BlankGuessStage } from "@/components/game/BlankGuessPhase";
 import { GameOverPhase } from "@/components/game/GameOverPhase";
 import { TestController } from "@/components/game/TestController";
 
@@ -110,7 +110,7 @@ function PhaseContent() {
     case "tieBreak":         return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
     case "voting":           return <VotingPhase />;
     case "night":            return <NightPhase />;
-    case "blankGuess":       return <BlankGuessWaiting />;
+    case "blankGuess":       return <BlankGuessStage />;
     case "gameOver":         return <GameOverPhase />;
     default:                 return <div className="py-12 text-center text-muted-foreground">未知阶段</div>;
   }

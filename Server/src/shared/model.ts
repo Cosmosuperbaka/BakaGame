@@ -147,7 +147,9 @@ export interface BlankGuessRecord {
   guessedWords: [string, string];
   success: boolean;
   createdAt: number;
-  reason: "active" | "eliminated" | "finale";
+  reason: BlankGuessReason;
+  /** 自动比对未通过、由主持人判定为正确时置位，用于结算复盘。 */
+  approvedByQuestioner?: boolean;
 }
 
 export interface VoteHistoryRecord {
@@ -174,12 +176,27 @@ export interface TieBreakState {
   votes: VoteRecord[];
 }
 
-// 白板被动猜词时，服务端需要记住猜词结束后要回到哪个阶段。
+/** 白板进入猜词阶段的原因，公开给全房，让其他人知道为什么被打断。 */
+export type BlankGuessReason = "active" | "eliminated" | "finale";
+
+// 白板猜词是阻塞阶段，服务端需要记住猜词结束后要回到哪个阶段。
 export interface BlankGuessContext {
   playerId: string;
-  reason: "eliminated" | "finale";
+  reason: BlankGuessReason;
   resumePhase?: Exclude<GamePhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
+  /**
+   * 白板正在输入的草稿，全房实时可见。
+   * 猜词过程本身是这一阶段的看点，因此不做保密。
+   */
+  draft?: [string, string];
+  /**
+   * 自动比对未通过、等待主持人裁定的那次猜测。
+   * 存在时阶段仍然阻塞，只有主持人的裁定能推进。
+   */
+  pendingReview?: {
+    words: [string, string];
+  };
 }
 
 // 一局结束后的结算快照，供结算页和历史回顾直接复用。
@@ -334,6 +351,12 @@ export interface RoomSnapshot {
     pendingDisconnectPlayerId?: string;
     questionerReconnectDeadlineAt?: number;
     blankGuessPlayerId?: string;
+    /** 白板进入猜词的原因，用于向全房说明这次打断从何而来。 */
+    blankGuessReason?: BlankGuessReason;
+    /** 白板正在输入的草稿，全房实时可见。 */
+    blankGuessDraft?: [string, string];
+    /** 自动比对未通过，正在等主持人裁定。 */
+    blankGuessPendingReview?: boolean;
     /** 出题人发起补充发言时，尚未完成补充的玩家 ID 列表。 */
     pendingSupplementPlayerIds?: string[];
   };
