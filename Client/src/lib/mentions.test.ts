@@ -66,4 +66,22 @@ describe("chat mentions", () => {
       caret: 7,
     });
   });
+
+  it("ignores empty names instead of matching every at-sign", () => {
+    // 空名会让 startsWith("") 永真、匹配长度为 0，游标不前进就是死循环。
+    // 这条断言锁住 splitMentions 里的 name.length > 0 过滤。
+    expect(splitMentions("@abc", [{ id: "p1", name: "" }])).toEqual([
+      { kind: "text", text: "@abc" },
+    ]);
+  });
+
+  it("stays fast when the message is nothing but at-signs", () => {
+    // 每个 @ 触发一次候选扫描：200 字上限 × 房间人数，必须仍是瞬时的。
+    const players = Array.from({ length: 20 }, (_, i) => ({ id: `p${i}`, name: `玩家${i}` }));
+    const text = "@".repeat(200);
+
+    const started = performance.now();
+    expect(splitMentions(text, players)).toEqual([{ kind: "text", text }]);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
 });
