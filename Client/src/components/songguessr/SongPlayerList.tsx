@@ -1,0 +1,320 @@
+import { useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import * as Popover from "@radix-ui/react-popover";
+import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { PlayerGroupTitle, PLAYER_ROW_HEIGHT } from "@/components/room/PlayerList";
+import { listContainer, listItem, popover, tappable } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
+import type { SongGuessrPhase, SongGuessrPlayerView } from "@/types";
+
+const BADGE_BASE =
+  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
+
+const statusTones = {
+  default: "bg-secondary text-secondary-foreground",
+  emerald: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950",
+  violet: "bg-violet-600 text-white dark:bg-violet-500 dark:text-violet-950",
+  amber: "bg-amber-500 text-white dark:text-amber-950",
+} as const;
+
+type SongStatus = {
+  label: string;
+  tone: keyof typeof statusTones;
+};
+
+interface SongPlayerListProps {
+  players: SongGuessrPlayerView[];
+  myPlayerId?: string;
+  isHost: boolean;
+  phase: SongGuessrPhase;
+  allowSpectators: boolean;
+}
+
+export function SongPlayerList({
+  players,
+  myPlayerId,
+  isHost,
+  phase,
+  allowSpectators,
+}: SongPlayerListProps) {
+  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
+  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const activePlayers = players.filter((player) => player.membership === "active");
+  const observers = players.filter((player) => player.membership === "spectator");
+  const me = players.find((player) => player.id === myPlayerId);
+  const waitingPhase = phase === "waiting";
+  const canJoinSpectators =
+    waitingPhase &&
+    Boolean(me) &&
+    allowSpectators &&
+    me?.membership === "active";
+  const canJoinPlayers = waitingPhase && me?.membership === "spectator";
+
+  const handleKick = useCallback(
+    async (playerId: string) => {
+      try {
+        await sendCommand("song.room.kick", { playerId });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
+
+  const handleTransferHost = useCallback(
+    async (playerId: string) => {
+      try {
+        await sendCommand("song.room.transferHost", { playerId });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
+
+  const handleSetSpectator = useCallback(
+    async (spectator: boolean) => {
+      try {
+        await sendCommand("song.player.setSpectator", { spectator });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
+
+  const renderRow = (player: SongGuessrPlayerView, hideSpectatorStatus: boolean) => (
+    <SongPlayerRow
+      key={player.id}
+      player={player}
+      myPlayerId={myPlayerId}
+      isHostViewer={isHost}
+      phase={phase}
+      hideSpectatorStatus={hideSpectatorStatus}
+      onKick={handleKick}
+      onTransferHost={handleTransferHost}
+    />
+  );
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="px-2">
+        <div className="relative flex flex-col py-3">
+          <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+          <motion.div
+            className="flex flex-col gap-px"
+            variants={listContainer(activePlayers.length)}
+            initial={false}
+            animate="animate"
+          >
+            <AnimatePresence initial={false} mode="popLayout">
+              {activePlayers.map((player) => renderRow(player, false))}
+            </AnimatePresence>
+          </motion.div>
+
+          {canJoinPlayers ? (
+            <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+          ) : null}
+
+          {observers.length > 0 || canJoinSpectators ? (
+            <>
+              <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+              <motion.div
+                className="flex flex-col gap-px"
+                variants={listContainer(observers.length)}
+                initial={false}
+                animate="animate"
+              >
+                <AnimatePresence initial={false} mode="popLayout">
+                  {observers.map((player) => renderRow(player, true))}
+                </AnimatePresence>
+              </motion.div>
+              {canJoinSpectators ? (
+                <SpectatorToggle spectator onToggle={handleSetSpectator} />
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </ScrollArea>
+  );
+}
+
+interface SongPlayerRowProps {
+  player: SongGuessrPlayerView;
+  myPlayerId?: string;
+  isHostViewer: boolean;
+  phase: SongGuessrPhase;
+  hideSpectatorStatus: boolean;
+  onKick: (playerId: string) => void;
+  onTransferHost: (playerId: string) => void;
+}
+
+function SongPlayerRow({
+  player,
+  myPlayerId,
+  isHostViewer,
+  phase,
+  hideSpectatorStatus,
+  onKick,
+  onTransferHost,
+}: SongPlayerRowProps) {
+  const isMe = player.id === myPlayerId;
+  const canManage = isHostViewer && !isMe;
+  const canTransfer = canManage && player.membership === "active" && player.online && !player.isBot;
+  const status = resolveSongStatus(player, phase, hideSpectatorStatus);
+
+  const body = (
+    <div
+      className={cn(
+        "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
+        PLAYER_ROW_HEIGHT,
+        isMe && "bg-primary/10",
+        !isMe && "transition-colors hover:bg-accent/50",
+        !player.online && !player.isBot && "opacity-60",
+        canManage && "cursor-pointer",
+      )}
+    >
+      {isMe ? (
+        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+      ) : null}
+      {status ? <StatusPill {...status} /> : null}
+      <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
+      {player.isHost ? (
+        <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
+      ) : null}
+      {player.isBot ? (
+        <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
+      ) : !player.online ? (
+        <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
+      ) : null}
+      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+        {player.score}<span className="ml-0.5 text-[10px]">分</span>
+      </span>
+    </div>
+  );
+
+  const content = (
+    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position">
+      {body}
+    </motion.div>
+  );
+
+  if (!canManage) return content;
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <div role="button" tabIndex={0} aria-label={`${player.name} 操作`}>
+          {content}
+        </div>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content side="right" align="center" sideOffset={6} collisionPadding={12} asChild>
+          <motion.div
+            variants={popover}
+            initial="initial"
+            animate="animate"
+            className="z-[80] overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
+          >
+            <div className="flex flex-col">
+              {canTransfer ? (
+                <ManageButton
+                  icon={<ArrowUpRightFromCircle className="h-3.5 w-3.5" />}
+                  label="转移房主"
+                  onClick={() => onTransferHost(player.id)}
+                />
+              ) : null}
+              <ManageButton
+                icon={<UserX className="h-3.5 w-3.5" />}
+                label="踢出玩家"
+                destructive
+                onClick={() => onKick(player.id)}
+              />
+            </div>
+          </motion.div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function resolveSongStatus(
+  player: SongGuessrPlayerView,
+  phase: SongGuessrPhase,
+  hideSpectatorStatus: boolean,
+): SongStatus | null {
+  if (player.membership === "spectator") {
+    return hideSpectatorStatus ? null : { label: "旁观", tone: "default" };
+  }
+  if (phase === "waiting") {
+    return player.isReady
+      ? { label: "准备", tone: "emerald" }
+      : { label: "等待", tone: "default" };
+  }
+  if (player.roundStatus === "submitter") return { label: "出题", tone: "violet" };
+  if (player.roundStatus === "guessing") return { label: "猜歌", tone: "amber" };
+  if (player.roundStatus === "correct") return { label: "猜中", tone: "emerald" };
+  if (player.roundStatus === "finished") return { label: "完成", tone: "default" };
+  return null;
+}
+
+function SpectatorToggle({
+  spectator,
+  onToggle,
+}: {
+  spectator: boolean;
+  onToggle: (spectator: boolean) => void;
+}) {
+  const label = spectator ? "加入旁观" : "取消旁观";
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
+      onClick={() => onToggle(spectator)}
+    >
+      {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+      {label}
+    </Button>
+  );
+}
+
+function StatusPill({ label, tone }: SongStatus) {
+  return <span className={cn(BADGE_BASE, statusTones[tone])}>{label}</span>;
+}
+
+function ManageButton({
+  icon,
+  label,
+  destructive,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  destructive?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Popover.Close asChild>
+      <motion.button
+        type="button"
+        {...tappable}
+        onClick={onClick}
+        className={cn(
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
+          "border-t first:border-t-0",
+          destructive
+            ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            : "text-foreground hover:bg-accent hover:text-accent-foreground",
+        )}
+      >
+        {icon}
+        {label}
+      </motion.button>
+    </Popover.Close>
+  );
+}

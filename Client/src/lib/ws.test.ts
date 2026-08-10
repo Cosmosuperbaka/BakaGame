@@ -107,4 +107,15 @@ describe("websocket client", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(MockWebSocket.instances).toHaveLength(2);
   });
+
+  it("immediately informs a status listener when the shared socket is already open", async () => {
+    const socketApi = await import("./ws");
+    socketApi.connect();
+    MockWebSocket.instances[0].open();
+
+    const statuses: boolean[] = [];
+    socketApi.onStatus((connected) => statuses.push(connected));
+
+    expect(statuses).toEqual([true]);
+  });
 });

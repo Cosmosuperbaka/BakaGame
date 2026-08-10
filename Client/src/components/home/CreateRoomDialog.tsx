@@ -27,6 +27,7 @@ export interface CreateRoomDialogProps {
     password?: string;
     allowSpectators: boolean;
   }) => Promise<void>;
+  onValidationError?: (message: string) => void;
 }
 
 export function CreateRoomDialog({
@@ -35,6 +36,7 @@ export function CreateRoomDialog({
   defaultName,
   origin,
   onCreate,
+  onValidationError,
 }: CreateRoomDialogProps) {
   // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
   return (
@@ -47,15 +49,24 @@ export function CreateRoomDialog({
           defaultName={defaultName}
           onOpenChange={onOpenChange}
           onCreate={onCreate}
+          onValidationError={onValidationError}
         />
       </DialogContent>
     </Dialog>
   );
 }
 
-type CreateRoomFormProps = Pick<CreateRoomDialogProps, "defaultName" | "onOpenChange" | "onCreate">;
+type CreateRoomFormProps = Pick<
+  CreateRoomDialogProps,
+  "defaultName" | "onOpenChange" | "onCreate" | "onValidationError"
+>;
 
-function CreateRoomForm({ defaultName, onOpenChange, onCreate }: CreateRoomFormProps) {
+function CreateRoomForm({
+  defaultName,
+  onOpenChange,
+  onCreate,
+  onValidationError,
+}: CreateRoomFormProps) {
   const [roomName, setRoomName] = useState(defaultName);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState("");
@@ -65,7 +76,8 @@ function CreateRoomForm({ defaultName, onOpenChange, onCreate }: CreateRoomFormP
 
   const handleCreate = async () => {
     if (isPrivate && !password.trim()) {
-      addToast("私密房间需要设置密码", "error");
+      if (onValidationError) onValidationError("私密房间需要设置密码");
+      else addToast("私密房间需要设置密码", "error");
       return;
     }
     setLoading(true);

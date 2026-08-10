@@ -2,6 +2,7 @@ import { TEST_ROOM_ID } from "@/config/constants";
 
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
+const SONG_SESSION_PREFIX = "songguessr_session_";
 
 function normalizeSessionRoomId(roomId: string): string {
   const normalized = roomId.trim();
@@ -12,6 +13,10 @@ function normalizeSessionRoomId(roomId: string): string {
 
 function getSessionKey(roomId: string): string {
   return SESSION_PREFIX + normalizeSessionRoomId(roomId);
+}
+
+function getSongSessionKey(roomId: string): string {
+  return SONG_SESSION_PREFIX + normalizeSessionRoomId(roomId);
 }
 
 function getSessionStorage(): Storage | null {
@@ -59,5 +64,29 @@ export function clearSessionToken(roomId: string): void {
     getSessionStorage()?.removeItem(getSessionKey(roomId));
   } catch {
     // 忽略
+  }
+}
+
+export function getSongGuessrSessionToken(roomId: string): string | null {
+  try {
+    return getSessionStorage()?.getItem(getSongSessionKey(roomId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSongGuessrSessionToken(roomId: string, token: string): void {
+  try {
+    getSessionStorage()?.setItem(getSongSessionKey(roomId), token);
+  } catch {
+    // 忽略浏览器禁用存储的情况。
+  }
+}
+
+export function clearSongGuessrSessionToken(roomId: string): void {
+  try {
+    getSessionStorage()?.removeItem(getSongSessionKey(roomId));
+  } catch {
+    // 忽略浏览器禁用存储的情况。
   }
 }

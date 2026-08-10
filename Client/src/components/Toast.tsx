@@ -1,10 +1,27 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { duration, ease, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
+import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
 import { cn } from "@/lib/utils";
 
 export function ToastContainer() {
   const toasts = useGameStore((s) => s.toasts);
+
+  return <ToastViewport toasts={toasts} />;
+}
+
+export function SongGuessrToastContainer() {
+  const notice = useSongGuessrStore((state) => state.notice);
+  const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
+
+  return <ToastViewport toasts={toasts} />;
+}
+
+function ToastViewport({
+  toasts,
+}: {
+  toasts: Array<{ id: string | number; text: string; type: "info" | "error" | "success" }>;
+}) {
 
   return (
     <div className="fixed top-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm">
