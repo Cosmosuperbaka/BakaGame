@@ -440,8 +440,8 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
   }
 };
 
-export const createAck = (
-  message: Pick<ClientMessage, "id" | "type">,
+export const createAck = <TMessage extends { id: string; type: string }>(
+  message: TMessage,
   payload?: unknown,
 ): AckPacket => ({
   type: "ack",
