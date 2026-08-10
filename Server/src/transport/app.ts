@@ -2,21 +2,31 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
 import { RoomService } from "../application/room-service";
+import { SongGuessrService } from "../application/songguessr-service";
 import type { AppEnv } from "../config/env";
 import { isAppError } from "../domain/errors";
 import { describeError, EventLogger } from "../infrastructure/event-logger";
+import { NeteaseMusicProvider } from "../infrastructure/netease-music-provider";
 import { createSwaggerPlugin } from "./openapi";
 import { createAck, createErrorPacket, parseClientMessage } from "./protocol";
+import { parseSongGuessrMessage } from "./songguessr-protocol";
 import { systemRoutes } from "./routes/system";
 
 export interface AppDependencies {
   env: AppEnv;
   roomService: RoomService;
   logger: EventLogger;
+  songGuessrService?: SongGuessrService;
 }
 
-export const createApp = ({ env, roomService, logger }: AppDependencies) => {
+export const createApp = ({ env, roomService, logger, songGuessrService }: AppDependencies) => {
   const decoder = new TextDecoder();
+  const songService =
+    songGuessrService ??
+    new SongGuessrService({
+      eventLogger: logger,
+      musicProvider: new NeteaseMusicProvider(),
+    });
 
   const app = new Elysia()
     // ==================== 原生插件与全局中间件 ====================
@@ -180,9 +190,91 @@ export const createApp = ({ env, roomService, logger }: AppDependencies) => {
           await roomService.unregisterConnection(connectionId);
         }
       },
+    })
+    // Song Guessr 与 Who is Faker 共用相同封包、错误与会话约定，但状态机彼此隔离。
+    .ws("/api/songguessr/ws", {
+      open(ws) {
+        const connectionId = crypto.randomUUID();
+        (ws.data as { connectionId?: string }).connectionId = connectionId;
+        songService.registerConnection({
+          id: connectionId,
+          lobbySubscribed: false,
+          send: (payload) => ws.send(JSON.stringify(payload)),
+          close: (code?: number, reason?: string) => ws.close(code, reason),
+        });
+      },
+      async message(ws, incoming) {
+        const connectionId = (ws.data as { connectionId?: string }).connectionId;
+        if (!connectionId) return;
+
+        const raw =
+          typeof incoming === "string"
+            ? incoming
+            : incoming instanceof ArrayBuffer
+              ? decoder.decode(new Uint8Array(incoming))
+              : ArrayBuffer.isView(incoming)
+                ? decoder.decode(
+                    new Uint8Array(
+                      incoming.buffer,
+                      incoming.byteOffset,
+                      incoming.byteLength,
+                    ),
+                  )
+                : incoming;
+
+        const startedAt = performance.now();
+        let parsedId = "unknown";
+        let parsedType = "raw";
+        try {
+          const parsed = parseSongGuessrMessage(raw);
+          parsedId = parsed.id;
+          parsedType = parsed.type;
+          const payload = await songService.execute(connectionId, parsed);
+          logger.logOperation({
+            status: 200,
+            durationMs: performance.now() - startedAt,
+            identifier: connectionId,
+            action: `WS ${parsedType}`,
+          });
+          ws.send(JSON.stringify(createAck(parsed, payload)));
+        } catch (error) {
+          if (isAppError(error)) {
+            logger.logOperation({
+              status: 400,
+              durationMs: performance.now() - startedAt,
+              identifier: connectionId,
+              action: `WS ${parsedType}`,
+              level: "WARN",
+            });
+            ws.send(
+              JSON.stringify(
+                createErrorPacket(parsedId, error.code, error.message, error.details),
+              ),
+            );
+            return;
+          }
+          logger.logOperation({
+            status: 500,
+            durationMs: performance.now() - startedAt,
+            identifier: connectionId,
+            action: `WS ${parsedType}`,
+            level: "ERROR",
+          });
+          ws.send(
+            JSON.stringify(
+              createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
+            ),
+          );
+        }
+      },
+      async close(ws) {
+        const connectionId = (ws.data as { connectionId?: string }).connectionId;
+        if (connectionId) await songService.unregisterConnection(connectionId);
+      },
     });
 
   return {
     app,
+    songGuessrService: songService,
   };
 };

@@ -13,7 +13,7 @@ const roomService = new RoomService({
   wordBankRepository: new WordBankRepository(env.wordBankPath),
 });
 
-const { app } = createApp({
+const { app, songGuessrService } = createApp({
   env,
   roomService,
   logger,
@@ -24,6 +24,9 @@ const { app } = createApp({
 const intervalId = setInterval(() => {
   void roomService.runHousekeeping().catch((error) => {
     logger.error("房间清理任务执行失败", describeError(error));
+  });
+  void songGuessrService.runHousekeeping().catch((error) => {
+    logger.error("Song Guessr 房间清理任务执行失败", describeError(error));
   });
 }, 10_000);
 
