@@ -99,6 +99,9 @@ export type ClientMessage =
   | ClientEnvelope<"game.submitVote", { targetId: string }>
   | ClientEnvelope<"game.submitNightAction", { targetId?: string | null }>
   | ClientEnvelope<"game.submitBlankGuess", { words: [string, string] }>
+  | ClientEnvelope<"game.enterBlankGuess", Record<string, never>>
+  | ClientEnvelope<"game.updateBlankGuessDraft", { words: [string, string] }>
+  | ClientEnvelope<"game.reviewBlankGuess", { approve: boolean }>
   | ClientEnvelope<
       "game.resolveDisconnect",
       { playerId: string; resolution: DisconnectResolution }

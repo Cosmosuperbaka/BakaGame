@@ -1,16 +1,27 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
+import {
+  ArrowUpRightFromCircle,
+  Bot,
+  Crown,
+  Eye,
+  EyeOff,
+  Skull,
+  UserX,
+  WifiOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listContainer, listItem, popover, tappable } from "@/lib/motion";
 import {
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
+  descriptionCellShade,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
-import { PendingSpeech } from "@/components/game/PendingSpeech";
+import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
+import { ROLE_COLORS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
 import {
@@ -40,53 +51,46 @@ const roleLabels: Record<PlayerMark, string> = {
 };
 
 /**
- * 身份配色。已确认的身份用实底，预测用同色系描边，
- * 两者一眼可分，不靠位置区分。
+ * 与投票预览里的身份标签使用同一套纯文字配色。
+ * 浅色卡片底承载标签，不再额外绘制彩色边框。
  */
-const roleTones: Record<PlayerMark, { solid: string; outline: string }> = {
-  unknown: {
-    solid: "bg-muted text-muted-foreground",
-    outline: "border-border text-muted-foreground",
-  },
-  civilian: {
-    solid: "bg-blue-600 text-white dark:bg-blue-500",
-    outline: "border-blue-500/60 text-blue-700 dark:text-blue-300",
-  },
-  undercover: {
-    solid: "bg-red-600 text-white dark:bg-red-500",
-    outline: "border-red-500/60 text-red-700 dark:text-red-300",
-  },
-  blank: {
-    solid: "bg-stone-500 text-white dark:bg-stone-400 dark:text-stone-950",
-    outline: "border-stone-400/70 text-stone-600 dark:text-stone-300",
-  },
-  angel: {
-    solid: "bg-amber-500 text-white dark:text-amber-950",
-    outline: "border-amber-500/60 text-amber-700 dark:text-amber-300",
-  },
+const roleTones: Record<PlayerMark, string> = {
+  unknown: "text-muted-foreground",
+  civilian: ROLE_COLORS.civilian,
+  undercover: ROLE_COLORS.undercover,
+  blank: ROLE_COLORS.blank,
+  angel: ROLE_COLORS.angel,
 };
 
 /**
- * 状态徽章配色。与身份徽章同为实底：
- * 低透明度底色下准备、等待这类高频状态几乎看不出来。
+ * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
+ * 半透明色底会被它吃掉，所以这里单独给一套实底。
  */
+const roleSelectedTones: Record<PlayerMark, string> = {
+  unknown: "bg-muted-foreground/85 text-background",
+  civilian: "bg-sky-800 text-white dark:bg-sky-700",
+  undercover: "bg-red-900 text-white dark:bg-red-800",
+  blank: "bg-stone-700 text-white dark:bg-stone-600",
+  angel: "bg-amber-800 text-white dark:bg-amber-700",
+};
+
+/** 状态标签沿用投票预览的浅底彩字语言。 */
 const statusTones: Record<StatusInfo["tone"], string> = {
-  default: "bg-secondary text-secondary-foreground",
-  emerald: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950",
-  violet: "bg-violet-600 text-white dark:bg-violet-500 dark:text-violet-950",
-  red: "bg-red-600 text-white dark:bg-red-500 dark:text-red-950",
-  amber: "bg-amber-500 text-white dark:text-amber-950",
+  default: "text-muted-foreground",
+  emerald: "text-emerald-600",
+  violet: "text-purple-600",
+  red: "text-red-600",
+  amber: "text-amber-600",
 };
 
 /**
- * 行首徽章的共同几何。身份、主持与准备状态共用同一套尺寸与字重，
- * 宽度固定为双字所需，使各行行首严格对齐。
+ * 几何参数直接复用投票预览标签：内容自适应宽度、无边框、小圆角。
  */
 const BADGE_BASE =
-  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-11";
+export const PLAYER_ROW_HEIGHT = "min-h-10";
 
 /**
  * 玩家列宽度。分界线、行内首列与面板宽度都由此推导。
@@ -95,11 +99,22 @@ export const PLAYER_ROW_HEIGHT = "min-h-11";
  */
 export const PLAYER_COLUMN_WIDTH = "16rem";
 
-/** 单个发言列的最小宽度（px），与单元格上的 min-w 保持一致 */
+/** 单个发言列的最小宽度（px） */
 const SPEECH_COLUMN_MIN_WIDTH = 200;
 
+/**
+ * 发言列的列宽由整列最长的一句决定：`max-content` 取本列所有格子的最大需求宽度，
+ * `minmax` 保证短列也不会窄到不可读。
+ *
+ * 列宽必须跨行一致，因此宽度只能由**同一个** grid 计算。玩家行各自是一层
+ * 包裹容器，靠 `grid-template-columns: subgrid` 继承外层的列轨道，
+ * 而不是各自再算一遍 —— 否则每行会按自己那一句单独取宽，列就对不齐了。
+ */
+const speechGridTemplate = (columnCount: number) =>
+  `${PLAYER_COLUMN_WIDTH} repeat(${columnCount}, minmax(${SPEECH_COLUMN_MIN_WIDTH}px, max-content))`;
+
 /** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
-const PLAYER_GROUP_TITLE_HEIGHT = "1.75rem";
+const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
 export interface PlayerListProps {
   players: PublicPlayerView[];
@@ -128,6 +143,12 @@ export interface PlayerListHistory {
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
   /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
   departedPlayers: PublicPlayerView[];
+  /**
+   * 进行中那一列里已提交但尚未公开的玩家。
+   * 这些格子显示对勾而不是等待占位 —— 内容已经有了，等的只是揭示时机。
+   */
+  submittedColumnKey?: string;
+  submittedPlayerIds?: Set<string>;
 }
 
 export function PlayerList(props: PlayerListProps) {
@@ -211,6 +232,7 @@ export function PlayerList(props: PlayerListProps) {
   const renderRow = (
     player: PublicPlayerView,
     hideSpectatorStatus: boolean,
+    rowIndex: number,
     options?: { readOnly?: boolean },
   ) => {
     const rowProps: PlayerRowProps = {
@@ -237,6 +259,7 @@ export function PlayerList(props: PlayerListProps) {
     if (!history) return <PlayerRow key={player.id} {...rowProps} />;
 
     // 展开后由外层承担进出场，行内首列去掉自身动画以免双重变换。
+    // 列轨道继承自外层 grid，保证同一列在所有行上等宽。
     return (
       <motion.div
         key={player.id}
@@ -245,9 +268,9 @@ export function PlayerList(props: PlayerListProps) {
         animate="animate"
         exit="exit"
         layout="position"
-        className="flex items-stretch"
+        className="col-span-full grid grid-cols-subgrid items-stretch"
       >
-        <div className="shrink-0 px-2" style={{ width: PLAYER_COLUMN_WIDTH }}>
+        <div className="px-2">
           <PlayerRow {...rowProps} embedded />
         </div>
         {history.columns.map((column) => (
@@ -256,6 +279,11 @@ export function PlayerList(props: PlayerListProps) {
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
             expected={column.expectedPlayerIds.has(player.id)}
+            submitted={
+              column.key === history.submittedColumnKey &&
+              Boolean(history.submittedPlayerIds?.has(player.id))
+            }
+            shade={descriptionCellShade(rowIndex, column.index)}
           />
         ))}
       </motion.div>
@@ -267,16 +295,14 @@ export function PlayerList(props: PlayerListProps) {
     const title = <PlayerGroupTitle label={label} count={count} withRule={withRule} />;
     if (!history) return title;
     return (
-      <div className="flex items-stretch">
-        <div className="shrink-0 px-2" style={{ width: PLAYER_COLUMN_WIDTH }}>
-          {title}
-        </div>
+      <div className="col-span-full grid grid-cols-subgrid items-stretch">
+        <div className="px-2">{title}</div>
         {history.columns.map((column) => (
           <div
             key={column.key}
             className={cn(
-              "flex min-w-[200px] flex-1 items-center px-4 text-[11px] font-semibold tracking-wide",
-              withRule && "mt-4",
+              "flex items-center whitespace-nowrap px-4 text-[11px] font-semibold tracking-wide",
+              withRule && "mt-3",
               DESCRIPTION_HEAD_TONES[column.tone],
             )}
             style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
@@ -290,15 +316,25 @@ export function PlayerList(props: PlayerListProps) {
   };
 
   const departed = history?.departedPlayers ?? [];
+  // 展开历史时分组容器只负责纵向排布，列轨道由最外层 grid 统一持有。
+  const groupClass = history
+    ? "col-span-full grid grid-cols-subgrid gap-y-px"
+    : "flex flex-col gap-px";
+  // 斑马纹按整张表连续计数，跨分组也不会在交界处出现两行同色。
+  const observerRowOffset = activePlayers.length;
+  const departedRowOffset = observerRowOffset + observers.length;
 
   const body = (
     <div
-      className={cn("relative flex flex-col py-3", history && "min-h-full")}
-      style={{
-        minWidth: history
-          ? `calc(${PLAYER_COLUMN_WIDTH} + ${history.columns.length * SPEECH_COLUMN_MIN_WIDTH}px)`
-          : undefined,
-      }}
+      className={cn(
+        "relative py-2",
+        history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col",
+      )}
+      style={
+        history
+          ? { gridTemplateColumns: speechGridTemplate(history.columns.length) }
+          : undefined
+      }
     >
       {/* 玩家列与发言列的分界线。整列贯穿到底，不随最后一行结束，
           否则行间距与列表末尾的空白处会把线断开。
@@ -313,13 +349,13 @@ export function PlayerList(props: PlayerListProps) {
       ) : null}
       {renderGroupTitle("玩家", activePlayers.length, false)}
       <motion.div
-        className="flex flex-col gap-px"
+        className={groupClass}
         variants={listContainer(activePlayers.length)}
         initial={false}
         animate="animate"
       >
         <AnimatePresence initial={false} mode="popLayout">
-          {activePlayers.map((player) => renderRow(player, false))}
+          {activePlayers.map((player, index) => renderRow(player, false, index))}
         </AnimatePresence>
       </motion.div>
 
@@ -331,13 +367,15 @@ export function PlayerList(props: PlayerListProps) {
         <>
           {renderGroupTitle("旁观", observers.length, true)}
           <motion.div
-            className="flex flex-col gap-px"
+            className={groupClass}
             variants={listContainer(observers.length)}
             initial={false}
             animate="animate"
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {observers.map((player) => renderRow(player, true))}
+              {observers.map((player, index) =>
+                renderRow(player, true, observerRowOffset + index),
+              )}
             </AnimatePresence>
           </motion.div>
           {showSpectatorToggle && !isSpectator ? (
@@ -350,8 +388,10 @@ export function PlayerList(props: PlayerListProps) {
       {departed.length > 0 ? (
         <>
           {renderGroupTitle("已离场", departed.length, true)}
-          <div className="flex flex-col gap-px">
-            {departed.map((player) => renderRow(player, true, { readOnly: true }))}
+          <div className={groupClass}>
+            {departed.map((player, index) =>
+              renderRow(player, true, departedRowOffset + index, { readOnly: true }),
+            )}
           </div>
         </>
       ) : null}
@@ -376,20 +416,30 @@ function SpeechCell({
   description,
   tone,
   expected,
+  submitted,
+  shade,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
   expected: boolean;
+  /** 已提交但顺序未到，内容仍折起 */
+  submitted?: boolean;
+  /** 棋盘格底色，由所在行列的奇偶决定 */
+  shade?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex min-w-[200px] flex-1 items-center px-4 py-1.5 text-sm leading-relaxed",
+        "flex items-center px-4 py-1.5 text-sm leading-relaxed",
         DESCRIPTION_TONES[tone],
+        shade,
       )}
     >
+      {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
-        <span className="break-words">{description.text}</span>
+        <span className="whitespace-nowrap">{description.text}</span>
+      ) : submitted ? (
+        <SubmittedSpeech />
       ) : expected ? (
         <PendingSpeech />
       ) : null}
@@ -428,7 +478,7 @@ export function PlayerGroupTitle({
 }) {
   return (
     <div
-      className={cn("flex items-center gap-2 px-2", withRule && "mt-4")}
+      className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
       <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -485,7 +535,7 @@ export function PlayerRow(props: PlayerRowProps) {
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
+        "relative flex w-full items-center gap-1 rounded-md py-1 pl-2.5 pr-2 text-left text-sm",
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && "transition-colors hover:bg-accent/50",
@@ -495,7 +545,7 @@ export function PlayerRow(props: PlayerRowProps) {
       )}
     >
       {isMe ? (
-        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
       ) : null}
       {/* 身份与状态全部落在名字之前：已知身份优先，其次自己的预测 */}
       {actualRole ? (
@@ -512,6 +562,10 @@ export function PlayerRow(props: PlayerRowProps) {
       >
         {player.name}
       </span>
+      {/* 出局与房主、掉线同属玩家标记，共用名字之后这一处图标位 */}
+      {eliminated ? (
+        <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+      ) : null}
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
@@ -622,7 +676,7 @@ function MarkButton({
         "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
         "border-r last:border-r-0",
         selected
-          ? roleTones[option].solid
+          ? roleSelectedTones[option]
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         first && "rounded-tl-[calc(var(--radius)-1px)]",
         last && "rounded-tr-[calc(var(--radius)-1px)]",
@@ -665,15 +719,11 @@ function ManageButton({
   );
 }
 
-/**
- * 身份徽章。`predicted` 为本人的猜测，用描边表达“尚未确认”；
- * 实底表示出题人视角或结算后公开的真实身份。
- */
+/** 身份标签；预测身份使用略淡底色，真实身份沿用投票预览的标准底色。 */
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
-  const tone = roleTones[role];
   return (
     <span
-      className={cn(BADGE_BASE, predicted ? cn("border border-dashed", tone.outline) : tone.solid)}
+      className={cn(BADGE_BASE, roleTones[role], predicted && "bg-muted/70")}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}

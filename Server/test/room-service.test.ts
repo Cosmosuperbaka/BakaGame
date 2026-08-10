@@ -634,8 +634,9 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   expect(snapshot?.status.phase).toBe("night");
 });
 
-test("白板被淘汰后仍可主动猜词并独立获胜", async () => {
-  // 白板被淘汰不会阻塞正常流程，但仍保留一次主动猜词机会。
+test("白板被淘汰后仍可自行发起猜词并独立获胜", async () => {
+  // 被淘汰不自动触发猜词，白板自己决定何时用掉这一次机会；
+  // 一旦发起就进入阻塞阶段，全房停下来等这次猜词。
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "4444");
   const joined: JoinedPlayer[] = [];
@@ -753,6 +754,17 @@ test("白板被淘汰后仍可主动猜词并独立获胜", async () => {
   expect(snapshot?.status.phase).toBe("night");
   expect(blankPrivateState?.canSubmitBlankGuess).toBe(true);
 
+  // 发起猜词把夜晚打断，全房进入阻塞的猜词阶段。
+  await execute(service, blankPlayer.connection, {
+    id: "enter-guess",
+    type: "game.enterBlankGuess",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("blankGuess");
+  expect(snapshot?.status.blankGuessPlayerId).toBe(blankPlayerId);
+  expect(snapshot?.status.blankGuessReason).toBe("active");
+
   await execute(service, blankPlayer.connection, {
     id: "guess",
     type: "game.submitBlankGuess",
@@ -823,6 +835,137 @@ test("玩家掉线后会等待出题人处理并可被淘汰移出", async () =>
   expect(
     snapshot?.players.find((player) => player.id === joined[0].joinResult.playerId)?.membership,
   ).toBe("kicked");
+});
+
+test("已提交描述的玩家掉线不暂停游戏，进入投票后才要求抉择", async () => {
+  // 掉线暂停的意义是「不能没有这个人的操作」。已经交过描述的玩家掉线
+  // 不影响本阶段推进，暂停只会白等；但到了需要他投票的阶段就必须补上。
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "5557");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `late-disc-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "5557",
+      payload: { userName: `按需暂停${index + 2}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 全部参战玩家交完描述，其中一位随后掉线。
+  for (const entry of [
+    { connection: host, id: "host" },
+    ...joined.slice(0, 3).map((item, index) => ({ connection: item.connection, id: `p${index}` })),
+  ]) {
+    await execute(service, entry.connection, {
+      id: `desc-${entry.id}`,
+      type: "game.submitDescription",
+      payload: { text: "一种常见的水果" },
+    });
+  }
+
+  await service.unregisterConnection(joined[0].connection.record.id);
+
+  // 描述已交齐，本阶段不需要他了，因此不该暂停。
+  expect(
+    getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot")?.status
+      .pendingDisconnectPlayerId,
+  ).toBeUndefined();
+
+  // 出题人得以正常推进到投票。
+  await execute(service, questioner.connection, {
+    id: "to-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  // 投票需要他，此时才要求出题人抉择。
+  const voting = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(voting?.status.phase).toBe("voting");
+  expect(voting?.status.pendingDisconnectPlayerId).toBe(joined[0].joinResult.playerId);
+});
+
+test("同阶段第二名掉线玩家在前一位被处理后仍会被要求抉择", async () => {
+  // 按需暂停最危险的失败形态是死锁：推进因「仍有玩家未提交」被拒，
+  // 却没有人被要求处理那次掉线。这里锁住「队列不会漏人」。
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "5560");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `dual-disc-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "5560",
+      payload: { userName: `双掉线${index + 2}` },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 两名尚未发言的玩家同时掉线：都需要抉择，按顺序排队。
+  await service.unregisterConnection(joined[0].connection.record.id);
+  await service.unregisterConnection(joined[1].connection.record.id);
+
+  const queued = getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(queued?.status.pendingDisconnectPlayerId).toBe(joined[0].joinResult.playerId);
+
+  // 处理掉第一位之后，第二位必须立刻浮出来，不能被漏掉。
+  await execute(service, questioner.connection, {
+    id: "resolve-first",
+    type: "game.resolveDisconnect",
+    payload: { playerId: joined[0].joinResult.playerId, resolution: "eliminate" },
+  });
+
+  expect(
+    getLastEventPayload<RoomSnapshot>(questioner.connection, "room.snapshot")?.status
+      .pendingDisconnectPlayerId,
+  ).toBe(joined[1].joinResult.playerId);
 });
 
 test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚动作", async () => {
@@ -1336,6 +1479,17 @@ test("旁观者在局内可以看到所有玩家身份", async () => {
   expect(privateState?.angelWordOptions).toBeUndefined();
   expect(privateState?.blankHint).toBeUndefined();
   expect(privateState?.questionerView).toHaveLength(4);
+
+  // 已能看到全部身份的视角才拿到全局词语；参战玩家仍只知道自己那一个。
+  expect(privateState?.globalWords).toEqual({
+    civilianWord: expect.any(String),
+    undercoverWord: expect.any(String),
+    blankHint: undefined,
+  });
+  expect(
+    getLastEventPayload<PrivateState>(joined[3].connection, "game.privateState")?.globalWords,
+  ).toEqual(privateState?.globalWords);
+  expect(getLastEventPayload<PrivateState>(host, "game.privateState")?.globalWords).toBeUndefined();
   expect(privateState?.questionerView?.every((entry) => entry.role != null)).toBe(true);
   expect(
     privateState?.questionerView?.some(

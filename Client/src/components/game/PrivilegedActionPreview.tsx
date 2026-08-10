@@ -2,7 +2,7 @@ import { Clock3 } from "lucide-react";
 import { ROLE_COLORS, ROLE_LABELS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
 import { useGameStore } from "@/stores/useGameStore";
-import type { PlayerRole } from "@/types";
+import { ABSTAIN_TARGET_ID, type PlayerRole } from "@/types";
 
 interface Props {
   mode: "vote" | "night";
@@ -46,7 +46,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
             name: player.name,
             role: roleByPlayerId.get(player.id),
             value: vote
-              ? vote.targetId === "abstain"
+              ? vote.targetId === ABSTAIN_TARGET_ID
                 ? "弃票"
                 : (playerNames.get(vote.targetId) ?? "未知玩家")
               : "等待投票",
@@ -95,11 +95,11 @@ export function PrivilegedActionPreview({ mode }: Props) {
               </span>
             </div>
           ))}
-          {(voteCounts.get("abstain") ?? 0) > 0 ? (
+          {(voteCounts.get(ABSTAIN_TARGET_ID) ?? 0) > 0 ? (
             <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5 text-sm text-muted-foreground">
               <span>弃票</span>
               <span className="rounded bg-background/80 px-2 py-0.5 font-bold tabular-nums text-foreground">
-                {voteCounts.get("abstain")}
+                {voteCounts.get(ABSTAIN_TARGET_ID)}
               </span>
             </div>
           ) : null}

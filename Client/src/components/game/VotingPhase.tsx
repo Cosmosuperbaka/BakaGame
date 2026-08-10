@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
+import { CheckCircle2, CircleSlash, FastForward, Undo2, Vote } from "lucide-react";
+import { ABSTAIN_TARGET_ID } from "@/types";
 import { Button } from "@/components/ui/button";
 import { listContainer, listItem, selectable, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
@@ -57,9 +58,11 @@ export function VotingPhase() {
     }
   }, [addToast, sendCommand]);
 
-  const targetPlayerName =
-    targets.find((target) => target.id === votedId)?.name ??
-    snapshot.players.find((player) => player.id === votedId)?.name;
+  const abstained = votedId === ABSTAIN_TARGET_ID;
+  const targetPlayerName = abstained
+    ? undefined
+    : (targets.find((target) => target.id === votedId)?.name ??
+      snapshot.players.find((player) => player.id === votedId)?.name);
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -91,6 +94,18 @@ export function VotingPhase() {
               <Vote className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
             </motion.button>
           ))}
+          {/* 弃票与投人是同一次决定的两种结果，因此并入同一组选项，
+              占满整行以区别于具体玩家。 */}
+          <motion.button
+            type="button"
+            variants={listItem}
+            {...selectable}
+            className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            onClick={() => handleVote(ABSTAIN_TARGET_ID)}
+          >
+            <span className="truncate text-sm font-medium">弃票</span>
+            <CircleSlash className="ml-2 h-4 w-4 shrink-0" />
+          </motion.button>
         </motion.div>
       ) : null}
 
@@ -111,8 +126,12 @@ export function VotingPhase() {
               <CheckCircle2 className="h-5 w-5 text-primary" />
             </motion.span>
             <div>
-              <div className="text-sm font-semibold text-foreground">已完成投票</div>
-              {targetPlayerName ? (
+              <div className="text-sm font-semibold text-foreground">
+                {abstained ? "已弃票" : "已完成投票"}
+              </div>
+              {abstained ? (
+                <div className="mt-0.5 text-xs text-muted-foreground">本轮不投出任何一票</div>
+              ) : targetPlayerName ? (
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   投给 <span className="font-medium text-foreground">{targetPlayerName}</span>
                 </div>
