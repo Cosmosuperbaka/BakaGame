@@ -73,7 +73,7 @@ const GAMES: GameEntry[] = [
     path: "/songguessr",
     icon: "/assets/SongGuessr.gif",
     title: "Song Guessr",
-    available: false,
+    available: true,
   },
   {
     id: "animecharguessr",
