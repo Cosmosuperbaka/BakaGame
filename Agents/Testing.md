@@ -22,6 +22,9 @@ cd Server
 bun test
 bun run test:coverage
 bun run verify
+
+# 需要本地 Server/.env 中存在 NETEASE_COOKIE；不会在常规 bun test 中执行
+bun run test:music:real
 ```
 
 客户端：
@@ -77,3 +80,6 @@ npm run verify
 ```
 
 服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 的顺序是 ESLint、Vitest 覆盖率、生产构建、Playwright，便于尽早失败。
+
+网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
+[`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。
