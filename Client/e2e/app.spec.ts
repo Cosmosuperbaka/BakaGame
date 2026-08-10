@@ -205,7 +205,7 @@ test("Song Guessr test room exposes bots and guests can switch to spectator", as
   await guestPage.getByPlaceholder("用户名").fill(`旁观访客${unique}`);
   await guestPage.getByRole("button", { name: "进入房间" }).click();
   await guestPage.getByRole("button", { name: "加入旁观" }).click();
-  await expect(guestPage.getByRole("button", { name: "加入游戏" })).toBeVisible();
+  await expect(guestPage.getByRole("button", { name: "取消旁观" })).toBeVisible();
   await expect(page.getByText(`旁观访客${unique}`, { exact: true }).first()).toBeVisible();
   await guestContext.close();
 });
