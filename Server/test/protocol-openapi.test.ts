@@ -137,6 +137,20 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
       roomId: "1234",
       payload: { playerIds: ["p1", "p2"] },
     },
+    { id: "24", type: "game.enterBlankGuess", roomId: "1234", payload: {} },
+    {
+      id: "25",
+      type: "game.updateBlankGuessDraft",
+      roomId: "1234",
+      // 草稿允许留空：白板边想边改的中间态不是非法输入。
+      payload: { words: ["苹果", ""] },
+    },
+    {
+      id: "26",
+      type: "game.reviewBlankGuess",
+      roomId: "1234",
+      payload: { approve: true },
+    },
   ] as const;
 
   for (const message of messages) {

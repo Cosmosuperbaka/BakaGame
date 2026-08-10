@@ -108,6 +108,13 @@ export interface ChatMessage {
   system: boolean;
 }
 
+/**
+ * 弃票在 VoteRecord 里占用一个保留的 targetId：
+ * 弃票同样是一次已完成的投票，必须计入「谁还没投」的判定，
+ * 因此不能用「没有记录」来表示。计票时不计入任何玩家的得票。
+ */
+export const ABSTAIN_TARGET_ID = "abstain";
+
 // 投票阶段只记录“谁投给了谁”，统计在运行时计算。
 export interface VoteRecord {
   voterId: string;
@@ -140,7 +147,9 @@ export interface BlankGuessRecord {
   guessedWords: [string, string];
   success: boolean;
   createdAt: number;
-  reason: "active" | "eliminated" | "finale";
+  reason: BlankGuessReason;
+  /** 自动比对未通过、由主持人判定为正确时置位，用于结算复盘。 */
+  approvedByQuestioner?: boolean;
 }
 
 export interface VoteHistoryRecord {
@@ -167,12 +176,27 @@ export interface TieBreakState {
   votes: VoteRecord[];
 }
 
-// 白板被动猜词时，服务端需要记住猜词结束后要回到哪个阶段。
+/** 白板进入猜词阶段的原因，公开给全房，让其他人知道为什么被打断。 */
+export type BlankGuessReason = "active" | "eliminated" | "finale";
+
+// 白板猜词是阻塞阶段，服务端需要记住猜词结束后要回到哪个阶段。
 export interface BlankGuessContext {
   playerId: string;
-  reason: "eliminated" | "finale";
+  reason: BlankGuessReason;
   resumePhase?: Exclude<GamePhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
+  /**
+   * 白板正在输入的草稿，全房实时可见。
+   * 猜词过程本身是这一阶段的看点，因此不做保密。
+   */
+  draft?: [string, string];
+  /**
+   * 自动比对未通过、等待主持人裁定的那次猜测。
+   * 存在时阶段仍然阻塞，只有主持人的裁定能推进。
+   */
+  pendingReview?: {
+    words: [string, string];
+  };
 }
 
 // 一局结束后的结算快照，供结算页和历史回顾直接复用。
@@ -327,6 +351,12 @@ export interface RoomSnapshot {
     pendingDisconnectPlayerId?: string;
     questionerReconnectDeadlineAt?: number;
     blankGuessPlayerId?: string;
+    /** 白板进入猜词的原因，用于向全房说明这次打断从何而来。 */
+    blankGuessReason?: BlankGuessReason;
+    /** 白板正在输入的草稿，全房实时可见。 */
+    blankGuessDraft?: [string, string];
+    /** 自动比对未通过，正在等主持人裁定。 */
+    blankGuessPendingReview?: boolean;
     /** 出题人发起补充发言时，尚未完成补充的玩家 ID 列表。 */
     pendingSupplementPlayerIds?: string[];
   };
@@ -349,6 +379,15 @@ export interface PrivateState {
   canSubmitBlankGuess: boolean;
   blankGuessUsed: boolean;
   nightActionSubmitted: boolean;
+  /**
+   * 本局的全部词语。只发给已经能看到全部身份的出题人与旁观者，
+   * 出局玩家仍留在场上交流，因此不在此列。
+   */
+  globalWords?: {
+    civilianWord: string;
+    undercoverWord: string;
+    blankHint?: string;
+  };
   /** 当前玩家在本轮投票中已投出的目标玩家 ID（含平票 PK 阶段）。 */
   myCurrentVoteTargetId?: string;
   /** 当前玩家本次夜晚已选择的目标玩家 ID；已提交但选择「不行动」时为 undefined。 */

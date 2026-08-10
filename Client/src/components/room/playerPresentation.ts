@@ -28,7 +28,9 @@ export function resolveStatus(
   hideSpectatorStatus?: boolean,
 ): StatusInfo | null {
   if (player.roundStatus === "questioner") return { label: "主持", tone: "violet" };
-  if (player.roundStatus === "dead") return { label: "出局", tone: "red" };
+  // 出局不占行首徽章位：它与房主、掉线一样是玩家的一种标记，
+  // 统一放在名字之后的图标位，行首留给身份与阶段状态。
+  if (player.roundStatus === "dead") return null;
   if (player.membership === "spectator") {
     return hideSpectatorStatus ? null : { label: "旁观", tone: "default" };
   }

@@ -20,6 +20,9 @@ export const GAME_COMMAND_TYPES = [
   "game.submitVote",
   "game.submitNightAction",
   "game.submitBlankGuess",
+  "game.enterBlankGuess",
+  "game.updateBlankGuessDraft",
+  "game.reviewBlankGuess",
   "game.cancelVote",
   "game.cancelNightAction",
   "game.requestSupplement",
@@ -40,6 +43,12 @@ interface GameCommandDependencies {
     connection: ConnectionRecord,
     words: [string, string],
   ): CommandResult;
+  enterBlankGuess(connection: ConnectionRecord): CommandResult;
+  updateBlankGuessDraft(
+    connection: ConnectionRecord,
+    words: [string, string],
+  ): CommandResult;
+  reviewBlankGuess(connection: ConnectionRecord, approve: boolean): CommandResult;
   cancelVote(connection: ConnectionRecord): CommandResult;
   cancelNightAction(connection: ConnectionRecord): CommandResult;
   requestSupplement(connection: ConnectionRecord, playerIds: string[]): CommandResult;
@@ -69,6 +78,12 @@ export const createGameCommandHandler = (
         return dependencies.submitNightAction(connection, message.payload.targetId);
       case "game.submitBlankGuess":
         return dependencies.submitBlankGuess(connection, message.payload.words);
+      case "game.enterBlankGuess":
+        return dependencies.enterBlankGuess(connection);
+      case "game.updateBlankGuessDraft":
+        return dependencies.updateBlankGuessDraft(connection, message.payload.words);
+      case "game.reviewBlankGuess":
+        return dependencies.reviewBlankGuess(connection, message.payload.approve);
       case "game.cancelVote":
         return dependencies.cancelVote(connection);
       case "game.cancelNightAction":

@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  BookOpen,
   History,
   Menu,
   MessageSquare,
@@ -39,7 +40,7 @@ import {
   type PlayerMark,
   type PlayerMarks,
 } from "@/components/room/PlayerList";
-import { buildDescriptionColumns } from "@/lib/descriptionColumns";
+import { buildDescriptionColumns, pendingColumn } from "@/lib/descriptionColumns";
 import { AssignedWord } from "@/components/room/AssignedWord";
 import { GameArea } from "@/components/room/GameArea";
 import { ChatPanel } from "@/components/room/ChatPanel";
@@ -257,10 +258,12 @@ export default function RoomPage() {
     };
   }, [phase, day, assignedWordText]);
 
+  const speechStatus = snapshot?.status;
+
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo<PlayerListHistory>(() => {
     const descriptions = snapshot?.descriptions ?? [];
-    const { columns, byPlayer } = buildDescriptionColumns(descriptions, snapshot?.status);
+    const { columns, byPlayer } = buildDescriptionColumns(descriptions, speechStatus);
     const present = new Set((snapshot?.players ?? []).map((player) => player.id));
     const departed = new Map<string, PublicPlayerView>();
     for (const record of descriptions) {
@@ -277,11 +280,22 @@ export default function RoomPage() {
         roundStatus: "waiting",
       });
     }
-    return { columns, byPlayer, departedPlayers: [...departed.values()] };
-  }, [snapshot?.descriptions, snapshot?.players, snapshot?.status]);
+    // 进行中那一列里已提交但顺序未到的玩家：格子显示对勾而不是等待占位。
+    const active = speechStatus ? pendingColumn(speechStatus) : null;
+
+    return {
+      columns,
+      byPlayer,
+      departedPlayers: [...departed.values()],
+      submittedColumnKey: active?.key,
+      submittedPlayerIds: new Set(speechStatus?.submittedSpeechPlayerIds ?? []),
+    };
+  }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
 
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  // 全局词语只发给主持人与旁观者，因此这里无需再判断视角。
+  const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
@@ -377,6 +391,22 @@ export default function RoomPage() {
               <Eye className="h-3.5 w-3.5" />旁观视角
             </span>
           )}
+          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
+          {globalWords && (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
+                </span>
+              </span>
+              {globalWords.blankHint && (
+                <span className="hidden min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex">
+                  <span className="truncate">白板：{globalWords.blankHint}</span>
+                </span>
+              )}
+            </>
+          )}
           {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
               此处只占位撑开顶栏空间，避免停靠时挤动相邻元素。 */}
           {privateInfoVisible && assignedWordText ? (
@@ -470,7 +500,7 @@ export default function RoomPage() {
                   aria-expanded={historyOpen}
                   onClick={() => setHistoryOpen(!historyOpen)}
                   {...iconTappable}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-secondary text-secondary-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border bg-background/95 text-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {/* 箭头指向面板将要移动的方向：收起时向右展开，展开时向左收回 */}
                   {historyOpen ? (
