@@ -2,11 +2,32 @@ import { describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
+  isInstrumentalLyricLine,
   parseLrc,
   sanitizeLyrics,
 } from "../src/infrastructure/netease-music-provider";
 
 describe("NeteaseMusicProvider", () => {
+  test("filters instrumental placeholders without removing ordinary lyrics", () => {
+    expect(isInstrumentalLyricLine("Music")).toBe(true);
+    expect(isInstrumentalLyricLine("[Music]")).toBe(true);
+    expect(isInstrumentalLyricLine("Music - Instrumental")).toBe(true);
+    expect(isInstrumentalLyricLine("instrumental2")).toBe(true);
+    expect(isInstrumentalLyricLine("we still hear music tonight")).toBe(false);
+
+    const lyrics = parseLrc([
+      "[00:01.00]Music",
+      "[00:02.00][Music]",
+      "[00:03.00]Music - Instrumental",
+      "[00:04.00]verse one",
+      "[00:05.00]verse two",
+    ].join("\n"));
+    expect(sanitizeLyrics(lyrics, { title: "answer", artist: "artist" })).toEqual([
+      { time: 4_000, endTime: 5_000, text: "verse one" },
+      { time: 5_000, endTime: 10_000, text: "verse two" },
+    ]);
+  });
+
   test("解析多时间戳 LRC 并补齐结束时间", () => {
     expect(parseLrc("[00:01.00][00:03.500]第一句\n[00:05.00]第二句")).toEqual([
       { time: 1_000, endTime: 3_500, text: "第一句" },
@@ -93,7 +114,7 @@ describe("NeteaseMusicProvider", () => {
         },
         login_qr_create: async (params: Record<string, unknown>) => {
           calls.push("login_qr_create");
-          expect(params).toMatchObject({ key: "qr-key", qrimg: true });
+          expect(params).toMatchObject({ key: "qr-key", qrimg: true, randomCNIP: false });
           return {
             body: {
               code: 200,
@@ -108,6 +129,7 @@ describe("NeteaseMusicProvider", () => {
         login_status: async (params: Record<string, unknown>) => {
           calls.push("login_status");
           expect(params.cookie).toBe("MUSIC_U=qr-cookie");
+          expect(params.randomCNIP).toBe(false);
           return {
             body: {
               data: {
@@ -148,11 +170,16 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({
         captcha_sent: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({ phone: "13800000000", ctcode: "86" });
+          expect(params).toMatchObject({ phone: "13800000000", ctcode: "86", randomCNIP: false });
           return { body: { code: 200 } };
         },
         login_cellphone: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({ phone: "13800000000", countrycode: "86", captcha: "123456" });
+          expect(params).toMatchObject({
+            phone: "13800000000",
+            countrycode: "86",
+            captcha: "123456",
+            randomCNIP: false,
+          });
           return {
             body: {
               code: 200,
@@ -162,7 +189,11 @@ describe("NeteaseMusicProvider", () => {
           };
         },
         login: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({ email: "user@example.com", password: "secret password" });
+          expect(params).toMatchObject({
+            email: "user@example.com",
+            password: "secret password",
+            randomCNIP: false,
+          });
           return {
             body: {
               code: 200,
@@ -192,6 +223,7 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         cloudsearch: async (params: Record<string, unknown>) => {
           expect(params.cookie).toBe("MUSIC_U=test");
+          expect(params.randomCNIP).toBe(true);
           calls.push("cloudsearch");
           return {
             body: {

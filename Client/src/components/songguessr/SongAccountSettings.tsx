@@ -69,6 +69,8 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
   const [phoneMethod, setPhoneMethod] = useState<PhoneMethod>("captcha");
   const [phoneSecret, setPhoneSecret] = useState("");
   const [captchaSending, setCaptchaSending] = useState(false);
+  const [captchaCooldownUntil, setCaptchaCooldownUntil] = useState<number | null>(null);
+  const [captchaClock, setCaptchaClock] = useState(() => Date.now());
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
 
@@ -77,6 +79,16 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
     window.addEventListener(SONG_MUSIC_SESSION_CHANGED, sync);
     return () => window.removeEventListener(SONG_MUSIC_SESSION_CHANGED, sync);
   }, []);
+
+  useEffect(() => {
+    if (captchaCooldownUntil === null) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setCaptchaClock(now);
+      if (now >= captchaCooldownUntil) setCaptchaCooldownUntil(null);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [captchaCooldownUntil]);
 
   const completeLogin = useCallback((session: LoginResponse) => {
     saveSongMusicSession(session, remember);
@@ -132,19 +144,29 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       setNotice("请输入手机号", "error");
       return;
     }
+    if (captchaCooldownUntil !== null && captchaCooldownUntil > Date.now()) return;
     setCaptchaSending(true);
     try {
       await sendCommand("song.auth.phone.sendCaptcha", {
         phone: phone.trim(),
         countryCode: countryCode.trim() || "86",
       });
+      setCaptchaCooldownUntil(Date.now() + 60_000);
       setNotice("验证码已发送", "success");
     } catch (error) {
+      const details = (error as { details?: { retryAfterMs?: number } }).details;
+      if (details?.retryAfterMs && details.retryAfterMs > 0) {
+        setCaptchaCooldownUntil(Date.now() + details.retryAfterMs);
+      }
       setNotice((error as { message?: string }).message ?? "验证码发送失败", "error");
     } finally {
       setCaptchaSending(false);
     }
   };
+
+  const captchaSecondsLeft = captchaCooldownUntil === null
+    ? 0
+    : Math.max(0, Math.ceil((captchaCooldownUntil - captchaClock) / 1_000));
 
   const loginPhone = async () => {
     if (!phone.trim() || !phoneSecret) {
@@ -323,9 +345,14 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
                           placeholder={phoneMethod === "captcha" ? "短信验证码" : "密码"}
                         />
                         {phoneMethod === "captcha" ? (
-                          <Button variant="outline" className="shrink-0 gap-1.5" disabled={captchaSending} onClick={() => void sendCaptcha()}>
+                          <Button
+                            variant="outline"
+                            className="shrink-0 gap-1.5"
+                            disabled={captchaSending || captchaSecondsLeft > 0}
+                            onClick={() => void sendCaptcha()}
+                          >
                             {captchaSending ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                            发送验证码
+                            {captchaSecondsLeft > 0 ? `${captchaSecondsLeft} 秒后重试` : "发送验证码"}
                           </Button>
                         ) : null}
                       </div>

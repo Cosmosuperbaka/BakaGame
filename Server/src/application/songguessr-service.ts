@@ -57,6 +57,7 @@ interface SongGuessrPlayerRecord {
   joinedAt: number;
   lastSeenAt: number;
   connectionId?: string;
+  phoneCaptchaSentAt?: number;
 }
 
 interface SongGuessrRoundPlayerState {
@@ -627,7 +628,13 @@ export class SongGuessrService {
     }
     const sendPhoneCaptcha = this.options.musicProvider.sendPhoneCaptcha;
     if (!sendPhoneCaptcha) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "手机登录功能不可用");
+    const now = this.now();
+    const retryAfterMs = 60_000 - (now - (player.phoneCaptchaSentAt ?? 0));
+    if (player.phoneCaptchaSentAt !== undefined && retryAfterMs > 0) {
+      throw new AppError("CAPTCHA_RATE_LIMITED", "验证码已发送，请 60 秒后重试", { retryAfterMs });
+    }
     await sendPhoneCaptcha.call(this.options.musicProvider, phone, countryCode);
+    player.phoneCaptchaSentAt = now;
     return { sent: true };
   }
 
