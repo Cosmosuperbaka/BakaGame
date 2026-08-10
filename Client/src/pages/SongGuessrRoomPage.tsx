@@ -24,7 +24,6 @@ import {
   Plus,
   RotateCcw,
   Settings,
-  SkipForward,
   Trophy,
   UserCheck,
   Users,
@@ -577,6 +576,15 @@ export default function SongGuessrRoomPage() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <audio
+        ref={audioRef}
+        src={roundAudioUrl}
+        className="hidden"
+        preload="auto"
+        playsInline
+        autoPlay
+        crossOrigin="anonymous"
+      />
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <Button
@@ -674,7 +682,6 @@ export default function SongGuessrRoomPage() {
               secondsLeft={secondsLeft}
               volume={volume}
               onVolumeChange={setVolume}
-              audioRef={audioRef}
               audioStatus={audioStatus}
               audioPlaybackState={audioPlaybackState}
               onPlayAudio={() => void playAudio()}
@@ -765,7 +772,6 @@ interface SongGameAreaProps {
   secondsLeft: number;
   volume: number;
   onVolumeChange: (value: number) => void;
-  audioRef: React.RefObject<HTMLAudioElement | null>;
   audioStatus: "loading" | "ready" | "error";
   audioPlaybackState: "idle" | "playing" | "completed";
   onPlayAudio: () => void;
@@ -812,7 +818,6 @@ function GameStage({
   me,
   isHost,
   secondsLeft,
-  audioRef,
   audioStatus,
   audioPlaybackState,
   onPlayAudio,
@@ -925,11 +930,11 @@ function GameStage({
                     {...spinner}
                   />
                 </Button>
-              ) : (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label={audioPlaybackState === "completed" ? "重播音频" : "播放音频"}>
-                  {audioPlaybackState === "completed" ? <RotateCcw className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              ) : audioPlaybackState === "completed" ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
+                  <RotateCcw className="h-4 w-4" />
                 </Button>
-              )}
+              ) : null}
             </div>
           </div>
           <div className="space-y-2 rounded-md bg-background/60 p-5 text-center">
@@ -937,7 +942,6 @@ function GameStage({
               <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
             ))}
           </div>
-          <audio ref={audioRef} className="hidden" preload="auto" playsInline autoPlay />
           {privateState.isSubmitter ? (
             <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
               本轮答案：<strong>{privateState.submittedSong?.title}</strong> · {privateState.submittedSong?.artist}
@@ -958,7 +962,7 @@ function GameStage({
                   className="gap-2"
                   onClick={() => void run("song.game.giveUp")}
                 >
-                  <Flag className="h-4 w-4" />放弃本轮
+                  <Flag className="h-4 w-4" />投降
                 </Button>
               ) : null}
             </div>
@@ -973,13 +977,6 @@ function GameStage({
           title={canObserveAllAttempts ? "全房猜测" : "我的猜测"}
           showPlayerName={canObserveAllAttempts}
         />
-        {isHost ? (
-          <div className="flex justify-end">
-            <Button variant="outline" className="gap-2" onClick={() => void run("song.game.skipRound")}>
-              <SkipForward className="h-4 w-4" />跳过并结算
-            </Button>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -1654,7 +1651,7 @@ function AttemptList({
                 {attempt.guessedSong
                   ? `${attempt.guessedSong.title} · ${attempt.guessedSong.artist}`
                   : attempt.result === "gaveUp"
-                    ? "放弃本轮"
+                    ? "投降"
                     : "超时"}
               </span>
             </div>

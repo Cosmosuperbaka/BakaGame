@@ -133,6 +133,56 @@ const startRound = async (
 };
 
 describe("SongGuessrService", () => {
+  test("phone captcha requests wait 60 seconds after success and failed requests do not start cooldown", async () => {
+    let now = 10_000;
+    let calls = 0;
+    let shouldFail = true;
+    const authProvider: MusicProvider = {
+      ...provider,
+      sendPhoneCaptcha: async () => {
+        calls += 1;
+        if (shouldFail) throw new Error("upstream unavailable");
+      },
+    };
+    const service = new SongGuessrService({ musicProvider: authProvider, now: () => now });
+    const host = connection(service, "host");
+    await createRoom(service, host);
+
+    await expect(execute(service, host, {
+      id: "captcha-fails",
+      type: "song.auth.phone.sendCaptcha",
+      roomId: "1234",
+      payload: { phone: "13800000000", countryCode: "86" },
+    })).rejects.toThrow("upstream unavailable");
+
+    shouldFail = false;
+    await expect(execute(service, host, {
+      id: "captcha-first-success",
+      type: "song.auth.phone.sendCaptcha",
+      roomId: "1234",
+      payload: { phone: "13800000000", countryCode: "86" },
+    })).resolves.toEqual({ sent: true });
+    await expect(execute(service, host, {
+      id: "captcha-too-soon",
+      type: "song.auth.phone.sendCaptcha",
+      roomId: "1234",
+      payload: { phone: "13800000000", countryCode: "86" },
+    })).rejects.toMatchObject({
+      code: "CAPTCHA_RATE_LIMITED",
+      details: { retryAfterMs: 60_000 },
+    });
+    expect(calls).toBe(2);
+
+    now += 60_000;
+    await expect(execute(service, host, {
+      id: "captcha-after-cooldown",
+      type: "song.auth.phone.sendCaptcha",
+      roomId: "1234",
+      payload: { phone: "13800000000", countryCode: "86" },
+    })).resolves.toEqual({ sent: true });
+    expect(calls).toBe(3);
+  });
+
   test("房间最多容纳十六个在线席位", async () => {
     const service = new SongGuessrService({ musicProvider: provider });
     const host = connection(service, "host");

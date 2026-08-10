@@ -25,6 +25,8 @@ export interface MusicProvider {
 
 export interface NeteaseMusicProviderOptions {
   loadApi?: () => Promise<ApiModule>;
+  /** 通过 Enhanced API 的随机中国出口降低网易云安全风控误判。默认开启。 */
+  randomCNIP?: boolean;
 }
 
 export interface MusicLoginSession {
@@ -155,6 +157,30 @@ const CREDIT_LINE_PATTERN = /^(?:作词(?:人)?|填词|词曲|词|作曲(?:人)?
 /** 过滤会直接暴露创作人员的 LRC 署名行。 */
 export const isCreditLyricLine = (text: string) => CREDIT_LINE_PATTERN.test(text.trim());
 
+const INSTRUMENTAL_MARKERS = new Set([
+  "music",
+  "instrumental",
+  "interlude",
+  "intro",
+  "outro",
+  "inst",
+  "伴奏",
+  "间奏",
+  "前奏",
+  "尾奏",
+  "纯音乐",
+  "器乐",
+]);
+
+/** 过滤 LRC 中表示间奏/纯音乐的占位行，避免把无歌词段落当作可猜片段。 */
+export const isInstrumentalLyricLine = (text: string) => {
+  const normalized = normalizeComparableText(text);
+  if (INSTRUMENTAL_MARKERS.has(normalized)) return true;
+  // 网易云会把间奏写成 Music1、[Music] 或 Music - Instrumental 等占位文本。
+  return /^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized) ||
+    /^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(normalized);
+};
+
 export const parseLrc = (raw: string): SongLyricLine[] => {
   const lines: Array<Omit<SongLyricLine, "endTime">> = [];
   const timePattern = /\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]/g;
@@ -202,6 +228,7 @@ export const sanitizeLyrics = (
   ].filter(Boolean));
   const filtered = lyrics.filter((line) => {
     if (isCreditLyricLine(line.text)) return false;
+    if (isInstrumentalLyricLine(line.text)) return false;
     const normalizedLine = normalizeComparableText(line.text);
     if (forbidden.has(normalizedLine)) return false;
     // 歌名可能嵌在一句完整歌词里；至少两个字符才做包含判断，避免误伤单字歌名。
@@ -269,8 +296,11 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
 
 export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
+  private readonly randomCNIP: boolean;
 
-  constructor(private readonly options: NeteaseMusicProviderOptions = {}) {}
+  constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
+    this.randomCNIP = options.randomCNIP ?? true;
+  }
 
   async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
@@ -297,12 +327,12 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   async createQrLogin(): Promise<MusicQrLogin> {
-    const keyResponse = await this.call(["login_qr_key"], {});
+    const keyResponse = await this.call(["login_qr_key"], {}, undefined, false);
     const keyBody = responseBody(keyResponse);
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
     if (!key) throw new AppError("MUSIC_LOGIN_FAILED", "无法创建登录二维码");
 
-    const qrResponse = await this.call(["login_qr_create"], { key, qrimg: true });
+    const qrResponse = await this.call(["login_qr_create"], { key, qrimg: true }, undefined, false);
     const qrData = asRecord(responseBody(qrResponse).data);
     const qrUrl = readString(qrData.qrurl);
     const qrImage = readString(qrData.qrimg);
@@ -313,7 +343,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async checkQrLogin(keyValue: string): Promise<MusicQrLoginCheck> {
     const key = keyValue.trim();
     if (!key) throw new AppError("INVALID_LOGIN", "二维码登录密钥不能为空");
-    const response = await this.call(["login_qr_check"], { key });
+    const response = await this.call(["login_qr_check"], { key }, undefined, false);
     const body = responseBody(response);
     const code = responseCode(body);
     const message = responseMessage(body, "等待扫码");
@@ -331,7 +361,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const phone = phoneValue.trim();
     const countryCode = countryCodeValue.trim() || "86";
     if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
-    const response = await this.call(["captcha_sent"], { phone, ctcode: countryCode });
+    const response = await this.call(["captcha_sent"], { phone, ctcode: countryCode }, undefined, false);
     const body = responseBody(response);
     if (responseCode(body) !== 200) {
       throw new AppError("MUSIC_LOGIN_FAILED", responseMessage(body, "验证码发送失败"));
@@ -349,7 +379,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       phone,
       countrycode: countryCode,
       ...(captcha ? { captcha } : { password }),
-    });
+    }, undefined, false);
     return this.readLoginSession(response);
   }
 
@@ -357,14 +387,14 @@ export class NeteaseMusicProvider implements MusicProvider {
     const email = emailValue.trim();
     const password = passwordValue;
     if (!email || !password) throw new AppError("INVALID_LOGIN", "邮箱和密码不能为空");
-    const response = await this.call(["login"], { email, password });
+    const response = await this.call(["login"], { email, password }, undefined, false);
     return this.readLoginSession(response);
   }
 
   async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
-    const response = await this.call(["login_status"], {}, cookie);
+    const response = await this.call(["login_status"], {}, cookie, false);
     const body = responseBody(response);
     if (responseCode(body) !== 200) {
       throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效");
@@ -448,6 +478,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     names: string[],
     params: Record<string, unknown>,
     cookie?: string,
+    randomCNIP = this.randomCNIP,
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     let hasEndpoint = false;
@@ -456,7 +487,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       if (typeof fn === "function") {
         hasEndpoint = true;
         try {
-          return await (fn as ApiFunction)(this.withCookie(params, cookie));
+          return await (fn as ApiFunction)(this.withCookie(params, cookie, randomCNIP));
         } catch {
           // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
         }
@@ -491,7 +522,15 @@ export class NeteaseMusicProvider implements MusicProvider {
     return { cookie, account: readLoginAccount(body) };
   }
 
-  private withCookie(params: Record<string, unknown>, cookie?: string): Record<string, unknown> {
-    return cookie ? { ...params, cookie } : params;
+  private withCookie(
+    params: Record<string, unknown>,
+    cookie?: string,
+    randomCNIP = this.randomCNIP,
+  ): Record<string, unknown> {
+    return {
+      ...params,
+      ...(cookie ? { cookie } : {}),
+      randomCNIP,
+    };
   }
 }
