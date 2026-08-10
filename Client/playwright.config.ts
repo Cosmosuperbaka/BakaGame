@@ -30,7 +30,7 @@ export default defineConfig({
     {
       command: "npm run start",
       cwd: path.resolve(clientDir, "../Server"),
-      url: "http://127.0.0.1:4850/health",
+      url: "http://localhost:4850/health",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
