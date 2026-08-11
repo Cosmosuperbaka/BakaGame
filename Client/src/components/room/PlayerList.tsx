@@ -23,6 +23,7 @@ import {
 import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
 import { ROLE_COLORS } from "@/lib/helpers";
 import { cn } from "@/lib/utils";
+import { PLAYER_BADGE_BASE, PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "@/components/room/PlayerStatusPill";
 import { useGameStore } from "@/stores/useGameStore";
 import {
   buildKnownRoleMap,
@@ -73,21 +74,6 @@ const roleSelectedTones: Record<PlayerMark, string> = {
   blank: "bg-stone-700 text-white dark:bg-stone-600",
   angel: "bg-amber-800 text-white dark:bg-amber-700",
 };
-
-/** 状态标签沿用投票预览的浅底彩字语言。 */
-const statusTones: Record<StatusInfo["tone"], string> = {
-  default: "text-muted-foreground",
-  emerald: "text-emerald-600",
-  violet: "text-purple-600",
-  red: "text-red-600",
-  amber: "text-amber-600",
-};
-
-/**
- * 几何参数直接复用投票预览标签：内容自适应宽度、无边框、小圆角。
- */
-const BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-10";
@@ -535,7 +521,7 @@ export function PlayerRow(props: PlayerRowProps) {
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-1 rounded-md py-1 pl-2.5 pr-2 text-left text-sm",
+        PLAYER_ROW_BASE,
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && "transition-colors hover:bg-accent/50",
@@ -545,7 +531,7 @@ export function PlayerRow(props: PlayerRowProps) {
       )}
     >
       {isMe ? (
-        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
+        <span className={PLAYER_ME_MARK} />
       ) : null}
       {/* 身份与状态全部落在名字之前：已知身份优先，其次自己的预测 */}
       {actualRole ? (
@@ -723,7 +709,7 @@ function ManageButton({
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
   return (
     <span
-      className={cn(BADGE_BASE, roleTones[role], predicted && "bg-muted/70")}
+      className={cn(PLAYER_BADGE_BASE, roleTones[role], predicted && "bg-muted/70")}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}
@@ -733,5 +719,5 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
 
 /** 主持、出局、旁观与准备状态。与身份徽章同尺寸同实底，行首一致。 */
 function StatusPill({ label, tone }: StatusInfo) {
-  return <span className={cn(BADGE_BASE, statusTones[tone])}>{label}</span>;
+  return <PlayerStatusPill label={label} tone={tone} />;
 }

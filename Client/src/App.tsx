@@ -42,10 +42,10 @@ function App() {
             {/* 子路径打错时退回本游戏大厅，而不是留在空白页 */}
             <Route path="*" element={<Navigate to="/whoisfaker" replace />} />
           </Route>
-          <Route path="/songguessr" element={<SongGuessrLayout />}>
+          <Route path="/songuessr" element={<SongGuessrLayout />}>
             <Route index element={<SongGuessrPage />} />
             <Route path="room/:roomId" element={<SongGuessrRoomPage />} />
-            <Route path="*" element={<Navigate to="/songguessr" replace />} />
+            <Route path="*" element={<Navigate to="/songuessr" replace />} />
           </Route>
           {/* 其余无法识别的路径一律回落地页 */}
           <Route path="*" element={<Navigate to="/" replace />} />

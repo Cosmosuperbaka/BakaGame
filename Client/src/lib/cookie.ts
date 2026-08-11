@@ -2,7 +2,7 @@ import { TEST_ROOM_ID } from "@/config/constants";
 
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
-const SONG_SESSION_PREFIX = "songguessr_session_";
+const SONG_SESSION_PREFIX = "songuessr_session_";
 
 function normalizeSessionRoomId(roomId: string): string {
   const normalized = roomId.trim();

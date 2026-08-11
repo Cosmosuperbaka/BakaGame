@@ -5,7 +5,7 @@ test("landing page exposes both playable games and keeps placeholders disabled",
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Who is Faker" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Song Guessr" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Songuessr" })).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]')).toHaveCount(1);
 
   await page.getByRole("button", { name: "Who is Faker" }).click();
@@ -24,21 +24,21 @@ test("removed and unknown routes fall back to a live page", async ({ page }) => 
   await expect(page).toHaveURL(/\/whoisfaker$/);
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
 
-  await page.goto("/songguessr/unknown");
-  await expect(page).toHaveURL(/\/songguessr$/);
-  await expect(page.getByRole("heading", { name: "Song Guessr" })).toBeVisible();
+  await page.goto("/songuessr/unknown");
+  await expect(page).toHaveURL(/\/songuessr$/);
+  await expect(page.getByRole("heading", { name: "Songuessr" })).toBeVisible();
 });
 
-test("Song Guessr is reachable from the landing page", async ({ page }) => {
+test("Songuessr is reachable from the landing page", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Song Guessr" }).click();
+  await page.getByRole("button", { name: "Songuessr" }).click();
 
-  await expect(page).toHaveURL(/\/songguessr$/);
-  await expect(page.getByRole("heading", { name: "Song Guessr" })).toBeVisible();
+  await expect(page).toHaveURL(/\/songuessr$/);
+  await expect(page.getByRole("heading", { name: "Songuessr" })).toBeVisible();
   await expect(page.getByRole("button", { name: "创建房间" })).toBeVisible();
 });
 
-test("Song Guessr lobby uses the same shell as Who is Faker", async ({ page }) => {
+test("Songuessr lobby uses the same shell as Who is Faker", async ({ page }) => {
   const readShellClasses = async () => ({
     root: await page.locator("#root > div").first().getAttribute("class"),
     header: await page.locator("header").first().getAttribute("class"),
@@ -50,7 +50,7 @@ test("Song Guessr lobby uses the same shell as Who is Faker", async ({ page }) =
   await page.goto("/whoisfaker");
   const whoIsFakerShell = await readShellClasses();
 
-  await page.goto("/songguessr");
+  await page.goto("/songuessr");
   expect(await readShellClasses()).toEqual(whoIsFakerShell);
 });
 
@@ -98,19 +98,19 @@ test("two browser sessions can create and join the same server room", async ({ b
   await guestContext.close();
 });
 
-test("two browser sessions can create and join a Song Guessr room", async ({ browser, page }) => {
+test("two browser sessions can create and join a Songuessr room", async ({ browser, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `E2E 音乐房间 ${unique}`;
   const hostName = `歌房主${unique}`;
   const guestName = `歌访客${unique}`;
 
-  await page.goto("/songguessr");
+  await page.goto("/songuessr");
   await page.getByPlaceholder("用户名").fill(hostName);
   await page.getByRole("button", { name: "创建房间" }).click();
   await page.getByPlaceholder("输入房间名称").fill(roomName);
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/songguessr\/room\/\d{4}$/);
+  await expect(page).toHaveURL(/\/songuessr\/room\/\d{4}$/);
   await expect(page.getByText(roomName, { exact: true })).toBeVisible();
   await expect(page.locator("header").first()).toHaveClass(/grid h-14 shrink-0/);
   await expect(page.locator("main").first()).toHaveClass(/isolate flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel/);
@@ -119,48 +119,43 @@ test("two browser sessions can create and join a Song Guessr room", async ({ bro
   const roomId = page.url().split("/").at(-1);
   const guestContext = await browser.newContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songguessr");
+  await guestPage.goto("http://localhost:5173/songuessr");
   await guestPage.getByPlaceholder("用户名").fill(guestName);
   await guestPage.getByRole("button", { name: new RegExp(roomName) }).click();
 
-  await expect(guestPage).toHaveURL(new RegExp(`/songguessr/room/${roomId}$`));
+  await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
   await guestContext.close();
 });
 
-test("Song Guessr direct room URL creates the room and leaving returns cleanly", async ({ page }) => {
+test("Songuessr direct room URL creates the room and leaving returns cleanly", async ({ page }) => {
   const roomId = String(1_000 + (Date.now() % 8_900));
   const userName = `直链玩家${Date.now().toString(36)}`;
 
-  await page.goto(`/songguessr/room/${roomId}`);
+  await page.goto(`/songuessr/room/${roomId}`);
   await expect(page.getByRole("heading", { name: "设置用户名" })).toBeVisible();
   await page.getByPlaceholder("用户名").fill(userName);
   await page.getByRole("button", { name: "进入房间" }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/songguessr/room/${roomId}$`));
+  await expect(page).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(page.getByText(`${userName}的房间`, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "音量设置" })).toBeVisible();
-  await page.getByRole("button", { name: "音量设置" }).click();
   await expect(page.getByRole("slider", { name: "播放音量" })).toBeVisible();
-  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /网易云账号/ }).click();
-  await expect(page.getByRole("button", { name: "扫码", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "手机", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "邮箱", exact: true })).toBeVisible();
-  await expect(page.getByText(/服务器不会保存账号、手机号、邮箱或密码/)).toBeVisible();
+  await expect(page.getByAltText("网易云登录二维码")).toBeVisible();
+  await expect(page.getByText(/服务器不会保存账号信息/)).toBeVisible();
 
   await page.getByRole("button", { name: "离开房间" }).click();
-  await expect(page).toHaveURL(/\/songguessr$/);
+  await expect(page).toHaveURL(/\/songuessr$/);
   await expect(page.getByText(/会话.*失效|会话令牌无效/)).toHaveCount(0);
 });
 
-test("private Song Guessr rooms stay listed and direct links request the password", async ({ browser, page }) => {
+test("private Songuessr rooms stay listed and direct links request the password", async ({ browser, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `私密音乐房 ${unique}`;
   const password = `pw-${unique}`;
 
-  await page.goto("/songguessr");
+  await page.goto("/songuessr");
   await page.getByPlaceholder("用户名").fill(`私密房主${unique}`);
   await page.getByRole("button", { name: "创建房间" }).click();
   const createDialog = page.getByRole("dialog");
@@ -172,21 +167,21 @@ test("private Song Guessr rooms stay listed and direct links request the passwor
 
   const guestContext = await browser.newContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songguessr");
+  await guestPage.goto("http://localhost:5173/songuessr");
   await guestPage.getByPlaceholder("用户名").fill(`私密访客${unique}`);
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
-  await guestPage.goto(`http://localhost:5173/songguessr/room/${roomId}`);
+  await guestPage.goto(`http://localhost:5173/songuessr/room/${roomId}`);
   await expect(guestPage.getByRole("heading", { name: "输入房间密码" })).toBeVisible();
   await guestPage.getByPlaceholder("请输入密码").fill(password);
   await guestPage.getByRole("button", { name: "加入房间" }).click();
-  await expect(guestPage).toHaveURL(new RegExp(`/songguessr/room/${roomId}$`));
+  await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
   await guestContext.close();
 });
 
-test("Song Guessr test room exposes bots and guests can switch to spectator", async ({ browser, page }) => {
+test("Songuessr test room exposes bots and guests can switch to spectator", async ({ browser, page }) => {
   const unique = Date.now().toString(36);
-  await page.goto("/songguessr/room/Oblivionis");
+  await page.goto("/songuessr/room/Oblivionis");
   await expect(page.getByRole("heading", { name: "设置用户名" })).toBeVisible();
   await page.getByPlaceholder("用户名").fill(`测试房主${unique}`);
   await page.getByRole("button", { name: "进入房间" }).click();
@@ -201,7 +196,7 @@ test("Song Guessr test room exposes bots and guests can switch to spectator", as
 
   const guestContext = await browser.newContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songguessr/room/Oblivionis");
+  await guestPage.goto("http://localhost:5173/songuessr/room/Oblivionis");
   await guestPage.getByPlaceholder("用户名").fill(`旁观访客${unique}`);
   await guestPage.getByRole("button", { name: "进入房间" }).click();
   await guestPage.getByRole("button", { name: "加入旁观" }).click();

@@ -5,24 +5,15 @@ import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlayerGroupTitle, PLAYER_ROW_HEIGHT } from "@/components/room/PlayerList";
+import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "@/components/room/PlayerStatusPill";
 import { listContainer, listItem, popover, tappable } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
 import type { SongGuessrPhase, SongGuessrPlayerView } from "@/types";
 
-const BADGE_BASE =
-  "inline-flex h-5 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold leading-none tracking-normal";
-
-const statusTones = {
-  default: "bg-secondary text-secondary-foreground",
-  emerald: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950",
-  violet: "bg-violet-600 text-white dark:bg-violet-500 dark:text-violet-950",
-  amber: "bg-amber-500 text-white dark:text-amber-950",
-} as const;
-
 type SongStatus = {
   label: string;
-  tone: keyof typeof statusTones;
+  tone: "default" | "emerald" | "violet" | "amber";
 };
 
 interface SongPlayerListProps {
@@ -170,7 +161,7 @@ function SongPlayerRow({
   const body = (
     <div
       className={cn(
-        "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2.5 text-left text-sm",
+        PLAYER_ROW_BASE,
         PLAYER_ROW_HEIGHT,
         isMe && "bg-primary/10",
         !isMe && "transition-colors hover:bg-accent/50",
@@ -179,7 +170,7 @@ function SongPlayerRow({
       )}
     >
       {isMe ? (
-        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        <span className={PLAYER_ME_MARK} />
       ) : null}
       {status ? <StatusPill {...status} /> : null}
       <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
@@ -284,7 +275,7 @@ function SpectatorToggle({
 }
 
 function StatusPill({ label, tone }: SongStatus) {
-  return <span className={cn(BADGE_BASE, statusTones[tone])}>{label}</span>;
+  return <PlayerStatusPill label={label} tone={tone} />;
 }
 
 function ManageButton({
