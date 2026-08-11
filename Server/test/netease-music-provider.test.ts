@@ -107,6 +107,7 @@ describe("NeteaseMusicProvider", () => {
   test("扫码登录只把最终 Cookie 返回给调用者并可读取账号状态", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
+      randomCNIP: false,
       loadApi: async () => ({
         login_qr_key: async () => {
           calls.push("login_qr_key");
@@ -168,6 +169,7 @@ describe("NeteaseMusicProvider", () => {
 
   test("手机与邮箱登录不会持久化凭据且仅返回登录 Cookie", async () => {
     const provider = new NeteaseMusicProvider({
+      randomCNIP: false,
       loadApi: async () => ({
         captcha_sent: async (params: Record<string, unknown>) => {
           expect(params).toMatchObject({ phone: "13800000000", ctcode: "86", randomCNIP: false });
@@ -215,6 +217,52 @@ describe("NeteaseMusicProvider", () => {
       cookie: "MUSIC_U=email-cookie",
       account: { nickname: "邮箱用户" },
     });
+  });
+
+  test("登录请求显式传递随机中国 IP 并保留网易云安全验证地址", async () => {
+    let loginParams: Record<string, unknown> | undefined;
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        login_cellphone: async (params: Record<string, unknown>) => {
+          loginParams = params;
+          return {
+            body: {
+              code: 8810,
+              message: "当前登录存在安全风险，请稍后再试",
+              redirectUrl: "https://y.music.163.com/g/yida/example",
+            },
+          };
+        },
+      }),
+    });
+
+    const result = provider.loginWithPhone({ phone: "13800000000", password: "secret" });
+    await expect(result).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_RISK",
+      details: {
+        upstreamCode: 8810,
+        redirectUrl: "https://y.music.163.com/g/yida/example",
+      },
+    });
+    expect(loginParams?.randomCNIP).toBe(true);
+    expect(loginParams?.realIP).toMatch(/^116\.(2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
+    expect(loginParams?.password).toBe("secret");
+  });
+
+  test("匿名令牌只用于后端请求参数，不会作为登录结果返回", async () => {
+    const observed: Record<string, unknown>[] = [];
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        register_anonimous: async () => ({ cookie: ["MUSIC_A=anonymous-only"] }),
+        cloudsearch: async (params: Record<string, unknown>) => {
+          observed.push(params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await expect(provider.search("test")).resolves.toEqual([]);
+    expect(observed[0]?.cookie).toBe("MUSIC_A=anonymous-only");
   });
 
   test("通过增强 API 包聚合搜索、歌曲、歌词、播放地址与百科", async () => {

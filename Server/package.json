@@ -8,6 +8,7 @@
     "check": "tsc --noEmit",
     "test": "bun test",
     "test:music:real": "bun test ./integration/netease-music-provider.integration.ts",
+    "test:music:login": "bun test ./integration/netease-login.integration.ts",
     "test:coverage": "bun test --coverage",
     "verify": "bun run check && bun run test:coverage",
     "docs:openapi": "bun run src/scripts/export-openapi.ts"

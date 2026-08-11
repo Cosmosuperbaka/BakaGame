@@ -11,7 +11,7 @@ type StatusHandler = (connected: boolean) => void;
 
 interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
-  reject: (error: { code: string; message: string }) => void;
+  reject: (error: { code: string; message: string; details?: unknown }) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 

@@ -50,6 +50,27 @@ interface QrCheckResponse extends Record<string, unknown> {
   account?: SongGuessrMusicAccount;
 }
 
+interface LoginError {
+  code?: string;
+  message?: string;
+  details?: {
+    redirectUrl?: string;
+    retryAfterMs?: number;
+  };
+}
+
+const readRiskVerificationUrl = (error: unknown): string | undefined => {
+  const candidate = (error as LoginError | null)?.details?.redirectUrl;
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" || !url.hostname.endsWith(".163.com")) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+};
+
 export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
   const sendCommand = useSongGuessrStore((state) => state.sendCommand);
   const setNotice = useSongGuessrStore((state) => state.setNotice);
@@ -61,6 +82,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
     getStoredSongMusicSession,
   );
   const [busy, setBusy] = useState(false);
+  const [riskVerificationUrl, setRiskVerificationUrl] = useState<string | null>(null);
   const [qr, setQr] = useState<QrCreateResponse | null>(null);
   const [qrStatus, setQrStatus] = useState("点击下方按钮生成二维码");
   const qrCheckingRef = useRef(false);
@@ -97,6 +119,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
     setEmailPassword("");
     setEditing(false);
     setQr(null);
+    setRiskVerificationUrl(null);
     setQrStatus("登录成功");
     setNotice("网易云账号已加载到当前房间", "success");
   }, [remember, setNotice]);
@@ -114,6 +137,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
         completeLogin({ cookie: result.cookie, account: result.account });
       }
     } catch (error) {
+      setRiskVerificationUrl(readRiskVerificationUrl(error) ?? null);
       setQrStatus((error as { message?: string }).message ?? "扫码状态检查失败");
     } finally {
       qrCheckingRef.current = false;
@@ -133,6 +157,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       setQr(result);
       setQrStatus("请使用网易云音乐 App 扫码");
     } catch (error) {
+      setRiskVerificationUrl(readRiskVerificationUrl(error) ?? null);
       setNotice((error as { message?: string }).message ?? "二维码生成失败", "error");
     } finally {
       setBusy(false);
@@ -154,6 +179,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       setCaptchaCooldownUntil(Date.now() + 60_000);
       setNotice("验证码已发送", "success");
     } catch (error) {
+      setRiskVerificationUrl(readRiskVerificationUrl(error) ?? null);
       const details = (error as { details?: { retryAfterMs?: number } }).details;
       if (details?.retryAfterMs && details.retryAfterMs > 0) {
         setCaptchaCooldownUntil(Date.now() + details.retryAfterMs);
@@ -184,6 +210,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       });
       completeLogin(result);
     } catch (error) {
+      setRiskVerificationUrl(readRiskVerificationUrl(error) ?? null);
       setNotice((error as { message?: string }).message ?? "手机登录失败", "error");
     } finally {
       setBusy(false);
@@ -203,6 +230,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       });
       completeLogin(result);
     } catch (error) {
+      setRiskVerificationUrl(readRiskVerificationUrl(error) ?? null);
       setNotice((error as { message?: string }).message ?? "邮箱登录失败", "error");
     } finally {
       setBusy(false);
@@ -381,6 +409,21 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
                     </div>
                     <Switch checked={remember} onCheckedChange={setRemember} />
                   </div>
+                  {riskVerificationUrl ? (
+                    <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                      <p>
+                        网易云要求完成安全验证。请打开验证页面，完成验证后再尝试登录；也可以直接使用扫码或短信验证码登录。
+                      </p>
+                      <a
+                        href={riskVerificationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex font-medium underline underline-offset-2"
+                      >
+                        打开网易云安全验证
+                      </a>
+                    </div>
+                  ) : null}
                   {storedSession ? (
                     <Button variant="ghost" size="sm" className="w-full" onClick={() => setEditing(false)}>
                       返回当前账号
