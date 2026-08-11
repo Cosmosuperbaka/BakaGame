@@ -116,31 +116,15 @@ const responseMessage = (body: Record<string, unknown>, fallback: string) =>
   readString(asRecord(body.data).message ?? asRecord(body.data).msg) ??
   fallback;
 
-const readSafeLoginRedirect = (value: unknown): string | undefined => {
-  const candidate = readString(value);
-  if (!candidate) return undefined;
-  try {
-    const url = new URL(candidate);
-    return url.protocol === "https:" && url.hostname.endsWith(".163.com")
-      ? url.toString()
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 const musicLoginError = (body: Record<string, unknown>, fallback: string) => {
   const code = responseCode(body);
-  const redirectUrl = readSafeLoginRedirect(
-    body.redirectUrl ?? asRecord(body.data).redirectUrl,
-  );
   const risk = code === 8810 || code === 10004;
   return new AppError(
     risk ? "MUSIC_LOGIN_RISK" : "MUSIC_LOGIN_FAILED",
     risk
-      ? "网易云要求完成安全验证，请使用扫码或短信验证码登录"
+      ? "网易云已拦截当前网络环境的登录请求，请稍后重试"
       : responseMessage(body, fallback),
-    redirectUrl ? { redirectUrl, upstreamCode: code } : { upstreamCode: code },
+    { upstreamCode: code },
   );
 };
 
@@ -417,7 +401,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const phone = phoneValue.trim();
     const countryCode = countryCodeValue.trim() || "86";
     if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
-    const response = await this.call(
+    let response = await this.call(
       ["captcha_sent"],
       { phone, ctcode: countryCode },
       undefined,
@@ -425,7 +409,23 @@ export class NeteaseMusicProvider implements MusicProvider {
       true,
       false,
     );
-    const body = responseBody(response);
+    let body = responseBody(response);
+    if (responseCode(body) !== 200) {
+      try {
+        const fallbackResponse = await this.call(
+          ["captcha_sent_v1"],
+          { phone, ctcode: countryCode },
+          undefined,
+          this.randomCNIP,
+          true,
+          false,
+        );
+        response = fallbackResponse;
+        body = responseBody(response);
+      } catch {
+        // v1 接口不存在时继续使用首个接口的错误，避免把真实原因覆盖掉。
+      }
+    }
     if (responseCode(body) !== 200) {
       throw musicLoginError(body, "验证码发送失败");
     }
@@ -560,6 +560,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     try {
       const response = await (api.register_anonimous as ApiFunction)({
         crypto: "weapi",
+        cookie: {},
         randomCNIP: this.randomCNIP,
         realIP: this.randomCNIPValue,
       });
@@ -631,11 +632,11 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
   ): Record<string, unknown> {
+    const requestCookie = cookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     return {
       ...params,
-      ...(cookie || (includeAnonymousCookie && this.anonymousCookie)
-        ? { cookie: cookie ?? this.anonymousCookie }
-        : {}),
+      // 始终显式传入 cookie，阻止 Enhanced API 从进程环境变量 NETEASE_COOKIE 偷读旧凭据。
+      cookie: requestCookie ?? {},
       ...(randomCNIP ? { realIP: this.randomCNIPValue } : {}),
       randomCNIP,
     };

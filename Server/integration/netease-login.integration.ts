@@ -37,10 +37,10 @@ test("真实网易云账号登录并可校验登录状态", async () => {
     } catch (error) {
       const loginError = error as {
         code?: string;
-        details?: { redirectUrl?: string };
+        details?: { upstreamCode?: number };
       };
       if (loginError.code !== "MUSIC_LOGIN_RISK") throw error;
-      expect(loginError.details?.redirectUrl).toMatch(/^https:\/\/[A-Za-z0-9.-]+\.163\.com\//);
+      expect([8810, 10004]).toContain(loginError.details?.upstreamCode);
       originalLog(JSON.stringify({
         login: false,
         blockedByRisk: true,
