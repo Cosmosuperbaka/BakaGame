@@ -12,7 +12,7 @@ const session = {
   account: { userId: "42", nickname: "本机账号" },
 };
 
-describe("Song Guessr browser music session", () => {
+describe("Songuessr browser music session", () => {
   it("stores remembered login state only in localStorage", () => {
     const changed = vi.fn();
     window.addEventListener(SONG_MUSIC_SESSION_CHANGED, changed);

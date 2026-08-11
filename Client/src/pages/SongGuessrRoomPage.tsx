@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import * as Popover from "@radix-ui/react-popover";
 import {
   ArrowLeft,
   Check,
@@ -55,6 +54,7 @@ import { songGuessrWs } from "@/lib/songguessrWs";
 import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
+  saveSongMusicSession,
   SONG_MUSIC_SESSION_CHANGED,
 } from "@/lib/songguessrMusicSession";
 import {
@@ -65,7 +65,6 @@ import {
   listContainer,
   listItem,
   phaseSwap,
-  popover,
   pressable,
   selectable,
   spinner,
@@ -75,14 +74,18 @@ import { cn } from "@/lib/utils";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
 import type {
+  SongArtistFilter,
+  SongArtistSearchResult,
+  SongPlaylistInfo,
   SongGuessAttempt,
   SongGuessDirection,
+  SongGuessrMusicAccount,
   SongGuessrPrivateState,
   SongGuessrPlayerView,
   SongGuessrRoomSnapshot,
 } from "@/types";
 
-const SONG_VOLUME_KEY = "songguessr_volume";
+const SONG_VOLUME_KEY = "songuessr_volume";
 
 const directionSymbol: Record<SongGuessDirection, string> = {
   higher: "↑",
@@ -147,7 +150,7 @@ export default function SongGuessrRoomPage() {
           try {
             await createRoom({
               roomId,
-              name: roomId === ROOM_ID_TEST_MODE ? "Song Guessr 测试房" : `${name}的房间`,
+              name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
               visibility: "public",
               allowSpectators: true,
               userName: name,
@@ -166,7 +169,7 @@ export default function SongGuessrRoomPage() {
         } else {
           setNotice(appError.message ?? "加入房间失败", "error");
         }
-        navigate("/songguessr", { replace: true });
+        navigate("/songuessr", { replace: true });
       }
     },
     [createRoom, joinRoom, navigate, roomId, setNotice],
@@ -176,7 +179,7 @@ export default function SongGuessrRoomPage() {
     if (!roomId || alreadyInRoom) return;
     if (!isValidRoomId(roomId)) {
       setNotice("房间号无效，请检查链接", "error");
-      navigate("/songguessr", { replace: true });
+      navigate("/songuessr", { replace: true });
       return;
     }
 
@@ -188,7 +191,7 @@ export default function SongGuessrRoomPage() {
       } catch {
         if (!cancelled) {
           setNotice("连接服务器超时，请刷新重试", "error");
-          navigate("/songguessr", { replace: true });
+      navigate("/songuessr", { replace: true });
         }
         return;
       }
@@ -213,7 +216,7 @@ export default function SongGuessrRoomPage() {
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (roomClosedAt && !leavingRef.current) navigate("/songguessr", { replace: true });
+    if (roomClosedAt && !leavingRef.current) navigate("/songuessr", { replace: true });
   }, [navigate, roomClosedAt]);
 
   const round = snapshot?.currentRound;
@@ -426,14 +429,22 @@ export default function SongGuessrRoomPage() {
     const mountKey = `${snapshot.roomId}:${privateState.playerId}:${storedSession.cookie}`;
     if (mountedMusicSessionRef.current === mountKey) return;
     mountedMusicSessionRef.current = mountKey;
-    void sendCommand("song.auth.useCookie", { cookie: storedSession.cookie }).catch((error) => {
-      mountedMusicSessionRef.current = null;
-      const appError = error as { code?: string; message?: string };
-      if (appError.code === "MUSIC_SESSION_INVALID") {
-        clearStoredSongMusicSession();
-        setNotice("网易云登录状态已失效，请重新登录", "error");
-      }
-    });
+    void sendCommand<{ account: SongGuessrMusicAccount }>("song.auth.useCookie", { cookie: storedSession.cookie })
+      .then((result) => {
+        if (!result?.account) return;
+        saveSongMusicSession(
+          { cookie: storedSession.cookie, account: result.account },
+          storedSession.persistent,
+        );
+      })
+      .catch((error) => {
+        mountedMusicSessionRef.current = null;
+        const appError = error as { code?: string; message?: string };
+        if (appError.code === "MUSIC_SESSION_INVALID") {
+          clearStoredSongMusicSession();
+          setNotice("网易云登录状态已失效，请重新扫码登录", "error");
+        }
+      });
   }, [
     connected,
     musicSessionRevision,
@@ -493,7 +504,7 @@ export default function SongGuessrRoomPage() {
         <Dialog
           open={needsName}
           onOpenChange={(open) => {
-            if (!open) navigate("/songguessr", { replace: true });
+            if (!open) navigate("/songuessr", { replace: true });
           }}
         >
           <DialogContent>
@@ -512,7 +523,7 @@ export default function SongGuessrRoomPage() {
               maxLength={20}
             />
             <DialogFooter>
-              <Button variant="ghost" onClick={() => navigate("/songguessr", { replace: true })}>
+              <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
                 返回大厅
               </Button>
               <Button onClick={() => void handleConfirmName()} disabled={!nameDraft.trim()}>
@@ -525,7 +536,7 @@ export default function SongGuessrRoomPage() {
         <Dialog
           open={needsPassword}
           onOpenChange={(open) => {
-            if (!open) navigate("/songguessr", { replace: true });
+            if (!open) navigate("/songuessr", { replace: true });
           }}
         >
           <DialogContent>
@@ -542,7 +553,7 @@ export default function SongGuessrRoomPage() {
               placeholder="请输入密码"
             />
             <DialogFooter>
-              <Button variant="ghost" onClick={() => navigate("/songguessr", { replace: true })}>
+              <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
                 返回大厅
               </Button>
               <Button onClick={() => void handleConfirmPassword()} disabled={!passwordDraft.trim()}>
@@ -564,14 +575,21 @@ export default function SongGuessrRoomPage() {
       await sendCommand(type, payload);
       if (success) setNotice(success, "success");
     } catch (error) {
-      setNotice((error as { message?: string }).message ?? "操作失败", "error");
+      const appError = error as { code?: string; message?: string };
+      if (appError.code === "MUSIC_SESSION_INVALID") {
+        mountedMusicSessionRef.current = null;
+        clearStoredSongMusicSession();
+        setNotice("网易云登录状态已失效，请重新扫码登录", "error");
+        return;
+      }
+      setNotice(appError.message ?? "操作失败", "error");
     }
   };
 
   const leave = async () => {
     leavingRef.current = true;
     await leaveRoom();
-    navigate("/songguessr", { replace: true });
+    navigate("/songuessr", { replace: true });
   };
 
   return (
@@ -687,6 +705,11 @@ export default function SongGuessrRoomPage() {
               onPlayAudio={() => void playAudio()}
               onRetryAudio={() => setAudioRetryToken((token) => token + 1)}
               openSearch={setSearchMode}
+              searchMode={searchMode}
+              closeSearch={() => setSearchMode(null)}
+              onSelectSearchSong={async (songId, mode) => {
+                await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
+              }}
               run={run}
             />
           </main>
@@ -742,24 +765,6 @@ export default function SongGuessrRoomPage() {
         </AnimatePresence>
       </div>
 
-      <SongSearchDialog
-        open={searchMode !== null}
-        onOpenChange={(open) => !open && setSearchMode(null)}
-        title={searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
-        description={
-          searchMode === "submit"
-            ? "歌曲信息只会在回合结束后公开。"
-            : "每次错误猜测会提供年代、热度、语种与标签反馈。"
-        }
-        actionLabel={searchMode === "submit" ? "设为答案" : "猜这首"}
-        onSelect={async (song) => {
-          if (searchMode === "submit") {
-            await sendCommand("song.game.submitSong", { songId: song.id });
-          } else {
-            await sendCommand("song.game.guess", { songId: song.id });
-          }
-        }}
-      />
     </div>
   );
 }
@@ -777,6 +782,9 @@ interface SongGameAreaProps {
   onPlayAudio: () => void;
   onRetryAudio: () => void;
   openSearch: (mode: "submit" | "guess") => void;
+  searchMode: "submit" | "guess" | null;
+  closeSearch: () => void;
+  onSelectSearchSong: (songId: string, mode: "submit" | "guess") => Promise<void>;
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
 }
 
@@ -805,6 +813,22 @@ function SongGameArea(props: SongGameAreaProps) {
               <GameStage {...props} />
             </motion.div>
           </AnimatePresence>
+          {props.searchMode ? (
+            <SongSearchDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) props.closeSearch();
+              }}
+              title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
+              description={
+                props.searchMode === "submit"
+                  ? "歌曲信息只会在回合结束后公开。"
+                  : "每次错误猜测会提供年代、热度、语种与标签反馈。"
+              }
+              actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
+              onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
+            />
+          ) : null}
         </div>
       </ScrollArea>
       {props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} /> : null}
@@ -904,10 +928,10 @@ function GameStage({
         <section className="space-y-5 rounded-md bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              歌词片段
+              {snapshot.settings.showLyrics ? "歌词片段" : "音乐片段"}
             </h3>
             <div className="flex items-center gap-2">
-              {privateState.canGuess && privateState.guessDeadlineAt ? (
+              {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
                 <Badge variant={secondsLeft <= 10 ? "destructive" : "outline"} className="gap-1 font-mono">
                   <Clock3 className="h-3.5 w-3.5" />{secondsLeft}s
                 </Badge>
@@ -937,11 +961,24 @@ function GameStage({
               ) : null}
             </div>
           </div>
-          <div className="space-y-2 rounded-md bg-background/60 p-5 text-center">
-            {snapshot.currentRound.lyricClip.lines.map((line) => (
-              <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
-            ))}
-          </div>
+          {snapshot.settings.questionMode === "automatic" ? (
+            <SongAutoFilterSummary snapshot={snapshot} />
+          ) : null}
+          {snapshot.settings.showLyrics ? (
+            <div className="space-y-2 rounded-md bg-background/60 p-5 text-center">
+              {snapshot.currentRound.lyricClip.lines.length > 0 ? (
+                snapshot.currentRound.lyricClip.lines.map((line) => (
+                  <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">本房间未显示歌词提示</p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md bg-background/60 p-5 text-center text-sm text-muted-foreground">
+              本房间已关闭歌词提示，请根据音乐进行猜测
+            </div>
+          )}
           {privateState.isSubmitter ? (
             <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
               本轮答案：<strong>{privateState.submittedSong?.title}</strong> · {privateState.submittedSong?.artist}
@@ -1063,6 +1100,7 @@ function SongWaitingPhase({
         readyCount={readyCount}
         nonHostTotal={nonHostActive.length}
         allReady={allReady}
+        canStart={allReady && snapshot.musicAccountReady}
         run={run}
       />
     );
@@ -1107,6 +1145,7 @@ function SongHostWaitingPanel({
   readyCount,
   nonHostTotal,
   allReady,
+  canStart,
   run,
 }: {
   snapshot: SongGuessrRoomSnapshot;
@@ -1114,12 +1153,15 @@ function SongHostWaitingPanel({
   readyCount: number;
   nonHostTotal: number;
   allReady: boolean;
+  canStart: boolean;
   run: SongGameAreaProps["run"];
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
+  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const setNotice = useSongGuessrStore((state) => state.setNotice);
-  const shareUrl = `${window.location.origin}/songguessr/room/${snapshot.roomId}`;
+  const shareUrl = `${window.location.origin}/songuessr/room/${snapshot.roomId}`;
 
   const handleCopy = async () => {
     try {
@@ -1180,48 +1222,42 @@ function SongHostWaitingPanel({
 
       <SongAccountSettings snapshot={snapshot} />
 
-      <div className="rounded-md border">
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={() => setSettingsOpen((open) => !open)}
-          aria-expanded={settingsOpen}
-          className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
-        >
-          <Settings className="h-4 w-4 text-muted-foreground" />
-          <span className="flex-1 text-left">游戏设置</span>
-          <motion.span
-            className="inline-flex text-muted-foreground"
-            animate={{ rotate: settingsOpen ? 180 : 0 }}
-            transition={spring.snap}
-          >
-            <ChevronDown className="h-4 w-4" />
-          </motion.span>
-        </motion.button>
-        <AnimatePresence initial={false}>
-          {settingsOpen ? (
-            <motion.div
-              variants={collapsible}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="overflow-hidden"
-            >
-              <div className="border-t px-4 py-4">
-                <SongInlineSettings snapshot={snapshot} run={run} />
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
+      <SettingsAccordion
+        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
+        title="题目设置"
+        open={questionSettingsOpen}
+        onOpenChange={setQuestionSettingsOpen}
+      >
+        <SongQuestionSettings snapshot={snapshot} run={run} />
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        title="猜测设置"
+        open={gameSettingsOpen}
+        onOpenChange={setGameSettingsOpen}
+      >
+        <SongGameSettings snapshot={snapshot} run={run} />
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        title="房间设置"
+        open={roomSettingsOpen}
+        onOpenChange={setRoomSettingsOpen}
+      >
+        <SongRoomSettings snapshot={snapshot} run={run} />
+      </SettingsAccordion>
 
       <Button
         size="lg"
-        disabled={!allReady}
+        disabled={!canStart}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {allReady
+        {!snapshot.musicAccountReady && allReady
+          ? "请先扫码登录网易云账号"
+          : allReady
           ? "开始游戏"
           : nonHostTotal === 0
             ? "等待玩家加入"
@@ -1231,7 +1267,352 @@ function SongHostWaitingPanel({
   );
 }
 
-function SongInlineSettings({
+function SettingsAccordion({
+  icon,
+  title,
+  open,
+  onOpenChange,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border">
+      <motion.button
+        type="button"
+        {...pressable}
+        onClick={() => onOpenChange(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
+      >
+        {icon}
+        <span className="flex-1 text-left">{title}</span>
+        <motion.span
+          className="inline-flex text-muted-foreground"
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={spring.snap}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.span>
+      </motion.button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            variants={collapsible}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="overflow-hidden"
+          >
+            <div className="border-t px-4 py-4">{children}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SongQuestionSettings({
+  snapshot,
+  run,
+}: {
+  snapshot: SongGuessrRoomSnapshot;
+  run: SongGameAreaProps["run"];
+}) {
+  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
+  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
+  const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
+  const [playlistDraft, setPlaylistDraft] = useState(snapshot.settings.autoFilters.playlist?.id ?? "");
+  const [playlist, setPlaylist] = useState(snapshot.settings.autoFilters.playlist);
+  const [artistDraft, setArtistDraft] = useState("");
+  const [artists, setArtists] = useState<SongArtistFilter[]>(snapshot.settings.autoFilters.artists);
+  const [artistResults, setArtistResults] = useState<SongArtistSearchResult[]>([]);
+  const [searchingArtists, setSearchingArtists] = useState(false);
+  const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
+
+  const resolvePlaylist = async () => {
+    try {
+      const result = await sendCommand<{ playlist: SongPlaylistInfo }>("song.music.playlist.resolve", {
+        value: playlistDraft,
+      });
+      setPlaylist(result.playlist);
+      setNotice(`已读取歌单：${result.playlist.name}（${result.playlist.songCount} 首）`, "success");
+    } catch (error) {
+      setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
+    }
+  };
+
+  const searchArtists = async () => {
+    const keyword = artistDraft.trim();
+    if (!keyword) return;
+    setSearchingArtists(true);
+    try {
+      const result = await sendCommand<{ results: SongArtistSearchResult[] }>("song.music.artist.search", { keyword });
+      setArtistResults(result.results);
+    } catch (error) {
+      setNotice((error as { message?: string }).message ?? "搜索歌手失败", "error");
+    } finally {
+      setSearchingArtists(false);
+    }
+  };
+
+  const save = async () => {
+    await run("song.room.updateSettings", {
+      questionType,
+      questionMode,
+      autoFilters: {
+        playlist,
+        artists,
+        minPopularity,
+      },
+    }, "题目设置已保存");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant={questionType === "song" ? "default" : "outline"}
+          className="h-10"
+          onClick={() => setQuestionType("song")}
+        >
+          听歌识曲
+        </Button>
+        <Button type="button" variant="outline" className="h-10" disabled>
+          听歌识番（即将推出）
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant={questionMode === "manual" ? "default" : "outline"}
+          className="h-10"
+          onClick={() => setQuestionMode("manual")}
+        >
+          手动出题
+        </Button>
+        <Button
+          type="button"
+          variant={questionMode === "automatic" ? "default" : "outline"}
+          className="h-10"
+          onClick={() => setQuestionMode("automatic")}
+        >
+          自动出题
+        </Button>
+      </div>
+
+      {questionMode === "automatic" ? (
+        <div className="space-y-4 rounded-md bg-muted/40 p-3">
+          <div className="space-y-2">
+            <Label className="text-xs">歌单筛选</Label>
+            <div className="flex gap-2">
+              <Input
+                value={playlistDraft}
+                onChange={(event) => setPlaylistDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void resolvePlaylist();
+                  }
+                }}
+                placeholder="粘贴网易云歌单链接或 ID"
+                className="h-9"
+              />
+              <Button type="button" size="sm" variant="outline" onClick={() => void resolvePlaylist()}>
+                读取
+              </Button>
+            </div>
+            {playlist ? (
+              <div className="flex items-center justify-between rounded border bg-background px-2.5 py-2 text-xs">
+                <span className="truncate">{playlist.name ?? playlist.id}</span>
+                <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">歌手筛选（可多选）</Label>
+            <div className="flex gap-2">
+              <Input
+                value={artistDraft}
+                onChange={(event) => setArtistDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void searchArtists();
+                  }
+                }}
+                placeholder="输入歌手名后搜索"
+                className="h-9"
+              />
+              <Button type="button" size="sm" variant="outline" onClick={() => void searchArtists()}>
+                {searchingArtists ? "搜索中" : "搜索"}
+              </Button>
+            </div>
+            {artistResults.length > 0 ? (
+              <div className="space-y-1 rounded border bg-background p-2">
+                {artistResults.map((artist) => {
+                  const selected = artists.some((item) => item.id === artist.id);
+                  return (
+                    <button
+                      key={artist.id}
+                      type="button"
+                      className={cn("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-muted", selected && "bg-primary/10 text-primary")}
+                      onClick={() => setArtists((current) => selected ? current.filter((item) => item.id !== artist.id) : [...current, { id: artist.id, name: artist.name }])}
+                    >
+                      <span>{artist.name}</span>
+                      <span>{selected ? "已选" : "选择"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            {artists.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {artists.map((artist) => (
+                  <button
+                    key={artist.id}
+                    type="button"
+                    className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary"
+                    onClick={() => setArtists((current) => current.filter((item) => item.id !== artist.id))}
+                    title="移除歌手筛选"
+                  >
+                    {artist.name} ×
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">热度筛选</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([0, 1_000, 10_000, 100_000] as const).map((value) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={minPopularity === value ? "default" : "outline"}
+                  onClick={() => setMinPopularity(value)}
+                >
+                  {value === 0 ? "不限" : `${value}+`}
+                </Button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
+          </div>
+          {!playlist && artists.length === 0 ? (
+            <p className="rounded border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+              未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <Button size="sm" className="w-full" onClick={() => void save()}>
+        保存题目设置
+      </Button>
+    </div>
+  );
+}
+
+function SongGameSettings({
+  snapshot,
+  run,
+}: {
+  snapshot: SongGuessrRoomSnapshot;
+  run: SongGameAreaProps["run"];
+}) {
+  const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
+  const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
+  const [showGuessTimer, setShowGuessTimer] = useState(snapshot.settings.showGuessTimer);
+  const [lyricsLineCount, setLyricsLineCount] = useState(snapshot.settings.lyricsLineCount);
+  const [maxGuesses, setMaxGuesses] = useState(snapshot.settings.maxGuessesPerRound);
+  const [guessDuration, setGuessDuration] = useState(snapshot.settings.guessDurationSeconds);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs">显示歌词</Label>
+            <p className="mt-1 text-[11px] text-muted-foreground">关闭后只播放音乐，不显示歌词提示。</p>
+          </div>
+          <Switch checked={showLyrics} onCheckedChange={setShowLyrics} />
+        </div>
+        {showLyrics ? (
+          <CountStepper
+            label="歌词行数"
+            value={lyricsLineCount}
+            minimum={1}
+            maximum={10}
+            onChange={setLyricsLineCount}
+          />
+        ) : null}
+      </div>
+      <CountStepper
+        label="猜测次数"
+        value={maxGuesses}
+        minimum={1}
+        maximum={10}
+        onChange={setMaxGuesses}
+      />
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs">猜测时限</Label>
+            <p className="mt-1 text-[11px] text-muted-foreground">关闭后本轮不会倒计时。</p>
+          </div>
+          <Switch checked={showGuessTimer} onCheckedChange={setShowGuessTimer} />
+        </div>
+        {showGuessTimer ? (
+          <CountStepper
+            label="每次猜测时限"
+            value={guessDuration}
+            minimum={10}
+            maximum={180}
+            step={10}
+            onChange={setGuessDuration}
+          />
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs">血战模式</Label>
+          <p className="mt-1 text-[11px] text-muted-foreground">首位答对获得正式玩家数分，之后每位答对者依次少 1 分。</p>
+        </div>
+        <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
+      </div>
+      <Button
+        size="sm"
+        className="w-full"
+        onClick={() => void run(
+          "song.room.updateSettings",
+          {
+            lyricsLineCount,
+            showLyrics,
+            maxGuessesPerRound: maxGuesses,
+            guessDurationSeconds: guessDuration,
+            showGuessTimer,
+            bloodMode,
+          },
+          "猜测设置已保存",
+        )}
+      >
+        保存设置
+      </Button>
+    </div>
+  );
+}
+
+function SongRoomSettings({
   snapshot,
   run,
 }: {
@@ -1242,10 +1623,6 @@ function SongInlineSettings({
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
-  const [lyricsLineCount, setLyricsLineCount] = useState(snapshot.settings.lyricsLineCount);
-  const [maxGuesses, setMaxGuesses] = useState(snapshot.settings.maxGuessesPerRound);
-  const [guessDuration, setGuessDuration] = useState(snapshot.settings.guessDurationSeconds);
-  const [endOnFirstCorrect, setEndOnFirstCorrect] = useState(snapshot.settings.endOnFirstCorrect);
 
   return (
     <div className="space-y-4">
@@ -1255,24 +1632,14 @@ function SongInlineSettings({
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {isPrivate ? (
-            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-          ) : (
-            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-          )}
+          {isPrivate ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
           <Label className="text-xs">私密房间</Label>
         </div>
         <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
       </div>
       <AnimatePresence initial={false}>
         {isPrivate ? (
-          <motion.div
-            variants={collapsible}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden"
-          >
+          <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
             <div className="space-y-1.5 pt-1">
               <Label className="text-xs">密码</Label>
               <Input
@@ -1293,39 +1660,6 @@ function SongInlineSettings({
         </div>
         <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
       </div>
-      <CountStepper
-        label="歌词行数"
-        value={lyricsLineCount}
-        minimum={1}
-        maximum={10}
-        suffix="行"
-        onChange={setLyricsLineCount}
-      />
-      <CountStepper
-        label="每人猜测次数"
-        value={maxGuesses}
-        minimum={1}
-        maximum={10}
-        suffix="次"
-        onChange={setMaxGuesses}
-      />
-      <div className="space-y-1.5">
-        <Label className="text-xs">每次猜测时限（10–180 秒）</Label>
-        <Input
-          type="number"
-          min={10}
-          max={180}
-          value={guessDuration}
-          onChange={(event) => {
-            setGuessDuration(Math.max(10, Math.min(180, Number(event.target.value) || 10)));
-          }}
-          className="h-9"
-        />
-      </div>
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">首位猜对后立即结算</Label>
-        <Switch checked={endOnFirstCorrect} onCheckedChange={setEndOnFirstCorrect} />
-      </div>
       <Button
         size="sm"
         className="w-full"
@@ -1336,15 +1670,11 @@ function SongInlineSettings({
             visibility: isPrivate ? "private" : "public",
             password: isPrivate ? password || undefined : "",
             allowSpectators,
-            lyricsLineCount,
-            maxGuessesPerRound: maxGuesses,
-            guessDurationSeconds: guessDuration,
-            endOnFirstCorrect,
           },
-          "游戏设置已保存",
+          "房间设置已保存",
         )}
       >
-        保存设置
+        保存房间设置
       </Button>
     </div>
   );
@@ -1355,16 +1685,30 @@ function CountStepper({
   value,
   minimum,
   maximum,
-  suffix,
+  step = 1,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: number;
   minimum: number;
   maximum: number;
-  suffix: string;
+  step?: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  const commit = (raw: string) => {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.max(minimum, Math.min(maximum, Math.round(parsed)));
+    setDraft(String(next));
+    onChange(next);
+  };
+
   return (
     <div className="flex items-center justify-between">
       <Label className="text-xs">{label}</Label>
@@ -1372,20 +1716,36 @@ function CountStepper({
         <Button
           variant="outline"
           size="icon"
-          className="h-7 w-7"
-          onClick={() => onChange(Math.max(minimum, value - 1))}
-          disabled={value <= minimum}
+          className="h-9 w-9"
+          onClick={() => commit(String(Math.max(minimum, value - step)))}
+          disabled={disabled || value <= minimum}
           aria-label={`减少${label}`}
         >
           <Minus className="h-3 w-3" />
         </Button>
-        <span className="w-12 text-center text-sm font-medium tabular-nums">{value} {suffix}</span>
+        <Input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={draft}
+          disabled={disabled}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (event.target.value !== "") commit(event.target.value);
+          }}
+          onBlur={() => commit(draft)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit(draft);
+          }}
+          aria-label={label}
+          className="h-9 w-16 bg-muted/30 px-1 text-center text-base font-medium tabular-nums shadow-inner"
+        />
         <Button
           variant="outline"
           size="icon"
-          className="h-7 w-7"
-          onClick={() => onChange(Math.min(maximum, value + 1))}
-          disabled={value >= maximum}
+          className="h-9 w-9"
+          onClick={() => commit(String(Math.min(maximum, value + step)))}
+          disabled={disabled || value >= maximum}
           aria-label={`增加${label}`}
         >
           <Plus className="h-3 w-3" />
@@ -1397,11 +1757,13 @@ function CountStepper({
 
 function SongSettingsPreview({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
   const items = [
+    snapshot.settings.questionMode === "automatic" ? "自动出题" : "手动出题",
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-    `${snapshot.settings.lyricsLineCount} 行歌词`,
+    snapshot.settings.showLyrics ? `${snapshot.settings.lyricsLineCount} 行歌词` : "歌词已关闭",
     `每人 ${snapshot.settings.maxGuessesPerRound} 次猜测`,
-    `每次 ${snapshot.settings.guessDurationSeconds} 秒`,
+    snapshot.settings.showGuessTimer ? `每次 ${snapshot.settings.guessDurationSeconds} 秒` : "猜测时限已关闭",
+    snapshot.settings.bloodMode ? "血战模式" : "普通模式",
   ];
   return (
     <div className="flex flex-wrap justify-center gap-2">
@@ -1410,6 +1772,21 @@ function SongSettingsPreview({ snapshot }: { snapshot: SongGuessrRoomSnapshot })
           {item}
         </span>
       ))}
+    </div>
+  );
+}
+
+function SongAutoFilterSummary({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
+  const filters = snapshot.settings.autoFilters;
+  const popularityLabel = filters.minPopularity === 0
+    ? "不限热度"
+    : `热度 ≥ ${filters.minPopularity >= 100_000 ? "100000" : filters.minPopularity}`;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+      <span className="font-medium text-primary">自动出题筛选</span>
+      {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
+      {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
+      <Badge variant="outline">{popularityLabel}</Badge>
     </div>
   );
 }
@@ -1423,48 +1800,47 @@ function VolumeControl({
 }) {
   const percentage = Math.round(volume * 100);
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9"
-          aria-label="音量设置"
-        >
-          <Volume2 className="h-5 w-5" />
-        </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side="bottom" align="end" sideOffset={6} collisionPadding={12} asChild>
-          <motion.div
-            variants={popover}
-            initial="initial"
-            animate="animate"
-            className="z-[80] w-64 rounded-md border bg-background/95 p-4 shadow-md backdrop-blur-md"
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Volume2 className="h-4 w-4 text-muted-foreground" />
-                播放音量
-              </div>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {percentage}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={(event) => onVolumeChange(Number(event.target.value))}
-              className="h-2 w-full cursor-pointer accent-primary"
-              aria-label="播放音量"
-            />
-          </motion.div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <motion.div
+      layout
+      className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel px-2.5 py-1.5 shadow-sm"
+      title={`播放音量 ${percentage}%`}
+    >
+      <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="relative h-4 w-20 sm:w-28">
+        <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-muted" />
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-primary"
+          animate={{ width: `${Math.max(0, Math.min(1, volume)) * 100}%` }}
+          transition={spring.settle}
+        />
+        <motion.span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm"
+          animate={{ left: `${Math.max(0, Math.min(1, volume)) * 100}%` }}
+          transition={spring.settle}
+        />
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
+          onChange={(event) => onVolumeChange(Number(event.target.value))}
+          className="absolute inset-0 h-4 w-full cursor-pointer opacity-0"
+          aria-label="播放音量"
+        />
+      </div>
+      <motion.span
+        key={percentage}
+        initial={{ opacity: 0.5, y: 2, scale: 0.92 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={spring.snap}
+        className="min-w-10 text-right text-sm font-semibold tabular-nums text-foreground"
+      >
+        {percentage}%
+      </motion.span>
+    </motion.div>
   );
 }
 

@@ -53,10 +53,15 @@ const snapshot: SongGuessrRoomSnapshot = {
   musicAccountReady: false,
   hostPlayerId: "player-1",
   settings: {
+    questionType: "song",
+    questionMode: "manual",
+    autoFilters: { artists: [], minPopularity: 0 },
     lyricsLineCount: 4,
-    endOnFirstCorrect: false,
+    showLyrics: true,
+    bloodMode: false,
     maxGuessesPerRound: 5,
     guessDurationSeconds: 60,
+    showGuessTimer: true,
   },
   phase: "waiting",
   roundNumber: 0,
@@ -75,7 +80,7 @@ const privateState: SongGuessrPrivateState = {
   visibleAttempts: [],
 };
 
-describe("Song Guessr store integration", () => {
+describe("Songuessr store integration", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.sessionStorage.clear();
@@ -91,7 +96,7 @@ describe("Song Guessr store integration", () => {
     vi.useRealTimers();
   });
 
-  it("persists created room sessions in the Song Guessr namespace", async () => {
+  it("persists created room sessions in the Songuessr namespace", async () => {
     wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
 
     await useSongGuessrStore.getState().createRoom({
@@ -154,7 +159,7 @@ describe("Song Guessr store integration", () => {
     });
   });
 
-  it("clears only the Song Guessr token after a stale reconnect", async () => {
+  it("clears only the Songuessr token after a stale reconnect", async () => {
     saveSongGuessrSessionToken("2345", "stale-song-token");
     saveSessionToken("2345", "live-faker-token");
     wsMock.send.mockRejectedValue({ code: "SESSION_NOT_FOUND" });

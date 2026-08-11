@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Music2, Search } from "lucide-react";
+import { LoaderCircle, Music2, Search, X } from "lucide-react";
 import type { SongSearchResult } from "@/types";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -84,13 +77,26 @@ export function SongSearchDialog({
     }
   };
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
+    <section className="mt-4 space-y-3 rounded-md border bg-background/80 p-4 shadow-sm" aria-label={title}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={() => handleOpenChange(false)}
+          aria-label="关闭搜索"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -110,7 +116,7 @@ export function SongSearchDialog({
           />
         </div>
 
-        <ScrollArea className="h-[min(55vh,28rem)] rounded-lg border bg-muted/25">
+      <ScrollArea className="h-[min(45vh,24rem)] rounded-lg border bg-muted/25">
           <div className="space-y-2 p-3">
             {searching ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -135,7 +141,14 @@ export function SongSearchDialog({
                     </div>
                   )}
                   <div className="min-w-0 flex-1 break-words">
-                    <div className="font-medium">{song.title}</div>
+                    <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                      <span>{song.title}</span>
+                      {song.requiresVip ? (
+                        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          会员专享
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {song.artist}{song.album ? ` · ${song.album}` : ""}
                     </div>
@@ -163,8 +176,7 @@ export function SongSearchDialog({
               </div>
             )}
           </div>
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+      </ScrollArea>
+    </section>
   );
 }

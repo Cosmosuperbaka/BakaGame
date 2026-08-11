@@ -59,27 +59,27 @@ describe("application routing regressions", () => {
     expect(window.location.pathname).toBe("/whoisfaker/room/AbCd");
   });
 
-  it("mounts the Song Guessr lobby", async () => {
-    window.history.replaceState({}, "", "/songguessr");
+  it("mounts the Songuessr lobby", async () => {
+    window.history.replaceState({}, "", "/songuessr");
     render(<App />);
 
     expect(await screen.findByText("song-lobby")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/songguessr");
+    expect(window.location.pathname).toBe("/songuessr");
   });
 
-  it("keeps valid Song Guessr room routes mounted", async () => {
-    window.history.replaceState({}, "", "/songguessr/room/1234");
+  it("keeps valid Songuessr room routes mounted", async () => {
+    window.history.replaceState({}, "", "/songuessr/room/1234");
     render(<App />);
 
     expect(await screen.findByText("song-room")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/songguessr/room/1234");
+    expect(window.location.pathname).toBe("/songuessr/room/1234");
   });
 
-  it("redirects an invalid Song Guessr sub-route to its lobby", async () => {
-    window.history.replaceState({}, "", "/songguessr/not-a-room");
+  it("redirects an invalid Songuessr sub-route to its lobby", async () => {
+    window.history.replaceState({}, "", "/songuessr/not-a-room");
     render(<App />);
 
     expect(await screen.findByText("song-lobby")).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe("/songguessr"));
+    await waitFor(() => expect(window.location.pathname).toBe("/songuessr"));
   });
 });

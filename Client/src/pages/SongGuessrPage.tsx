@@ -71,7 +71,7 @@ export default function SongGuessrPage() {
       }
       const reconnected = await reconnectRoom(room.roomId);
       if (reconnected) {
-        navigate(`/songguessr/room/${room.roomId}`);
+        navigate(`/songuessr/room/${room.roomId}`);
         return;
       }
       if (room.hasPassword) {
@@ -80,7 +80,7 @@ export default function SongGuessrPage() {
       } else {
         try {
           await joinRoom(room.roomId, userName.trim());
-          navigate(`/songguessr/room/${room.roomId}`);
+          navigate(`/songuessr/room/${room.roomId}`);
         } catch (error) {
           setNotice((error as { message: string }).message, "error");
         }
@@ -94,7 +94,7 @@ export default function SongGuessrPage() {
     try {
       await joinRoom(joinTarget.roomId, userName.trim(), joinPassword);
       setJoinTarget(null);
-      navigate(`/songguessr/room/${joinTarget.roomId}`);
+      navigate(`/songuessr/room/${joinTarget.roomId}`);
     } catch (error) {
       setNotice((error as { message: string }).message, "error");
     }
@@ -115,7 +115,7 @@ export default function SongGuessrPage() {
               返回主页
             </Button>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Song Guessr</h1>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Songuessr</h1>
         </div>
       </header>
 
@@ -245,7 +245,7 @@ export default function SongGuessrPage() {
               userName: userName.trim(),
             });
             setCreateOpen(false);
-            navigate(`/songguessr/room/${generatedRoomId}`);
+            navigate(`/songuessr/room/${generatedRoomId}`);
           } catch (error) {
             setNotice((error as { message: string }).message, "error");
           }

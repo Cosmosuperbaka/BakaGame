@@ -69,10 +69,10 @@ const GAMES: GameEntry[] = [
     available: true,
   },
   {
-    id: "songguessr",
-    path: "/songguessr",
+    id: "songuessr",
+    path: "/songuessr",
     icon: "/assets/SongGuessr.gif",
-    title: "Song Guessr",
+    title: "Songuessr",
     available: true,
   },
   {

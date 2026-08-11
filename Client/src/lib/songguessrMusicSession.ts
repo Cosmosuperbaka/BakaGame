@@ -1,9 +1,9 @@
 import type { SongGuessrMusicAccount } from "@/types";
 
-const LOCAL_KEY = "songguessr_netease_session_v1";
-const SESSION_KEY = "songguessr_netease_session_v1_session";
+const LOCAL_KEY = "songuessr_netease_session_v1";
+const SESSION_KEY = "songuessr_netease_session_v1_session";
 
-export const SONG_MUSIC_SESSION_CHANGED = "songguessr-music-session-changed";
+export const SONG_MUSIC_SESSION_CHANGED = "songuessr-music-session-changed";
 
 export interface StoredSongMusicSession {
   cookie: string;
