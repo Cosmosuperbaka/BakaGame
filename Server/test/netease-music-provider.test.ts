@@ -109,8 +109,9 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       randomCNIP: false,
       loadApi: async () => ({
-        login_qr_key: async () => {
+        login_qr_key: async (params: Record<string, unknown>) => {
           calls.push("login_qr_key");
+          expect(params.cookie).toEqual({});
           return { body: { data: { code: 200, unikey: "qr-key" } } };
         },
         login_qr_create: async (params: Record<string, unknown>) => {
@@ -219,7 +220,7 @@ describe("NeteaseMusicProvider", () => {
     });
   });
 
-  test("登录请求显式传递随机中国 IP 并保留网易云安全验证地址", async () => {
+  test("登录请求显式传递随机中国 IP 并且不向客户端返回拦截提醒链接", async () => {
     let loginParams: Record<string, unknown> | undefined;
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({
@@ -241,19 +242,44 @@ describe("NeteaseMusicProvider", () => {
       code: "MUSIC_LOGIN_RISK",
       details: {
         upstreamCode: 8810,
-        redirectUrl: "https://y.music.163.com/g/yida/example",
       },
     });
     expect(loginParams?.randomCNIP).toBe(true);
     expect(loginParams?.realIP).toMatch(/^116\.(2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
+    expect(loginParams?.cookie).toEqual({});
     expect(loginParams?.password).toBe("secret");
+  });
+
+  test("旧版验证码接口返回错误时会回退到 v1 接口", async () => {
+    const calls: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      randomCNIP: false,
+      loadApi: async () => ({
+        captcha_sent: async () => {
+          calls.push("captcha_sent");
+          return { body: { code: 400, message: "旧接口不可用" } };
+        },
+        captcha_sent_v1: async (params: Record<string, unknown>) => {
+          calls.push("captcha_sent_v1");
+          expect(params.cookie).toEqual({});
+          return { body: { code: 200 } };
+        },
+      }),
+    });
+
+    await expect(provider.sendPhoneCaptcha("13800000000", "86")).resolves.toBeUndefined();
+    expect(calls).toEqual(["captcha_sent", "captcha_sent_v1"]);
   });
 
   test("匿名令牌只用于后端请求参数，不会作为登录结果返回", async () => {
     const observed: Record<string, unknown>[] = [];
+    let registerParams: Record<string, unknown> | undefined;
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({
-        register_anonimous: async () => ({ cookie: ["MUSIC_A=anonymous-only"] }),
+        register_anonimous: async (params: Record<string, unknown>) => {
+          registerParams = params;
+          return { cookie: ["MUSIC_A=anonymous-only"] };
+        },
         cloudsearch: async (params: Record<string, unknown>) => {
           observed.push(params);
           return { body: { result: { songs: [] } } };
@@ -262,6 +288,7 @@ describe("NeteaseMusicProvider", () => {
     });
 
     await expect(provider.search("test")).resolves.toEqual([]);
+    expect(registerParams?.cookie).toEqual({});
     expect(observed[0]?.cookie).toBe("MUSIC_A=anonymous-only");
   });
 
