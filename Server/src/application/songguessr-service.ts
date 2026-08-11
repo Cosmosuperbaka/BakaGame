@@ -23,22 +23,30 @@ import type {
   SongGuessrRoundSummary,
   SongGuessrScore,
   SongGuessrSettings,
-  SongLyricClip,
+  SongAutoFilters,
   SongSearchResult,
+  SongLyricClip,
 } from "../shared";
 import { createEvent } from "../transport/protocol";
 import { ConnectionRegistry } from "./connection-registry";
 
 const DEFAULT_SETTINGS: SongGuessrSettings = {
+  questionType: "song",
+  questionMode: "manual",
+  autoFilters: { artists: [], minPopularity: 0 },
   lyricsLineCount: 5,
-  endOnFirstCorrect: false,
+  showLyrics: true,
+  bloodMode: false,
   maxGuessesPerRound: 3,
   guessDurationSeconds: 60,
+  showGuessTimer: true,
 };
 
+/** 未配置歌单或歌手时使用网易云热歌榜作为默认题库。 */
+const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
+
 const SCORING = {
-  correct: 10,
-  firstCorrect: 5,
+  correct: 1,
   submitterPerCorrect: 3,
   submitterNobodyCorrect: 5,
 } as const;
@@ -57,7 +65,6 @@ interface SongGuessrPlayerRecord {
   joinedAt: number;
   lastSeenAt: number;
   connectionId?: string;
-  phoneCaptchaSentAt?: number;
 }
 
 interface SongGuessrRoundPlayerState {
@@ -97,6 +104,7 @@ interface SongGuessrRoomRecord {
   musicSession?: {
     ownerPlayerId: string;
     cookie: string;
+    account: MusicLoginSession["account"];
   };
   players: Record<string, SongGuessrPlayerRecord>;
   chat: ChatMessage[];
@@ -114,6 +122,15 @@ export interface SongGuessrServiceOptions {
 
 const clampInt = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Math.round(value)));
+
+const cloneSettings = (settings: SongGuessrSettings): SongGuessrSettings => ({
+  ...settings,
+  autoFilters: {
+    ...settings.autoFilters,
+    playlist: settings.autoFilters.playlist ? { ...settings.autoFilters.playlist } : undefined,
+    artists: settings.autoFilters.artists.map((artist) => ({ ...artist })),
+  },
+});
 
 const normalizeSongText = (value: string) =>
   value
@@ -229,26 +246,16 @@ export class SongGuessrService {
         return this.createMusicQrLogin(connection);
       case "song.auth.qr.check":
         return this.checkMusicQrLogin(connection, message.payload.key);
-      case "song.auth.phone.sendCaptcha":
-        return this.sendMusicPhoneCaptcha(
-          connection,
-          message.payload.phone,
-          message.payload.countryCode,
-        );
-      case "song.auth.phone.login":
-        return this.loginMusicWithPhone(connection, message.payload);
-      case "song.auth.email.login":
-        return this.loginMusicWithEmail(
-          connection,
-          message.payload.email,
-          message.payload.password,
-        );
       case "song.auth.useCookie":
         return this.useMusicCookie(connection, message.payload.cookie);
       case "song.auth.clear":
         return this.clearMusicAccount(connection);
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
+      case "song.music.playlist.resolve":
+        return this.resolvePlaylist(connection, message.payload.value);
+      case "song.music.artist.search":
+        return this.searchArtists(connection, message.payload.keyword);
       case "song.game.start":
         return this.startGame(connection);
       case "song.game.chooseSubmitter":
@@ -324,7 +331,7 @@ export class SongGuessrService {
       password: payload.visibility === "private" ? this.requirePassword(payload.password) : undefined,
       allowSpectators: payload.allowSpectators,
       hostPlayerId: player.id,
-      settings: { ...DEFAULT_SETTINGS },
+      settings: cloneSettings(DEFAULT_SETTINGS),
       phase: "waiting",
       roundNumber: 0,
       players: { [player.id]: player },
@@ -477,8 +484,24 @@ export class SongGuessrService {
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
     }
 
+    if (payload.questionType !== undefined) {
+      if (payload.questionType === "anime") {
+        throw new AppError("FEATURE_NOT_AVAILABLE", "听歌识番即将推出");
+      }
+      room.settings.questionType = payload.questionType;
+    }
+    if (payload.questionMode !== undefined) {
+      room.settings.questionMode = payload.questionMode;
+    }
+    if (payload.autoFilters !== undefined) {
+      room.settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
+    }
+
     if (payload.lyricsLineCount !== undefined) {
       room.settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
+    }
+    if (payload.showLyrics !== undefined) {
+      room.settings.showLyrics = payload.showLyrics;
     }
     if (payload.maxGuessesPerRound !== undefined) {
       room.settings.maxGuessesPerRound = clampInt(payload.maxGuessesPerRound, 1, 10);
@@ -486,8 +509,11 @@ export class SongGuessrService {
     if (payload.guessDurationSeconds !== undefined) {
       room.settings.guessDurationSeconds = clampInt(payload.guessDurationSeconds, 10, 180);
     }
-    if (payload.endOnFirstCorrect !== undefined) {
-      room.settings.endOnFirstCorrect = payload.endOnFirstCorrect;
+    if (payload.showGuessTimer !== undefined) {
+      room.settings.showGuessTimer = payload.showGuessTimer;
+    }
+    if (payload.bloodMode !== undefined) {
+      room.settings.bloodMode = payload.bloodMode;
     }
 
     this.touch(room);
@@ -520,6 +546,50 @@ export class SongGuessrService {
         room.musicSession?.cookie,
       ),
     };
+  }
+
+  private async resolvePlaylist(connection: ConnectionRecord, value: string) {
+    const { room } = this.requireRoomPlayer(connection);
+    const playlistId = this.parsePlaylistId(value);
+    const resolve = this.options.musicProvider.getPlaylistSongs;
+    if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
+    const result = await resolve.call(this.options.musicProvider, playlistId, room.musicSession?.cookie);
+    return { playlist: result.info };
+  }
+
+  private async searchArtists(connection: ConnectionRecord, keyword: string) {
+    const { room } = this.requireRoomPlayer(connection);
+    const search = this.options.musicProvider.searchArtists;
+    if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
+    return {
+      results: await search.call(this.options.musicProvider, keyword, 20, room.musicSession?.cookie),
+    };
+  }
+
+  private parsePlaylistId(value: string): string {
+    const trimmed = value.trim();
+    const match = trimmed.match(/(?:[?&]id=|\/playlist\?id=|playlist\/)(\d+)/i) ?? trimmed.match(/^(\d+)$/);
+    const id = match?.[1];
+    if (!id) throw new AppError("INVALID_PLAYLIST", "请输入网易云歌单链接或数字 ID");
+    return id;
+  }
+
+  private normalizeAutoFilters(filters: SongAutoFilters): SongAutoFilters {
+    const playlist = filters.playlist
+      ? {
+          id: this.parsePlaylistId(filters.playlist.id),
+          name: filters.playlist.name?.trim().slice(0, 120),
+          songCount: filters.playlist.songCount,
+        }
+      : undefined;
+    const artists = filters.artists
+      .slice(0, 20)
+      .map((artist) => ({ id: artist.id.trim().slice(0, 64), name: normalizeWord(artist.name).slice(0, 80) }))
+      .filter((artist) => artist.id && artist.name);
+    const minPopularity = [0, 1_000, 10_000, 100_000].includes(filters.minPopularity)
+      ? filters.minPopularity
+      : 0;
+    return { playlist, artists, minPopularity };
   }
 
   private kick(connection: ConnectionRecord, targetPlayerId: string) {
@@ -614,79 +684,6 @@ export class SongGuessrService {
     };
   }
 
-  private async sendMusicPhoneCaptcha(
-    connection: ConnectionRecord,
-    phoneValue: string,
-    countryCodeValue?: string,
-  ) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
-    const phone = phoneValue.trim();
-    const countryCode = countryCodeValue?.trim() || "86";
-    if (!phone || phone.length > 32 || countryCode.length > 8) {
-      throw new AppError("INVALID_LOGIN", "手机号或国家区号无效");
-    }
-    const sendPhoneCaptcha = this.options.musicProvider.sendPhoneCaptcha;
-    if (!sendPhoneCaptcha) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "手机登录功能不可用");
-    const now = this.now();
-    const retryAfterMs = 60_000 - (now - (player.phoneCaptchaSentAt ?? 0));
-    if (player.phoneCaptchaSentAt !== undefined && retryAfterMs > 0) {
-      throw new AppError("CAPTCHA_RATE_LIMITED", "验证码已发送，请 60 秒后重试", { retryAfterMs });
-    }
-    await sendPhoneCaptcha.call(this.options.musicProvider, phone, countryCode);
-    player.phoneCaptchaSentAt = now;
-    return { sent: true };
-  }
-
-  private async loginMusicWithPhone(
-    connection: ConnectionRecord,
-    payload: Extract<SongGuessrClientMessage, { type: "song.auth.phone.login" }>["payload"],
-  ) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
-    const phone = payload.phone.trim();
-    const password = payload.password;
-    const captcha = payload.captcha?.trim();
-    if (!phone || phone.length > 32 || (password && password.length > 256) || (captcha && captcha.length > 16)) {
-      throw new AppError("INVALID_LOGIN", "手机登录信息无效");
-    }
-    if (Boolean(password) === Boolean(captcha)) {
-      throw new AppError("INVALID_LOGIN", "密码和验证码必须且只能填写一项");
-    }
-    const loginWithPhone = this.options.musicProvider.loginWithPhone;
-    if (!loginWithPhone) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "手机登录功能不可用");
-    const result = await loginWithPhone.call(this.options.musicProvider, {
-      phone,
-      countryCode: payload.countryCode?.trim() || "86",
-      password,
-      captcha,
-    });
-    const session = this.installMusicSession(room, player.id, result);
-    this.touch(room);
-    this.publishRoom(room);
-    return session;
-  }
-
-  private async loginMusicWithEmail(
-    connection: ConnectionRecord,
-    emailValue: string,
-    password: string,
-  ) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
-    const email = emailValue.trim();
-    if (!email || email.length > 254 || !password || password.length > 256) {
-      throw new AppError("INVALID_LOGIN", "邮箱登录信息无效");
-    }
-    const loginWithEmail = this.options.musicProvider.loginWithEmail;
-    if (!loginWithEmail) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "邮箱登录功能不可用");
-    const result = await loginWithEmail.call(this.options.musicProvider, email, password);
-    const session = this.installMusicSession(room, player.id, result);
-    this.touch(room);
-    this.publishRoom(room);
-    return session;
-  }
-
   private async useMusicCookie(connection: ConnectionRecord, cookieValue: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -720,9 +717,12 @@ export class SongGuessrService {
       userId: session.account.userId?.slice(0, 64),
       nickname: session.account.nickname.slice(0, 80) || "网易云用户",
       avatarUrl: session.account.avatarUrl?.slice(0, 2_048),
+      vipStatus: session.account.vipStatus,
+      vipType: session.account.vipType,
+      vipExpireTime: session.account.vipExpireTime,
     };
-    // 房间内只暂存调用音乐接口所需的 Cookie，不保留账号资料或登录凭据。
-    room.musicSession = { ownerPlayerId, cookie };
+    // 房间内只暂存调用音乐接口所需的 Cookie 和会员判定所需的最小账号状态，不做持久化保存。
+    room.musicSession = { ownerPlayerId, cookie, account };
     return { cookie, account };
   }
 
@@ -777,11 +777,28 @@ export class SongGuessrService {
     return { removedPlayerIds: bots.map((bot) => bot.id) };
   }
 
-  private startGame(connection: ConnectionRecord) {
+  private async startGame(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "waiting") {
       throw new AppError("INVALID_PHASE", "当前不能开始新游戏");
+    }
+
+    if (!room.musicSession) {
+      throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录网易云账号");
+    }
+    const getLoginStatus = this.options.musicProvider.getLoginStatus;
+    if (!getLoginStatus) {
+      throw new AppError("MUSIC_AUTH_UNAVAILABLE", "网易云登录状态校验不可用");
+    }
+    try {
+      const session = await getLoginStatus.call(this.options.musicProvider, room.musicSession.cookie);
+      room.musicSession.account = session.account;
+    } catch (error) {
+      this.clearMusicSession(room);
+      this.publishRoom(room);
+      if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") throw error;
+      throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效，请重新扫码登录");
     }
 
     const activePlayers = this.activePlayers(room);
@@ -790,10 +807,14 @@ export class SongGuessrService {
       throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
     }
 
-    room.phase = "choosingSubmitter";
     room.pendingSubmitterPlayerId = undefined;
     room.currentRound = undefined;
     room.roundSummary = undefined;
+    if (room.settings.questionMode === "automatic") {
+      await this.startAutomaticRound(room);
+    } else {
+      room.phase = "choosingSubmitter";
+    }
     room.finalScores = undefined;
     this.touch(room);
     this.publishRoom(room);
@@ -827,9 +848,25 @@ export class SongGuessrService {
     }
 
     const song = await this.options.musicProvider.getSong(songId, room.musicSession?.cookie);
+    if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) {
+      throw new AppError("MUSIC_VIP_REQUIRED", "当前网易云账号不是会员，无法选择会员专享歌曲");
+    }
+    const roundNumber = this.installRound(room, song, player.id);
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+
+    if (this.isRoundComplete(room)) {
+      this.finishRound(room);
+      this.publishRoom(room);
+    }
+    return { roundNumber };
+  }
+
+  private installRound(room: SongGuessrRoomRecord, song: SongDetails, submitterPlayerId: string): number {
     const lyricClip = createSongLyricClip(song.lyrics, room.settings.lyricsLineCount, this.random);
     const roundNumber = room.roundNumber + 1;
-    const roundSettings = { ...room.settings };
+    const roundSettings = cloneSettings(room.settings);
     const participantStates = Object.fromEntries(
       this.activePlayers(room).map((candidate) => [
         candidate.id,
@@ -844,7 +881,7 @@ export class SongGuessrService {
     room.roundNumber = roundNumber;
     room.currentRound = {
       number: roundNumber,
-      submitterPlayerId: player.id,
+      submitterPlayerId,
       song,
       lyricClip,
       attempts: [],
@@ -855,15 +892,68 @@ export class SongGuessrService {
     };
     room.pendingSubmitterPlayerId = undefined;
     room.phase = "playing";
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    return roundNumber;
+  }
 
-    if (this.isRoundComplete(room)) {
-      this.finishRound(room);
-      this.publishRoom(room);
+  private async startAutomaticRound(room: SongGuessrRoomRecord): Promise<void> {
+    const candidates = await this.resolveAutomaticCandidates(room);
+    if (candidates.length === 0) {
+      throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
     }
-    return { roundNumber };
+    const pool = [...candidates];
+    while (pool.length > 0) {
+      const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
+      if (room.musicSession?.account.vipStatus === "nonVip" && selected.requiresVip) continue;
+      const song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
+      if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
+      this.installRound(room, song, "");
+      return;
+    }
+    throw new AppError("MUSIC_VIP_REQUIRED", "筛选结果全部为会员歌曲，当前账号无法开始");
+  }
+
+  private async resolveAutomaticCandidates(room: SongGuessrRoomRecord): Promise<SongSearchResult[]> {
+    const filters = room.settings.autoFilters;
+    const cookie = room.musicSession?.cookie;
+    const sets: SongSearchResult[][] = [];
+    if (filters.playlist && this.options.musicProvider.getPlaylistSongs) {
+      sets.push((await this.options.musicProvider.getPlaylistSongs(filters.playlist.id, cookie)).songs);
+    }
+    if (filters.artists.length > 0 && this.options.musicProvider.getArtistSongs) {
+      const artistSongs = await Promise.all(filters.artists.map((artist) =>
+        this.options.musicProvider.getArtistSongs!(artist.id, cookie)));
+      sets.push(artistSongs.flat());
+    }
+    if (sets.length === 0) {
+      if (!this.options.musicProvider.getPlaylistSongs) {
+        throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持自动题库");
+      }
+      sets.push((await this.options.musicProvider.getPlaylistSongs(
+        DEFAULT_AUTO_PLAYLIST_ID,
+        cookie,
+      )).songs);
+    }
+    const first = new Map(sets[0].map((song) => [song.id, song]));
+    for (const set of sets.slice(1)) {
+      const ids = new Set(set.map((song) => song.id));
+      for (const id of first.keys()) if (!ids.has(id)) first.delete(id);
+    }
+    const candidates = [...first.values()];
+    if (filters.minPopularity === 0) return candidates;
+    const getPopularity = this.options.musicProvider.getSongPopularity;
+    if (!getPopularity) {
+      return candidates.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
+    }
+    const enriched: SongSearchResult[] = [];
+    for (let index = 0; index < candidates.length; index += 8) {
+      const batch = candidates.slice(index, index + 8);
+      const values = await Promise.all(batch.map(async (song) => ({
+        ...song,
+        popularity: await getPopularity.call(this.options.musicProvider, song.id, cookie) ?? song.popularity,
+      })));
+      enriched.push(...values);
+    }
+    return enriched.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
   }
 
   private audioReady(connection: ConnectionRecord, roundNumber: number) {
@@ -885,7 +975,9 @@ export class SongGuessrService {
       state.guessesUsed < round.settings.maxGuessesPerRound
     ) {
       state.audioReady = true;
-      state.deadlineAt = this.now() + round.settings.guessDurationSeconds * 1_000;
+      state.deadlineAt = round.settings.showGuessTimer
+        ? this.now() + round.settings.guessDurationSeconds * 1_000
+        : undefined;
     }
     this.touch(room);
     this.publishPrivateState(room, player);
@@ -935,16 +1027,20 @@ export class SongGuessrService {
       state.correct = true;
       state.deadlineAt = undefined;
       player.correctGuesses += 1;
-      player.score += SCORING.correct;
-      if (round.correctPlayerIds.length === 0) player.score += SCORING.firstCorrect;
+      const formalPlayerCount = this.activePlayers(room).length;
+      player.score += round.settings.bloodMode
+        ? formalPlayerCount - round.correctPlayerIds.length
+        : SCORING.correct;
       round.correctPlayerIds.push(player.id);
     } else if (state.guessesUsed < round.settings.maxGuessesPerRound) {
-      state.deadlineAt = this.now() + round.settings.guessDurationSeconds * 1_000;
+      state.deadlineAt = round.settings.showGuessTimer
+        ? this.now() + round.settings.guessDurationSeconds * 1_000
+        : undefined;
     } else {
       state.deadlineAt = undefined;
     }
 
-    if ((correct && round.settings.endOnFirstCorrect) || this.isRoundComplete(room)) {
+    if (this.isRoundComplete(room)) {
       this.finishRound(room);
     }
     this.touch(room);
@@ -996,13 +1092,17 @@ export class SongGuessrService {
     return { skipped: true };
   }
 
-  private nextRound(connection: ConnectionRecord) {
+  private async nextRound(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "当前不在回合结算阶段");
-    room.phase = "choosingSubmitter";
     room.currentRound = undefined;
     room.roundSummary = undefined;
+    if (room.settings.questionMode === "automatic") {
+      await this.startAutomaticRound(room);
+    } else {
+      room.phase = "choosingSubmitter";
+    }
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -1045,7 +1145,7 @@ export class SongGuessrService {
       createdAt: this.now(),
       result: "timeout",
     });
-    state.deadlineAt = state.guessesUsed < round.settings.maxGuessesPerRound
+    state.deadlineAt = state.guessesUsed < round.settings.maxGuessesPerRound && round.settings.showGuessTimer
       ? this.now() + round.settings.guessDurationSeconds * 1_000
       : undefined;
   }
@@ -1162,7 +1262,9 @@ export class SongGuessrService {
               roundNumber: round.number,
               submitterPlayerId: round.submitterPlayerId,
               audioUrl: round.song.audioUrl,
-              lyricClip: round.lyricClip,
+              lyricClip: room.settings.showLyrics
+                ? round.lyricClip
+                : { ...round.lyricClip, lines: [] },
             }
           : undefined,
       players: Object.values(room.players)
@@ -1368,6 +1470,7 @@ export class SongGuessrService {
       album: song.album,
       pictureUrl: song.pictureUrl,
       durationMs: song.durationMs,
+      requiresVip: song.requiresVip,
     };
   }
 

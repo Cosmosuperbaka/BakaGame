@@ -28,6 +28,39 @@ describe("NeteaseMusicProvider", () => {
     ]);
   });
 
+  test("读取歌单、歌手歌曲与热度字段", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        playlist_track_all: async () => ({
+          body: {
+            playlist: { id: 42, name: "自动题库", trackCount: 2 },
+            songs: [
+              { id: 1, name: "高热度", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 100_000 },
+              { id: 2, name: "普通", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 999 },
+            ],
+          },
+        }),
+        cloudsearch: async ({ type }: { type: number }) => ({
+          body: { result: type === 100 ? { artists: [{ id: 7, name: "歌手甲" }] } : { songs: [] } },
+        }),
+        artist_songs: async () => ({
+          body: { songs: [{ id: 1, name: "高热度", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 100_000 }] },
+        }),
+        song_red_count: async () => ({ body: { code: 200, data: { count: 123_456, countDesc: "100w+" } } }),
+      }),
+    });
+
+    await expect(provider.getPlaylistSongs("42")).resolves.toMatchObject({
+      info: { id: "42", name: "自动题库", songCount: 2 },
+      songs: [{ id: "1" }, { id: "2" }],
+    });
+    await expect(provider.searchArtists("歌手甲")).resolves.toEqual([{ id: "7", name: "歌手甲" }]);
+    await expect(provider.getArtistSongs("7")).resolves.toEqual([
+      expect.objectContaining({ id: "1" }),
+    ]);
+    await expect(provider.getSongPopularity("1")).resolves.toBe(123_456);
+  });
+
   test("解析多时间戳 LRC 并补齐结束时间", () => {
     expect(parseLrc("[00:01.00][00:03.500]第一句\n[00:05.00]第二句")).toEqual([
       { time: 1_000, endTime: 3_500, text: "第一句" },
@@ -148,7 +181,7 @@ describe("NeteaseMusicProvider", () => {
       key: "qr-key",
       qrImage: "data:image/png;base64,qr",
     });
-    await expect(provider.checkQrLogin("qr-key")).resolves.toEqual({
+    await expect(provider.checkQrLogin("qr-key")).resolves.toMatchObject({
       status: "authorized",
       message: "授权登录成功",
       session: {
@@ -168,107 +201,25 @@ describe("NeteaseMusicProvider", () => {
     ]);
   });
 
-  test("手机与邮箱登录不会持久化凭据且仅返回登录 Cookie", async () => {
+  test("扫码接口被网易云风控拦截时不向客户端暴露提醒链接", async () => {
     const provider = new NeteaseMusicProvider({
-      randomCNIP: false,
       loadApi: async () => ({
-        captcha_sent: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({ phone: "13800000000", ctcode: "86", randomCNIP: false });
-          return { body: { code: 200 } };
-        },
-        login_cellphone: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({
-            phone: "13800000000",
-            countrycode: "86",
-            captcha: "123456",
-            randomCNIP: false,
-          });
-          return {
-            body: {
-              code: 200,
-              cookie: "MUSIC_U=phone-cookie",
-              profile: { userId: 1, nickname: "手机用户" },
-            },
-          };
-        },
-        login: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({
-            email: "user@example.com",
-            password: "secret password",
-            randomCNIP: false,
-          });
-          return {
-            body: {
-              code: 200,
-              cookie: "MUSIC_U=email-cookie",
-              profile: { userId: 2, nickname: "邮箱用户" },
-            },
-          };
-        },
+        login_qr_key: async () => ({
+          body: {
+            code: 8810,
+            message: "您当前的网络环境存在安全风险",
+            redirectUrl: "https://y.music.163.com/g/yida/private-risk-url",
+          },
+        }),
       }),
     });
 
-    await expect(provider.sendPhoneCaptcha("13800000000", "86")).resolves.toBeUndefined();
-    await expect(provider.loginWithPhone({
-      phone: "13800000000",
-      countryCode: "86",
-      captcha: "123456",
-    })).resolves.toMatchObject({ cookie: "MUSIC_U=phone-cookie", account: { nickname: "手机用户" } });
-    await expect(provider.loginWithEmail("user@example.com", "secret password")).resolves.toMatchObject({
-      cookie: "MUSIC_U=email-cookie",
-      account: { nickname: "邮箱用户" },
-    });
-  });
-
-  test("登录请求显式传递随机中国 IP 并且不向客户端返回拦截提醒链接", async () => {
-    let loginParams: Record<string, unknown> | undefined;
-    const provider = new NeteaseMusicProvider({
-      loadApi: async () => ({
-        login_cellphone: async (params: Record<string, unknown>) => {
-          loginParams = params;
-          return {
-            body: {
-              code: 8810,
-              message: "当前登录存在安全风险，请稍后再试",
-              redirectUrl: "https://y.music.163.com/g/yida/example",
-            },
-          };
-        },
-      }),
-    });
-
-    const result = provider.loginWithPhone({ phone: "13800000000", password: "secret" });
-    await expect(result).rejects.toMatchObject({
-      code: "MUSIC_LOGIN_RISK",
-      details: {
-        upstreamCode: 8810,
-      },
-    });
-    expect(loginParams?.randomCNIP).toBe(true);
-    expect(loginParams?.realIP).toMatch(/^116\.(2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
-    expect(loginParams?.cookie).toEqual({});
-    expect(loginParams?.password).toBe("secret");
-  });
-
-  test("旧版验证码接口返回错误时会回退到 v1 接口", async () => {
-    const calls: string[] = [];
-    const provider = new NeteaseMusicProvider({
-      randomCNIP: false,
-      loadApi: async () => ({
-        captcha_sent: async () => {
-          calls.push("captcha_sent");
-          return { body: { code: 400, message: "旧接口不可用" } };
-        },
-        captcha_sent_v1: async (params: Record<string, unknown>) => {
-          calls.push("captcha_sent_v1");
-          expect(params.cookie).toEqual({});
-          return { body: { code: 200 } };
-        },
-      }),
-    });
-
-    await expect(provider.sendPhoneCaptcha("13800000000", "86")).resolves.toBeUndefined();
-    expect(calls).toEqual(["captcha_sent", "captcha_sent_v1"]);
+    const error = await provider.createQrLogin().catch(
+      (value) => value as Error & { code?: string; details?: unknown },
+    ) as Error & { code?: string; details?: unknown };
+    expect(error).toMatchObject({ code: "MUSIC_LOGIN_RISK" });
+    expect(error.message).not.toContain("private-risk-url");
+    expect(JSON.stringify(error)).not.toContain("private-risk-url");
   });
 
   test("匿名令牌只用于后端请求参数，不会作为登录结果返回", async () => {
@@ -424,5 +375,55 @@ describe("NeteaseMusicProvider", () => {
     await expect(unavailableProvider.getSong("42")).rejects.toMatchObject({
       code: "MUSIC_API_FAILED",
     });
+  });
+
+  test("登录状态会读取会员信息，并区分会员与非会员", async () => {
+    const createProvider = (vipCode: number, expireTime: number) => new NeteaseMusicProvider({
+      randomCNIP: false,
+      loadApi: async () => ({
+        login_status: async () => ({
+          body: {
+            data: {
+              code: 200,
+              profile: { userId: 42, nickname: "会员测试" },
+            },
+          },
+        }),
+        vip_info_v2: async (params: Record<string, unknown>) => {
+          expect(params).toMatchObject({ uid: "42", cookie: "MUSIC_U=test" });
+          return {
+            body: {
+              code: 200,
+              data: { associator: { vipCode, expireTime } },
+            },
+          };
+        },
+      }),
+    });
+
+    await expect(createProvider(100, Date.now() + 60_000).getLoginStatus("MUSIC_U=test"))
+      .resolves.toMatchObject({
+        account: { vipStatus: "vip", vipType: 100 },
+      });
+    await expect(createProvider(0, Date.now() - 60_000).getLoginStatus("MUSIC_U=test"))
+      .resolves.toMatchObject({
+        account: { vipStatus: "nonVip" },
+      });
+  });
+
+  test("登录状态接口返回嵌套失效码时不会误判为已登录", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        login_status: async () => ({
+          body: {
+            code: 200,
+            data: { code: 301, profile: null, account: null },
+          },
+        }),
+      }),
+    });
+
+    await expect(provider.getLoginStatus("MUSIC_U=expired"))
+      .rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
   });
 });

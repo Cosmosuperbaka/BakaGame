@@ -13,17 +13,46 @@ export type SongGuessrPhase = (typeof SONG_GUESSR_PHASES)[number];
 
 export const SONG_GUESSR_MAX_PLAYERS = 16;
 
+export type SongQuestionType = "song" | "anime";
+export type SongQuestionMode = "manual" | "automatic";
+
+export interface SongArtistFilter {
+  id: string;
+  name: string;
+}
+
+export interface SongPlaylistFilter {
+  id: string;
+  name?: string;
+  songCount?: number;
+}
+
+export interface SongAutoFilters {
+  playlist?: SongPlaylistFilter;
+  artists: SongArtistFilter[];
+  minPopularity: 0 | 1_000 | 10_000 | 100_000;
+}
+
 export interface SongGuessrSettings {
+  questionType: SongQuestionType;
+  questionMode: SongQuestionMode;
+  autoFilters: SongAutoFilters;
   lyricsLineCount: number;
-  endOnFirstCorrect: boolean;
+  showLyrics: boolean;
+  bloodMode: boolean;
   maxGuessesPerRound: number;
   guessDurationSeconds: number;
+  showGuessTimer: boolean;
 }
 
 export interface SongGuessrMusicAccount {
   userId?: string;
   nickname: string;
   avatarUrl?: string;
+  /** 当前账号会员状态；未知表示网易云会员接口暂时不可用。 */
+  vipStatus?: "vip" | "nonVip" | "unknown";
+  vipType?: number;
+  vipExpireTime?: number;
 }
 
 export interface SongLyricLine {
@@ -45,6 +74,21 @@ export interface SongSearchResult {
   album?: string;
   pictureUrl?: string;
   durationMs?: number;
+  requiresVip?: boolean;
+  /** 网易云接口中的热度/播放热度字段；部分接口会对超大值做模糊化处理。 */
+  popularity?: number;
+}
+
+export interface SongPlaylistInfo {
+  id: string;
+  name: string;
+  songCount: number;
+}
+
+export interface SongArtistSearchResult {
+  id: string;
+  name: string;
+  avatarUrl?: string;
 }
 
 export interface SongEncyclopedia {
@@ -216,18 +260,11 @@ export type SongGuessrClientMessage =
   | SongGuessrClientEnvelope<"song.chat.send", { text: string }>
   | SongGuessrClientEnvelope<"song.auth.qr.create", Record<string, never>>
   | SongGuessrClientEnvelope<"song.auth.qr.check", { key: string }>
-  | SongGuessrClientEnvelope<
-      "song.auth.phone.sendCaptcha",
-      { phone: string; countryCode?: string }
-    >
-  | SongGuessrClientEnvelope<
-      "song.auth.phone.login",
-      { phone: string; countryCode?: string; password?: string; captcha?: string }
-    >
-  | SongGuessrClientEnvelope<"song.auth.email.login", { email: string; password: string }>
   | SongGuessrClientEnvelope<"song.auth.useCookie", { cookie: string }>
   | SongGuessrClientEnvelope<"song.auth.clear", Record<string, never>>
   | SongGuessrClientEnvelope<"song.music.search", { keyword: string }>
+  | SongGuessrClientEnvelope<"song.music.playlist.resolve", { value: string }>
+  | SongGuessrClientEnvelope<"song.music.artist.search", { keyword: string }>
   | SongGuessrClientEnvelope<"song.game.start", Record<string, never>>
   | SongGuessrClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
   | SongGuessrClientEnvelope<"song.game.submitSong", { songId: string }>

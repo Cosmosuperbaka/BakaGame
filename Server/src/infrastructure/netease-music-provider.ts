@@ -1,9 +1,11 @@
 import { AppError } from "../domain/errors";
 import type {
   SongDetails,
+  SongArtistSearchResult,
   SongEncyclopedia,
   SongGuessrMusicAccount,
   SongLyricLine,
+  SongPlaylistInfo,
   SongSearchResult,
 } from "../shared";
 
@@ -15,12 +17,13 @@ export interface MusicProvider {
   search(keyword: string, limit?: number, cookie?: string): Promise<SongSearchResult[]>;
   getSong(songId: string, cookie?: string): Promise<SongDetails>;
   getSongMetadata(songId: string, cookie?: string): Promise<SongDetails>;
+  getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
   createQrLogin?(): Promise<MusicQrLogin>;
   checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
-  sendPhoneCaptcha?(phone: string, countryCode?: string): Promise<void>;
-  loginWithPhone?(params: MusicPhoneLogin): Promise<MusicLoginSession>;
-  loginWithEmail?(email: string, password: string): Promise<MusicLoginSession>;
   getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
+  getPlaylistSongs?(playlistId: string, cookie?: string): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
+  searchArtists?(keyword: string, limit?: number, cookie?: string): Promise<SongArtistSearchResult[]>;
+  getArtistSongs?(artistId: string, cookie?: string): Promise<SongSearchResult[]>;
 }
 
 export interface NeteaseMusicProviderOptions {
@@ -32,13 +35,6 @@ export interface NeteaseMusicProviderOptions {
 export interface MusicLoginSession {
   cookie: string;
   account: SongGuessrMusicAccount;
-}
-
-export interface MusicPhoneLogin {
-  phone: string;
-  countryCode?: string;
-  password?: string;
-  captcha?: string;
 }
 
 export interface MusicQrLogin {
@@ -140,6 +136,40 @@ const readLoginAccount = (body: Record<string, unknown>): SongGuessrMusicAccount
   };
 };
 
+const readVipAccount = (
+  raw: unknown,
+  account: SongGuessrMusicAccount,
+): SongGuessrMusicAccount => {
+  const body = asRecord(raw);
+  const data = asRecord(body.data ?? raw);
+  const now = Date.now();
+  const memberships = [
+    asRecord(data.associator),
+    asRecord(data.musicPackage),
+    asRecord(data.redplus),
+    asRecord(data.albumVip),
+  ];
+  const active = memberships.filter((membership) => {
+    const code = readNumber(membership.vipCode ?? membership.vipType ?? membership.code) ?? 0;
+    const expireTime = readNumber(membership.expireTime ?? membership.expire ?? membership.endTime);
+    return code > 0 && (expireTime === undefined || expireTime > now);
+  });
+  const vipType = active
+    .map((membership) => readNumber(membership.vipCode ?? membership.vipType ?? membership.code))
+    .filter((value): value is number => value !== undefined)
+    .sort((left, right) => right - left)[0];
+  const vipExpireTime = active
+    .map((membership) => readNumber(membership.expireTime ?? membership.expire ?? membership.endTime))
+    .filter((value): value is number => value !== undefined)
+    .sort((left, right) => right - left)[0];
+  return {
+    ...account,
+    vipStatus: active.length > 0 ? "vip" : "nonVip",
+    vipType,
+    vipExpireTime,
+  };
+};
+
 const artistNames = (song: Record<string, unknown>): string => {
   const artists = asArray(song.ar ?? song.artists ?? song.artist);
   const names = artists
@@ -155,6 +185,8 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
   if (!id || !title) return undefined;
 
   const album = asRecord(song.al ?? song.album);
+  const privilege = asRecord(song.privilege);
+  const fee = readNumber(song.fee ?? privilege.fee);
   return {
     id,
     title,
@@ -162,6 +194,7 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
     album: readString(album.name),
     pictureUrl: readString(album.picUrl ?? album.pic),
     durationMs: readNumber(song.dt ?? song.duration),
+    requiresVip: fee === 1,
   };
 };
 
@@ -318,6 +351,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly randomCNIP: boolean;
   private readonly randomCNIPValue: string;
   private anonymousCookie?: string;
+  private readonly popularityCache = new Map<string, number>();
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
@@ -346,6 +380,79 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
     return this.loadSong(songId, false, cookie);
+  }
+
+  async getSongPopularity(songId: string, cookie?: string): Promise<number | undefined> {
+    const id = songId.trim();
+    if (!id) return undefined;
+    const cached = this.popularityCache.get(id);
+    if (cached !== undefined) return cached;
+    const response = await this.callOptional(["song_red_count"], { id }, cookie);
+    if (!response) return undefined;
+    const body = responseBody(response);
+    const data = asRecord(body.data);
+    const count = readNumber(data.count ?? body.count);
+    if (count !== undefined) this.popularityCache.set(id, count);
+    return count;
+  }
+
+  async getPlaylistSongs(playlistId: string, cookie?: string) {
+    const id = playlistId.trim();
+    if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
+    const response = await this.call(["playlist_track_all", "playlist_detail"], {
+      id,
+      limit: 1000,
+      offset: 0,
+    }, cookie);
+    const body = responseBody(response);
+    let playlist = asRecord(body.playlist ?? asRecord(body.data).playlist);
+    if (!readString(playlist.name)) {
+      const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
+      if (detailResponse) playlist = asRecord(responseBody(detailResponse).playlist);
+    }
+    const rawSongs = asArray(body.songs ?? playlist.tracks ?? asRecord(body.data).songs);
+    const songs = rawSongs.map(normalizeSong).filter((song): song is SongSearchResult => Boolean(song));
+    const name = readString(playlist.name) ?? `歌单 ${id}`;
+    const songCount = readNumber(playlist.trackCount ?? playlist.trackNumber ?? songs.length) ?? songs.length;
+    return { info: { id, name, songCount }, songs };
+  }
+
+  async searchArtists(keyword: string, limit = 20, cookie?: string) {
+    const normalized = keyword.trim();
+    if (!normalized) return [];
+    const response = await this.call(["cloudsearch", "search"], {
+      keywords: normalized,
+      limit: Math.max(1, Math.min(limit, 50)),
+      type: 100,
+    }, cookie);
+    const body = responseBody(response);
+    const result = asRecord(body.result);
+    return asArray(result.artists ?? result.artist)
+      .map((value): SongArtistSearchResult | undefined => {
+        const artist = asRecord(value);
+        const id = readString(artist.id);
+        const name = readString(artist.name);
+        if (!id || !name) return undefined;
+        const avatarUrl = readString(artist.picUrl ?? artist.img1v1Url);
+        return avatarUrl ? { id, name, avatarUrl } : { id, name };
+      })
+      .filter((artist): artist is SongArtistSearchResult => artist !== undefined);
+  }
+
+  async getArtistSongs(artistId: string, cookie?: string) {
+    const id = artistId.trim();
+    if (!/^\d+$/.test(id)) throw new AppError("INVALID_ARTIST", "歌手 ID 无效");
+    const response = await this.call(["artist_songs", "artist_top_song"], {
+      id,
+      limit: 1000,
+      offset: 0,
+      order: "hot",
+    }, cookie);
+    const body = responseBody(response);
+    const songs = asArray(body.songs ?? asRecord(body.data).songs ?? body.hotSongs)
+      .map(normalizeSong)
+      .filter((song): song is SongSearchResult => Boolean(song));
+    return songs;
   }
 
   async createQrLogin(): Promise<MusicQrLogin> {
@@ -397,86 +504,27 @@ export class NeteaseMusicProvider implements MusicProvider {
     return { status: "authorized", message, session };
   }
 
-  async sendPhoneCaptcha(phoneValue: string, countryCodeValue = "86"): Promise<void> {
-    const phone = phoneValue.trim();
-    const countryCode = countryCodeValue.trim() || "86";
-    if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
-    let response = await this.call(
-      ["captcha_sent"],
-      { phone, ctcode: countryCode },
-      undefined,
-      this.randomCNIP,
-      true,
-      false,
-    );
-    let body = responseBody(response);
-    if (responseCode(body) !== 200) {
-      try {
-        const fallbackResponse = await this.call(
-          ["captcha_sent_v1"],
-          { phone, ctcode: countryCode },
-          undefined,
-          this.randomCNIP,
-          true,
-          false,
-        );
-        response = fallbackResponse;
-        body = responseBody(response);
-      } catch {
-        // v1 接口不存在时继续使用首个接口的错误，避免把真实原因覆盖掉。
-      }
-    }
-    if (responseCode(body) !== 200) {
-      throw musicLoginError(body, "验证码发送失败");
-    }
-  }
-
-  async loginWithPhone(params: MusicPhoneLogin): Promise<MusicLoginSession> {
-    const phone = params.phone.trim();
-    const countryCode = params.countryCode?.trim() || "86";
-    const password = params.password;
-    const captcha = params.captcha?.trim();
-    if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
-    if (!password && !captcha) throw new AppError("INVALID_LOGIN", "请输入密码或验证码");
-    const response = await this.call(
-      ["login_cellphone"],
-      {
-        phone,
-        countrycode: countryCode,
-        ...(captcha ? { captcha } : { password }),
-      },
-      undefined,
-      this.randomCNIP,
-      true,
-      false,
-    );
-    return this.readLoginSession(response);
-  }
-
-  async loginWithEmail(emailValue: string, passwordValue: string): Promise<MusicLoginSession> {
-    const email = emailValue.trim();
-    const password = passwordValue;
-    if (!email || !password) throw new AppError("INVALID_LOGIN", "邮箱和密码不能为空");
-    const response = await this.call(
-      ["login"],
-      { email, password },
-      undefined,
-      this.randomCNIP,
-      true,
-      false,
-    );
-    return this.readLoginSession(response);
-  }
-
   async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
     const response = await this.call(["login_status"], {}, cookie, false, true, false);
     const body = responseBody(response);
-    if (responseCode(body) !== 200) {
+    const data = asRecord(body.data);
+    const profile = asRecord(body.profile ?? data.profile);
+    const account = asRecord(body.account ?? data.account);
+    const nestedCode = readNumber(data.code);
+    const userId = readString(profile.userId ?? profile.id ?? account.id ?? account.userId);
+    if (
+      responseCode(body) !== 200 ||
+      (nestedCode !== undefined && nestedCode !== 200) ||
+      !userId
+    ) {
       throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效");
     }
-    return { cookie, account: readLoginAccount(body) };
+    return {
+      cookie,
+      account: await this.enrichVipAccount(cookie, readLoginAccount(body)),
+    };
   }
 
   private async loadSong(
@@ -497,16 +545,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     const lyricPromise = includeResources
       ? this.call(["lyric_new", "lyric"], { id }, cookie)
       : Promise.resolve(undefined);
+    const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
     const urlPromise = includeResources
       // song_url_v1 在当前 API Enhanced 版本中可能因缺少 xeapi 公钥直接抛错；
       // 优先使用稳定的 song_url，并保留 v1 作为后备。
       ? this.call(["song_url", "song_url_v1"], { id, level: "standard", br: 320000 }, cookie)
       : Promise.resolve(undefined);
 
-    const [wikiResponse, lyricResponse, urlResponse] = await Promise.all([
+    const [wikiResponse, lyricResponse, urlResponse, popularity] = await Promise.all([
       wikiPromise,
       lyricPromise,
       urlPromise,
+      popularityPromise,
     ]);
 
     const songRecord = asRecord(rawSong);
@@ -532,7 +582,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       audioUrl,
       lyrics,
       releaseYear: publishTime ? new Date(publishTime).getUTCFullYear() : undefined,
-      popularity: readNumber(songRecord.pop ?? songRecord.popularity),
+      popularity: popularity ?? base.popularity ?? readNumber(songRecord.pop ?? songRecord.popularity),
       language: wiki.language,
       encyclopedia: {
         summary: wiki.summary,
@@ -615,15 +665,19 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
   }
 
-  private readLoginSession(response: ApiResponse): MusicLoginSession {
+  private async enrichVipAccount(
+    cookie: string,
+    account: SongGuessrMusicAccount,
+  ): Promise<SongGuessrMusicAccount> {
+    const response = await this.callOptional(
+      ["vip_info_v2", "vip_info"],
+      account.userId ? { uid: account.userId } : {},
+      cookie,
+    );
+    if (!response) return { ...account, vipStatus: "unknown" };
     const body = responseBody(response);
-    const code = responseCode(body);
-    if (code !== 200) {
-      throw musicLoginError(body, "网易云登录失败");
-    }
-    const cookie = responseCookie(response);
-    if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "登录成功但未取得 Cookie");
-    return { cookie, account: readLoginAccount(body) };
+    if (responseCode(body) !== 200) return { ...account, vipStatus: "unknown" };
+    return readVipAccount(body, account);
   }
 
   private withCookie(

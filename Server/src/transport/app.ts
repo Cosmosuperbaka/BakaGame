@@ -191,8 +191,8 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
         }
       },
     })
-    // Song Guessr 与 Who is Faker 共用相同封包、错误与会话约定，但状态机彼此隔离。
-    .ws("/api/songguessr/ws", {
+    // Songuessr 与 Who is Faker 共用相同封包、错误与会话约定，但状态机彼此隔离。
+    .ws("/api/songuessr/ws", {
       open(ws) {
         const connectionId = crypto.randomUUID();
         (ws.data as { connectionId?: string }).connectionId = connectionId;

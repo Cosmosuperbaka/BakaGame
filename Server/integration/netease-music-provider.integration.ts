@@ -28,3 +28,11 @@ test("真实网易云接口可以返回 HTTPS 音频、时间轴歌词并支持�
   expect(response.headers.get("access-control-allow-origin")).toBe("*");
   await response.body?.cancel();
 });
+
+test("真实网易云红心数接口返回精确 count 且 countDesc 仅用于展示", async () => {
+  const cookie = Bun.env.NETEASE_COOKIE?.trim();
+  if (!cookie) throw new Error("请先在 Server/.env 中配置 NETEASE_COOKIE 再运行真实接口测试");
+  const provider = new NeteaseMusicProvider();
+  const count = await provider.getSongPopularity("65766", cookie);
+  expect(count).toBeGreaterThan(1_000);
+});

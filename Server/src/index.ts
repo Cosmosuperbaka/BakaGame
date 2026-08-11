@@ -26,7 +26,7 @@ const intervalId = setInterval(() => {
     logger.error("房间清理任务执行失败", describeError(error));
   });
   void songGuessrService.runHousekeeping().catch((error) => {
-    logger.error("Song Guessr 房间清理任务执行失败", describeError(error));
+    logger.error("Songuessr 房间清理任务执行失败", describeError(error));
   });
 }, 10_000);
 

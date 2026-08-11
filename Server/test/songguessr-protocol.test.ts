@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { parseSongGuessrMessage } from "../src/transport/songguessr-protocol";
 
-test("Song Guessr 协议解析房间设置与游戏命令", () => {
+test("Songuessr 协议解析房间设置与游戏命令", () => {
   expect(
     parseSongGuessrMessage({
       id: "1",
@@ -11,7 +11,9 @@ test("Song Guessr 协议解析房间设置与游戏命令", () => {
       sessionToken: "token",
       payload: {
         lyricsLineCount: 7,
-        endOnFirstCorrect: true,
+        showLyrics: false,
+        bloodMode: true,
+        showGuessTimer: false,
         allowSpectators: false,
       },
     }),
@@ -20,13 +22,41 @@ test("Song Guessr 协议解析房间设置与游戏命令", () => {
     roomId: "1234",
     payload: {
       lyricsLineCount: 7,
-      endOnFirstCorrect: true,
+      showLyrics: false,
+      bloodMode: true,
+      showGuessTimer: false,
       allowSpectators: false,
     },
   });
 });
 
-test("Song Guessr 协议拒绝非法音频准备回合号", () => {
+test("Songuessr 协议解析题目设置与自动筛选", () => {
+  expect(parseSongGuessrMessage({
+    id: "question-settings",
+    type: "song.room.updateSettings",
+    payload: {
+      questionType: "song",
+      questionMode: "automatic",
+      autoFilters: {
+        playlist: { id: "123", name: "测试歌单", songCount: 10 },
+        artists: [{ id: "7", name: "测试歌手" }],
+        minPopularity: 10_000,
+      },
+    },
+  })).toMatchObject({
+    payload: {
+      questionType: "song",
+      questionMode: "automatic",
+      autoFilters: {
+        playlist: { id: "123" },
+        artists: [{ id: "7", name: "测试歌手" }],
+        minPopularity: 10_000,
+      },
+    },
+  });
+});
+
+test("Songuessr 协议拒绝非法音频准备回合号", () => {
   for (const roundNumber of ["1", 0, -1, 1.5]) {
     expect(() =>
       parseSongGuessrMessage({
@@ -38,7 +68,7 @@ test("Song Guessr 协议拒绝非法音频准备回合号", () => {
   }
 });
 
-test("Song Guessr 协议解析旁观、放弃与测试人机命令", () => {
+test("Songuessr 协议解析旁观、放弃与测试人机命令", () => {
   expect(parseSongGuessrMessage({
     id: "spectator",
     type: "song.player.setSpectator",
@@ -66,30 +96,16 @@ test("Song Guessr 协议解析旁观、放弃与测试人机命令", () => {
   }
 });
 
-test("Song Guessr 协议解析扫码、手机、邮箱与 Cookie 登录命令", () => {
+test("Songuessr 协议只解析扫码与 Cookie 登录命令", () => {
   expect(parseSongGuessrMessage({
     id: "qr",
     type: "song.auth.qr.check",
     payload: { key: "qr-key" },
   })).toMatchObject({ type: "song.auth.qr.check", payload: { key: "qr-key" } });
 
-  expect(parseSongGuessrMessage({
-    id: "phone",
-    type: "song.auth.phone.login",
-    payload: { phone: "13800000000", countryCode: "86", captcha: "123456" },
-  })).toMatchObject({
-    type: "song.auth.phone.login",
-    payload: { phone: "13800000000", countryCode: "86", captcha: "123456" },
-  });
-
-  expect(parseSongGuessrMessage({
-    id: "email",
-    type: "song.auth.email.login",
-    payload: { email: "user@example.com", password: "secret" },
-  })).toMatchObject({
-    type: "song.auth.email.login",
-    payload: { email: "user@example.com", password: "secret" },
-  });
+  for (const type of ["song.auth.phone.login", "song.auth.email.login"]) {
+    expect(() => parseSongGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow();
+  }
 
   expect(parseSongGuessrMessage({
     id: "cookie",
