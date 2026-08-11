@@ -69,6 +69,13 @@ const readString = (value: unknown): string | undefined => {
 const readNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+const randomChineseIp = () => [
+  116,
+  25 + Math.floor(Math.random() * 70),
+  Math.floor(Math.random() * 256),
+  Math.floor(Math.random() * 256),
+].join(".");
+
 const normalizeAudioUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
   if (!raw) return undefined;
@@ -108,6 +115,34 @@ const responseMessage = (body: Record<string, unknown>, fallback: string) =>
   readString(body.message ?? body.msg) ??
   readString(asRecord(body.data).message ?? asRecord(body.data).msg) ??
   fallback;
+
+const readSafeLoginRedirect = (value: unknown): string | undefined => {
+  const candidate = readString(value);
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" && url.hostname.endsWith(".163.com")
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const musicLoginError = (body: Record<string, unknown>, fallback: string) => {
+  const code = responseCode(body);
+  const redirectUrl = readSafeLoginRedirect(
+    body.redirectUrl ?? asRecord(body.data).redirectUrl,
+  );
+  const risk = code === 8810 || code === 10004;
+  return new AppError(
+    risk ? "MUSIC_LOGIN_RISK" : "MUSIC_LOGIN_FAILED",
+    risk
+      ? "网易云要求完成安全验证，请使用扫码或短信验证码登录"
+      : responseMessage(body, fallback),
+    redirectUrl ? { redirectUrl, upstreamCode: code } : { upstreamCode: code },
+  );
+};
 
 const readLoginAccount = (body: Record<string, unknown>): SongGuessrMusicAccount => {
   const data = asRecord(body.data);
@@ -297,9 +332,12 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
 export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
+  private readonly randomCNIPValue: string;
+  private anonymousCookie?: string;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
+    this.randomCNIPValue = randomChineseIp();
   }
 
   async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
@@ -327,13 +365,23 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   async createQrLogin(): Promise<MusicQrLogin> {
-    const keyResponse = await this.call(["login_qr_key"], {}, undefined, false);
+    const keyResponse = await this.call(["login_qr_key"], {}, undefined, this.randomCNIP, true, false);
     const keyBody = responseBody(keyResponse);
+    if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
     if (!key) throw new AppError("MUSIC_LOGIN_FAILED", "无法创建登录二维码");
 
-    const qrResponse = await this.call(["login_qr_create"], { key, qrimg: true }, undefined, false);
-    const qrData = asRecord(responseBody(qrResponse).data);
+    const qrResponse = await this.call(
+      ["login_qr_create"],
+      { key, qrimg: true },
+      undefined,
+      this.randomCNIP,
+      true,
+      false,
+    );
+    const qrBody = responseBody(qrResponse);
+    if (responseCode(qrBody) !== 200) throw musicLoginError(qrBody, "无法生成登录二维码");
+    const qrData = asRecord(qrBody.data);
     const qrUrl = readString(qrData.qrurl);
     const qrImage = readString(qrData.qrimg);
     if (!qrUrl || !qrImage) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码");
@@ -343,9 +391,17 @@ export class NeteaseMusicProvider implements MusicProvider {
   async checkQrLogin(keyValue: string): Promise<MusicQrLoginCheck> {
     const key = keyValue.trim();
     if (!key) throw new AppError("INVALID_LOGIN", "二维码登录密钥不能为空");
-    const response = await this.call(["login_qr_check"], { key }, undefined, false);
+    const response = await this.call(
+      ["login_qr_check"],
+      { key },
+      undefined,
+      this.randomCNIP,
+      true,
+      false,
+    );
     const body = responseBody(response);
     const code = responseCode(body);
+    if (code === 8810 || code === 10004) throw musicLoginError(body, "扫码登录失败");
     const message = responseMessage(body, "等待扫码");
     if (code === 800) return { status: "expired", message };
     if (code === 802) return { status: "scanned", message };
@@ -361,10 +417,17 @@ export class NeteaseMusicProvider implements MusicProvider {
     const phone = phoneValue.trim();
     const countryCode = countryCodeValue.trim() || "86";
     if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
-    const response = await this.call(["captcha_sent"], { phone, ctcode: countryCode }, undefined, false);
+    const response = await this.call(
+      ["captcha_sent"],
+      { phone, ctcode: countryCode },
+      undefined,
+      this.randomCNIP,
+      true,
+      false,
+    );
     const body = responseBody(response);
     if (responseCode(body) !== 200) {
-      throw new AppError("MUSIC_LOGIN_FAILED", responseMessage(body, "验证码发送失败"));
+      throw musicLoginError(body, "验证码发送失败");
     }
   }
 
@@ -375,11 +438,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     const captcha = params.captcha?.trim();
     if (!phone) throw new AppError("INVALID_LOGIN", "手机号不能为空");
     if (!password && !captcha) throw new AppError("INVALID_LOGIN", "请输入密码或验证码");
-    const response = await this.call(["login_cellphone"], {
-      phone,
-      countrycode: countryCode,
-      ...(captcha ? { captcha } : { password }),
-    }, undefined, false);
+    const response = await this.call(
+      ["login_cellphone"],
+      {
+        phone,
+        countrycode: countryCode,
+        ...(captcha ? { captcha } : { password }),
+      },
+      undefined,
+      this.randomCNIP,
+      true,
+      false,
+    );
     return this.readLoginSession(response);
   }
 
@@ -387,14 +457,21 @@ export class NeteaseMusicProvider implements MusicProvider {
     const email = emailValue.trim();
     const password = passwordValue;
     if (!email || !password) throw new AppError("INVALID_LOGIN", "邮箱和密码不能为空");
-    const response = await this.call(["login"], { email, password }, undefined, false);
+    const response = await this.call(
+      ["login"],
+      { email, password },
+      undefined,
+      this.randomCNIP,
+      true,
+      false,
+    );
     return this.readLoginSession(response);
   }
 
   async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
-    const response = await this.call(["login_status"], {}, cookie, false);
+    const response = await this.call(["login_status"], {}, cookie, false, true, false);
     const body = responseBody(response);
     if (responseCode(body) !== 200) {
       throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效");
@@ -467,11 +544,29 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private async loadApi(): Promise<ApiModule> {
     if (!this.apiPromise) {
-      this.apiPromise = this.options.loadApi
-        ? this.options.loadApi()
-        : import("@neteasecloudmusicapienhanced/api") as Promise<ApiModule>;
+      this.apiPromise = (async () => {
+        const api = this.options.loadApi
+          ? await this.options.loadApi()
+          : await import("@neteasecloudmusicapienhanced/api") as ApiModule;
+        await this.prepareAnonymousSession(api);
+        return api;
+      })();
     }
     return this.apiPromise;
+  }
+
+  private async prepareAnonymousSession(api: ApiModule) {
+    if (this.anonymousCookie || typeof api.register_anonimous !== "function") return;
+    try {
+      const response = await (api.register_anonimous as ApiFunction)({
+        crypto: "weapi",
+        randomCNIP: this.randomCNIP,
+        realIP: this.randomCNIPValue,
+      });
+      this.anonymousCookie = responseCookie(response);
+    } catch {
+      // 匿名令牌不是登录的硬前置条件；上游不可用时继续使用无 Cookie 请求。
+    }
   }
 
   private async call(
@@ -479,16 +574,22 @@ export class NeteaseMusicProvider implements MusicProvider {
     params: Record<string, unknown>,
     cookie?: string,
     randomCNIP = this.randomCNIP,
+    preserveErrorResponse = false,
+    includeAnonymousCookie = true,
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     let hasEndpoint = false;
+    let lastErrorResponse: ApiResponse | undefined;
     for (const name of names) {
       const fn = api[name];
       if (typeof fn === "function") {
         hasEndpoint = true;
         try {
-          return await (fn as ApiFunction)(this.withCookie(params, cookie, randomCNIP));
-        } catch {
+          return await (fn as ApiFunction)(
+            this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie),
+          );
+        } catch (error) {
+          if ("body" in asRecord(error)) lastErrorResponse = error as ApiResponse;
           // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
         }
       }
@@ -496,6 +597,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!hasEndpoint) {
       throw new AppError("MUSIC_API_UNAVAILABLE", `音乐 API 缺少接口：${names.join(" / ")}`);
     }
+    if (preserveErrorResponse && lastErrorResponse) return lastErrorResponse;
     throw new AppError("MUSIC_API_FAILED", "网易云音乐接口请求失败，请稍后重试");
   }
 
@@ -514,8 +616,9 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private readLoginSession(response: ApiResponse): MusicLoginSession {
     const body = responseBody(response);
-    if (responseCode(body) !== 200) {
-      throw new AppError("MUSIC_LOGIN_FAILED", responseMessage(body, "网易云登录失败"));
+    const code = responseCode(body);
+    if (code !== 200) {
+      throw musicLoginError(body, "网易云登录失败");
     }
     const cookie = responseCookie(response);
     if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "登录成功但未取得 Cookie");
@@ -526,10 +629,14 @@ export class NeteaseMusicProvider implements MusicProvider {
     params: Record<string, unknown>,
     cookie?: string,
     randomCNIP = this.randomCNIP,
+    includeAnonymousCookie = true,
   ): Record<string, unknown> {
     return {
       ...params,
-      ...(cookie ? { cookie } : {}),
+      ...(cookie || (includeAnonymousCookie && this.anonymousCookie)
+        ? { cookie: cookie ?? this.anonymousCookie }
+        : {}),
+      ...(randomCNIP ? { realIP: this.randomCNIPValue } : {}),
       randomCNIP,
     };
   }
