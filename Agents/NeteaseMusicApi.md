@@ -1,8 +1,8 @@
 # 网易云音乐 API 使用规范
 
 本文档记录网易云音乐 API Enhanced 的官方资料、图片中的接口注意事项，以及
-BakaGame Song Guessr 的实际接入约束。所有后续修改
-`Server/src/infrastructure/netease-music-provider.ts` 或 Song Guessr 音乐请求时，必须先阅读本文档。
+BakaGame Songuessr 的实际接入约束。所有后续修改
+`Server/src/infrastructure/netease-music-provider.ts` 或 Songuessr 音乐请求时，必须先阅读本文档。
 
 ## 资料与版本
 
@@ -73,9 +73,9 @@ fetch(url, { credentials: "include" });
 
 ### 分页
 
-分页接口返回 `more: true` 时表示仍有下一页。调用方必须根据接口要求递增 `offset`/页码并设置上限，不能因为 `more` 无限请求。Song Guessr 搜索结果应限制单次数量，避免把整张歌单或搜索结果推送给客户端。
+分页接口返回 `more: true` 时表示仍有下一页。调用方必须根据接口要求递增 `offset`/页码并设置上限，不能因为 `more` 无限请求。Songuessr 搜索结果应限制单次数量，避免把整张歌单或搜索结果推送给客户端。
 
-## Song Guessr 接入约束
+## Songuessr 接入约束
 
 ### 请求链路
 
@@ -84,7 +84,7 @@ fetch(url, { credentials: "include" });
 - 搜索：`cloudsearch`/`search`。
 - 出题歌曲详情：`song_detail`、时间轴歌词、播放地址和可选歌曲百科。
 - 猜测歌曲：只读取元数据，不请求歌词或音频。
-- 登录：二维码、手机验证码/密码、邮箱密码和 `login_status`。
+- 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
 
@@ -118,3 +118,8 @@ fetch(url, { credentials: "include" });
 - 真实测试从本地 `.env` 读取 `NETEASE_COOKIE`，验证登录状态、搜索、歌曲详情、时间轴歌词、HTTPS 播放地址、Range/CORS 和真实制作人员过滤；测试输出不得打印 Cookie、账号资料或完整响应。
 - 真实接口测试可能受网易云缓存、网络出口、账号权限和上游限流影响。失败时先查看状态码和接口文档，禁止通过无限重试或批量更换 IP“修复”测试。
 - 新增或修改音乐接口时，至少补充一条 mock 回归测试和一条真实接口测试断言；如果接口不适合真实测试，应在文档中记录原因和替代验证方式。
+- 歌单读取使用 `playlist_track_all`（缺少时回退 `playlist_detail`），客户端可提交网易云歌单数字 ID 或链接，服务端只保存规范化后的数字 ID。
+- 歌手搜索使用 `cloudsearch` 的 `type=100`，歌手歌曲使用 `artist_songs`（缺少时回退 `artist_top_song`）。多个歌手在歌手筛选组内取并集，再与歌单、热度条件取交集。
+- 红心数使用 `song_red_count` 的 `data.count`，不要使用歌曲详情中的 `pop`（它是另一种热度指标）。`countDesc` 可能只显示 `100w+` 等近似文本，但 `count` 仍是服务端筛选使用的数值。
+- 热度筛选档位固定为 `0`、`1000`、`10000`、`100000`。自动出题选中候选后仍需调用 `song_detail` 获取歌词、音频和百科信息。
+- 三个筛选项均为可选；歌单、歌手都未配置时，自动出题默认使用热歌榜歌单 `3778678` 作为题库，再应用红心数条件。
