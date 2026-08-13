@@ -30,6 +30,7 @@ coverage
 playwright-report
 test-results
 Client/dist
+Client/.generated-public
 Server/.next/
 Server/out/
 Server/build
