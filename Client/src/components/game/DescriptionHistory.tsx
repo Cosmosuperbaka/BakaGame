@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 历史表测试共享纯数据辅助函数。 */
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -28,23 +29,14 @@ interface DescriptionTableProps {
   compact?: boolean;
 }
 
-/** 与 PlayerList 一致的分组顺序：活跃玩家在前，出题与旁观在后。 */
-function orderPlayers(players: PublicPlayerView[]): PublicPlayerView[] {
-  return [
-    ...players
-      .filter((p) => p.membership === "active" && p.roundStatus !== "questioner")
-      .sort((a, b) => Number(b.isHost) - Number(a.isHost)),
-    ...players.filter((p) => p.membership === "spectator" || p.roundStatus === "questioner"),
-  ];
-}
-
 /** 补上只在发言记录里出现、已不在玩家列表中的玩家（已离场）。 */
-function collectRows(
+export function collectDescriptionRows(
   players: PublicPlayerView[] | undefined,
   descriptions: DescriptionRecord[],
 ): PublicPlayerView[] {
   const rows = new Map<string, PublicPlayerView>();
-  for (const player of orderPlayers(players ?? [])) rows.set(player.id, player);
+  // 快照中的玩家数组就是 PlayerList 的实际渲染顺序，历史表不得另行排序。
+  for (const player of players ?? []) rows.set(player.id, player);
   for (const record of descriptions) {
     if (rows.has(record.playerId)) continue;
     rows.set(record.playerId, {
@@ -73,7 +65,7 @@ export function DescriptionTable({
   compact = false,
 }: DescriptionTableProps) {
   const { columns, byPlayer } = buildDescriptionColumns(descriptions);
-  const rows = collectRows(players, descriptions);
+  const rows = collectDescriptionRows(players, descriptions);
 
   if (rows.length === 0) {
     return <p className="py-10 text-center text-sm text-muted-foreground">暂无玩家与发言记录</p>;
