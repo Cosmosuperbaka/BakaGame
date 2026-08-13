@@ -1,4 +1,5 @@
 import { AppError } from "../domain/errors";
+import { createHash } from "node:crypto";
 import type {
   SongDetails,
   SongArtistSearchResult,
@@ -30,6 +31,17 @@ export interface NeteaseMusicProviderOptions {
   loadApi?: () => Promise<ApiModule>;
   /** 通过 Enhanced API 的随机中国出口降低网易云安全风控误判。默认开启。 */
   randomCNIP?: boolean;
+  /** 单个 provider 允许同时访问网易云的请求数。 */
+  maxConcurrentRequests?: number;
+  /** 两次上游请求启动之间的最小间隔。 */
+  minRequestIntervalMs?: number;
+  /** 首次遇到上游限流后的冷却时间；连续限流会指数增长。 */
+  rateLimitCooldownMs?: number;
+  maxRateLimitCooldownMs?: number;
+  /** 等待队列的容量和最长停留时间，避免限流恢复后集中补发陈旧请求。 */
+  maxQueuedRequests?: number;
+  queueTimeoutMs?: number;
+  cacheMaxEntries?: number;
 }
 
 export interface MusicLoginSession {
@@ -71,6 +83,70 @@ const randomChineseIp = () => [
   Math.floor(Math.random() * 256),
   Math.floor(Math.random() * 256),
 ].join(".");
+
+const SEARCH_CACHE_TTL_MS = 2 * 60_000;
+const SONG_METADATA_CACHE_TTL_MS = 10 * 60_000;
+const SONG_LYRICS_CACHE_TTL_MS = 10 * 60_000;
+const SONG_WIKI_CACHE_TTL_MS = 30 * 60_000;
+const COLLECTION_CACHE_TTL_MS = 5 * 60_000;
+const ARTIST_SONGS_CACHE_TTL_MS = 10 * 60_000;
+const POPULARITY_CACHE_TTL_MS = 30 * 60_000;
+const DEFAULT_CACHE_MAX_ENTRIES = 512;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
+const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const DEFAULT_MAX_QUEUED_REQUESTS = 64;
+const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
+
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+interface QueuedRequest<T = unknown> {
+  task: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+  queuedAt: number;
+}
+
+const cloneCacheValue = <T>(value: T): T => structuredClone(value);
+
+class BoundedTtlCache {
+  private readonly entries = new Map<string, CacheEntry<unknown>>();
+
+  constructor(private readonly maxEntries: number) {}
+
+  get<T>(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return cloneCacheValue(entry.value as T);
+  }
+
+  set<T>(key: string, value: T, ttlMs: number) {
+    const now = Date.now();
+    for (const [entryKey, entry] of this.entries) {
+      if (entry.expiresAt <= now) this.entries.delete(entryKey);
+    }
+    this.entries.delete(key);
+    this.entries.set(key, {
+      value: cloneCacheValue(value),
+      expiresAt: now + ttlMs,
+    });
+    while (this.entries.size > this.maxEntries) {
+      const oldestKey = this.entries.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.entries.delete(oldestKey);
+    }
+  }
+}
 
 const normalizeAudioUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
@@ -349,110 +425,188 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
 export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
-  private readonly randomCNIPValue: string;
   private anonymousCookie?: string;
-  private readonly popularityCache = new Map<string, number>();
+  private readonly cache: BoundedTtlCache;
+  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly ipByScope = new Map<string, string>();
+  private readonly requestQueue: QueuedRequest[] = [];
+  private readonly maxConcurrentRequests: number;
+  private readonly minRequestIntervalMs: number;
+  private readonly rateLimitCooldownMs: number;
+  private readonly maxRateLimitCooldownMs: number;
+  private readonly maxQueuedRequests: number;
+  private readonly queueTimeoutMs: number;
+  private activeRequests = 0;
+  private lastRequestStartedAt = 0;
+  private cooldownUntil = 0;
+  private rateLimitStrikes = 0;
+  private lastRateLimitAt = 0;
+  private lastRateLimitMessage = "操作频繁，请稍候再试";
+  private queueTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
-    this.randomCNIPValue = randomChineseIp();
+    this.cache = new BoundedTtlCache(Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES));
+    this.maxConcurrentRequests = Math.max(
+      1,
+      options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
+    );
+    this.minRequestIntervalMs = Math.max(
+      0,
+      options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS,
+    );
+    this.rateLimitCooldownMs = Math.max(
+      0,
+      options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+    );
+    this.maxRateLimitCooldownMs = Math.max(
+      this.rateLimitCooldownMs,
+      options.maxRateLimitCooldownMs ?? DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS,
+    );
+    this.maxQueuedRequests = Math.max(
+      1,
+      options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS,
+    );
+    this.queueTimeoutMs = Math.max(1, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
   }
 
   async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
-
-    const response = await this.call(["cloudsearch", "search"], {
-      keywords: normalized,
-      limit: Math.max(1, Math.min(limit, 50)),
-      type: 1,
-    }, cookie);
-    const body = responseBody(response);
-    const result = asRecord(body.result);
-    return asArray(result.songs)
-      .map(normalizeSong)
-      .filter((song): song is SongSearchResult => Boolean(song));
+    const normalizedLimit = Math.max(1, Math.min(limit, 50));
+    return this.cached(
+      this.cacheKey("search", cookie, normalized.toLocaleLowerCase(), normalizedLimit),
+      SEARCH_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["cloudsearch", "search"], {
+          keywords: normalized,
+          limit: normalizedLimit,
+          type: 1,
+        }, cookie);
+        const body = responseBody(response);
+        const result = asRecord(body.result);
+        return asArray(result.songs)
+          .map(normalizeSong)
+          .filter((song): song is SongSearchResult => Boolean(song));
+      },
+    );
   }
 
   async getSong(songId: string, cookie?: string): Promise<SongDetails> {
-    return this.loadSong(songId, true, cookie);
+    const id = songId.trim();
+    if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
+    return this.cached(
+      this.cacheKey("song", cookie, id),
+      0,
+      () => this.loadSong(id, true, cookie),
+    );
   }
 
   async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
-    return this.loadSong(songId, false, cookie);
+    const id = songId.trim();
+    if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
+    return this.cached(
+      this.cacheKey("metadata", undefined, id),
+      SONG_METADATA_CACHE_TTL_MS,
+      () => this.loadSong(id, false, cookie),
+    );
   }
 
   async getSongPopularity(songId: string, cookie?: string): Promise<number | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    const cached = this.popularityCache.get(id);
-    if (cached !== undefined) return cached;
-    const response = await this.callOptional(["song_red_count"], { id }, cookie);
-    if (!response) return undefined;
-    const body = responseBody(response);
-    const data = asRecord(body.data);
-    const count = readNumber(data.count ?? body.count);
-    if (count !== undefined) this.popularityCache.set(id, count);
-    return count;
+    return this.cached(
+      this.cacheKey("popularity", undefined, id),
+      POPULARITY_CACHE_TTL_MS,
+      async () => {
+        const response = await this.callOptional(["song_red_count"], { id }, cookie);
+        if (!response) return undefined;
+        const body = responseBody(response);
+        const data = asRecord(body.data);
+        return readNumber(data.count ?? body.count);
+      },
+    );
   }
 
   async getPlaylistSongs(playlistId: string, cookie?: string) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
-    const response = await this.call(["playlist_track_all", "playlist_detail"], {
-      id,
-      limit: 1000,
-      offset: 0,
-    }, cookie);
-    const body = responseBody(response);
-    let playlist = asRecord(body.playlist ?? asRecord(body.data).playlist);
-    if (!readString(playlist.name)) {
-      const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
-      if (detailResponse) playlist = asRecord(responseBody(detailResponse).playlist);
-    }
-    const rawSongs = asArray(body.songs ?? playlist.tracks ?? asRecord(body.data).songs);
-    const songs = rawSongs.map(normalizeSong).filter((song): song is SongSearchResult => Boolean(song));
-    const name = readString(playlist.name) ?? `歌单 ${id}`;
-    const songCount = readNumber(playlist.trackCount ?? playlist.trackNumber ?? songs.length) ?? songs.length;
-    return { info: { id, name, songCount }, songs };
+    return this.cached(
+      this.cacheKey("playlist", cookie, id),
+      COLLECTION_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["playlist_track_all", "playlist_detail"], {
+          id,
+          limit: 1000,
+          offset: 0,
+        }, cookie);
+        const body = responseBody(response);
+        let playlist = asRecord(body.playlist ?? asRecord(body.data).playlist);
+        if (!readString(playlist.name)) {
+          const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
+          if (detailResponse) playlist = asRecord(responseBody(detailResponse).playlist);
+        }
+        const rawSongs = asArray(body.songs ?? playlist.tracks ?? asRecord(body.data).songs);
+        const songs = rawSongs
+          .map(normalizeSong)
+          .filter((song): song is SongSearchResult => Boolean(song));
+        const name = readString(playlist.name) ?? `歌单 ${id}`;
+        const songCount = readNumber(
+          playlist.trackCount ?? playlist.trackNumber ?? songs.length,
+        ) ?? songs.length;
+        return { info: { id, name, songCount }, songs };
+      },
+    );
   }
 
   async searchArtists(keyword: string, limit = 20, cookie?: string) {
     const normalized = keyword.trim();
     if (!normalized) return [];
-    const response = await this.call(["cloudsearch", "search"], {
-      keywords: normalized,
-      limit: Math.max(1, Math.min(limit, 50)),
-      type: 100,
-    }, cookie);
-    const body = responseBody(response);
-    const result = asRecord(body.result);
-    return asArray(result.artists ?? result.artist)
-      .map((value): SongArtistSearchResult | undefined => {
-        const artist = asRecord(value);
-        const id = readString(artist.id);
-        const name = readString(artist.name);
-        if (!id || !name) return undefined;
-        const avatarUrl = readString(artist.picUrl ?? artist.img1v1Url);
-        return avatarUrl ? { id, name, avatarUrl } : { id, name };
-      })
-      .filter((artist): artist is SongArtistSearchResult => artist !== undefined);
+    const normalizedLimit = Math.max(1, Math.min(limit, 50));
+    return this.cached(
+      this.cacheKey("artist-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
+      SEARCH_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["cloudsearch", "search"], {
+          keywords: normalized,
+          limit: normalizedLimit,
+          type: 100,
+        }, cookie);
+        const body = responseBody(response);
+        const result = asRecord(body.result);
+        return asArray(result.artists ?? result.artist)
+          .map((value): SongArtistSearchResult | undefined => {
+            const artist = asRecord(value);
+            const id = readString(artist.id);
+            const name = readString(artist.name);
+            if (!id || !name) return undefined;
+            const avatarUrl = readString(artist.picUrl ?? artist.img1v1Url);
+            return avatarUrl ? { id, name, avatarUrl } : { id, name };
+          })
+          .filter((artist): artist is SongArtistSearchResult => artist !== undefined);
+      },
+    );
   }
 
   async getArtistSongs(artistId: string, cookie?: string) {
     const id = artistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_ARTIST", "歌手 ID 无效");
-    const response = await this.call(["artist_songs", "artist_top_song"], {
-      id,
-      limit: 1000,
-      offset: 0,
-      order: "hot",
-    }, cookie);
-    const body = responseBody(response);
-    const songs = asArray(body.songs ?? asRecord(body.data).songs ?? body.hotSongs)
-      .map(normalizeSong)
-      .filter((song): song is SongSearchResult => Boolean(song));
-    return songs;
+    return this.cached(
+      this.cacheKey("artist-songs", undefined, id),
+      ARTIST_SONGS_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["artist_songs", "artist_top_song"], {
+          id,
+          limit: 1000,
+          offset: 0,
+          order: "hot",
+        }, cookie);
+        const body = responseBody(response);
+        return asArray(body.songs ?? asRecord(body.data).songs ?? body.hotSongs)
+          .map(normalizeSong)
+          .filter((song): song is SongSearchResult => Boolean(song));
+      },
+    );
   }
 
   async createQrLogin(): Promise<MusicQrLogin> {
@@ -535,15 +689,27 @@ export class NeteaseMusicProvider implements MusicProvider {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
 
-    const detailResponse = await this.call(["song_detail"], { ids: id }, cookie);
+    const detailResponse = await this.cached(
+      this.cacheKey("song-detail", undefined, id),
+      SONG_METADATA_CACHE_TTL_MS,
+      () => this.call(["song_detail"], { ids: id }, cookie),
+    );
     const detailBody = responseBody(detailResponse);
     const rawSong = asArray(detailBody.songs)[0];
     const base = normalizeSong(rawSong);
     if (!base) throw new AppError("SONG_NOT_FOUND", "未找到歌曲信息");
 
-    const wikiPromise = this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie);
+    const wikiPromise = this.cached(
+      this.cacheKey("song-wiki", undefined, id),
+      SONG_WIKI_CACHE_TTL_MS,
+      () => this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie),
+    );
     const lyricPromise = includeResources
-      ? this.call(["lyric_new", "lyric"], { id }, cookie)
+      ? this.cached(
+          this.cacheKey("song-lyrics", undefined, id),
+          SONG_LYRICS_CACHE_TTL_MS,
+          () => this.call(["lyric_new", "lyric"], { id }, cookie),
+        )
       : Promise.resolve(undefined);
     const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
     const urlPromise = includeResources
@@ -574,7 +740,6 @@ export class NeteaseMusicProvider implements MusicProvider {
       lyrics = sanitizeLyrics(parseLrc(readString(lrc.lyric) ?? ""), base);
 
       if (!audioUrl) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
-      if (lyrics.length === 0) throw new AppError("LYRICS_UNAVAILABLE", "该歌曲没有可用的时间轴歌词");
     }
 
     return {
@@ -608,12 +773,13 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async prepareAnonymousSession(api: ApiModule) {
     if (this.anonymousCookie || typeof api.register_anonimous !== "function") return;
     try {
-      const response = await (api.register_anonimous as ApiFunction)({
-        crypto: "weapi",
-        cookie: {},
-        randomCNIP: this.randomCNIP,
-        realIP: this.randomCNIPValue,
-      });
+      const response = await this.scheduleRequest(() =>
+        (api.register_anonimous as ApiFunction)({
+          crypto: "weapi",
+          cookie: {},
+          randomCNIP: this.randomCNIP,
+          ...(this.randomCNIP ? { realIP: this.ipForCookie() } : {}),
+        }));
       this.anonymousCookie = responseCookie(response);
     } catch {
       // 匿名令牌不是登录的硬前置条件；上游不可用时继续使用无 Cookie 请求。
@@ -631,16 +797,34 @@ export class NeteaseMusicProvider implements MusicProvider {
     const api = await this.loadApi();
     let hasEndpoint = false;
     let lastErrorResponse: ApiResponse | undefined;
+    let lastError: unknown;
     for (const name of names) {
       const fn = api[name];
       if (typeof fn === "function") {
         hasEndpoint = true;
         try {
-          return await (fn as ApiFunction)(
-            this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie),
+          const response = await this.scheduleRequest(() =>
+            (fn as ApiFunction)(
+              this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie),
+            ),
           );
+          // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
+          // 两种形态都必须进入同一冷却逻辑，否则 resolve 形态会被误当成空搜索结果。
+          if (this.isRateLimitError(response)) {
+            this.enterRateLimitCooldown(response);
+            throw this.upstreamError(response);
+          }
+          return response;
         } catch (error) {
+          lastError = error;
+          if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") {
+            throw error;
+          }
           if ("body" in asRecord(error)) lastErrorResponse = error as ApiResponse;
+          if (this.isRateLimitError(error)) {
+            this.enterRateLimitCooldown(error);
+            throw this.upstreamError(error);
+          }
           // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
         }
       }
@@ -649,7 +833,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       throw new AppError("MUSIC_API_UNAVAILABLE", `音乐 API 缺少接口：${names.join(" / ")}`);
     }
     if (preserveErrorResponse && lastErrorResponse) return lastErrorResponse;
-    throw new AppError("MUSIC_API_FAILED", "网易云音乐接口请求失败，请稍后重试");
+    throw this.upstreamError(lastErrorResponse ?? lastError);
   }
 
   private async callOptional(
@@ -661,6 +845,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       return await this.call(names, params, cookie);
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
+      if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") throw error;
       return undefined;
     }
   }
@@ -680,6 +865,154 @@ export class NeteaseMusicProvider implements MusicProvider {
     return readVipAccount(body, account);
   }
 
+  private cacheKey(namespace: string, cookie: string | undefined, ...parts: unknown[]) {
+    const scope = cookie?.trim()
+      ? createHash("sha256").update(cookie.trim()).digest("hex").slice(0, 16)
+      : "anonymous";
+    return [namespace, scope, ...parts].map(String).join(":");
+  }
+
+  private async cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+    const cached = this.cache.get<T>(key);
+    if (cached !== undefined) return cached;
+    const existing = this.inFlight.get(key) as Promise<T> | undefined;
+    if (existing) return cloneCacheValue(await existing);
+
+    const request = loader().then((value) => {
+      if (value !== undefined) this.cache.set(key, value, ttlMs);
+      return value;
+    }).finally(() => {
+      if (this.inFlight.get(key) === request) this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, request);
+    return cloneCacheValue(await request);
+  }
+
+  private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
+    if (Date.now() < this.cooldownUntil) {
+      return Promise.reject(this.busyError());
+    }
+    if (this.requestQueue.length >= this.maxQueuedRequests) {
+      return Promise.reject(this.busyError("网易云请求排队过多，请稍后重试"));
+    }
+    return new Promise<T>((resolve, reject) => {
+      this.requestQueue.push({
+        task,
+        resolve: (value) => resolve(value as T),
+        reject,
+        queuedAt: Date.now(),
+      });
+      this.drainRequestQueue();
+    });
+  }
+
+  private drainRequestQueue() {
+    if (this.queueTimer) {
+      clearTimeout(this.queueTimer);
+      this.queueTimer = undefined;
+    }
+    const now = Date.now();
+    while (this.requestQueue.length > 0) {
+      const next = this.requestQueue[0];
+      if (now - next.queuedAt <= this.queueTimeoutMs) break;
+      this.requestQueue.shift();
+      next.reject(this.busyError("网易云请求等待超时，请稍后重试"));
+    }
+    if (this.requestQueue.length === 0) return;
+    if (this.activeRequests >= this.maxConcurrentRequests) {
+      const nextExpiryAt = this.requestQueue[0].queuedAt + this.queueTimeoutMs;
+      this.queueTimer = setTimeout(
+        () => this.drainRequestQueue(),
+        Math.max(1, nextExpiryAt - now),
+      );
+      return;
+    }
+
+    const waitMs = Math.max(
+      0,
+      this.cooldownUntil - now,
+      this.lastRequestStartedAt + this.minRequestIntervalMs - now,
+    );
+    if (waitMs > 0) {
+      this.queueTimer = setTimeout(() => this.drainRequestQueue(), waitMs);
+      return;
+    }
+
+    const next = this.requestQueue.shift();
+    if (!next) return;
+    this.activeRequests += 1;
+    this.lastRequestStartedAt = Date.now();
+    void next.task().then(next.resolve, next.reject).finally(() => {
+      this.activeRequests -= 1;
+      this.drainRequestQueue();
+    });
+    this.drainRequestQueue();
+  }
+
+  private enterRateLimitCooldown(error: unknown) {
+    const body = responseBody(error);
+    this.lastRateLimitMessage = responseMessage(body, this.lastRateLimitMessage);
+    const now = Date.now();
+    if (now - this.lastRateLimitAt > this.maxRateLimitCooldownMs) {
+      this.rateLimitStrikes = 0;
+    }
+    this.rateLimitStrikes = Math.min(this.rateLimitStrikes + 1, 8);
+    this.lastRateLimitAt = now;
+    const duration = Math.min(
+      this.maxRateLimitCooldownMs,
+      this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1),
+    );
+    this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
+
+    const pending = this.requestQueue.splice(0);
+    for (const request of pending) request.reject(this.busyError(this.lastRateLimitMessage));
+    this.drainRequestQueue();
+  }
+
+  private busyError(message = this.lastRateLimitMessage) {
+    return new AppError("MUSIC_API_RATE_LIMITED", message, {
+      upstreamCode: 405,
+      retryAfterMs: Math.max(0, this.cooldownUntil - Date.now()),
+    });
+  }
+
+  private upstreamError(error: unknown) {
+    if (error instanceof AppError) return error;
+    const body = responseBody(error);
+    const code = responseCode(body) ?? readNumber(asRecord(error).status);
+    const message = responseMessage(
+      body,
+      error instanceof Error && error.message
+        ? error.message
+        : "网易云音乐接口请求失败，请稍后重试",
+    );
+    return new AppError(
+      code === 405 ? "MUSIC_API_RATE_LIMITED" : "MUSIC_API_FAILED",
+      message,
+      { upstreamCode: code },
+    );
+  }
+
+  private isRateLimitError(error: unknown) {
+    const body = responseBody(error);
+    return responseCode(body) === 405 || readNumber(asRecord(error).status) === 405;
+  }
+
+  private ipForCookie(cookie?: string) {
+    const scope = cookie?.trim()
+      ? createHash("sha256").update(cookie.trim()).digest("hex").slice(0, 16)
+      : "anonymous";
+    const existing = this.ipByScope.get(scope);
+    if (existing) return existing;
+    const ip = randomChineseIp();
+    this.ipByScope.set(scope, ip);
+    if (this.ipByScope.size > 128) {
+      const oldest = this.ipByScope.keys().next().value;
+      if (oldest !== undefined) this.ipByScope.delete(oldest);
+    }
+    return ip;
+  }
+
   private withCookie(
     params: Record<string, unknown>,
     cookie?: string,
@@ -691,7 +1024,8 @@ export class NeteaseMusicProvider implements MusicProvider {
       ...params,
       // 始终显式传入 cookie，阻止 Enhanced API 从进程环境变量 NETEASE_COOKIE 偷读旧凭据。
       cookie: requestCookie ?? {},
-      ...(randomCNIP ? { realIP: this.randomCNIPValue } : {}),
+      // 同一登录态使用稳定伪装 IP，减少单一出口的限流聚集，也避免请求间频繁漂移触发风控。
+      ...(randomCNIP ? { realIP: this.ipForCookie(cookie) } : {}),
       randomCNIP,
     };
   }

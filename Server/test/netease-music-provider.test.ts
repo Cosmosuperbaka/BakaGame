@@ -137,6 +137,31 @@ describe("NeteaseMusicProvider", () => {
     expect(calls).toEqual(["song_detail"]);
   });
 
+  test("出题歌曲没有歌词时仍返回播放资源", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        song_detail: async () => ({
+          body: {
+            songs: [{
+              id: 78,
+              name: "纯音乐题",
+              ar: [{ name: "演奏者" }],
+              al: { name: "器乐专辑" },
+              dt: 120_000,
+            }],
+          },
+        }),
+        lyric_new: async () => ({ body: { lrc: { lyric: "" } } }),
+        song_url: async () => ({ body: { data: [{ url: "https://audio/78.mp3" }] } }),
+      }),
+    });
+
+    await expect(provider.getSong("78")).resolves.toMatchObject({
+      audioUrl: "https://audio/78.mp3",
+      lyrics: [],
+    });
+  });
+
   test("扫码登录只把最终 Cookie 返回给调用者并可读取账号状态", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
@@ -425,5 +450,187 @@ describe("NeteaseMusicProvider", () => {
 
     await expect(provider.getLoginStatus("MUSIC_U=expired"))
       .rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+  });
+
+  test("搜索缓存会合并并发请求并保持有界", async () => {
+    let calls = 0;
+    const provider = new NeteaseMusicProvider({
+      cacheMaxEntries: 1,
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        cloudsearch: async ({ keywords }: { keywords: string }) => {
+          calls += 1;
+          await Bun.sleep(5);
+          return {
+            body: {
+              result: {
+                songs: [{ id: calls, name: keywords, ar: [{ name: "测试歌手" }] }],
+              },
+            },
+          };
+        },
+      }),
+    });
+
+    const concurrent = await Promise.all([
+      provider.search("同一首歌"),
+      provider.search("同一首歌"),
+      provider.search("同一首歌"),
+    ]);
+    expect(calls).toBe(1);
+    concurrent[0].push({ id: "local", title: "本地改动", artist: "测试" });
+    expect(concurrent[1]).toHaveLength(1);
+    await expect(provider.search("同一首歌")).resolves.toHaveLength(1);
+    expect(calls).toBe(1);
+
+    await provider.search("另一首歌");
+    await provider.search("同一首歌");
+    expect(calls).toBe(3);
+  });
+
+  test("同一登录态复用稳定的随机中国 IP", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await provider.search("歌曲甲", 20, "MUSIC_U=user-a");
+    await provider.search("歌曲乙", 20, "MUSIC_U=user-a");
+    await provider.search("歌曲丙", 20, "MUSIC_U=user-b");
+
+    expect(requests[0]?.realIP).toBe(requests[1]?.realIP);
+    expect(requests[0]?.realIP).toMatch(/^116\.(?:2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
+    expect(requests[2]?.realIP).toMatch(/^116\.(?:2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
+    expect(requests.every((params) => params.randomCNIP === true)).toBe(true);
+  });
+
+  test("上游 405 会透传消息、清空队列并在冷却期快速失败", async () => {
+    let calls = 0;
+    let rejectFirst!: (reason: unknown) => void;
+    const firstResponse = new Promise<never>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const provider = new NeteaseMusicProvider({
+      maxConcurrentRequests: 1,
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 30,
+      queueTimeoutMs: 1_000,
+      loadApi: async () => ({
+        cloudsearch: async () => {
+          calls += 1;
+          if (calls === 1) return firstResponse;
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    const pending = [
+      provider.search("请求一"),
+      provider.search("请求二"),
+      provider.search("请求三"),
+    ];
+    while (calls === 0) await Bun.sleep(1);
+    await Bun.sleep(1);
+    rejectFirst({
+      status: 405,
+      body: {
+        code: 405,
+        msg: "操作频繁，请稍候再试",
+      },
+    });
+
+    const settled = await Promise.allSettled(pending);
+    expect(calls).toBe(1);
+    for (const result of settled) {
+      expect(result.status).toBe("rejected");
+      if (result.status === "rejected") {
+        expect(result.reason).toMatchObject({
+          code: "MUSIC_API_RATE_LIMITED",
+          message: "操作频繁，请稍候再试",
+          details: { upstreamCode: 405 },
+        });
+      }
+    }
+
+    await expect(provider.search("冷却中")).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+      message: "操作频繁，请稍候再试",
+    });
+    expect(calls).toBe(1);
+
+    await Bun.sleep(35);
+    await expect(provider.search("冷却结束")).resolves.toEqual([]);
+    expect(calls).toBe(2);
+  });
+
+  test("上游正常返回 405 body 时同样进入冷却并透传消息", async () => {
+    let calls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 30,
+      loadApi: async () => ({
+        cloudsearch: async () => {
+          calls += 1;
+          return calls === 1
+            ? { body: { code: 405, message: "操作频繁，请稍候再试" } }
+            : { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await expect(provider.search("正常返回限流")).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+      message: "操作频繁，请稍候再试",
+      details: { upstreamCode: 405 },
+    });
+    await expect(provider.search("冷却期间快速失败")).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+      message: "操作频繁，请稍候再试",
+    });
+    expect(calls).toBe(1);
+
+    await Bun.sleep(35);
+    await expect(provider.search("冷却结束恢复")).resolves.toEqual([]);
+    expect(calls).toBe(2);
+  });
+
+  test("排队请求会过期而不是等待活动请求结束后补发", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const blocker = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = new NeteaseMusicProvider({
+      maxConcurrentRequests: 1,
+      minRequestIntervalMs: 0,
+      queueTimeoutMs: 15,
+      loadApi: async () => ({
+        cloudsearch: async () => {
+          calls += 1;
+          if (calls === 1) await blocker;
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    const active = provider.search("活动请求");
+    while (calls === 0) await Bun.sleep(1);
+    const queued = provider.search("陈旧请求");
+    await expect(queued).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+      message: "网易云请求等待超时，请稍后重试",
+    });
+    expect(calls).toBe(1);
+    release();
+    await expect(active).resolves.toEqual([]);
+    expect(calls).toBe(1);
   });
 });
