@@ -1,6 +1,7 @@
 # 生产部署边界
 
-WhoIsFaker 的实时业务通过 `/api/whoisfaker/ws` 提供。应用服务负责 WebSocket
+WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
+`/api/songuessr/ws` 提供。应用服务负责 WebSocket
 协议解析、业务权限和房间状态，不在进程内按来源 IP 实现限流或连接配额。
 
 ## 反向代理职责
@@ -12,6 +13,7 @@ WhoIsFaker 的实时业务通过 `/api/whoisfaker/ws` 提供。应用服务负�
 - 限制 HTTP 请求体、WebSocket 消息或帧大小以及连接带宽。
 - 配置空闲连接和握手超时，同时允许正常对局使用长连接。
 - 正确转发 WebSocket 的 `Upgrade` 与 `Connection` 头。
+- 保留 `permessage-deflate` 协商头，不得在代理层移除应用已启用的消息压缩扩展。
 - 只把受信任的前端来源转发给服务；应用的 `CLIENT_URL` 必须与该来源一致。
 
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
@@ -22,3 +24,11 @@ WhoIsFaker 的实时业务通过 `/api/whoisfaker/ws` 提供。应用服务负�
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
 `Server/src/transport/protocol.ts` 与 `RoomService` 的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
+
+## 带宽与容量基线
+
+实时状态采用带修订号的增量同步，首次连接、重连、修订缺口和周期校准才发送全量。
+生产发布前必须运行 `bun test test/network-capacity.test.ts`；其固定验收目标是单台
+6 Mbps 出口承载 150 名 WhoIsFaker 玩家，并在每秒 12 次房间变化与每分钟一次全量校准下
+保留 15% 的 TLS/TCP/IP 传输余量。代理的带宽监控应按应用出口持续核对这一预算；超过预算时
+优先检查新增快照字段、重复事件和广播频率，不得通过取消最终同步或延长到不可接受的状态延迟来过测。
