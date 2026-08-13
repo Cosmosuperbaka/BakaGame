@@ -3,6 +3,9 @@
 /** 房间无活动清理超时时间（10分钟） */
 export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** 网络短暂断开后的空房宽限期，避免移动端切后台立即丢失房间。 */
+export const ROOM_EMPTY_GRACE_PERIOD_MS = 90 * 1000;
+
 /** 出题人断线重连超时时间（60秒） */
 export const QUESTIONER_RECONNECT_TIMEOUT_MS = 60 * 1000;
 

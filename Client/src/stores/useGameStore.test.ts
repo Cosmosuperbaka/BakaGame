@@ -120,6 +120,20 @@ describe("game store integration", () => {
     await expect(useGameStore.getState().reconnectRoom("2345")).resolves.toBe(false);
     expect(getSessionToken("2345")).toBeNull();
     expect(useGameStore.getState().roomId).toBeNull();
+    expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+  });
+
+  it("keeps the room session while a reconnect request fails transiently", async () => {
+    saveSessionToken("2346", "live-token");
+    wsMock.send.mockRejectedValue({ code: "DISCONNECTED" });
+
+    await expect(useGameStore.getState().reconnectRoom("2346")).resolves.toBe(true);
+    expect(getSessionToken("2346")).toBe("live-token");
+    expect(useGameStore.getState()).toMatchObject({
+      roomId: "2346",
+      sessionToken: "live-token",
+      roomClosedAt: null,
+    });
   });
 
   it("subscribes and restores the active session after socket reconnection", async () => {

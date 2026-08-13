@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../src/config/constants";
 import type { PrivateState, RoomSnapshot } from "../src/domain/model";
 import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./helpers";
 
@@ -1906,27 +1907,23 @@ test("测试房间最后一人掉线后仍然保留，可凭令牌回到原席�
   expect(getEventPayloads(host, "room.closed")).toHaveLength(0);
 });
 
-test("正式房间最后一人掉线仍然立即回收，令牌不再有效", async () => {
-  // 与测试房间相对：正式房间没人在线就该回收，重连也拿不回原席位。
-  const { service } = createTestContext();
+test("正式房间最后一人掉线后在空房宽限期内仍可重连", async () => {
+  const { service, advanceTime } = createTestContext();
   const { host, result } = await createRoom(service, "8123");
 
   await service.unregisterConnection(host.record.id);
-  expect(service.getRoomSummaries()).toHaveLength(0);
+  expect(service.getRoomSummaries()).toHaveLength(1);
+  advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS - 1);
+  await service.runHousekeeping();
 
   const rejoin = createConnection(service, "8123-rejoin");
-  let errorCode: string | undefined;
-  try {
-    await execute(service, rejoin, {
-      id: "reconnect-closed-room",
-      type: "room.reconnect",
-      payload: { roomId: "8123", sessionToken: result.sessionToken },
-    });
-  } catch (error) {
-    errorCode = (error as { code?: string }).code;
-  }
+  await execute(service, rejoin, {
+    id: "reconnect-within-grace",
+    type: "room.reconnect",
+    payload: { roomId: "8123", sessionToken: result.sessionToken },
+  });
 
-  expect(errorCode).toBe("ROOM_NOT_FOUND");
+  expect(getLastEventPayload<RoomSnapshot>(rejoin, "room.snapshot")?.roomId).toBe("8123");
 });
 
 test("测试房间单人不能跳转阶段，补足机器人后可以", async () => {
@@ -2074,11 +2071,14 @@ test("单人在测试房间跳转被拒后，房间不会被开局", async () =>
 });
 
 test("房间会在无人在线或闲置超时后被清理", async () => {
-  // 这里同时验证“空房立即清理”和“闲置超时清理”两条房间生命周期规则。
+  // 这里同时验证“空房宽限期清理”和“闲置超时清理”两条房间生命周期规则。
   const { service, advanceTime } = createTestContext();
   const { host } = await createRoom(service, "6666");
 
   await service.unregisterConnection(host.record.id);
+  expect(service.getRoomSummaries()).toHaveLength(1);
+  advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS + 1);
+  await service.runHousekeeping();
   expect(service.getRoomSummaries()).toHaveLength(0);
 
   const next = await createRoom(service, "7777");

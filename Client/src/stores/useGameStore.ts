@@ -72,6 +72,12 @@ let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
 
+const isPermanentRoomError = (error: unknown) => {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
+    code === "SESSION_INVALID" || code === "PLAYER_KICKED";
+};
+
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
@@ -175,12 +181,20 @@ export const useGameStore = create<GameState>((set, get) => ({
   reconnectRoom: async (roomId) => {
     const token = getSessionToken(roomId);
     if (!token) return false;
+    // 先恢复本地房间上下文。请求因切网或切后台短暂失败时，页面会继续等待
+    // WebSocket 自动重连，而不是拿同一个名字创建第二个席位。
+    get().joinRoomState(roomId, token);
     try {
       await ws.send("room.reconnect", { roomId, sessionToken: token });
-      get().joinRoomState(roomId, token);
       return true;
-    } catch {
+    } catch (error) {
+      // 网络断开/请求超时不是会话失效，保留令牌让同一标签页稍后继续重连。
+      if (!isPermanentRoomError(error)) return true;
       clearSessionToken(roomId);
+      if (get().roomId === roomId) {
+        get().leaveRoomState();
+        get().markRoomClosed();
+      }
       return false;
     }
   },
@@ -305,7 +319,14 @@ export function initGameSocket() {
         ws.send("room.reconnect", {
           roomId: currentStore.roomId,
           sessionToken: currentStore.sessionToken,
-        }).catch(() => {});
+        }).catch((error) => {
+          if (!isPermanentRoomError(error)) return;
+          const roomId = useGameStore.getState().roomId;
+          if (!roomId) return;
+          clearSessionToken(roomId);
+          useGameStore.getState().leaveRoomState();
+          useGameStore.getState().markRoomClosed();
+        });
       }
     }
   });

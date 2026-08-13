@@ -273,6 +273,8 @@ export interface RoomRecord {
   hostPlayerId: string;
   /** 房主断线后的重连宽限期，过期后才自动转移房主。 */
   hostReconnectDeadlineAt?: number;
+  /** 所有连接暂时断开后的回收时间；显式离开仍可立即关闭。 */
+  emptySinceAt?: number;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;

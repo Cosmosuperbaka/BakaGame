@@ -46,6 +46,7 @@ import {
   ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
   HOST_RECONNECT_TIMEOUT_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
   TEST_MODE_DEFAULT_WORD,
   TEST_MODE_MAX_PLAYERS,
@@ -206,8 +207,13 @@ export class RoomService {
       const isTestRoom = room.id === ROOM_ID_TEST_MODE;
 
       if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
-        await this.closeRoom(room, "empty");
-        continue;
+        if (room.emptySinceAt === undefined) room.emptySinceAt = currentTime;
+        if (currentTime - room.emptySinceAt >= ROOM_EMPTY_GRACE_PERIOD_MS) {
+          await this.closeRoom(room, "empty");
+          continue;
+        }
+      } else {
+        room.emptySinceAt = undefined;
       }
 
       if (!isTestRoom && currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS) {
@@ -1995,6 +2001,9 @@ export class RoomService {
 
     const round = room.round;
     const wasHost = room.hostPlayerId === player.id;
+    if (this.getOnlineCount(room) === 0 && this.shouldAutoCloseWhenEmpty(room)) {
+      room.emptySinceAt ??= this.now();
+    }
 
     if (wasHost) {
       if (reason === "leave") {
@@ -2021,7 +2030,7 @@ export class RoomService {
       }
       this.normalizeRoomRoleConfig(room);
       this.touchRoom(room);
-      if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
+      if (reason === "leave" && this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
         await this.closeRoom(room, "empty");
       } else {
         this.publishRoomState(room);
@@ -2053,7 +2062,7 @@ export class RoomService {
       playerId,
     });
 
-    if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
+    if (reason === "leave" && this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
       await this.closeRoom(room, "empty");
     } else {
       this.publishRoomState(room);
@@ -2563,6 +2572,7 @@ export class RoomService {
     }
 
     player.online = true;
+    room.emptySinceAt = undefined;
     player.connectionId = connection.id;
     player.lastSeenAt = this.now();
     connection.resetStateSync?.();
