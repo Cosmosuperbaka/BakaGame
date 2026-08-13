@@ -1,7 +1,7 @@
 {
   "name": "whoisfaker-client",
   "private": true,
-  "//": "version 已作废：npm 只接受 semver，填不了 ∞。用户可见版本号取 public/changelog.json 的最大版本号，不要再改这里。",
+  "//": "version 已作废：npm 只接受 semver，填不了 ∞。用户可见版本号取 src/data/changelog.json 的最大版本号，不要再改这里。",
   "version": "0.0.0",
   "type": "module",
   "scripts": {

@@ -61,7 +61,6 @@ docs(Faker): 更新游戏规则
     {
       "version": "1.x.x",
       "date": "YYYY-MM-DD",
-      "title": "简短描述",
       "content": "- 第一条\n- 第二条"
     }
   ]
