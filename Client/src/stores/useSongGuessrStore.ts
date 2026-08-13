@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type {
-  ChatMessage,
   EventPacket,
   ServerMessage,
   SongGuessrPrivateState,
@@ -14,6 +13,7 @@ import {
   saveSongGuessrSessionToken,
 } from "@/lib/cookie";
 import { songGuessrWs } from "@/lib/songguessrWs";
+import { consumeStateSync } from "@/lib/stateSync";
 
 interface SongGuessrStore {
   connected: boolean;
@@ -46,6 +46,19 @@ interface SongGuessrStore {
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let snapshotRevision: number | undefined;
+let privateStateRevision: number | undefined;
+let syncRequestPending = false;
+
+const requestFullSync = () => {
+  if (syncRequestPending) return;
+  syncRequestPending = true;
+  void useSongGuessrStore.getState().sendCommand("song.room.requestSync")
+    .catch(() => {})
+    .finally(() => {
+      syncRequestPending = false;
+    });
+};
 
 export const useSongGuessrStore = create<SongGuessrStore>((set, get) => ({
   connected: false,
@@ -144,11 +157,29 @@ export function initSongGuessrSocket() {
         useSongGuessrStore.setState({ rooms: event.payload as SongGuessrRoomSummary[] });
         break;
       case "song.room.snapshot":
-        useSongGuessrStore.setState({ snapshot: event.payload as SongGuessrRoomSnapshot });
+        {
+          const result = consumeStateSync(store.snapshot, snapshotRevision, event.payload);
+          if (result.needsFullSync || !result.state) {
+            requestFullSync();
+            break;
+          }
+          snapshotRevision = result.revision;
+          useSongGuessrStore.setState({ snapshot: result.state as SongGuessrRoomSnapshot });
+        }
         break;
       case "song.game.privateState":
         {
-          const privateState = event.payload as SongGuessrPrivateState;
+          const result = consumeStateSync(
+            store.privateState,
+            privateStateRevision,
+            event.payload,
+          );
+          if (result.needsFullSync || !result.state) {
+            requestFullSync();
+            break;
+          }
+          privateStateRevision = result.revision;
+          const privateState = result.state as SongGuessrPrivateState;
           const roomId = store.snapshot?.roomId ?? store.roomId;
           if (roomId) saveSongGuessrSessionToken(roomId, privateState.sessionToken);
           useSongGuessrStore.setState({
@@ -157,17 +188,6 @@ export function initSongGuessrSocket() {
             sessionToken: roomId ? privateState.sessionToken : store.sessionToken,
             roomClosedAt: null,
           });
-        }
-        break;
-      case "song.chat.message":
-        {
-          const message = event.payload as ChatMessage;
-          const snapshot = useSongGuessrStore.getState().snapshot;
-          if (snapshot) {
-            useSongGuessrStore.setState({
-              snapshot: { ...snapshot, chat: [...snapshot.chat, message].slice(-100) },
-            });
-          }
         }
         break;
       case "song.room.kicked":
@@ -191,6 +211,8 @@ export function initSongGuessrSocket() {
   const unsubscribeStatus = songGuessrWs.onStatus((connected) => {
     useSongGuessrStore.setState({ connected });
     if (!connected) return;
+    snapshotRevision = undefined;
+    privateStateRevision = undefined;
     const store = useSongGuessrStore.getState();
     void songGuessrWs.send("song.lobby.subscribeRooms").catch(() => {});
     if (store.roomId && store.sessionToken) {

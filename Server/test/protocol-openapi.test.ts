@@ -130,6 +130,7 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
       payload: { text: "你好" },
     },
     { id: "20", type: "game.cancelVote", roomId: "1234", payload: {} },
+    { id: "sync", type: "room.requestSync", roomId: "1234", payload: {} },
     { id: "21", type: "game.cancelNightAction", roomId: "1234", payload: {} },
     {
       id: "22",

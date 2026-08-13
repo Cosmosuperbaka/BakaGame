@@ -122,6 +122,7 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
   switch (type) {
     case "song.lobby.subscribeRooms":
     case "song.room.leave":
+    case "song.room.requestSync":
     case "song.auth.qr.create":
     case "song.auth.clear":
     case "song.game.start":

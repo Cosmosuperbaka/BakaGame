@@ -244,6 +244,7 @@ export type SongGuessrClientMessage =
       { roomId: string; sessionToken: string }
     >
   | SongGuessrClientEnvelope<"song.room.leave", Record<string, never>>
+  | SongGuessrClientEnvelope<"song.room.requestSync", Record<string, never>>
   | SongGuessrClientEnvelope<"song.player.setReady", { ready: boolean }>
   | SongGuessrClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
   | SongGuessrClientEnvelope<

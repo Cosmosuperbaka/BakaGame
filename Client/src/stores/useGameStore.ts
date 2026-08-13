@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ws from "@/lib/ws";
+import { consumeStateSync } from "@/lib/stateSync";
 import {
   saveSessionToken,
   getSessionToken,
@@ -11,7 +12,6 @@ import type {
   RoomSummary,
   ServerMessage,
   EventPacket,
-  ChatMessage,
   RoundSummary,
   DaybreakNotice,
 } from "@/types";
@@ -46,7 +46,6 @@ export interface GameState {
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
-  appendChat: (message: ChatMessage) => void;
   setSummary: (summary: RoundSummary | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
   removeToast: (id: number) => void;
@@ -69,6 +68,19 @@ export interface GameState {
 
 let toastCounter = 0;
 let daybreakNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+let snapshotRevision: number | undefined;
+let privateStateRevision: number | undefined;
+let syncRequestPending = false;
+
+const requestFullSync = () => {
+  if (syncRequestPending) return;
+  syncRequestPending = true;
+  void useGameStore.getState().sendCommand("room.requestSync")
+    .catch(() => {})
+    .finally(() => {
+      syncRequestPending = false;
+    });
+};
 
 export const useGameStore = create<GameState>((set, get) => ({
   connected: false,
@@ -118,17 +130,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       daybreakNoticeTimer = undefined;
     }, 3000);
   },
-
-  appendChat: (message) =>
-    set((state) => {
-      if (!state.snapshot) return state;
-      return {
-        snapshot: {
-          ...state.snapshot,
-          chat: [...state.snapshot.chat, message],
-        },
-      };
-    }),
 
   setSummary: (summary) =>
     set((state) => {
@@ -219,15 +220,34 @@ export function initGameSocket() {
         currentStore.setRooms(evt.payload as RoomSummary[]);
         break;
       case "room.snapshot":
-        currentStore.setSnapshot(evt.payload as RoomSnapshot);
+        {
+          const result = consumeStateSync(
+            currentStore.snapshot,
+            snapshotRevision,
+            evt.payload,
+          );
+          if (result.needsFullSync || !result.state) {
+            requestFullSync();
+            break;
+          }
+          snapshotRevision = result.revision;
+          currentStore.setSnapshot(result.state as RoomSnapshot);
+        }
         break;
       case "game.privateState":
-        currentStore.setPrivateState(evt.payload as PrivateState);
-        break;
-      case "chat.message":
-        currentStore.appendChat(evt.payload as ChatMessage);
-        break;
-      case "game.phaseChanged":
+        {
+          const result = consumeStateSync(
+            currentStore.privateState,
+            privateStateRevision,
+            evt.payload,
+          );
+          if (result.needsFullSync || !result.state) {
+            requestFullSync();
+            break;
+          }
+          privateStateRevision = result.revision;
+          currentStore.setPrivateState(result.state as PrivateState);
+        }
         break;
       case "game.daybreak":
         currentStore.showDaybreakNotice(evt.payload as DaybreakNotice);
@@ -278,6 +298,8 @@ export function initGameSocket() {
     currentStore.setConnected(connected);
 
     if (connected) {
+      snapshotRevision = undefined;
+      privateStateRevision = undefined;
       ws.send("lobby.subscribeRooms").catch(() => {});
       if (currentStore.roomId && currentStore.sessionToken) {
         ws.send("room.reconnect", {

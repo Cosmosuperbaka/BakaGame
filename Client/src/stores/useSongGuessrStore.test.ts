@@ -189,18 +189,18 @@ describe("Songuessr store integration", () => {
     expect(wsMock.statusHandlers).toHaveLength(0);
   });
 
-  it("stores public snapshots and private state from server events", () => {
+  it("stores versioned public snapshots and private state from server events", () => {
     const dispose = initSongGuessrSocket();
 
     wsMock.messageHandlers[0]({
       type: "event",
       event: "song.room.snapshot",
-      payload: snapshot,
+      payload: { mode: "full", revision: 1, state: snapshot },
     });
     wsMock.messageHandlers[0]({
       type: "event",
       event: "song.game.privateState",
-      payload: privateState,
+      payload: { mode: "full", revision: 1, state: privateState },
     });
 
     expect(useSongGuessrStore.getState()).toMatchObject({ snapshot, privateState });
@@ -209,29 +209,6 @@ describe("Songuessr store integration", () => {
       sessionToken: "live-token",
     });
     expect(getSongGuessrSessionToken("1234")).toBe("live-token");
-    dispose();
-  });
-
-  it("appends chat events to the current public snapshot", () => {
-    useSongGuessrStore.setState({ snapshot });
-    const dispose = initSongGuessrSocket();
-
-    wsMock.messageHandlers[0]({
-      type: "event",
-      event: "song.chat.message",
-      payload: {
-        id: "chat-1",
-        playerId: "player-1",
-        playerName: "房主",
-        text: "开始猜歌",
-        createdAt: 1_000,
-        system: false,
-      },
-    });
-
-    expect(useSongGuessrStore.getState().snapshot?.chat).toEqual([
-      expect.objectContaining({ id: "chat-1", text: "开始猜歌" }),
-    ]);
     dispose();
   });
 

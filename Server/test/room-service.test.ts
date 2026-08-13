@@ -68,7 +68,7 @@ test("大厅订阅后会收到房间列表更新", async () => {
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.roomId).toBe("1111");
 });
 
-test("房间设置变更事件不会广播私房密码", async () => {
+test("房间设置只通过公开快照同步且不会暴露私房密码", async () => {
   const { service } = createTestContext();
   const host = createConnection(service, "settings-host");
   await execute(service, host, {
@@ -97,11 +97,10 @@ test("房间设置变更事件不会广播私房密码", async () => {
     payload: { password: "new-password" },
   });
 
-  const event = getLastEventPayload<{
-    settings: Record<string, unknown>;
-  }>(guest, "room.settingsChanged");
-  expect(event?.settings.password).toBeUndefined();
-  expect(event?.settings.visibility).toBe("private");
+  const snapshot = getLastEventPayload<RoomSnapshot>(guest, "room.snapshot");
+  expect(snapshot?.visibility).toBe("private");
+  expect(snapshot?.hasPassword).toBe(true);
+  expect(JSON.stringify(snapshot)).not.toContain("new-password");
 });
 
 test("玩家改名会规范化名称并广播最新快照", async () => {
@@ -120,9 +119,6 @@ test("玩家改名会规范化名称并广播最新快照", async () => {
       (player) => player.id === result.playerId,
     )?.name,
   ).toBe("新房主");
-  expect(
-    getLastEventPayload<{ action: string; name: string }>(host, "room.playerChanged"),
-  ).toMatchObject({ action: "renamed", name: "新房主" });
 });
 
 test("玩家改名会拒绝空名称和房间内重名", async () => {

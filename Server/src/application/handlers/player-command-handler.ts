@@ -30,7 +30,6 @@ interface PlayerCommandDependencies {
   normalizeRoleConfig(room: RoomRecord): void;
   touchRoom(room: RoomRecord): void;
   log(entry: LogEntry): Promise<void>;
-  broadcastRoomEvent(room: RoomRecord, event: string, payload: unknown): void;
   publishRoomState(room: RoomRecord): void;
   publishLobby(): void;
 }
@@ -64,12 +63,6 @@ const renamePlayer = async (
     payload: { name: player.name },
   });
 
-  dependencies.broadcastRoomEvent(room, "room.playerChanged", {
-    roomId: room.id,
-    action: "renamed",
-    playerId: player.id,
-    name: player.name,
-  });
   dependencies.publishRoomState(room);
   return { name: player.name };
 };
@@ -107,12 +100,6 @@ const setSpectator = async (
     payload: { membership: player.membership },
   });
 
-  dependencies.broadcastRoomEvent(room, "room.playerChanged", {
-    roomId: room.id,
-    action: "membership_changed",
-    playerId: player.id,
-    membership: player.membership,
-  });
   dependencies.publishRoomState(room);
   dependencies.publishLobby();
   return { membership: player.membership };
@@ -140,12 +127,6 @@ const setReady = async (
     payload: { ready },
   });
 
-  dependencies.broadcastRoomEvent(room, "room.playerChanged", {
-    roomId: room.id,
-    action: "ready_changed",
-    playerId: player.id,
-    ready,
-  });
   dependencies.publishRoomState(room);
   return { ready };
 };
