@@ -275,7 +275,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
         <p>
           隐私说明：服务器不会保存账号信息。账号信息仅保存在登录者浏览器，
-          在房间中临时加载到服务器内存供全房获取音乐信息；登录者离开房间时立即销毁。
+          在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或主动移除登录时销毁。
         </p>
       </div>
     </div>
