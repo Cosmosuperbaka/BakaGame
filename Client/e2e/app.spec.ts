@@ -13,25 +13,59 @@ test("landing page exposes both playable games and keeps placeholders disabled",
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
 });
 
-test("landing page remembers the latest site update as read", async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => window.localStorage.removeItem("bakagame:last-seen-commit"));
-  await page.reload();
+test("landing game entries stay horizontal and clear of the footer", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const viewport of [
+    { width: 2048, height: 1050 },
+    { width: 1024, height: 500 },
+    { width: 844, height: 390 },
+    { width: 390, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
 
-  const updateNotice = page.getByRole("button", { name: "有新的站点更新" });
-  await expect(updateNotice).toBeVisible();
-  await updateNotice.click();
-  await expect(page.getByRole("heading", { name: "站点有新更新" })).toBeVisible();
+    const entries = ["whoisfaker", "songuessr", "animecharguessr"].map((id) =>
+      page.getByTestId(`game-entry-${id}`),
+    );
+    const boxes = await Promise.all(entries.map((entry) => entry.boundingBox()));
+    const headerBox = await page.locator("header").boundingBox();
+    const footerBox = await page.locator("footer").boundingBox();
 
-  await page.getByRole("button", { name: "知道了" }).click();
-  await expect(updateNotice).toBeHidden();
-  const seenCommit = await page.evaluate(() =>
-    window.localStorage.getItem("bakagame:last-seen-commit"),
-  );
-  expect(seenCommit).toMatch(/^[0-9a-f]{7}$/);
+    expect(boxes.every((box) => box !== null)).toBe(true);
+    expect(headerBox).not.toBeNull();
+    expect(footerBox).not.toBeNull();
+    const resolvedBoxes = boxes.filter((box): box is NonNullable<typeof box> => box !== null);
+    const yPositions = resolvedBoxes.map((box) => box.y);
+    expect(Math.max(...yPositions) - Math.min(...yPositions)).toBeLessThan(3);
+    expect(resolvedBoxes[0]!.x).toBeLessThan(resolvedBoxes[1]!.x);
+    expect(resolvedBoxes[1]!.x).toBeLessThan(resolvedBoxes[2]!.x);
+    expect(Math.min(...resolvedBoxes.map((box) => box.y))).toBeGreaterThanOrEqual(
+      headerBox!.y + headerBox!.height,
+    );
+    expect(Math.max(...resolvedBoxes.map((box) => box.y + box.height))).toBeLessThanOrEqual(
+      footerBox!.y,
+    );
+  }
+});
 
-  await page.reload();
-  await expect(updateNotice).toHaveCount(0);
+test("players in a room are prompted when a newer build is deployed", async ({ page }) => {
+  await page.route("**/?version-check=*", async (route) => {
+    await route.fulfill({
+      contentType: "text/html",
+      body: '<!doctype html><html><head><meta name="bakagame-build" content="newer-build"></head></html>',
+    });
+  });
+
+  const unique = Date.now().toString(36);
+  await page.goto("/whoisfaker");
+  await page.getByPlaceholder("用户名").fill(`版本测试${unique}`);
+  await page.getByRole("button", { name: "创建房间" }).click();
+  await page.getByPlaceholder("输入房间名称").fill(`版本测试房${unique}`);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
+  await expect(page.getByRole("status")).toContainText("游戏有新版本，请刷新后继续游玩");
+  await expect(page.getByRole("button", { name: "刷新", exact: true })).toBeVisible();
 });
 
 test("removed and unknown routes fall back to a live page", async ({ page }) => {
@@ -156,8 +190,131 @@ test("two browser sessions can create and join the same server room", async ({ b
 
   await expect(guestPage).toHaveURL(new RegExp(`/whoisfaker/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
   await guestContext.close();
+});
+
+test("empty description history keeps the player pane width after a direct voting jump", async ({ page }) => {
+  const unique = Date.now().toString(36);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/whoisfaker/room/Oblivionis");
+  await page.getByPlaceholder("用户名").fill(`历史测试${unique}`);
+  await page.getByRole("button", { name: "进入房间" }).click();
+
+  const addBot = page.getByRole("button", { name: "添加一个测试人机" });
+  const removeBot = page.getByRole("button", { name: "移除一个测试人机" });
+  for (let index = 0; index < 16 && await removeBot.isEnabled(); index += 1) {
+    await removeBot.click();
+  }
+  for (let index = 0; index < 4; index += 1) await addBot.click();
+
+  await page.getByRole("button", { name: "投票阶段", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "投票阶段", exact: true })).toBeVisible();
+
+  const playerPane = page.locator("section > aside").first();
+  const roomSection = playerPane.locator("..");
+  const playerSpacer = playerPane.locator("xpath=preceding-sibling::div[1]");
+  const collapsedWidths = await Promise.all([
+    playerPane.evaluate((element) => element.getBoundingClientRect().width),
+    playerSpacer.evaluate((element) => element.getBoundingClientRect().width),
+  ]);
+  expect(Math.abs(collapsedWidths[0] - collapsedWidths[1])).toBeLessThan(1);
+  await page.getByRole("button", { name: "展开发言历史" }).click();
+  await expect(page.getByRole("button", { name: "收起发言历史" })).toBeVisible();
+  await expect.poll(async () => {
+    const [paneWidth, sectionWidth] = await Promise.all([
+      playerPane.evaluate((element) => element.getBoundingClientRect().width),
+      roomSection.evaluate((element) => element.getBoundingClientRect().width),
+    ]);
+    return Math.abs(paneWidth - sectionWidth);
+  }).toBeLessThan(1);
+
+  const firstColumn = playerPane.locator('[style*="grid-template-columns"]').first();
+  const firstColumnWidth = await firstColumn.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).gridTemplateColumns),
+  );
+  expect(Math.abs(firstColumnWidth - collapsedWidths[1])).toBeLessThan(1);
+});
+
+test("a decisive vote shows the eliminated player before game over", async ({ browser, page }) => {
+  test.setTimeout(75_000);
+  const unique = Date.now().toString(36);
+  const hostName = `结算主持${unique}`;
+  const playerNames = Array.from({ length: 4 }, (_, index) => `结算玩家${index + 1}-${unique}`);
+  const playerContexts = [];
+  const waitForPhaseAnimation = async (targetPage: typeof page) => {
+    const stage = targetPage.locator('main [style*="will-change"]').first();
+    await expect(stage).toBeVisible();
+    await expect.poll(async () => stage.evaluate((element) => ({
+      opacity: getComputedStyle(element).opacity,
+      transform: getComputedStyle(element).transform,
+    }))).toEqual({ opacity: "1", transform: "none" });
+  };
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/whoisfaker");
+  await page.getByPlaceholder("用户名").fill(hostName);
+  await page.getByRole("button", { name: "创建房间" }).click();
+  await page.getByPlaceholder("输入房间名称").fill(`结算展示房${unique}`);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
+  const roomUrl = page.url();
+
+  try {
+    for (const playerName of playerNames) {
+      const context = await browser.newContext({ reducedMotion: "reduce" });
+      playerContexts.push(context);
+      const playerPage = await context.newPage();
+      await playerPage.goto(roomUrl);
+      await playerPage.getByPlaceholder("用户名").fill(playerName);
+      await playerPage.getByRole("button", { name: "进入房间" }).click();
+      await playerPage.getByRole("button", { name: "准备", exact: true }).click();
+    }
+
+    await expect(page.getByRole("button", { name: "开始游戏", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "开始游戏", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "指定主持人" })).toBeVisible();
+    await page.getByRole("button", { name: hostName, exact: true }).click();
+    await expect(page.getByRole("heading", { name: "提交词语" })).toBeVisible();
+    await waitForPhaseAnimation(page);
+
+    await page.getByPlaceholder("输入平民获得的词语").fill("苹果");
+    await page.getByPlaceholder("输入卧底获得的词语").fill("香蕉");
+    await page.getByRole("switch").click();
+    for (const [index, playerName] of playerNames.entries()) {
+      const roleGroup = page.getByRole("group", { name: `为 ${playerName} 分配身份` });
+      await roleGroup.getByRole("button", { name: index === 0 ? "卧底" : "平民" }).click();
+    }
+    await page.getByRole("button", { name: "确认提交" }).click();
+    await expect(page.getByRole("heading", { name: "描述阶段" })).toBeVisible();
+
+    const playerPages = playerContexts.map((context) => context.pages()[0]!);
+    for (const [index, playerPage] of playerPages.entries()) {
+      await expect(playerPage.getByPlaceholder("输入你的描述...")).toBeVisible();
+      await waitForPhaseAnimation(playerPage);
+      await playerPage.getByPlaceholder("输入你的描述...").fill(`描述${index + 1}`);
+      await playerPage.getByRole("button", { name: "发送", exact: true }).click();
+      await expect(playerPage.getByPlaceholder("输入你的描述...")).toHaveCount(0);
+    }
+
+    await page.getByRole("button", { name: "进入投票阶段" }).click();
+    await expect(page.getByRole("heading", { name: "投票阶段", exact: true })).toBeVisible();
+
+    for (const [index, playerPage] of playerPages.entries()) {
+      const targetName = index === 0 ? playerNames[1]! : playerNames[0]!;
+      await playerPage.getByRole("button", { name: targetName, exact: true }).click();
+      await expect(playerPage.getByText("已完成投票", { exact: true })).toBeVisible();
+    }
+
+    await page.getByRole("button", { name: "结算投票" }).click();
+    await expect(page.getByRole("heading", { name: "投票阶段", exact: true })).toBeVisible();
+    await expect(page.getByLabel("已出局")).toHaveCount(1);
+    await expect(page.getByText("好人阵营胜利", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("好人阵营胜利", { exact: true })).toBeVisible();
+  } finally {
+    await Promise.all(playerContexts.map((context) => context.close()));
+  }
 });
 
 test("two browser sessions can create and join a Songuessr room", async ({ browser, page }) => {
