@@ -55,6 +55,7 @@ const snapshot: SongGuessrRoomSnapshot = {
   settings: {
     questionType: "song",
     questionMode: "manual",
+    autoRotateSubmitter: false,
     autoFilters: { artists: [], minPopularity: 0 },
     lyricsLineCount: 4,
     showLyrics: true,

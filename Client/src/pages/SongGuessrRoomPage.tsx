@@ -121,6 +121,7 @@ export default function SongGuessrRoomPage() {
   const [pendingJoinName, setPendingJoinName] = useState("");
   const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
+  const [roomLinkCopied, setRoomLinkCopied] = useState(false);
   const [volume, setVolume] = useState(() => {
     const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
     return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
@@ -609,6 +610,16 @@ export default function SongGuessrRoomPage() {
     navigate("/songuessr", { replace: true });
   };
 
+  const copyRoomLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/songuessr/room/${snapshot.roomId}`);
+      setRoomLinkCopied(true);
+      window.setTimeout(() => setRoomLinkCopied(false), 2_000);
+    } catch {
+      setNotice("复制失败，请手动复制", "error");
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <audio
@@ -658,6 +669,16 @@ export default function SongGuessrRoomPage() {
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           ) : null}
           <VolumeControl volume={volume} onVolumeChange={setVolume} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => void copyRoomLink()}
+            aria-label={roomLinkCopied ? "房间链接已复制" : "复制房间链接"}
+            title={roomLinkCopied ? "已复制" : "复制房间链接"}
+          >
+            {roomLinkCopied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+          </Button>
           <div className="flex gap-1 md:hidden">
             <Button
               variant="ghost"
@@ -919,7 +940,7 @@ function GameStage({
         {privateState.canSubmitSong ? (
           <>
             <p className="text-sm text-muted-foreground">
-              搜索一首带时间轴歌词且可播放的网易云音乐歌曲。
+              搜索一首可播放的网易云音乐歌曲。
             </p>
             <Button size="lg" className="min-w-[120px] gap-2" onClick={() => openSearch("submit")}>
               <Music2 className="h-4 w-4" />选择歌曲
@@ -986,7 +1007,11 @@ function GameStage({
             <SongAutoFilterSummary snapshot={snapshot} />
           ) : null}
           {snapshot.settings.showLyrics ? (
-            <div className="space-y-2 rounded-md bg-background/60 p-5 text-center">
+            <div
+              className="select-none space-y-2 rounded-md bg-background/60 p-5 text-center"
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
+            >
               {snapshot.currentRound.lyricClip.lines.length > 0 ? (
                 snapshot.currentRound.lyricClip.lines.map((line) => (
                   <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
@@ -1351,6 +1376,7 @@ function SongQuestionSettings({
   const setNotice = useSongGuessrStore((state) => state.setNotice);
   const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
   const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
+  const [autoRotateSubmitter, setAutoRotateSubmitter] = useState(snapshot.settings.autoRotateSubmitter);
   const [playlistDraft, setPlaylistDraft] = useState(snapshot.settings.autoFilters.playlist?.id ?? "");
   const [playlist, setPlaylist] = useState(snapshot.settings.autoFilters.playlist);
   const [artistDraft, setArtistDraft] = useState("");
@@ -1389,6 +1415,7 @@ function SongQuestionSettings({
     {
       questionType,
       questionMode,
+      autoRotateSubmitter,
       autoFilters: { playlist, artists, minPopularity },
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
@@ -1432,6 +1459,16 @@ function SongQuestionSettings({
           自动出题
         </Button>
       </div>
+
+      {questionMode === "manual" ? (
+        <div className="flex items-center justify-between rounded-md bg-muted/40 p-3">
+          <div>
+            <Label className="text-xs">自动轮流出题</Label>
+            <p className="mt-1 text-[11px] text-muted-foreground">每轮按玩家加入顺序自动指定下一位出题人。</p>
+          </div>
+          <Switch checked={autoRotateSubmitter} onCheckedChange={setAutoRotateSubmitter} />
+        </div>
+      ) : null}
 
       {questionMode === "automatic" ? (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">
@@ -1776,7 +1813,9 @@ function CountStepper({
 
 function SongSettingsPreview({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
   const items = [
-    snapshot.settings.questionMode === "automatic" ? "自动出题" : "手动出题",
+    snapshot.settings.questionMode === "automatic"
+      ? "自动出题"
+      : snapshot.settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
     snapshot.settings.showLyrics ? `${snapshot.settings.lyricsLineCount} 行歌词` : "歌词已关闭",

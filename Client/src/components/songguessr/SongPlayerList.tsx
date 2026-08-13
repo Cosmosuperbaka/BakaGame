@@ -38,11 +38,10 @@ export function SongPlayerList({
   const me = players.find((player) => player.id === myPlayerId);
   const waitingPhase = phase === "waiting";
   const canJoinSpectators =
-    waitingPhase &&
     Boolean(me) &&
     allowSpectators &&
     me?.membership === "active";
-  const canJoinPlayers = waitingPhase && me?.membership === "spectator";
+  const canJoinPlayers = me?.membership === "spectator";
 
   const handleKick = useCallback(
     async (playerId: string) => {
@@ -107,7 +106,12 @@ export function SongPlayerList({
           </motion.div>
 
           {canJoinPlayers ? (
-            <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+            <SpectatorToggle
+              spectator={false}
+              queued={!waitingPhase}
+              selected={me?.nextRoundMembership === "active"}
+              onToggle={handleSetSpectator}
+            />
           ) : null}
 
           {observers.length > 0 || canJoinSpectators ? (
@@ -124,7 +128,12 @@ export function SongPlayerList({
                 </AnimatePresence>
               </motion.div>
               {canJoinSpectators ? (
-                <SpectatorToggle spectator onToggle={handleSetSpectator} />
+                <SpectatorToggle
+                  spectator
+                  queued={!waitingPhase}
+                  selected={me?.nextRoundMembership === "spectator"}
+                  onToggle={handleSetSpectator}
+                />
               ) : null}
             </>
           ) : null}
@@ -255,21 +264,27 @@ function resolveSongStatus(
 
 function SpectatorToggle({
   spectator,
+  queued,
+  selected,
   onToggle,
 }: {
   spectator: boolean;
+  queued: boolean;
+  selected: boolean;
   onToggle: (spectator: boolean) => void;
 }) {
-  const label = spectator ? "加入旁观" : "取消旁观";
+  const label = queued
+    ? spectator ? "下轮加入旁观" : "下轮加入游戏"
+    : spectator ? "加入旁观" : "取消旁观";
   return (
     <Button
-      variant="ghost"
+      variant={selected ? "secondary" : "ghost"}
       size="sm"
       className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
       onClick={() => onToggle(spectator)}
     >
       {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-      {label}
+      {selected ? `${label}（已选择）` : label}
     </Button>
   );
 }

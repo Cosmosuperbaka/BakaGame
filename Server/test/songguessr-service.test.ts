@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { SongGuessrService } from "../src/application/songguessr-service";
+import { createSongLyricClip, SongGuessrService } from "../src/application/songguessr-service";
 import { AppError } from "../src/domain/errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/constants";
 import type { ConnectionRecord } from "../src/domain/model";
@@ -147,6 +147,24 @@ const startRound = async (
 };
 
 describe("SongGuessrService", () => {
+
+  test("歌词不足或歌词跨度过长时降级为固定时长随机片段", () => {
+    const fallback = createSongLyricClip([], 5, { nextInt: () => 12_345 }, 180_000);
+    expect(fallback).toEqual({ startTime: 12_345, endTime: 42_345, lines: [] });
+
+    const insufficient = createSongLyricClip([
+      { time: 10_000, endTime: 14_000, text: "仅有一句" },
+    ], 5, { nextInt: () => 7_000 }, 180_000);
+    expect(insufficient).toEqual({ startTime: 7_000, endTime: 37_000, lines: [] });
+
+    const longLineFallback = createSongLyricClip([
+      { time: 10_000, endTime: 30_001, text: "跨度过长" },
+    ], 1, { nextInt: () => 5_000 }, 60_000);
+    expect(longLineFallback).toEqual({ startTime: 5_000, endTime: 11_000, lines: [] });
+
+    const shortSong = createSongLyricClip([], 5, { nextInt: () => 0 }, 12_000);
+    expect(shortSong).toEqual({ startTime: 0, endTime: 12_000, lines: [] });
+  });
 
   test("房间最多容纳十六个在线席位", async () => {
     const service = new SongGuessrService({ musicProvider: provider });
@@ -470,6 +488,42 @@ describe("SongGuessrService", () => {
     })).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
     expect(statusCalls).toBe(2);
     expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(false);
+  });
+
+  test("开始游戏校验遇到限流时透传上游错误且保留账号状态", async () => {
+    let statusCalls = 0;
+    const rateLimitedProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => {
+        statusCalls += 1;
+        if (statusCalls > 1) {
+          throw new AppError("MUSIC_API_RATE_LIMITED", "操作频繁，请稍候再试");
+        }
+        return { cookie, account: { nickname: "限流账号", vipStatus: "vip" } };
+      },
+    };
+    const service = new SongGuessrService({ musicProvider: rateLimitedProvider });
+    const host = connection(service, "rate-limit-host");
+    const guest = connection(service, "rate-limit-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "玩家");
+    await execute(service, guest, {
+      id: "ready-before-rate-limit",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+
+    await expect(execute(service, host, {
+      id: "start-during-rate-limit",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    })).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+      message: "操作频繁，请稍候再试",
+    });
+    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
   });
 
   test("非会员不能提交会员专享歌曲", async () => {
@@ -921,6 +975,64 @@ describe("SongGuessrService", () => {
       payload: { roundNumber: 1 },
     });
     expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").canGuess).toBe(true);
+  });
+
+  test("自动题库热度筛选对大歌单限制单轮上游查询数量", async () => {
+    let popularityCalls = 0;
+    const largePlaylist = Array.from({ length: 1_000 }, (_, index) => ({
+      ...songs.wrong,
+      id: `large-${index}`,
+      popularity: undefined,
+    }));
+    const autoProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "大歌单", songCount: largePlaylist.length },
+        songs: largePlaylist,
+      }),
+      getSongPopularity: async () => {
+        popularityCalls += 1;
+        return 2_000;
+      },
+      getSong: async (id) => ({ ...songs.answer, id }),
+    };
+    const service = new SongGuessrService({
+      musicProvider: autoProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "large-auto-host");
+    const guest = connection(service, "large-auto-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "大歌单玩家");
+    await execute(service, host, {
+      id: "large-auto-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "42", name: "大歌单", songCount: largePlaylist.length },
+          artists: [],
+          minPopularity: 1_000,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "large-auto-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+
+    await execute(service, host, {
+      id: "large-auto-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(popularityCalls).toBeLessThanOrEqual(24);
   });
 
   test("自动出题只配置歌单时也可以开始", async () => {
@@ -1378,7 +1490,7 @@ describe("SongGuessrService", () => {
     ]));
   });
 
-  test("中途加入者只能在等待阶段切换席位，旁观真人也可以担任出题人", async () => {
+  test("中途加入者可以预约下轮席位，旁观真人也可以担任出题人", async () => {
     const service = new SongGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
@@ -1402,7 +1514,15 @@ describe("SongGuessrService", () => {
       type: "song.player.setSpectator",
       roomId: "1234",
       payload: { spectator: false },
-    })).rejects.toMatchObject({ code: "INVALID_PHASE" });
+    })).resolves.toEqual({ spectator: false, queued: true });
+    expect(lastEvent<SongGuessrRoomSnapshot>(lateJoiner, "song.room.snapshot").players)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: lateState.playerId,
+          membership: "spectator",
+          nextRoundMembership: "active",
+        }),
+      ]));
     expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGuess).toBe(false);
     const observerState = await joinRoom(service, observer, "旁观出题人");
 
@@ -1418,6 +1538,10 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
+    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: lateState.playerId, membership: "active" }),
+      ]));
     await execute(service, host, {
       id: "choose-observer",
       type: "song.game.chooseSubmitter",
@@ -1433,7 +1557,185 @@ describe("SongGuessrService", () => {
     });
     expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound)
       .toMatchObject({ submitterPlayerId: observerState.playerId });
-    expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGiveUp).toBe(false);
+    expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGiveUp).toBe(true);
+  });
+
+  test("离线旁观者的下轮参战预约不会阻塞回合", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "offline-queue-host");
+    const guest = connection(service, "offline-queue-guest");
+    const lateJoiner = connection(service, "offline-queue-late");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    const lateState = await joinRoom(service, lateJoiner, "离线预约者");
+    await execute(service, lateJoiner, {
+      id: "queue-active-while-playing",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: false },
+    });
+    await service.unregisterConnection(lateJoiner.record.id);
+    await execute(service, guest, {
+      id: "finish-first-round",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "prepare-next-round",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "choose-next-submitter",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "submit-next-song",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+
+    const nextRound = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(nextRound.phase).toBe("playing");
+    expect(nextRound.players).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: lateState.playerId,
+        membership: "spectator",
+        nextRoundMembership: "active",
+        online: false,
+      }),
+    ]));
+    await execute(service, guest, {
+      id: "finish-next-round",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
+  });
+
+  test("手动模式全员预约旁观后回到等待阶段且不创建空回合", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "all-watch-host");
+    const guest = connection(service, "all-watch-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    for (const client of [host, guest]) {
+      await execute(service, client, {
+        id: `queue-watch-${client.record.id}`,
+        type: "song.player.setSpectator",
+        roomId: "1234",
+        payload: { spectator: true },
+      });
+    }
+    await execute(service, guest, {
+      id: "finish-before-all-watch",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "next-after-all-watch",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+
+    const snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("waiting");
+    expect(snapshot.currentRound).toBeUndefined();
+    expect(snapshot.hostPlayerId).toBe(hostState.playerId);
+    expect(snapshot.players).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: hostState.playerId, membership: "spectator", isHost: true }),
+      expect.objectContaining({ id: guestState.playerId, membership: "spectator" }),
+    ]));
+  });
+
+  test("自动模式全员预约旁观后回到等待阶段且不请求下一首歌", async () => {
+    let songLoads = 0;
+    const autoProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "自动题库", songCount: 1 },
+        songs: [songs.answer],
+      }),
+      getSong: async (id) => {
+        songLoads += 1;
+        return provider.getSong(id);
+      },
+    };
+    const service = new SongGuessrService({ musicProvider: autoProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, "auto-all-watch-host");
+    const guest = connection(service, "auto-all-watch-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "玩家");
+    await execute(service, host, {
+      id: "auto-all-watch-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "42", name: "自动题库", songCount: 1 },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "auto-all-watch-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "auto-all-watch-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(songLoads).toBe(1);
+
+    for (const client of [host, guest]) {
+      await execute(service, client, {
+        id: `auto-queue-watch-${client.record.id}`,
+        type: "song.player.setSpectator",
+        roomId: "1234",
+        payload: { spectator: true },
+      });
+    }
+    await execute(service, host, {
+      id: "auto-finish-round",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, guest, {
+      id: "auto-finish-round-guest",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "auto-next-after-all-watch",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+
+    const snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("waiting");
+    expect(snapshot.currentRound).toBeUndefined();
+    expect(songLoads).toBe(1);
   });
 
   test("进行中禁止修改房间设置且回合继续使用开局快照", async () => {
@@ -1506,7 +1808,7 @@ describe("SongGuessrService", () => {
     expect(nextPrivate.guessDeadlineAt).toBe(now + 60_000);
   });
 
-  test("禁止用展示中的歌词原词搜索但允许普通关键词", async () => {
+  test("允许用展示中的歌词原词搜索", async () => {
     const service = new SongGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
@@ -1523,13 +1825,120 @@ describe("SongGuessrService", () => {
       type: "song.music.search",
       roomId: "1234",
       payload: { keyword: "歌词1" },
-    })).rejects.toMatchObject({ code: "LYRIC_SEARCH_FORBIDDEN" });
+    })).resolves.toMatchObject({ results: expect.any(Array) });
     await expect(execute(service, guest, {
       id: "search-normal",
       type: "song.music.search",
       roomId: "1234",
       payload: { keyword: "测试歌手" },
     })).resolves.toMatchObject({ results: expect.any(Array) });
+  });
+
+  test("歌名匹配忽略版本信息且共同歌手即可判对", async () => {
+    const matchingAnswer = {
+      ...songs.answer,
+      title: "答案歌（Live Ver.）",
+      artist: "歌手甲 / 歌手乙",
+    };
+    const matchingGuess = {
+      ...songs.wrong,
+      title: "答案歌 (inst.)",
+      artist: "歌手丙 feat. 歌手乙",
+    };
+    const matchingProvider: MusicProvider = {
+      ...provider,
+      getSong: async () => matchingAnswer,
+      getSongMetadata: async () => matchingGuess,
+    };
+    const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, "matching-host");
+    const guest = connection(service, "matching-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "匹配玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "matching-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    const result = await execute(service, guest, {
+      id: "matching-guess",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "different-id" },
+    }) as { attempt: { result: string } };
+    expect(result.attempt.result).toBe("correct");
+  });
+
+  test("歌名匹配也会清理裸露的 feat、Remix 与 TV Size 后缀", async () => {
+    const variants = [
+      ["答案歌 feat. 歌手乙", "答案歌"],
+      ["答案歌 Remix", "答案歌"],
+      ["答案歌 TV Size", "答案歌"],
+    ] as const;
+
+    for (const [answerTitle, guessTitle] of variants) {
+      const matchingProvider: MusicProvider = {
+        ...provider,
+        getSong: async () => ({ ...songs.answer, title: answerTitle, artist: "歌手甲 / 歌手乙" }),
+        getSongMetadata: async () => ({ ...songs.wrong, title: guessTitle, artist: "歌手乙" }),
+      };
+      const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+      const host = connection(service, `variant-host-${answerTitle}`);
+      const guest = connection(service, `variant-guest-${answerTitle}`);
+      await createRoom(service, host);
+      const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+      await joinRoom(service, guest, "版本匹配玩家");
+      await startRound(service, host, guest, hostState.playerId);
+      await execute(service, guest, {
+        id: `variant-audio-${answerTitle}`,
+        type: "song.game.audioReady",
+        roomId: "1234",
+        payload: { roundNumber: 1 },
+      });
+      const result = await execute(service, guest, {
+        id: `variant-guess-${answerTitle}`,
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "different-id" },
+      }) as { attempt: { result: string } };
+      expect(result.attempt.result).toBe("correct");
+    }
+  });
+
+  test("手动模式开启自动轮流后直接轮到下一位正式玩家出题", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "rotate-host");
+    const guest = connection(service, "rotate-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "轮流玩家");
+    await execute(service, host, {
+      id: "rotate-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { autoRotateSubmitter: true },
+    });
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "rotate-give-up",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "rotate-next",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+      phase: "submittingSong",
+      pendingSubmitterPlayerId: guestState.playerId,
+    });
+    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").canSubmitSong).toBe(true);
   });
 
   test("玩家可以主动放弃并且只记录一个放弃结果", async () => {

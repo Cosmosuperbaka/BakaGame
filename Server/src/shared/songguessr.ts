@@ -36,6 +36,7 @@ export interface SongAutoFilters {
 export interface SongGuessrSettings {
   questionType: SongQuestionType;
   questionMode: SongQuestionMode;
+  autoRotateSubmitter: boolean;
   autoFilters: SongAutoFilters;
   lyricsLineCount: number;
   showLyrics: boolean;
@@ -156,6 +157,7 @@ export interface SongGuessrPlayerView {
   name: string;
   score: number;
   membership: "active" | "spectator" | "kicked";
+  nextRoundMembership?: "active" | "spectator";
   online: boolean;
   isReady: boolean;
   isBot: boolean;

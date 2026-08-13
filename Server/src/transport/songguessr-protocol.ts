@@ -185,6 +185,7 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
       const settings: Partial<SongGuessrSettings> = {
         questionType: readQuestionType(payload.questionType),
         questionMode: readQuestionMode(payload.questionMode),
+        autoRotateSubmitter: readBoolean(payload.autoRotateSubmitter, "payload.autoRotateSubmitter", true),
         autoFilters: readAutoFilters(payload.autoFilters),
         lyricsLineCount: readNumber(payload.lyricsLineCount, "payload.lyricsLineCount"),
         showLyrics: readBoolean(payload.showLyrics, "payload.showLyrics", true),
