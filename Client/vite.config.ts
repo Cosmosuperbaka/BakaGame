@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { execSync } from 'child_process'
 import fs from 'fs'
+import { preparePublicWebp } from './scripts/prepare-public-webp.mjs'
 
 // ==================== Vite 插件：构建时注入提交历史 ====================
 // 以虚拟模块提供数据，随 JS 产物一同带 hash：
@@ -126,11 +127,10 @@ function parseInfoFile(packDir: string) {
 
 const STICKER_MANIFEST_ID = 'virtual:sticker-manifest'
 
-function stickerManifestPlugin() {
+function stickerManifestPlugin(publicDir: string) {
   const resolvedId = '\0' + STICKER_MANIFEST_ID
 
   function collect() {
-    const publicDir = path.resolve(__dirname, 'public')
     const emojiDir = path.join(publicDir, 'emojis')
 
     let packs: unknown[] = []
@@ -202,14 +202,19 @@ function stickerManifestPlugin() {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), commitHistoryPlugin(), stickerManifestPlugin()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      // 共享定义唯一副本在 Server/src/shared/：服务端部署时只挂载 Server 目录，
-      // 定义必须落在其内部才能被解析。这里显式指向它，不再经由 node_modules 链接。
-      '@bakagame/shared': path.resolve(__dirname, '../Server/src/shared/index.ts'),
+export default defineConfig(async () => {
+  const publicDir = await preparePublicWebp()
+
+  return {
+    publicDir,
+    plugins: [react(), tailwindcss(), commitHistoryPlugin(), stickerManifestPlugin(publicDir)],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+        // 共享定义唯一副本在 Server/src/shared/：服务端部署时只挂载 Server 目录，
+        // 定义必须落在其内部才能被解析。这里显式指向它，不再经由 node_modules 链接。
+        '@bakagame/shared': path.resolve(__dirname, '../Server/src/shared/index.ts'),
+      },
     },
-  },
+  }
 })
