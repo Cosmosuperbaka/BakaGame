@@ -71,6 +71,7 @@ import {
   spring,
 } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useAutoSave } from "@/lib/useAutoSave";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
 import type {
@@ -1228,7 +1229,7 @@ function SongHostWaitingPanel({
         open={questionSettingsOpen}
         onOpenChange={setQuestionSettingsOpen}
       >
-        <SongQuestionSettings snapshot={snapshot} run={run} />
+        <SongQuestionSettings snapshot={snapshot} />
       </SettingsAccordion>
 
       <SettingsAccordion
@@ -1237,7 +1238,7 @@ function SongHostWaitingPanel({
         open={gameSettingsOpen}
         onOpenChange={setGameSettingsOpen}
       >
-        <SongGameSettings snapshot={snapshot} run={run} />
+        <SongGameSettings snapshot={snapshot} />
       </SettingsAccordion>
 
       <SettingsAccordion
@@ -1246,7 +1247,7 @@ function SongHostWaitingPanel({
         open={roomSettingsOpen}
         onOpenChange={setRoomSettingsOpen}
       >
-        <SongRoomSettings snapshot={snapshot} run={run} />
+        <SongRoomSettings snapshot={snapshot} />
       </SettingsAccordion>
 
       <Button
@@ -1318,10 +1319,8 @@ function SettingsAccordion({
 
 function SongQuestionSettings({
   snapshot,
-  run,
 }: {
   snapshot: SongGuessrRoomSnapshot;
-  run: SongGameAreaProps["run"];
 }) {
   const sendCommand = useSongGuessrStore((state) => state.sendCommand);
   const setNotice = useSongGuessrStore((state) => state.setNotice);
@@ -1361,17 +1360,18 @@ function SongQuestionSettings({
     }
   };
 
-  const save = async () => {
-    await run("song.room.updateSettings", {
+  useAutoSave(
+    {
       questionType,
       questionMode,
-      autoFilters: {
-        playlist,
-        artists,
-        minPopularity,
-      },
-    }, "题目设置已保存");
-  };
+      autoFilters: { playlist, artists, minPopularity },
+    },
+    (payload) => sendCommand("song.room.updateSettings", payload),
+    {
+      onError: (error) =>
+        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+    },
+  );
 
   return (
     <div className="space-y-4">
@@ -1516,26 +1516,39 @@ function SongQuestionSettings({
         </div>
       ) : null}
 
-      <Button size="sm" className="w-full" onClick={() => void save()}>
-        保存题目设置
-      </Button>
     </div>
   );
 }
 
 function SongGameSettings({
   snapshot,
-  run,
 }: {
   snapshot: SongGuessrRoomSnapshot;
-  run: SongGameAreaProps["run"];
 }) {
+  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
+  const setNotice = useSongGuessrStore((state) => state.setNotice);
   const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
   const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
   const [showGuessTimer, setShowGuessTimer] = useState(snapshot.settings.showGuessTimer);
   const [lyricsLineCount, setLyricsLineCount] = useState(snapshot.settings.lyricsLineCount);
   const [maxGuesses, setMaxGuesses] = useState(snapshot.settings.maxGuessesPerRound);
   const [guessDuration, setGuessDuration] = useState(snapshot.settings.guessDurationSeconds);
+
+  useAutoSave(
+    {
+      lyricsLineCount,
+      showLyrics,
+      maxGuessesPerRound: maxGuesses,
+      guessDurationSeconds: guessDuration,
+      showGuessTimer,
+      bloodMode,
+    },
+    (payload) => sendCommand("song.room.updateSettings", payload),
+    {
+      onError: (error) =>
+        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+    },
+  );
 
   return (
     <div className="space-y-4">
@@ -1590,39 +1603,36 @@ function SongGameSettings({
         </div>
         <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
       </div>
-      <Button
-        size="sm"
-        className="w-full"
-        onClick={() => void run(
-          "song.room.updateSettings",
-          {
-            lyricsLineCount,
-            showLyrics,
-            maxGuessesPerRound: maxGuesses,
-            guessDurationSeconds: guessDuration,
-            showGuessTimer,
-            bloodMode,
-          },
-          "猜测设置已保存",
-        )}
-      >
-        保存设置
-      </Button>
     </div>
   );
 }
 
 function SongRoomSettings({
   snapshot,
-  run,
 }: {
   snapshot: SongGuessrRoomSnapshot;
-  run: SongGameAreaProps["run"];
 }) {
+  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
+  const setNotice = useSongGuessrStore((state) => state.setNotice);
   const [name, setName] = useState(snapshot.name);
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
+
+  useAutoSave(
+    {
+      name: name || undefined,
+      visibility: isPrivate ? "private" : "public",
+      password: isPrivate ? password || undefined : "",
+      allowSpectators,
+    },
+    (payload) => sendCommand("song.room.updateSettings", payload),
+    {
+      enabled: !isPrivate || snapshot.hasPassword || password.trim().length > 0,
+      onError: (error) =>
+        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+    },
+  );
 
   return (
     <div className="space-y-4">
@@ -1660,22 +1670,6 @@ function SongRoomSettings({
         </div>
         <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
       </div>
-      <Button
-        size="sm"
-        className="w-full"
-        onClick={() => void run(
-          "song.room.updateSettings",
-          {
-            name: name || undefined,
-            visibility: isPrivate ? "private" : "public",
-            password: isPrivate ? password || undefined : "",
-            allowSpectators,
-          },
-          "房间设置已保存",
-        )}
-      >
-        保存房间设置
-      </Button>
     </div>
   );
 }
