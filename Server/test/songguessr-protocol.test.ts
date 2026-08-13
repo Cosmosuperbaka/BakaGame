@@ -3,6 +3,13 @@ import { expect, test } from "bun:test";
 import { parseSongGuessrMessage } from "../src/transport/songguessr-protocol";
 
 test("Songuessr 协议解析房间设置与游戏命令", () => {
+  expect(parseSongGuessrMessage({
+    id: "sync",
+    type: "song.room.requestSync",
+    roomId: "1234",
+    payload: {},
+  })).toMatchObject({ type: "song.room.requestSync", payload: {} });
+
   expect(
     parseSongGuessrMessage({
       id: "1",

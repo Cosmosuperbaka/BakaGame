@@ -409,5 +409,11 @@ export interface ConnectionRecord {
   playerId?: string;
   lobbySubscribed: boolean;
   send: (payload: unknown) => void;
+  /** 传输层清空该连接的差量基线，下一次状态推送必须发送全量。 */
+  resetStateSync?: () => void;
+  /** housekeeping 调用；传输层仅在到达校准周期时发送全量状态。 */
+  sendStateSyncCalibration?: (payload: unknown) => void;
+  /** 发送非状态事件/ACK，沿用传输层的帧大小压缩阈值。 */
+  sendPacket?: (payload: unknown) => void;
   close: (code?: number, reason?: string) => void;
 }

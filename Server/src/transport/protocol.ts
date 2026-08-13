@@ -236,6 +236,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         },
       };
     case "room.leave":
+    case "room.requestSync":
       return { id, type, roomId, sessionToken, payload: {} };
     case "player.rename":
       return { id, type, roomId, sessionToken, payload: { name: readString(payload.name, "payload.name")! } };

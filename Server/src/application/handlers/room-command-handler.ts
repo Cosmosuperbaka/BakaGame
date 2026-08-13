@@ -18,6 +18,7 @@ export const ROOM_COMMAND_TYPES = [
   "room.join",
   "room.reconnect",
   "room.leave",
+  "room.requestSync",
   "room.updateSettings",
   "room.kick",
   "room.transferHost",
@@ -30,6 +31,7 @@ interface RoomCommandDependencies {
   join(connection: ConnectionRecord, message: Message<"room.join">): CommandResult;
   reconnect(connection: ConnectionRecord, message: Message<"room.reconnect">): CommandResult;
   leave(connection: ConnectionRecord): CommandResult;
+  requestSync(connection: ConnectionRecord): CommandResult;
   updateSettings(
     connection: ConnectionRecord,
     payload: Message<"room.updateSettings">["payload"],
@@ -55,6 +57,8 @@ export const createRoomCommandHandler = (
         return dependencies.reconnect(connection, message);
       case "room.leave":
         return dependencies.leave(connection);
+      case "room.requestSync":
+        return dependencies.requestSync(connection);
       case "room.updateSettings":
         return dependencies.updateSettings(connection, message.payload);
       case "room.kick":

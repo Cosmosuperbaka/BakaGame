@@ -12,6 +12,7 @@ const ALL_COMMAND_TYPES = [
   "room.join",
   "room.reconnect",
   "room.leave",
+  "room.requestSync",
   "player.rename",
   "player.setSpectator",
   "player.setReady",

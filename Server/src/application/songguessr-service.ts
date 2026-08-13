@@ -230,6 +230,8 @@ export class SongGuessrService {
         return this.reconnectRoom(connection, message.payload.roomId, message.payload.sessionToken);
       case "song.room.leave":
         return this.leaveRoom(connection);
+      case "song.room.requestSync":
+        return this.requestSync(connection);
       case "song.player.setReady":
         return this.setReady(connection, message.payload.ready);
       case "song.player.setSpectator":
@@ -290,20 +292,23 @@ export class SongGuessrService {
         continue;
       }
 
-      if (room.phase !== "playing" || !room.currentRound) continue;
-      let changed = false;
-      for (const [playerId, state] of Object.entries(room.currentRound.players)) {
-        if (state.correct || state.gaveUp || state.guessesUsed >= room.currentRound.settings.maxGuessesPerRound) continue;
-        if (state.deadlineAt !== undefined && state.deadlineAt <= currentTime) {
-          this.recordTimeout(room, playerId);
-          changed = true;
+      if (room.phase === "playing" && room.currentRound) {
+        let changed = false;
+        for (const [playerId, state] of Object.entries(room.currentRound.players)) {
+          if (state.correct || state.gaveUp || state.guessesUsed >= room.currentRound.settings.maxGuessesPerRound) continue;
+          if (state.deadlineAt !== undefined && state.deadlineAt <= currentTime) {
+            this.recordTimeout(room, playerId);
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          if (this.isRoundComplete(room)) this.finishRound(room);
+          this.publishRoom(room);
         }
       }
 
-      if (changed) {
-        if (this.isRoundComplete(room)) this.finishRound(room);
-        this.publishRoom(room);
-      }
+      this.publishRoomCalibration(room);
     }
   }
 
@@ -427,6 +432,13 @@ export class SongGuessrService {
     this.publishRoom(room);
     this.publishLobby();
     return { left: true, roomClosed: false };
+  }
+
+  private requestSync(connection: ConnectionRecord) {
+    const { room } = this.requireRoomPlayer(connection);
+    connection.resetStateSync?.();
+    this.publishRoom(room, connection);
+    return { synced: true };
   }
 
   private setReady(connection: ConnectionRecord, ready: boolean) {
@@ -604,7 +616,9 @@ export class SongGuessrService {
     target.online = false;
     const targetConnection = this.connections.findConnectionByPlayer(room.id, target.id);
     if (targetConnection) {
-      targetConnection.send(createEvent("song.room.kicked", { roomId: room.id }));
+      (targetConnection.sendPacket ?? targetConnection.send)(
+        createEvent("song.room.kicked", { roomId: room.id }),
+      );
       targetConnection.roomId = undefined;
       targetConnection.playerId = undefined;
       targetConnection.close(4003, "kicked");
@@ -650,7 +664,7 @@ export class SongGuessrService {
     };
     room.chat = [...room.chat, message].slice(-CHAT_LIMIT);
     this.touch(room);
-    this.connections.broadcastToRoom(room.id, createEvent("song.chat.message", message));
+    this.publishRoom(room);
     return { sent: true };
   }
 
@@ -1369,9 +1383,12 @@ export class SongGuessrService {
       .sort((left, right) => right.score - left.score || left.playerName.localeCompare(right.playerName));
   }
 
-  private publishRoom(room: SongGuessrRoomRecord) {
+  private publishRoom(room: SongGuessrRoomRecord, targetConnection?: ConnectionRecord) {
     const snapshot = this.buildRoomSnapshot(room);
-    for (const connection of this.connections.getRoomConnections(room.id)) {
+    const connections = targetConnection
+      ? [targetConnection]
+      : this.connections.getRoomConnections(room.id);
+    for (const connection of connections) {
       connection.send(createEvent("song.room.snapshot", snapshot));
       if (connection.playerId) {
         const player = room.players[connection.playerId];
@@ -1383,6 +1400,20 @@ export class SongGuessrService {
   private publishPrivateState(room: SongGuessrRoomRecord, player: SongGuessrPlayerRecord) {
     const connection = this.connections.findConnectionByPlayer(room.id, player.id);
     connection?.send(createEvent("song.game.privateState", this.buildPrivateState(room, player)));
+  }
+
+  private publishRoomCalibration(room: SongGuessrRoomRecord) {
+    const snapshot = this.buildRoomSnapshot(room);
+    for (const connection of this.connections.getRoomConnections(room.id)) {
+      connection.sendStateSyncCalibration?.(createEvent("song.room.snapshot", snapshot));
+      if (!connection.playerId) continue;
+      const player = room.players[connection.playerId];
+      if (player) {
+        connection.sendStateSyncCalibration?.(
+          createEvent("song.game.privateState", this.buildPrivateState(room, player)),
+        );
+      }
+    }
   }
 
   private publishLobby() {
@@ -1407,7 +1438,7 @@ export class SongGuessrService {
   ) {
     const previous = this.connections.findConnectionByPlayer(room.id, player.id);
     if (previous && previous.id !== connection.id) {
-      previous.send(createEvent("session.replaced", { roomId: room.id }));
+      (previous.sendPacket ?? previous.send)(createEvent("session.replaced", { roomId: room.id }));
       previous.roomId = undefined;
       previous.playerId = undefined;
       previous.close(4001, "session_replaced");
@@ -1415,6 +1446,7 @@ export class SongGuessrService {
     player.online = true;
     player.connectionId = connection.id;
     player.lastSeenAt = this.now();
+    connection.resetStateSync?.();
     connection.roomId = room.id;
     connection.playerId = player.id;
   }

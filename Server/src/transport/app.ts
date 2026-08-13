@@ -10,6 +10,7 @@ import { NeteaseMusicProvider } from "../infrastructure/netease-music-provider";
 import { createSwaggerPlugin } from "./openapi";
 import { createAck, createErrorPacket, parseClientMessage } from "./protocol";
 import { parseSongGuessrMessage } from "./songguessr-protocol";
+import { createStateSyncSender } from "./state-sync";
 import { systemRoutes } from "./routes/system";
 
 export interface AppDependencies {
@@ -18,6 +19,16 @@ export interface AppDependencies {
   logger: EventLogger;
   songGuessrService?: SongGuessrService;
 }
+
+const COMPRESSION_THRESHOLD_BYTES = 256;
+
+const sendPacket = (
+  ws: { send: (data: string, compress?: boolean) => unknown },
+  payload: unknown,
+) => {
+  const serialized = JSON.stringify(payload);
+  ws.send(serialized, Buffer.byteLength(serialized, "utf8") >= COMPRESSION_THRESHOLD_BYTES);
+};
 
 export const createApp = ({ env, roomService, logger, songGuessrService }: AppDependencies) => {
   const decoder = new TextDecoder();
@@ -28,7 +39,11 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
       musicProvider: new NeteaseMusicProvider(),
     });
 
-  const app = new Elysia()
+  const app = new Elysia({
+    websocket: {
+      perMessageDeflate: { compress: "shared", decompress: "shared" },
+    },
+  })
     // ==================== 原生插件与全局中间件 ====================
     .use(
       cors({
@@ -100,12 +115,16 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
         // 为每个连接建立独立的连接上下文，后续所有命令都靠它定位会话。
         const connectionId = crypto.randomUUID();
         (ws.data as { connectionId?: string }).connectionId = connectionId;
+        const stateSync = createStateSyncSender((payload) => {
+          sendPacket(ws, payload);
+        });
         roomService.registerConnection({
           id: connectionId,
           lobbySubscribed: false,
-          send: (payload) => {
-            ws.send(JSON.stringify(payload));
-          },
+          send: stateSync.send,
+          resetStateSync: stateSync.reset,
+          sendStateSyncCalibration: stateSync.calibrate,
+          sendPacket: (payload) => sendPacket(ws, payload),
           close: (code?: number, reason?: string) => {
             ws.close(code, reason);
           },
@@ -150,7 +169,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
             identifier: connectionId,
             action: `WS ${parsedType}`,
           });
-          ws.send(JSON.stringify(createAck(parsed, payload)));
+          sendPacket(ws, createAck(parsed, payload));
         } catch (error) {
           const durationMs = performance.now() - startTime;
           if (isAppError(error)) {
@@ -161,10 +180,9 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
               action: `WS ${parsedType}`,
               level: "WARN",
             });
-            ws.send(
-              JSON.stringify(
-                createErrorPacket(parsedId, error.code, error.message, error.details),
-              ),
+            sendPacket(
+              ws,
+              createErrorPacket(parsedId, error.code, error.message, error.details),
             );
             return;
           }
@@ -176,10 +194,9 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
             action: `WS ${parsedType}`,
             level: "ERROR",
           });
-          ws.send(
-            JSON.stringify(
-              createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
-            ),
+          sendPacket(
+            ws,
+            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
           );
         }
       },
@@ -196,10 +213,16 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
       open(ws) {
         const connectionId = crypto.randomUUID();
         (ws.data as { connectionId?: string }).connectionId = connectionId;
+        const stateSync = createStateSyncSender((payload) => {
+          sendPacket(ws, payload);
+        });
         songService.registerConnection({
           id: connectionId,
           lobbySubscribed: false,
-          send: (payload) => ws.send(JSON.stringify(payload)),
+          send: stateSync.send,
+          resetStateSync: stateSync.reset,
+          sendStateSyncCalibration: stateSync.calibrate,
+          sendPacket: (payload) => sendPacket(ws, payload),
           close: (code?: number, reason?: string) => ws.close(code, reason),
         });
       },
@@ -236,7 +259,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
             identifier: connectionId,
             action: `WS ${parsedType}`,
           });
-          ws.send(JSON.stringify(createAck(parsed, payload)));
+          sendPacket(ws, createAck(parsed, payload));
         } catch (error) {
           if (isAppError(error)) {
             logger.logOperation({
@@ -246,10 +269,9 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
               action: `WS ${parsedType}`,
               level: "WARN",
             });
-            ws.send(
-              JSON.stringify(
-                createErrorPacket(parsedId, error.code, error.message, error.details),
-              ),
+            sendPacket(
+              ws,
+              createErrorPacket(parsedId, error.code, error.message, error.details),
             );
             return;
           }
@@ -260,10 +282,9 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
             action: `WS ${parsedType}`,
             level: "ERROR",
           });
-          ws.send(
-            JSON.stringify(
-              createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
-            ),
+          sendPacket(
+            ws,
+            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
           );
         }
       },

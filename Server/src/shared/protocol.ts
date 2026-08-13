@@ -39,6 +39,25 @@ export interface EventPacket {
   payload: unknown;
 }
 
+export type StatePathSegment = string | number;
+
+export type StatePatchOperation =
+  | { op: "set"; path: StatePathSegment[]; value: unknown }
+  | { op: "delete"; path: StatePathSegment[] };
+
+export type StateSyncPayload<T> =
+  | {
+      mode: "full";
+      revision: number;
+      state: T;
+    }
+  | {
+      mode: "patch";
+      baseRevision: number;
+      revision: number;
+      operations: StatePatchOperation[];
+    };
+
 export type ServerMessage = AckPacket | ErrorPacket | EventPacket;
 
 // 所有客户端命令的联合类型。
@@ -71,6 +90,7 @@ export type ClientMessage =
       }
     >
   | ClientEnvelope<"room.leave", Record<string, never>>
+  | ClientEnvelope<"room.requestSync", Record<string, never>>
   | ClientEnvelope<"player.rename", { name: string }>
   | ClientEnvelope<"player.setSpectator", { spectator: boolean }>
   | ClientEnvelope<"player.setReady", { ready: boolean }>

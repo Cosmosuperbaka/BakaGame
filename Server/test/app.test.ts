@@ -255,10 +255,11 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
         Boolean(payload) &&
         (payload as { type?: string }).type === "event" &&
         (payload as { event?: string }).event === "room.snapshot" &&
-        (payload as { payload?: { roomId?: string } }).payload?.roomId === "8888",
-    )) as { payload: { roomId: string } };
+        (payload as { payload?: { mode?: string; state?: { roomId?: string } } }).payload?.mode === "full" &&
+        (payload as { payload?: { state?: { roomId?: string } } }).payload?.state?.roomId === "8888",
+    )) as { payload: { state: { roomId: string } } };
 
-    expect(snapshot.payload.roomId).toBe("8888");
+    expect(snapshot.payload.state.roomId).toBe("8888");
 
     const populatedHealth = await fetch(`http://127.0.0.1:${port}/health`);
     expect(await populatedHealth.json()).toMatchObject({

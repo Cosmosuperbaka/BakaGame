@@ -96,6 +96,7 @@ export class RoomService {
         join: (connection, message) => this.handleRoomJoin(connection, message),
         reconnect: (connection, message) => this.handleRoomReconnect(connection, message),
         leave: (connection) => this.handleRoomLeave(connection),
+        requestSync: (connection) => this.handleRequestSync(connection),
         updateSettings: (connection, payload) =>
           this.handleUpdateSettings(connection, payload),
         kick: (connection, playerId) => this.handleKick(connection, playerId),
@@ -112,8 +113,6 @@ export class RoomService {
         normalizeRoleConfig: (room) => this.normalizeRoomRoleConfig(room),
         touchRoom: (room) => this.touchRoom(room),
         log: (entry) => this.log(entry),
-        broadcastRoomEvent: (room, event, payload) =>
-          this.broadcastRoomEvent(room, event, payload),
         publishRoomState: (room) => this.publishRoomState(room),
         publishLobby: () => this.publishLobby(),
       }),
@@ -235,6 +234,8 @@ export class RoomService {
         this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
         this.publishRoomState(room);
       }
+
+      this.publishRoomStateCalibration(room);
     }
   }
 
@@ -327,11 +328,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "joined",
-      playerId: host.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
 
@@ -380,11 +376,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "joined",
-      playerId: player.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
 
@@ -426,6 +417,13 @@ export class RoomService {
     await this.handlePlayerOffline(room, player.id, "leave");
 
     return { left: true };
+  }
+
+  private handleRequestSync(connection: ConnectionRecord) {
+    const { room } = this.requireRoomPlayer(connection);
+    connection.resetStateSync?.();
+    this.publishRoomState(room, connection);
+    return { synced: true };
   }
 
   private async handleUpdateSettings(
@@ -497,15 +495,6 @@ export class RoomService {
       payload: room.settings,
     });
 
-    this.broadcastRoomEvent(room, "room.settingsChanged", {
-      roomId: room.id,
-      settings: {
-        name: room.settings.name,
-        visibility: room.settings.visibility,
-        allowSpectators: room.settings.allowSpectators,
-        roleConfig: room.settings.roleConfig,
-      },
-    });
     this.publishRoomState(room);
     this.publishLobby();
 
@@ -534,11 +523,6 @@ export class RoomService {
 
     await this.forceRemovePlayer(room, target.id, "房主已将其移出房间");
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "kicked",
-      playerId: target.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
     await this.runBots(room);
@@ -598,11 +582,6 @@ export class RoomService {
       playerId: target.id,
     });
 
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: round.phase,
-      questionerPlayerId: target.id,
-    });
     this.publishRoomState(room);
     await this.runBots(room);
 
@@ -684,10 +663,6 @@ export class RoomService {
       playerId: player.id,
     });
 
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: round.phase,
-    });
     this.publishRoomState(room);
     await this.runBots(room);
 
@@ -792,11 +767,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: room.round?.phase ?? "waiting",
-      tieBreakStage: room.round?.tieBreak?.stage,
-    });
     this.publishRoomState(room);
     await this.runBots(room);
 
@@ -1308,7 +1278,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "chat.message", message);
     this.publishRoomState(room);
     return { sent: true };
   }
@@ -1340,11 +1309,6 @@ export class RoomService {
       payload: { nextHostId: target.id },
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "host_changed",
-      playerId: target.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
     return { hostPlayerId: target.id };
@@ -1633,12 +1597,6 @@ export class RoomService {
       bot.membership = this.isRoundActive(room) ? "spectator" : "active";
       room.players[bot.id] = bot;
       added.push(bot.id);
-      this.broadcastRoomEvent(room, "room.playerChanged", {
-        roomId: room.id,
-        action: "joined",
-        playerId: bot.id,
-        name: bot.name,
-      });
     }
 
     if (added.length === 0) {
@@ -1722,11 +1680,6 @@ export class RoomService {
   private broadcastPhaseAndPublish(room: RoomRecord) {
     // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
     this.requeuePendingDisconnects(room);
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: room.round?.phase ?? "waiting",
-      tieBreakStage: room.round?.tieBreak?.stage,
-    });
     this.publishRoomState(room);
   }
 
@@ -1763,10 +1716,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: room.round.phase,
-    });
     this.publishRoomState(room);
   }
 
@@ -1778,10 +1727,6 @@ export class RoomService {
     }
 
     this.touchRoom(room);
-    this.broadcastRoomEvent(room, "game.phaseChanged", {
-      roomId: room.id,
-      phase: "waiting",
-    });
     this.publishRoomState(room);
     this.publishLobby();
   }
@@ -2108,11 +2053,6 @@ export class RoomService {
       playerId,
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: reason,
-      playerId,
-    });
     if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
       await this.closeRoom(room, "empty");
     } else {
@@ -2144,7 +2084,7 @@ export class RoomService {
     const connection = this.getConnectionByPlayer(player.id);
 
     if (connection) {
-      connection.send(
+      (connection.sendPacket ?? connection.send)(
         createEvent("room.closed", {
           roomId: room.id,
           reason: "kicked",
@@ -2268,7 +2208,7 @@ export class RoomService {
   private async closeRoom(room: RoomRecord, reason: string) {
     // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
-      connection.send(
+      (connection.sendPacket ?? connection.send)(
         createEvent("room.closed", {
           roomId: room.id,
           reason,
@@ -2556,11 +2496,14 @@ export class RoomService {
     };
   }
 
-  private publishRoomState(room: RoomRecord) {
+  private publishRoomState(room: RoomRecord, targetConnection?: ConnectionRecord) {
     // 每次状态变化都同时推送公共快照与当前连接的私有视图。
     const snapshot = this.buildRoomSnapshot(room);
 
-    for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
+    const connections = targetConnection
+      ? [targetConnection]
+      : this.connectionRegistry.getRoomConnections(room.id);
+    for (const connection of connections) {
       connection.send(createEvent("room.snapshot", snapshot));
 
       if (connection.playerId) {
@@ -2571,6 +2514,21 @@ export class RoomService {
             createEvent("game.privateState", this.buildPrivateState(room, player)),
           );
         }
+      }
+    }
+  }
+
+  private publishRoomStateCalibration(room: RoomRecord) {
+    const snapshot = this.buildRoomSnapshot(room);
+    for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
+      connection.sendStateSyncCalibration?.(createEvent("room.snapshot", snapshot));
+
+      if (!connection.playerId) continue;
+      const player = room.players[connection.playerId];
+      if (player) {
+        connection.sendStateSyncCalibration?.(
+          createEvent("game.privateState", this.buildPrivateState(room, player)),
+        );
       }
     }
   }
@@ -2607,6 +2565,7 @@ export class RoomService {
     player.online = true;
     player.connectionId = connection.id;
     player.lastSeenAt = this.now();
+    connection.resetStateSync?.();
     connection.roomId = room.id;
     connection.playerId = player.id;
   }
@@ -2919,11 +2878,6 @@ export class RoomService {
       playerId: player.id,
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "reconnected",
-      playerId: player.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
 
@@ -3297,11 +3251,6 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "room.playerChanged", {
-      roomId: room.id,
-      action: "host_changed",
-      playerId: nextHost.id,
-    });
     this.publishRoomState(room);
     this.publishLobby();
   }
