@@ -12,6 +12,7 @@ import { spring, collapsible, pressable } from "@/lib/motion";
 import { PhaseHeader } from "@/components/game/PhaseHeader";
 import { useGameStore } from "@/stores/useGameStore";
 import { cn } from "@/lib/utils";
+import { useAutoSave } from "@/lib/useAutoSave";
 import type { RoomSnapshot } from "@/types";
 
 export function WaitingPhase() {
@@ -321,24 +322,21 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
   const limits = snapshot.roleLimits;
 
-  const handleSave = async () => {
-    try {
-      await sendCommand("room.updateSettings", {
-        name: name || undefined,
-        visibility: isPrivate ? "private" : "public",
-        password: isPrivate ? password || undefined : "",
-        allowSpectators,
-        roleConfig: {
-          undercoverCount: Math.max(1, Math.min(undercoverCount, limits.maxUndercoverCount)),
-          hasAngel: limits.canEnableAngel && hasAngel,
-          hasBlank: limits.canEnableBlank && hasBlank,
-        },
-      });
-      addToast("设置已保存", "success");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
+  const draft = {
+    name: name || undefined,
+    visibility: isPrivate ? "private" : "public",
+    password: isPrivate ? password || undefined : "",
+    allowSpectators,
+    roleConfig: {
+      undercoverCount: Math.max(1, Math.min(undercoverCount, limits.maxUndercoverCount)),
+      hasAngel: limits.canEnableAngel && hasAngel,
+      hasBlank: limits.canEnableBlank && hasBlank,
+    },
   };
+  useAutoSave(draft, (payload) => sendCommand("room.updateSettings", payload), {
+    enabled: !isPrivate || snapshot.hasPassword || password.trim().length > 0,
+    onError: (error) => addToast((error as { message: string }).message, "error"),
+  });
 
   return (
     <div className="space-y-4">
@@ -396,7 +394,6 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
         canEnable={limits.canEnableBlank}
         unavailableHint="8 人开启"
       />
-      <Button size="sm" onClick={handleSave} className="w-full">保存设置</Button>
     </div>
   );
 }
