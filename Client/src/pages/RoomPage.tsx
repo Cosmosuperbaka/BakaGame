@@ -167,6 +167,9 @@ export default function RoomPage() {
       const ok = await reconnectRoom(roomId);
       if (ok) { if (!cancelled) setJoining(false); return; }
       if (cancelled) return;
+      // 携带旧令牌访问一个已关闭房间时，store 已设置明确的关闭状态。
+      // 此时不能再按分享链接逻辑自动创建同号新房间。
+      if (useGameStore.getState().roomClosedAt) return;
 
       const name = getSavedUsername();
       if (!name) {
@@ -300,7 +303,7 @@ export default function RoomPage() {
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
         {!needsName && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -358,7 +361,7 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {/* ── 顶栏 ── */}
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-2">
@@ -512,7 +515,7 @@ export default function RoomPage() {
               </motion.div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-auto rounded-xl">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl">
               <PlayerList
                 players={snapshot.players}
                 hostPlayerId={snapshot.hostPlayerId}
@@ -552,7 +555,7 @@ export default function RoomPage() {
               initial={{ x: "-100%" }}
               animate={{ x: 0, transition: spring.swift }}
               exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-72 flex-col overflow-y-auto border-r bg-panel shadow-xl md:hidden"
+              className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
             >
               <PlayerList
                 players={snapshot.players}
@@ -578,7 +581,7 @@ export default function RoomPage() {
               initial={{ x: "-100%" }}
               animate={{ x: 0, transition: spring.swift }}
               exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-full max-w-sm flex-col overflow-auto bg-panel shadow-xl md:hidden"
+              className="absolute inset-y-0 left-0 z-30 flex w-full max-w-sm min-w-0 flex-col overflow-hidden bg-panel shadow-xl md:hidden"
             >
               <PlayerList
                 players={snapshot.players}
