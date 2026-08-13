@@ -18,6 +18,7 @@ import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -314,6 +315,7 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
 
 export default function LandingPage() {
   const [infoOpen, setInfoOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
@@ -323,10 +325,28 @@ export default function LandingPage() {
   // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
   const commit = commitHistory.currentCommit;
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
+  const updateStorageKey = "bakagame:last-seen-commit";
+  const [hasUnreadUpdate, setHasUnreadUpdate] = useState(() => {
+    if (!commit || commit === "dev") return false;
+    try {
+      return window.localStorage.getItem(updateStorageKey) !== commit;
+    } catch {
+      return false;
+    }
+  });
+  const acknowledgeUpdate = () => {
+    try {
+      if (commit) window.localStorage.setItem(updateStorageKey, commit);
+    } catch {
+      // 浏览器禁用存储时仍可在当前页面关闭提醒。
+    }
+    setHasUnreadUpdate(false);
+    setUpdateOpen(false);
+  };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="px-6 pb-10 pt-20 text-center md:pb-12 md:pt-28">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <header className="shrink-0 px-6 pb-8 pt-[clamp(2.5rem,10svh,7rem)] text-center md:pb-10">
         <motion.h1
           variants={listItem}
           initial="initial"
@@ -344,9 +364,9 @@ export default function LandingPage() {
         </motion.h1>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 pb-12 md:px-10">
+      <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 items-center px-6 py-4 md:px-10">
         <motion.div
-          className="space-y-3"
+          className="w-full space-y-3"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
@@ -357,7 +377,7 @@ export default function LandingPage() {
         </motion.div>
       </main>
 
-      <footer className="flex flex-col items-center gap-3 px-6 pb-10">
+      <footer className="relative flex shrink-0 flex-col items-center gap-3 px-6 pb-[clamp(1.5rem,6svh,4rem)]">
         <motion.div
           className="flex items-center gap-1"
           variants={listContainer(EXTERNAL_LINKS.length)}
@@ -379,6 +399,16 @@ export default function LandingPage() {
         >
           {versionLabel}
         </motion.button>
+        {hasUnreadUpdate ? (
+          <button
+            type="button"
+            onClick={() => setUpdateOpen(true)}
+            className="absolute bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-1.5 text-xs font-medium text-primary"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+            有新的站点更新
+          </button>
+        ) : null}
       </footer>
 
       <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
@@ -392,7 +422,7 @@ export default function LandingPage() {
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
             </TabsList>
             {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态 */}
-            <TabsContent value="changelog" className="mt-4 max-h-[55vh] overflow-y-auto">
+            <TabsContent value="changelog" className="scrollbar-hidden mt-4 max-h-[55vh] overflow-y-auto">
               {entries.length > 0 ? (
                 <div className="space-y-5">
                   {entries.map((entry) => (
@@ -409,10 +439,24 @@ export default function LandingPage() {
                 <div className="py-6 text-center text-sm text-muted-foreground">暂无更新日志</div>
               )}
             </TabsContent>
-            <TabsContent value="commits" className="mt-4 max-h-[55vh] overflow-y-auto pr-1">
+            <TabsContent value="commits" className="scrollbar-hidden mt-4 max-h-[55vh] overflow-y-auto pr-1">
               <CommitTimeline commits={commitHistory.commits} />
             </TabsContent>
           </Tabs>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={updateOpen}
+        onOpenChange={(open) => (open ? setUpdateOpen(true) : acknowledgeUpdate())}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>站点有新更新</DialogTitle>
+          </DialogHeader>
+          <div className="scrollbar-hidden max-h-[55vh] overflow-y-auto pr-1">
+            <CommitTimeline commits={commitHistory.commits} />
+          </div>
+          <Button onClick={acknowledgeUpdate}>知道了</Button>
         </DialogContent>
       </Dialog>
     </div>

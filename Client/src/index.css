@@ -222,13 +222,6 @@ html {
 @layer base {
   * {
     @apply border-border;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  *::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
   }
   body {
     @apply bg-background text-foreground;
@@ -236,4 +229,63 @@ html {
     letter-spacing: var(--tracking-normal);
     margin: 0;
   }
+}
+
+/* 根文档固定在动态视口内，页面需要滚动时由自己的内容区承接。
+   这样移动端地址栏伸缩和弹窗锁页都不会生成额外的页面级滚动条。 */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100dvh;
+}
+
+/* 保持滚轮、触控和键盘滚动能力，但不绘制滚动条或预留其宽度。
+   规则故意不放进 cascade layer，确保覆盖组件库和浏览器注入的样式。 */
+*,
+.scrollbar-hidden,
+[data-radix-scroll-area-viewport],
+[data-radix-select-viewport] {
+  scrollbar-color: transparent transparent !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+*::-webkit-scrollbar,
+.scrollbar-hidden::-webkit-scrollbar,
+[data-radix-scroll-area-viewport]::-webkit-scrollbar,
+[data-radix-select-viewport]::-webkit-scrollbar {
+  -webkit-appearance: none !important;
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+[data-radix-scroll-area-scrollbar] {
+  display: none !important;
 }

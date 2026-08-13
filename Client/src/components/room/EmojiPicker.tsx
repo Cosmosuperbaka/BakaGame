@@ -117,7 +117,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
           <div
             role="tablist"
             aria-label="表情包分类"
-            className="flex shrink-0 overflow-x-auto border-t"
+            className="scrollbar-hidden flex shrink-0 overflow-x-auto border-t"
           >
             {packs.map((p, i) => (
               <button
