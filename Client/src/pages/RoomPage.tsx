@@ -11,9 +11,12 @@ import {
   MessageSquare,
   ShieldCheck,
   Eye,
+  Check,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -75,6 +78,7 @@ export default function RoomPage() {
   // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
   const [wordRevealed, setWordRevealed] = useState(false);
   const [dockSize, setDockSize] = useState({ width: 0, height: 0 });
+  const [roomLinkCopied, setRoomLinkCopied] = useState(false);
   const hasRevealedThisGameRef = useRef(false);
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -203,6 +207,19 @@ export default function RoomPage() {
     navigate("/whoisfaker");
   }, [leaveRoom, navigate]);
 
+  const handleCopyRoomLink = useCallback(async () => {
+    if (!snapshot) return;
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/whoisfaker/room/${snapshot.roomId}`,
+      );
+      setRoomLinkCopied(true);
+      window.setTimeout(() => setRoomLinkCopied(false), 2_000);
+    } catch {
+      addToast("复制失败，请手动复制", "error");
+    }
+  }, [addToast, snapshot]);
+
   const handleMarkChange = useCallback((playerId: string, mark: PlayerMark) => {
     setPlayerMarks((cur) => ({ ...cur, [playerId]: mark }));
   }, []);
@@ -220,10 +237,11 @@ export default function RoomPage() {
 
   // 结算后身份公开，与出题人视角合并成一张身份表交给玩家栏。
   const revealedRoles = useMemo(() => {
+    if (snapshot?.status.phase !== "gameOver") return undefined;
     const roles = new Map<string, PlayerRole>();
     for (const entry of snapshot?.summary?.revealedRoles ?? []) roles.set(entry.playerId, entry.role);
     return roles.size > 0 ? roles : undefined;
-  }, [snapshot?.summary?.revealedRoles]);
+  }, [snapshot?.status.phase, snapshot?.summary?.revealedRoles]);
 
   const assignedWordText =
     !isSpectator && !privateState?.isQuestioner
@@ -426,6 +444,24 @@ export default function RoomPage() {
           {!connected && (
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => void handleCopyRoomLink()}
+                aria-label={roomLinkCopied ? "房间链接已复制" : "复制房间链接"}
+              >
+                {roomLinkCopied ? (
+                  <Check className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{roomLinkCopied ? "已复制" : "复制房间链接"}</TooltipContent>
+          </Tooltip>
           <div className="flex gap-1 md:hidden">
             <Button
               variant="ghost"

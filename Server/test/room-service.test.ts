@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../src/config/constants";
+import {
+  PHASE_RESULT_DISPLAY_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
+} from "../src/config/constants";
 import type { PrivateState, RoomSnapshot } from "../src/domain/model";
 import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./helpers";
 
@@ -365,6 +368,10 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     },
   });
 
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
+    "已进入第 1 天描述阶段",
+  );
+
   for (const connection of [host, joined[0].connection, joined[1].connection, joined[2].connection]) {
     await execute(service, connection, {
       id: `desc-${connection.record.id}`,
@@ -380,6 +387,9 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     type: "game.advancePhase",
     payload: {},
   });
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
+    "已进入投票阶段",
+  );
 
   await execute(service, host, {
     id: "vote-host",
@@ -461,13 +471,22 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.descriptions.at(-1)?.kind,
   ).toBe("supplement");
 
+  const snapshotsBeforeResolution = getEventPayloads<RoomSnapshot>(host, "room.snapshot").length;
   await execute(service, questioner.connection, {
     id: "resolve-vote",
     type: "game.advancePhase",
     payload: {},
   });
 
+  const resolutionSnapshots = getEventPayloads<RoomSnapshot>(host, "room.snapshot").slice(
+    snapshotsBeforeResolution,
+  );
+  const eliminationSnapshot = resolutionSnapshots.find(
+    (item) => item.status.phase === "voting",
+  );
   const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(eliminationSnapshot?.players.find((player) => player.id === hostResult.playerId)?.roundStatus)
+    .toBe("dead");
   expect(snapshot?.status.phase).toBe("gameOver");
   expect(snapshot?.summary?.winner).toBe("good");
   expect(snapshot?.summary?.words?.civilianWord).toBeTruthy();
@@ -631,9 +650,7 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   expect(snapshot?.status.phase).toBe("night");
 });
 
-test("白板被淘汰后仍可自行发起猜词并独立获胜", async () => {
-  // 被淘汰不自动触发猜词，白板自己决定何时用掉这一次机会；
-  // 一旦发起就进入阻塞阶段，全房停下来等这次猜词。
+test("白板被淘汰后不能再主动发起猜词", async () => {
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "4444");
   const joined: JoinedPlayer[] = [];
@@ -749,28 +766,22 @@ test("白板被淘汰后仍可自行发起猜词并独立获胜", async () => {
     "game.privateState",
   );
   expect(snapshot?.status.phase).toBe("night");
-  expect(blankPrivateState?.canSubmitBlankGuess).toBe(true);
+  expect(snapshot?.players.find((item) => item.id === blankPlayerId)?.roundStatus).toBe("dead");
+  expect(blankPrivateState?.canSubmitBlankGuess).toBe(false);
 
-  // 发起猜词把夜晚打断，全房进入阻塞的猜词阶段。
-  await execute(service, blankPlayer.connection, {
-    id: "enter-guess",
-    type: "game.enterBlankGuess",
-    payload: {},
-  });
+  let errorCode: string | undefined;
+  try {
+    await execute(service, blankPlayer.connection, {
+      id: "enter-guess",
+      type: "game.enterBlankGuess",
+      payload: {},
+    });
+  } catch (error) {
+    errorCode = (error as { code?: string }).code;
+  }
+  expect(errorCode).toBe("ACTION_FORBIDDEN");
   snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
-  expect(snapshot?.status.phase).toBe("blankGuess");
-  expect(snapshot?.status.blankGuessPlayerId).toBe(blankPlayerId);
-  expect(snapshot?.status.blankGuessReason).toBe("active");
-
-  await execute(service, blankPlayer.connection, {
-    id: "guess",
-    type: "game.submitBlankGuess",
-    payload: { words: ["香蕉", "苹果"] },
-  });
-
-  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
-  expect(snapshot?.summary?.winner).toBe("blank");
-  expect(snapshot?.players.find((player) => player.id === blankPlayerId)?.score).toBe(2);
+  expect(snapshot?.status.phase).toBe("night");
 });
 
 test("玩家掉线后会等待出题人处理并可被淘汰移出", async () => {
@@ -2104,8 +2115,85 @@ test("服务关闭通知会广播到所有连接", () => {
   );
 });
 
-test("结算后房主可以让全房返回等待阶段", async () => {
-  const { service } = createTestContext();
+test("真实结算结果展示结束前不能返回等待阶段", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "5151");
+  const joined = await joinPlayers(service, "5151", 4, "结算锁玩家");
+  const allConnections = [host, ...joined.map((item) => item.connection)];
+
+  for (const connection of allConnections) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3]!;
+  await execute(service, host, {
+    id: "assign-questioner",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  const voters = [host, joined[0]!.connection, joined[1]!.connection, joined[2]!.connection];
+  for (const connection of voters) {
+    await execute(service, connection, {
+      id: `describe-${connection.record.id}`,
+      type: "game.submitDescription",
+      payload: { text: "阶段结算测试" },
+    });
+  }
+  await execute(service, questioner.connection, {
+    id: "advance-to-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  for (const [index, connection] of voters.entries()) {
+    await execute(service, connection, {
+      id: `vote-${connection.record.id}`,
+      type: "game.submitVote",
+      payload: {
+        targetId: index === 0 ? joined[0]!.joinResult.playerId : hostResult.playerId,
+      },
+    });
+  }
+  await execute(service, questioner.connection, {
+    id: "resolve-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.status.phase).toBe("gameOver");
+
+  let errorCode: string | undefined;
+  try {
+    await execute(service, host, {
+      id: "advance-during-result",
+      type: "game.advancePhase",
+      payload: {},
+    });
+  } catch (error) {
+    errorCode = (error as { code?: string }).code;
+  }
+  expect(errorCode).toBe("PHASE_RESULT_PENDING");
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.status.phase).toBe("gameOver");
+
+  advanceTime(PHASE_RESULT_DISPLAY_MS);
+  await execute(service, host, {
+    id: "advance-after-result",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.status.phase).toBe("waiting");
+});
+
+test("测试控制器生成的结算后房主可以让全房返回等待阶段", async () => {
+  const { service, advanceTime } = createTestContext();
   const { host, result } = await createRoom(service, "Oblivionis");
   await execute(service, host, {
     id: "waiting-add-bots",
@@ -2117,6 +2205,7 @@ test("结算后房主可以让全房返回等待阶段", async () => {
     type: "test.jumpToPhase",
     payload: { phase: "gameOver" },
   });
+  advanceTime(PHASE_RESULT_DISPLAY_MS);
 
   await execute(service, host, {
     id: "return-to-waiting",

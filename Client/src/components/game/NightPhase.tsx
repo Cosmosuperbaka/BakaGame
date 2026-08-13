@@ -1,17 +1,21 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { Moon, Sword, FastForward, ShieldOff, CheckCircle2, Undo2 } from "lucide-react";
+import { Moon, Sword, FastForward, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { listContainer, listItem, selectable, spring } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
+import { AbstainOption } from "./AbstainOption";
 
 export function NightPhase() {
   const snapshot = useGameStore((s) => s.snapshot)!;
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
+  const phaseResultPresentationPending = useGameStore(
+    (state) => state.phaseResultPresentationPending,
+  );
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
@@ -68,13 +72,12 @@ export function NightPhase() {
       <PrivilegedActionPreview mode="night" />
 
       {canAct && !acted && (
-        <div className="space-y-3">
-          <motion.div
-            className="grid grid-cols-2 gap-2.5"
-            variants={listContainer(targets.length)}
-            initial="initial"
-            animate="animate"
-          >
+        <motion.div
+          className="grid grid-cols-2 gap-2.5"
+          variants={listContainer(targets.length)}
+          initial="initial"
+          animate="animate"
+        >
             {targets.map((p) => (
               <motion.button
                 key={p.id}
@@ -88,15 +91,8 @@ export function NightPhase() {
                 <Sword className="ml-2 h-4 w-4 shrink-0 text-rose-500" />
               </motion.button>
             ))}
-          </motion.div>
-          <Button
-            variant="outline"
-            className="w-full gap-2 h-10"
-            onClick={() => handleNightAction()}
-          >
-            <ShieldOff className="h-4 w-4 text-muted-foreground" /> 什么都不做
-          </Button>
-        </div>
+          <AbstainOption onSelect={() => handleNightAction()} />
+        </motion.div>
       )}
 
       {/* 提交行动后的反馈卡片，与投票阶段同一套结构与配色 */}
@@ -124,7 +120,7 @@ export function NightPhase() {
                     目标 <span className="font-medium text-foreground">{actionTargetName}</span>
                   </>
                 ) : (
-                  "本回合不行动"
+                  "已弃票"
                 )}
               </div>
             </div>
@@ -143,7 +139,12 @@ export function NightPhase() {
 
       {isQuestioner && (
         <div className="text-center pt-2">
-          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
+          <Button
+            onClick={handleAdvance}
+            disabled={phaseResultPresentationPending}
+            size="lg"
+            className="gap-2 px-6"
+          >
             <FastForward className="h-4 w-4" /> 天亮了
           </Button>
         </div>

@@ -15,6 +15,9 @@ export const HOST_RECONNECT_TIMEOUT_MS = 60 * 1000;
 /** 房间聊天记录最大保留条数 */
 export const CHAT_LIMIT = 200;
 
+/** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
+export const PHASE_RESULT_DISPLAY_MS = 1_500;
+
 /** 测试模式默认词对（用于快速跳转阶段） */
 export const TEST_MODE_DEFAULT_WORD: [string, string] = ["苹果", "香蕉"];
 

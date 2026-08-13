@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PublicPlayerView } from "@/types";
 import { buildKnownRoleMap, resolveStatus } from "./playerPresentation";
+import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./playerListLayout";
 
 const createPlayer = (overrides: Partial<PublicPlayerView> = {}): PublicPlayerView => ({
   id: "player-1",
@@ -17,6 +18,11 @@ const createPlayer = (overrides: Partial<PublicPlayerView> = {}): PublicPlayerVi
 });
 
 describe("player list presentation", () => {
+  it("keeps the player column fixed when history has no description columns", () => {
+    expect(speechGridTemplate(0)).toBe(PLAYER_COLUMN_WIDTH);
+    expect(speechGridTemplate(1)).toContain("repeat(1, minmax(200px, max-content))");
+  });
+
   it("uses the server-revealed role for eliminated players", () => {
     const deadPlayer = createPlayer({
       roundStatus: "dead",

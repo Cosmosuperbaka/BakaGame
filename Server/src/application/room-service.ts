@@ -48,6 +48,7 @@ import {
   HOST_RECONNECT_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
+  PHASE_RESULT_DISPLAY_MS,
   TEST_MODE_DEFAULT_WORD,
   TEST_MODE_MAX_PLAYERS,
   BOT_NAME_SUFFIXES,
@@ -75,6 +76,8 @@ export class RoomService {
   private readonly now: () => number;
   private readonly random: RandomSource;
   private readonly commandHandlers: CommandHandler[];
+  private readonly publishedPhaseKeyByRoomId = new Map<string, string>();
+  private readonly gameOverAdvanceAllowedAtByRoomId = new Map<string, number>();
   private idCounter = 0;
 
   constructor(private readonly options: RoomServiceOptions) {
@@ -682,6 +685,10 @@ export class RoomService {
 
     if (phase === "gameOver") {
       this.ensureHost(room, player.id);
+      const advanceAllowedAt = this.gameOverAdvanceAllowedAtByRoomId.get(room.id) ?? 0;
+      if (this.now() < advanceAllowedAt) {
+        throw new AppError("PHASE_RESULT_PENDING", "阶段结果展示中，请稍候");
+      }
       this.returnRoomToWaiting(room);
       return { phase: "waiting" as GamePhase };
     }
@@ -1043,6 +1050,10 @@ export class RoomService {
       throw new AppError("ACTION_FORBIDDEN", "只有白板可以猜词");
     }
 
+    if (!state.alive) {
+      throw new AppError("ACTION_FORBIDDEN", "白板出局后不能再猜词");
+    }
+
     if (round.blankGuessUsed) {
       throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
     }
@@ -1066,7 +1077,6 @@ export class RoomService {
     // 机会在提交这一刻就消耗掉，裁定只决定这一次算不算猜中。
     round.blankGuessUsed = true;
     round.blankGuessRecords.push(guess);
-    round.blankGuessContext.draft = undefined;
     this.touchRoom(room);
 
     await this.log({
@@ -1084,6 +1094,7 @@ export class RoomService {
     } else {
       // 自动比对只认完全一致。细微差异交由主持人裁定，阶段继续阻塞。
       round.blankGuessContext.pendingReview = { words: guess.guessedWords };
+      round.blankGuessContext.draft = guess.guessedWords;
       this.appendSystemMessage(room, `${player.name} 的猜词未完全匹配，等待主持人裁定`);
     }
 
@@ -1102,6 +1113,10 @@ export class RoomService {
 
     if (!state || state.role !== "blank") {
       throw new AppError("ACTION_FORBIDDEN", "只有白板可以猜词");
+    }
+
+    if (!state.alive) {
+      throw new AppError("ACTION_FORBIDDEN", "白板出局后不能再猜词");
     }
 
     if (round.blankGuessUsed) {
@@ -1726,6 +1741,7 @@ export class RoomService {
   }
 
   private returnRoomToWaiting(room: RoomRecord) {
+    this.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
     room.round = undefined;
     for (const player of Object.values(room.players)) {
       // 机器人无法自行点击准备；旁观者则始终不参与准备计数。
@@ -1801,6 +1817,8 @@ export class RoomService {
 
     if (eliminatedIds.length > 0) {
       recordEliminations(round.assignments, eliminatedIds, "夜晚结算", this.now());
+      // 胜负结算前先推送本阶段淘汰结果，让玩家栏有机会展示死亡状态。
+      this.publishRoomState(room);
     }
 
     await this.log({
@@ -1859,7 +1877,7 @@ export class RoomService {
       return true;
     }
 
-    // 白板被淘汰但残局条件未触发：继续正常流程，白板玩家的 canSubmitBlankGuess 仍为 true。
+    // 白板被淘汰但残局条件未触发：继续正常流程；死亡白板不再拥有主动猜词入口。
     return false;
   }
 
@@ -1874,6 +1892,8 @@ export class RoomService {
 
     if (eliminatedIds.length > 0) {
       recordEliminations(round.assignments, eliminatedIds, reason, this.now());
+      // 保持当前阶段推送一次淘汰后的快照，再进入白板残局或游戏结算。
+      this.publishRoomState(room);
     }
 
     if (this.maybeEnterBlankGuess(room)) {
@@ -1928,6 +1948,10 @@ export class RoomService {
     }
 
     round.phase = "gameOver";
+    this.gameOverAdvanceAllowedAtByRoomId.set(
+      room.id,
+      this.now() + PHASE_RESULT_DISPLAY_MS,
+    );
     round.speechMode = undefined;
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
@@ -2228,6 +2252,8 @@ export class RoomService {
     }
 
     this.rooms.delete(room.id);
+    this.publishedPhaseKeyByRoomId.delete(room.id);
+    this.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
     await this.log({
       type: "room.closed",
       createdAt: this.now(),
@@ -2372,7 +2398,9 @@ export class RoomService {
         questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
         blankGuessPlayerId: room.round?.blankGuessContext?.playerId,
         blankGuessReason: room.round?.blankGuessContext?.reason,
-        blankGuessDraft: room.round?.blankGuessContext?.draft,
+        blankGuessDraft:
+          room.round?.blankGuessContext?.pendingReview?.words ??
+          room.round?.blankGuessContext?.draft,
         blankGuessPendingReview: room.round?.blankGuessContext?.pendingReview
           ? true
           : undefined,
@@ -2493,7 +2521,7 @@ export class RoomService {
       isQuestioner: false,
       // 只表示「还有猜词机会」。是否已在阻塞阶段由公共快照的
       // blankGuessPlayerId 表达，客户端据此决定显示入口还是输入界面。
-      canSubmitBlankGuess: state?.role === "blank" && !round.blankGuessUsed,
+      canSubmitBlankGuess: state?.role === "blank" && Boolean(state.alive) && !round.blankGuessUsed,
       blankGuessUsed: round.blankGuessUsed,
       nightActionSubmitted: round.nightActions.some((action) => action.actorId === player.id),
       myCurrentVoteTargetId:
@@ -2508,6 +2536,16 @@ export class RoomService {
   private publishRoomState(room: RoomRecord, targetConnection?: ConnectionRecord) {
     // 每次状态变化都同时推送公共快照与当前连接的私有视图。
     const snapshot = this.buildRoomSnapshot(room);
+
+    if (!targetConnection) {
+      const phaseKey = this.getPhaseNoticeKey(snapshot);
+      const previousPhaseKey = this.publishedPhaseKeyByRoomId.get(room.id);
+      if (previousPhaseKey !== undefined && previousPhaseKey !== phaseKey) {
+        this.appendSystemMessage(room, this.describePhaseChange(snapshot));
+        snapshot.chat = room.chat;
+      }
+      this.publishedPhaseKeyByRoomId.set(room.id, phaseKey);
+    }
 
     const connections = targetConnection
       ? [targetConnection]
@@ -2854,6 +2892,30 @@ export class RoomService {
   private appendSystemMessage(room: RoomRecord, text: string) {
     room.chat.push(this.createChatMessage("system", "系统", text, true));
     room.chat = room.chat.slice(-CHAT_LIMIT);
+  }
+
+  private describePhaseChange(snapshot: RoomSnapshot) {
+    const phaseText: Record<GamePhase, string> = {
+      waiting: "等待阶段",
+      assigningQuestioner: "指定出题人阶段",
+      wordSubmission: "出题阶段",
+      description:
+        snapshot.status.speechMode === "supplement"
+          ? "补充描述阶段"
+          : `第 ${snapshot.status.day} 天描述阶段`,
+      voting: "投票阶段",
+      tieBreak:
+        snapshot.status.tieBreakStage === "vote" ? "平票投票阶段" : "平票描述阶段",
+      night: "夜晚阶段",
+      blankGuess: "白板猜词阶段",
+      gameOver: "游戏结算阶段",
+    };
+    return `已进入${phaseText[snapshot.status.phase]}`;
+  }
+
+  private getPhaseNoticeKey(snapshot: RoomSnapshot) {
+    const { phase, day, speechMode, tieBreakStage, supplementIndex } = snapshot.status;
+    return [phase, day, speechMode, tieBreakStage, supplementIndex].join(":");
   }
 
   private async restorePlayerConnection(

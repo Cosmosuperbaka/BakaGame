@@ -88,6 +88,7 @@ describe("game store integration", () => {
   });
 
   afterEach(() => {
+    useGameStore.getState().leaveRoomState();
     vi.useRealTimers();
   });
 
@@ -217,5 +218,157 @@ describe("game store integration", () => {
 
     useGameStore.getState().setSnapshot(gameOverSnapshot("round-2"));
     expect(useGameStore.getState().snapshot?.summary).toBeUndefined();
+  });
+
+  it("keeps a phase elimination visible before presenting game over", async () => {
+    const beforeElimination: RoomSnapshot = {
+      ...gameOverSnapshot("round-result"),
+      status: {
+        phase: "voting",
+        roundId: "round-result",
+        started: true,
+        day: 1,
+      },
+      players: [
+        {
+          id: "player-1",
+          name: "Player 1",
+          score: 0,
+          membership: "active",
+          online: true,
+          isReady: true,
+          isBot: false,
+          isHost: true,
+          roundStatus: "alive",
+        },
+      ],
+      summary: undefined,
+    };
+    const eliminationSnapshot: RoomSnapshot = {
+      ...beforeElimination,
+      players: beforeElimination.players.map((player) => ({
+        ...player,
+        roundStatus: "dead" as const,
+      })),
+    };
+    const finalSnapshot: RoomSnapshot = {
+      ...gameOverSnapshot("round-result", roundSummary),
+      players: eliminationSnapshot.players,
+    };
+
+    useGameStore.getState().setSnapshot(beforeElimination);
+    useGameStore.getState().setSnapshot(eliminationSnapshot);
+    useGameStore.getState().setSnapshot(finalSnapshot);
+
+    expect(useGameStore.getState().snapshot?.status.phase).toBe("voting");
+    expect(useGameStore.getState().snapshot?.players[0]?.roundStatus).toBe("dead");
+    expect(useGameStore.getState().phaseResultPresentationPending).toBe(true);
+
+    await expect(useGameStore.getState().sendCommand("game.advancePhase")).rejects.toThrow(
+      "阶段结果展示中，请稍候",
+    );
+    expect(wsMock.send).not.toHaveBeenCalledWith(
+      "game.advancePhase",
+      expect.anything(),
+      expect.anything(),
+    );
+
+    vi.advanceTimersByTime(1499);
+    expect(useGameStore.getState().snapshot?.status.phase).toBe("voting");
+
+    vi.advanceTimersByTime(1);
+    expect(useGameStore.getState().snapshot?.status.phase).toBe("gameOver");
+    expect(useGameStore.getState().snapshot?.summary).toEqual(roundSummary);
+    expect(useGameStore.getState().phaseResultPresentationPending).toBe(false);
+  });
+
+  it("continues applying snapshot patches while game over is held for presentation", () => {
+    wsMock.send.mockResolvedValue({});
+    const dispose = initGameSocket();
+    const initialSnapshot: RoomSnapshot = {
+      ...gameOverSnapshot("round-sync"),
+      status: {
+        phase: "night",
+        roundId: "round-sync",
+        started: true,
+        day: 1,
+      },
+      players: [
+        {
+          id: "player-1",
+          name: "Player 1",
+          score: 0,
+          membership: "active",
+          online: true,
+          isReady: true,
+          isBot: false,
+          isHost: true,
+          roundStatus: "alive",
+        },
+      ],
+      summary: undefined,
+    };
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "room.snapshot",
+      payload: { mode: "full", revision: 1, state: initialSnapshot },
+    });
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        revision: 2,
+        baseRevision: 1,
+        operations: [{
+          op: "set",
+          path: ["players", 0, "roundStatus"],
+          value: "dead",
+        }],
+      },
+    });
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        revision: 3,
+        baseRevision: 2,
+        operations: [
+          { op: "set", path: ["status", "phase"], value: "gameOver" },
+          { op: "set", path: ["summary"], value: roundSummary },
+        ],
+      },
+    });
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        revision: 4,
+        baseRevision: 3,
+        operations: [{
+          op: "set",
+          path: ["chat"],
+          value: [{
+            id: "message-1",
+            playerId: "system",
+            playerName: "System",
+            text: "Game over",
+            createdAt: 1,
+            system: true,
+          }],
+        }],
+      },
+    });
+
+    expect(useGameStore.getState().snapshot?.status.phase).toBe("night");
+    expect(wsMock.send).not.toHaveBeenCalledWith("room.requestSync");
+
+    vi.advanceTimersByTime(1500);
+    expect(useGameStore.getState().snapshot?.status.phase).toBe("gameOver");
+    expect(useGameStore.getState().snapshot?.chat[0]?.text).toBe("Game over");
+    dispose();
   });
 });

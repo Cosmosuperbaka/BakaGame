@@ -415,7 +415,7 @@ export interface ConnectionRecord {
   resetStateSync?: () => void;
   /** housekeeping 调用；传输层仅在到达校准周期时发送全量状态。 */
   sendStateSyncCalibration?: (payload: unknown) => void;
-  /** 发送非状态事件/ACK，沿用传输层的帧大小压缩阈值。 */
+  /** 发送非状态事件/ACK，统一交给传输层序列化。 */
   sendPacket?: (payload: unknown) => void;
   close: (code?: number, reason?: string) => void;
 }

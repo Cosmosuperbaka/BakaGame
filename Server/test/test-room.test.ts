@@ -447,6 +447,7 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
   const waiting = snapshotOf(host);
   expect(waiting.status.phase).toBe("blankGuess");
   expect(waiting.status.blankGuessPendingReview).toBe(true);
+  expect(waiting.status.blankGuessDraft).toEqual(["苹果", "香焦"]);
   expect(privateOf(host).blankGuessUsed).toBe(true);
 
   // 只有出题人能裁定。

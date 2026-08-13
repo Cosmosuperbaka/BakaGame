@@ -5,7 +5,7 @@ import {
   buildDescriptionColumns,
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
-  descriptionCellShade,
+  descriptionCellShadeForPlayer,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
 import { PlayerRow, type PlayerMarks, type PlayerRowProps } from "@/components/room/PlayerList";
@@ -146,7 +146,7 @@ export function DescriptionTable({
                     "whitespace-nowrap border-r text-sm leading-relaxed",
                     cellPad,
                     DESCRIPTION_TONES[column.tone],
-                    descriptionCellShade(rowIndex, column.index),
+                    descriptionCellShadeForPlayer(player, rowIndex, column.index),
                   )}
                 >
                   {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
