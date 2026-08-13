@@ -13,6 +13,27 @@ test("landing page exposes both playable games and keeps placeholders disabled",
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
 });
 
+test("landing page remembers the latest site update as read", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => window.localStorage.removeItem("bakagame:last-seen-commit"));
+  await page.reload();
+
+  const updateNotice = page.getByRole("button", { name: "有新的站点更新" });
+  await expect(updateNotice).toBeVisible();
+  await updateNotice.click();
+  await expect(page.getByRole("heading", { name: "站点有新更新" })).toBeVisible();
+
+  await page.getByRole("button", { name: "知道了" }).click();
+  await expect(updateNotice).toBeHidden();
+  const seenCommit = await page.evaluate(() =>
+    window.localStorage.getItem("bakagame:last-seen-commit"),
+  );
+  expect(seenCommit).toMatch(/^[0-9a-f]{7}$/);
+
+  await page.reload();
+  await expect(updateNotice).toHaveCount(0);
+});
+
 test("removed and unknown routes fall back to a live page", async ({ page }) => {
   for (const path of ["/animecharguessr", "/unknown"]) {
     await page.goto(path);
@@ -59,15 +80,56 @@ test("landing and lobby stay within a mobile viewport", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
-  expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-  ).toBe(true);
+  expect(await page.evaluate(() => ({
+    widthFits: document.documentElement.scrollWidth <= window.innerWidth,
+    heightFits: document.documentElement.scrollHeight === window.innerHeight,
+    overflow: getComputedStyle(document.documentElement).overflow,
+  }))).toEqual({ widthFits: true, heightFits: true, overflow: "hidden" });
 
   await page.getByRole("button", { name: "Who is Faker" }).click();
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
-  expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-  ).toBe(true);
+  expect(await page.evaluate(() => ({
+    widthFits: document.documentElement.scrollWidth <= window.innerWidth,
+    heightFits: document.documentElement.scrollHeight === window.innerHeight,
+    overflow: getComputedStyle(document.documentElement).overflow,
+  }))).toEqual({ widthFits: true, heightFits: true, overflow: "hidden" });
+});
+
+test("internal scrolling works without visible scrollbar chrome", async ({ page }) => {
+  await page.goto("/");
+
+  const result = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    const content = document.createElement("div");
+    probe.className = "scrollbar-hidden";
+    probe.style.cssText = "position:fixed;inset:0 auto auto 0;width:100px;height:80px;overflow:auto";
+    content.style.cssText = "width:240px;height:240px";
+    probe.append(content);
+    document.body.append(probe);
+
+    const style = getComputedStyle(probe);
+    const webkitScrollbar = getComputedStyle(probe, "::-webkit-scrollbar");
+    probe.scrollTo({ left: probe.scrollWidth, top: probe.scrollHeight });
+    const measurement = {
+      scrollbarWidth: style.getPropertyValue("scrollbar-width"),
+      webkitDisplay: webkitScrollbar.display,
+      webkitWidth: webkitScrollbar.width,
+      webkitHeight: webkitScrollbar.height,
+      scrollLeft: probe.scrollLeft,
+      scrollTop: probe.scrollTop,
+    };
+    probe.remove();
+    return measurement;
+  });
+
+  expect(result).toEqual({
+    scrollbarWidth: "none",
+    webkitDisplay: "none",
+    webkitWidth: "0px",
+    webkitHeight: "0px",
+    scrollLeft: 140,
+    scrollTop: 160,
+  });
 });
 
 test("two browser sessions can create and join the same server room", async ({ browser, page }) => {

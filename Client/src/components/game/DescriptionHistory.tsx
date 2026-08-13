@@ -86,7 +86,7 @@ export function DescriptionTable({
         ];
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="scrollbar-hidden h-full overflow-auto">
       {/* table-auto 让每列按本列最长的一句取宽，不再统一均分 */}
       <table className="w-full table-auto border-collapse text-left text-sm">
         <thead className="text-xs font-semibold text-muted-foreground">

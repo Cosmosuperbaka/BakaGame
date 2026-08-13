@@ -101,7 +101,7 @@ export default function SongGuessrPage() {
   }, [joinPassword, joinRoom, joinTarget, navigate, setNotice, userName]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background">
       <header className="pt-12 md:pt-16 pb-5 md:pb-6 px-6">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center gap-2 mb-4">

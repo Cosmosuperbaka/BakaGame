@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { EmojiPicker } from "@/components/room/EmojiPicker";
+import { useAutoScrollToBottom } from "@/lib/useAutoScrollToBottom";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
 const MENTION_LIMIT = 6;
@@ -72,8 +73,8 @@ export function ChatPanel() {
   // 提及候选：null 表示当前没在输入提及
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useAutoScrollToBottom(chat.length);
 
   // 提及只对照当前房间名单判断，改名或退房不会留下失效标记。
   const mentionablePlayers = useMemo(
@@ -87,10 +88,6 @@ export function ChatPanel() {
         : [],
     [mention, mentionablePlayers],
   );
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat.length]);
 
   const closeMention = useCallback(() => {
     setMention(null);
@@ -145,7 +142,7 @@ export function ChatPanel() {
   return (
     <div className="flex flex-col h-full">
       <ScrollArea className="flex-1 px-3 py-3">
-        <div className="space-y-2">
+        <div ref={messagesRef} className="space-y-2">
           <AnimatePresence initial={false}>
             {chat.map((msg) => {
               const isMe = msg.playerId === myId;
@@ -209,7 +206,6 @@ export function ChatPanel() {
               );
             })}
           </AnimatePresence>
-          <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
