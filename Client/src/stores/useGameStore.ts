@@ -29,6 +29,7 @@ export interface GameState {
   sessionToken: string | null;
   snapshot: RoomSnapshot | null;
   privateState: PrivateState | null;
+  phaseResultPresentationPending: boolean;
   daybreakNotice: DaybreakNotice | null;
   toasts: ToastItem[];
   /**
@@ -71,6 +72,37 @@ let daybreakNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
+let syncedSnapshot: RoomSnapshot | null = null;
+let pendingGameOverSnapshot: RoomSnapshot | null = null;
+let phaseResultVisibleUntil = 0;
+let phaseResultTimer: ReturnType<typeof setTimeout> | undefined;
+
+const PHASE_RESULT_DISPLAY_MS = 1500;
+
+const clearPhaseResultPresentation = () => {
+  if (phaseResultTimer) clearTimeout(phaseResultTimer);
+  phaseResultTimer = undefined;
+  pendingGameOverSnapshot = null;
+  phaseResultVisibleUntil = 0;
+};
+
+const isSameRound = (left: RoomSnapshot | null, right: RoomSnapshot) =>
+  Boolean(
+    left &&
+    left.roomId === right.roomId &&
+    left.status.roundId &&
+    left.status.roundId === right.status.roundId,
+  );
+
+const hasNewElimination = (previous: RoomSnapshot, next: RoomSnapshot) => {
+  const previousStatuses = new Map(
+    previous.players.map((player) => [player.id, player.roundStatus]),
+  );
+  return next.players.some(
+    (player) =>
+      player.roundStatus === "dead" && previousStatuses.get(player.id) !== "dead",
+  );
+};
 
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
@@ -95,38 +127,96 @@ export const useGameStore = create<GameState>((set, get) => ({
   sessionToken: null,
   snapshot: null,
   privateState: null,
+  phaseResultPresentationPending: false,
   daybreakNotice: null,
   toasts: [],
   roomClosedAt: null,
 
   setConnected: (connected) => set({ connected }),
   setRooms: (rooms) => set({ rooms }),
-  joinRoomState: (roomId, sessionToken) =>
-    set({ roomId, sessionToken, roomClosedAt: null }),
-  leaveRoomState: () =>
+  joinRoomState: (roomId, sessionToken) => {
+    if (get().roomId !== roomId) {
+      clearPhaseResultPresentation();
+      set({ phaseResultPresentationPending: false });
+    }
+    set({ roomId, sessionToken, roomClosedAt: null });
+  },
+  leaveRoomState: () => {
+    clearPhaseResultPresentation();
     set({
       roomId: null,
       sessionToken: null,
       snapshot: null,
       privateState: null,
+      phaseResultPresentationPending: false,
       daybreakNotice: null,
-    }),
+    });
+  },
   markRoomClosed: () => set({ roomClosedAt: Date.now() }),
-  setSnapshot: (snapshot) =>
-    set((state) => {
-      const previousSnapshot = state.snapshot;
-      const previousSummary =
-        snapshot.status.phase === "gameOver" &&
-        !snapshot.summary &&
-        previousSnapshot &&
-        previousSnapshot.status.roundId === snapshot.status.roundId
-          ? previousSnapshot.summary
-          : undefined;
+  setSnapshot: (incomingSnapshot) => {
+    const previousSnapshot = get().snapshot;
+    const summarySource = pendingGameOverSnapshot ?? previousSnapshot;
+    const previousSummary =
+      incomingSnapshot.status.phase === "gameOver" &&
+      !incomingSnapshot.summary &&
+      summarySource?.status.roundId === incomingSnapshot.status.roundId
+        ? summarySource?.summary
+        : undefined;
+    const snapshot = previousSummary
+      ? { ...incomingSnapshot, summary: previousSummary }
+      : incomingSnapshot;
 
-      return {
-        snapshot: previousSummary ? { ...snapshot, summary: previousSummary } : snapshot,
-      };
-    }),
+    if (!isSameRound(previousSnapshot, snapshot)) {
+      clearPhaseResultPresentation();
+      set({ snapshot, phaseResultPresentationPending: false });
+      return;
+    }
+
+    if (
+      previousSnapshot &&
+      previousSnapshot.status.phase !== "gameOver" &&
+      snapshot.status.phase !== "gameOver" &&
+      hasNewElimination(previousSnapshot, snapshot)
+    ) {
+      phaseResultVisibleUntil = Date.now() + PHASE_RESULT_DISPLAY_MS;
+    }
+
+    if (
+      previousSnapshot?.status.phase !== "gameOver" &&
+      snapshot.status.phase === "gameOver" &&
+      phaseResultVisibleUntil > Date.now()
+    ) {
+      pendingGameOverSnapshot = snapshot;
+      set({ phaseResultPresentationPending: true });
+      if (!phaseResultTimer) {
+        phaseResultTimer = setTimeout(() => {
+          phaseResultTimer = undefined;
+          phaseResultVisibleUntil = 0;
+          const pendingSnapshot = pendingGameOverSnapshot;
+          pendingGameOverSnapshot = null;
+          if (!pendingSnapshot) return;
+
+          set((state) =>
+            isSameRound(state.snapshot, pendingSnapshot)
+              ? { snapshot: pendingSnapshot, phaseResultPresentationPending: false }
+              : state,
+          );
+        }, phaseResultVisibleUntil - Date.now());
+      }
+      return;
+    }
+
+    if (snapshot.status.phase !== "gameOver" && pendingGameOverSnapshot) {
+      clearPhaseResultPresentation();
+      set({ phaseResultPresentationPending: false });
+    }
+    set({
+      snapshot,
+      phaseResultPresentationPending: snapshot.status.phase === "gameOver"
+        ? false
+        : get().phaseResultPresentationPending,
+    });
+  },
   setPrivateState: (privateState) => set({ privateState }),
   showDaybreakNotice: (notice) => {
     if (daybreakNoticeTimer) clearTimeout(daybreakNoticeTimer);
@@ -214,7 +304,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   sendCommand: async (type, payload = {}) => {
-    const { roomId, sessionToken } = get();
+    const { roomId, sessionToken, phaseResultPresentationPending } = get();
+    if (type === "game.advancePhase" && phaseResultPresentationPending) {
+      throw new Error("阶段结果展示中，请稍候");
+    }
     return ws.send(type, payload, {
       roomId: roomId ?? undefined,
       sessionToken: sessionToken ?? undefined,
@@ -224,6 +317,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
 // 初始化全局 WS 事件监听与重连联动
 export function initGameSocket() {
+  syncedSnapshot = null;
+  snapshotRevision = undefined;
+  privateStateRevision = undefined;
+
   const unsubMsg = ws.onMessage((msg: ServerMessage) => {
     if (msg.type !== "event") return;
     const evt = msg as EventPacket;
@@ -236,7 +333,7 @@ export function initGameSocket() {
       case "room.snapshot":
         {
           const result = consumeStateSync(
-            currentStore.snapshot,
+            syncedSnapshot,
             snapshotRevision,
             evt.payload,
           );
@@ -245,7 +342,8 @@ export function initGameSocket() {
             break;
           }
           snapshotRevision = result.revision;
-          currentStore.setSnapshot(result.state as RoomSnapshot);
+          syncedSnapshot = result.state as RoomSnapshot;
+          currentStore.setSnapshot(syncedSnapshot);
         }
         break;
       case "game.privateState":
@@ -314,6 +412,7 @@ export function initGameSocket() {
     if (connected) {
       snapshotRevision = undefined;
       privateStateRevision = undefined;
+      syncedSnapshot = null;
       ws.send("lobby.subscribeRooms").catch(() => {});
       if (currentStore.roomId && currentStore.sessionToken) {
         ws.send("room.reconnect", {

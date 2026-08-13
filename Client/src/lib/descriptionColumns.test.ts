@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { DescriptionRecord } from "@/types";
+import type { DescriptionRecord, PublicPlayerView } from "@/types";
 
 import {
   buildDescriptionColumns,
   descriptionCellShade,
+  descriptionCellShadeForPlayer,
   type SpeechStatus,
 } from "./descriptionColumns";
 
@@ -49,6 +50,25 @@ describe("description column model", () => {
     expect(descriptionCellShade(0, 0)).toBe(descriptionCellShade(1, 1));
     expect(descriptionCellShade(0, 1)).toBe(descriptionCellShade(1, 0));
     expect(descriptionCellShade(0, 0)).not.toBe(descriptionCellShade(0, 1));
+  });
+
+  it("keeps spectator and questioner history cells on a plain background", () => {
+    const player = (overrides: Partial<PublicPlayerView>): PublicPlayerView => ({
+      id: "p1",
+      name: "玩家",
+      score: 0,
+      membership: "active",
+      online: true,
+      isReady: false,
+      isBot: false,
+      isHost: false,
+      roundStatus: "alive",
+      ...overrides,
+    });
+
+    expect(descriptionCellShadeForPlayer(player({ membership: "spectator" }), 0, 0)).toBe("");
+    expect(descriptionCellShadeForPlayer(player({ roundStatus: "questioner" }), 0, 0)).toBe("");
+    expect(descriptionCellShadeForPlayer(player({}), 0, 0)).toBe(descriptionCellShade(0, 0));
   });
 
   it("keeps the full active speech order even when an early submission is still hidden", () => {

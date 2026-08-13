@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, CircleSlash, FastForward, Undo2, Vote } from "lucide-react";
+import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { Button } from "@/components/ui/button";
 import { listContainer, listItem, selectable, spring } from "@/lib/motion";
@@ -8,12 +8,16 @@ import { useGameStore } from "@/stores/useGameStore";
 import { PrivilegedActionPreview } from "./PrivilegedActionPreview";
 import { PhaseHeader } from "./PhaseHeader";
 import { SupplementRequestControl } from "./SupplementRequestControl";
+import { AbstainOption } from "./AbstainOption";
 
 export function VotingPhase() {
   const snapshot = useGameStore((state) => state.snapshot)!;
   const privateState = useGameStore((state) => state.privateState);
   const sendCommand = useGameStore((state) => state.sendCommand);
   const addToast = useGameStore((state) => state.addToast);
+  const phaseResultPresentationPending = useGameStore(
+    (state) => state.phaseResultPresentationPending,
+  );
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((player) => player.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
@@ -96,16 +100,7 @@ export function VotingPhase() {
           ))}
           {/* 弃票与投人是同一次决定的两种结果，因此并入同一组选项，
               占满整行以区别于具体玩家。 */}
-          <motion.button
-            type="button"
-            variants={listItem}
-            {...selectable}
-            className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            onClick={() => handleVote(ABSTAIN_TARGET_ID)}
-          >
-            <span className="truncate text-sm font-medium">弃票</span>
-            <CircleSlash className="ml-2 h-4 w-4 shrink-0" />
-          </motion.button>
+          <AbstainOption onSelect={() => handleVote(ABSTAIN_TARGET_ID)} />
         </motion.div>
       ) : null}
 
@@ -153,7 +148,12 @@ export function VotingPhase() {
       {isQuestioner ? (
         <div className="flex items-center justify-center gap-3 pt-2">
           <SupplementRequestControl canRequest={!isTieBreak} />
-          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
+          <Button
+            onClick={handleAdvance}
+            disabled={phaseResultPresentationPending}
+            size="lg"
+            className="gap-2 px-6"
+          >
             <FastForward className="h-4 w-4" />
             结算投票
           </Button>

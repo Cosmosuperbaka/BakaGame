@@ -154,7 +154,7 @@ export function ChatPanel() {
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="py-1 text-center text-xs italic text-muted-foreground/70"
+                    className="py-1 text-center text-xs text-muted-foreground/70"
                   >
                     {msg.text}
                   </motion.div>

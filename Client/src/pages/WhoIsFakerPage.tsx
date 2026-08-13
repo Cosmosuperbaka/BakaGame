@@ -108,7 +108,14 @@ export default function WhoIsFakerPage() {
               返回主页
             </Button>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Who is Faker</h1>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
+            <span>Who is</span>
+            <img
+              src="/assets/faker.webp"
+              alt="Faker"
+              className="h-[1.15em] w-[1.15em] rounded-sm object-cover"
+            />
+          </h1>
         </div>
       </header>
 

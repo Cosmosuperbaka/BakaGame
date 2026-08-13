@@ -17,7 +17,7 @@ import { listContainer, listItem, popover, tappable } from "@/lib/motion";
 import {
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
-  descriptionCellShade,
+  descriptionCellShadeForPlayer,
   type DescriptionColumn,
 } from "@/lib/descriptionColumns";
 import { PendingSpeech, SubmittedSpeech } from "@/components/game/PendingSpeech";
@@ -30,6 +30,7 @@ import {
   resolveStatus,
   type StatusInfo,
 } from "./playerPresentation";
+import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./playerListLayout";
 import type {
   DescriptionRecord,
   GamePhase,
@@ -83,10 +84,7 @@ export const PLAYER_ROW_HEIGHT = "min-h-10";
  * 必须以 rem 表达：全局字号为 120%，1rem 不等于 16px，
  * 写成像素常量会让分界线落进玩家列内部。
  */
-export const PLAYER_COLUMN_WIDTH = "16rem";
-
-/** 单个发言列的最小宽度（px） */
-const SPEECH_COLUMN_MIN_WIDTH = 200;
+export { PLAYER_COLUMN_WIDTH } from "./playerListLayout";
 
 /**
  * 发言列的列宽由整列最长的一句决定：`max-content` 取本列所有格子的最大需求宽度，
@@ -96,9 +94,6 @@ const SPEECH_COLUMN_MIN_WIDTH = 200;
  * 包裹容器，靠 `grid-template-columns: subgrid` 继承外层的列轨道，
  * 而不是各自再算一遍 —— 否则每行会按自己那一句单独取宽，列就对不齐了。
  */
-const speechGridTemplate = (columnCount: number) =>
-  `${PLAYER_COLUMN_WIDTH} repeat(${columnCount}, minmax(${SPEECH_COLUMN_MIN_WIDTH}px, max-content))`;
-
 /** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
 const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
@@ -269,7 +264,7 @@ export function PlayerList(props: PlayerListProps) {
               column.key === history.submittedColumnKey &&
               Boolean(history.submittedPlayerIds?.has(player.id))
             }
-            shade={descriptionCellShade(rowIndex, column.index)}
+            shade={descriptionCellShadeForPlayer(player, rowIndex, column.index)}
           />
         ))}
       </motion.div>
@@ -384,8 +379,18 @@ export function PlayerList(props: PlayerListProps) {
     </div>
   );
 
-  // 展开历史时纵向滚动交给外层共享容器，避免两侧各自滚动。
-  if (history) return body;
+  // 展开后玩家列和发言列必须共享同一个双向滚动容器，才能保持行对齐；
+  // 外层面板只负责裁切动画范围，不会替这里提供滚动。
+  if (history) {
+    return (
+      <div
+        data-testid="player-history-scroll"
+        className="scrollbar-hidden h-full min-h-0 overflow-auto"
+      >
+        {body}
+      </div>
+    );
+  }
   return (
     <ScrollArea className="h-full">
       <div className="px-2">{body}</div>

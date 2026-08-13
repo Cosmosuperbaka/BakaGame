@@ -1,4 +1,4 @@
-import type { DescriptionRecord, RoomSnapshot } from "@/types";
+import type { DescriptionRecord, PublicPlayerView, RoomSnapshot } from "@/types";
 
 /** 发言历史的一列。轮次、平票 PK 与补充发言各自独立编号。 */
 export interface DescriptionColumn {
@@ -161,3 +161,13 @@ export const DESCRIPTION_HEAD_TONES: Record<DescriptionColumn["tone"], string> =
  */
 export const descriptionCellShade = (rowIndex: number, columnIndex: number): string =>
   (rowIndex + columnIndex) % 2 === 0 ? "bg-foreground/[0.035]" : "";
+
+/** 旁观席无需发言，空单元格保持纯底色，避免形成没有业务含义的棋盘格。 */
+export const descriptionCellShadeForPlayer = (
+  player: PublicPlayerView,
+  rowIndex: number,
+  columnIndex: number,
+): string =>
+  player.membership === "spectator" || player.roundStatus === "questioner"
+    ? ""
+    : descriptionCellShade(rowIndex, columnIndex);
