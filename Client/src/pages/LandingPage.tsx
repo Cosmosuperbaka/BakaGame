@@ -400,9 +400,6 @@ export default function LandingPage() {
                       <div className="flex items-baseline gap-2">
                         <strong className="text-base">V{entry.version}</strong>
                         <span className="text-xs text-muted-foreground">{entry.date}</span>
-                        <span className="min-w-0 truncate text-sm text-muted-foreground">
-                          {entry.title}
-                        </span>
                       </div>
                       <ChangelogBody content={entry.content} />
                     </div>

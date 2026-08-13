@@ -11,7 +11,6 @@ import {
 const entry = (version: string): ChangelogEntry => ({
   version,
   date: "2026-08-08",
-  title: version,
   content: version,
 });
 
