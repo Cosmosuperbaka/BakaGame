@@ -20,14 +20,11 @@ export interface AppDependencies {
   songGuessrService?: SongGuessrService;
 }
 
-const COMPRESSION_THRESHOLD_BYTES = 256;
-
 const sendPacket = (
-  ws: { send: (data: string, compress?: boolean) => unknown },
+  ws: { send: (data: string) => unknown },
   payload: unknown,
 ) => {
-  const serialized = JSON.stringify(payload);
-  ws.send(serialized, Buffer.byteLength(serialized, "utf8") >= COMPRESSION_THRESHOLD_BYTES);
+  ws.send(JSON.stringify(payload));
 };
 
 export const createApp = ({ env, roomService, logger, songGuessrService }: AppDependencies) => {
@@ -41,7 +38,9 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
 
   const app = new Elysia({
     websocket: {
-      perMessageDeflate: { compress: "shared", decompress: "shared" },
+      // 部分 iOS WebKit 版本会在 permessage-deflate 协商后立即断开连接。
+      // Bun 的协商配置是服务器级别，无法按 UA 稳定切换，因此全局关闭压缩。
+      perMessageDeflate: false,
     },
   })
     // ==================== 原生插件与全局中间件 ====================

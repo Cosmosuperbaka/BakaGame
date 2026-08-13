@@ -18,7 +18,6 @@ import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -65,7 +64,7 @@ const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
-    icon: "/assets/Faker.webp",
+    icon: "/assets/faker.webp",
     title: "Who is Faker",
     available: true,
   },
@@ -135,7 +134,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const [entering, setEntering] = useState(false);
 
   const baseClass =
-    "w-full flex items-center gap-5 rounded-xl border bg-card px-5 py-6 md:px-6 md:py-7 text-left";
+    "flex h-full min-h-0 w-full flex-col items-start justify-between gap-2 overflow-hidden rounded-lg border bg-card p-2 text-left sm:gap-3 sm:p-4 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   const content = (
     <>
@@ -143,12 +142,12 @@ function GameRow({ game }: { game: GameEntry }) {
         src={game.icon}
         alt=""
         aria-hidden="true"
-        className="h-14 w-14 shrink-0 rounded-md object-cover md:h-16 md:w-16"
+        className="h-8 w-8 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xl font-semibold md:text-2xl">{game.title}</div>
+        <div className="break-words text-sm leading-tight font-semibold sm:text-lg [@media(max-height:680px)]:text-sm">{game.title}</div>
         {game.subtitle ? (
-          <div className="mt-1 truncate text-sm text-muted-foreground">{game.subtitle}</div>
+          <div className="mt-1 truncate text-xs text-muted-foreground sm:text-sm [@media(max-width:480px)]:hidden">{game.subtitle}</div>
         ) : null}
       </div>
       {game.available ? (
@@ -170,7 +169,7 @@ function GameRow({ game }: { game: GameEntry }) {
 
   if (!game.available) {
     return (
-      <motion.div variants={listItem}>
+      <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
         <div aria-disabled="true" className={`${baseClass} opacity-60`}>
           {content}
         </div>
@@ -187,7 +186,7 @@ function GameRow({ game }: { game: GameEntry }) {
   };
 
   return (
-    <motion.div variants={listItem}>
+    <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
       <motion.button
         type="button"
         onClick={handleEnter}
@@ -315,7 +314,6 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
 
 export default function LandingPage() {
   const [infoOpen, setInfoOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
@@ -325,48 +323,30 @@ export default function LandingPage() {
   // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
   const commit = commitHistory.currentCommit;
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
-  const updateStorageKey = "bakagame:last-seen-commit";
-  const [hasUnreadUpdate, setHasUnreadUpdate] = useState(() => {
-    if (!commit || commit === "dev") return false;
-    try {
-      return window.localStorage.getItem(updateStorageKey) !== commit;
-    } catch {
-      return false;
-    }
-  });
-  const acknowledgeUpdate = () => {
-    try {
-      if (commit) window.localStorage.setItem(updateStorageKey, commit);
-    } catch {
-      // 浏览器禁用存储时仍可在当前页面关闭提醒。
-    }
-    setHasUnreadUpdate(false);
-    setUpdateOpen(false);
-  };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="shrink-0 px-6 pb-8 pt-[clamp(2.5rem,10svh,7rem)] text-center md:pb-10">
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-background">
+      <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
           variants={listItem}
           initial="initial"
           animate="animate"
-          className="flex items-center justify-center gap-2 text-4xl font-bold tracking-tight sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl"
+          className="flex items-center justify-center gap-2 text-4xl font-bold tracking-tight sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl [@media(max-height:680px)]:text-3xl"
         >
           Baka
           <img
             src="/assets/logo.webp"
             alt=""
             aria-hidden="true"
-            className="h-12 rounded-md object-cover sm:h-14 md:h-16"
+            className="h-12 rounded-md object-cover sm:h-14 md:h-16 [@media(max-height:680px)]:h-9"
           />
           Game
         </motion.h1>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 items-center px-6 py-4 md:px-10">
+      <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-hidden px-3 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
         <motion.div
-          className="w-full space-y-3"
+          className="grid h-[clamp(7rem,26svh,11rem)] w-full grid-cols-3 items-stretch gap-2 sm:gap-3"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
@@ -377,7 +357,7 @@ export default function LandingPage() {
         </motion.div>
       </main>
 
-      <footer className="relative flex shrink-0 flex-col items-center gap-3 px-6 pb-[clamp(1.5rem,6svh,4rem)]">
+      <footer className="flex flex-col items-center gap-2 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-2 [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-3 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
         <motion.div
           className="flex items-center gap-1"
           variants={listContainer(EXTERNAL_LINKS.length)}
@@ -399,16 +379,6 @@ export default function LandingPage() {
         >
           {versionLabel}
         </motion.button>
-        {hasUnreadUpdate ? (
-          <button
-            type="button"
-            onClick={() => setUpdateOpen(true)}
-            className="absolute bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-1.5 text-xs font-medium text-primary"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
-            有新的站点更新
-          </button>
-        ) : null}
       </footer>
 
       <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
@@ -443,20 +413,6 @@ export default function LandingPage() {
               <CommitTimeline commits={commitHistory.commits} />
             </TabsContent>
           </Tabs>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={updateOpen}
-        onOpenChange={(open) => (open ? setUpdateOpen(true) : acknowledgeUpdate())}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>站点有新更新</DialogTitle>
-          </DialogHeader>
-          <div className="scrollbar-hidden max-h-[55vh] overflow-y-auto pr-1">
-            <CommitTimeline commits={commitHistory.commits} />
-          </div>
-          <Button onClick={acknowledgeUpdate}>知道了</Button>
         </DialogContent>
       </Dialog>
     </div>

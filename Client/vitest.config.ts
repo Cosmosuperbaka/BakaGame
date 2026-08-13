@@ -4,7 +4,20 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "test-commit-history",
+      resolveId(id) {
+        return id === "virtual:commit-history" ? "\0virtual:commit-history" : null;
+      },
+      load(id) {
+        return id === "\0virtual:commit-history"
+          ? 'export default { generatedAt: "", currentCommit: "dev", commits: [] }'
+          : null;
+      },
+    },
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
