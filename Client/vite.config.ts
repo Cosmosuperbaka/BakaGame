@@ -60,6 +60,18 @@ function commitHistoryPlugin() {
       if (id !== resolvedId) return null
       return `export default ${JSON.stringify(collect())}`
     },
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'bakagame-build',
+            content: collect().currentCommit,
+          },
+          injectTo: 'head' as const,
+        },
+      ]
+    },
   }
 }
 

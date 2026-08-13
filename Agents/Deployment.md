@@ -13,7 +13,7 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 - 限制 HTTP 请求体、WebSocket 消息或帧大小以及连接带宽。
 - 配置空闲连接和握手超时，同时允许正常对局使用长连接。
 - 正确转发 WebSocket 的 `Upgrade` 与 `Connection` 头。
-- 保留 `permessage-deflate` 协商头，不得在代理层移除应用已启用的消息压缩扩展。
+- 不得在代理层注入或强制启用 `permessage-deflate`；应用当前为兼容 iOS WebKit 全局关闭该扩展。
 - 只把受信任的前端来源转发给服务；应用的 `CLIENT_URL` 必须与该来源一致。
 
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，

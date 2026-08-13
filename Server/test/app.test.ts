@@ -207,6 +207,18 @@ const startTestServer = () => {
   };
 };
 
+test("WebSocket 不协商 permessage-deflate", async () => {
+  const { port, stop } = startTestServer();
+
+  try {
+    const socket = await openSocket(port);
+    expect(socket.extensions).not.toContain("permessage-deflate");
+    socket.close();
+  } finally {
+    await stop();
+  }
+});
+
 test("HTTP 与 WebSocket 路由可以联通", async () => {
   const { port, stop } = startTestServer();
 
