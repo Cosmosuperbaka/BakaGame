@@ -201,6 +201,7 @@ export default function SongGuessrRoomPage() {
         if (!cancelled) setJoining(false);
         return;
       }
+      if (cancelled || useSongGuessrStore.getState().roomClosedAt) return;
       const savedName = getSavedUsername();
       if (!savedName) {
         setJoining(false);
@@ -397,6 +398,21 @@ export default function SongGuessrRoomPage() {
   }, [audioPlaybackState, audioStatus, lyricEndTime, lyricStartTime]);
 
   useEffect(() => {
+    const resumePlayback = () => {
+      if (document.visibilityState !== "visible") return;
+      const audio = audioRef.current;
+      if (!audio || audioStatus !== "ready" || !audio.paused || audioPlaybackState === "completed") return;
+      void audio.play().catch(() => setAudioPlaybackState("idle"));
+    };
+    document.addEventListener("visibilitychange", resumePlayback);
+    window.addEventListener("pageshow", resumePlayback);
+    return () => {
+      document.removeEventListener("visibilitychange", resumePlayback);
+      window.removeEventListener("pageshow", resumePlayback);
+    };
+  }, [audioPlaybackState, audioStatus]);
+
+  useEffect(() => {
     volumeRef.current = volume;
     window.localStorage.setItem(SONG_VOLUME_KEY, String(volume));
     if (audioRef.current) audioRef.current.volume = volume;
@@ -486,7 +502,7 @@ export default function SongGuessrRoomPage() {
 
   if (joining || needsName || needsPassword || !snapshot || !privateState || snapshot.roomId !== roomId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
         {!needsName && !needsPassword ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -594,7 +610,7 @@ export default function SongGuessrRoomPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <audio
         ref={audioRef}
         src={roundAudioUrl}
@@ -681,7 +697,7 @@ export default function SongGuessrRoomPage() {
             animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
           >
-            <div className="min-h-0 flex-1 overflow-auto rounded-xl">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl">
               <SongPlayerList
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
@@ -726,7 +742,7 @@ export default function SongGuessrRoomPage() {
               initial={{ x: "-100%" }}
               animate={{ x: 0, transition: spring.swift }}
               exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-72 flex-col overflow-y-auto border-r bg-panel shadow-xl md:hidden"
+              className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
             >
               <SongPlayerList
                 players={snapshot.players}
@@ -959,7 +975,11 @@ function GameStage({
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
                   <RotateCcw className="h-4 w-4" />
                 </Button>
-              ) : null}
+              ) : (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="播放音频">
+                  <Play className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
           {snapshot.settings.questionMode === "automatic" ? (
@@ -1060,7 +1080,12 @@ function GameStage({
         {isHost ? (
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => void run("song.game.finish")}>返回等待阶段</Button>
-            <Button onClick={() => void run("song.game.nextRound")}>再来一轮</Button>
+            <Button
+              disabled={snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady}
+              onClick={() => void run("song.game.nextRound")}
+            >
+              再来一轮
+            </Button>
           </div>
         ) : null}
       </div>

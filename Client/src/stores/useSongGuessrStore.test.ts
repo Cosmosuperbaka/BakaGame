@@ -168,6 +168,20 @@ describe("Songuessr store integration", () => {
 
     expect(getSongGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
+    expect(useSongGuessrStore.getState().roomClosedAt).not.toBeNull();
+  });
+
+  it("keeps the Songuessr session while reconnecting after a temporary disconnect", async () => {
+    saveSongGuessrSessionToken("2346", "live-song-token");
+    wsMock.send.mockRejectedValue({ code: "TIMEOUT" });
+
+    await expect(useSongGuessrStore.getState().reconnectRoom("2346")).resolves.toBe(true);
+    expect(getSongGuessrSessionToken("2346")).toBe("live-song-token");
+    expect(useSongGuessrStore.getState()).toMatchObject({
+      roomId: "2346",
+      sessionToken: "live-song-token",
+      roomClosedAt: null,
+    });
   });
 
   it("subscribes to the lobby and restores the active room after reconnecting", async () => {

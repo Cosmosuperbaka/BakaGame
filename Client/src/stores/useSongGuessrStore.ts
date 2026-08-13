@@ -50,6 +50,12 @@ let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
 
+const isPermanentRoomError = (error: unknown) => {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
+    code === "SESSION_INVALID" || code === "PLAYER_KICKED";
+};
+
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
@@ -105,12 +111,17 @@ export const useSongGuessrStore = create<SongGuessrStore>((set, get) => ({
   reconnectRoom: async (roomId) => {
     const sessionToken = getSongGuessrSessionToken(roomId);
     if (!sessionToken) return false;
+    set({ roomId, sessionToken, roomClosedAt: null });
     try {
       await songGuessrWs.send("song.room.reconnect", { roomId, sessionToken });
-      set({ roomId, sessionToken, roomClosedAt: null });
       return true;
-    } catch {
+    } catch (error) {
+      if (!isPermanentRoomError(error)) return true;
       clearSongGuessrSessionToken(roomId);
+      if (get().roomId === roomId) {
+        set({ roomId: null, sessionToken: null, snapshot: null, privateState: null });
+        useSongGuessrStore.setState({ roomClosedAt: Date.now() });
+      }
       return false;
     }
   },
@@ -219,7 +230,19 @@ export function initSongGuessrSocket() {
       void songGuessrWs.send("song.room.reconnect", {
         roomId: store.roomId,
         sessionToken: store.sessionToken,
-      }).catch(() => {});
+      }).catch((error) => {
+        if (!isPermanentRoomError(error)) return;
+        const roomId = useSongGuessrStore.getState().roomId;
+        if (!roomId) return;
+        clearSongGuessrSessionToken(roomId);
+        useSongGuessrStore.setState({
+          roomId: null,
+          sessionToken: null,
+          snapshot: null,
+          privateState: null,
+          roomClosedAt: Date.now(),
+        });
+      });
     }
   });
 

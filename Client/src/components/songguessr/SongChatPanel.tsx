@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { duration, ease, spring } from "@/lib/motion";
 import { STICKER_PREFIX } from "@/lib/stickers";
 import { cn } from "@/lib/utils";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
+import { useAutoScrollToBottom } from "@/lib/useAutoScrollToBottom";
 
 const systemMessage = {
   initial: { opacity: 0, scaleY: 0.6 },
@@ -24,11 +25,7 @@ export function SongChatPanel() {
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat.length]);
+  const messagesRef = useAutoScrollToBottom(chat.length);
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -52,7 +49,7 @@ export function SongChatPanel() {
   return (
     <div className="flex flex-col h-full">
       <ScrollArea className="flex-1 px-3 py-3">
-        <div className="space-y-2">
+        <div ref={messagesRef} className="space-y-2">
           <AnimatePresence initial={false}>
             {chat.map((message) => {
               const isMe = message.playerId === myId;
@@ -112,7 +109,6 @@ export function SongChatPanel() {
               );
             })}
           </AnimatePresence>
-          <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
