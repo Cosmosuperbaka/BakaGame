@@ -39,6 +39,7 @@ import { ConnectionRegistry } from "./connection-registry";
 const DEFAULT_SETTINGS: SongGuessrSettings = {
   questionType: "song",
   questionMode: "manual",
+  autoRotateSubmitter: false,
   autoFilters: { artists: [], minPopularity: 0 },
   lyricsLineCount: 5,
   showLyrics: true,
@@ -62,6 +63,7 @@ interface SongGuessrPlayerRecord {
   sessionToken: string;
   name: string;
   membership: "active" | "spectator" | "kicked";
+  nextRoundMembership?: "active" | "spectator";
   online: boolean;
   isReady: boolean;
   score: number;
@@ -147,6 +149,32 @@ const normalizeSongText = (value: string) =>
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
 
+const SONG_VERSION_PATTERN = /\s*[（(【[]\s*(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|[^）)】\]]*?\b(?:ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b[^）)】\]]*)\s*[）)】\]]/giu;
+const TRAILING_VERSION_PATTERN = /\s*[-–—]\s*(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|[^-–—]*?\b(?:ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b.*)$/iu;
+const BARE_VERSION_SUFFIX_PATTERN = /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
+const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
+
+const normalizeSongTitle = (value: string) =>
+  normalizeSongText(
+    value
+      .replace(SONG_VERSION_PATTERN, "")
+      .replace(TRAILING_VERSION_PATTERN, "")
+      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
+      .replace(FEAT_SUFFIX_PATTERN, ""),
+  );
+
+const normalizedArtists = (value: string) =>
+  new Set(
+    value
+      .split(/\s*(?:,|，|、|&|＆|\/|／|;|；|\bx\b|\bfeat(?:uring)?\.?\b|\bwith\b)\s*/iu)
+      .map(normalizeSongText)
+      .filter(Boolean),
+  );
+
+const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
+const MAX_LYRIC_LINE_DURATION_MS = 12_000;
+const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
+
 const direction = (guess?: number, answer?: number): SongGuessDirection => {
   if (guess === undefined || answer === undefined) return "unknown";
   if (guess === answer) return "equal";
@@ -157,23 +185,37 @@ export const createSongLyricClip = (
   lyrics: SongDetails["lyrics"],
   lineCount: number,
   random: RandomSource,
+  durationMs?: number,
 ): SongLyricClip => {
-  if (lyrics.length < lineCount) {
-    throw new AppError("LYRICS_TOO_SHORT", "歌词行数不足，无法生成当前设置的片段");
+  const safeCount = clampInt(lineCount, 1, 10);
+  const windows = lyrics.length >= safeCount
+    ? Array.from({ length: lyrics.length - safeCount + 1 }, (_, startIndex) =>
+      lyrics.slice(startIndex, startIndex + safeCount))
+        .filter((lines) => lines.every((line) =>
+          line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS))
+    : [];
+
+  if (windows.length > 0) {
+    const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
+    const candidates = padded.length > 0 ? padded : windows;
+    const lines = candidates[random.nextInt(candidates.length)];
+    return {
+      startTime: lines[0].time,
+      endTime: Math.max(lines[0].time, lines.at(-1)!.endTime - 250),
+      lines,
+    };
   }
 
-  const safeCount = clampInt(lineCount, 1, lyrics.length);
-  const edgePadding = lyrics.length - safeCount >= 4 ? 2 : 0;
-  const firstIndex = edgePadding;
-  const lastIndex = Math.max(firstIndex, lyrics.length - safeCount - edgePadding);
-  const startIndex = firstIndex + random.nextInt(lastIndex - firstIndex + 1);
-  const lines = lyrics.slice(startIndex, startIndex + safeCount);
-  const endTime = Math.max(lines[0].time, lines.at(-1)!.endTime - 250);
+  const clipDuration = safeCount * FALLBACK_CLIP_SECONDS_PER_LINE * 1_000;
+  const songDuration = Math.max(1, durationMs ?? clipDuration);
+  const actualClipDuration = Math.min(clipDuration, songDuration);
+  const latestStart = Math.max(0, songDuration - actualClipDuration);
+  const startTime = random.nextInt(latestStart + 1);
 
   return {
-    startTime: lines[0].time,
-    endTime,
-    lines,
+    startTime,
+    endTime: startTime + actualClipDuration,
+    lines: [],
   };
 };
 
@@ -518,10 +560,22 @@ export class SongGuessrService {
   private setSpectator(connection: ConnectionRecord, spectator: boolean) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "waiting") {
-      throw new AppError("INVALID_PHASE", "只能在等待阶段切换玩家或旁观状态");
+      const nextRoundMembership = spectator ? "spectator" : "active";
+      if (nextRoundMembership === "spectator" && !room.allowSpectators) {
+        throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
+      }
+      player.nextRoundMembership = nextRoundMembership;
+      this.touch(room);
+      this.appendSystemMessage(
+        room,
+        `${player.name} 将在下轮${spectator ? "加入旁观" : "加入游戏"}`,
+      );
+      this.publishRoom(room);
+      return { spectator, queued: true };
     }
     const nextMembership = spectator ? "spectator" : "active";
-    if (player.membership === nextMembership) return { spectator };
+    player.nextRoundMembership = undefined;
+    if (player.membership === nextMembership) return { spectator, queued: false };
     if (spectator) {
       if (!room.allowSpectators) throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
       player.membership = "spectator";
@@ -537,7 +591,7 @@ export class SongGuessrService {
     );
     this.publishRoom(room);
     this.publishLobby();
-    return { spectator };
+    return { spectator, queued: false };
   }
 
   private updateSettings(
@@ -569,6 +623,9 @@ export class SongGuessrService {
     if (payload.questionMode !== undefined) {
       room.settings.questionMode = payload.questionMode;
     }
+    if (payload.autoRotateSubmitter !== undefined) {
+      room.settings.autoRotateSubmitter = payload.autoRotateSubmitter;
+    }
     if (payload.autoFilters !== undefined) {
       room.settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
     }
@@ -599,22 +656,7 @@ export class SongGuessrService {
   }
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    const round = room.currentRound;
-    if (
-      room.phase === "playing" &&
-      round &&
-      (player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id))
-    ) {
-      const query = normalizeSongText(keyword);
-      const containsLyric = query.length >= 2 && round.lyricClip.lines.some((line) => {
-        const lyric = normalizeSongText(line.text);
-        return lyric.length >= 2 && (lyric.includes(query) || query.includes(lyric));
-      });
-      if (containsLyric) {
-        throw new AppError("LYRIC_SEARCH_FORBIDDEN", "不能直接搜索当前展示的歌词原词");
-      }
-    }
+    const { room } = this.requireRoomPlayer(connection);
     return {
       results: await this.options.musicProvider.search(
         keyword,
@@ -878,10 +920,14 @@ export class SongGuessrService {
         const session = await getLoginStatus.call(this.options.musicProvider, room.musicSession.cookie);
         room.musicSession.account = session.account;
       } catch (error) {
-        this.clearMusicSession(room);
-        this.publishRoom(room);
-        if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") throw error;
-        throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效，请重新扫码登录");
+        if (error instanceof AppError) {
+          if (error.code === "MUSIC_SESSION_INVALID") {
+            this.clearMusicSession(room);
+            this.publishRoom(room);
+          }
+          throw error;
+        }
+        throw new AppError("MUSIC_API_FAILED", "网易云登录状态校验失败，请稍后重试");
       }
 
       const activePlayers = this.activePlayers(room);
@@ -961,11 +1007,20 @@ export class SongGuessrService {
   }
 
   private installRound(room: SongGuessrRoomRecord, song: SongDetails, submitterPlayerId: string): number {
-    const lyricClip = createSongLyricClip(song.lyrics, room.settings.lyricsLineCount, this.random);
+    this.applyQueuedMemberships(room);
+    if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+      throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
+    }
+    const lyricClip = createSongLyricClip(
+      song.lyrics,
+      room.settings.lyricsLineCount,
+      this.random,
+      song.durationMs,
+    );
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
     const participantStates = Object.fromEntries(
-      this.activePlayers(room).map((candidate) => [
+      this.activePlayers(room).filter((candidate) => candidate.online).map((candidate) => [
         candidate.id,
         {
           audioReady: candidate.isBot,
@@ -990,6 +1045,7 @@ export class SongGuessrService {
     room.pendingSubmitterPlayerId = undefined;
     room.roundSummary = undefined;
     room.phase = "playing";
+    this.appendSystemMessage(room, `第 ${roundNumber} 轮开始`);
     return roundNumber;
   }
 
@@ -1038,13 +1094,27 @@ export class SongGuessrService {
     }
     const candidates = [...first.values()];
     if (filters.minPopularity === 0) return candidates;
+    const knownMatches = candidates.filter(
+      (song) => song.popularity !== undefined && song.popularity >= filters.minPopularity,
+    );
+    if (knownMatches.length > 0) return knownMatches;
+
     const getPopularity = this.options.musicProvider.getSongPopularity;
     if (!getPopularity) {
-      return candidates.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
+      return [];
     }
+
+    // 大歌单不能逐首回源查询热度。随机抽取有限候选，缓存命中仍可复用，
+    // 冷缓存下单轮最多发起固定数量的上游请求，避免限流恢复后继续堆积。
+    const lookupPool = [...candidates];
+    const sampled: SongSearchResult[] = [];
+    while (lookupPool.length > 0 && sampled.length < AUTO_POPULARITY_LOOKUP_LIMIT) {
+      sampled.push(lookupPool.splice(this.random.nextInt(lookupPool.length), 1)[0]);
+    }
+
     const enriched: SongSearchResult[] = [];
-    for (let index = 0; index < candidates.length; index += 8) {
-      const batch = candidates.slice(index, index + 8);
+    for (let index = 0; index < sampled.length; index += 4) {
+      const batch = sampled.slice(index, index + 4);
       const values = await Promise.all(batch.map(async (song) => ({
         ...song,
         popularity: await getPopularity.call(this.options.musicProvider, song.id, cookie) ?? song.popularity,
@@ -1205,6 +1275,18 @@ export class SongGuessrService {
       if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
       room.automaticRoundLoading = true;
       try {
+        this.applyQueuedMemberships(room);
+        if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+          room.currentRound = undefined;
+          room.roundSummary = undefined;
+          room.pendingSubmitterPlayerId = undefined;
+          room.phase = "waiting";
+          this.resetReadyState(room);
+          this.touch(room);
+          this.publishRoom(room);
+          this.publishLobby();
+          return { nextRound: room.roundNumber + 1, waiting: true };
+        }
         await this.startAutomaticRound(room);
       } catch (error) {
         // 自动题库临时失败时保留答案页，房主可以重试或回到等待阶段，
@@ -1217,9 +1299,30 @@ export class SongGuessrService {
         room.automaticRoundLoading = false;
       }
     } else {
+      const previousSubmitterId = previousRound?.submitterPlayerId;
       room.currentRound = undefined;
       room.roundSummary = undefined;
-      room.phase = "choosingSubmitter";
+      this.applyQueuedMemberships(room);
+      if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+        room.pendingSubmitterPlayerId = undefined;
+        room.phase = "waiting";
+        this.resetReadyState(room);
+        this.touch(room);
+        this.publishRoom(room);
+        this.publishLobby();
+        return { nextRound: room.roundNumber + 1, waiting: true };
+      }
+      if (room.settings.autoRotateSubmitter) {
+        const nextSubmitter = this.nextRotatingSubmitter(room, previousSubmitterId);
+        if (nextSubmitter) {
+          room.pendingSubmitterPlayerId = nextSubmitter.id;
+          room.phase = "submittingSong";
+        } else {
+          room.phase = "choosingSubmitter";
+        }
+      } else {
+        room.phase = "choosingSubmitter";
+      }
     }
     this.touch(room);
     this.publishRoom(room);
@@ -1236,10 +1339,8 @@ export class SongGuessrService {
     room.currentRound = undefined;
     room.roundSummary = undefined;
     room.finalScores = undefined;
-    for (const candidate of Object.values(room.players)) {
-      if (candidate.membership !== "active") continue;
-      candidate.isReady = candidate.id === room.hostPlayerId || candidate.isBot;
-    }
+    this.applyQueuedMemberships(room);
+    this.resetReadyState(room);
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -1318,8 +1419,42 @@ export class SongGuessrService {
 
   private isCorrectSong(guess: SongDetails, answer: SongDetails) {
     if (guess.id === answer.id) return true;
-    return normalizeSongText(guess.title) === normalizeSongText(answer.title) &&
-      normalizeSongText(guess.artist) === normalizeSongText(answer.artist);
+    if (normalizeSongTitle(guess.title) !== normalizeSongTitle(answer.title)) return false;
+    const answerArtists = normalizedArtists(answer.artist);
+    return [...normalizedArtists(guess.artist)].some((artist) => answerArtists.has(artist));
+  }
+
+  private applyQueuedMemberships(room: SongGuessrRoomRecord) {
+    let hostMovedToSpectator = false;
+    for (const player of Object.values(room.players)) {
+      const membership = player.nextRoundMembership;
+      if (!membership || player.membership === "kicked") continue;
+      if (membership === "spectator" && !room.allowSpectators) continue;
+      if (membership === "active" && !player.online) continue;
+      player.nextRoundMembership = undefined;
+      player.membership = membership;
+      if (membership === "spectator" && player.id === room.hostPlayerId) {
+        hostMovedToSpectator = true;
+      }
+      player.isReady = membership === "active" && (player.id === room.hostPlayerId || player.isBot);
+    }
+    if (hostMovedToSpectator) this.reassignHost(room);
+  }
+
+  private resetReadyState(room: SongGuessrRoomRecord) {
+    for (const candidate of Object.values(room.players)) {
+      candidate.isReady = candidate.membership === "active" &&
+        (candidate.id === room.hostPlayerId || candidate.isBot);
+    }
+  }
+
+  private nextRotatingSubmitter(room: SongGuessrRoomRecord, previousSubmitterId?: string) {
+    const candidates = Object.values(room.players)
+      .filter((player) => player.online && player.membership === "active" && !player.isBot)
+      .sort((left, right) => left.joinedAt - right.joinedAt);
+    if (candidates.length === 0) return undefined;
+    const previousIndex = candidates.findIndex((player) => player.id === previousSubmitterId);
+    return candidates[(previousIndex + 1 + candidates.length) % candidates.length];
   }
 
   private canTestSubmitterGuess(room: SongGuessrRoomRecord, playerId: string) {
@@ -1415,6 +1550,7 @@ export class SongGuessrService {
       name: player.name,
       score: player.score,
       membership: player.membership,
+      nextRoundMembership: player.nextRoundMembership,
       online: player.online,
       isReady: player.isReady,
       isBot: player.isBot,
@@ -1661,7 +1797,10 @@ export class SongGuessrService {
   private reassignHost(room: SongGuessrRoomRecord) {
     const next = Object.values(room.players)
       .filter((player) => player.online && player.membership === "active" && !player.isBot)
-      .sort((left, right) => left.joinedAt - right.joinedAt)[0];
+      .sort((left, right) => left.joinedAt - right.joinedAt)[0]
+      ?? Object.values(room.players)
+        .filter((player) => player.online && player.membership !== "kicked" && !player.isBot)
+        .sort((left, right) => left.joinedAt - right.joinedAt)[0];
     if (next) {
       room.hostPlayerId = next.id;
       next.isReady = true;

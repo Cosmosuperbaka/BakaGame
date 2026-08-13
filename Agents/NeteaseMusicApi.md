@@ -95,7 +95,8 @@ fetch(url, { credentials: "include" });
 - 解析多时间戳 LRC，并重新计算每句结束时间。
 - 删除歌名、歌手、专辑名等标题行。
 - 删除中文和英文作词、作曲、编曲、制作、录音、混音、母带、乐器演奏及发行署名行，包括 `Production Coordination`、`Keyboards & Programming`、`Drums`、`Strings Arranged & Conducted`、`Recorded at`、`Engineered by` 等变体。
-- 过滤后的歌词行数不足时返回可预期的业务错误，不能把空歌词交给 `createSongLyricClip`。
+- 过滤后的歌词行数达到设置要求时，交给 `createSongLyricClip` 选择连续歌词片段；单句跨度超过 12 秒的候选片段必须跳过，避免截取过长间奏。
+- 歌词缺失或过滤后的行数不足时，允许纯音乐或未上传歌词的歌曲出题，改为在歌曲时长内随机截取 `设置歌词行数 * 6` 秒的音频片段。
 
 ### 音频播放
 

@@ -19,6 +19,7 @@ test("Songuessr 协议解析房间设置与游戏命令", () => {
       payload: {
         lyricsLineCount: 7,
         showLyrics: false,
+        autoRotateSubmitter: true,
         bloodMode: true,
         showGuessTimer: false,
         allowSpectators: false,
@@ -30,6 +31,7 @@ test("Songuessr 协议解析房间设置与游戏命令", () => {
     payload: {
       lyricsLineCount: 7,
       showLyrics: false,
+      autoRotateSubmitter: true,
       bloodMode: true,
       showGuessTimer: false,
       allowSpectators: false,
