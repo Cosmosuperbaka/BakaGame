@@ -120,7 +120,6 @@ export default function SongGuessrRoomPage() {
   const [pendingJoinName, setPendingJoinName] = useState("");
   const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
-  const [roomLinkCopied, setRoomLinkCopied] = useState(false);
   const [volume, setVolume] = useState(() => {
     const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
     return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
@@ -609,16 +608,6 @@ export default function SongGuessrRoomPage() {
     navigate("/songuessr", { replace: true });
   };
 
-  const copyRoomLink = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/songuessr/room/${snapshot.roomId}`);
-      setRoomLinkCopied(true);
-      window.setTimeout(() => setRoomLinkCopied(false), 2_000);
-    } catch {
-      setNotice("复制失败，请手动复制", "error");
-    }
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <audio
@@ -668,16 +657,6 @@ export default function SongGuessrRoomPage() {
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           ) : null}
           <VolumeControl volume={volume} onVolumeChange={setVolume} />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() => void copyRoomLink()}
-            aria-label={roomLinkCopied ? "房间链接已复制" : "复制房间链接"}
-            title={roomLinkCopied ? "已复制" : "复制房间链接"}
-          >
-            {roomLinkCopied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-          </Button>
           <div className="flex gap-1 md:hidden">
             <Button
               variant="ghost"
@@ -703,8 +682,8 @@ export default function SongGuessrRoomPage() {
         </div>
       </header>
 
-      <div className="relative flex flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
-        <section className="relative flex min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
+      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
+        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
           <div
             className="hidden shrink-0 md:block"
             style={{ width: PLAYER_COLUMN_WIDTH }}
@@ -728,7 +707,7 @@ export default function SongGuessrRoomPage() {
             </div>
           </motion.aside>
 
-          <main className="isolate flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel">
+          <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel">
             <SongGameArea
               snapshot={snapshot}
               privateState={privateState}
@@ -752,7 +731,7 @@ export default function SongGuessrRoomPage() {
           </main>
         </section>
 
-        <aside className="hidden w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
+        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
           <SongChatPanel />
         </aside>
 
@@ -829,8 +808,8 @@ function SongGameArea(props: SongGameAreaProps) {
   const phaseRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className={cn("relative flex h-full flex-col overflow-hidden", props.snapshot.testMode && "pb-16")}>
-      <ScrollArea className="min-h-0 flex-1">
+    <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", props.snapshot.testMode && "pb-16")}>
+      <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
         <div className="p-6 md:p-8">
           <AnimatePresence mode="wait">
             <motion.div
@@ -1154,6 +1133,7 @@ function SongWaitingPhase({
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6">
       <PhaseHeader icon={Gamepad2} title="等待开始" />
+      <SongRoomLinkShare roomId={snapshot.roomId} />
       <SongSettingsPreview snapshot={snapshot} />
       {showProgress ? (
         <div className="w-full space-y-2 text-center">
@@ -1204,49 +1184,12 @@ function SongHostWaitingPanel({
   const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
-  const shareUrl = `${window.location.origin}/songuessr/room/${snapshot.roomId}`;
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2_000);
-    } catch {
-      setNotice("复制失败，请手动复制", "error");
-    }
-  };
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Gamepad2} title="等待玩家加入" />
 
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">房间链接</Label>
-        <div className="flex gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-            <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-              {shareUrl}
-            </span>
-          </div>
-          <motion.button
-            type="button"
-            {...pressable}
-            onClick={() => void handleCopy()}
-            className={cn(
-              "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-              copied
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
-                : "hover:bg-accent/60",
-            )}
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {copied ? "已复制" : "复制"}
-          </motion.button>
-        </div>
-      </div>
+      <SongRoomLinkShare roomId={snapshot.roomId} />
 
       {showProgress ? (
         <div className="space-y-2">
@@ -1308,6 +1251,50 @@ function SongHostWaitingPanel({
             ? "等待玩家加入"
             : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
       </Button>
+    </div>
+  );
+}
+
+function SongRoomLinkShare({ roomId }: { roomId: string }) {
+  const [copied, setCopied] = useState(false);
+  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const shareUrl = `${window.location.origin}/songuessr/room/${roomId}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2_000);
+    } catch {
+      setNotice("复制失败，请手动复制", "error");
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2">
+      <Label className="text-xs text-muted-foreground">房间链接</Label>
+      <div className="flex gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+            {shareUrl}
+          </span>
+        </div>
+        <motion.button
+          type="button"
+          {...pressable}
+          onClick={() => void handleCopy()}
+          className={cn(
+            "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
+            copied
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+              : "hover:bg-accent/60",
+          )}
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "已复制" : "复制"}
+        </motion.button>
+      </div>
     </div>
   );
 }

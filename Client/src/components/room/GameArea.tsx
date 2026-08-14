@@ -25,8 +25,8 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
   const phase = snapshot.status.phase;
 
   return (
-    <div className={`relative flex h-full flex-col overflow-hidden${isTestRoom ? " pb-16" : ""}`}>
-      <ScrollArea className="min-h-0 flex-1">
+    <div className={`relative flex min-h-0 flex-1 flex-col overflow-hidden${isTestRoom ? " pb-16" : ""}`}>
+      <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
         <div className="p-6 md:p-8">
           {/* 阶段切换：进入从略小放大，退出向外轻胀，形成前后层次感。
               动画结束后清掉 transform，避免残留的分数缩放让文本子像素抖动。 */}
