@@ -64,7 +64,7 @@ const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
-    icon: "/assets/faker.webp",
+    icon: "/assets/Faker.webp",
     title: "Who is Faker",
     available: true,
   },
