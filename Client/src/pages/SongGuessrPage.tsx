@@ -27,7 +27,6 @@ const phaseLabels: Record<SongGuessrRoomSummary["phase"], string> = {
   submittingSong: "出题中",
   playing: "猜歌中",
   roundResult: "回合结算",
-  gameOver: "游戏结束",
 };
 
 export default function SongGuessrPage() {

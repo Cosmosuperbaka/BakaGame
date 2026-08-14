@@ -227,6 +227,59 @@ describe("Songuessr store integration", () => {
     dispose();
   });
 
+  it("normalizes legacy game-over snapshots and lobby entries back to waiting", () => {
+    const dispose = initSongGuessrSocket();
+    const legacySnapshot = {
+      ...snapshot,
+      phase: "gameOver",
+      pendingSubmitterPlayerId: "player-1",
+      currentRound: {
+        roundNumber: 1,
+        submitterPlayerId: "player-1",
+        audioUrl: "https://audio.example/song.mp3",
+        lyricClip: { startTime: 0, endTime: 1_000, lines: [] },
+      },
+      players: [
+        {
+          id: "player-1",
+          name: "房主",
+          score: 1,
+          membership: "active",
+          online: true,
+          isReady: false,
+          isBot: false,
+          isHost: true,
+          correctGuesses: 1,
+          totalGuesses: 1,
+          roundStatus: "finished",
+          guessesUsed: 1,
+        },
+      ],
+    } as unknown as SongGuessrRoomSnapshot;
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "song.lobby.rooms",
+      payload: [{ ...snapshot, phase: "gameOver" }],
+    });
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 2, state: legacySnapshot },
+    });
+
+    expect(useSongGuessrStore.getState().rooms[0]?.phase).toBe("waiting");
+    expect(useSongGuessrStore.getState().snapshot).toMatchObject({
+      phase: "waiting",
+      pendingSubmitterPlayerId: undefined,
+      currentRound: undefined,
+      roundSummary: undefined,
+      finalScores: undefined,
+      players: [expect.objectContaining({ isReady: true, roundStatus: "waiting", guessesUsed: 0 })],
+    });
+    dispose();
+  });
+
   it.each([
     ["song.room.closed", "房间已关闭"],
     ["song.room.kicked", "你已被移出房间"],

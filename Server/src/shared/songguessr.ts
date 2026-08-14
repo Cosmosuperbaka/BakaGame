@@ -6,7 +6,6 @@ export const SONG_GUESSR_PHASES = [
   "submittingSong",
   "playing",
   "roundResult",
-  "gameOver",
 ] as const;
 
 export type SongGuessrPhase = (typeof SONG_GUESSR_PHASES)[number];

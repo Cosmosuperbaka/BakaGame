@@ -66,6 +66,35 @@ const requestFullSync = () => {
     });
 };
 
+const normalizeLegacyRoomSummary = (
+  summary: SongGuessrRoomSummary,
+): SongGuessrRoomSummary =>
+  (summary as { phase: string }).phase === "gameOver"
+    ? { ...summary, phase: "waiting" }
+    : summary;
+
+const normalizeLegacySnapshot = (
+  snapshot: SongGuessrRoomSnapshot,
+): SongGuessrRoomSnapshot => {
+  if ((snapshot as { phase: string }).phase !== "gameOver") return snapshot;
+
+  return {
+    ...snapshot,
+    phase: "waiting",
+    pendingSubmitterPlayerId: undefined,
+    currentRound: undefined,
+    roundSummary: undefined,
+    finalScores: undefined,
+    players: snapshot.players.map((player) => ({
+      ...player,
+      isReady:
+        player.membership === "active" && (player.isHost || player.isBot),
+      roundStatus: player.membership === "spectator" ? "spectator" : "waiting",
+      guessesUsed: 0,
+    })),
+  };
+};
+
 export const useSongGuessrStore = create<SongGuessrStore>((set, get) => ({
   connected: false,
   rooms: [],
@@ -165,7 +194,9 @@ export function initSongGuessrSocket() {
 
     switch (event.event) {
       case "song.lobby.rooms":
-        useSongGuessrStore.setState({ rooms: event.payload as SongGuessrRoomSummary[] });
+        useSongGuessrStore.setState({
+          rooms: (event.payload as SongGuessrRoomSummary[]).map(normalizeLegacyRoomSummary),
+        });
         break;
       case "song.room.snapshot":
         {
@@ -175,7 +206,9 @@ export function initSongGuessrSocket() {
             break;
           }
           snapshotRevision = result.revision;
-          useSongGuessrStore.setState({ snapshot: result.state as SongGuessrRoomSnapshot });
+          useSongGuessrStore.setState({
+            snapshot: normalizeLegacySnapshot(result.state as SongGuessrRoomSnapshot),
+          });
         }
         break;
       case "song.game.privateState":
