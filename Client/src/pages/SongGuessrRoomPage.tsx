@@ -23,7 +23,6 @@ import {
   Plus,
   RotateCcw,
   Settings,
-  Trophy,
   UserCheck,
   Users,
   Volume2,
@@ -1117,13 +1116,8 @@ function GameStage({
     );
   }
 
-  // 旧客户端可能仍收到 gameOver 快照；新流程不再展示终局总结，统一提示回到等待阶段。
-  return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-5 text-center">
-      <PhaseHeader icon={Trophy} title="等待开始" />
-      <p className="text-sm text-muted-foreground">本局已结束，请从等待阶段重新准备。</p>
-    </div>
-  );
+  // 阶段快照不完整时直接回退到可操作的等待界面，避免留下悬空页面。
+  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} />;
 }
 
 function SongWaitingPhase({

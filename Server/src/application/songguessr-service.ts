@@ -149,19 +149,33 @@ const normalizeSongText = (value: string) =>
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
 
-const SONG_VERSION_PATTERN = /\s*[（(【[]\s*(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|[^）)】\]]*?\b(?:ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b[^）)】\]]*)\s*[）)】\]]/giu;
-const TRAILING_VERSION_PATTERN = /\s*[-–—]\s*(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|[^-–—]*?\b(?:ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b.*)$/iu;
-const BARE_VERSION_SUFFIX_PATTERN = /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
+const VERSION_MARKER_PATTERN = /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
+const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
+const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
+const BARE_VERSION_SUFFIX_PATTERN = /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
 const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
-const normalizeSongTitle = (value: string) =>
-  normalizeSongText(
-    value
-      .replace(SONG_VERSION_PATTERN, "")
-      .replace(TRAILING_VERSION_PATTERN, "")
-      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
-      .replace(FEAT_SUFFIX_PATTERN, ""),
+const stripSongVersionInfo = (value: string) => {
+  let result = value.replace(
+    BRACKETED_VERSION_PATTERN,
+    (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
   );
+
+  while (true) {
+    const next = result
+      .replace(
+        DECORATED_VERSION_SUFFIX_PATTERN,
+        (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+      )
+      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
+      .replace(FEAT_SUFFIX_PATTERN, "");
+    if (next === result) return result;
+    result = next;
+  }
+};
+
+const normalizeSongTitle = (value: string) =>
+  normalizeSongText(stripSongVersionInfo(value));
 
 const normalizedArtists = (value: string) =>
   new Set(

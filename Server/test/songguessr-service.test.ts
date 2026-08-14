@@ -1872,11 +1872,15 @@ describe("SongGuessrService", () => {
     expect(result.attempt.result).toBe("correct");
   });
 
-  test("歌名匹配也会清理裸露的 feat、Remix 与 TV Size 后缀", async () => {
+  test("歌名匹配会清理裸露及符号包裹的版本后缀", async () => {
     const variants = [
       ["答案歌 feat. 歌手乙", "答案歌"],
       ["答案歌 Remix", "答案歌"],
       ["答案歌 TV Size", "答案歌"],
+      ["答案歌 ~~ Live ~~", "答案歌"],
+      ["答案歌 -- Remix --", "答案歌"],
+      ["答案歌 —— TV Size ——", "答案歌"],
+      ["答案歌 ～ Acoustic ～", "答案歌"],
     ] as const;
 
     for (const [answerTitle, guessTitle] of variants) {
@@ -1906,6 +1910,34 @@ describe("SongGuessrService", () => {
       }) as { attempt: { result: string } };
       expect(result.attempt.result).toBe("correct");
     }
+  });
+
+  test("不含版本关键词的符号后缀仍属于歌名", async () => {
+    const matchingProvider: MusicProvider = {
+      ...provider,
+      getSong: async () => ({ ...songs.answer, title: "答案歌 -- 第二章", artist: "歌手乙" }),
+      getSongMetadata: async () => ({ ...songs.wrong, title: "答案歌", artist: "歌手乙" }),
+    };
+    const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, "subtitle-host");
+    const guest = connection(service, "subtitle-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "副标题玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "subtitle-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    const result = await execute(service, guest, {
+      id: "subtitle-guess",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "different-id" },
+    }) as { attempt: { result: string } };
+    expect(result.attempt.result).toBe("wrong");
   });
 
   test("手动模式开启自动轮流后直接轮到下一位正式玩家出题", async () => {
