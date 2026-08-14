@@ -111,7 +111,7 @@ export default function WhoIsFakerPage() {
           <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
             <span>Who is</span>
             <img
-              src="/assets/faker.webp"
+              src="/assets/Faker.webp"
               alt="Faker"
               className="h-[1.15em] w-[1.15em] rounded-sm object-cover"
             />

@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { execSync } from 'child_process'
 import fs from 'fs'
-import { preparePublicWebp } from './scripts/prepare-public-webp.mjs'
+import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
 
 // ==================== Vite 插件：构建时注入提交历史 ====================
 // 以虚拟模块提供数据，随 JS 产物一同带 hash：
@@ -139,12 +139,10 @@ function parseInfoFile(packDir: string) {
 
 const STICKER_MANIFEST_ID = 'virtual:sticker-manifest'
 
-function stickerManifestPlugin(publicDir: string) {
+function stickerManifestPlugin(emojiDir: string) {
   const resolvedId = '\0' + STICKER_MANIFEST_ID
 
   function collect() {
-    const emojiDir = path.join(publicDir, 'emojis')
-
     let packs: unknown[] = []
 
     try {
@@ -166,12 +164,16 @@ function stickerManifestPlugin(publicDir: string) {
               const inner = base.replace(/^\[/, '').replace(/\]$/, '')
               const underscore = inner.indexOf('_')
               const key = (underscore >= 0 ? inner.slice(underscore + 1) : inner).trim()
+              const filePath = path.join(packDir, file.name)
 
               return {
                 key,
                 label: key,
-                path: `/emojis/${encodeURIComponent(entry.name)}/${encodeURIComponent(file.name)}`,
-                animated: detectAnimated(path.join(packDir, file.name), ext),
+                path: stickerAssetUrl(
+                  path.relative(emojiDir, filePath),
+                  fs.readFileSync(filePath),
+                ),
+                animated: detectAnimated(filePath, ext),
               }
             })
             // info.txt 里列出的按其顺序排在前，未列出的按名称追加在后。
@@ -216,10 +218,11 @@ function stickerManifestPlugin(publicDir: string) {
 
 export default defineConfig(async () => {
   const publicDir = await preparePublicWebp()
+  const emojiDir = path.resolve(__dirname, './public/emojis')
 
   return {
     publicDir,
-    plugins: [react(), tailwindcss(), commitHistoryPlugin(), stickerManifestPlugin(publicDir)],
+    plugins: [react(), tailwindcss(), commitHistoryPlugin(), stickerManifestPlugin(emojiDir)],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

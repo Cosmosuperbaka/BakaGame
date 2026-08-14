@@ -140,9 +140,9 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 px-3 py-3">
-        <div ref={messagesRef} className="space-y-2">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+      <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
+        <div ref={messagesRef} className="min-w-0 space-y-2">
           <AnimatePresence initial={false}>
             {chat.map((msg) => {
               const isMe = msg.playerId === myId;
@@ -154,7 +154,7 @@ export function ChatPanel() {
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="py-1 text-center text-xs text-muted-foreground/70"
+                    className="min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]"
                   >
                     {msg.text}
                   </motion.div>
@@ -176,14 +176,14 @@ export function ChatPanel() {
                   exit={{ opacity: 0, scale: 0.94, transition: { duration: duration.instant } }}
                   transition={spring.swift}
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
-                  className={cn("flex flex-col", isMe ? "items-end" : "items-start")}
+                  className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
                   <span className="text-[11px] text-muted-foreground/60 mb-0.5 px-1">
                     {msg.playerName}
                   </span>
                   <div
                     className={cn(
-                      "max-w-[85%] break-words rounded-xl text-sm leading-relaxed",
+                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere]",
                       isSticker ? "p-1.5" : "px-3 py-1.5",
                       isMe
                         ? "rounded-br-sm bg-primary text-primary-foreground"

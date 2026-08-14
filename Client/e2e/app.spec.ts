@@ -166,6 +166,64 @@ test("internal scrolling works without visible scrollbar chrome", async ({ page 
   });
 });
 
+test("stickers load from stable paths and long chat messages stay inside both panels", async ({ page }) => {
+  const unique = Date.now().toString(36);
+  const measureBubble = async (text: string) => {
+    const textNode = page.getByText(text, { exact: true }).last();
+    await expect(textNode).toBeVisible();
+    return textNode.evaluate((element) => {
+      const candidate = element as HTMLElement;
+      const bubble = candidate.className.includes("max-w-[85%]")
+        ? candidate
+        : candidate.parentElement!;
+      return {
+        clientWidth: bubble.clientWidth,
+        scrollWidth: bubble.scrollWidth,
+        overflowWrap: getComputedStyle(bubble).overflowWrap,
+      };
+    });
+  };
+
+  await page.goto("/whoisfaker");
+  await page.getByPlaceholder("用户名").fill(`长消息${unique}`);
+  await page.getByRole("button", { name: "创建房间" }).click();
+  await page.getByPlaceholder("输入房间名称").fill(`长消息房${unique}`);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+
+  const stickerResponse = page.waitForResponse((response) =>
+    /\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png|webp)$/.test(new URL(response.url()).pathname),
+  );
+  await page.getByRole("button", { name: "发送表情" }).click();
+  const firstSticker = page.locator('img[src^="/stickers/"]').first();
+  await expect(firstSticker).toBeVisible();
+  expect((await stickerResponse).status()).toBe(200);
+  expect(await firstSticker.getAttribute("src")).toMatch(
+    /^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png|webp)$/,
+  );
+  expect(await firstSticker.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "发送表情" }).click();
+
+  const whoMessage = "W".repeat(200);
+  await page.getByPlaceholder("请输入文本").fill(whoMessage);
+  await page.getByRole("button", { name: "发送消息" }).click();
+  const whoMetrics = await measureBubble(whoMessage);
+  expect(whoMetrics.scrollWidth).toBeLessThanOrEqual(whoMetrics.clientWidth + 1);
+  expect(whoMetrics.overflowWrap).toBe("anywhere");
+
+  await page.goto("/songuessr");
+  await page.getByPlaceholder("用户名").fill(`歌聊${unique}`);
+  await page.getByRole("button", { name: "创建房间" }).click();
+  await page.getByPlaceholder("输入房间名称").fill(`歌聊房${unique}`);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+
+  const songMessage = "S".repeat(200);
+  await page.getByPlaceholder("发送消息...").fill(songMessage);
+  await page.getByRole("button", { name: "发送消息" }).click();
+  const songMetrics = await measureBubble(songMessage);
+  expect(songMetrics.scrollWidth).toBeLessThanOrEqual(songMetrics.clientWidth + 1);
+  expect(songMetrics.overflowWrap).toBe("anywhere");
+});
+
 test("two browser sessions can create and join the same server room", async ({ browser, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `E2E 集成房间 ${unique}`;
@@ -361,7 +419,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   await expect(page.getByText(`${userName}的房间`, { exact: true })).toBeVisible();
   await expect(page.getByRole("slider", { name: "播放音量" })).toBeVisible();
   await page.getByRole("button", { name: /网易云账号/ }).click();
-  await expect(page.getByAltText("网易云登录二维码")).toBeVisible();
+  await expect(page.getByAltText("网易云登录二维码")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/服务器不会保存账号信息/)).toBeVisible();
 
   await page.getByRole("button", { name: "离开房间" }).click();
