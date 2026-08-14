@@ -11,12 +11,9 @@ import {
   MessageSquare,
   ShieldCheck,
   Eye,
-  Check,
-  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -78,7 +75,6 @@ export default function RoomPage() {
   // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
   const [wordRevealed, setWordRevealed] = useState(false);
   const [dockSize, setDockSize] = useState({ width: 0, height: 0 });
-  const [roomLinkCopied, setRoomLinkCopied] = useState(false);
   const hasRevealedThisGameRef = useRef(false);
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -206,19 +202,6 @@ export default function RoomPage() {
     await leaveRoom();
     navigate("/whoisfaker");
   }, [leaveRoom, navigate]);
-
-  const handleCopyRoomLink = useCallback(async () => {
-    if (!snapshot) return;
-    try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/whoisfaker/room/${snapshot.roomId}`,
-      );
-      setRoomLinkCopied(true);
-      window.setTimeout(() => setRoomLinkCopied(false), 2_000);
-    } catch {
-      addToast("复制失败，请手动复制", "error");
-    }
-  }, [addToast, snapshot]);
 
   const handleMarkChange = useCallback((playerId: string, mark: PlayerMark) => {
     setPlayerMarks((cur) => ({ ...cur, [playerId]: mark }));
@@ -444,24 +427,6 @@ export default function RoomPage() {
           {!connected && (
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                onClick={() => void handleCopyRoomLink()}
-                aria-label={roomLinkCopied ? "房间链接已复制" : "复制房间链接"}
-              >
-                {roomLinkCopied ? (
-                  <Check className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{roomLinkCopied ? "已复制" : "复制房间链接"}</TooltipContent>
-          </Tooltip>
           <div className="flex gap-1 md:hidden">
             <Button
               variant="ghost"
@@ -501,10 +466,10 @@ export default function RoomPage() {
       </header>
 
       {/* ── 主体三栏 ── */}
-      <div className="relative flex flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
+      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
 
         {/* 玩家栏 + 游戏区（共享同一个 section 以便 aside 绝对定位覆盖游戏区） */}
-        <section className="relative flex min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
+        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
 
           {/* 布局占位：使游戏区不因 aside 展开而收缩 */}
           <div
@@ -573,14 +538,14 @@ export default function RoomPage() {
               分层，不会越过玩家面板去盖住骑缝的展开按钮。 */}
           <main
             ref={stageRef}
-            className="isolate flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel"
+            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel"
           >
             <GameArea wordRevealed={wordRevealed} />
           </main>
         </section>
 
         {/* 右栏：聊天（桌面） */}
-        <aside className="hidden w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
+        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
           <ChatPanel />
         </aside>
 

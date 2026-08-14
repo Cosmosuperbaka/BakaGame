@@ -1,4 +1,35 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function expectActionAreaScrollable(page: Page) {
+  const viewport = page
+    .getByTestId("game-area-scroll")
+    .locator("[data-radix-scroll-area-viewport]");
+
+  await expect(viewport).toBeVisible();
+  await expect.poll(() => viewport.evaluate((element) => element.scrollHeight - element.clientHeight))
+    .toBeGreaterThan(0);
+  await expect(viewport).toHaveCSS("overflow-y", "auto");
+  await viewport.evaluate((element) => element.scrollTo({ top: 0 }));
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
+  await viewport.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+}
+
+async function removeAllTestBots(page: Page) {
+  const bots = page.getByLabel("测试人机", { exact: true });
+  const removeBot = page.getByRole("button", { name: "移除一个测试人机" });
+
+  for (let index = 0; index < 16; index += 1) {
+    const count = await bots.count();
+    if (count === 0) return;
+    await expect(removeBot).toBeEnabled();
+    await removeBot.click();
+    await expect(bots).toHaveCount(count - 1);
+  }
+
+  await expect(bots).toHaveCount(0);
+}
 
 test("landing page exposes both playable games and keeps placeholders disabled", async ({ page }) => {
   await page.goto("/");
@@ -7,10 +38,22 @@ test("landing page exposes both playable games and keeps placeholders disabled",
   await expect(page.getByRole("button", { name: "Who is Faker" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Songuessr" })).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]')).toHaveCount(1);
+  expect(await page.getByText("Who is Faker", { exact: true }).evaluate((element) => (
+    Number.parseFloat(getComputedStyle(element).fontSize)
+  ))).toBeGreaterThanOrEqual(20);
 
   await page.getByRole("button", { name: "Who is Faker" }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
+  const fakerImageStyle = await page.getByAltText("Faker").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      width: element.getBoundingClientRect().width,
+      borderRadius: Number.parseFloat(style.borderRadius),
+    };
+  });
+  expect(fakerImageStyle.width).toBeGreaterThan(45);
+  expect(fakerImageStyle.borderRadius).toBeGreaterThanOrEqual(8);
 });
 
 test("landing game entries stay horizontal and clear of the footer", async ({ page }) => {
@@ -230,6 +273,7 @@ test("two browser sessions can create and join the same server room", async ({ b
   const hostName = `房主${unique}`;
   const guestName = `访客${unique}`;
 
+  await page.setViewportSize({ width: 1280, height: 400 });
   await page.goto("/whoisfaker");
   await page.getByPlaceholder("用户名").fill(hostName);
   await page.getByRole("button", { name: "创建房间" }).click();
@@ -238,6 +282,11 @@ test("two browser sessions can create and join the same server room", async ({ b
 
   await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
   await expect(page.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "复制", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "房间设置", exact: true }).click();
+  await expect(page.getByText("卧底人数", { exact: true })).toBeVisible();
+  await expectActionAreaScrollable(page);
 
   const roomId = page.url().split("/").at(-1);
   const guestContext = await browser.newContext();
@@ -248,7 +297,8 @@ test("two browser sessions can create and join the same server room", async ({ b
 
   await expect(guestPage).toHaveURL(new RegExp(`/whoisfaker/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
-  await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toBeVisible();
+  await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
+  await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
   await guestContext.close();
 });
@@ -261,10 +311,7 @@ test("empty description history keeps the player pane width after a direct votin
   await page.getByRole("button", { name: "进入房间" }).click();
 
   const addBot = page.getByRole("button", { name: "添加一个测试人机" });
-  const removeBot = page.getByRole("button", { name: "移除一个测试人机" });
-  for (let index = 0; index < 16 && await removeBot.isEnabled(); index += 1) {
-    await removeBot.click();
-  }
+  await removeAllTestBots(page);
   for (let index = 0; index < 4; index += 1) await addBot.click();
 
   await page.getByRole("button", { name: "投票阶段", exact: true }).click();
@@ -381,6 +428,7 @@ test("two browser sessions can create and join a Songuessr room", async ({ brows
   const hostName = `歌房主${unique}`;
   const guestName = `歌访客${unique}`;
 
+  await page.setViewportSize({ width: 1280, height: 400 });
   await page.goto("/songuessr");
   await page.getByPlaceholder("用户名").fill(hostName);
   await page.getByRole("button", { name: "创建房间" }).click();
@@ -390,8 +438,13 @@ test("two browser sessions can create and join a Songuessr room", async ({ brows
   await expect(page).toHaveURL(/\/songuessr\/room\/\d{4}$/);
   await expect(page.getByText(roomName, { exact: true })).toBeVisible();
   await expect(page.locator("header").first()).toHaveClass(/grid h-14 shrink-0/);
-  await expect(page.locator("main").first()).toHaveClass(/isolate flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel/);
+  await expect(page.locator("main").first()).toHaveClass(/isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel/);
   await expect(page.locator("aside").first()).toHaveClass(/absolute inset-y-0 left-0 z-30 hidden flex-col rounded-xl border bg-panel md:flex/);
+  await expect(page.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "复制", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "题目设置", exact: true }).click();
+  await expect(page.getByText("自动轮流出题", { exact: true })).toBeVisible();
+  await expectActionAreaScrollable(page);
 
   const roomId = page.url().split("/").at(-1);
   const guestContext = await browser.newContext();
@@ -402,6 +455,8 @@ test("two browser sessions can create and join a Songuessr room", async ({ brows
 
   await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
+  await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
   await guestContext.close();
 });
@@ -440,6 +495,8 @@ test("private Songuessr rooms stay listed and direct links request the password"
   await createDialog.locator('button[role="switch"]').first().click();
   await createDialog.getByPlaceholder("设置房间密码").fill(password);
   await createDialog.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page).toHaveURL(/\/songuessr\/room\/\d{4}$/);
+  await expect(page.getByText(roomName, { exact: true })).toBeVisible();
   const roomId = page.url().split("/").at(-1)!;
 
   const guestContext = await browser.newContext();
@@ -464,10 +521,7 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
   await page.getByRole("button", { name: "进入房间" }).click();
   await expect(page.getByText("测试控制器", { exact: true })).toBeVisible();
 
-  const removeBot = page.getByRole("button", { name: "移除一个测试人机" });
-  for (let index = 0; index < 16 && await removeBot.isEnabled(); index += 1) {
-    await removeBot.click();
-  }
+  await removeAllTestBots(page);
   await page.getByRole("button", { name: "添加一个测试人机" }).click();
   await expect(page.getByLabel("测试人机", { exact: true })).toHaveCount(1);
 

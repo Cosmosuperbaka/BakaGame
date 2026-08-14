@@ -145,7 +145,7 @@ function GameRow({ game }: { game: GameEntry }) {
         className="h-8 w-8 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
       />
       <div className="min-w-0 flex-1">
-        <div className="break-words text-sm leading-tight font-semibold sm:text-lg [@media(max-height:680px)]:text-sm">{game.title}</div>
+        <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
         {game.subtitle ? (
           <div className="mt-1 truncate text-xs text-muted-foreground sm:text-sm [@media(max-width:480px)]:hidden">{game.subtitle}</div>
         ) : null}

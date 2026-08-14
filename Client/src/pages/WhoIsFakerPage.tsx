@@ -113,7 +113,7 @@ export default function WhoIsFakerPage() {
             <img
               src="/assets/Faker.webp"
               alt="Faker"
-              className="h-[1.15em] w-[1.15em] rounded-sm object-cover"
+              className="h-[1.4em] w-[1.4em] rounded-[10px] object-cover"
             />
           </h1>
         </div>
