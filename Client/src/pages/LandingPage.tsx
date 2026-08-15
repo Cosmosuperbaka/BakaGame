@@ -10,7 +10,7 @@ import {
   spring,
   useOriginTracker,
 } from "@/lib/motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 // 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
@@ -83,6 +83,17 @@ const GAMES: GameEntry[] = [
     subtitle: "Enhanced Edition",
     available: false,
   },
+];
+
+interface FriendLink {
+  href: string;
+  name: string;
+}
+
+const FRIEND_LINKS: FriendLink[] = [
+  { href: "https://ccb.baka.website/", name: "二刺猿笑传之猜猜呗" },
+  { href: "https://anipeek.animaster.dpdns.org/", name: "动漫高手一眼顶针" },
+  { href: "https://decrypto.monight.dpdns.org/", name: "动漫高手截码战" },
 ];
 
 interface ExternalLink {
@@ -218,6 +229,25 @@ function FooterLink({ link }: { link: ExternalLink }) {
       </TooltipTrigger>
       <TooltipContent>{link.label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function FriendLinkItem({ link }: { link: FriendLink }) {
+  return (
+    <motion.a
+      href={link.href}
+      target="_blank"
+      rel="noreferrer"
+      variants={listItem}
+      {...pressable}
+      className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span>{link.name}</span>
+      <ArrowUpRight
+        aria-hidden="true"
+        className="h-3 w-3 shrink-0 opacity-40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+      />
+    </motion.a>
   );
 }
 
@@ -357,28 +387,44 @@ export default function LandingPage() {
         </motion.div>
       </main>
 
-      <footer className="flex flex-col items-center gap-2 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-2 [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-3 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
+      <footer className="flex flex-col items-center gap-2 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-2 [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:flex-wrap [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-x-4 [@media(max-height:680px)]:gap-y-1 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
+        {/* 友情链接 */}
         <motion.div
-          className="flex items-center gap-1"
-          variants={listContainer(EXTERNAL_LINKS.length)}
+          className="flex flex-wrap items-center justify-center gap-1 text-xs"
+          variants={listContainer(FRIEND_LINKS.length)}
           initial="initial"
           animate="animate"
         >
-          {EXTERNAL_LINKS.map((link) => (
-            <FooterLink key={link.href} link={link} />
+          <span className="mr-0.5 text-muted-foreground/60 select-none">友情链接</span>
+          {FRIEND_LINKS.map((link) => (
+            <FriendLinkItem key={link.href} link={link} />
           ))}
         </motion.div>
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={(event) => {
-            capture(event);
-            setInfoOpen(true);
-          }}
-          className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          {versionLabel}
-        </motion.button>
+
+        {/* 社区外链与版本详情 */}
+        <div className="flex items-center gap-2">
+          <motion.div
+            className="flex items-center gap-1"
+            variants={listContainer(EXTERNAL_LINKS.length)}
+            initial="initial"
+            animate="animate"
+          >
+            {EXTERNAL_LINKS.map((link) => (
+              <FooterLink key={link.href} link={link} />
+            ))}
+          </motion.div>
+          <motion.button
+            type="button"
+            {...pressable}
+            onClick={(event) => {
+              capture(event);
+              setInfoOpen(true);
+            }}
+            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {versionLabel}
+          </motion.button>
+        </div>
       </footer>
 
       <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
