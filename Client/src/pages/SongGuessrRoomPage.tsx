@@ -396,20 +396,6 @@ export default function SongGuessrRoomPage() {
     }
   }, [audioPlaybackState, audioStatus, lyricEndTime, lyricStartTime]);
 
-  useEffect(() => {
-    const resumePlayback = () => {
-      if (document.visibilityState !== "visible") return;
-      const audio = audioRef.current;
-      if (!audio || audioStatus !== "ready" || !audio.paused || audioPlaybackState === "completed") return;
-      void audio.play().catch(() => setAudioPlaybackState("idle"));
-    };
-    document.addEventListener("visibilitychange", resumePlayback);
-    window.addEventListener("pageshow", resumePlayback);
-    return () => {
-      document.removeEventListener("visibilitychange", resumePlayback);
-      window.removeEventListener("pageshow", resumePlayback);
-    };
-  }, [audioPlaybackState, audioStatus]);
 
   useEffect(() => {
     volumeRef.current = volume;
