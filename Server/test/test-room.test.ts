@@ -69,7 +69,7 @@ test("房主转给机器人后移除该机器人，房主自动转移给仍在�
   expect(snapshot.hostPlayerId).toBe(playerId);
 });
 
-test("房主落在机器人身上时，名单一变就交回真人", async () => {
+test("房主转给机器人后，踢其他机器人不会将房主移交回玩家", async () => {
   const { service } = createTestContext();
   const { host, playerId } = await createTestRoom(service, 2);
   const before = snapshotOf(host);
@@ -94,7 +94,7 @@ test("房主落在机器人身上时，名单一变就交回真人", async () =>
   const after = snapshotOf(host);
   expect(after.players.some((player) => player.id === botB)).toBe(false);
   expect(after.players.some((player) => player.id === botA)).toBe(true);
-  expect(after.hostPlayerId).toBe(playerId);
+  expect(after.hostPlayerId).toBe(botA);
 });
 
 test("游戏进行中加入的机器人进旁观，不进玩家列", async () => {

@@ -325,6 +325,12 @@ interface InlineSettingsProps {
 }
 
 function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps) {
+  const limits = snapshot.roleLimits;
+  const [prevRoleConfig, setPrevRoleConfig] = useState(snapshot.settings.roleConfig);
+  const [prevName, setPrevName] = useState(snapshot.name);
+  const [prevVisibility, setPrevVisibility] = useState(snapshot.visibility);
+  const [prevAllowSpectators, setPrevAllowSpectators] = useState(snapshot.allowSpectators);
+
   const [name, setName] = useState(snapshot.name);
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
@@ -332,7 +338,30 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [undercoverCount, setUndercoverCount] = useState(snapshot.settings.roleConfig.undercoverCount);
   const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
-  const limits = snapshot.roleLimits;
+
+  // 外部配置或人数上限变化时直接在渲染期同步，避免 useEffect 引起多余二次渲染与 linter 告警。
+  if (snapshot.name !== prevName) {
+    setPrevName(snapshot.name);
+    setName(snapshot.name);
+  }
+  if (snapshot.visibility !== prevVisibility) {
+    setPrevVisibility(snapshot.visibility);
+    setIsPrivate(snapshot.visibility === "private");
+  }
+  if (snapshot.allowSpectators !== prevAllowSpectators) {
+    setPrevAllowSpectators(snapshot.allowSpectators);
+    setAllowSpectators(snapshot.allowSpectators);
+  }
+  if (
+    snapshot.settings.roleConfig.undercoverCount !== prevRoleConfig.undercoverCount ||
+    snapshot.settings.roleConfig.hasAngel !== prevRoleConfig.hasAngel ||
+    snapshot.settings.roleConfig.hasBlank !== prevRoleConfig.hasBlank
+  ) {
+    setPrevRoleConfig(snapshot.settings.roleConfig);
+    setUndercoverCount(snapshot.settings.roleConfig.undercoverCount);
+    setHasAngel(snapshot.settings.roleConfig.hasAngel);
+    setHasBlank(snapshot.settings.roleConfig.hasBlank);
+  }
 
   const draft = {
     name: name || undefined,
@@ -414,12 +443,17 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
 
 function SettingsPreview({ snapshot }: { snapshot: RoomSnapshot }) {
   const cfg = snapshot.settings.roleConfig;
+  const limits = snapshot.roleLimits;
+  const effectiveUndercover = Math.max(1, Math.min(cfg.undercoverCount, limits.maxUndercoverCount));
+  const effectiveAngel = limits.canEnableAngel && cfg.hasAngel;
+  const effectiveBlank = limits.canEnableBlank && cfg.hasBlank;
+
   const items = [
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-    `${cfg.undercoverCount} 名卧底`,
-    ...(cfg.hasAngel ? ["1 名天使"] : []),
-    ...(cfg.hasBlank ? ["1 名白板"] : []),
+    `${effectiveUndercover} 名卧底`,
+    ...(effectiveAngel ? ["1 名天使"] : []),
+    ...(effectiveBlank ? ["1 名白板"] : []),
   ];
   return (
     <div className="flex flex-wrap justify-center gap-2">
