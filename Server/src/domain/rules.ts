@@ -236,12 +236,18 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
     voteCounter.set(vote.targetId, (voteCounter.get(vote.targetId) ?? 0) + 1);
   }
 
-  const maxVotes = Math.max(...voteCounter.values(), 0);
   const abstainCount = voteCounter.get(ABSTAIN_TARGET_ID) ?? 0;
-  const leaders = [...voteCounter.entries()]
-    .filter(([playerId, count]) => playerId !== ABSTAIN_TARGET_ID && count === maxVotes)
-    .map(([playerId]) => playerId)
-    .sort();
+  const playerEntries = [...voteCounter.entries()].filter(
+    ([playerId]) => playerId !== ABSTAIN_TARGET_ID,
+  );
+  const maxVotes = Math.max(...playerEntries.map(([, count]) => count), 0);
+  const leaders =
+    maxVotes > 0
+      ? playerEntries
+          .filter(([, count]) => count === maxVotes)
+          .map(([playerId]) => playerId)
+          .sort()
+      : [];
 
   return {
     maxVotes,

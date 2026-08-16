@@ -1762,12 +1762,9 @@ export class RoomService {
       tieBreak,
       votes: votes.map((vote) => ({ ...vote })),
     });
-    const fallbackCandidates = tieBreak
-      ? round.tieBreak?.candidateIds ?? []
-      : this.getAliveAssignedPlayerIds(room);
+    const aliveIds = this.getAliveAssignedPlayerIds(room);
     const outcome = computeVoteOutcome(votes);
-    const leaders =
-      outcome.leaders.length > 0 ? outcome.leaders : [...fallbackCandidates].sort();
+    const leaders = outcome.leaders;
 
     this.broadcastRoomEvent(room, "game.voteResult", {
       roomId: room.id,
@@ -1787,26 +1784,42 @@ export class RoomService {
       },
     });
 
-    if (!tieBreak && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
-      round.tieBreakCount += 1;
-      round.phase = "tieBreak";
-      round.speechMode = "tieBreak";
-      round.tieBreak = {
-        candidateIds: leaders,
-        stage: "description",
-        descriptionsDone: [],
-        votes: [],
-      };
+    if (!tieBreak) {
+      if (leaders.length > 0 && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
+        // 平票或弃票数达到最高票：若非全员平票（有非候选玩家可在第二轮投票），则进入平票PK
+        if (leaders.length < aliveIds.length) {
+          round.tieBreakCount += 1;
+          round.phase = "tieBreak";
+          round.speechMode = "tieBreak";
+          round.tieBreak = {
+            candidateIds: leaders,
+            stage: "description",
+            descriptionsDone: [],
+            votes: [],
+          };
+          return;
+        }
+        // 全员平票：无人出局，直接进入夜晚
+        await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
+        return;
+      }
+
+      if (leaders.length === 1 && outcome.abstainCount < outcome.maxVotes) {
+        await this.applyEliminationAndMove(room, [leaders[0]], "投票出局", "night");
+        return;
+      }
+
+      // 全员弃票或无得票者：无人出局
+      await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
       return;
     }
 
-    const eliminatedIds = tieBreak && leaders.length > 1 ? leaders : [leaders[0]];
-    await this.applyEliminationAndMove(
-      room,
-      eliminatedIds.filter((value): value is string => Boolean(value)),
-      tieBreak ? "平票再次出局" : "投票出局",
-      "night",
-    );
+    // 第二轮平票PK投票：仅当产生单一最高票时淘汰该玩家，再次平票或全员弃票则无人出局
+    if (leaders.length === 1 && outcome.maxVotes > 0 && outcome.abstainCount < outcome.maxVotes) {
+      await this.applyEliminationAndMove(room, [leaders[0]], "平票再次出局", "night");
+    } else {
+      await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
+    }
   }
 
   private async resolveNight(room: RoomRecord) {
@@ -2054,7 +2067,7 @@ export class RoomService {
       }
       this.normalizeRoomRoleConfig(room);
       this.touchRoom(room);
-      if (reason === "leave" && this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
+      if (reason === "leave" && this.getOnlineCount(room) === 0) {
         await this.closeRoom(room, "empty");
       } else {
         this.publishRoomState(room);
@@ -2086,7 +2099,7 @@ export class RoomService {
       playerId,
     });
 
-    if (reason === "leave" && this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
+    if (reason === "leave" && this.getOnlineCount(room) === 0) {
       await this.closeRoom(room, "empty");
     } else {
       this.publishRoomState(room);
@@ -3262,12 +3275,9 @@ export class RoomService {
       (player) => player.membership !== "kicked",
     );
     const current = room.hostPlayerId ? room.players[room.hostPlayerId] : undefined;
-    // 机器人不会操作房间：房主落在机器人身上，等于没人能开局、改设置或踢人。
-    const botHoldsHostWhileHumanWaits =
-      Boolean(current?.isBot) && candidates.some((player) => !player.isBot);
 
-    // 现任房主仍在且未被踢出 → 保留。唯一例外是机器人占着房主而还有真人可接手。
-    if (current && current.membership !== "kicked" && !botHoldsHostWhileHumanWaits) {
+    // 现任房主仍在且未被踢出 → 保留。
+    if (current && current.membership !== "kicked") {
       return;
     }
 

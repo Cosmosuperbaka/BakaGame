@@ -2460,3 +2460,163 @@ test("夜晚踢人会保留其他有效动作并让机器人补齐缺失动作",
     "description",
   );
 });
+
+test("平票PK第二轮再次平票时无人出局并直接进入夜晚", async () => {
+  const { service } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "3334");
+  const joined: JoinedPlayer[] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `tie-draw-join-${index}`);
+    const joinResult = (await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "3334",
+      payload: {
+        userName: `平票玩家${index + 2}`,
+      },
+    })) as { playerId: string };
+    joined.push({ connection, joinResult });
+  }
+
+  for (const connection of [host, ...joined.map((item) => item.connection)]) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  const questioner = joined[3];
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.joinResult.playerId },
+  });
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  for (const connection of [host, joined[0].connection, joined[1].connection, joined[2].connection]) {
+    await execute(service, connection, {
+      id: `desc-${connection.record.id}`,
+      type: "game.submitDescription",
+      payload: { text: "描述" },
+    });
+  }
+
+  await execute(service, questioner.connection, {
+    id: "to-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  // 第一轮：joined[0] 和 joined[1] 各得2票平票
+  await execute(service, host, {
+    id: "vote-host",
+    type: "game.submitVote",
+    payload: { targetId: joined[0].joinResult.playerId },
+  });
+  await execute(service, joined[0].connection, {
+    id: "vote-1",
+    type: "game.submitVote",
+    payload: { targetId: joined[1].joinResult.playerId },
+  });
+  await execute(service, joined[1].connection, {
+    id: "vote-2",
+    type: "game.submitVote",
+    payload: { targetId: joined[0].joinResult.playerId },
+  });
+  await execute(service, joined[2].connection, {
+    id: "vote-3",
+    type: "game.submitVote",
+    payload: { targetId: joined[1].joinResult.playerId },
+  });
+
+  await execute(service, questioner.connection, {
+    id: "resolve-1",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("tieBreak");
+  expect(snapshot?.status.tieBreakStage).toBe("description");
+
+  // 双方补充发言
+  const tieOrder = snapshot?.status.speechOrder ?? [];
+  const connectionByPlayerId = new Map<string, typeof host>([
+    [hostResult.playerId, host],
+    ...joined.map((item) => [item.joinResult.playerId, item.connection] as const),
+  ]);
+
+  for (const pid of tieOrder) {
+    await execute(service, connectionByPlayerId.get(pid)!, {
+      id: `tie-desc-${pid}`,
+      type: "game.submitDescription",
+      payload: { text: "PK描述" },
+    });
+  }
+
+  await execute(service, questioner.connection, {
+    id: "to-tie-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.tieBreakStage).toBe("vote");
+
+  // 第二轮平票PK投票：host 投 joined[0], joined[2] 投 joined[1] -> 再次各得1票平票
+  await execute(service, host, {
+    id: "tie-vote-host-again",
+    type: "game.submitVote",
+    payload: { targetId: joined[0].joinResult.playerId },
+  });
+  await execute(service, joined[2].connection, {
+    id: "tie-vote-2-again",
+    type: "game.submitVote",
+    payload: { targetId: joined[1].joinResult.playerId },
+  });
+
+  await execute(service, questioner.connection, {
+    id: "resolve-2",
+    type: "game.advancePhase",
+    payload: {},
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  // 必须进入夜晚且全员存活，无人出局
+  expect(snapshot?.status.phase).toBe("night");
+  const aliveCount = (snapshot?.players ?? []).filter((p) => p.roundStatus === "alive").length;
+  expect(aliveCount).toBe(4);
+});
+
+test("真人离开测试房间后测试房间自动关闭", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+
+  await execute(service, host, {
+    id: "leave-test-room",
+    type: "room.leave",
+    payload: {},
+  });
+
+  const rejoin = createConnection(service, "oblivionis-new-human");
+  // 房间已关闭，直接加入会找不到房间
+  await expect(
+    execute(service, rejoin, {
+      id: "join-new",
+      type: "room.join",
+      roomId: "Oblivionis",
+      payload: { userName: "新玩家" },
+    }),
+  ).rejects.toThrow("房间不存在");
+
+  // 再次创建 Oblivionis 则是全新房间
+  const { result: createResult } = await createRoom(service, "Oblivionis");
+  expect(createResult.roomId).toBe("Oblivionis");
+});
