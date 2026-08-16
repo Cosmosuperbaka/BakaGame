@@ -145,7 +145,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const [entering, setEntering] = useState(false);
 
   const baseClass =
-    "flex h-full min-h-0 w-full flex-col items-start justify-between gap-2 overflow-hidden rounded-lg border bg-card p-2 text-left sm:gap-3 sm:p-4 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-xl sm:rounded-lg border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   const content = (
     <>
@@ -153,12 +153,12 @@ function GameRow({ game }: { game: GameEntry }) {
         src={game.icon}
         alt=""
         aria-hidden="true"
-        className="h-8 w-8 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+        className="h-11 w-11 shrink-0 rounded-lg object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
       />
       <div className="min-w-0 flex-1">
         <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
         {game.subtitle ? (
-          <div className="mt-1 truncate text-xs text-muted-foreground sm:text-sm [@media(max-width:480px)]:hidden">{game.subtitle}</div>
+          <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
         ) : null}
       </div>
       {game.available ? (
@@ -374,9 +374,9 @@ export default function LandingPage() {
         </motion.h1>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-hidden px-3 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
+      <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
         <motion.div
-          className="grid h-[clamp(7rem,26svh,11rem)] w-full grid-cols-3 items-stretch gap-2 sm:gap-3"
+          className="flex w-full flex-col gap-2.5 sm:grid sm:h-[clamp(7rem,26svh,11rem)] sm:grid-cols-3 sm:items-stretch sm:gap-3"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
