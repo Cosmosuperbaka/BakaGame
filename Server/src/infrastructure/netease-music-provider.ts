@@ -148,18 +148,20 @@ class BoundedTtlCache {
   }
 }
 
-const normalizeAudioUrl = (value: unknown): string | undefined => {
+const normalizeHttpsUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
   if (!raw) return undefined;
   try {
     const url = new URL(raw);
-    // 网易云播放接口仍可能返回 HTTP；HTTPS 页面会将其作为混合内容直接拦截。
+    // 网易云接口仍可能返回 HTTP 图片或音频；HTTPS 页面会将其作为混合内容直接拦截或告警。
     if (url.protocol === "http:") url.protocol = "https:";
     return url.toString();
   } catch {
-    return raw;
+    return raw.startsWith("http://") ? `https://${raw.slice(7)}` : raw;
   }
 };
+
+const normalizeAudioUrl = normalizeHttpsUrl;
 
 const responseBody = (response: ApiResponse): Record<string, unknown> => {
   const record = asRecord(response);
@@ -208,7 +210,7 @@ const readLoginAccount = (body: Record<string, unknown>): SongGuessrMusicAccount
   return {
     userId: readString(profile.userId ?? profile.id ?? account.id ?? account.userId),
     nickname,
-    avatarUrl: readString(profile.avatarUrl ?? profile.avatar),
+    avatarUrl: normalizeHttpsUrl(profile.avatarUrl ?? profile.avatar),
   };
 };
 
@@ -268,7 +270,7 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
     title,
     artist: artistNames(song),
     album: readString(album.name),
-    pictureUrl: readString(album.picUrl ?? album.pic),
+    pictureUrl: normalizeHttpsUrl(album.picUrl ?? album.pic),
     durationMs: readNumber(song.dt ?? song.duration),
     requiresVip: fee === 1,
   };
@@ -580,7 +582,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             const id = readString(artist.id);
             const name = readString(artist.name);
             if (!id || !name) return undefined;
-            const avatarUrl = readString(artist.picUrl ?? artist.img1v1Url);
+            const avatarUrl = normalizeHttpsUrl(artist.picUrl ?? artist.img1v1Url);
             return avatarUrl ? { id, name, avatarUrl } : { id, name };
           })
           .filter((artist): artist is SongArtistSearchResult => artist !== undefined);

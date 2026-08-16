@@ -100,7 +100,7 @@ export function SongPlayerList({
             initial={false}
             animate="animate"
           >
-            <AnimatePresence initial={false} mode="popLayout">
+            <AnimatePresence initial={false}>
               {activePlayers.map((player) => renderRow(player, false))}
             </AnimatePresence>
           </motion.div>
@@ -123,7 +123,7 @@ export function SongPlayerList({
                 initial={false}
                 animate="animate"
               >
-                <AnimatePresence initial={false} mode="popLayout">
+                <AnimatePresence initial={false}>
                   {observers.map((player) => renderRow(player, true))}
                 </AnimatePresence>
               </motion.div>
@@ -198,7 +198,14 @@ function SongPlayerRow({
   );
 
   const content = (
-    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position">
+    <motion.div
+      variants={listItem}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      layout="position"
+      className="w-full min-w-0"
+    >
       {body}
     </motion.div>
   );
@@ -208,7 +215,7 @@ function SongPlayerRow({
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <div role="button" tabIndex={0} aria-label={`${player.name} 操作`}>
+        <div role="button" tabIndex={0} aria-label={`${player.name} 操作`} className="w-full min-w-0">
           {content}
         </div>
       </Popover.Trigger>
