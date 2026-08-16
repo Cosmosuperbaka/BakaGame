@@ -1,15 +1,25 @@
-import { useState } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Send, Smile } from "lucide-react";
+import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmojiPicker } from "@/components/room/EmojiPicker";
-import { duration, ease, spring } from "@/lib/motion";
+import { duration, ease, popover, spring, tappable } from "@/lib/motion";
 import { STICKER_PREFIX } from "@/lib/stickers";
+import {
+  applyMention,
+  filterMentionCandidates,
+  mentionsPlayer,
+  readMentionQuery,
+  splitMentions,
+} from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
 import { useAutoScrollToBottom } from "@/lib/useAutoScrollToBottom";
+
+/** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
+const MENTION_LIMIT = 6;
 
 const systemMessage = {
   initial: { opacity: 0, scaleY: 0.6 },
@@ -17,20 +27,102 @@ const systemMessage = {
   exit: { opacity: 0, transition: { duration: duration.instant } },
 };
 
+/** 消息正文：命中房间成员的 `@名字` 高亮，其余按普通文本渲染。 */
+function MessageText({
+  text,
+  players,
+  isMe,
+}: {
+  text: string;
+  players: Array<{ id: string; name: string }>;
+  isMe: boolean;
+}) {
+  const segments = splitMentions(text, players);
+
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === "mention" ? (
+          <span
+            key={index}
+            className={cn(
+              "rounded-md px-1 font-medium",
+              isMe ? "bg-primary-foreground/20" : "bg-primary/12 text-primary",
+            )}
+          >
+            {segment.text}
+          </span>
+        ) : (
+          <span key={index}>{segment.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export function SongChatPanel() {
   const sendCommand = useSongGuessrStore((state) => state.sendCommand);
   const setNotice = useSongGuessrStore((state) => state.setNotice);
   const chat = useSongGuessrStore((state) => state.snapshot?.chat ?? []);
+  const players = useSongGuessrStore((state) => state.snapshot?.players);
   const myId = useSongGuessrStore((state) => state.privateState?.playerId);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
+  // 提及候选：null 表示当前没在输入提及
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useAutoScrollToBottom(chat.length);
+
+  // 提及只对照当前房间名单判断，改名或退房不会留下失效标记。
+  const mentionablePlayers = useMemo(
+    () => (players ?? []).filter((player) => player.id !== myId),
+    [players, myId],
+  );
+  const candidates = useMemo(
+    () =>
+      mention
+        ? filterMentionCandidates(mentionablePlayers, mention.query).slice(0, MENTION_LIMIT)
+        : [],
+    [mention, mentionablePlayers],
+  );
+
+  const closeMention = useCallback(() => {
+    setMention(null);
+    setMentionIndex(0);
+  }, []);
+
+  /** 输入时同步提及查询：光标位置决定当前是否正在写一个提及。 */
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value;
+    setText(next);
+    setMention(readMentionQuery(next, event.target.selectionStart ?? next.length));
+    setMentionIndex(0);
+  }, []);
+
+  /** 选中候选：写回输入框并把光标留在名字之后。 */
+  const pickMention = useCallback(
+    (name: string) => {
+      if (!mention) return;
+      const caret = inputRef.current?.selectionStart ?? text.length;
+      const applied = applyMention(text, mention.start, caret, name);
+      setText(applied.value);
+      closeMention();
+      // 写回后光标要落在插入内容之后，否则继续输入会插在中间。
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(applied.caret, applied.caret);
+      });
+    },
+    [mention, text, closeMention],
+  );
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setText("");
+    closeMention();
     try {
       await sendCommand("song.chat.send", { text: trimmed });
     } catch (error) {
@@ -70,6 +162,9 @@ export function SongChatPanel() {
 
               const isSticker = message.text.startsWith(STICKER_PREFIX);
               const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
+              // 被点到名的消息加一圈描边，便于在滚动中回头找到
+              const mentionsMe =
+                !isSticker && Boolean(myId) && mentionsPlayer(message.text, myId!, players ?? []);
 
               return (
                 <motion.div
@@ -92,6 +187,7 @@ export function SongChatPanel() {
                       isMe
                         ? "rounded-br-sm bg-primary text-primary-foreground"
                         : "rounded-bl-sm bg-muted text-foreground",
+                      mentionsMe && "ring-1 ring-primary/45",
                     )}
                   >
                     {isSticker ? (
@@ -102,7 +198,7 @@ export function SongChatPanel() {
                         className="h-20 w-20 object-contain"
                       />
                     ) : (
-                      message.text
+                      <MessageText text={message.text} players={players ?? []} isMe={isMe} />
                     )}
                   </div>
                 </motion.div>
@@ -120,6 +216,45 @@ export function SongChatPanel() {
           onSelect={handleSendSticker}
           onClose={() => setPickerOpen(false)}
         />
+
+        {/* 候选自输入框上缘展开 */}
+        <AnimatePresence>
+          {candidates.length > 0 && (
+            <motion.div
+              variants={popover}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ originY: 1 }}
+              role="listbox"
+              aria-label="提及玩家"
+              className="absolute bottom-full left-3 right-3 z-50 mb-1 overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur-md"
+            >
+              {candidates.map((player, index) => (
+                <motion.button
+                  key={player.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === mentionIndex}
+                  {...tappable}
+                  onMouseEnter={() => setMentionIndex(index)}
+                  onClick={() => pickMention(player.name)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                    "border-t first:border-t-0",
+                    index === mentionIndex
+                      ? "bg-accent text-accent-foreground"
+                      : "text-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
+                </motion.button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <Button
           size="icon"
           variant="ghost"
@@ -131,11 +266,35 @@ export function SongChatPanel() {
           <Smile className="h-5 w-5" />
         </Button>
         <Input
+          ref={inputRef}
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={handleChange}
           placeholder="发送消息..."
           className="flex-1"
+          aria-expanded={candidates.length > 0}
           onKeyDown={(event) => {
+            if (candidates.length > 0) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setMentionIndex((cur) => (cur + 1) % candidates.length);
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setMentionIndex((cur) => (cur - 1 + candidates.length) % candidates.length);
+                return;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                pickMention(candidates[mentionIndex].name);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeMention();
+                return;
+              }
+            }
             if (event.key === "Enter") void handleSend();
             if (event.key === "Escape") setPickerOpen(false);
           }}
