@@ -2,6 +2,7 @@ import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
   HOST_RECONNECT_TIMEOUT_MS,
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
 } from "../config/constants";
@@ -268,6 +269,16 @@ export class SongGuessrService {
       room.emptySinceAt ??= this.now();
     }
 
+    // 0分数的旁观者掉线立即移除
+    if (
+      player.membership === "spectator" &&
+      player.score === 0 &&
+      !player.isBot &&
+      room.hostPlayerId !== player.id
+    ) {
+      delete room.players[player.id];
+    }
+
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
     if (room.hostPlayerId === player.id && !this.isTestRoom(room)) {
       room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
@@ -370,6 +381,27 @@ export class SongGuessrService {
         continue;
       }
       room.emptySinceAt = undefined;
+
+      // 清理掉线超过3分钟的玩家
+      for (const player of Object.values(room.players)) {
+        if (
+          !player.online &&
+          !player.isBot &&
+          currentTime - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+        ) {
+          delete room.players[player.id];
+          if (room.hostPlayerId === player.id) {
+            this.reassignHost(room);
+          }
+          this.touch(room);
+          if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
+            this.closeRoom(room, "empty");
+          } else {
+            this.publishRoom(room);
+            this.publishLobby();
+          }
+        }
+      }
 
       if (
         room.hostReconnectDeadlineAt !== undefined &&
@@ -580,10 +612,6 @@ export class SongGuessrService {
       }
       player.nextRoundMembership = nextRoundMembership;
       this.touch(room);
-      this.appendSystemMessage(
-        room,
-        `${player.name} 将在下轮${spectator ? "加入旁观" : "加入游戏"}`,
-      );
       this.publishRoom(room);
       return { spectator, queued: true };
     }
@@ -599,10 +627,6 @@ export class SongGuessrService {
       player.isReady = player.id === room.hostPlayerId;
     }
     this.touch(room);
-    this.appendSystemMessage(
-      room,
-      `${player.name} ${spectator ? "加入了旁观" : "加入了游戏"}`,
-    );
     this.publishRoom(room);
     this.publishLobby();
     return { spectator, queued: false };
@@ -1611,7 +1635,11 @@ export class SongGuessrService {
         (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound) - (state?.guessesUsed ?? 0),
       ),
       guessDeadlineAt: state?.deadlineAt,
-      submittedSong: isSubmitter && round ? this.publicSong(round.song) : undefined,
+      // 出题人与旁观者在游戏中均可看到本题答案
+      submittedSong:
+        (isSubmitter || player.membership === "spectator") && round
+          ? this.publicSong(round.song)
+          : undefined,
       visibleAttempts: round
         ? round.attempts.filter(
             (attempt) => canObserveAllAttempts || attempt.playerId === player.id,
@@ -1783,7 +1811,10 @@ export class SongGuessrService {
   }
 
   private ensureConnectionFree(connection: ConnectionRecord) {
-    if (connection.roomId || connection.playerId) throw new AppError("ALREADY_IN_ROOM", "当前连接已在房间中");
+    if (connection.roomId || connection.playerId) {
+      connection.roomId = undefined;
+      connection.playerId = undefined;
+    }
   }
 
   private ensureHost(room: SongGuessrRoomRecord, playerId: string) {

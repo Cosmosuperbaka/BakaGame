@@ -86,6 +86,20 @@ const clearPhaseResultPresentation = () => {
   phaseResultVisibleUntil = 0;
 };
 
+const mergeChat = (
+  existing: RoomSnapshot["chat"] = [],
+  incoming: RoomSnapshot["chat"] = [],
+): RoomSnapshot["chat"] => {
+  const map = new Map<string, RoomSnapshot["chat"][number]>();
+  for (const msg of existing) {
+    map.set(msg.id, msg);
+  }
+  for (const msg of incoming) {
+    map.set(msg.id, msg);
+  }
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+};
+
 const isSameRound = (left: RoomSnapshot | null, right: RoomSnapshot) =>
   Boolean(
     left &&
@@ -162,9 +176,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       summarySource?.status.roundId === incomingSnapshot.status.roundId
         ? summarySource?.summary
         : undefined;
-    const snapshot = previousSummary
+    let snapshot = previousSummary
       ? { ...incomingSnapshot, summary: previousSummary }
       : incomingSnapshot;
+
+    if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
+      snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
+    }
 
     if (!isSameRound(previousSnapshot, snapshot)) {
       clearPhaseResultPresentation();

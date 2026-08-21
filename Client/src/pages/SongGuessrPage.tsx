@@ -158,7 +158,7 @@ export default function SongGuessrPage() {
           </Button>
         </div>
 
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <AnimatePresence mode="popLayout" initial={false}>
             {rooms.length === 0 ? (
               <motion.div
@@ -179,7 +179,7 @@ export default function SongGuessrPage() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  layout
+                  layout="position"
                   {...selectable}
                 >
                   <Card

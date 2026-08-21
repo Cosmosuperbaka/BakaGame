@@ -989,9 +989,9 @@ function GameStage({
               本房间已关闭歌词提示，请根据音乐进行猜测
             </div>
           )}
-          {privateState.isSubmitter ? (
+          {privateState.submittedSong ? (
             <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-              本轮答案：<strong>{privateState.submittedSong?.title}</strong> · {privateState.submittedSong?.artist}
+              本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
             </div>
           ) : null}
           {me?.membership === "spectator" ? (
@@ -1392,6 +1392,7 @@ function SongQuestionSettings({
     },
   );
 
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2">
@@ -1459,9 +1460,24 @@ function SongQuestionSettings({
               </Button>
             </div>
             {playlist ? (
-              <div className="flex items-center justify-between rounded border bg-background px-2.5 py-2 text-xs">
-                <span className="truncate">{playlist.name ?? playlist.id}</span>
-                <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
+              <div className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-2 text-xs">
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                  <span className="truncate">{playlist.name ?? playlist.id}</span>
+                  <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => {
+                    setPlaylist(undefined);
+                    setPlaylistDraft("");
+                  }}
+                  aria-label="清除歌单筛选"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
               </div>
             ) : null}
           </div>

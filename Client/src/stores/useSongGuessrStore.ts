@@ -50,6 +50,20 @@ let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
 
+const mergeChat = (
+  existing: SongGuessrRoomSnapshot["chat"] = [],
+  incoming: SongGuessrRoomSnapshot["chat"] = [],
+): SongGuessrRoomSnapshot["chat"] => {
+  const map = new Map<string, SongGuessrRoomSnapshot["chat"][number]>();
+  for (const msg of existing) {
+    map.set(msg.id, msg);
+  }
+  for (const msg of incoming) {
+    map.set(msg.id, msg);
+  }
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+};
+
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
   return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
@@ -200,14 +214,20 @@ export function initSongGuessrSocket() {
         break;
       case "song.room.snapshot":
         {
+          const previousSnapshot = store.snapshot;
           const result = consumeStateSync(store.snapshot, snapshotRevision, event.payload);
           if (result.needsFullSync || !result.state) {
             requestFullSync();
             break;
           }
           snapshotRevision = result.revision;
+          const nextSnapshot = normalizeLegacySnapshot(result.state as SongGuessrRoomSnapshot);
+          const mergedSnapshot =
+            previousSnapshot && previousSnapshot.roomId === nextSnapshot.roomId
+              ? { ...nextSnapshot, chat: mergeChat(previousSnapshot.chat, nextSnapshot.chat) }
+              : nextSnapshot;
           useSongGuessrStore.setState({
-            snapshot: normalizeLegacySnapshot(result.state as SongGuessrRoomSnapshot),
+            snapshot: mergedSnapshot,
           });
         }
         break;

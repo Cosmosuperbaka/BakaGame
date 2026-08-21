@@ -46,6 +46,7 @@ import {
   ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
   HOST_RECONNECT_TIMEOUT_MS,
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
   PHASE_RESULT_DISPLAY_MS,
@@ -226,6 +227,30 @@ export class RoomService {
         });
         await this.closeRoom(room, "idle_timeout");
         continue;
+      }
+
+      // 清理掉线超过3分钟的玩家（3分钟清理超时）
+      for (const player of Object.values(room.players)) {
+        if (
+          !player.online &&
+          !player.isBot &&
+          currentTime - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+        ) {
+          if (room.round && room.round.phase !== "gameOver") {
+            if (room.round.questionerPlayerId === player.id) {
+              await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
+              this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
+            } else {
+              await this.forceRemovePlayer(room, player.id, "timeout");
+            }
+          }
+          delete room.players[player.id];
+          if (room.hostPlayerId === player.id) {
+            this.reassignHost(room);
+          }
+          this.normalizeRoomRoleConfig(room);
+          this.touchRoom(room);
+        }
       }
 
       if (
@@ -2051,9 +2076,20 @@ export class RoomService {
       }
     }
 
+    // 0分数的旁观者掉线立即移除
+    if (
+      reason === "disconnect" &&
+      player.membership === "spectator" &&
+      player.score === 0 &&
+      !player.isBot &&
+      !wasHost
+    ) {
+      delete room.players[player.id];
+    }
+
     if (!round || round.phase === "gameOver") {
-      // 房主显式离开时，无条件把身份交给下一位玩家；这样下一局不会卡在没人能操控的状态。
-      if (reason === "leave" && player.score === 0 && !player.isBot) {
+      // 玩家显式离开时，无条件将其从房间列表中清理
+      if (reason === "leave" && !player.isBot) {
         delete room.players[player.id];
       }
 
@@ -2076,7 +2112,16 @@ export class RoomService {
       return;
     }
 
-    if (round.questionerPlayerId === player.id) {
+    if (reason === "leave") {
+      if (round.questionerPlayerId === player.id) {
+        await this.finishRound(room, "aborted", "出题人主动退出房间，本局已终止");
+      } else {
+        await this.forceRemovePlayer(room, player.id, "leave");
+      }
+      if (!player.isBot) {
+        delete room.players[player.id];
+      }
+    } else if (round.questionerPlayerId === player.id) {
       round.questionerReconnectDeadlineAt = this.now() + QUESTIONER_RECONNECT_TIMEOUT_MS;
       this.appendSystemMessage(room, "出题人已掉线，系统开始等待其重新连接");
     } else if (this.shouldQueueDisconnectForDecision(round, player)) {
@@ -3223,8 +3268,10 @@ export class RoomService {
   }
 
   private ensureConnectionIsFree(connection: ConnectionRecord) {
+    // 若连接已有旧房间或旧玩家绑定，先安全清理，避免阻断后续重连或换房
     if (connection.roomId || connection.playerId) {
-      throw new AppError("ALREADY_IN_ROOM", "当前连接已在房间中");
+      connection.roomId = undefined;
+      connection.playerId = undefined;
     }
   }
 
