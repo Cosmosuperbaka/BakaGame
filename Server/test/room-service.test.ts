@@ -2620,3 +2620,105 @@ test("真人离开测试房间后测试房间自动关闭", async () => {
   const { result: createResult } = await createRoom(service, "Oblivionis");
   expect(createResult.roomId).toBe("Oblivionis");
 });
+
+test("0分数的旁观者掉线立即移除", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "3333");
+  const spectatorConn = createConnection(service, "spec-conn");
+  const joinResult = (await execute(service, spectatorConn, {
+    id: "join-spec",
+    type: "room.join",
+    roomId: "3333",
+    payload: { userName: "旁观者" },
+  })) as { playerId: string };
+  await execute(service, spectatorConn, {
+    id: "set-spec",
+    type: "player.setSpectator",
+    payload: { spectator: true },
+  });
+
+  const room = (service as any).rooms.get("3333")!;
+  expect(room.players[joinResult.playerId]).toBeDefined();
+
+  await service.unregisterConnection(spectatorConn.record.id);
+  expect(room.players[joinResult.playerId]).toBeUndefined();
+});
+
+test("退出房间的玩家即使有积分也会被正确清理", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "4444");
+  const playerConn = createConnection(service, "player-conn");
+  const joinResult = (await execute(service, playerConn, {
+    id: "join-player",
+    type: "room.join",
+    roomId: "4444",
+    payload: { userName: "有分玩家" },
+  })) as { playerId: string };
+
+  const room = (service as any).rooms.get("4444")!;
+  room.players[joinResult.playerId]!.score = 10;
+
+  await execute(service, playerConn, {
+    id: "leave-player",
+    type: "room.leave",
+    payload: {},
+  });
+
+  expect(room.players[joinResult.playerId]).toBeUndefined();
+});
+
+test("掉线玩家3分钟后由 housekeeping 自动清理", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host } = await createRoom(service, "5555");
+  const playerConn = createConnection(service, "offline-player-conn");
+  const joinResult = (await execute(service, playerConn, {
+    id: "join-player",
+    type: "room.join",
+    roomId: "5555",
+    payload: { userName: "掉线玩家" },
+  })) as { playerId: string };
+
+  const room = (service as any).rooms.get("5555")!;
+  await service.unregisterConnection(playerConn.record.id);
+  expect(room.players[joinResult.playerId]).toBeDefined();
+  expect(room.players[joinResult.playerId]?.online).toBe(false);
+
+  // 模拟2分钟过去，尚未超时
+  advanceTime(2 * 60 * 1000);
+  await service.runHousekeeping();
+  expect(room.players[joinResult.playerId]).toBeDefined();
+
+  // 模拟超过3分钟过去（累计3分01秒）
+  advanceTime(1 * 60 * 1000 + 1000);
+  await service.runHousekeeping();
+  expect(room.players[joinResult.playerId]).toBeUndefined();
+});
+
+test("房主掉线1分钟后自动移交房主", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host, result: hostResult } = await createRoom(service, "6666");
+  const playerConn = createConnection(service, "next-host-conn");
+  const joinResult = (await execute(service, playerConn, {
+    id: "join-player",
+    type: "room.join",
+    roomId: "6666",
+    payload: { userName: "接任房主" },
+  })) as { playerId: string };
+
+  const room = (service as any).rooms.get("6666")!;
+  expect(room.hostPlayerId).toBe(hostResult.playerId);
+
+  await service.unregisterConnection(host.record.id);
+  expect(room.hostPlayerId).toBe(hostResult.playerId);
+  expect(room.hostReconnectDeadlineAt).toBeDefined();
+
+  // 30秒过去，房主尚未移交
+  advanceTime(30 * 1000);
+  await service.runHousekeeping();
+  expect(room.hostPlayerId).toBe(hostResult.playerId);
+
+  // 累计61秒过去，房主已移交给下一位在线正式玩家
+  advanceTime(31 * 1000);
+  await service.runHousekeeping();
+  expect(room.hostPlayerId).toBe(joinResult.playerId);
+});

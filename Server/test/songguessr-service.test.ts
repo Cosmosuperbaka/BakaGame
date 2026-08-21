@@ -1560,6 +1560,23 @@ describe("SongGuessrService", () => {
     expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGiveUp).toBe(true);
   });
 
+  test("0分数的旁观者掉线立即移除", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "spec-host");
+    const spectator = connection(service, "spec-spectator");
+    await createRoom(service, host);
+    const specState = await joinRoom(service, spectator, "旁观者");
+    await execute(service, spectator, {
+      id: "set-spectator",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: true },
+    });
+    expect((service as any).rooms.get("1234")!.players[specState.playerId]).toBeDefined();
+    await service.unregisterConnection(spectator.record.id);
+    expect((service as any).rooms.get("1234")!.players[specState.playerId]).toBeUndefined();
+  });
+
   test("离线旁观者的下轮参战预约不会阻塞回合", async () => {
     const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "offline-queue-host");
@@ -1570,6 +1587,8 @@ describe("SongGuessrService", () => {
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     const lateState = await joinRoom(service, lateJoiner, "离线预约者");
+    // 给该旁观者设置分数，确保不会作为0分旁观者在掉线时被立即移除
+    (service as any).rooms.get("1234")!.players[lateState.playerId]!.score = 5;
     await execute(service, lateJoiner, {
       id: "queue-active-while-playing",
       type: "song.player.setSpectator",

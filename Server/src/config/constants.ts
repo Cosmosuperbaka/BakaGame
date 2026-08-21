@@ -12,8 +12,11 @@ export const QUESTIONER_RECONNECT_TIMEOUT_MS = 60 * 1000;
 /** 房主断线重连超时时间（60秒） */
 export const HOST_RECONNECT_TIMEOUT_MS = 60 * 1000;
 
+/** 玩家掉线清理超时时间（3分钟） */
+export const PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS = 3 * 60 * 1000;
+
 /** 房间聊天记录最大保留条数 */
-export const CHAT_LIMIT = 200;
+export const CHAT_LIMIT = 20;
 
 /** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
 export const PHASE_RESULT_DISPLAY_MS = 1_500;

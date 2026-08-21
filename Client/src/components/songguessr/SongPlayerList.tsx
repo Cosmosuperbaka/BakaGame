@@ -91,8 +91,8 @@ export function SongPlayerList({
 
   return (
     <ScrollArea className="h-full">
-      <div className="px-2">
-        <div className="relative flex flex-col py-3">
+      <div className="min-w-0 px-2">
+        <div className="relative flex min-w-0 w-full flex-col py-3">
           <PlayerGroupTitle label="玩家" count={activePlayers.length} />
           <motion.div
             className="flex flex-col gap-px"
@@ -287,11 +287,11 @@ function SpectatorToggle({
     <Button
       variant={selected ? "secondary" : "ghost"}
       size="sm"
-      className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
+      className="mt-1 h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
       onClick={() => onToggle(spectator)}
     >
-      {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-      {selected ? `${label}（已选择）` : label}
+      {spectator ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
+      <span className="truncate">{selected ? `${label}（已选择）` : label}</span>
     </Button>
   );
 }
