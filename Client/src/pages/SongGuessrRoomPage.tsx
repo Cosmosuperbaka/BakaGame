@@ -121,7 +121,9 @@ export default function SongGuessrRoomPage() {
   const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
   const [volume, setVolume] = useState(() => {
-    const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
+    const raw = window.localStorage.getItem(SONG_VOLUME_KEY);
+    if (raw === null) return 0.65;
+    const saved = Number(raw);
     return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
   });
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
