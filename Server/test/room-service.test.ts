@@ -588,13 +588,11 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   expect(snapshot?.status.phase).toBe("tieBreak");
   expect(snapshot?.status.tieBreakStage).toBe("description");
 
-  const leaders = getEventPayloads<{ leaders: string[] }>(host, "game.voteResult").at(-1)
-    ?.leaders;
-  expect(leaders).toHaveLength(2);
+  // 投票结果只走状态通道：领先者直接取自快照，事件不再携带票数或领先者负载。
+  const candidates = snapshot?.status.tieBreakCandidateIds ?? [];
+  expect(candidates).toHaveLength(2);
   expect(snapshot?.status.tieBreakIndex).toBe(1);
-  expect([...(snapshot?.status.tieBreakCandidateIds ?? [])].sort()).toEqual(
-    [...(leaders ?? [])].sort(),
-  );
+  expect(getEventPayloads<Record<string, never>>(host, "game.voteResult").at(-1)).toEqual({});
 
   const tieOrder = snapshot?.status.speechOrder ?? [];
   expect(tieOrder).toEqual(snapshot?.status.tieBreakCandidateIds ?? []);
@@ -1874,6 +1872,8 @@ test("游戏中踢出出题人会中止本局", async () => {
   const snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("gameOver");
   expect(snapshot?.summary?.winner).toBe("aborted");
+  // 对局小结只经状态通道发布：结算不再广播 game.roundSummary 事件。
+  expect(getEventPayloads<unknown>(host, "game.roundSummary")).toHaveLength(0);
   expect(snapshot?.players.find((player) => player.id === questionerJoin.playerId)?.membership).toBe(
     "kicked",
   );

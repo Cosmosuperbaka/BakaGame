@@ -213,9 +213,6 @@ describe("game store integration", () => {
 
     expect(useGameStore.getState().snapshot?.summary).toEqual(roundSummary);
 
-    useGameStore.getState().setSummary(null);
-    expect(useGameStore.getState().snapshot?.summary).toEqual(roundSummary);
-
     useGameStore.getState().setSnapshot(gameOverSnapshot("round-2"));
     expect(useGameStore.getState().snapshot?.summary).toBeUndefined();
   });

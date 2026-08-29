@@ -12,7 +12,6 @@ import type {
   RoomSummary,
   ServerMessage,
   EventPacket,
-  RoundSummary,
   DaybreakNotice,
 } from "@/types";
 
@@ -47,7 +46,6 @@ export interface GameState {
   setSnapshot: (snapshot: RoomSnapshot) => void;
   setPrivateState: (privateState: PrivateState) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
-  setSummary: (summary: RoundSummary | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
   removeToast: (id: number) => void;
 
@@ -245,12 +243,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     }, 3000);
   },
 
-  setSummary: (summary) =>
-    set((state) => {
-      if (!state.snapshot || !summary) return state;
-      return { snapshot: { ...state.snapshot, summary } };
-    }),
-
   addToast: (text, type = "info") => {
     const id = ++toastCounter;
     set((state) => ({
@@ -384,9 +376,6 @@ export function initGameSocket() {
         break;
       case "game.voteResult":
         currentStore.addToast("投票结果已公布");
-        break;
-      case "game.roundSummary":
-        currentStore.setSummary(evt.payload as RoundSummary | null);
         break;
       case "game.disconnectDecisionRequested":
         currentStore.addToast("有玩家掉线，等待出题人处理", "info");
