@@ -97,6 +97,22 @@ describe("NeteaseMusicProvider", () => {
     ]);
   });
 
+  test("多歌手合唱歌曲中的单个人名歌词会被正确过滤", () => {
+    const lyrics = parseLrc([
+      "[00:01.00]（周杰伦）天青色等烟雨",
+      "[00:04.00]（费玉清）而我在等你",
+      "[00:08.00]炊烟袅袅升起",
+    ].join("\n"));
+
+    expect(sanitizeLyrics(lyrics, {
+      title: "千里之外",
+      artist: "周杰伦 / 费玉清",
+      album: "依然范特西",
+    })).toEqual([
+      { time: 8_000, endTime: 13_000, text: "炊烟袅袅升起" },
+    ]);
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
