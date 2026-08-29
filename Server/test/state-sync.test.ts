@@ -13,6 +13,15 @@ test("状态补丁只编码变化路径与数组追加项", () => {
   ]);
 });
 
+test("数组缩短时直接发送数组整体替换操作", () => {
+  expect(buildStatePatch(
+    { players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }] },
+    { players: [{ id: "p1" }] },
+  )).toEqual([
+    { op: "set", path: ["players"], value: [{ id: "p1" }] },
+  ]);
+});
+
 test("编码器发送首个全量、连续补丁并省略无变化私有状态", () => {
   const encoder = new StateSyncEncoder();
   const filler = "x".repeat(1_000);

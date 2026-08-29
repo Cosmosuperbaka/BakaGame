@@ -65,17 +65,17 @@ export function buildStatePatch(
   if (sameScalar(previous, next)) return operations;
 
   if (Array.isArray(previous) && Array.isArray(next)) {
-    const commonLength = Math.min(previous.length, next.length);
-    for (let index = 0; index < commonLength; index += 1) {
-      buildStatePatch(previous[index], next[index], [...path, index], operations);
-    }
-    if (next.length >= previous.length) {
-      for (let index = previous.length; index < next.length; index += 1) {
-        operations.push({ op: "set", path: [...path, index], value: next[index] });
-      }
+    if (next.length < previous.length) {
+      operations.push({ op: "set", path, value: next });
       return operations;
     }
-    operations.push({ op: "set", path, value: next });
+
+    for (let index = 0; index < previous.length; index += 1) {
+      buildStatePatch(previous[index], next[index], [...path, index], operations);
+    }
+    for (let index = previous.length; index < next.length; index += 1) {
+      operations.push({ op: "set", path: [...path, index], value: next[index] });
+    }
     return operations;
   }
 

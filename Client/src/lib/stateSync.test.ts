@@ -39,4 +39,13 @@ describe("state sync", () => {
       needsFullSync: true,
     });
   });
+
+  it("正确处理数组元素删除，不生成稀疏数组", () => {
+    const baseline = { list: ["a", "b", "c"] };
+    const next = applyStatePatch(baseline, [
+      { op: "delete", path: ["list", 1] },
+    ]);
+    expect(next.list).toEqual(["a", "c"]);
+    expect(next.list.length).toBe(2);
+  });
 });
