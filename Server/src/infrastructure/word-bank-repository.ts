@@ -1,7 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { normalizeWordPair } from "../domain/rules";
+
+const MAX_WORD_BANK_ENTRIES = 10_000;
 
 export class WordBankRepository {
   private writeQueue: Promise<void> = Promise.resolve();
@@ -9,10 +11,15 @@ export class WordBankRepository {
   constructor(private readonly filePath: string) {}
 
   async readAll(): Promise<Array<[string, string]>> {
-    // 词库文件损坏或不存在时，统一回退为空词库。
+    // 词库文件损坏、格式异常或不存在时，统一安全回退为空词库，避免阻塞主流程。
     try {
       const content = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(content) as unknown;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content) as unknown;
+      } catch {
+        return [];
+      }
 
       if (!Array.isArray(parsed)) {
         return [];
@@ -54,11 +61,18 @@ export class WordBankRepository {
     );
 
     if (!exists) {
-      // 存储前按字典序排序，尽量让 Git diff 和人工检查都更稳定。
+      // 存储前按字典序排序，维持容量上限
+      if (allPairs.length >= MAX_WORD_BANK_ENTRIES) {
+        allPairs.shift();
+      }
       allPairs.push(normalizedPair);
       allPairs.sort((left, right) => left.join("|").localeCompare(right.join("|")));
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, `${JSON.stringify(allPairs, null, 2)}\n`, "utf8");
+
+      const dir = dirname(this.filePath);
+      await mkdir(dir, { recursive: true });
+      const tempPath = `${this.filePath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+      await writeFile(tempPath, `${JSON.stringify(allPairs, null, 2)}\n`, "utf8");
+      await rename(tempPath, this.filePath);
     }
 
     return allPairs;
