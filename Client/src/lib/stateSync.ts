@@ -39,7 +39,11 @@ export function applyStatePatch<T>(current: T, operations: StatePatchOperation[]
     const parent = getParent(result, operation.path);
     const key = operation.path.at(-1)!;
     if (operation.op === "delete") {
-      delete parent[key];
+      if (Array.isArray(parent) && typeof key === "number") {
+        parent.splice(key, 1);
+      } else {
+        delete parent[key];
+      }
     } else {
       parent[key] = structuredClone(operation.value);
     }
