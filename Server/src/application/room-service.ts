@@ -239,7 +239,6 @@ export class RoomService {
           if (room.round && room.round.phase !== "gameOver") {
             if (room.round.questionerPlayerId === player.id) {
               await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
-              this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
             } else {
               await this.forceRemovePlayer(room, player.id, "timeout");
             }
@@ -265,8 +264,6 @@ export class RoomService {
         currentTime >= room.round.questionerReconnectDeadlineAt
       ) {
         await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
-        this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
-        this.publishRoomState(room);
       }
 
       this.publishRoomStateCalibration(room);
@@ -1124,7 +1121,6 @@ export class RoomService {
     }
 
     this.publishRoomState(room);
-    this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
     await this.runBots(room);
 
     return { success: guess.success, pendingReview: !guess.success };
@@ -1254,7 +1250,6 @@ export class RoomService {
 
     this.touchRoom(room);
     this.broadcastPhaseAndPublish(room);
-    this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
     await this.runBots(room);
 
     return { approved: approve };
@@ -1561,8 +1556,6 @@ export class RoomService {
       }
       case "gameOver":
         await this.finishRound(room, "good", "手动结束本局");
-        this.broadcastRoomEvent(room, "game.roundSummary", room.round?.summary ?? null);
-        this.publishRoomState(room);
         return { phase: "gameOver" as GamePhase };
     }
 
@@ -1791,12 +1784,8 @@ export class RoomService {
     const outcome = computeVoteOutcome(votes);
     const leaders = outcome.leaders;
 
-    this.broadcastRoomEvent(room, "game.voteResult", {
-      roomId: room.id,
-      tieBreak,
-      counts: outcome.counts,
-      leaders,
-    });
+    // 投票明细（票数、领先者）已随快照发布，事件只保留提示性信号，不再携带客户端不消费的负载。
+    this.broadcastRoomEvent(room, "game.voteResult", {});
 
     await this.log({
       type: "game.vote_resolved",
@@ -2036,7 +2025,9 @@ export class RoomService {
       },
     });
 
-    this.broadcastRoomEvent(room, "game.roundSummary", round.summary);
+    // 结算必然改变阶段与摘要，这里统一发布快照；对局小结只走状态通道，
+    // 调用方无需也不得再补发 game.roundSummary 事件。
+    this.publishRoomState(room);
   }
 
   private async handlePlayerOffline(
