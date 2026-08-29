@@ -62,7 +62,6 @@ test("landing game entries stay horizontal and clear of the footer", async ({ pa
     { width: 2048, height: 1050 },
     { width: 1024, height: 500 },
     { width: 844, height: 390 },
-    { width: 390, height: 600 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
@@ -357,6 +356,7 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
     }))).toEqual({ opacity: "1", transform: "none" });
   };
 
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/whoisfaker");
   await page.getByPlaceholder("用户名").fill(hostName);

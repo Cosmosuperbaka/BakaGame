@@ -4,7 +4,7 @@ import { ChevronUp, FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from 
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/lib/helpers";
-import { collapsible, spring } from "@/lib/motion";
+import { collapsible, headerTappable, spring } from "@/lib/motion";
 import type { GamePhase, PlayerRole } from "@/types";
 
 /** 观察视角。测试房间通过真实的旁观/出题人指令切换，不再本地伪造。 */
@@ -96,8 +96,7 @@ export function TestController() {
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
-            whileTap={{ scale: 0.995 }}
-            transition={spring.snap}
+            {...headerTappable}
             className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
           >
             <FlaskConical className="h-4 w-4 text-primary" />

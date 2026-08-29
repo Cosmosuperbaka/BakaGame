@@ -61,6 +61,7 @@ import {
   collapsible,
   duration,
   ease,
+  headerTappable,
   listContainer,
   listItem,
   phaseSwap,
@@ -1843,7 +1844,7 @@ function VolumeControl({
   return (
     <motion.div
       layout
-      className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel px-2.5 py-1.5 shadow-sm"
+      className="flex items-center gap-2 rounded-md border border-border/70 bg-panel px-2.5 py-1.5 shadow-sm"
       title={`播放音量 ${percentage}%`}
     >
       <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -1907,8 +1908,7 @@ function SongTestController({
             type="button"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            whileTap={{ scale: 0.995 }}
-            transition={spring.snap}
+            {...headerTappable}
             className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
           >
             <FlaskConical className="h-4 w-4 text-primary" />

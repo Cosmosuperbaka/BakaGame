@@ -116,7 +116,7 @@ export function SongSearchDialog({
           />
         </div>
 
-      <ScrollArea className="h-[min(45vh,24rem)] rounded-lg border bg-muted/25">
+      <ScrollArea className="h-[min(45vh,24rem)] rounded-xl border bg-muted/25">
           <div className="space-y-2 p-3">
             {searching ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -127,7 +127,7 @@ export function SongSearchDialog({
               results.map((song) => (
                 <div
                   key={song.id}
-                  className="flex items-center gap-3 rounded-lg bg-card p-3 shadow-sm"
+                  className="flex items-center gap-3 rounded-xl bg-card p-3 shadow-sm"
                 >
                   {song.pictureUrl ? (
                     <img

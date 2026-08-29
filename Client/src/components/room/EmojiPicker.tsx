@@ -10,10 +10,9 @@ function AnimatedBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-10 rounded-md px-1 py-0.5 text-xs font-semibold leading-none",
+        "pointer-events-none absolute z-10 rounded-md bg-destructive px-1 py-0.5 text-xs font-semibold leading-none text-destructive-foreground",
         className,
       )}
-      style={{ background: "#ff4d79", color: "#fff" }}
     >
       动图
     </span>

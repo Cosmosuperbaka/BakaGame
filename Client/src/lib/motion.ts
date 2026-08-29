@@ -34,6 +34,8 @@ export const ease = {
 
 /** 时长档位。用于退出、擦除等需要确定收束时间的动效。 */
 export const duration = {
+  /** 无过渡：状态仅作落位同步，不播放动画 */
+  none: 0,
   instant: 0.12,
   quick: 0.18,
   base: 0.26,
@@ -79,6 +81,12 @@ export const tappable = {
 export const iconTappable = {
   whileHover: { scale: 1.06 },
   whileTap: { scale: 0.9 },
+  transition: spring.snap,
+} as const;
+
+/** 整行折叠标题：按压幅度极小，避免大面积文本区随按压晃动 */
+export const headerTappable = {
+  whileTap: { scale: 0.995 },
   transition: spring.snap,
 } as const;
 

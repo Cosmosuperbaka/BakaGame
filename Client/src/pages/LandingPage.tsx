@@ -145,7 +145,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const [entering, setEntering] = useState(false);
 
   const baseClass =
-    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-xl sm:rounded-lg border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-xl border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   const content = (
     <>
@@ -153,7 +153,7 @@ function GameRow({ game }: { game: GameEntry }) {
         src={game.icon}
         alt=""
         aria-hidden="true"
-        className="h-11 w-11 shrink-0 rounded-lg object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+        className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
       />
       <div className="min-w-0 flex-1">
         <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
@@ -264,7 +264,7 @@ function InlineContent({ nodes }: { nodes: InlineNode[] }) {
             );
           case "code":
             return (
-              <code key={index} className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">
+              <code key={index} className="rounded-md bg-muted px-1 py-0.5 font-mono text-xs">
                 {node.text}
               </code>
             );
