@@ -9,13 +9,19 @@ import type {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const MAX_DEFAULT_STRING_LENGTH = 500;
+
 const readString = (
   value: unknown,
   field: string,
-  options: { optional?: boolean; allowEmpty?: boolean } = {},
+  options: { optional?: boolean; allowEmpty?: boolean; maxLength?: number } = {},
 ): string | undefined => {
   if (value == null && options.optional) return undefined;
   if (typeof value !== "string") throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串`);
+  const maxLength = options.maxLength ?? MAX_DEFAULT_STRING_LENGTH;
+  if (value.length > maxLength) {
+    throw new AppError("INVALID_MESSAGE", `${field} 长度不能超过 ${maxLength} 个字符`);
+  }
   if (!options.allowEmpty && !value.trim()) throw new AppError("INVALID_MESSAGE", `${field} 不能为空`);
   return value;
 };
