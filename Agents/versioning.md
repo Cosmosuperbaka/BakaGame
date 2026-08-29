@@ -29,7 +29,7 @@ type(scope): 中文摘要
 规则：
 
 1. 摘要必须使用中文，且不超过 12 个中文字（含标点）。
-2. `type` 使用 Angular 标准类型：`feat`、`fix`、`docs`、`style`、`refactor`、`test`、`chore`、`perf`。
+2. `type` 使用 Angular 标准类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert`。
 3. `scope` 填写受影响游戏的缩写：
 
 | 游戏 | 缩写 |
@@ -61,13 +61,17 @@ docs(Faker): 更新游戏规则
     {
       "version": "1.x.x",
       "date": "YYYY-MM-DD",
-      "content": "- 第一条\n- 第二条"
+      "content": [
+        "第一条更新说明",
+        "第二条更新说明"
+      ]
     }
   ]
 }
 ```
 
 - 新增版本时，在 `entries` 数组前部添加条目。
-- `content` 使用纯文本轻量标记，由 `Client/src/lib/changelog.ts` 解析；禁止写 HTML 或使用 `dangerouslySetInnerHTML`。
+- `content` 支持单字符串（多行以 `\n` 分隔）或字符串数组（`string | string[]`），推荐使用更易阅读和维护的字符串数组格式。
+- `content` 内容使用纯文本轻量标记（行首 `-`、`**加粗**`、`` `等宽` `` 与 `[文字](链接)`），由 `Client/src/lib/changelog.ts` 解析；禁止写 HTML 或使用 `dangerouslySetInnerHTML`。
 - 更新日志直接从源码导入，随前端构建产物发布，不放入 `public/` 的固定 URL。
 - 构建期生成的数据同样不得落在 `public/`：文件名不带 hash，CDN 会按 `immutable` 长期缓存，内容更新后老用户取不到。表情包清单由 `vite.config.ts` 的 `sticker-manifest` 插件以虚拟模块 `virtual:sticker-manifest` 提供，在 `lib/stickers.ts` 中用动态 `import` 按需加载，声明见 `Client/src/vite-env.d.ts`。

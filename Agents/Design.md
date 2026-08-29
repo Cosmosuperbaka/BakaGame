@@ -13,15 +13,15 @@
 ## 2. 技术基线
 
 - 样式使用 Tailwind CSS v4 和 `Client/src/index.css` 中的语义变量。
-- 全站主题基线来源为 tweakcn 的 `vintage-paper`（<https://tweakcn.com/r/themes/vintage-paper.json>），其变量已完整落入 `Client/src/index.css` 的 `:root` 与 `.dark`，是唯一的全局设计标准。
-- 主题变量包含颜色、`--radius`、`--shadow-*`、`--font-sans/serif/mono` 与 `--tracking-*`，业务组件只能引用这些变量派生出的 Tailwind 语义类，不得在组件内重新定义同类基础值。
+- 全站主题基线来源为 tweakcn 的 `vintage-paper`（<https://tweakcn.com/r/themes/vintage-paper.json>），其主题颜色与 `--panel` 变量已完整落入 `Client/src/index.css` 的 `:root` 与 `.dark`，是唯一的全局设计标准。
+- 主题变量包含颜色、`--radius`、`--shadow-*`、`--font-sans/serif/mono` 与 `--tracking-*`（其中 `--font-*` 与 `--tracking-*` 等排版基线唯一定义于 `:root`），业务组件只能引用这些变量派生出的 Tailwind 语义类，不得在组件内重新定义同类基础值。
 - 需要调整全局观感时，应修改 `index.css` 中的主题变量，并同步更新本文件，不在业务组件中做局部覆盖。
 - 通用交互组件优先复用 `Client/src/components/ui/`，其底层 Radix UI 行为不得被无故绕过或重复实现。
 - 界面图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符代替已有的标准图标。
 - 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
 - 条件类名使用项目现有的 `cn` 工具，组件变体沿用 `class-variance-authority`。
 - 动效使用项目已有的 `framer-motion`，只用于状态切换、列表变化、面板进入退出和必要反馈。
-- 动效令牌统一维护于 `Client/src/lib/motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
+- 动效令牌统一维护于 `Client/src/lib/motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
 - 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/motion.ts` 保持一致。
 - 全局色值、圆角或字体基线应在现有主题变量和公共组件中统一维护，避免在业务组件中散落重复定义。
 
@@ -40,8 +40,8 @@
 
 ## 4. 字体与文案
 
-- 正文字体栈由 `--font-sans` 统一提供：`Libre Baskerville` 承担拉丁字形，`Noto Sans SC` 承担中文字形，二者通过 fontsource 本地引入，不得改为系统字体栈或额外引入新的网页字体。
-- 等宽内容（提交哈希、房间号等）使用 `font-mono`（`IBM Plex Mono`）；`--font-serif`（`Lora`）为备用衬线族，仅在明确需要区分时使用。
+- 正文字体栈由 `--font-sans` 统一提供：`Libre Baskerville` 承担拉丁字形，`Noto Serif SC` 承担中文字形，二者通过 fontsource 本地引入，不得改为系统字体栈或额外引入新的网页字体。
+- 等宽内容（提交哈希、房间号等）使用 `font-mono`（`JetBrains Mono`）；`--font-serif`（`Lora`）为备用衬线族，仅在明确需要区分时使用。
 - 字距由 `--tracking-normal` 统一控制，业务组件不单独设置 `letter-spacing`。
 - 全局字号基线由 `html { font-size: 120%; }` 控制，不在局部通过视口宽度动态缩放字体。
 - 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`。
@@ -73,13 +73,14 @@
 
 ### 7.1 站点主页
 
-- 根路径为游戏选择页，保持单列、居中和易扫描，内容宽度以 `max-w-2xl` 为基线。
-- 页面只包含站点标识、游戏入口列表和页脚三层，不新增营销模块、玩法介绍或无关说明区块。
-- 游戏入口为整行可点击的大尺寸条目，左侧为图标，中间为标题与可选副标题，右侧为进入指示或状态徽章。条目内不写玩法描述性文案，站点标识下方也不加标语。
+- 根路径为游戏选择页，保持居中和易扫描，内容宽度以 `max-w-6xl` 为基线。
+- 页面只包含站点标识、游戏入口区和页脚三层，不新增营销模块、玩法介绍或无关说明区块。
+- 游戏入口在窄屏为单列垂直堆叠，在 `sm` 及以上视口使用 `grid-cols-3` 三列网格自适应展示，条目为整行可点击的大尺寸卡片，左侧为图标，中间为标题与可选副标题，右侧为进入指示或状态徽章。条目内不写玩法描述性文案，站点标识下方也不加标语。
 - 图标资源统一放在 `public/assets/` 并以绝对路径引用，不通过 `src/assets` 打包，便于替换。
 - 点击可用条目后先让箭头前移、条目微沉，动效落地再跳转，使离开当前页读作这次点击的结果。
 - 未上线的游戏入口保持相同尺寸与结构，通过降低不透明度和“即将推出”徽章表达不可用，且不可点击、不获取焦点。
-- 页脚自上而下为外部链接行与版本号，居中排列。版本号点击后在弹窗中分标签展示更新日志与提交历史，不在页面主体常驻展开这两块内容。
+- 页脚自上而下为友情链接文字链接行、外部链接图标行与版本号，居中排列。版本号点击后在弹窗中分标签展示更新日志与提交历史，不在页面主体常驻展开这两块内容。
+- 友情链接展示为紧凑的文字链接行，使用 `FriendLinkItem` 并带外链指示小图标。
 - 外部链接（社群、代码仓库、作者主页）实现为一排 `h-8 w-8` 纯图标链接，使用对应平台的品牌图标（见第 2 节），取 `text-muted-foreground` 并以 `Tooltip` 提供名称，同时保留 `aria-label`。链接在新标签打开并带 `rel="noreferrer"`，按压反馈取 `iconTappable`。不加文字标签，不做彩色品牌底色，也不把外部链接放进页面主体。
 - `changelog.json` 的 `content` 用纯文本书写：`-` 开头为列表项，行内支持 `**加粗**`、`` `等宽` `` 与 `[文字](链接)`，由 `lib/changelog.ts` 解析成结构化节点后渲染。禁止写 HTML 标签，也禁止使用 `dangerouslySetInnerHTML`。
 - 提交历史使用时间线式列表：单条包含提交信息、短哈希、作者和相对时间，保持单色克制表现，不按提交类型铺设彩色标签。

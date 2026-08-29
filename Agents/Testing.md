@@ -6,9 +6,9 @@
 
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
-| 后端单元测试 | `Server/test/rules.test.ts`、`connection-registry.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离 |
-| 后端服务回归 | `Server/test/room-service.test.ts`、`test-room.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间 |
-| 协议与传输集成 | `Server/test/protocol-openapi.test.ts`、`app.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket |
+| 后端单元测试 | `Server/test/rules.test.ts`、`connection-registry.test.ts`、`word-bank-repository.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化 |
+| 后端服务回归 | `Server/test/room-service.test.ts`、`test-room.test.ts`、`songguessr-service.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SongGuessr 游戏流程与人机 |
+| 协议与传输集成 | `Server/test/protocol-openapi.test.ts`、`app.test.ts`、`command-handlers.test.ts`、`songguessr-protocol.test.ts`、`netease-music-provider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SongGuessr 协议、网易云音乐接口 Mock 与解析 |
 | 网络承载回归 | `Server/test/network-capacity.test.ts`、`state-sync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端 |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -57,7 +57,7 @@ npx playwright test e2e/app.spec.ts
 - 客户端只使用 `Client/package-lock.json`，安装时运行 `npm ci`。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
-- Playwright 自动启动服务端与 Vite；默认使用 `127.0.0.1:4850` 和 `localhost:5173`。
+- Playwright 自动启动服务端与 Vite；使用 `http://localhost:4850/health` 进行服务端健康检查探活，前端监听 `localhost:5173`。
 
 ## 编写约定
 
