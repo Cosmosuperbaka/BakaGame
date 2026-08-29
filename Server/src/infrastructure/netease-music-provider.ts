@@ -347,22 +347,33 @@ export const sanitizeLyrics = (
   song: Pick<SongSearchResult, "title" | "artist" | "album">,
 ): SongLyricLine[] => {
   const title = normalizeComparableText(song.title);
-  const artist = normalizeComparableText(song.artist);
   const album = song.album ? normalizeComparableText(song.album) : "";
+  const artistTokens = song.artist
+    .split(/[\/,、&与和]/)
+    .map(normalizeComparableText)
+    .filter((token) => token.length >= 2);
+  const wholeArtist = normalizeComparableText(song.artist);
+
   const forbidden = new Set([
     title,
-    artist,
+    wholeArtist,
+    ...artistTokens,
     album,
-    `${title}${artist}`,
-    `${artist}${title}`,
+    `${title}${wholeArtist}`,
+    `${wholeArtist}${title}`,
   ].filter(Boolean));
+
   const filtered = lyrics.filter((line) => {
     if (isCreditLyricLine(line.text)) return false;
     if (isInstrumentalLyricLine(line.text)) return false;
     const normalizedLine = normalizeComparableText(line.text);
     if (forbidden.has(normalizedLine)) return false;
-    // 歌名可能嵌在一句完整歌词里；至少两个字符才做包含判断，避免误伤单字歌名。
-    return title.length < 2 || !normalizedLine.includes(title);
+    if (title.length >= 2 && normalizedLine.includes(title)) return false;
+    for (const token of artistTokens) {
+      if (normalizedLine.includes(token)) return false;
+    }
+    if (album.length >= 2 && normalizedLine.includes(album)) return false;
+    return true;
   });
 
   return filtered.map((line, index) => ({
