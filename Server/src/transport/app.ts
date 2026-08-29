@@ -27,6 +27,28 @@ const sendPacket = (
   ws.send(JSON.stringify(payload));
 };
 
+const isAllowedOrigin = (
+  origin: string | null | undefined,
+  clientUrl?: string,
+): boolean => {
+  if (!origin) return true;
+  if (!clientUrl) return true;
+  try {
+    const originUrl = new URL(origin);
+    const allowedUrl = new URL(clientUrl);
+    if (originUrl.origin === allowedUrl.origin) return true;
+    if (
+      (originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1") &&
+      (allowedUrl.hostname === "localhost" || allowedUrl.hostname === "127.0.0.1")
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
 export const createApp = ({ env, roomService, logger, songGuessrService }: AppDependencies) => {
   const decoder = new TextDecoder();
   const songService =
@@ -110,6 +132,14 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
     .use(systemRoutes({ roomService }))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
+      upgrade({ headers, request }) {
+        const origin =
+          request?.headers?.get("origin") ??
+          (headers as Record<string, string> | undefined)?.["origin"];
+        if (!isAllowedOrigin(origin, env.clientUrl)) {
+          return { status: 403 };
+        }
+      },
       open(ws) {
         // 为每个连接建立独立的连接上下文，后续所有命令都靠它定位会话。
         const connectionId = crypto.randomUUID();
@@ -209,6 +239,14 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
     })
     // Songuessr 与 Who is Faker 共用相同封包、错误与会话约定，但状态机彼此隔离。
     .ws("/api/songuessr/ws", {
+      upgrade({ headers, request }) {
+        const origin =
+          request?.headers?.get("origin") ??
+          (headers as Record<string, string> | undefined)?.["origin"];
+        if (!isAllowedOrigin(origin, env.clientUrl)) {
+          return { status: 403 };
+        }
+      },
       open(ws) {
         const connectionId = crypto.randomUUID();
         (ws.data as { connectionId?: string }).connectionId = connectionId;
