@@ -49,3 +49,25 @@ test("并发保存不同词对时不会互相覆盖", async () => {
     rmSync(tempDir, { force: true, recursive: true });
   }
 });
+
+test("词库文件内容损坏时安全回退为空列表而不抛错", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "word-bank-corrupt-"));
+
+  try {
+    const filePath = join(tempDir, "word-bank.json");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(filePath, "invalid-json-content-{{{", "utf8");
+
+    const repository = new WordBankRepository(filePath);
+    const result = await repository.readAll();
+    expect(result).toEqual([]);
+
+    // 仍能正常写入新词对
+    await repository.savePair(["月亮", "太阳"]);
+    const updated = await repository.readAll();
+    expect(updated).toEqual([["太阳", "月亮"]]);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
