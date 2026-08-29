@@ -228,7 +228,7 @@ When a player first receives a word, word options, or blank hint, `RoomPage` dis
 
 `DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement). When `players` are supplied, all current player rows remain visible even if they have no description in a column.
 
-The room shell uses a light warm-yellow background. Player, game-action, and chat panels remain white; secondary rounded content blocks use a solid light gray. The client loads Noto Sans SC globally and hides scrollbar chrome without disabling scrolling.
+The room shell uses a light warm-yellow background. Player, game-action, and chat panels remain white; secondary rounded content blocks use a solid light gray. The client loads Noto Serif SC globally and hides scrollbar chrome without disabling scrolling.
 
 ## Tests
 
