@@ -1,0 +1,49 @@
+name: Bug 报告
+description: 报告游戏功能或部署中遇到的问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 请尽量填写完整，便于定位问题。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际现象与期望行为。如与对局相关，请说明当时的阶段与操作。
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - WhoIsFaker（谁是卧底）
+        - SongGuessr（听歌猜歌）
+        - 服务端 / 部署
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 逐步说明操作路径；若使用测试房间 Oblivionis，请说明使用的跳转与机器人配置。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与截图
+      description: 服务端控制台输出、浏览器控制台报错或截图。日志请放入代码块。
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 浏览器及版本、操作系统、客户端来源（线上站点或本地 dev）、服务端版本或提交号。
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前自查
+      options:
+        - label: 已搜索现有 Issue，确认没有重复报告
+        - label: 已尝试刷新页面重新连接（断线会话可通过刷新重连）

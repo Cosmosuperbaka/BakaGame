@@ -1,0 +1,80 @@
+# Issue/PR 标签清单（机器可读源），分组与使用规则见 .github/labels.md。
+# 同步到仓库：
+#   npx github-label-sync --labels .github/labels.yml --allow-added-labels Cosmosuperbaka/BakaGame
+# 不加 --allow-added-labels 时，不在本文件中的已有标签（如其他临时标签）会被删除。
+
+# 类型：必选一个，与 commit type 对应
+- name: bug
+  color: d73a4a
+  description: 功能未按预期工作
+- name: enhancement
+  color: a2eeef
+  description: 新功能或对现有功能的改进
+- name: documentation
+  color: 0075ca
+  description: 文档变更
+- name: refactor
+  color: d4c5f9
+  description: 重构，不改变外部行为
+- name: perf
+  color: fbca04
+  description: 性能优化
+- name: test
+  color: c5def5
+  description: 测试补充或修复
+- name: chore
+  color: fef2c0
+  description: 构建、依赖、CI 等工程杂项
+
+# 范围：与 commit scope 对应，按主要受影响对象选择
+- name: scope/Faker
+  color: 1d76db
+  description: WhoIsFaker（谁是卧底）
+- name: scope/Song
+  color: 5319e7
+  description: SongGuessr（听歌猜歌）
+- name: scope/CCB
+  color: 91ca55
+  description: 二刺猿笑传之猜猜呗（AnimeCharacterGuessr）
+- name: scope/Core
+  color: bfd4f2
+  description: 公共能力、基础设施、主页
+
+# 层级：可选，用于区分问题所在位置；双端协议与共享定义用 layer/shared
+- name: layer/server
+  color: 006b75
+  description: 服务端（Server/）
+- name: layer/client
+  color: e99695
+  description: 客户端（Client/）
+- name: layer/shared
+  color: 5ebeff
+  description: 双端共享定义（Server/src/shared/）
+
+# 流程：由维护者在分诊时添加，报告者无需操作
+- name: status/needs-info
+  color: d876e3
+  description: 等待报告者补充信息
+- name: status/confirmed
+  color: 0e8a16
+  description: 已确认，等待排期
+
+# 社区：保留 GitHub 默认标签名，仅汉化描述
+- name: good first issue
+  color: 7057ff
+  description: 适合新贡献者入手
+- name: help wanted
+  color: 008672
+  description: 欢迎社区协助
+- name: question
+  color: d876e3
+  description: 使用方式或行为咨询
+- name: duplicate
+  color: cfd3d7
+  description: 与现有 Issue 重复
+- name: invalid
+  color: eeeeee
+  description: 描述有误或无法成立
+- name: wontfix
+  color: ffffff
+  description: 不计划处理
