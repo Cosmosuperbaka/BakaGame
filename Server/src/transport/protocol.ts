@@ -19,6 +19,8 @@ export type { AckPacket, ErrorPacket, EventPacket, ClientMessage, ClientEnvelope
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const MAX_DEFAULT_STRING_LENGTH = 500;
+
 // 统一做字段级校验，保证业务层拿到的都是稳定结构。
 const readString = (
   value: unknown,
@@ -26,6 +28,7 @@ const readString = (
   options?: {
     optional?: boolean;
     allowEmpty?: boolean;
+    maxLength?: number;
   },
 ): string | undefined => {
   if (value == null) {
@@ -38,6 +41,11 @@ const readString = (
 
   if (typeof value !== "string") {
     throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串`);
+  }
+
+  const maxLength = options?.maxLength ?? MAX_DEFAULT_STRING_LENGTH;
+  if (value.length > maxLength) {
+    throw new AppError("INVALID_MESSAGE", `${field} 长度不能超过 ${maxLength} 个字符`);
   }
 
   if (!options?.allowEmpty && value.trim().length === 0) {
@@ -125,6 +133,10 @@ const readWordPair = (value: unknown): [string, string] => {
     throw new AppError("INVALID_MESSAGE", "words 必须为长度为 2 的字符串数组");
   }
 
+  if (value[0].length > 50 || value[1].length > 50) {
+    throw new AppError("INVALID_MESSAGE", "每个词语长度不能超过 50 个字符");
+  }
+
   return [value[0], value[1]];
 };
 
@@ -142,12 +154,26 @@ const readDraftPair = (value: unknown): [string, string] => {
     throw new AppError("INVALID_MESSAGE", "words 必须为长度为 2 的字符串数组");
   }
 
+  if (value[0].length > 50 || value[1].length > 50) {
+    throw new AppError("INVALID_MESSAGE", "每个词语长度不能超过 50 个字符");
+  }
+
   return [value[0], value[1]];
 };
 
-const readStringArray = (value: unknown, field: string): string[] => {
+const readStringArray = (value: unknown, field: string, maxItems = 100, maxItemLength = 100): string[] => {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串数组`);
+  }
+
+  if (value.length > maxItems) {
+    throw new AppError("INVALID_MESSAGE", `${field} 数组长度不能超过 ${maxItems}`);
+  }
+
+  for (const item of value) {
+    if (item.length > maxItemLength) {
+      throw new AppError("INVALID_MESSAGE", `${field} 中的项目长度不能超过 ${maxItemLength} 个字符`);
+    }
   }
 
   return value;
@@ -198,16 +224,17 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         type,
         payload: {
           roomId: readString(payload.roomId, "payload.roomId")!,
-          name: readString(payload.name, "payload.name")!,
+          name: readString(payload.name, "payload.name", { maxLength: 40 })!,
           visibility: readVisibility(payload.visibility),
           password: readString(payload.password, "payload.password", {
             optional: true,
+            maxLength: 64,
           }),
           allowSpectators: readBoolean(
             payload.allowSpectators,
             "payload.allowSpectators",
           ),
-          userName: readString(payload.userName, "payload.userName")!,
+          userName: readString(payload.userName, "payload.userName", { maxLength: 32 })!,
           roleConfig: payload.roleConfig
             ? readRoleConfig(payload.roleConfig)
             : undefined,
@@ -220,9 +247,10 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         roomId,
         sessionToken,
         payload: {
-          userName: readString(payload.userName, "payload.userName")!,
+          userName: readString(payload.userName, "payload.userName", { maxLength: 32 })!,
           password: readString(payload.password, "payload.password", {
             optional: true,
+            maxLength: 64,
           }),
         },
       };
@@ -239,7 +267,13 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
     case "room.requestSync":
       return { id, type, roomId, sessionToken, payload: {} };
     case "player.rename":
-      return { id, type, roomId, sessionToken, payload: { name: readString(payload.name, "payload.name")! } };
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: { name: readString(payload.name, "payload.name", { maxLength: 32 })! },
+      };
     case "player.setSpectator":
       return {
         id,
@@ -265,12 +299,13 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         roomId,
         sessionToken,
         payload: {
-          name: readString(payload.name, "payload.name", { optional: true }),
+          name: readString(payload.name, "payload.name", { optional: true, maxLength: 40 }),
           visibility:
             payload.visibility == null ? undefined : readVisibility(payload.visibility),
           password: readString(payload.password, "payload.password", {
             optional: true,
             allowEmpty: true,
+            maxLength: 64,
           }),
           allowSpectators:
             payload.allowSpectators == null
@@ -308,6 +343,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
           blankHint: readString(payload.blankHint, "payload.blankHint", {
             optional: true,
             allowEmpty: true,
+            maxLength: 50,
           }),
           manualRoles: isObject(payload.manualRoles)
             ? parseManualRoles(payload.manualRoles)
@@ -322,7 +358,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         type,
         roomId,
         sessionToken,
-        payload: { text: readString(payload.text, "payload.text")! },
+        payload: { text: readString(payload.text, "payload.text", { maxLength: 300 })! },
       };
     case "game.submitVote":
       return {
@@ -411,7 +447,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         type,
         roomId,
         sessionToken,
-        payload: { text: readString(payload.text, "payload.text")! },
+        payload: { text: readString(payload.text, "payload.text", { maxLength: 300 })! },
       };
     case "room.transferHost":
       return {
