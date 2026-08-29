@@ -7,14 +7,20 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: "test-commit-history",
+      name: "test-virtual-modules",
       resolveId(id) {
-        return id === "virtual:commit-history" ? "\0virtual:commit-history" : null;
+        if (id === "virtual:commit-history") return "\0virtual:commit-history";
+        if (id === "virtual:sticker-manifest") return "\0virtual:sticker-manifest";
+        return null;
       },
       load(id) {
-        return id === "\0virtual:commit-history"
-          ? 'export default { generatedAt: "", currentCommit: "dev", commits: [] }'
-          : null;
+        if (id === "\0virtual:commit-history") {
+          return 'export default { generatedAt: "", currentCommit: "dev", commits: [] }';
+        }
+        if (id === "\0virtual:sticker-manifest") {
+          return 'export default { generatedAt: "", packs: [] }';
+        }
+        return null;
       },
     },
   ],

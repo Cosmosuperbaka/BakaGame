@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { duration, ease, popover, spring, tappable } from "@/lib/motion";
 import { useGameStore } from "@/stores/useGameStore";
-import { STICKER_PREFIX } from "@/lib/stickers";
+import { STICKER_PREFIX, isValidStickerPath } from "@/lib/stickers";
 import {
   applyMention,
   filterMentionCandidates,
@@ -163,6 +163,7 @@ export function ChatPanel() {
 
               const isSticker = msg.text.startsWith(STICKER_PREFIX);
               const stickerPath = isSticker ? msg.text.slice(STICKER_PREFIX.length) : null;
+              const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
               // 被点到名的消息加一圈描边，便于在滚动中回头找到
               const mentionsMe =
                 !isSticker && Boolean(myId) && mentionsPlayer(msg.text, myId!, players ?? []);
@@ -184,16 +185,16 @@ export function ChatPanel() {
                   <div
                     className={cn(
                       "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere]",
-                      isSticker ? "p-1.5" : "px-3 py-1.5",
+                      safeStickerPath ? "p-1.5" : "px-3 py-1.5",
                       isMe
                         ? "rounded-br-sm bg-primary text-primary-foreground"
                         : "rounded-bl-sm bg-muted text-foreground",
                       mentionsMe && "ring-1 ring-primary/45",
                     )}
                   >
-                    {isSticker ? (
+                    {safeStickerPath ? (
                       <img
-                        src={stickerPath!}
+                        src={safeStickerPath}
                         alt="表情"
                         draggable={false}
                         className="h-20 w-20 object-contain"
