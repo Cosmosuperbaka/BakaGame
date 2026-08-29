@@ -108,7 +108,7 @@ export function AssignedWord({
               scale: spring.drift,
               opacity: { duration: duration.quick, ease: ease.out },
             }
-          : { duration: 0 }
+          : { duration: duration.none }
       }
     >
       {word}

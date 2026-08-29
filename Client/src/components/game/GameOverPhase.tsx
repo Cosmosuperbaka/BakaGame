@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "@/stores/useGameStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/lib/helpers";
-import { collapsible, listContainer, listItem, spring } from "@/lib/motion";
+import { collapsible, headerTappable, listContainer, listItem, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "./PhaseHeader";
@@ -30,8 +30,7 @@ function DisclosureHeader({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      whileTap={{ scale: 0.995 }}
-      transition={spring.snap}
+      {...headerTappable}
       className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
     >
       {icon}

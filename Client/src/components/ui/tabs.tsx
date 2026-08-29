@@ -81,29 +81,42 @@ const TabsTrigger = React.forwardRef<
 })
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
 
-/** 面板内容随激活切换缩放淡入，与标签底块同一时序。 */
+/** 面板内容随激活切换缩放淡入，与标签底块同一时序。
+ * 动画结束后清除残留 transform，避免分数缩放导致文本子像素抖动。
+ */
 const TabsContent = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <TabsPrimitive.Content
-    ref={ref}
-    className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      className
-    )}
-    {...props}
-  >
-    <motion.div
-      variants={phaseSwap}
-      initial="initial"
-      animate="animate"
-      className="h-full"
+>(({ className, children, ...props }, ref) => {
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+
+  return (
+    <TabsPrimitive.Content
+      ref={ref}
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        className
+      )}
+      {...props}
     >
-      {children}
-    </motion.div>
-  </TabsPrimitive.Content>
-))
+      <motion.div
+        ref={contentRef}
+        variants={phaseSwap}
+        initial="initial"
+        animate="animate"
+        onAnimationComplete={(definition) => {
+          if (definition !== "animate") return;
+          const node = contentRef.current;
+          if (node) node.style.transform = "";
+        }}
+        style={{ willChange: "transform, opacity" }}
+        className="h-full"
+      >
+        {children}
+      </motion.div>
+    </TabsPrimitive.Content>
+  );
+});
 TabsContent.displayName = TabsPrimitive.Content.displayName
 
 export { Tabs, TabsList, TabsTrigger, TabsContent }

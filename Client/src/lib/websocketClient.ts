@@ -108,11 +108,19 @@ export class WebSocketClient {
     });
   }
 
-  send<T extends Record<string, unknown> = Record<string, unknown>>(
+  async send<T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload: Record<string, unknown> = {},
     options?: { roomId?: string; sessionToken?: string; timeout?: number },
   ): Promise<T> {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      if (this.socket?.readyState === WebSocket.CONNECTING) {
+        await this.waitForConnection(options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+      } else {
+        throw { code: "NOT_CONNECTED", message: "WebSocket 未连接" };
+      }
+    }
+
     return new Promise((resolve, reject) => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
