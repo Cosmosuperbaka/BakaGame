@@ -1,10 +1,10 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import { GAME_COMMAND_TYPES } from "../src/application/handlers/game-command-handler";
-import { PLAYER_COMMAND_TYPES } from "../src/application/handlers/player-command-handler";
-import { ROOM_COMMAND_TYPES } from "../src/application/handlers/room-command-handler";
-import { TEST_COMMAND_TYPES } from "../src/application/handlers/test-command-handler";
-import type { ClientMessage } from "../src/transport/protocol";
+import { GAME_COMMAND_TYPES } from "../src/application/handlers/GameCommandHandler";
+import { PLAYER_COMMAND_TYPES } from "../src/application/handlers/PlayerCommandHandler";
+import { ROOM_COMMAND_TYPES } from "../src/application/handlers/RoomCommandHandler";
+import { TEST_COMMAND_TYPES } from "../src/application/handlers/TestCommandHandler";
+import type { ClientMessage } from "../src/transport/Protocol";
 
 const ALL_COMMAND_TYPES = [
   "lobby.subscribeRooms",

@@ -1,16 +1,21 @@
-import { describe, expect, test } from "bun:test";
+﻿import { describe, expect, test } from "bun:test";
 
-import { createSongLyricClip, SongGuessrService } from "../src/application/songguessr-service";
-import { AppError } from "../src/domain/errors";
-import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/constants";
-import type { ConnectionRecord } from "../src/domain/model";
-import type { MusicProvider } from "../src/infrastructure/netease-music-provider";
+import { createSongLyricClip, SonGuessrService } from "../src/application/SonGuessrService";
+const SongGuessrService = SonGuessrService;
+type SongGuessrService = SonGuessrService;
+import { AppError } from "../src/domain/Errors";
+import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
+import type { ConnectionRecord } from "../src/domain/Model";
+import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type {
   SongDetails,
+  SonGuessrClientMessage,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
   SongGuessrClientMessage,
   SongGuessrPrivateState,
   SongGuessrRoomSnapshot,
-} from "../src/shared";
+} from "../src/shared/Index";
 
 const makeSong = (id: string, title: string, year: number): SongDetails => ({
   id,

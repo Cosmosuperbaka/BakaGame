@@ -1,9 +1,9 @@
-import type {
+﻿import type {
   EventPacket,
   StatePatchOperation,
   StatePathSegment,
   StateSyncPayload,
-} from "../shared";
+} from "../shared/Index";
 
 export const STATE_FULL_SYNC_INTERVAL_MS = 60_000;
 export const STATE_MAX_PATCHES_BEFORE_FULL = 1_024;

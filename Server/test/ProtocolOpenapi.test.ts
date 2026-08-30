@@ -1,16 +1,16 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import { RoomService } from "../src/application/room-service";
-import { AppError } from "../src/domain/errors";
-import { EventLogger } from "../src/infrastructure/event-logger";
-import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
-import { createApp } from "../src/transport/app";
+import { RoomService } from "../src/application/RoomService";
+import { AppError } from "../src/domain/Errors";
+import { EventLogger } from "../src/infrastructure/EventLogger";
+import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
+import { createApp } from "../src/transport/App";
 import {
   createAck,
   createErrorPacket,
   createEvent,
   parseClientMessage,
-} from "../src/transport/protocol";
+} from "../src/transport/Protocol";
 
 // ==================== 协议与文档测试 ====================
 

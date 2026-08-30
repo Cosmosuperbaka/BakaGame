@@ -1,9 +1,9 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import type { ConnectionRecord } from "../src/shared";
-import { createAck } from "../src/transport/protocol";
-import { StateSyncEncoder } from "../src/transport/state-sync";
-import { createTestContext, execute, type TestConnection } from "./helpers";
+import type { ConnectionRecord } from "../src/shared/Index";
+import { createAck } from "../src/transport/Protocol";
+import { StateSyncEncoder } from "../src/transport/StateSync";
+import { createTestContext, execute, type TestConnection } from "./Helpers";
 
 const TARGET_PLAYERS = 150;
 const MUTATIONS_PER_SECOND = 12;

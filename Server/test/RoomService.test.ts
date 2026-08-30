@@ -1,11 +1,11 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
 import {
   PHASE_RESULT_DISPLAY_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
-} from "../src/config/constants";
-import type { PrivateState, RoomSnapshot } from "../src/domain/model";
-import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./helpers";
+} from "../src/config/Constants";
+import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
+import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./Helpers";
 
 interface JoinedPlayer {
   connection: ReturnType<typeof createConnection>;

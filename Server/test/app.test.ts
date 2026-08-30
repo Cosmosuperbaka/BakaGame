@@ -1,17 +1,17 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { RoomService } from "../src/application/room-service";
-import type { AppEnv } from "../src/config/env";
+import { RoomService } from "../src/application/RoomService";
+import type { AppEnv } from "../src/config/Env";
 import {
   EventLogger,
   formatLogEntry,
   formatSystemLog,
-} from "../src/infrastructure/event-logger";
-import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
-import { createApp } from "../src/transport/app";
+} from "../src/infrastructure/EventLogger";
+import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
+import { createApp } from "../src/transport/App";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 

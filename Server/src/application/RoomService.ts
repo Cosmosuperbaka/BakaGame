@@ -1,4 +1,4 @@
-import { AppError } from "../domain/errors";
+﻿import { AppError } from "../domain/Errors";
 import type {
   ChatMessage,
   ConnectionRecord,
@@ -16,8 +16,8 @@ import type {
   RoomSummary,
   RoundWinner,
   VoteRecord,
-} from "../domain/model";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../domain/model";
+} from "../domain/Model";
+import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../domain/Model";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -36,11 +36,11 @@ import {
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
   type RandomSource,
-} from "../domain/rules";
-import type { LogEntry } from "../infrastructure/event-logger";
-import { EventLogger } from "../infrastructure/event-logger";
-import { WordBankRepository } from "../infrastructure/word-bank-repository";
-import { createEvent, type ClientMessage } from "../transport/protocol";
+} from "../domain/Rules";
+import type { LogEntry } from "../infrastructure/EventLogger";
+import { EventLogger } from "../infrastructure/EventLogger";
+import { WordBankRepository } from "../infrastructure/WordBankRepository";
+import { createEvent, type ClientMessage } from "../transport/Protocol";
 
 import {
   ROOM_IDLE_TIMEOUT_MS,
@@ -54,13 +54,13 @@ import {
   TEST_MODE_MAX_PLAYERS,
   BOT_NAME_SUFFIXES,
   BOT_DESCRIPTION_TEMPLATES,
-} from "../config/constants";
-import { ConnectionRegistry } from "./connection-registry";
-import type { CommandHandler } from "./handlers/command-handler";
-import { createGameCommandHandler } from "./handlers/game-command-handler";
-import { createPlayerCommandHandler } from "./handlers/player-command-handler";
-import { createRoomCommandHandler } from "./handlers/room-command-handler";
-import { createTestCommandHandler } from "./handlers/test-command-handler";
+} from "../config/Constants";
+import { ConnectionRegistry } from "./ConnectionRegistry";
+import type { CommandHandler } from "./handlers/CommandHandler";
+import { createGameCommandHandler } from "./handlers/GameCommandHandler";
+import { createPlayerCommandHandler } from "./handlers/PlayerCommandHandler";
+import { createRoomCommandHandler } from "./handlers/RoomCommandHandler";
+import { createTestCommandHandler } from "./handlers/TestCommandHandler";
 
 export interface RoomServiceOptions {
   now?: () => number;
@@ -1857,7 +1857,7 @@ export class RoomService {
       },
     });
 
-    if (this.maybeEnterBlankGuess(room)) {
+    if (this.tryTransitionToFinaleBlankGuess(room)) {
       return;
     }
 
@@ -1885,7 +1885,7 @@ export class RoomService {
     });
   }
 
-  private maybeEnterBlankGuess(room: RoomRecord): boolean {
+  private tryTransitionToFinaleBlankGuess(room: RoomRecord): boolean {
     // 被淘汰不自动触发猜词：白板自己决定何时用掉这一次机会（game.enterBlankGuess）。
     // 这里只保留「残局触发」：其他阵营已满足胜负条件但白板仍存活时，
     // 在结算前强制补一次猜词。
@@ -1923,7 +1923,7 @@ export class RoomService {
       this.publishRoomState(room);
     }
 
-    if (this.maybeEnterBlankGuess(room)) {
+    if (this.tryTransitionToFinaleBlankGuess(room)) {
       return;
     }
 

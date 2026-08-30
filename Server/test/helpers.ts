@@ -1,14 +1,14 @@
-import { mkdtempSync, rmSync } from "node:fs";
+﻿import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach } from "bun:test";
 
-import { RoomService } from "../src/application/room-service";
-import { EventLogger } from "../src/infrastructure/event-logger";
-import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
-import type { ConnectionRecord } from "../src/domain/model";
-import type { ClientMessage } from "../src/transport/protocol";
+import { RoomService } from "../src/application/RoomService";
+import { EventLogger } from "../src/infrastructure/EventLogger";
+import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
+import type { ConnectionRecord } from "../src/domain/Model";
+import type { ClientMessage } from "../src/transport/Protocol";
 
 export interface TestConnection {
   record: ConnectionRecord;

@@ -1,11 +1,11 @@
-import type { ConnectionRecord } from "../../domain/model";
-import type { ClientMessage } from "../../transport/protocol";
+﻿import type { ConnectionRecord } from "../../domain/Model";
+import type { ClientMessage } from "../../transport/Protocol";
 import {
   type CommandHandler,
   type CommandResult,
   ownsCommand,
   unsupportedCommand,
-} from "./command-handler";
+} from "./CommandHandler";
 
 type Message<TType extends ClientMessage["type"]> = Extract<
   ClientMessage,

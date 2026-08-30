@@ -1,26 +1,35 @@
-import {
+﻿import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
   HOST_RECONNECT_TIMEOUT_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
-} from "../config/constants";
-import { AppError } from "../domain/errors";
-import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/rules";
-import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/model";
-import type { EventLogger } from "../infrastructure/event-logger";
+} from "../config/Constants";
+import { AppError } from "../domain/Errors";
+import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
+import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
+import type { EventLogger } from "../infrastructure/EventLogger";
 import type {
   MusicLoginSession,
   MusicProvider,
-} from "../infrastructure/netease-music-provider";
-import { SONG_GUESSR_MAX_PLAYERS } from "../shared";
+} from "../infrastructure/NeteaseMusicProvider";
+import { SONGUESSR_MAX_PLAYERS } from "../shared/Index";
 import type {
   ChatMessage,
   SongDetails,
   SongGuessAttempt,
   SongGuessDirection,
   SongGuessFeedback,
+  SonGuessrClientMessage,
+  SonGuessrPhase,
+  SonGuessrPlayerView,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+  SonGuessrRoomSummary,
+  SonGuessrRoundSummary,
+  SonGuessrScore,
+  SonGuessrSettings,
   SongGuessrClientMessage,
   SongGuessrPhase,
   SongGuessrPlayerView,
@@ -33,9 +42,9 @@ import type {
   SongAutoFilters,
   SongSearchResult,
   SongLyricClip,
-} from "../shared";
-import { createEvent } from "../transport/protocol";
-import { ConnectionRegistry } from "./connection-registry";
+} from "../shared/Index";
+import { createEvent } from "../transport/Protocol";
+import { ConnectionRegistry } from "./ConnectionRegistry";
 
 const DEFAULT_SETTINGS: SongGuessrSettings = {
   questionType: "song",
@@ -125,12 +134,14 @@ interface SongGuessrRoomRecord {
   hostReconnectDeadlineAt?: number;
 }
 
-export interface SongGuessrServiceOptions {
+export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
   now?: () => number;
   random?: RandomSource;
   eventLogger?: EventLogger;
 }
+
+export type SongGuessrServiceOptions = SonGuessrServiceOptions;
 
 const clampInt = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Math.round(value)));
@@ -234,14 +245,14 @@ export const createSongLyricClip = (
   };
 };
 
-export class SongGuessrService {
+export class SonGuessrService {
   private readonly rooms = new Map<string, SongGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
   private readonly now: () => number;
   private readonly random: RandomSource;
   private idCounter = 0;
 
-  constructor(private readonly options: SongGuessrServiceOptions) {
+  constructor(private readonly options: SonGuessrServiceOptions) {
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
@@ -250,6 +261,17 @@ export class SongGuessrService {
 
   registerConnection(connection: ConnectionRecord): void {
     this.connections.registerConnection(connection);
+  }
+
+  getHealthSnapshot() {
+    return {
+      roomCount: this.rooms.size,
+      connectionCount: this.connections.stats.totalConnections,
+      onlinePlayerCount: [...this.rooms.values()].reduce(
+        (sum, room) => sum + this.onlineCount(room),
+        0,
+      ),
+    };
   }
 
   async unregisterConnection(connectionId: string): Promise<void> {
@@ -481,8 +503,8 @@ export class SongGuessrService {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     this.ensurePassword(room, payload.password);
-    if (this.onlineCount(room) >= SONG_GUESSR_MAX_PLAYERS) {
-      throw new AppError("ROOM_FULL", `房间最多容纳 ${SONG_GUESSR_MAX_PLAYERS} 人`);
+    if (this.onlineCount(room) >= SONGUESSR_MAX_PLAYERS) {
+      throw new AppError("ROOM_FULL", `房间最多容纳 ${SONGUESSR_MAX_PLAYERS} 人`);
     }
     const name = this.requireName(payload.userName);
     if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
@@ -904,8 +926,8 @@ export class SongGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
-    const count = clampInt(countValue ?? 1, 1, SONG_GUESSR_MAX_PLAYERS);
-    const available = Math.max(0, SONG_GUESSR_MAX_PLAYERS - this.onlineCount(room));
+    const count = clampInt(countValue ?? 1, 1, SONGUESSR_MAX_PLAYERS);
+    const available = Math.max(0, SONGUESSR_MAX_PLAYERS - this.onlineCount(room));
     const added: string[] = [];
     for (let index = 0; index < Math.min(count, available); index += 1) {
       const botIndex = Object.values(room.players).filter((candidate) => candidate.isBot).length;
@@ -924,7 +946,7 @@ export class SongGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
-    const count = clampInt(countValue ?? 1, 1, SONG_GUESSR_MAX_PLAYERS);
+    const count = clampInt(countValue ?? 1, 1, SONGUESSR_MAX_PLAYERS);
     const bots = Object.values(room.players)
       .filter((candidate) => candidate.isBot)
       .sort((left, right) => right.joinedAt - left.joinedAt)
@@ -1525,7 +1547,7 @@ export class SongGuessrService {
       hasPassword: Boolean(room.password),
       playerCount: this.activePlayers(room).length,
       onlineCount: this.onlineCount(room),
-      maxPlayers: SONG_GUESSR_MAX_PLAYERS,
+      maxPlayers: SONGUESSR_MAX_PLAYERS,
       phase: room.phase,
     };
   }
@@ -1538,7 +1560,7 @@ export class SongGuessrService {
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
       hasPassword: Boolean(room.password),
-      maxPlayers: SONG_GUESSR_MAX_PLAYERS,
+      maxPlayers: SONGUESSR_MAX_PLAYERS,
       hostPlayerId: room.hostPlayerId,
       testMode: this.isTestRoom(room),
       musicAccountReady: Boolean(room.musicSession),
@@ -1892,3 +1914,7 @@ export class SongGuessrService {
     });
   }
 }
+
+export const SongGuessrService = SonGuessrService;
+export type SongGuessrService = SonGuessrService;
+

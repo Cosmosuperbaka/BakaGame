@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
 import {
   assignRoles,
@@ -10,8 +10,8 @@ import {
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
-} from "../src/domain/rules";
-import { isValidRoomId, type GameRound } from "../src/domain/model";
+} from "../src/domain/Rules";
+import { isValidRoomId, type GameRound } from "../src/domain/Model";
 
 test("房间号校验：四位数字与测试房间号合法，其余一律拒绝", () => {
   for (const valid of ["0000", "1234", "9999", "Oblivionis", "oblivionis", " 1234 "]) {

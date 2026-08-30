@@ -1,9 +1,9 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { WordBankRepository } from "../src/infrastructure/word-bank-repository";
+import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 
 // 词库仓储只允许保存最小结构：string[][]。
 test("词库只保存二维词语数组且会去重", async () => {
