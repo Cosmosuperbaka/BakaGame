@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import {
@@ -125,6 +125,76 @@ const isPermanentRoomError = (error: unknown) => {
     code === "SESSION_INVALID" || code === "PLAYER_KICKED";
 };
 
+let lastPlayerChannel: "main" | "ghost" | undefined;
+let lastRoomAndRoundKey: string | undefined;
+
+const computePlayerChannel = (
+  snapshot: RoomSnapshot | null,
+  playerId: string | null | undefined,
+): "main" | "ghost" => {
+  if (!snapshot || !playerId) return "main";
+  const isIngame = Boolean(
+    snapshot.status.started &&
+    snapshot.status.phase !== "waiting" &&
+    snapshot.status.phase !== "gameOver",
+  );
+  if (!isIngame) return "main";
+  const isQuestioner = snapshot.status.questionerPlayerId === playerId;
+  if (isQuestioner) return "main";
+  const me = snapshot.players.find((p) => p.id === playerId);
+  if (!me) return "main";
+  const isDeadOrSpectator = me.roundStatus === "dead" || me.roundStatus === "spectator";
+  return isDeadOrSpectator ? "ghost" : "main";
+};
+
+const applyChannelTransitions = (
+  snapshot: RoomSnapshot,
+  playerId: string | null | undefined,
+): RoomSnapshot => {
+  if (!playerId) return snapshot;
+  const currentKey = `${snapshot.roomId}:${snapshot.status.roundId ?? snapshot.status.phase ?? "lobby"}`;
+  const nextChannel = computePlayerChannel(snapshot, playerId);
+
+  if (lastRoomAndRoundKey !== currentKey) {
+    lastRoomAndRoundKey = currentKey;
+    lastPlayerChannel = nextChannel;
+    if (nextChannel === "ghost") {
+      const notice: RoomSnapshot["chat"][number] = {
+        id: `local-chan-init-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        playerId: "system",
+        playerName: "系统",
+        text: "已进入观战频道，发言仅对淘汰玩家与观战者可见",
+        createdAt: Date.now(),
+        system: true,
+        channel: "ghost",
+      };
+      return { ...snapshot, chat: mergeChat(snapshot.chat, [notice]) };
+    }
+    return snapshot;
+  }
+
+  if (lastPlayerChannel && lastPlayerChannel !== nextChannel) {
+    const noticeText =
+      nextChannel === "ghost"
+        ? "已进入观战频道，发言仅对淘汰玩家与观战者可见"
+        : "已返回公共聊天频道，所有玩家均可见发言";
+    const notice: RoomSnapshot["chat"][number] = {
+      id: `local-chan-trans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      playerId: "system",
+      playerName: "系统",
+      text: noticeText,
+      createdAt: Date.now(),
+      system: true,
+      channel: nextChannel,
+    };
+    lastPlayerChannel = nextChannel;
+    return { ...snapshot, chat: mergeChat(snapshot.chat, [notice]) };
+  }
+
+  lastPlayerChannel = nextChannel;
+  return snapshot;
+};
+
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
@@ -158,6 +228,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
   },
   leaveRoomState: () => {
     clearPhaseResultPresentation();
+    lastPlayerChannel = undefined;
+    lastRoomAndRoundKey = undefined;
     set({
       roomId: null,
       sessionToken: null,
@@ -189,6 +261,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
       snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
     }
+
+    snapshot = applyChannelTransitions(snapshot, get().privateState?.playerId);
 
     if (!isSameRound(previousSnapshot, snapshot)) {
       clearPhaseResultPresentation();
@@ -242,7 +316,16 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     });
   },
   applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
-  setPrivateState: (privateState) => set({ privateState }),
+  setPrivateState: (privateState) => {
+    set({ privateState });
+    const currentSnapshot = get().snapshot;
+    if (currentSnapshot && privateState?.playerId) {
+      const updated = applyChannelTransitions(currentSnapshot, privateState.playerId);
+      if (updated !== currentSnapshot) {
+        set({ snapshot: updated });
+      }
+    }
+  },
   showDaybreakNotice: (notice) => {
     if (daybreakNoticeTimer) clearTimeout(daybreakNoticeTimer);
     set({ daybreakNotice: notice });
