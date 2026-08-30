@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.2.4",
+      "date": "2026-08-30",
+      "content": [
+        "修复已知问题",
+        "新功能：Whoisfaker新增观战频道"
+      ]
+    },
+    {
       "version": "1.2.3",
       "date": "2026-08-22",
       "content": [
