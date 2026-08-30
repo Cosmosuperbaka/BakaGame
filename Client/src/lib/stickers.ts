@@ -4,15 +4,15 @@
 /** 贴纸消息前缀，用于识别聊天消息是贴纸而非普通文本 */
 export const STICKER_PREFIX = "@@sticker@@";
 
-/** 校验贴纸资源路径是否安全合法（仅允许 /emojis/ 下合法静态图片，阻止外部 URL 注入与路径穿越） */
+/** 校验贴纸资源路径是否安全合法（允许 /stickers/ 与 /emojis/ 下合法静态图片，阻止外部 URL 注入与路径穿越） */
 export const isValidStickerPath = (path: unknown): path is string => {
   if (typeof path !== "string") return false;
   return (
-    path.startsWith("/emojis/") &&
+    (path.startsWith("/stickers/") || path.startsWith("/emojis/")) &&
     !path.includes("..") &&
     !path.includes("://") &&
     !path.startsWith("//") &&
-    /\.(?:png|jpg|jpeg|gif|webp)$/i.test(path)
+    /\.(?:png|jpg|jpeg|gif|webp|apng)$/i.test(path)
   );
 };
 

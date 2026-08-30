@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("virtual:sticker-manifest", () => ({
   default: { packs: [] },
@@ -9,6 +9,8 @@ import { isValidStickerPath } from "./Stickers";
 describe("isValidStickerPath", () => {
   it("允许合法的本地表情包路径", () => {
     expect(isValidStickerPath("/emojis/default/cat.png")).toBe(true);
+    expect(isValidStickerPath("/stickers/3b86f74e1fb1e33b0c58743f.gif")).toBe(true);
+    expect(isValidStickerPath("/stickers/custom_smile.webp")).toBe(true);
     expect(isValidStickerPath("/emojis/pack-1/dog_happy.gif")).toBe(true);
     expect(isValidStickerPath("/emojis/custom/smile.webp")).toBe(true);
   });

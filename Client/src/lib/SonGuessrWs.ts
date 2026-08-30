@@ -1,4 +1,4 @@
-﻿import { createWebSocketClient } from "@/lib/WebsocketClient";
+import { createWebSocketClient } from "@/lib/WebsocketClient";
 
-export const sonGuessrWs = createWebSocketClient("/api/songuessr/Ws");
+export const sonGuessrWs = createWebSocketClient("/api/songuessr/ws");
 export const songGuessrWs = sonGuessrWs;

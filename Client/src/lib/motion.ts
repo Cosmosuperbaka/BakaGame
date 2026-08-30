@@ -301,3 +301,24 @@ export const ellipsisDot: Variants = {
     },
   }),
 };
+
+/**
+ * 聊天消息发送：从输入框以弹性形变飞入展开（类似 macOS 窗口打开的弹性加速与神灯展开）。
+ */
+export const chatMessageLaunch: Variants = {
+  initial: { opacity: 0, scale: 0.35, y: 32, scaleX: 0.75, scaleY: 1.15 },
+  animate: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    scaleX: 1,
+    scaleY: 1,
+    transition: {
+      type: "spring",
+      stiffness: 420,
+      damping: 26,
+      mass: 0.75,
+    },
+  },
+  exit: { opacity: 0, scale: 0.95, transition: { duration: duration.instant } },
+};
