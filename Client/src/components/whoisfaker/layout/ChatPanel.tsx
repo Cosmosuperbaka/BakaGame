@@ -1,10 +1,10 @@
-﻿import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { duration, ease, popover, spring, tappable } from "@/lib/Motion";
+import { chatMessageLaunch, duration, ease, popover, tappable } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
@@ -33,10 +33,12 @@ function MessageText({
   text,
   players,
   isMe,
+  isGhost,
 }: {
   text: string;
   players: Array<{ id: string; name: string }>;
   isMe: boolean;
+  isGhost?: boolean;
 }) {
   const segments = splitMentions(text, players);
 
@@ -48,7 +50,9 @@ function MessageText({
             key={index}
             className={cn(
               "rounded-md px-1 font-medium",
-              isMe ? "bg-primary-foreground/20" : "bg-primary/12 text-primary",
+              isMe && !isGhost
+                ? "bg-primary-foreground/20"
+                : "bg-primary/12 text-primary",
             )}
           >
             {segment.text}
@@ -64,7 +68,7 @@ function MessageText({
 export function ChatPanel() {
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
-  const chat = useGameStore((s) => s.snapshot?.chat ?? []);
+  const snapshot = useGameStore((s) => s.snapshot);
   const players = useGameStore((s) => s.snapshot?.players);
   const myId = useGameStore((s) => s.privateState?.playerId);
   const [text, setText] = useState("");
@@ -74,6 +78,8 @@ export function ChatPanel() {
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const chat = snapshot?.chat ?? [];
   const messagesRef = useAutoScrollToBottom(chat.length);
 
   // 提及只对照当前房间名单判断，改名或退房不会留下失效标记。
@@ -146,6 +152,8 @@ export function ChatPanel() {
           <AnimatePresence initial={false}>
             {chat.map((msg) => {
               const isMe = msg.playerId === myId;
+              const isGhost = msg.channel === "ghost";
+
               if (msg.system) {
                 return (
                   <motion.div
@@ -154,9 +162,11 @@ export function ChatPanel() {
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]"
+                    className="flex justify-center py-1"
                   >
-                    {msg.text}
+                    <span className="rounded-full bg-muted/40 px-3 py-0.5 text-center text-xs text-muted-foreground/75 [overflow-wrap:anywhere]">
+                      {msg.text}
+                    </span>
                   </motion.div>
                 );
               }
@@ -172,23 +182,27 @@ export function ChatPanel() {
                 <motion.div
                   key={msg.id}
                   layout="position"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.94, transition: { duration: duration.instant } }}
-                  transition={spring.swift}
+                  variants={chatMessageLaunch}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <span className="text-[11px] text-muted-foreground/60 mb-0.5 px-1">
+                  <span className="text-[11px] text-muted-foreground/70 mb-0.5 px-1 select-none">
                     {msg.playerName}
                   </span>
                   <div
                     className={cn(
-                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere]",
-                      safeStickerPath ? "p-1.5" : "px-3 py-1.5",
+                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-2xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                      safeStickerPath ? "p-1.5" : "px-3.5 py-2",
                       isMe
-                        ? "rounded-br-sm bg-primary text-primary-foreground"
-                        : "rounded-bl-sm bg-muted text-foreground",
+                        ? isGhost
+                          ? "rounded-br-xs bg-stone-500/15 border border-dashed border-stone-400/50 dark:border-stone-500/50 text-foreground"
+                          : "rounded-br-xs bg-primary text-primary-foreground shadow-2xs"
+                        : isGhost
+                          ? "rounded-bl-xs bg-muted/40 border border-dashed border-border/80 text-foreground/85"
+                          : "rounded-bl-xs bg-card border border-border/70 text-foreground shadow-2xs",
                       mentionsMe && "ring-1 ring-primary/45",
                     )}
                   >
@@ -200,7 +214,12 @@ export function ChatPanel() {
                         className="h-20 w-20 object-contain"
                       />
                     ) : (
-                      <MessageText text={msg.text} players={players ?? []} isMe={isMe} />
+                      <MessageText
+                        text={msg.text}
+                        players={players ?? []}
+                        isMe={isMe}
+                        isGhost={isGhost}
+                      />
                     )}
                   </div>
                 </motion.div>
@@ -211,7 +230,7 @@ export function ChatPanel() {
       </ScrollArea>
 
       {/* 输入区：表情包选择器浮层 + 提及候选浮层 + 输入框 */}
-      <div className="relative p-3 border-t flex gap-2 shrink-0">
+      <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background/50">
         <EmojiPicker
           open={pickerOpen}
           activeTab={activeTab}

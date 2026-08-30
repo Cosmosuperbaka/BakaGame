@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -270,7 +270,7 @@ export function SongChatPanel() {
           ref={inputRef}
           value={text}
           onChange={handleChange}
-          placeholder="发送消息..."
+          placeholder="请输入文本"
           className="flex-1"
           aria-expanded={candidates.length > 0}
           onKeyDown={(event) => {
