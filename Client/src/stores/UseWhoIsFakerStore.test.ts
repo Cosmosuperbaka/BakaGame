@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RoomSnapshot, RoundSummary, ServerMessage } from "@/types";
 
@@ -367,5 +367,67 @@ describe("game store integration", () => {
     expect(useGameStore.getState().snapshot?.status.phase).toBe("gameOver");
     expect(useGameStore.getState().snapshot?.chat[0]?.text).toBe("Game over");
     dispose();
+  });
+
+  it("records persistent notices in chat when player transitions between channels", () => {
+    useGameStore.getState().setPrivateState({
+      playerId: "p1",
+      sessionToken: "token-1",
+      isQuestioner: false,
+      canSubmitBlankGuess: false,
+      blankGuessUsed: false,
+      nightActionSubmitted: false,
+    });
+
+    const ingameAlive: RoomSnapshot = {
+      ...gameOverSnapshot("round-1"),
+      status: { phase: "description", roundId: "round-1", started: true, day: 1 },
+      players: [
+        {
+          id: "p1",
+          name: "玩家1",
+          score: 0,
+          membership: "active",
+          online: true,
+          isReady: true,
+          isBot: false,
+          isHost: true,
+          roundStatus: "alive",
+        },
+      ],
+      chat: [],
+    };
+
+    useGameStore.getState().setSnapshot(ingameAlive);
+    expect(useGameStore.getState().snapshot?.chat).toHaveLength(0);
+
+    // 玩家被淘汰 -> 触发进入观战频道提示
+    const ingameDead: RoomSnapshot = {
+      ...ingameAlive,
+      players: [
+        {
+          ...ingameAlive.players[0],
+          roundStatus: "dead",
+        },
+      ],
+    };
+
+    useGameStore.getState().setSnapshot(ingameDead);
+    const chatAfterDead = useGameStore.getState().snapshot?.chat ?? [];
+    expect(chatAfterDead).toHaveLength(1);
+    expect(chatAfterDead[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
+
+    // 游戏结束 -> 触发返回公共频道提示，原提示依然保留
+    const gameOverState: RoomSnapshot = {
+      ...ingameDead,
+      status: { phase: "gameOver", roundId: "round-1", started: true, day: 1 },
+    };
+
+    useGameStore.getState().setSnapshot(gameOverState);
+    vi.advanceTimersByTime(1500);
+    const chatAfterGameOver = useGameStore.getState().snapshot?.chat ?? [];
+    expect(chatAfterGameOver).toHaveLength(2);
+    expect(chatAfterGameOver[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
+    expect(chatAfterGameOver[1]?.text).toBe("已返回公共聊天频道，所有玩家均可见发言");
   });
 });
