@@ -1,8 +1,8 @@
-import * as React from "react"
+﻿import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 import { motion } from "framer-motion"
-import { phaseSwap, spring } from "@/lib/motion"
-import { cn } from "@/lib/utils"
+import { phaseSwap, spring } from "@/lib/Motion"
+import { cn } from "@/lib/Utils"
 
 /** 同一组 Tabs 共享的 layoutId，使激活底块在标签之间滑动而非各自淡入。 */
 const TabsGroupContext = React.createContext<string | null>(null)

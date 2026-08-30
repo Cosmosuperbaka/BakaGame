@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { LoaderCircle, Music2, Search, X } from "lucide-react";
 import type { SongSearchResult } from "@/types";
-import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { ScrollArea } from "@/components/ui/ScrollArea";
 
 interface SongSearchDialogProps {
   open: boolean;

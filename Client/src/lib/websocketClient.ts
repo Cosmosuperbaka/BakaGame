@@ -1,10 +1,10 @@
-import type { ServerMessage } from "@/types";
+﻿import type { ServerMessage } from "@/types";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SERVER_URL,
   MAX_RECONNECT_DELAY_MS,
-} from "@/config/constants";
+} from "@/config/Constants";
 
 type MessageHandler = (message: ServerMessage) => void;
 type StatusHandler = (connected: boolean) => void;

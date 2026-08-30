@@ -1,40 +1,40 @@
-import { BrowserRouter, Routes, Route, Outlet, Navigate, useMatch } from "react-router-dom";
+﻿import { BrowserRouter, Routes, Route, Outlet, Navigate, useMatch } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { GameProvider } from "@/contexts/GameContext";
+import { TooltipProvider } from "@/components/ui/Tooltip";
+import { WhoIsFakerProvider } from "@/contexts/WhoIsFakerContext";
 import { SongGuessrToastContainer, ToastContainer } from "@/components/Toast";
 import LandingPage from "@/pages/LandingPage";
 import WhoIsFakerPage from "@/pages/WhoIsFakerPage";
-import RoomPage from "@/pages/RoomPage";
-import SongGuessrPage from "@/pages/SongGuessrPage";
-import SongGuessrRoomPage from "@/pages/SongGuessrRoomPage";
-import { SongGuessrProvider } from "@/contexts/SongGuessrContext";
+import WhoIsFakerRoomPage from "@/pages/WhoIsFakerRoomPage";
+import SonGuessrPage from "@/pages/SonGuessrPage";
+import SonGuessrRoomPage from "@/pages/SonGuessrRoomPage";
+import { SonGuessrProvider } from "@/contexts/SonGuessrContext";
 import { VersionUpdateNotice } from "@/components/VersionUpdateNotice";
-import { useGameStore } from "@/stores/useGameStore";
-import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 // WhoIsFaker 子路由布局 — 初始化 GameSocket、展示 Toast
 function WhoIsFakerLayout() {
   const inRoom = Boolean(useMatch("/whoisfaker/room/:roomId"));
-  const active = useGameStore((state) => inRoom && Boolean(state.roomId && state.snapshot));
+  const active = useWhoIsFakerStore((state) => inRoom && Boolean(state.roomId && state.snapshot));
   return (
-    <GameProvider>
+    <WhoIsFakerProvider>
       <Outlet />
       <ToastContainer />
       <VersionUpdateNotice active={active} />
-    </GameProvider>
+    </WhoIsFakerProvider>
   );
 }
 
-function SongGuessrLayout() {
+function SonGuessrLayout() {
   const inRoom = Boolean(useMatch("/songuessr/room/:roomId"));
-  const active = useSongGuessrStore((state) => inRoom && Boolean(state.roomId && state.snapshot));
+  const active = useSonGuessrStore((state) => inRoom && Boolean(state.roomId && state.snapshot));
   return (
-    <SongGuessrProvider>
+    <SonGuessrProvider>
       <Outlet />
       <SongGuessrToastContainer />
       <VersionUpdateNotice active={active} />
-    </SongGuessrProvider>
+    </SonGuessrProvider>
   );
 }
 
@@ -47,13 +47,13 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/whoisfaker" element={<WhoIsFakerLayout />}>
               <Route index element={<WhoIsFakerPage />} />
-              <Route path="room/:roomId" element={<RoomPage />} />
+              <Route path="room/:roomId" element={<WhoIsFakerRoomPage />} />
               {/* 子路径打错时退回本游戏大厅，而不是留在空白页 */}
               <Route path="*" element={<Navigate to="/whoisfaker" replace />} />
             </Route>
-            <Route path="/songuessr" element={<SongGuessrLayout />}>
-              <Route index element={<SongGuessrPage />} />
-              <Route path="room/:roomId" element={<SongGuessrRoomPage />} />
+            <Route path="/songuessr" element={<SonGuessrLayout />}>
+              <Route index element={<SonGuessrPage />} />
+              <Route path="room/:roomId" element={<SonGuessrRoomPage />} />
               <Route path="*" element={<Navigate to="/songuessr" replace />} />
             </Route>
             {/* 其余无法识别的路径一律回落地页 */}

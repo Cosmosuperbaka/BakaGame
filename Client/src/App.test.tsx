@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,14 +6,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("framer-motion", () => ({
   MotionConfig: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("@/components/ui/tooltip", () => ({
+vi.mock("@/components/ui/Tooltip", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("@/contexts/WhoIsFakerContext", () => ({
+  WhoIsFakerProvider: ({ children }: { children: ReactNode }) => children,
+  GameProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@/contexts/GameContext", () => ({
   GameProvider: ({ children }: { children: ReactNode }) => children,
+  WhoIsFakerProvider: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("@/contexts/SonGuessrContext", () => ({
+  SonGuessrProvider: ({ children }: { children: ReactNode }) => children,
+  SongGuessrProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@/contexts/SongGuessrContext", () => ({
   SongGuessrProvider: ({ children }: { children: ReactNode }) => children,
+  SonGuessrProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@/components/Toast", () => ({
   ToastContainer: () => null,
@@ -21,8 +31,11 @@ vi.mock("@/components/Toast", () => ({
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
 vi.mock("@/pages/WhoIsFakerPage", () => ({ default: () => <h1>faker-lobby</h1> }));
+vi.mock("@/pages/WhoIsFakerRoomPage", () => ({ default: () => <h1>room-page</h1> }));
 vi.mock("@/pages/RoomPage", () => ({ default: () => <h1>room-page</h1> }));
+vi.mock("@/pages/SonGuessrPage", () => ({ default: () => <h1>song-lobby</h1> }));
 vi.mock("@/pages/SongGuessrPage", () => ({ default: () => <h1>song-lobby</h1> }));
+vi.mock("@/pages/SonGuessrRoomPage", () => ({ default: () => <h1>song-room</h1> }));
 vi.mock("@/pages/SongGuessrRoomPage", () => ({ default: () => <h1>song-room</h1> }));
 
 import App from "./App";

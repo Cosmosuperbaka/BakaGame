@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import commitHistory from "virtual:commit-history";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/Button";
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -10,19 +10,19 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/Button";
+import { Label } from "@/components/ui/Label";
+import { Switch } from "@/components/ui/Switch";
 import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
   SONG_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
-} from "@/lib/songguessrMusicSession";
-import { collapsible, pressable, spring } from "@/lib/motion";
-import { cn } from "@/lib/utils";
-import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
+} from "@/lib/SongguessrMusicSession";
+import { collapsible, pressable, spring } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
+import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
 import type { SongGuessrMusicAccount, SongGuessrRoomSnapshot } from "@/types";
 
 interface QrCreateResponse extends Record<string, unknown> {

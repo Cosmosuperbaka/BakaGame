@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -9,7 +9,7 @@ import {
   selectable,
   spring,
   useOriginTracker,
-} from "@/lib/motion";
+} from "@/lib/Motion";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
@@ -17,15 +17,15 @@ import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/Badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+} from "@/components/ui/Dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import {
   parseChangelogContent,
   resolveLatestVersion,
@@ -33,7 +33,7 @@ import {
   type ChangelogContent,
   type ChangelogEntry,
   type InlineNode,
-} from "@/lib/changelog";
+} from "@/lib/Changelog";
 // 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
 // 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
 import changelogData from "@/data/changelog.json";
