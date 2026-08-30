@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
-import { applyStatePatch, consumeStateSync } from "./stateSync";
+import { applyStatePatch, consumeStateSync } from "./StateSync";
 
 describe("state sync", () => {
   it("applies nested changes, appends and deletes without mutating the baseline", () => {

@@ -4,7 +4,7 @@ vi.mock("virtual:sticker-manifest", () => ({
   default: { packs: [] },
 }));
 
-import { isValidStickerPath } from "./stickers";
+import { isValidStickerPath } from "./Stickers";
 
 describe("isValidStickerPath", () => {
   it("允许合法的本地表情包路径", () => {

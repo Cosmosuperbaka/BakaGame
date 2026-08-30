@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
 import {
   compareVersions,
@@ -6,7 +6,7 @@ import {
   resolveLatestVersion,
   sortEntriesByVersion,
   type ChangelogEntry,
-} from "./changelog";
+} from "./Changelog";
 
 const entry = (version: string): ChangelogEntry => ({
   version,

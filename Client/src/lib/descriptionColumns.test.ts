@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
 import type { DescriptionRecord, PublicPlayerView } from "@/types";
 
@@ -7,7 +7,7 @@ import {
   descriptionCellShade,
   descriptionCellShadeForPlayer,
   type SpeechStatus,
-} from "./descriptionColumns";
+} from "./DescriptionColumns";
 
 const description = (
   id: string,

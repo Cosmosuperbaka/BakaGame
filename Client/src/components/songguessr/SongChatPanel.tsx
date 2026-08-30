@@ -1,22 +1,22 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+﻿import { useState, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { EmojiPicker } from "@/components/room/EmojiPicker";
-import { duration, ease, popover, spring, tappable } from "@/lib/motion";
-import { STICKER_PREFIX, isValidStickerPath } from "@/lib/stickers";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { ScrollArea } from "@/components/ui/ScrollArea";
+import { EmojiPicker } from "@/components/common/EmojiPicker";
+import { duration, ease, popover, spring, tappable } from "@/lib/Motion";
+import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
   applyMention,
   filterMentionCandidates,
   mentionsPlayer,
   readMentionQuery,
   splitMentions,
-} from "@/lib/mentions";
-import { cn } from "@/lib/utils";
-import { useSongGuessrStore } from "@/stores/useSongGuessrStore";
-import { useAutoScrollToBottom } from "@/lib/useAutoScrollToBottom";
+} from "@/lib/Mentions";
+import { cn } from "@/lib/Utils";
+import { useSonGuessrStore as useSongGuessrStore } from "@/stores/UseSonGuessrStore";
+import { useAutoScrollToBottom } from "@/hooks/UseAutoScrollToBottom";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
 const MENTION_LIMIT = 6;

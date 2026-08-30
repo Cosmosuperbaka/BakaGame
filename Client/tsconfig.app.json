@@ -26,7 +26,8 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@bakagame/shared": ["../Server/src/shared/index.ts"]
+      "@/types": ["./src/types/Index.ts"],
+      "@bakagame/shared": ["../Server/src/shared/Index.ts"]
     }
   },
   "include": ["src", "../Server/src/shared/**/*"]

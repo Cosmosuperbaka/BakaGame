@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+﻿import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/songguessrMusicSession";
+import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SongguessrMusicSession";
 import type { SongGuessrRoomSnapshot } from "@/types";
 
 const store = vi.hoisted(() => ({
@@ -9,7 +9,7 @@ const store = vi.hoisted(() => ({
   setNotice: vi.fn(),
 }));
 
-vi.mock("@/stores/useSongGuessrStore", () => ({
+vi.mock("@/stores/UseSongGuessrStore", () => ({
   useSongGuessrStore: (selector: (state: typeof store) => unknown) => selector(store),
 }));
 

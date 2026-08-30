@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { listItem, selectable, backdrop, spinner, spring, useOriginTracker } from "@/lib/motion";
+import { listItem, selectable, backdrop, spinner, spring } from "@/lib/Motion";
+import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { ArrowLeft, RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Card, CardContent } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import {
   Dialog,
   DialogContent,
@@ -14,22 +15,22 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog";
-import { useGameStore } from "@/stores/useGameStore";
-import { CreateRoomDialog } from "@/components/home/CreateRoomDialog";
-import { getSavedUsername, saveUsername } from "@/lib/cookie";
-import { PHASE_LABELS, randomRoomId } from "@/lib/helpers";
+} from "@/components/ui/Dialog";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
+import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import { PHASE_LABELS } from "@/config/WhoIsFakerPresentation";
+import { randomRoomId } from "@/lib/Random";
 import type { RoomSummary } from "@/types";
-
 
 export default function WhoIsFakerPage() {
   const navigate = useNavigate();
-  const rooms = useGameStore((state) => state.rooms);
-  const createRoom = useGameStore((state) => state.createRoom);
-  const joinRoom = useGameStore((state) => state.joinRoom);
-  const reconnectRoom = useGameStore((state) => state.reconnectRoom);
-  const subscribeLobby = useGameStore((state) => state.subscribeLobby);
-  const addToast = useGameStore((state) => state.addToast);
+  const rooms = useWhoIsFakerStore((state) => state.rooms);
+  const createRoom = useWhoIsFakerStore((state) => state.createRoom);
+  const joinRoom = useWhoIsFakerStore((state) => state.joinRoom);
+  const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
+  const subscribeLobby = useWhoIsFakerStore((state) => state.subscribeLobby);
+  const addToast = useWhoIsFakerStore((state) => state.addToast);
 
   const [userName, setUserName] = useState(getSavedUsername);
   const [createOpen, setCreateOpen] = useState(false);

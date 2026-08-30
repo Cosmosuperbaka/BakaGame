@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+﻿import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearSessionToken,
@@ -6,7 +6,7 @@ import {
   getSessionToken,
   saveSessionToken,
   saveUsername,
-} from "./cookie";
+} from "./Cookie";
 
 describe("session storage", () => {
   beforeEach(() => {

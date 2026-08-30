@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
 import {
   applyMention,
@@ -6,7 +6,7 @@ import {
   mentionsPlayer,
   readMentionQuery,
   splitMentions,
-} from "./mentions";
+} from "./Mentions";
 
 const players = [
   { id: "p1", name: "小明" },
