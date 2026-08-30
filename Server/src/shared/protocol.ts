@@ -1,10 +1,10 @@
-import type {
+﻿import type {
   DisconnectResolution,
   GamePhase,
   PlayerRole,
   RoleConfig,
   RoomVisibility,
-} from "./model";
+} from "./Model";
 
 // ==================== WebSocket 协议封包类型 ====================
 

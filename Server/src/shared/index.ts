@@ -1,3 +1,3 @@
-export * from "./model";
-export * from "./protocol";
-export * from "./songguessr";
+﻿export * from "./Model";
+export * from "./Protocol";
+export * from "./SonGuessr";
