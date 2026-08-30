@@ -1,6 +1,6 @@
-﻿import { createWebSocketClient } from "@/lib/WebsocketClient";
+import { createWebSocketClient } from "@/lib/WebsocketClient";
 
-export const whoIsFakerWsClient = createWebSocketClient("/api/whoisfaker/Ws");
+export const whoIsFakerWsClient = createWebSocketClient("/api/whoisfaker/ws");
 
 export const connect = () => whoIsFakerWsClient.connect();
 export const waitForConnection = (timeoutMs?: number) => whoIsFakerWsClient.waitForConnection(timeoutMs);
