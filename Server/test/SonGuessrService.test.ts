@@ -2067,4 +2067,77 @@ describe("SongGuessrService", () => {
       expect.arrayContaining([expect.objectContaining({ playerName: "房主", score: 5 })]),
     );
   });
+
+  test("房主局中预约旁观在回合结束后依然保持房主身份", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "host-spec-test");
+    const guest1 = connection(service, "guest1-spec-test");
+    const guest2 = connection(service, "guest2-spec-test");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest1, "玩家1");
+    await joinRoom(service, guest2, "玩家2");
+    await execute(service, guest1, { id: "ready-1", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+    await execute(service, guest2, { id: "ready-2", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+
+    await execute(service, host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} });
+    await execute(service, host, { id: "choose", type: "song.game.chooseSubmitter", roomId: "1234", payload: { playerId: hostState.playerId } });
+    await execute(service, host, { id: "song", type: "song.game.submitSong", roomId: "1234", payload: { songId: "answer" } });
+
+    // 房主局中预约下轮旁观
+    await execute(service, host, {
+      id: "host-queue-spectator",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: true },
+    });
+
+    const queuedSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const hostPlayerBefore = queuedSnapshot.players.find((p) => p.id === hostState.playerId);
+    expect(hostPlayerBefore?.nextRoundMembership).toBe("spectator");
+    expect(hostPlayerBefore?.isHost).toBe(true);
+
+    // 玩家放弃回合，结算并进入下一轮准备阶段
+    await execute(service, guest1, { id: "give-up-1", type: "song.game.giveUp", roomId: "1234", payload: {} });
+    await execute(service, guest2, { id: "give-up-2", type: "song.game.giveUp", roomId: "1234", payload: {} });
+
+    await execute(service, host, { id: "next-round", type: "song.game.nextRound", roomId: "1234", payload: {} });
+
+    const nextSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const hostPlayerAfter = nextSnapshot.players.find((p) => p.id === hostState.playerId);
+    expect(hostPlayerAfter?.membership).toBe("spectator");
+    expect(hostPlayerAfter?.isHost).toBe(true);
+    expect(nextSnapshot.hostPlayerId).toBe(hostState.playerId);
+  });
+
+  test("局中点击下轮加入旁观或玩家再次点击可撤销预约", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "toggle-host");
+    const guest = connection(service, "toggle-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "玩家");
+    await startRound(service, host, guest, hostState.playerId);
+
+    // 玩家第一次点击下轮加入旁观：预约成功
+    await execute(service, guest, {
+      id: "queue-spec",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: true },
+    });
+    let snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    expect(snapshot.players.find((p) => p.id === guestState.playerId)?.nextRoundMembership).toBe("spectator");
+
+    // 玩家第二次点击下轮加入旁观：撤销预约
+    await execute(service, guest, {
+      id: "cancel-queue-spec",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: true },
+    });
+    snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    expect(snapshot.players.find((p) => p.id === guestState.playerId)?.nextRoundMembership).toBeUndefined();
+  });
+
 });

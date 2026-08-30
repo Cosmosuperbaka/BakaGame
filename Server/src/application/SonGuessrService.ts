@@ -628,11 +628,18 @@ export class SonGuessrService {
   private setSpectator(connection: ConnectionRecord, spectator: boolean) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "waiting") {
-      const nextRoundMembership = spectator ? "spectator" : "active";
-      if (nextRoundMembership === "spectator" && !room.allowSpectators) {
+      const targetMembership = spectator ? "spectator" : "active";
+      if (targetMembership === "spectator" && !room.allowSpectators) {
         throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
       }
-      player.nextRoundMembership = nextRoundMembership;
+      // 再次点击同个预约选项时撤销预约
+      if (player.nextRoundMembership === targetMembership) {
+        player.nextRoundMembership = undefined;
+        this.touch(room);
+        this.publishRoom(room);
+        return { spectator: player.membership === "spectator", queued: false };
+      }
+      player.nextRoundMembership = targetMembership;
       this.touch(room);
       this.publishRoom(room);
       return { spectator, queued: true };
@@ -1485,7 +1492,6 @@ export class SonGuessrService {
   }
 
   private applyQueuedMemberships(room: SongGuessrRoomRecord) {
-    let hostMovedToSpectator = false;
     for (const player of Object.values(room.players)) {
       const membership = player.nextRoundMembership;
       if (!membership || player.membership === "kicked") continue;
@@ -1493,12 +1499,8 @@ export class SonGuessrService {
       if (membership === "active" && !player.online) continue;
       player.nextRoundMembership = undefined;
       player.membership = membership;
-      if (membership === "spectator" && player.id === room.hostPlayerId) {
-        hostMovedToSpectator = true;
-      }
       player.isReady = membership === "active" && (player.id === room.hostPlayerId || player.isBot);
     }
-    if (hostMovedToSpectator) this.reassignHost(room);
   }
 
   private resetReadyState(room: SongGuessrRoomRecord) {
