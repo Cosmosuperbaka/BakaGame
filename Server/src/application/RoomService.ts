@@ -1,5 +1,6 @@
-﻿import { AppError } from "../domain/Errors";
+import { AppError } from "../domain/Errors";
 import type {
+  ChatChannel,
   ChatMessage,
   ConnectionRecord,
   DescriptionRecord,
@@ -1304,7 +1305,25 @@ export class RoomService {
       throw new AppError("INVALID_CHAT", "聊天内容不能为空");
     }
 
-    const message = this.createChatMessage(player.id, player.name, normalized, false);
+    let channel: ChatChannel = "main";
+    let ghostRole: "dead" | "spectator" | undefined;
+
+    const isIngame = Boolean(
+      room.round &&
+      room.round.phase !== "waiting" &&
+      room.round.phase !== "gameOver",
+    );
+
+    if (isIngame) {
+      const isSpectator = player.membership === "spectator" && room.round?.questionerPlayerId !== player.id;
+      const isDead = room.round?.assignments[player.id]?.alive === false;
+      if (isSpectator || isDead) {
+        channel = "ghost";
+        ghostRole = isSpectator ? "spectator" : "dead";
+      }
+    }
+
+    const message = this.createChatMessage(player.id, player.name, normalized, false, channel, ghostRole);
     room.chat.push(message);
     room.chat = room.chat.slice(-CHAT_LIMIT);
     this.touchRoom(room);
@@ -1316,6 +1335,8 @@ export class RoomService {
       playerId: player.id,
       payload: {
         text: normalized,
+        channel,
+        ghostRole,
       },
     });
 
@@ -2496,6 +2517,7 @@ export class RoomService {
           isBot: player.isBot,
           isHost: room.hostPlayerId === player.id,
           roundStatus,
+          eliminatedAt: roundState && !roundState.alive ? roundState.eliminatedAt : undefined,
           revealedRole:
             roundState && (!roundState.alive || room.round?.phase === "gameOver")
               ? roundState.role
@@ -2582,6 +2604,32 @@ export class RoomService {
     };
   }
 
+  private canViewerAccessGhostChat(room: RoomRecord, player?: PlayerRecord): boolean {
+    if (!room.round || room.round.phase === "waiting" || room.round.phase === "gameOver") {
+      return true;
+    }
+    if (!player) return false;
+    if (player.membership === "spectator" && room.round.questionerPlayerId !== player.id) {
+      return true;
+    }
+    const assignment = room.round.assignments[player.id];
+    if (assignment && !assignment.alive) {
+      return true;
+    }
+    return false;
+  }
+
+  private filterChatForConnection(
+    room: RoomRecord,
+    chat: ChatMessage[],
+    player?: PlayerRecord,
+  ): ChatMessage[] {
+    if (this.canViewerAccessGhostChat(room, player)) {
+      return chat;
+    }
+    return chat.filter((msg) => msg.channel !== "ghost");
+  }
+
   private publishRoomState(room: RoomRecord, targetConnection?: ConnectionRecord) {
     // 每次状态变化都同时推送公共快照与当前连接的私有视图。
     const snapshot = this.buildRoomSnapshot(room);
@@ -2600,11 +2648,17 @@ export class RoomService {
       ? [targetConnection]
       : this.connectionRegistry.getRoomConnections(room.id);
     for (const connection of connections) {
-      connection.send(createEvent("room.snapshot", snapshot));
+      const player = connection.playerId ? room.players[connection.playerId] : undefined;
+      const connectionSnapshot = this.canViewerAccessGhostChat(room, player)
+        ? snapshot
+        : {
+            ...snapshot,
+            chat: this.filterChatForConnection(room, snapshot.chat, player),
+          };
+
+      connection.send(createEvent("room.snapshot", connectionSnapshot));
 
       if (connection.playerId) {
-        const player = room.players[connection.playerId];
-
         if (player) {
           connection.send(
             createEvent("game.privateState", this.buildPrivateState(room, player)),
@@ -2617,10 +2671,16 @@ export class RoomService {
   private publishRoomStateCalibration(room: RoomRecord) {
     const snapshot = this.buildRoomSnapshot(room);
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
-      connection.sendStateSyncCalibration?.(createEvent("room.snapshot", snapshot));
+      const player = connection.playerId ? room.players[connection.playerId] : undefined;
+      const connectionSnapshot = this.canViewerAccessGhostChat(room, player)
+        ? snapshot
+        : {
+            ...snapshot,
+            chat: this.filterChatForConnection(room, snapshot.chat, player),
+          };
+      connection.sendStateSyncCalibration?.(createEvent("room.snapshot", connectionSnapshot));
 
       if (!connection.playerId) continue;
-      const player = room.players[connection.playerId];
       if (player) {
         connection.sendStateSyncCalibration?.(
           createEvent("game.privateState", this.buildPrivateState(room, player)),
@@ -2927,6 +2987,8 @@ export class RoomService {
     playerName: string,
     text: string,
     system: boolean,
+    channel?: ChatChannel,
+    ghostRole?: "dead" | "spectator",
   ): ChatMessage {
     return {
       id: this.createId("chat"),
@@ -2935,11 +2997,13 @@ export class RoomService {
       text,
       createdAt: this.now(),
       system,
+      channel,
+      ghostRole,
     };
   }
 
   private appendSystemMessage(room: RoomRecord, text: string) {
-    room.chat.push(this.createChatMessage("system", "系统", text, true));
+    room.chat.push(this.createChatMessage("system", "系统", text, true, "main"));
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
 
