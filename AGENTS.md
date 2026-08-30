@@ -17,8 +17,10 @@ Two independent packages — **no root-level package.json or shared scripts**:
 
 **Shared definitions live in `Server/src/shared/`** (`model.ts` + `protocol.ts`), the single copy used by both sides. There is no `@bakagame/shared` npm package and no `packages/` directory — the server is deployed by mounting only `Server/` as the app root, so anything it imports must sit inside that directory.
 
-- Server imports it by relative path (`../shared`), re-exported through `Server/src/domain/model.ts`.
+- Server imports it by relative path (`../shared/Index`), re-exported through `Server/src/domain/Model.ts`.
 - Client keeps the `@bakagame/shared` specifier, mapped in **two** places that must stay in sync: `Client/tsconfig.app.json` `paths` (for `tsc`) and `Client/vite.config.ts` `resolve.alias` (for the bundler). Vite does not read tsconfig paths, so editing only one silently breaks the build.
+
+Detailed naming, structure, and Clean Code standards are documented in `Agents/Conventions.md`.
 
 Never reintroduce a `file:../packages/...` dependency: npm/bun turn it into a symlink to an absolute host path, which dangles on the deploy target (`ENOENT reading .../node_modules/@bakagame/shared`).
 
@@ -75,7 +77,7 @@ application validation.
 
 ### Communication Protocol
 
-All WebSocket messages use a typed envelope defined in `Server/src/shared/protocol.ts`:
+All WebSocket messages use a typed envelope defined in `Server/src/shared/Protocol.ts`:
 
 - **Client → Server**: `{ id, type, roomId?, sessionToken?, payload }`
 - **Server → Client**: one of three shapes:
@@ -83,25 +85,30 @@ All WebSocket messages use a typed envelope defined in `Server/src/shared/protoc
   - `ErrorPacket` — error: `{ type:"error", id, error: { code, message, details } }`
   - `EventPacket` — server push: `{ type:"event", event, payload }`
 
-The client WS singleton (`Client/src/lib/ws.ts`) maintains a pending-request map keyed by `id` to resolve/reject a Promise when the matching ack/error arrives.
+The client WS singletons (`Client/src/lib/WhoIsFakerWs.ts` and `Client/src/lib/SonGuessrWs.ts`) maintain pending-request maps keyed by `id` to resolve/reject Promises when matching ack/errors arrive.
 
 ### Server Layers
 
 ```
 transport/       ← Elysia app, WS handler, request parsing, packet factories
-application/     ← RoomService (routes all commands), RoomManager, ConnectionRegistry
-domain/          ← rules.ts (pure functions), model.ts (re-exports shared), errors.ts
-infrastructure/  ← word-bank-repository.ts, event-logger.ts
-config/          ← env.ts, constants.ts
+application/     ← RoomService (WhoIsFaker), SonGuessrService (SonGuessr), handlers/
+domain/          ← Rules.ts (pure functions), Model.ts (re-exports shared), Errors.ts
+infrastructure/  ← NeteaseMusicProvider.ts, WordBankRepository.ts, EventLogger.ts
+config/          ← Env.ts, Constants.ts
 ```
 
-`RoomService` (`Server/src/application/room-service.ts`) is the core — it holds all rooms and connections in memory and routes every incoming command. All state is **in-memory only**; no database. `runHousekeeping()` runs on a 10-second interval for idle room cleanup and questioner-reconnect timeout.
+`RoomService` (`Server/src/application/RoomService.ts`) and `SonGuessrService` (`Server/src/application/SonGuessrService.ts`) are the core — holding rooms and connections in memory and routing incoming commands. All state is **in-memory only**; no database. `runHousekeeping()` runs on a 10-second interval for idle room cleanup.
 
 ### Client State
 
-Single Zustand store: `useGameStore` (`Client/src/stores/useGameStore.ts`). Holds public snapshot, per-player private state, session token, and all async actions. `GameContext.tsx` initialises the WS connection on mount.
+- WhoIsFaker: `useWhoIsFakerStore` (`Client/src/stores/UseWhoIsFakerStore.ts`).
+- SonGuessr: `useSonGuessrStore` (`Client/src/stores/UseSonGuessrStore.ts`).
+- Contexts: `WhoIsFakerContext.tsx` and `SonGuessrContext.tsx`.
 
-Routing (React Router v7): `/` → `HomePage` (lobby), `/room/:roomId` → `RoomPage`.
+Routing (React Router v7):
+- `/` → `LandingPage`
+- `/whoisfaker` → `WhoIsFakerPage`, `/whoisfaker/room/:roomId` → `WhoIsFakerRoomPage`
+- `/songuessr` → `SonGuessrPage`, `/songuessr/room/:roomId` → `SonGuessrRoomPage`
 
 Client path alias: `@/` → `Client/src/`.
 
@@ -111,7 +118,7 @@ Client path alias: `@/` → `Client/src/`.
 
 **Typed errors**: `AppError` with a `code` string (e.g. `"ROOM_NOT_FOUND"`, `"INVALID_PHASE"`) is used uniformly throughout the server. The transport layer converts them to `ErrorPacket`.
 
-**Session persistence**: session tokens are stored in the current tab's `sessionStorage` (keyed by `roomId`) via `Client/src/lib/cookie.ts`; usernames alone use `localStorage`. Refreshing the same tab can reconnect, while a new tab starts without the old token. On reconnect, the client auto-attempts `room.reconnect`.
+**Session persistence**: session tokens are stored in the current tab's `sessionStorage` (keyed by `roomId`) via `Client/src/lib/storage.ts`; usernames alone use `localStorage`. Refreshing the same tab can reconnect, while a new tab starts without the old token. On reconnect, the client auto-attempts `room.reconnect`.
 
 **Code comments in Chinese**: all business-logic comments in the server are in Simplified Chinese. Match this convention when adding comments.
 
