@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import {
   PHASE_RESULT_DISPLAY_MS,
@@ -2721,4 +2721,104 @@ test("房主掉线1分钟后自动移交房主", async () => {
   advanceTime(31 * 1000);
   await service.runHousekeeping();
   expect(room.hostPlayerId).toBe(joinResult.playerId);
+});
+
+test("游戏进行中死亡玩家与旁观者发言归入ghost频道且仅对有权限者可见", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "7777", "房主");
+  const joined = await joinPlayers(service, "7777", 4, "玩家");
+  const spectatorConn = createConnection(service, "7777-spectator");
+  await execute(service, spectatorConn, {
+    id: "spectator-join",
+    type: "room.join",
+    roomId: "7777",
+    payload: { userName: "旁观者" },
+  });
+  await execute(service, spectatorConn, {
+    id: "set-spectator",
+    type: "player.setSpectator",
+    roomId: "7777",
+    payload: { spectator: true },
+  });
+
+  // 全员准备并开局
+  for (const item of joined) {
+    await execute(service, item.connection, {
+      id: "ready",
+      type: "player.setReady",
+      roomId: "7777",
+      payload: { ready: true },
+    });
+  }
+  await execute(service, host, {
+    id: "host-ready",
+    type: "player.setReady",
+    roomId: "7777",
+    payload: { ready: true },
+  });
+  await execute(service, host, { id: "start", type: "game.advancePhase", roomId: "7777", payload: {} });
+  await execute(service, host, {
+    id: "assign-q",
+    type: "game.assignQuestioner",
+    roomId: "7777",
+    payload: { playerId: joined[0].joinResult.playerId },
+  });
+  await execute(service, joined[0].connection, {
+    id: "submit-words",
+    type: "game.submitWords",
+    roomId: "7777",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  const room = (service as any).rooms.get("7777")!;
+  expect(room.round.phase).toBe("description");
+
+  // 正常存活玩家发言
+  await execute(service, host, {
+    id: "alive-chat",
+    type: "chat.send",
+    roomId: "7777",
+    payload: { text: "我是活人发言" },
+  });
+
+  // 旁观者发言
+  await execute(service, spectatorConn, {
+    id: "spectator-chat",
+    type: "chat.send",
+    roomId: "7777",
+    payload: { text: "我是旁观者发言" },
+  });
+
+  // 模拟其中一位玩家死亡
+  const deadPlayerId = joined[1].joinResult.playerId;
+  room.round.assignments[deadPlayerId].alive = false;
+
+  // 死亡玩家发言
+  await execute(service, joined[1].connection, {
+    id: "dead-chat",
+    type: "chat.send",
+    roomId: "7777",
+    payload: { text: "我是亡者发言" },
+  });
+
+  // 检查存活玩家收到的 snapshot.chat：只能看到活人发言与系统消息，看不到旁观者和亡者发言
+  const hostSnapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  const hostChatTexts = hostSnapshot?.chat.map((m) => m.text);
+  expect(hostChatTexts).toContain("我是活人发言");
+  expect(hostChatTexts).not.toContain("我是旁观者发言");
+  expect(hostChatTexts).not.toContain("我是亡者发言");
+
+  // 检查旁观者收到的 snapshot.chat：能看到活人、旁观者、亡者的全部发言
+  const spectatorSnapshot = getLastEventPayload<RoomSnapshot>(spectatorConn, "room.snapshot");
+  const spectatorChatTexts = spectatorSnapshot?.chat.map((m) => m.text);
+  expect(spectatorChatTexts).toContain("我是活人发言");
+  expect(spectatorChatTexts).toContain("我是旁观者发言");
+  expect(spectatorChatTexts).toContain("我是亡者发言");
+
+  // 检查死亡玩家收到的 snapshot.chat：同样能看到全部发言
+  const deadPlayerSnapshot = getLastEventPayload<RoomSnapshot>(joined[1].connection, "room.snapshot");
+  const deadChatTexts = deadPlayerSnapshot?.chat.map((m) => m.text);
+  expect(deadChatTexts).toContain("我是活人发言");
+  expect(deadChatTexts).toContain("我是旁观者发言");
+  expect(deadChatTexts).toContain("我是亡者发言");
 });

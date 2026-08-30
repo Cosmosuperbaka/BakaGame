@@ -98,6 +98,8 @@ export interface DescriptionRecord {
   createdAt: number;
 }
 
+export type ChatChannel = "main" | "ghost";
+
 // 房间聊天与系统提示共用一个消息结构，靠 system 字段区分。
 export interface ChatMessage {
   id: string;
@@ -106,6 +108,8 @@ export interface ChatMessage {
   text: string;
   createdAt: number;
   system: boolean;
+  channel?: ChatChannel;
+  ghostRole?: "dead" | "spectator";
 }
 
 /**
@@ -314,6 +318,7 @@ export interface PublicPlayerView {
     | "spectator"
     | "kicked";
   revealedRole?: PlayerRole;
+  eliminatedAt?: number;
 }
 
 // 房间公共快照，所有房间成员都能收到。
