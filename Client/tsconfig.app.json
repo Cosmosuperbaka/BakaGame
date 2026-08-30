@@ -25,9 +25,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@/*": ["./src/*"],
+      "@bakagame/shared": ["../Server/src/shared/Index.ts"],
       "@/types": ["./src/types/Index.ts"],
-      "@bakagame/shared": ["../Server/src/shared/Index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "../Server/src/shared/**/*"]
