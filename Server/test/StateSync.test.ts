@@ -1,7 +1,7 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import { createEvent } from "../src/transport/protocol";
-import { buildStatePatch, StateSyncEncoder } from "../src/transport/state-sync";
+import { createEvent } from "../src/transport/Protocol";
+import { buildStatePatch, StateSyncEncoder } from "../src/transport/StateSync";
 
 test("状态补丁只编码变化路径与数组追加项", () => {
   expect(buildStatePatch(

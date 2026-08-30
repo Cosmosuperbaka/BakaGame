@@ -1,4 +1,4 @@
-import { AppError } from "../domain/errors";
+﻿import { AppError } from "../domain/Errors";
 import {
   GAME_PHASES,
   PLAYER_ROLES,
@@ -12,7 +12,7 @@ import {
   type PlayerRole,
   type RoleConfig,
   type RoomVisibility,
-} from "../shared";
+} from "../shared/Index";
 
 export type { AckPacket, ErrorPacket, EventPacket, ClientMessage, ClientEnvelope };
 

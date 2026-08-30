@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import type { PrivateState, RoomSnapshot } from "../src/domain/model";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../src/domain/model";
-import { createConnection, createTestContext, execute, getLastEventPayload } from "./helpers";
+import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
+import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../src/domain/Model";
+import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 // ==================== 测试房间与真实规则一致性 ====================
 //

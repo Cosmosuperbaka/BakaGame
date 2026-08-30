@@ -1,4 +1,4 @@
-export interface LogEntry {
+﻿export interface LogEntry {
   type: string;
   createdAt: number;
   roomId?: string;

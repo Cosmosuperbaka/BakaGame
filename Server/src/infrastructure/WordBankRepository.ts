@@ -1,7 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+﻿import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { normalizeWordPair } from "../domain/rules";
+import { normalizeWordPair } from "../domain/Rules";
 
 const MAX_WORD_BANK_ENTRIES = 10_000;
 

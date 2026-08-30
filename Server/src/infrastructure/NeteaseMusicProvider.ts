@@ -1,14 +1,14 @@
-import { AppError } from "../domain/errors";
+﻿import { AppError } from "../domain/Errors";
 import { createHash } from "node:crypto";
 import type {
   SongDetails,
   SongArtistSearchResult,
   SongEncyclopedia,
-  SongGuessrMusicAccount,
+  SonGuessrMusicAccount,
   SongLyricLine,
   SongPlaylistInfo,
   SongSearchResult,
-} from "../shared";
+} from "../shared/Index";
 
 type ApiResponse = { body?: unknown } | unknown;
 type ApiFunction = (params: Record<string, unknown>) => Promise<ApiResponse>;
@@ -46,7 +46,7 @@ export interface NeteaseMusicProviderOptions {
 
 export interface MusicLoginSession {
   cookie: string;
-  account: SongGuessrMusicAccount;
+  account: SonGuessrMusicAccount;
 }
 
 export interface MusicQrLogin {
@@ -202,8 +202,8 @@ const musicLoginError = (body: Record<string, unknown>, fallback: string) => {
   );
 };
 
-const readLoginAccount = (body: Record<string, unknown>): SongGuessrMusicAccount => {
-  const data = asRecord(body.data);
+const readLoginAccount = (body: Record<string, unknown>): SonGuessrMusicAccount => {
+  const data = asRecord(dataRecord(body));
   const profile = asRecord(body.profile ?? data.profile);
   const account = asRecord(body.account ?? data.account);
   const nickname = readString(profile.nickname ?? account.userName ?? account.nickname) ?? "网易云用户";
@@ -214,10 +214,12 @@ const readLoginAccount = (body: Record<string, unknown>): SongGuessrMusicAccount
   };
 };
 
+const dataRecord = (body: Record<string, unknown>) => asRecord(body.data);
+
 const readVipAccount = (
   raw: unknown,
-  account: SongGuessrMusicAccount,
-): SongGuessrMusicAccount => {
+  account: SonGuessrMusicAccount,
+): SonGuessrMusicAccount => {
   const body = asRecord(raw);
   const data = asRecord(body.data ?? raw);
   const now = Date.now();
@@ -865,8 +867,8 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private async enrichVipAccount(
     cookie: string,
-    account: SongGuessrMusicAccount,
-  ): Promise<SongGuessrMusicAccount> {
+    account: SonGuessrMusicAccount,
+  ): Promise<SonGuessrMusicAccount> {
     const response = await this.callOptional(
       ["vip_info_v2", "vip_info"],
       account.userId ? { uid: account.userId } : {},

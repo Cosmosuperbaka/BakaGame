@@ -1,23 +1,24 @@
-import { cors } from "@elysiajs/cors";
+﻿import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
-import { RoomService } from "../application/room-service";
-import { SongGuessrService } from "../application/songguessr-service";
-import type { AppEnv } from "../config/env";
-import { isAppError } from "../domain/errors";
-import { describeError, EventLogger } from "../infrastructure/event-logger";
-import { NeteaseMusicProvider } from "../infrastructure/netease-music-provider";
-import { createSwaggerPlugin } from "./openapi";
-import { createAck, createErrorPacket, parseClientMessage } from "./protocol";
-import { parseSongGuessrMessage } from "./songguessr-protocol";
-import { createStateSyncSender } from "./state-sync";
-import { systemRoutes } from "./routes/system";
+import { RoomService } from "../application/RoomService";
+import { SonGuessrService, type SongGuessrService } from "../application/SonGuessrService";
+import type { AppEnv } from "../config/Env";
+import { isAppError } from "../domain/Errors";
+import { describeError, EventLogger } from "../infrastructure/EventLogger";
+import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
+import { createSwaggerPlugin } from "./Openapi";
+import { createAck, createErrorPacket, parseClientMessage } from "./Protocol";
+import { parseSonGuessrMessage, parseSongGuessrMessage } from "./SonGuessrProtocol";
+import { createStateSyncSender } from "./StateSync";
+import { systemRoutes } from "./routes/System";
 
 export interface AppDependencies {
   env: AppEnv;
   roomService: RoomService;
   logger: EventLogger;
-  songGuessrService?: SongGuessrService;
+  songGuessrService?: SonGuessrService | SongGuessrService;
+  sonGuessrService?: SonGuessrService;
 }
 
 const sendPacket = (
@@ -49,11 +50,12 @@ const isAllowedOrigin = (
   return false;
 };
 
-export const createApp = ({ env, roomService, logger, songGuessrService }: AppDependencies) => {
+export const createApp = ({ env, roomService, logger, songGuessrService, sonGuessrService }: AppDependencies) => {
   const decoder = new TextDecoder();
   const songService =
+    sonGuessrService ??
     songGuessrService ??
-    new SongGuessrService({
+    new SonGuessrService({
       eventLogger: logger,
       musicProvider: new NeteaseMusicProvider(),
     });
@@ -129,7 +131,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
       };
     })
     // ==================== 系统 HTTP 业务模块 ====================
-    .use(systemRoutes({ roomService }))
+    .use(systemRoutes({ roomService, sonGuessrService: songService }))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       upgrade({ headers, request }) {
@@ -259,7 +261,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
           send: stateSync.send,
           resetStateSync: stateSync.reset,
           sendStateSyncCalibration: stateSync.calibrate,
-          sendPacket: (payload) => sendPacket(ws, payload),
+          sendPacket: (payload: unknown) => sendPacket(ws, payload),
           close: (code?: number, reason?: string) => ws.close(code, reason),
         });
       },
@@ -334,5 +336,6 @@ export const createApp = ({ env, roomService, logger, songGuessrService }: AppDe
   return {
     app,
     songGuessrService: songService,
+    sonGuessrService: songService,
   };
 };

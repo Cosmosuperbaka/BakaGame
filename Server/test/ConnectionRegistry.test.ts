@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+﻿import { describe, expect, test } from "bun:test";
 
-import { ConnectionRegistry } from "../src/application/connection-registry";
-import { AppError } from "../src/domain/errors";
-import type { ConnectionRecord } from "../src/domain/model";
+import { ConnectionRegistry } from "../src/application/ConnectionRegistry";
+import { AppError } from "../src/domain/Errors";
+import type { ConnectionRecord } from "../src/domain/Model";
 
 const createConnection = (
   id: string,

@@ -1,9 +1,9 @@
-import { expect, test } from "bun:test";
+﻿import { expect, test } from "bun:test";
 
-import { parseSongGuessrMessage } from "../src/transport/songguessr-protocol";
+import { parseSonGuessrMessage, parseSongGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
-test("Songuessr 协议解析房间设置与游戏命令", () => {
-  expect(parseSongGuessrMessage({
+test("SonGuessr 协议解析房间设置与游戏命令", () => {
+  expect(parseSonGuessrMessage({
     id: "sync",
     type: "song.room.requestSync",
     roomId: "1234",
@@ -11,7 +11,7 @@ test("Songuessr 协议解析房间设置与游戏命令", () => {
   })).toMatchObject({ type: "song.room.requestSync", payload: {} });
 
   expect(
-    parseSongGuessrMessage({
+    parseSonGuessrMessage({
       id: "1",
       type: "song.room.updateSettings",
       roomId: "1234",
@@ -39,8 +39,8 @@ test("Songuessr 协议解析房间设置与游戏命令", () => {
   });
 });
 
-test("Songuessr 协议解析题目设置与自动筛选", () => {
-  expect(parseSongGuessrMessage({
+test("SonGuessr 协议解析题目设置与自动筛选", () => {
+  expect(parseSonGuessrMessage({
     id: "question-settings",
     type: "song.room.updateSettings",
     payload: {
@@ -65,10 +65,10 @@ test("Songuessr 协议解析题目设置与自动筛选", () => {
   });
 });
 
-test("Songuessr 协议拒绝非法音频准备回合号", () => {
+test("SonGuessr 协议拒绝非法音频准备回合号", () => {
   for (const roundNumber of ["1", 0, -1, 1.5]) {
     expect(() =>
-      parseSongGuessrMessage({
+      parseSonGuessrMessage({
         id: "1",
         type: "song.game.audioReady",
         payload: { roundNumber },
@@ -77,27 +77,27 @@ test("Songuessr 协议拒绝非法音频准备回合号", () => {
   }
 });
 
-test("Songuessr 协议解析旁观、放弃与测试人机命令", () => {
-  expect(parseSongGuessrMessage({
+test("SonGuessr 协议解析旁观、放弃与测试人机命令", () => {
+  expect(parseSonGuessrMessage({
     id: "spectator",
     type: "song.player.setSpectator",
     payload: { spectator: true },
   })).toMatchObject({ type: "song.player.setSpectator", payload: { spectator: true } });
 
-  expect(parseSongGuessrMessage({
+  expect(parseSonGuessrMessage({
     id: "give-up",
     type: "song.game.giveUp",
     payload: {},
   })).toMatchObject({ type: "song.game.giveUp", payload: {} });
 
-  expect(parseSongGuessrMessage({
+  expect(parseSonGuessrMessage({
     id: "bots",
     type: "song.test.addBot",
     payload: { count: 3 },
   })).toMatchObject({ type: "song.test.addBot", payload: { count: 3 } });
 
   for (const count of [0, -1, 1.5, "2"]) {
-    expect(() => parseSongGuessrMessage({
+    expect(() => parseSonGuessrMessage({
       id: "invalid-bots",
       type: "song.test.removeBot",
       payload: { count },
@@ -105,7 +105,7 @@ test("Songuessr 协议解析旁观、放弃与测试人机命令", () => {
   }
 });
 
-test("Songuessr 协议只解析扫码与 Cookie 登录命令", () => {
+test("SonGuessr 协议只解析扫码与 Cookie 登录命令", () => {
   expect(parseSongGuessrMessage({
     id: "qr",
     type: "song.auth.qr.check",

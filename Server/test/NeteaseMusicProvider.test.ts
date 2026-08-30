@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+﻿import { describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
   isInstrumentalLyricLine,
   parseLrc,
   sanitizeLyrics,
-} from "../src/infrastructure/netease-music-provider";
+} from "../src/infrastructure/NeteaseMusicProvider";
 
 describe("NeteaseMusicProvider", () => {
   test("filters instrumental placeholders without removing ordinary lyrics", () => {

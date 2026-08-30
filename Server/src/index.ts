@@ -1,8 +1,8 @@
-import { RoomService } from "./application/room-service";
-import { readEnv } from "./config/env";
-import { describeError, EventLogger } from "./infrastructure/event-logger";
-import { WordBankRepository } from "./infrastructure/word-bank-repository";
-import { createApp } from "./transport/app";
+﻿import { RoomService } from "./application/RoomService";
+import { readEnv } from "./config/Env";
+import { describeError, EventLogger } from "./infrastructure/EventLogger";
+import { WordBankRepository } from "./infrastructure/WordBankRepository";
+import { createApp } from "./transport/App";
 
 // ==================== 服务启动 ====================
 
@@ -13,7 +13,7 @@ const roomService = new RoomService({
   wordBankRepository: new WordBankRepository(env.wordBankPath),
 });
 
-const { app, songGuessrService } = createApp({
+const { app, sonGuessrService } = createApp({
   env,
   roomService,
   logger,
@@ -22,11 +22,11 @@ const { app, songGuessrService } = createApp({
 // 定时执行房间闲置清理与掉线超时检查。
 // 最短超时窗口为 10 分钟，10 s 轮询足够精度，无需1 s 高频空转。
 const intervalId = setInterval(() => {
-  void roomService.runHousekeeping().catch((error) => {
+  void roomService.runHousekeeping().catch((error: unknown) => {
     logger.error("房间清理任务执行失败", describeError(error));
   });
-  void songGuessrService.runHousekeeping().catch((error) => {
-    logger.error("Songuessr 房间清理任务执行失败", describeError(error));
+  void sonGuessrService.runHousekeeping().catch((error: unknown) => {
+    logger.error("SonGuessr 房间清理任务执行失败", describeError(error));
   });
 }, 10_000);
 

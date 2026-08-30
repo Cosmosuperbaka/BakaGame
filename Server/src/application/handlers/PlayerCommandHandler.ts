@@ -1,17 +1,17 @@
-import { AppError } from "../../domain/errors";
+﻿import { AppError } from "../../domain/Errors";
 import type {
   ConnectionRecord,
   PlayerRecord,
   RoomRecord,
-} from "../../domain/model";
-import { normalizeName } from "../../domain/rules";
-import type { LogEntry } from "../../infrastructure/event-logger";
-import type { ClientMessage } from "../../transport/protocol";
+} from "../../domain/Model";
+import { normalizeName } from "../../domain/Rules";
+import type { LogEntry } from "../../infrastructure/EventLogger";
+import type { ClientMessage } from "../../transport/Protocol";
 import {
   type CommandHandler,
   ownsCommand,
   unsupportedCommand,
-} from "./command-handler";
+} from "./CommandHandler";
 
 export const PLAYER_COMMAND_TYPES = [
   "player.rename",

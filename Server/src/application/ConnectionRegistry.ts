@@ -1,5 +1,5 @@
-import type { ConnectionRecord } from "../domain/model";
-import { AppError } from "../domain/errors";
+﻿import type { ConnectionRecord } from "../domain/Model";
+import { AppError } from "../domain/Errors";
 
 export class ConnectionRegistry {
   private readonly connections = new Map<string, ConnectionRecord>();

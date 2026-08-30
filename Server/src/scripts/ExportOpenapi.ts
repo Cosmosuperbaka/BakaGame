@@ -1,11 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
+﻿import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { RoomService } from "../application/room-service";
-import { readEnv } from "../config/env";
-import { EventLogger } from "../infrastructure/event-logger";
-import { WordBankRepository } from "../infrastructure/word-bank-repository";
-import { createApp } from "../transport/app";
+import { RoomService } from "../application/RoomService";
+import { readEnv } from "../config/Env";
+import { EventLogger } from "../infrastructure/EventLogger";
+import { WordBankRepository } from "../infrastructure/WordBankRepository";
+import { createApp } from "../transport/App";
 
 // ==================== 导出静态 OpenAPI 快照 ====================
 

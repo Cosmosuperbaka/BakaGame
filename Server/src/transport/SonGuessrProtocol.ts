@@ -1,10 +1,10 @@
-import { AppError } from "../domain/errors";
+﻿import { AppError } from "../domain/Errors";
 import type {
   RoomVisibility,
   SongArtistFilter,
-  SongGuessrClientMessage,
-  SongGuessrSettings,
-} from "../shared";
+  SonGuessrClientMessage,
+  SonGuessrSettings,
+} from "../shared/Index";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -61,7 +61,7 @@ const readVisibility = (value: unknown, optional = false): RoomVisibility | unde
   return value;
 };
 
-const readQuestionType = (value: unknown): SongGuessrSettings["questionType"] | undefined => {
+const readQuestionType = (value: unknown): SonGuessrSettings["questionType"] | undefined => {
   if (value == null) return undefined;
   if (value !== "song" && value !== "anime") {
     throw new AppError("INVALID_MESSAGE", "questionType 必须为 song 或 anime");
@@ -69,7 +69,7 @@ const readQuestionType = (value: unknown): SongGuessrSettings["questionType"] | 
   return value;
 };
 
-const readQuestionMode = (value: unknown): SongGuessrSettings["questionMode"] | undefined => {
+const readQuestionMode = (value: unknown): SonGuessrSettings["questionMode"] | undefined => {
   if (value == null) return undefined;
   if (value !== "manual" && value !== "automatic") {
     throw new AppError("INVALID_MESSAGE", "questionMode 必须为 manual 或 automatic");
@@ -77,11 +77,11 @@ const readQuestionMode = (value: unknown): SongGuessrSettings["questionMode"] | 
   return value;
 };
 
-const readAutoFilters = (value: unknown): SongGuessrSettings["autoFilters"] | undefined => {
+const readAutoFilters = (value: unknown): SonGuessrSettings["autoFilters"] | undefined => {
   if (value == null) return undefined;
   if (!isObject(value)) throw new AppError("INVALID_MESSAGE", "autoFilters 必须为对象");
   const playlistValue = value.playlist;
-  let playlist: SongGuessrSettings["autoFilters"]["playlist"];
+  let playlist: SonGuessrSettings["autoFilters"]["playlist"];
   if (playlistValue != null) {
     if (!isObject(playlistValue)) throw new AppError("INVALID_MESSAGE", "autoFilters.playlist 必须为对象");
     playlist = {
@@ -107,7 +107,7 @@ const readAutoFilters = (value: unknown): SongGuessrSettings["autoFilters"] | un
   return { playlist, artists, minPopularity: minPopularity as 0 | 1_000 | 10_000 | 100_000 };
 };
 
-export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage => {
+export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
   let parsed: unknown = raw;
   if (typeof raw === "string") {
     try {
@@ -136,7 +136,7 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
     case "song.game.skipRound":
     case "song.game.nextRound":
     case "song.game.finish":
-      return { ...envelope, type, payload: {} } as SongGuessrClientMessage;
+      return { ...envelope, type, payload: {} } as SonGuessrClientMessage;
     case "song.room.create":
       return {
         id,
@@ -186,9 +186,9 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
         ...envelope,
         type,
         payload: { count: readOptionalPositiveInteger(payload.count, "payload.count") },
-      } as SongGuessrClientMessage;
+      } as SonGuessrClientMessage;
     case "song.room.updateSettings": {
-      const settings: Partial<SongGuessrSettings> = {
+      const settings: Partial<SonGuessrSettings> = {
         questionType: readQuestionType(payload.questionType),
         questionMode: readQuestionMode(payload.questionMode),
         autoRotateSubmitter: readBoolean(payload.autoRotateSubmitter, "payload.autoRotateSubmitter", true),
@@ -219,7 +219,7 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
         ...envelope,
         type,
         payload: { playerId: readString(payload.playerId, "payload.playerId")! },
-      } as SongGuessrClientMessage;
+      } as SonGuessrClientMessage;
     case "song.chat.send":
       return {
         ...envelope,
@@ -262,7 +262,7 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
         ...envelope,
         type,
         payload: { songId: readString(payload.songId, "payload.songId")! },
-      } as SongGuessrClientMessage;
+      } as SonGuessrClientMessage;
     case "song.game.audioReady":
       return {
         ...envelope,
@@ -273,3 +273,5 @@ export const parseSongGuessrMessage = (raw: unknown): SongGuessrClientMessage =>
       throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }
 };
+
+export const parseSongGuessrMessage = parseSonGuessrMessage;

@@ -1,4 +1,4 @@
-import { AppError } from "./errors";
+﻿import { AppError } from "./Errors";
 import {
   ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
@@ -14,7 +14,7 @@ import {
   type RoundPlayerState,
   type RoundWinner,
   type VoteRecord,
-} from "./model";
+} from "./Model";
 
 // ==================== 纯规则函数 ====================
 

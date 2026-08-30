@@ -3,15 +3,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/Index.ts",
+    "start": "bun run src/Index.ts",
     "check": "tsc --noEmit",
     "test": "bun test",
-    "test:music:real": "bun test ./integration/netease-music-provider.integration.ts",
-    "test:music:login": "bun test ./integration/netease-login.integration.ts",
+    "test:music:real": "bun test ./integration/NeteaseMusicProvider.integration.ts",
+    "test:music:login": "bun test ./integration/NeteaseLogin.integration.ts",
     "test:coverage": "bun test --coverage",
     "verify": "bun run check && bun run test:coverage",
-    "docs:openapi": "bun run src/scripts/export-openapi.ts"
+    "docs:openapi": "bun run src/scripts/ExportOpenapi.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",
