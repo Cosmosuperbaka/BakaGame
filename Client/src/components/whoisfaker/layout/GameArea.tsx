@@ -1,4 +1,4 @@
-﻿import { useRef } from "react";
+import { useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -12,6 +12,7 @@ import { VotingPhase } from "../phases/VotingPhase";
 import { NightPhase } from "../phases/NightPhase";
 import { BlankGuessButton, BlankGuessStage } from "../phases/BlankGuessPhase";
 import { GameOverPhase } from "../phases/GameOverPhase";
+import { PhaseTimerControl } from "./PhaseTimerControl";
 import { TestController } from "./TestController";
 
 export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
@@ -28,6 +29,8 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
     <div className={`relative flex min-h-0 flex-1 flex-col overflow-hidden${isTestRoom ? " pb-16" : ""}`}>
       <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
         <div className="p-6 md:p-8">
+          <PhaseTimerControl className="mx-auto max-w-2xl mb-6" />
+
           {/* 阶段切换：进入从略小放大，退出向外轻胀，形成前后层次感。
               动画结束后清掉 transform，避免残留的分数缩放让文本子像素抖动。 */}
           <AnimatePresence mode="wait">
