@@ -1,4 +1,4 @@
-﻿import type { ConnectionRecord } from "../../domain/Model";
+import type { ConnectionRecord } from "../../domain/Model";
 import type { ClientMessage } from "../../transport/Protocol";
 import {
   type CommandHandler,
@@ -27,6 +27,8 @@ export const GAME_COMMAND_TYPES = [
   "game.cancelNightAction",
   "game.requestSupplement",
   "game.resolveDisconnect",
+  "game.startPhaseTimer",
+  "game.stopPhaseTimer",
 ] as const satisfies readonly ClientMessage["type"][];
 
 interface GameCommandDependencies {
@@ -56,6 +58,8 @@ interface GameCommandDependencies {
     connection: ConnectionRecord,
     payload: Message<"game.resolveDisconnect">["payload"],
   ): CommandResult;
+  startPhaseTimer(connection: ConnectionRecord, durationSeconds: number): CommandResult;
+  stopPhaseTimer(connection: ConnectionRecord): CommandResult;
 }
 
 export const createGameCommandHandler = (
@@ -92,6 +96,10 @@ export const createGameCommandHandler = (
         return dependencies.requestSupplement(connection, message.payload.playerIds);
       case "game.resolveDisconnect":
         return dependencies.resolveDisconnect(connection, message.payload);
+      case "game.startPhaseTimer":
+        return dependencies.startPhaseTimer(connection, message.payload.durationSeconds);
+      case "game.stopPhaseTimer":
+        return dependencies.stopPhaseTimer(connection);
       default:
         return unsupportedCommand();
     }
