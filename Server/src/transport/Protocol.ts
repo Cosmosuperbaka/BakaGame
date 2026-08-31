@@ -1,4 +1,4 @@
-﻿import { AppError } from "../domain/Errors";
+import { AppError } from "../domain/Errors";
 import {
   GAME_PHASES,
   PLAYER_ROLES,
@@ -420,6 +420,18 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         sessionToken,
         payload: { playerIds: readStringArray(payload.playerIds, "payload.playerIds") },
       };
+    case "game.startPhaseTimer":
+      return {
+        id,
+        type,
+        roomId,
+        sessionToken,
+        payload: {
+          durationSeconds: readPositiveInt(payload.durationSeconds, "payload.durationSeconds")!,
+        },
+      };
+    case "game.stopPhaseTimer":
+      return { id, type, roomId, sessionToken, payload: {} };
     case "game.resolveDisconnect": {
       const resolution = readString(payload.resolution, "payload.resolution")!;
 
