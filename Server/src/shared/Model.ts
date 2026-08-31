@@ -46,6 +46,20 @@ export type TieBreakStage = "description" | "vote";
 export type DisconnectResolution = "wait" | "eliminate";
 export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
 
+/** 阶段倒计时运行时状态，严格仅限当前阶段生效。 */
+export interface PhaseTimerState {
+  /** 倒计时时长（秒）：60 | 120 | 180 */
+  durationSeconds: number;
+  /** 倒计时结束的绝对毫秒时间戳 */
+  endsAt: number;
+  /** 倒计时所属的游戏阶段 */
+  phase: GamePhase;
+  /** 触发时的发言模式（用于区分 normal / supplement / tieBreak） */
+  speechMode?: SpeechMode;
+  /** 触发时的平票PK阶段（用于区分 description / vote） */
+  tieBreakStage?: TieBreakStage;
+}
+
 // 房主在开局前配置的阵营参数。
 export interface RoleConfig {
   undercoverCount: number;
@@ -267,6 +281,7 @@ export interface GameRound {
   blankGuessContext?: BlankGuessContext;
   pendingDisconnectPlayerIds: string[];
   questionerReconnectDeadlineAt?: number;
+  phaseTimer?: PhaseTimerState;
   summary?: RoundSummary;
 }
 
@@ -279,6 +294,7 @@ export interface RoomRecord {
   hostReconnectDeadlineAt?: number;
   /** 所有连接暂时断开后的回收时间；显式离开仍可立即关闭。 */
   emptySinceAt?: number;
+  phaseTimer?: PhaseTimerState;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
@@ -366,6 +382,8 @@ export interface RoomSnapshot {
     blankGuessPendingReview?: boolean;
     /** 出题人发起补充发言时，尚未完成补充的玩家 ID 列表。 */
     pendingSupplementPlayerIds?: string[];
+    /** 当前阶段倒计时运行时状态 */
+    phaseTimer?: PhaseTimerState;
   };
   players: PublicPlayerView[];
   descriptions: DescriptionRecord[];

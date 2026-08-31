@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   DisconnectResolution,
   GamePhase,
   PlayerRole,
@@ -134,4 +134,6 @@ export type ClientMessage =
   | ClientEnvelope<"test.removeBot", { playerId?: string; count?: number }>
   | ClientEnvelope<"game.cancelVote", Record<string, never>>
   | ClientEnvelope<"game.cancelNightAction", Record<string, never>>
-  | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>;
+  | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>
+  | ClientEnvelope<"game.startPhaseTimer", { durationSeconds: number }>
+  | ClientEnvelope<"game.stopPhaseTimer", Record<string, never>>;
