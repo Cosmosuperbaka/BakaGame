@@ -7,6 +7,7 @@ import type {
   GamePhase,
   GameRound,
   NightActionRecord,
+  PhaseTimerState,
   PlayerRecord,
   PlayerRole,
   PrivateState,
@@ -16,6 +17,8 @@ import type {
   RoomSnapshot,
   RoomSummary,
   RoundWinner,
+  SpeechMode,
+  TieBreakStage,
   VoteRecord,
 } from "../domain/Model";
 import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../domain/Model";
@@ -80,6 +83,7 @@ export class RoomService {
   private readonly commandHandlers: CommandHandler[];
   private readonly publishedPhaseKeyByRoomId = new Map<string, string>();
   private readonly gameOverAdvanceAllowedAtByRoomId = new Map<string, number>();
+  private readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
   private idCounter = 0;
 
   constructor(private readonly options: RoomServiceOptions) {
@@ -156,6 +160,10 @@ export class RoomService {
             payload.playerId,
             payload.resolution,
           ),
+        startPhaseTimer: (connection, durationSeconds) =>
+          this.handleStartPhaseTimer(connection, durationSeconds),
+        stopPhaseTimer: (connection) =>
+          this.handleStopPhaseTimer(connection),
       }),
       createTestCommandHandler({
         jumpToPhase: (connection, phase) =>
@@ -265,6 +273,16 @@ export class RoomService {
         currentTime >= room.round.questionerReconnectDeadlineAt
       ) {
         await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
+      }
+
+      const activeTimer = room.round?.phaseTimer ?? room.phaseTimer;
+      if (activeTimer && currentTime >= activeTimer.endsAt) {
+        await this.handlePhaseTimeout(
+          room.id,
+          activeTimer.phase,
+          activeTimer.speechMode,
+          activeTimer.tieBreakStage,
+        );
       }
 
       this.publishRoomStateCalibration(room);
@@ -596,6 +614,7 @@ export class RoomService {
 
     validateRoleConfig(room.settings.roleConfig, participantCount);
 
+    this.clearPhaseTimer(room);
     round.questionerPlayerId = target.id;
     round.phase = "wordSubmission";
     round.speechMode = undefined;
@@ -664,6 +683,7 @@ export class RoomService {
       manualRoles,
     );
 
+    this.clearPhaseTimer(room);
     round.words = {
       pair: assigned.pair,
       civilianWord: assigned.civilianWord,
@@ -731,6 +751,8 @@ export class RoomService {
     if (round.supplement && round.speechMode === "supplement") {
       throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
     }
+
+    this.clearPhaseTimer(room);
 
     switch (phase) {
       case "description":
@@ -836,6 +858,7 @@ export class RoomService {
         }),
       );
       if (round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length) {
+        this.clearPhaseTimer(room);
         const resumePhase = round.supplement.resumePhase;
         round.supplement = undefined;
         round.speechMode = resumePhase === "description" ? "normal" : undefined;
@@ -967,6 +990,7 @@ export class RoomService {
       0,
     );
 
+    this.clearPhaseTimer(room);
     round.supplement = {
       index: maxSuppIdx + 1,
       requestedPlayerIds: [...new Set(playerIds)],
@@ -1163,6 +1187,7 @@ export class RoomService {
 
     this.ensurePhaseNotBlocked(round);
 
+    this.clearPhaseTimer(room);
     round.blankGuessContext = {
       playerId: player.id,
       reason: "active",
@@ -1220,6 +1245,7 @@ export class RoomService {
       throw new AppError("ACTION_FORBIDDEN", "当前没有待裁定的白板猜词");
     }
 
+    this.clearPhaseTimer(room);
     round.blankGuessContext!.pendingReview = undefined;
     const record = round.blankGuessRecords.at(-1);
 
@@ -1294,6 +1320,294 @@ export class RoomService {
     await this.runBots(room);
 
     return { resolved: true };
+  }
+
+  private handleStartPhaseTimer(connection: ConnectionRecord, durationSeconds: number) {
+    if (durationSeconds !== 60 && durationSeconds !== 120 && durationSeconds !== 180) {
+      throw new AppError("INVALID_ARGUMENT", "倒计时时长只能在1、2、3分钟之间选择");
+    }
+
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+    const phase = round.phase;
+
+    if (
+      phase === "assigningQuestioner" ||
+      phase === "wordSubmission" ||
+      phase === "gameOver"
+    ) {
+      throw new AppError("INVALID_PHASE", "当前阶段不支持设置倒计时");
+    }
+
+    if (room.id !== ROOM_ID_TEST_MODE) {
+      this.ensureQuestioner(round, player.id);
+    }
+    this.ensurePhaseNotBlocked(round);
+
+    this.clearPhaseTimer(room);
+
+    const now = this.now();
+    const endsAt = now + durationSeconds * 1000;
+    const timerState: PhaseTimerState = {
+      durationSeconds,
+      endsAt,
+      phase,
+      speechMode: round.speechMode,
+      tieBreakStage: round.tieBreak?.stage,
+    };
+
+    round.phaseTimer = timerState;
+
+    const timeoutMs = Math.max(0, endsAt - this.now());
+    const timer = setTimeout(() => {
+      void this.handlePhaseTimeout(
+        room.id,
+        phase,
+        timerState.speechMode,
+        timerState.tieBreakStage,
+      );
+    }, timeoutMs);
+    this.phaseTimerTimeoutByRoomId.set(room.id, timer);
+
+    this.touchRoom(room);
+    this.appendSystemMessage(room, `主持人开启了本阶段倒计时（${durationSeconds / 60}分钟）`);
+    this.publishRoomState(room);
+
+    return { phaseTimer: timerState };
+  }
+
+  private handleStopPhaseTimer(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireRound(room);
+
+    if (room.id !== ROOM_ID_TEST_MODE) {
+      this.ensureQuestioner(round, player.id);
+    }
+
+    const hadTimer = Boolean(round.phaseTimer);
+    this.clearPhaseTimer(room);
+
+    if (hadTimer) {
+      this.touchRoom(room);
+      this.appendSystemMessage(room, "主持人取消了本阶段倒计时");
+      this.publishRoomState(room);
+    }
+
+    return { stopped: true };
+  }
+
+  private clearPhaseTimer(room: RoomRecord): void {
+    const existing = this.phaseTimerTimeoutByRoomId.get(room.id);
+    if (existing) {
+      clearTimeout(existing);
+      this.phaseTimerTimeoutByRoomId.delete(room.id);
+    }
+    if (room.phaseTimer) {
+      room.phaseTimer = undefined;
+    }
+    if (room.round?.phaseTimer) {
+      room.round.phaseTimer = undefined;
+    }
+  }
+
+  private async handlePhaseTimeout(
+    roomId: string,
+    expectedPhase: GamePhase,
+    expectedSpeechMode?: SpeechMode,
+    expectedTieBreakStage?: TieBreakStage,
+  ) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const currentPhase = room.round?.phase ?? "waiting";
+    if (currentPhase !== expectedPhase) return;
+    if (room.round?.speechMode !== expectedSpeechMode) return;
+    if (room.round?.tieBreak?.stage !== expectedTieBreakStage) return;
+
+    this.clearPhaseTimer(room);
+    this.appendSystemMessage(room, "本阶段倒计时结束，系统已强制推进");
+
+    const round = room.round;
+    if (!round) return;
+
+    if (currentPhase === "description") {
+      if (round.supplement && round.speechMode === "supplement") {
+        for (const playerId of round.supplement.requestedPlayerIds) {
+          if (!round.supplement.donePlayers.includes(playerId)) {
+            const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
+            round.supplement.donePlayers.push(playerId);
+            round.descriptions.push(
+              this.createDescription(
+                player,
+                "（超时未发言）",
+                "supplement",
+                round.descriptionCycle,
+                { supplementIndex: round.supplement.index },
+              ),
+            );
+          }
+        }
+        const resumePhase = round.supplement.resumePhase;
+        round.supplement = undefined;
+        round.speechMode = resumePhase === "description" ? "normal" : undefined;
+        round.phase = resumePhase;
+      } else {
+        for (const playerId of round.descriptionOrder) {
+          if (!round.descriptionSubmittedBy.includes(playerId)) {
+            const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
+            round.descriptionSubmittedBy.push(playerId);
+            round.descriptions.push(
+              this.createDescription(
+                player,
+                "（超时未发言）",
+                "description",
+                round.descriptionCycle,
+              ),
+            );
+          }
+        }
+        const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
+        const isTwoPlayerUndercoverEndgame =
+          aliveStates.length === 2 &&
+          aliveStates.filter((state) => state.role === "undercover").length === 1 &&
+          aliveStates.filter((state) => state.role === "civilian").length === 1;
+
+        if (isTwoPlayerUndercoverEndgame) {
+          await this.finishRound(room, "undercover", "2人残局卧底胜");
+          return;
+        }
+
+        round.phase = "voting";
+        round.speechMode = undefined;
+        round.votes = [];
+      }
+      this.touchRoom(room);
+      this.requeuePendingDisconnects(room);
+      this.publishRoomState(room);
+      await this.runBots(room);
+      return;
+    }
+
+    if (currentPhase === "voting") {
+      const aliveIds = this.getAliveAssignedPlayerIds(room).filter(
+        (id) => id !== round.questionerPlayerId,
+      );
+      for (const voterId of aliveIds) {
+        if (!round.votes.some((v) => v.voterId === voterId)) {
+          round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
+        }
+      }
+      await this.resolveVoting(room, false);
+      this.touchRoom(room);
+      this.publishRoomState(room);
+      await this.runBots(room);
+      return;
+    }
+
+    if (currentPhase === "tieBreak") {
+      if (round.tieBreak?.stage === "description") {
+        for (const candidateId of round.tieBreak.candidateIds) {
+          if (!round.tieBreak.descriptionsDone.includes(candidateId)) {
+            const player = room.players[candidateId] ?? ({ id: candidateId, name: "超时玩家" } as PlayerRecord);
+            round.tieBreak.descriptionsDone.push(candidateId);
+            round.descriptions.push(
+              this.createDescription(
+                player,
+                "（超时未发言）",
+                "tieBreak",
+                round.descriptionCycle,
+                { tieBreakIndex: round.tieBreakCount },
+              ),
+            );
+          }
+        }
+        round.tieBreak.stage = "vote";
+        round.speechMode = undefined;
+        round.tieBreak.votes = [];
+        this.touchRoom(room);
+        this.requeuePendingDisconnects(room);
+        this.publishRoomState(room);
+        await this.runBots(room);
+        return;
+      }
+
+      if (round.tieBreak?.stage === "vote") {
+        const aliveIds = this.getAliveAssignedPlayerIds(room).filter(
+          (id) => id !== round.questionerPlayerId,
+        );
+        for (const voterId of aliveIds) {
+          if (!round.tieBreak.votes.some((v) => v.voterId === voterId)) {
+            round.tieBreak.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
+          }
+        }
+        await this.resolveVoting(room, true);
+        this.touchRoom(room);
+        this.publishRoomState(room);
+        await this.runBots(room);
+        return;
+      }
+    }
+
+    if (currentPhase === "night") {
+      for (const [playerId, state] of Object.entries(round.assignments)) {
+        if (state.alive && (state.role === "civilian" || state.role === "undercover")) {
+          if (!round.nightActions.some((a) => a.actorId === playerId)) {
+            round.nightActions.push({
+              actorId: playerId,
+              actorRole: state.role,
+              targetId: undefined,
+            });
+          }
+        }
+      }
+      await this.resolveNight(room);
+      this.touchRoom(room);
+      this.publishRoomState(room);
+      await this.runBots(room);
+      return;
+    }
+
+    if (currentPhase === "blankGuess") {
+      const ctx = round.blankGuessContext;
+      if (ctx) {
+        if (ctx.pendingReview) {
+          ctx.pendingReview = undefined;
+          if (ctx.deferredWinner) {
+            await this.finishRound(
+              room,
+              ctx.deferredWinner,
+              "白板猜词超时未通过，系统按残局条件结算",
+            );
+          } else if (ctx.resumePhase) {
+            round.phase = ctx.resumePhase;
+            round.blankGuessContext = undefined;
+            this.appendSystemMessage(room, "白板猜词裁定超时未通过，游戏继续");
+          }
+        } else {
+          round.blankGuessUsed = true;
+          const draft = ctx.draft ?? ["", ""];
+          const guess = evaluateBlankGuess(round, draft, this.now(), ctx.reason);
+          round.blankGuessRecords.push(guess);
+          if (guess.success) {
+            await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
+          } else if (ctx.deferredWinner) {
+            await this.finishRound(
+              room,
+              ctx.deferredWinner,
+              "白板猜词超时失败，系统按残局条件结算",
+            );
+          } else if (ctx.resumePhase) {
+            round.phase = ctx.resumePhase;
+            round.blankGuessContext = undefined;
+            this.appendSystemMessage(room, "白板猜词超时失败，游戏继续");
+          }
+        }
+        this.touchRoom(room);
+        this.broadcastPhaseAndPublish(room);
+        await this.runBots(room);
+      }
+      return;
+    }
   }
 
   private async handleChat(connection: ConnectionRecord, text: string) {
@@ -1383,6 +1697,8 @@ export class RoomService {
     if (room.id !== ROOM_ID_TEST_MODE) {
       throw new AppError("FORBIDDEN", "仅测试房间允许使用跳转控制器");
     }
+
+    this.clearPhaseTimer(room);
 
     if (target === "waiting") {
       this.returnRoomToWaiting(room);
@@ -1744,6 +2060,7 @@ export class RoomService {
   }
 
   private async startRound(room: RoomRecord) {
+    this.clearPhaseTimer(room);
     // 每次开局都创建全新的 round 对象，避免上一局残留状态污染新局。
     room.round = {
       id: this.createId("round"),
@@ -1780,6 +2097,7 @@ export class RoomService {
   }
 
   private returnRoomToWaiting(room: RoomRecord) {
+    this.clearPhaseTimer(room);
     this.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
     room.round = undefined;
     for (const player of Object.values(room.players)) {
@@ -1963,6 +2281,7 @@ export class RoomService {
   }
 
   private async finishRound(room: RoomRecord, winner: RoundWinner, reason: string) {
+    this.clearPhaseTimer(room);
     // 结算时既要给分，也要冻结当局摘要，供房间页在局后复盘。
     const round = this.requireRound(room);
     const awardedScores: Array<{ playerId: string; delta: number }> = [];
@@ -2309,6 +2628,7 @@ export class RoomService {
   }
 
   private async closeRoom(room: RoomRecord, reason: string) {
+    this.clearPhaseTimer(room);
     // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
       (connection.sendPacket ?? connection.send)(
@@ -2479,6 +2799,7 @@ export class RoomService {
               (id) => !room.round!.supplement!.donePlayers.includes(id),
             )
           : undefined,
+        phaseTimer: room.round?.phaseTimer ?? room.phaseTimer,
       },
       players: this.buildPublicPlayers(room),
       descriptions: this.buildPublicDescriptions(room.round),

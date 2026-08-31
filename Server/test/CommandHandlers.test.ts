@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { GAME_COMMAND_TYPES } from "../src/application/handlers/GameCommandHandler";
 import { PLAYER_COMMAND_TYPES } from "../src/application/handlers/PlayerCommandHandler";
@@ -38,6 +38,8 @@ const ALL_COMMAND_TYPES = [
   "game.cancelVote",
   "game.cancelNightAction",
   "game.requestSupplement",
+  "game.startPhaseTimer",
+  "game.stopPhaseTimer",
 ] as const satisfies readonly ClientMessage["type"][];
 
 type MissingCommandType = Exclude<
