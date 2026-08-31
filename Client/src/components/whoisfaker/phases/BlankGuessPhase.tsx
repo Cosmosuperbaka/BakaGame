@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CircleHelp, Gavel, HelpCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -126,6 +126,17 @@ function BlankGuessInput() {
       setSubmitting(false);
     }
   }, [wordA, wordB, sendCommand, addToast]);
+
+  // 阶段倒计时归零时，若已输入内容则自动提交
+  useEffect(() => {
+    const handleTimeout = () => {
+      if (!pendingReview && (wordA.trim() || wordB.trim())) {
+        void handleSubmit();
+      }
+    };
+    window.addEventListener("whoisfaker:phase-timeout", handleTimeout);
+    return () => window.removeEventListener("whoisfaker:phase-timeout", handleTimeout);
+  }, [pendingReview, wordA, wordB, handleSubmit]);
 
   if (pendingReview) {
     return (

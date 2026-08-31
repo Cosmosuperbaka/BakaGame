@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { duration, ease, listContainer, spring } from "@/lib/Motion";
 import {
@@ -218,6 +218,17 @@ export function DescriptionPhase() {
       addToast((error as { message: string }).message, "error");
     }
   }, [addToast, sendCommand, text]);
+
+  // 阶段倒计时归零时，自动将本地已输入的内容发送提交
+  useEffect(() => {
+    const handleTimeout = () => {
+      if (canSpeak && text.trim()) {
+        void handleSubmit();
+      }
+    };
+    window.addEventListener("whoisfaker:phase-timeout", handleTimeout);
+    return () => window.removeEventListener("whoisfaker:phase-timeout", handleTimeout);
+  }, [canSpeak, handleSubmit, text]);
 
   const handleAdvance = useCallback(async () => {
     try {
