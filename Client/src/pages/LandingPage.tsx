@@ -123,14 +123,13 @@ export function formatRelativeTime(dateStr: string): string {
   const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
   if (Number.isNaN(then.getTime())) return dateStr;
 
-  const seconds = Math.floor((then.getTime() - Date.now()) / 1000);
+  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
   // 时钟偏差或未来时间戳，显示刚刚。
-  if (seconds >= 0) return "刚刚";
+  if (seconds <= 0) return "刚刚";
 
-  const abs = Math.abs(seconds);
-  if (abs < 60) return rtf.format(-abs, "second");
+  if (seconds < 60) return rtf.format(-seconds, "second");
 
-  const minutes = Math.floor(abs / 60);
+  const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return rtf.format(-minutes, "minute");
 
   const hours = Math.floor(minutes / 60);

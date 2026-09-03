@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import LandingPage, { formatRelativeTime } from "./LandingPage";
 
@@ -46,25 +46,30 @@ describe("LandingPage", () => {
   });
 
   it("formats relative time correctly using Intl.RelativeTimeFormat", () => {
-    const now = Date.now();
+    const fixedNow = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(fixedNow);
 
-    // 刚刚 (未来或0)
-    expect(formatRelativeTime(new Date(now + 1000).toISOString())).toBe("刚刚");
+    try {
+      // 刚刚 (未来或0)
+      expect(formatRelativeTime(new Date(fixedNow + 1000).toISOString())).toBe("刚刚");
 
-    // 秒级
-    expect(formatRelativeTime(new Date(now - 10 * 1000).toISOString())).toBe("10秒钟前");
+      // 秒级
+      expect(formatRelativeTime(new Date(fixedNow - 10 * 1000).toISOString())).toBe("10秒钟前");
 
-    // 分钟级
-    expect(formatRelativeTime(new Date(now - 5 * 60 * 1000).toISOString())).toBe("5分钟前");
+      // 分钟级
+      expect(formatRelativeTime(new Date(fixedNow - 5 * 60 * 1000).toISOString())).toBe("5分钟前");
 
-    // 小时级
-    expect(formatRelativeTime(new Date(now - 3 * 3600 * 1000).toISOString())).toBe("3小时前");
+      // 小时级
+      expect(formatRelativeTime(new Date(fixedNow - 3 * 3600 * 1000).toISOString())).toBe("3小时前");
 
-    // 天级
-    expect(formatRelativeTime(new Date(now - 2 * 86400 * 1000).toISOString())).toBe("2天前");
+      // 天级
+      expect(formatRelativeTime(new Date(fixedNow - 2 * 86400 * 1000).toISOString())).toBe("2天前");
 
-    // 无效输入原样返回
-    expect(formatRelativeTime("invalid-date")).toBe("invalid-date");
+      // 无效输入原样返回
+      expect(formatRelativeTime("invalid-date")).toBe("invalid-date");
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 
