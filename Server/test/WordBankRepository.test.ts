@@ -68,3 +68,30 @@ test("词库文件内容损坏时应抛出错误保护数据，阻止破坏性�
   }
 });
 
+test("高并发连续保存多个词对时保证数据完整一致且无临时文件残留", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "word-bank-high-concurrency-"));
+
+  try {
+    const repository = new WordBankRepository(join(tempDir, "word-bank.json"));
+    const pairs: Array<[string, string]> = [
+      ["春", "秋"],
+      ["夏", "冬"],
+      ["东", "西"],
+      ["南", "北"],
+      ["江", "河"],
+      ["湖", "海"],
+    ];
+
+    await Promise.all(pairs.map((pair) => repository.savePair(pair)));
+
+    const result = await repository.readAll();
+    expect(result).toHaveLength(6);
+
+    const { readdirSync } = await import("node:fs");
+    const files = readdirSync(tempDir);
+    expect(files.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+

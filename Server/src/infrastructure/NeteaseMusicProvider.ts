@@ -87,6 +87,7 @@ const randomChineseIp = () => [
 ].join(".");
 
 const SEARCH_CACHE_TTL_MS = 2 * 60_000;
+const SONG_CACHE_TTL_MS = 3 * 60_000;
 const SONG_METADATA_CACHE_TTL_MS = 10 * 60_000;
 const SONG_LYRICS_CACHE_TTL_MS = 10 * 60_000;
 const SONG_WIKI_CACHE_TTL_MS = 30 * 60_000;
@@ -474,7 +475,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
     return this.cached(
       this.cacheKey("song", cookie, id),
-      0,
+      SONG_CACHE_TTL_MS,
       () => this.loadSong(id, true, cookie),
     );
   }

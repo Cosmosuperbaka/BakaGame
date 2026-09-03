@@ -1,4 +1,4 @@
-﻿import { cors } from "@elysiajs/cors";
+import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
 import { RoomService } from "../application/RoomService";
@@ -7,6 +7,8 @@ import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
+import { LRUCache } from "lru-cache";
+
 import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket, parseClientMessage } from "./Protocol";
 import { parseSonGuessrMessage, parseSongGuessrMessage } from "./SonGuessrProtocol";
@@ -20,6 +22,12 @@ export interface AppDependencies {
   songGuessrService?: SonGuessrService | SongGuessrService;
   sonGuessrService?: SonGuessrService;
 }
+
+const messageAckCache = new LRUCache<string, unknown>({
+  max: 2048,
+  ttl: 15_000,
+});
+const inFlightMessages = new Set<string>();
 
 const sendPacket = (
   ws: { send: (data: string) => unknown },
@@ -192,7 +200,24 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
           const parsed = parseClientMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
-          const payload = await roomService.execute(connectionId, parsed);
+
+          if (messageAckCache.has(parsedId)) {
+            sendPacket(ws, createAck(parsed, messageAckCache.get(parsedId)));
+            return;
+          }
+          if (inFlightMessages.has(parsedId)) {
+            return;
+          }
+          inFlightMessages.add(parsedId);
+
+          let payload: unknown;
+          try {
+            payload = await roomService.execute(connectionId, parsed);
+          } finally {
+            inFlightMessages.delete(parsedId);
+          }
+
+          messageAckCache.set(parsedId, payload);
           const durationMs = performance.now() - startTime;
           logger.logOperation({
             status: 200,
@@ -291,7 +316,24 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
           const parsed = parseSongGuessrMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
-          const payload = await songService.execute(connectionId, parsed);
+
+          if (messageAckCache.has(parsedId)) {
+            sendPacket(ws, createAck(parsed, messageAckCache.get(parsedId)));
+            return;
+          }
+          if (inFlightMessages.has(parsedId)) {
+            return;
+          }
+          inFlightMessages.add(parsedId);
+
+          let payload: unknown;
+          try {
+            payload = await songService.execute(connectionId, parsed);
+          } finally {
+            inFlightMessages.delete(parsedId);
+          }
+
+          messageAckCache.set(parsedId, payload);
           logger.logOperation({
             status: 200,
             durationMs: performance.now() - startedAt,
