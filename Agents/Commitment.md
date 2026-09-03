@@ -29,33 +29,41 @@ V<major>.<minor>.<patch>
 
 ## Commit Message 规范
 
-格式：
+> [!CAUTION]
+> **绝对不可违背的提交语言与格式铁律（Zero-Tolerance Commit Rules）**：
+> 1. **全中文摘要（Mandatory 100% Chinese Summary）**：commit message 的摘要与正文**必须 100% 使用中文**，**严禁使用任何英文描述**（包括但不限于英文动词、英文短语或整句英文）。
+> 2. **字数硬上限（Max 12 Characters）**：冒号后中文摘要**严禁超过 12 个中文字符**（含标点符号）。
+> 3. **封闭 Scope 枚举（Strict Scope Enum）**：`scope` **只能且必须从下表枚举 4 选 1**，**严禁自行发明**任何其他作用域（严禁使用 `server`、`client`、`tasks`、`shared`、`backend`、`frontend`、`ui` 等）。
 
-```
+格式模板：
+
+```text
 type(scope): 中文摘要
 ```
 
-规则：
+### 1. 字段约束表
 
-1. 摘要必须使用中文，且不超过 12 个中文字（含标点）。
-2. `type` 使用 Angular 标准类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert`。
-3. `scope` 填写受影响游戏的缩写：
+| 字段 | 允许值 / 约束规则 | 严重违规反例（严禁出现） |
+|---|---|---|
+| `type` | 仅限 Angular 标准类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` | `update`、`modify`、`change` |
+| `scope` | **只能四选一（严格区分大小写）**：<br>• `Faker`（WhoIsFaker 相关逻辑）<br>• `Song`（SongGuessr 相关逻辑）<br>• `CCB`（AnimeCharacterGuessr 相关逻辑）<br>• `Core`（公共架构、Shared 协议、工具链、大厅、CI、文档、任务） | `server`、`client`、`backend`、`frontend`、`shared`、`tasks`、`faker`（小写亦违规） |
+| `中文摘要` | **纯中文，不超过 12 个汉字（含标点）**，简洁点明本提交的原子动作 | • 任何英文句子（如 `fail fast on corrupted file`）<br>• 超过 12 字的冗长描述（如 `修复谁是卧底发言阶段中的假玩家对象错误`） |
 
-| 游戏 | 缩写 |
-|---|---|
-| WhoIsFaker | `Faker` |
-| SongGuessr | `Song` |
-| AnimeCharacterGuessr | `CCB` |
-| 公共能力、基础设施、主页 | `Core` |
+### 2. 正误对照清单 (Good Taste vs Bad Taste)
 
-一次提交影响多个游戏时，以主要受影响的游戏为准，或拆分提交。
+| 场景 | ❌ 严禁提交（Bad Taste） | ✅ 正确提交（Good Taste） |
+|---|---|---|
+| 服务端词库损坏防护 | `fix(server): fail fast on corrupted word bank` | `fix(Faker): 词库损坏时拒绝覆盖` |
+| 角色规则纯谓词重构 | `refactor(server): replace try-catch with predicate` | `refactor(Faker): 纯谓词重构配置校验` |
+| 客户端移除篡改补丁 | `refactor(client): remove normalizeSnapshot patch` | `refactor(Song): 移除快照篡改补丁` |
+| 发言阶段移除假实体 | `refactor(client): eliminate ghost player synthesis` | `refactor(Faker): 消除发言阶段伪造实体` |
+| 任务清单文档更新 | `docs(tasks): archive refactoring review in todo.md` | `docs(Core): 归档重构复盘记录` |
 
-示例：
+### 3. 提交前正则自检公式 (Pre-commit Regex Check)
 
-```
-feat(Faker): 新增白板猜词
-fix(Core): 修复健康检查
-docs(Faker): 更新游戏规则
+在执行 `git commit -m` 之前，必须在内部强制校验提交信息是否匹配以下正则，凡不匹配一律禁止提交：
+```regex
+^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((Faker|Song|CCB|Core)\): [\u4e00-\u9fa5\d，。、“”《》（）]{1,12}$
 ```
 
 ---
