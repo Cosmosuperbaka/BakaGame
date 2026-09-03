@@ -38,6 +38,7 @@ import {
   resolveNightEliminations,
   shuffle,
   shouldEnterFinalBlankGuess,
+  isRoleConfigSatisfied,
   validateRoleConfig,
   type RandomSource,
 } from "../domain/Rules";
@@ -3096,16 +3097,12 @@ export class RoomService {
   }
 
   private hasValidQuestionerCandidate(room: RoomRecord) {
-    return this.getAssignableQuestionerCandidates(room).some((candidate) => {
-      const participantCount = this.getParticipantCount(room, candidate.id);
-
-      try {
-        validateRoleConfig(room.settings.roleConfig, participantCount);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    return this.getAssignableQuestionerCandidates(room).some((candidate) =>
+      isRoleConfigSatisfied(
+        room.settings.roleConfig,
+        this.getParticipantCount(room, candidate.id),
+      ),
+    );
   }
 
   private clampRoleConfig(config: RoleConfig, participantCount: number): RoleConfig {
@@ -3556,12 +3553,11 @@ export class RoomService {
     }
 
     if (round.phase === "wordSubmission" && round.questionerPlayerId) {
-      try {
-        validateRoleConfig(
-          room.settings.roleConfig,
-          this.getParticipantCount(room, round.questionerPlayerId),
-        );
-      } catch {
+      const satisfied = isRoleConfigSatisfied(
+        room.settings.roleConfig,
+        this.getParticipantCount(room, round.questionerPlayerId),
+      );
+      if (!satisfied) {
         await this.finishRound(room, "aborted", "当前人数不足，系统已取消本局");
       }
     }
