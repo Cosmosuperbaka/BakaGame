@@ -190,35 +190,45 @@ export function DescriptionPhase() {
     !submittedPlayerIds.has(myId) &&
     (mode === "normal" || waitingPlayerIds.includes(myId));
 
+  const [submitting, setSubmitting] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+
   const handleSubmit = useCallback(async () => {
     const normalized = text.trim();
-    if (!normalized) return;
+    if (!normalized || submitting) return;
+    setSubmitting(true);
     try {
       await sendCommand("game.submitDescription", { text: normalized });
       setText("");
     } catch (error) {
       addToast((error as { message: string }).message, "error");
+    } finally {
+      setSubmitting(false);
     }
-  }, [addToast, sendCommand, text]);
+  }, [addToast, sendCommand, text, submitting]);
 
   // 阶段倒计时归零时，自动将本地已输入的内容发送提交
   useEffect(() => {
     const handleTimeout = () => {
-      if (canSpeak && text.trim()) {
+      if (canSpeak && text.trim() && !submitting) {
         void handleSubmit();
       }
     };
     window.addEventListener("whoisfaker:phase-timeout", handleTimeout);
     return () => window.removeEventListener("whoisfaker:phase-timeout", handleTimeout);
-  }, [canSpeak, handleSubmit, text]);
+  }, [canSpeak, handleSubmit, text, submitting]);
 
   const handleAdvance = useCallback(async () => {
+    if (advancing) return;
+    setAdvancing(true);
     try {
       await sendCommand("game.advancePhase");
     } catch (error) {
       addToast((error as { message: string }).message, "error");
+    } finally {
+      setAdvancing(false);
     }
-  }, [addToast, sendCommand]);
+  }, [addToast, sendCommand, advancing]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -249,7 +259,7 @@ export function DescriptionPhase() {
               {countTextUnits(text)}/{DESCRIPTION_MAX_UNITS}
             </span>
           </div>
-          <Button onClick={handleSubmit} className="gap-2 h-10" disabled={!text.trim()}>
+          <Button onClick={handleSubmit} className="gap-2 h-10" disabled={!text.trim() || submitting}>
             <Send className="h-4 w-4" /> 发送
           </Button>
         </div>
@@ -260,7 +270,7 @@ export function DescriptionPhase() {
           {mode === "normal" ? (
             <SupplementRequestControl canRequest={waitingPlayers.length === 0} />
           ) : null}
-          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6">
+          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6" disabled={advancing}>
             <FastForward className="h-4 w-4" />
             {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
           </Button>
