@@ -60,3 +60,4 @@ Server/build
 *.sw?
 
 word-bank.json
+/tasks
