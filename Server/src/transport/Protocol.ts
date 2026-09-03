@@ -1,3 +1,5 @@
+import { t } from "elysia";
+import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
 import {
   GAME_PHASES,
@@ -15,6 +17,25 @@ import {
 } from "../shared/Index";
 
 export type { AckPacket, ErrorPacket, EventPacket, ClientMessage, ClientEnvelope };
+
+export const VisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
+export const BooleanSchema = t.Boolean();
+export const PositiveIntSchema = t.Integer({ minimum: 1 });
+export const RoleConfigSchema = t.Object({
+  undercoverCount: t.Integer({ minimum: 0 }),
+  hasAngel: t.Boolean(),
+  hasBlank: t.Boolean(),
+});
+export const WordPairSchema = t.Tuple([
+  t.String({ maxLength: 50 }),
+  t.String({ maxLength: 50 }),
+]);
+export const GamePhaseSchema = t.Union(GAME_PHASES.map((p) => t.Literal(p)));
+export const PlayerRoleSchema = t.Union(PLAYER_ROLES.map((r) => t.Literal(r)));
+export const DisconnectResolutionSchema = t.Union([
+  t.Literal("wait"),
+  t.Literal("eliminate"),
+]);
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -56,7 +77,7 @@ const readString = (
 };
 
 const readBoolean = (value: unknown, field: string): boolean => {
-  if (typeof value !== "boolean") {
+  if (!Value.Check(BooleanSchema, value)) {
     throw new AppError("INVALID_MESSAGE", `${field} 必须为布尔值`);
   }
 
@@ -76,7 +97,7 @@ const readPositiveInt = (
     throw new AppError("INVALID_MESSAGE", `${field} 必须为正整数`);
   }
 
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+  if (!Value.Check(PositiveIntSchema, value)) {
     throw new AppError("INVALID_MESSAGE", `${field} 必须为正整数`);
   }
 
@@ -84,11 +105,11 @@ const readPositiveInt = (
 };
 
 const readVisibility = (value: unknown): RoomVisibility => {
-  if (value !== "public" && value !== "private") {
+  if (!Value.Check(VisibilitySchema, value)) {
     throw new AppError("INVALID_MESSAGE", "visibility 必须为 public 或 private");
   }
 
-  return value;
+  return value as RoomVisibility;
 };
 
 // 阵营配置的解析比普通字段更严格，因为它会直接影响状态机合法性。
@@ -108,32 +129,35 @@ const readRoleConfig = (value: unknown): RoleConfig => {
     );
   }
 
-  if (
-    typeof undercoverCount !== "number" ||
-    !Number.isInteger(undercoverCount) ||
-    undercoverCount < 0
-  ) {
-    throw new AppError("INVALID_MESSAGE", "undercoverCount 必须为非负整数");
+  if (!Value.Check(RoleConfigSchema, value)) {
+    if (
+      typeof undercoverCount !== "number" ||
+      !Number.isInteger(undercoverCount) ||
+      undercoverCount < 0
+    ) {
+      throw new AppError("INVALID_MESSAGE", "undercoverCount 必须为非负整数");
+    }
+    throw new AppError("INVALID_MESSAGE", "roleConfig 字段格式不正确");
   }
 
   return {
-    undercoverCount,
+    undercoverCount: undercoverCount as number,
     hasAngel: readBoolean(hasAngel, "hasAngel"),
     hasBlank: readBoolean(hasBlank, "hasBlank"),
   };
 };
 
 const readWordPair = (value: unknown): [string, string] => {
-  if (
-    !Array.isArray(value) ||
-    value.length !== 2 ||
-    typeof value[0] !== "string" ||
-    typeof value[1] !== "string"
-  ) {
-    throw new AppError("INVALID_MESSAGE", "words 必须为长度为 2 的字符串数组");
-  }
+  if (!Value.Check(WordPairSchema, value)) {
+    if (
+      !Array.isArray(value) ||
+      value.length !== 2 ||
+      typeof value[0] !== "string" ||
+      typeof value[1] !== "string"
+    ) {
+      throw new AppError("INVALID_MESSAGE", "words 必须为长度为 2 的字符串数组");
+    }
 
-  if (value[0].length > 50 || value[1].length > 50) {
     throw new AppError("INVALID_MESSAGE", "每个词语长度不能超过 50 个字符");
   }
 
@@ -183,7 +207,7 @@ const readStringArray = (value: unknown, field: string, maxItems = 100, maxItemL
 const parseManualRoles = (obj: Record<string, unknown>): Record<string, PlayerRole> => {
   const result: Record<string, PlayerRole> = {};
   for (const [playerId, role] of Object.entries(obj)) {
-    if (!PLAYER_ROLES.includes(role as PlayerRole)) {
+    if (!Value.Check(PlayerRoleSchema, role)) {
       throw new AppError("INVALID_MESSAGE", `manualRoles 中存在无效角色值: ${String(role)}`);
     }
     result[playerId] = role as PlayerRole;
@@ -435,7 +459,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
     case "game.resolveDisconnect": {
       const resolution = readString(payload.resolution, "payload.resolution")!;
 
-      if (resolution !== "wait" && resolution !== "eliminate") {
+      if (!Value.Check(DisconnectResolutionSchema, resolution)) {
         throw new AppError(
           "INVALID_MESSAGE",
           "payload.resolution 必须为 wait 或 eliminate",
@@ -472,7 +496,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
     case "test.jumpToPhase": {
       const phase = readString(payload.phase, "payload.phase")!;
 
-      if (!GAME_PHASES.includes(phase as GamePhase)) {
+      if (!Value.Check(GamePhaseSchema, phase)) {
         throw new AppError("INVALID_MESSAGE", "phase 无效");
       }
 
@@ -481,13 +505,13 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         type,
         roomId,
         sessionToken,
-        payload: { phase: phase as GamePhase },
+        payload: { phase },
       };
     }
     case "test.setMyRole": {
       const role = readString(payload.role, "payload.role")!;
 
-      if (!PLAYER_ROLES.includes(role as PlayerRole)) {
+      if (!Value.Check(PlayerRoleSchema, role)) {
         throw new AppError("INVALID_MESSAGE", "role 无效");
       }
 
@@ -496,7 +520,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
         type,
         roomId,
         sessionToken,
-        payload: { role: role as PlayerRole },
+        payload: { role },
       };
     }
     case "test.addBot":

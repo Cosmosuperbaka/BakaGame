@@ -1,10 +1,22 @@
-﻿import { AppError } from "../domain/Errors";
+import { t } from "elysia";
+import { Value } from "@sinclair/typebox/value";
+import { AppError } from "../domain/Errors";
 import type {
   RoomVisibility,
   SongArtistFilter,
   SonGuessrClientMessage,
   SonGuessrSettings,
 } from "../shared/Index";
+
+export const SongVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
+export const QuestionTypeSchema = t.Union([t.Literal("song"), t.Literal("anime")]);
+export const QuestionModeSchema = t.Union([t.Literal("manual"), t.Literal("automatic")]);
+export const MinPopularitySchema = t.Union([
+  t.Literal(0),
+  t.Literal(1_000),
+  t.Literal(10_000),
+  t.Literal(100_000),
+]);
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -55,15 +67,15 @@ const readOptionalPositiveInteger = (value: unknown, field: string): number | un
 
 const readVisibility = (value: unknown, optional = false): RoomVisibility | undefined => {
   if (value == null && optional) return undefined;
-  if (value !== "public" && value !== "private") {
+  if (!Value.Check(SongVisibilitySchema, value)) {
     throw new AppError("INVALID_MESSAGE", "visibility 必须为 public 或 private");
   }
-  return value;
+  return value as RoomVisibility;
 };
 
 const readQuestionType = (value: unknown): SonGuessrSettings["questionType"] | undefined => {
   if (value == null) return undefined;
-  if (value !== "song" && value !== "anime") {
+  if (!Value.Check(QuestionTypeSchema, value)) {
     throw new AppError("INVALID_MESSAGE", "questionType 必须为 song 或 anime");
   }
   return value;
@@ -71,7 +83,7 @@ const readQuestionType = (value: unknown): SonGuessrSettings["questionType"] | u
 
 const readQuestionMode = (value: unknown): SonGuessrSettings["questionMode"] | undefined => {
   if (value == null) return undefined;
-  if (value !== "manual" && value !== "automatic") {
+  if (!Value.Check(QuestionModeSchema, value)) {
     throw new AppError("INVALID_MESSAGE", "questionMode 必须为 manual 或 automatic");
   }
   return value;
@@ -101,7 +113,7 @@ const readAutoFilters = (value: unknown): SonGuessrSettings["autoFilters"] | und
     };
   });
   const minPopularity = readNumber(value.minPopularity, "autoFilters.minPopularity");
-  if (![0, 1_000, 10_000, 100_000].includes(minPopularity ?? -1)) {
+  if (!Value.Check(MinPopularitySchema, minPopularity)) {
     throw new AppError("INVALID_MESSAGE", "autoFilters.minPopularity 不是支持的热度档位");
   }
   return { playlist, artists, minPopularity: minPopularity as 0 | 1_000 | 10_000 | 100_000 };
