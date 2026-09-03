@@ -1,5 +1,6 @@
-﻿import { AppError } from "../domain/Errors";
+import { AppError } from "../domain/Errors";
 import { createHash } from "node:crypto";
+import { LRUCache } from "lru-cache";
 import type {
   SongDetails,
   SongArtistSearchResult,
@@ -99,11 +100,6 @@ const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
 
-interface CacheEntry<T> {
-  value: T;
-  expiresAt: number;
-}
-
 interface QueuedRequest<T = unknown> {
   task: () => Promise<T>;
   resolve: (value: T) => void;
@@ -112,41 +108,6 @@ interface QueuedRequest<T = unknown> {
 }
 
 const cloneCacheValue = <T>(value: T): T => structuredClone(value);
-
-class BoundedTtlCache {
-  private readonly entries = new Map<string, CacheEntry<unknown>>();
-
-  constructor(private readonly maxEntries: number) {}
-
-  get<T>(key: string): T | undefined {
-    const entry = this.entries.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt <= Date.now()) {
-      this.entries.delete(key);
-      return undefined;
-    }
-    this.entries.delete(key);
-    this.entries.set(key, entry);
-    return cloneCacheValue(entry.value as T);
-  }
-
-  set<T>(key: string, value: T, ttlMs: number) {
-    const now = Date.now();
-    for (const [entryKey, entry] of this.entries) {
-      if (entry.expiresAt <= now) this.entries.delete(entryKey);
-    }
-    this.entries.delete(key);
-    this.entries.set(key, {
-      value: cloneCacheValue(value),
-      expiresAt: now + ttlMs,
-    });
-    while (this.entries.size > this.maxEntries) {
-      const oldestKey = this.entries.keys().next().value;
-      if (oldestKey === undefined) break;
-      this.entries.delete(oldestKey);
-    }
-  }
-}
 
 const normalizeHttpsUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
@@ -441,7 +402,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
-  private readonly cache: BoundedTtlCache;
+  private readonly cache: LRUCache<string, unknown>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
   private readonly requestQueue: QueuedRequest[] = [];
@@ -461,7 +422,9 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
-    this.cache = new BoundedTtlCache(Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES));
+    this.cache = new LRUCache<string, unknown>({
+      max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+    });
     this.maxConcurrentRequests = Math.max(
       1,
       options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
@@ -888,13 +851,17 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private async cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
-    const cached = this.cache.get<T>(key);
-    if (cached !== undefined) return cached;
+    if (ttlMs > 0) {
+      const cached = this.cache.get(key) as T | undefined;
+      if (cached !== undefined) return cloneCacheValue(cached);
+    }
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) return cloneCacheValue(await existing);
 
     const request = loader().then((value) => {
-      if (value !== undefined) this.cache.set(key, value, ttlMs);
+      if (value !== undefined && ttlMs > 0) {
+        this.cache.set(key, value, { ttl: ttlMs });
+      }
       return value;
     }).finally(() => {
       if (this.inFlight.get(key) === request) this.inFlight.delete(key);
