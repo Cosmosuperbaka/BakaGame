@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { createSongLyricClip, SonGuessrService } from "../src/application/SonGuessrService";
 const SongGuessrService = SonGuessrService;
@@ -2140,4 +2140,41 @@ describe("SongGuessrService", () => {
     expect(snapshot.players.find((p) => p.id === guestState.playerId)?.nextRoundMembership).toBeUndefined();
   });
 
+  test("歌单 ID 解析支持纯数字、带参数 URL、Hash 路由与移动端链接", async () => {
+    const service = new SongGuessrService({ musicProvider: provider });
+    const host = connection(service, "host");
+    await createRoom(service, host);
+
+    // 1. 纯数字 ID
+    await execute(service, host, {
+      id: "filter-num",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { autoFilters: { playlist: { id: "987654321" }, artists: [], minPopularity: 0 } },
+    });
+    let snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.settings.autoFilters.playlist?.id).toBe("987654321");
+
+    // 2. 带 Query 参数的标准 URL
+    await execute(service, host, {
+      id: "filter-query",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { autoFilters: { playlist: { id: "https://music.163.com/playlist?id=12345678&userid=999" }, artists: [], minPopularity: 0 } },
+    });
+    snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.settings.autoFilters.playlist?.id).toBe("12345678");
+
+    // 3. SPA Hash 路由 URL
+    await execute(service, host, {
+      id: "filter-hash",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { autoFilters: { playlist: { id: "https://music.163.com/#/playlist?id=87654321" }, artists: [], minPopularity: 0 } },
+    });
+    snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.settings.autoFilters.playlist?.id).toBe("87654321");
+  });
+
 });
+

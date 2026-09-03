@@ -1,4 +1,4 @@
-﻿import {
+import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
   HOST_RECONNECT_TIMEOUT_MS,
@@ -753,10 +753,42 @@ export class SonGuessrService {
 
   private parsePlaylistId(value: string): string {
     const trimmed = value.trim();
-    const match = trimmed.match(/(?:[?&]id=|\/playlist\?id=|playlist\/)(\d+)/i) ?? trimmed.match(/^(\d+)$/);
-    const id = match?.[1];
-    if (!id) throw new AppError("INVALID_PLAYLIST", "请输入网易云歌单链接或数字 ID");
-    return id;
+    if (!trimmed) throw new AppError("INVALID_PLAYLIST", "请输入网易云歌单链接或数字 ID");
+    if (/^\d+$/.test(trimmed)) return trimmed;
+
+    try {
+      const url = new URL(trimmed);
+      // 1. 常规 Query 参数: ?id=123
+      const queryId = url.searchParams.get("id");
+      if (queryId && /^\d+$/.test(queryId)) return queryId;
+
+      // 2. SPA Hash 路由参数: #/playlist?id=123
+      if (url.hash.includes("?")) {
+        const hashQuery = url.hash.slice(url.hash.indexOf("?") + 1);
+        const hashParams = new URLSearchParams(hashQuery);
+        const hashId = hashParams.get("id");
+        if (hashId && /^\d+$/.test(hashId)) return hashId;
+      }
+
+      // 3. 路径格式: /playlist/123
+      const pathMatch = url.pathname.match(/\/playlist\/(\d+)/i);
+      if (pathMatch?.[1]) return pathMatch[1];
+    } catch {
+      // 针对缺少协议的前缀 (如 music.163.com/playlist?id=123) 补全后解析
+      if (trimmed.includes("/")) {
+        try {
+          const fallbackUrl = new URL(`https://${trimmed.replace(/^\/+/, "")}`);
+          const queryId = fallbackUrl.searchParams.get("id");
+          if (queryId && /^\d+$/.test(queryId)) return queryId;
+          const pathMatch = fallbackUrl.pathname.match(/\/playlist\/(\d+)/i);
+          if (pathMatch?.[1]) return pathMatch[1];
+        } catch {
+          // 忽略
+        }
+      }
+    }
+
+    throw new AppError("INVALID_PLAYLIST", "请输入网易云歌单链接或数字 ID");
   }
 
   private normalizeAutoFilters(filters: SongAutoFilters): SongAutoFilters {
