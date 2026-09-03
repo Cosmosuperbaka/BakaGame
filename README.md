@@ -78,15 +78,15 @@ npm run dev   # http://localhost:5173
 | [Agents/Animation.md](Agents/Animation.md) | 动效设计规范 |
 | [Agents/Testing.md](Agents/Testing.md) | 测试分层与验证流程 |
 | [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界 |
-| [Agents/versioning.md](Agents/versioning.md) | 版本号与提交规范 |
+| [Agents/Commitment.md](Agents/Commitment.md) | 版本号、提交与变更承诺规范 |
 
 ## 版本
 
-用户可见版本号维护在 `Client/src/data/changelog.json`，取其中最大条目，规范见 [Agents/versioning.md](Agents/versioning.md)。
+用户可见版本号维护在 `Client/src/data/changelog.json`，取其中最大条目，规范见 [Agents/Commitment.md](Agents/Commitment.md)。
 
 ## 参与贡献
 
-提交 Issue 请使用内置模板（Bug 报告 / 功能建议），标签分组与用法见 [.github/labels.md](.github/labels.md)。提交 PR 请填写内置模板，变更说明遵循 [Agents/versioning.md](Agents/versioning.md) 的 commit 规范，验证要求见 [Agents/Testing.md](Agents/Testing.md)。
+提交 Issue 请使用内置模板（Bug 报告 / 功能建议），标签分组与用法见 [.github/labels.md](.github/labels.md)。提交 PR 请填写内置模板，变更说明遵循 [Agents/Commitment.md](Agents/Commitment.md) 的 commit 规范，验证要求见 [Agents/Testing.md](Agents/Testing.md)。
 
 ## 许可证
 

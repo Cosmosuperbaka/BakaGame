@@ -21,6 +21,7 @@ Two independent packages — **no root-level package.json or shared scripts**:
 - Client keeps the `@bakagame/shared` specifier, mapped in **two** places that must stay in sync: `Client/tsconfig.app.json` `paths` (for `tsc`) and `Client/vite.config.ts` `resolve.alias` (for the bundler). Vite does not read tsconfig paths, so editing only one silently breaks the build.
 
 Detailed naming, structure, and Clean Code standards are documented in `Agents/Conventions.md`.
+Engineering constraints, third-party ecosystem standards, and anti-reinventing-the-wheel rules are defined in `Agents/Spec.md`. Git commit timing, atomicity rules, and changelog tone specifications are defined in `Agents/Commitment.md`.
 
 Never reintroduce a `file:../packages/...` dependency: npm/bun turn it into a symlink to an absolute host path, which dangles on the deploy target (`ENOENT reading .../node_modules/@bakagame/shared`).
 
@@ -236,6 +237,12 @@ When a player first receives a word, word options, or blank hint, `RoomPage` dis
 `DescriptionTable` (from `DescriptionHistory.tsx`) renders one column per description group: `第N轮` (normal), `平票N` (amber, tieBreak), `补充N` (sky, supplement). When `players` are supplied, all current player rows remain visible even if they have no description in a column.
 
 The room shell uses a light warm-yellow background. Player, game-action, and chat panels remain white; secondary rounded content blocks use a solid light gray. The client loads Noto Serif SC globally and hides scrollbar chrome without disabling scrolling.
+
+## Engineering Standards & Ecosystem
+
+- **Third-Party Ecosystem & Anti-Reinventing-the-Wheel**: Prioritize native Web/runtime standards (`URL`, `Intl`, `Map`/`Set`) and framework capabilities (Elysia TypeBox `t`/`Value.Check`). For non-core primitives, prefer battle-tested, lightweight community standards (`fast-json-patch` for RFC 6902, `p-queue` for concurrency, `lru-cache` for bounded cache, `fast-deep-equal` for deep dirty check, `compare-versions` for SemVer 2.0). Never write fragile ad-hoc regexes, O(N) cache sweeps, or recursive polling loops. Full review criteria are documented in `Agents/Spec.md`.
+- **Commit Immediately per Change**: Commit immediately after completing and verifying each atomic modification point. Never accumulate changes until the end. See `Agents/Commitment.md`.
+- **Changelog Tone & Syntax**: User-facing entries in `Client/src/data/changelog.json` must follow existing concise, objective user-facing phrasing without internal implementation jargon. See `Agents/Commitment.md`.
 
 ## Tests
 
