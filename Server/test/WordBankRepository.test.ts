@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,7 +50,7 @@ test("并发保存不同词对时不会互相覆盖", async () => {
   }
 });
 
-test("词库文件内容损坏时安全回退为空列表而不抛错", async () => {
+test("词库文件内容损坏时应抛出错误保护数据，阻止破坏性覆盖", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "word-bank-corrupt-"));
 
   try {
@@ -59,13 +59,10 @@ test("词库文件内容损坏时安全回退为空列表而不抛错", async ()
     writeFileSync(filePath, "invalid-json-content-{{{", "utf8");
 
     const repository = new WordBankRepository(filePath);
-    const result = await repository.readAll();
-    expect(result).toEqual([]);
+    await expect(repository.readAll()).rejects.toThrow("词库文件内容不是合法的 JSON");
 
-    // 仍能正常写入新词对
-    await repository.savePair(["月亮", "太阳"]);
-    const updated = await repository.readAll();
-    expect(updated).toEqual([["太阳", "月亮"]]);
+    // 拒绝盲目写回，阻止破坏性覆盖清空已有文件
+    await expect(repository.savePair(["月亮", "太阳"])).rejects.toThrow();
   } finally {
     rmSync(tempDir, { force: true, recursive: true });
   }

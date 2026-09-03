@@ -1,6 +1,7 @@
-﻿import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { AppError } from "../domain/Errors";
 import { normalizeWordPair } from "../domain/Rules";
 
 const MAX_WORD_BANK_ENTRIES = 10_000;
@@ -11,36 +12,38 @@ export class WordBankRepository {
   constructor(private readonly filePath: string) {}
 
   async readAll(): Promise<Array<[string, string]>> {
-    // 词库文件损坏、格式异常或不存在时，统一安全回退为空词库，避免阻塞主流程。
+    let content: string;
     try {
-      const content = await readFile(this.filePath, "utf8");
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(content) as unknown;
-      } catch {
-        return [];
-      }
-
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-
-      return parsed
-        .filter(
-          (entry): entry is [string, string] =>
-            Array.isArray(entry) &&
-            entry.length === 2 &&
-            typeof entry[0] === "string" &&
-            typeof entry[1] === "string",
-        )
-        .map((entry) => normalizeWordPair(entry));
+      content = await readFile(this.filePath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return [];
       }
-
       throw error;
     }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content) as unknown;
+    } catch (error) {
+      throw new AppError("WORDBANK_CORRUPT", "词库文件内容不是合法的 JSON", { cause: error });
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new AppError("WORDBANK_CORRUPT", "词库文件格式不正确：根节点必须为数组");
+    }
+
+    return parsed.map((entry, index) => {
+      if (
+        !Array.isArray(entry) ||
+        entry.length !== 2 ||
+        typeof entry[0] !== "string" ||
+        typeof entry[1] !== "string"
+      ) {
+        throw new AppError("WORDBANK_CORRUPT", `词库在索引 ${index} 处的条目格式不正确`);
+      }
+      return normalizeWordPair(entry);
+    });
   }
 
   async savePair(pair: [string, string]): Promise<Array<[string, string]>> {
