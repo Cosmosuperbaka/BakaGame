@@ -1,4 +1,4 @@
-﻿# 谁是卧底业务架构与状态机指南 (WhoIsFaker Domain Architecture & State Machine)
+# 谁是卧底业务架构与状态机指南 (WhoIsFaker Domain Architecture & State Machine)
 
 本文档是 `WhoIsFaker`（谁是卧底）游戏核心领域模型、网络通信协议、服务端分层、客户端状态流向与游戏规则状态机的权威技术规范。
 
@@ -129,8 +129,10 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 白板猜词是游戏的**全局阻塞阶段**，整房暂停一切倒计时并切换为全员围观：
 
 1. **触发入口 (`BlankGuessButton`)**：白板玩家在存活期间（或残局触发）可见，点击弹窗二次确认后发送 `game.enterBlankGuess`。每局有且仅有 1 次尝试机会。
-2. **实时草稿广播 (`blankGuessDraft`)**：白板输入时，前端以约 220ms 节流发送 `game.updateBlankGuessDraft`，服务端实时广播草稿给全房玩家围观其推演过程。
-3. **出题人复核裁定 (`pendingReview`)**：
+2. **倒计时打断与暂存还原 (`interruptedRemainingTimerMs`)**：白板发起猜词打断发言阶段时，服务端计算并暂存当前阶段剩余毫秒数。若后续裁定未通过或超时切回原阶段，系统精准恢复该剩余倒计时，杜绝倒计时丢失或被重置为初始全长。
+3. **实时草稿广播 (`blankGuessDraft`)**：白板输入时，前端以约 220ms 节流发送 `game.updateBlankGuessDraft`，服务端实时广播草稿给全房玩家围观其推演过程。
+4. **掉线兜底防死锁**：若白板在猜词阻塞期间意外断线，出题人选择“继续等待”时，服务端强制挂载 60 秒倒计时兜底；若到期白板未重连提交，超时机制自动判定猜词失败并切回原阶段，杜绝房间陷入不可推进的死锁。
+5. **出题人复核裁定 (`pendingReview`)**：
    - 真实词对仅通过 `privateState.globalWords` 下发出题人，公共快照严格保密。
    - 为避免因错别字或同义词（如“香焦”与“香蕉”）误杀，若自动精确比对未完全匹配，服务端**不直接宣告失败**，而是挂起至 `pendingReview` 阻塞等待出题人人工裁定。
    - 出题人通过 `game.reviewBlankGuess` 提交 `{ approve: boolean }`：
