@@ -319,8 +319,8 @@ describe("game store integration", () => {
         revision: 2,
         baseRevision: 1,
         operations: [{
-          op: "set",
-          path: ["players", 0, "roundStatus"],
+          op: "replace",
+          path: "/players/0/roundStatus",
           value: "dead",
         }],
       },
@@ -333,8 +333,8 @@ describe("game store integration", () => {
         revision: 3,
         baseRevision: 2,
         operations: [
-          { op: "set", path: ["status", "phase"], value: "gameOver" },
-          { op: "set", path: ["summary"], value: roundSummary },
+          { op: "replace", path: "/status/phase", value: "gameOver" },
+          { op: "add", path: "/summary", value: roundSummary },
         ],
       },
     });
@@ -346,8 +346,8 @@ describe("game store integration", () => {
         revision: 4,
         baseRevision: 3,
         operations: [{
-          op: "set",
-          path: ["chat"],
+          op: "replace",
+          path: "/chat",
           value: [{
             id: "message-1",
             playerId: "system",
