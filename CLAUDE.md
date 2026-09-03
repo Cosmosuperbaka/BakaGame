@@ -6,7 +6,7 @@ Before changing anything, read the following files in order:
 1. `AGENTS.md` — overall guidance entry point and workspace overview.
 2. `Agents/Conventions.md` — workspace structure, commands, environment variables, and naming conventions.
 3. `Agents/Spec.md` — engineering constraints and third-party ecosystem standards.
-4. `Agents/Commitment.md` — immediate atomic commit rules, versioning, and changelog specifications.
+4. `Agents/Commitment.md` — immediate atomic commit rules, strict 100% Chinese commit messages (max 12 chars), strict 4 scopes (`Faker`/`Song`/`CCB`/`Core`), versioning, and changelog specifications.
 5. `Agents/WhoIsFaker.md` — WhoIsFaker domain architecture, game state machine, and protocol rules.
 6. `Agents/Design.md` — required for client UI changes.
 7. `Agents/Animation.md` — required for animation or interaction changes.
