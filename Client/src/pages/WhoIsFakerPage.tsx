@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { listItem, selectable, backdrop, spinner, spring } from "@/lib/Motion";
@@ -51,7 +51,7 @@ export default function WhoIsFakerPage() {
     } catch {
       addToast("刷新失败", "error");
     } finally {
-      setTimeout(() => setRefreshing(false), 500);
+      setRefreshing(false);
     }
   }, [subscribeLobby, addToast]);
 

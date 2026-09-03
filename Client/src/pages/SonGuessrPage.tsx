@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Eye, Lock, Plus, RefreshCw, Users } from "lucide-react";
@@ -58,7 +58,7 @@ export default function SonGuessrPage() {
     } catch {
       setNotice("刷新失败", "error");
     } finally {
-      window.setTimeout(() => setRefreshing(false), 500);
+      setRefreshing(false);
     }
   }, [setNotice, subscribeLobby]);
 
