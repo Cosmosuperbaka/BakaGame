@@ -16,7 +16,7 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SupplementRequestControl } from "../layout/SupplementRequestControl";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { PublicPlayerView, SpeechMode } from "@/types";
+import type { SpeechMode } from "@/types";
 
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
@@ -26,7 +26,10 @@ const speechMeta = {
 
 /** 发言表格中的一行 */
 interface SpeechRow {
-  player: PublicPlayerView;
+  player: {
+    id: string;
+    name: string;
+  };
   /** 已提交且顺序已到，可以公开 */
   text?: string;
   /** 已提交但顺序未到，内容仍需折起 */
@@ -138,21 +141,6 @@ export function DescriptionPhase() {
     [currentDescriptions, snapshot.status.submittedSpeechPlayerIds],
   );
 
-  const waitingPlayerIds = useMemo(() => {
-    const order =
-      snapshot.status.speechOrder ??
-      (mode === "supplement"
-        ? snapshot.status.pendingSupplementPlayerIds
-        : mode === "tieBreak"
-          ? snapshot.status.tieBreakCandidateIds
-          : snapshot.status.descriptionOrder) ??
-      [];
-    return order.filter((playerId) => !submittedPlayerIds.has(playerId));
-  }, [mode, snapshot.status, submittedPlayerIds]);
-
-  const waitingPlayers = waitingPlayerIds
-    .map((playerId) => snapshot.players.find((player) => player.id === playerId))
-    .filter((player): player is (typeof snapshot.players)[number] => player !== undefined);
   const myId = privateState?.playerId ?? "";
 
   /**
@@ -162,16 +150,12 @@ export function DescriptionPhase() {
     if (snapshot.status.speechOrder) return snapshot.status.speechOrder;
     if (mode === "supplement") return snapshot.status.pendingSupplementPlayerIds ?? [];
     if (mode === "tieBreak") return snapshot.status.tieBreakCandidateIds ?? [];
-    const order = snapshot.status.descriptionOrder ?? [];
-    if (order.length > 0) return order;
-    // 顺序缺失时退回为存活玩家，避免表格为空。
-    return snapshot.players
-      .filter(
-        (player) =>
-          player.roundStatus === "alive" && player.id !== snapshot.status.questionerPlayerId,
-      )
-      .map((player) => player.id);
-  }, [mode, snapshot.status, snapshot.players]);
+    return snapshot.status.descriptionOrder ?? [];
+  }, [mode, snapshot.status]);
+
+  const waitingPlayerIds = useMemo(() => {
+    return speechOrder.filter((playerId) => !submittedPlayerIds.has(playerId));
+  }, [speechOrder, submittedPlayerIds]);
 
   /**
    * 服务端已经只下发顺序连续完成的公开前缀；客户端不再为任何身份开后门。
@@ -180,26 +164,24 @@ export function DescriptionPhase() {
     const textByPlayer = new Map(
       currentDescriptions.map((description) => [description.playerId, description.text]),
     );
+    const playerNameById = new Map(
+      snapshot.players.map((player) => [player.id, player.name]),
+    );
 
     return speechOrder.map((playerId) => {
-      const player =
-        snapshot.players.find((candidate) => candidate.id === playerId) ??
-        ({
-          id: playerId,
-          name: currentDescriptions.find((d) => d.playerId === playerId)?.playerName ?? "已离场",
-          score: 0,
-          membership: "active",
-          online: false,
-          isReady: false,
-          isBot: false,
-          isHost: false,
-          roundStatus: "waiting",
-        } satisfies PublicPlayerView);
-
+      const name =
+        playerNameById.get(playerId) ??
+        currentDescriptions.find((d) => d.playerId === playerId)?.playerName ??
+        "已离场";
       const text = textByPlayer.get(playerId);
       const isMe = playerId === myId;
 
-      return { player, text, submitted: submittedPlayerIds.has(playerId), isMe };
+      return {
+        player: { id: playerId, name },
+        text,
+        submitted: submittedPlayerIds.has(playerId),
+        isMe,
+      };
     });
   }, [speechOrder, currentDescriptions, snapshot.players, myId, submittedPlayerIds]);
   const canSpeak =
