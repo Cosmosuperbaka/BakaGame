@@ -1,8 +1,8 @@
-﻿import { render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
-import LandingPage from "./LandingPage";
+import LandingPage, { formatRelativeTime } from "./LandingPage";
 
 function renderLandingPage() {
   return render(
@@ -44,4 +44,27 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-songuessr")).toBeInTheDocument();
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
+
+  it("formats relative time correctly using Intl.RelativeTimeFormat", () => {
+    const now = Date.now();
+
+    // 刚刚 (未来或0)
+    expect(formatRelativeTime(new Date(now + 1000).toISOString())).toBe("刚刚");
+
+    // 秒级
+    expect(formatRelativeTime(new Date(now - 10 * 1000).toISOString())).toBe("10秒钟前");
+
+    // 分钟级
+    expect(formatRelativeTime(new Date(now - 5 * 60 * 1000).toISOString())).toBe("5分钟前");
+
+    // 小时级
+    expect(formatRelativeTime(new Date(now - 3 * 3600 * 1000).toISOString())).toBe("3小时前");
+
+    // 天级
+    expect(formatRelativeTime(new Date(now - 2 * 86400 * 1000).toISOString())).toBe("2天前");
+
+    // 无效输入原样返回
+    expect(formatRelativeTime("invalid-date")).toBe("invalid-date");
+  });
 });
+

@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -108,36 +108,41 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
+const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "always" });
+
 /**
- * 把时间戳换算成中文相对时间，精度随时间跨度递减：
- * 一分钟内数秒，一小时内数分钟，一天内数小时，再往后数天/月/年。
+ * 把时间戳换算成中文相对时间，采用标准 Intl.RelativeTimeFormat：
+ * 精度随时间跨度递减：秒 -> 分钟 -> 小时 -> 天 -> 月 -> 年。
  *
  * 只有日期没有时间的旧数据（YYYY-MM-DD）按当天零点解析，
  * 这种输入本身没有秒级精度，最细只会落到「几小时前」。
  */
-function formatRelativeTime(dateStr: string): string {
+export function formatRelativeTime(dateStr: string): string {
   const raw = dateStr.trim();
   // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
   const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
   if (Number.isNaN(then.getTime())) return dateStr;
 
-  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
-  // 时钟偏差或未来时间戳，不显示负数。
-  if (seconds < 0) return "刚刚";
-  if (seconds < 60) return `${seconds} 秒前`;
+  const seconds = Math.floor((then.getTime() - Date.now()) / 1000);
+  // 时钟偏差或未来时间戳，显示刚刚。
+  if (seconds >= 0) return "刚刚";
 
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
+  const abs = Math.abs(seconds);
+  if (abs < 60) return rtf.format(-abs, "second");
+
+  const minutes = Math.floor(abs / 60);
+  if (minutes < 60) return rtf.format(-minutes, "minute");
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return rtf.format(-hours, "hour");
 
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} 天前`;
+  if (days < 30) return rtf.format(-days, "day");
 
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months} 个月前`;
-  return `${Math.floor(months / 12)} 年前`;
+  if (months < 12) return rtf.format(-months, "month");
+
+  return rtf.format(-Math.floor(months / 12), "year");
 }
 
 function GameRow({ game }: { game: GameEntry }) {
