@@ -1,4 +1,4 @@
-﻿import { AppError } from "./Errors";
+import { AppError } from "./Errors";
 import {
   ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
@@ -63,7 +63,34 @@ export const normalizeWordPair = (values: [string, string]): [string, string] =>
   ];
 };
 
-// 校验阵营配置是否符合当前人数约束。测试房间与真实房间同规则。
+// 纯规则谓词：判断阵营配置是否满足当前人数约束，无异常与副作用。
+export const isRoleConfigSatisfied = (config: RoleConfig, playerCount: number): boolean => {
+  const limits = getRoomRoleLimits(playerCount);
+  const effectiveAngelCount = config.hasAngel ? 1 : 0;
+  const effectiveBlankCount = config.hasBlank ? 1 : 0;
+  const specialCount = config.undercoverCount + effectiveAngelCount + effectiveBlankCount;
+  const civilianCount = playerCount - specialCount;
+
+  if (
+    config.undercoverCount < 1 ||
+    limits.maxUndercoverCount < 1 ||
+    config.undercoverCount > limits.maxUndercoverCount
+  ) {
+    return false;
+  }
+
+  if (config.hasAngel && !limits.canEnableAngel) {
+    return false;
+  }
+
+  if (config.hasBlank && !limits.canEnableBlank) {
+    return false;
+  }
+
+  return civilianCount >= 1;
+};
+
+// 校验阵营配置是否符合当前人数约束。若不符合则抛出精准业务错误。测试房间与真实房间同规则。
 export const validateRoleConfig = (config: RoleConfig, playerCount: number): void => {
   const limits = getRoomRoleLimits(playerCount);
   const effectiveAngelCount = config.hasAngel ? 1 : 0;
