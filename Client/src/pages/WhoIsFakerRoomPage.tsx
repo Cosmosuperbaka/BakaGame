@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -213,10 +213,6 @@ export default function WhoIsFakerRoomPage() {
   const phase = snapshot?.status.phase ?? "waiting";
   const roundId = snapshot?.status.roundId;
   const day = snapshot?.status.day ?? 0;
-  const roleConfig = snapshot?.settings.roleConfig ?? { undercoverCount: 1, hasAngel: false, hasBlank: false };
-
-  // 游戏开始前不显示发言历史按钮
-  const showHistoryToggle = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
   // 结算后身份公开，与出题人视角合并成一张身份表交给玩家栏。
   const revealedRoles = useMemo(() => {
@@ -296,11 +292,6 @@ export default function WhoIsFakerRoomPage() {
     };
   }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
 
-  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
-  const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
-  // 全局词语只发给主持人与旁观者，因此这里无需再判断视角。
-  const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
-
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
     return (
@@ -360,6 +351,12 @@ export default function WhoIsFakerRoomPage() {
       </div>
     );
   }
+
+  const roleConfig = snapshot.settings.roleConfig;
+  const showHistoryToggle = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
+  const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
