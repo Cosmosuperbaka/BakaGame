@@ -1,4 +1,4 @@
-﻿import { act, renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useAutoSave } from "./UseAutoSave";
@@ -36,6 +36,22 @@ describe("useAutoSave", () => {
 
     rerender({ value: 1 });
     rerender({ value: 0 });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger save when object keys are reordered (fast-deep-equal)", async () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(({ value }) => useAutoSave(value, save), {
+      initialProps: { value: { a: 1, b: 2 } as Record<string, number> },
+    });
+
+    // 重新排序 key，但内容实质相等
+    rerender({ value: { b: 2, a: 1 } });
     await act(async () => {
       vi.advanceTimersByTime(500);
       await Promise.resolve();
