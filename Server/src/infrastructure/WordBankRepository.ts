@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { AppError } from "../domain/Errors";
@@ -75,7 +75,23 @@ export class WordBankRepository {
       await mkdir(dir, { recursive: true });
       const tempPath = `${this.filePath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
       await writeFile(tempPath, `${JSON.stringify(allPairs, null, 2)}\n`, "utf8");
-      await rename(tempPath, this.filePath);
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await rename(tempPath, this.filePath);
+          break;
+        } catch (error) {
+          if (attempt === 2) {
+            try {
+              await unlink(tempPath);
+            } catch {
+              // 忽略临时文件删除异常，透传主错误
+            }
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+        }
+      }
     }
 
     return allPairs;
