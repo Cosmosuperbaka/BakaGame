@@ -38,6 +38,7 @@ import {
 // 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
 import changelogData from "@/data/changelog.json";
 import commitHistory from "virtual:commit-history";
+import { formatRelativeTime } from "@/lib/Time";
 
 interface ChangelogData {
   entries: ChangelogEntry[];
@@ -107,42 +108,6 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: faGithub },
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
-
-const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "always" });
-
-/**
- * 把时间戳换算成中文相对时间，采用标准 Intl.RelativeTimeFormat：
- * 精度随时间跨度递减：秒 -> 分钟 -> 小时 -> 天 -> 月 -> 年。
- *
- * 只有日期没有时间的旧数据（YYYY-MM-DD）按当天零点解析，
- * 这种输入本身没有秒级精度，最细只会落到「几小时前」。
- */
-export function formatRelativeTime(dateStr: string): string {
-  const raw = dateStr.trim();
-  // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
-  const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
-  if (Number.isNaN(then.getTime())) return dateStr;
-
-  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
-  // 时钟偏差或未来时间戳，显示刚刚。
-  if (seconds <= 0) return "刚刚";
-
-  if (seconds < 60) return rtf.format(-seconds, "second");
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return rtf.format(-minutes, "minute");
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return rtf.format(-hours, "hour");
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) return rtf.format(-days, "day");
-
-  const months = Math.floor(days / 30);
-  if (months < 12) return rtf.format(-months, "month");
-
-  return rtf.format(-Math.floor(months / 12), "year");
-}
 
 function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();

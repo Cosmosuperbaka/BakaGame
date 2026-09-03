@@ -2,7 +2,8 @@ import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
-import LandingPage, { formatRelativeTime } from "./LandingPage";
+import LandingPage from "./LandingPage";
+import { formatRelativeTime } from "@/lib/Time";
 
 function renderLandingPage() {
   return render(
