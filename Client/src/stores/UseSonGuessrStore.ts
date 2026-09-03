@@ -51,6 +51,16 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
+let rawSnapshot: SonGuessrRoomSnapshot | null = null;
+let rawPrivateState: SonGuessrPrivateState | null = null;
+
+export const resetSonGuessrStateSync = () => {
+  snapshotRevision = undefined;
+  privateStateRevision = undefined;
+  syncRequestPending = false;
+  rawSnapshot = null;
+  rawPrivateState = null;
+};
 
 const mergeChat = (
   existing: SonGuessrRoomSnapshot["chat"] = [],
@@ -122,6 +132,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
 
     const roomId = res.roomId ?? params.roomId;
     saveSonGuessrSessionToken(roomId, res.sessionToken);
+    resetSonGuessrStateSync();
+    rawSnapshot = res.snapshot ?? null;
+    rawPrivateState = res.privateState ?? null;
     set({
       roomId,
       sessionToken: res.sessionToken,
@@ -141,6 +154,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
 
     const canonicalRoomId = res.roomId ?? roomId;
     saveSonGuessrSessionToken(canonicalRoomId, res.sessionToken);
+    resetSonGuessrStateSync();
+    rawSnapshot = res.snapshot ?? null;
+    rawPrivateState = res.privateState ?? null;
     set({
       roomId: canonicalRoomId,
       sessionToken: res.sessionToken,
@@ -164,6 +180,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
 
       const canonicalRoomId = res.roomId ?? roomId;
       saveSonGuessrSessionToken(canonicalRoomId, res.sessionToken);
+      resetSonGuessrStateSync();
+      rawSnapshot = res.snapshot ?? null;
+      rawPrivateState = res.privateState ?? null;
       set({
         roomId: canonicalRoomId,
         sessionToken: res.sessionToken,
@@ -178,6 +197,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
         return true;
       }
       clearSonGuessrSessionToken(roomId);
+      resetSonGuessrStateSync();
       set({
         roomId: null,
         sessionToken: null,
@@ -198,6 +218,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
       // 忽略离开房间失败
     } finally {
       clearSonGuessrSessionToken(roomId);
+      resetSonGuessrStateSync();
       set({
         roomId: null,
         sessionToken: null,
@@ -247,7 +268,7 @@ export function initSonGuessrWs() {
       case "song.room.snapshot":
         {
           const result = consumeStateSync(
-            store.snapshot,
+            rawSnapshot,
             snapshotRevision,
             evt.payload,
           );
@@ -256,14 +277,14 @@ export function initSonGuessrWs() {
             break;
           }
           snapshotRevision = result.revision;
-          const incomingSnapshot = result.state as SonGuessrRoomSnapshot;
+          rawSnapshot = result.state as SonGuessrRoomSnapshot;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          const nextSnapshot = currentSnapshot && currentSnapshot.roomId === incomingSnapshot.roomId
+          const nextSnapshot = currentSnapshot && currentSnapshot.roomId === rawSnapshot.roomId
             ? {
-                ...incomingSnapshot,
-                chat: mergeChat(currentSnapshot.chat, incomingSnapshot.chat),
+                ...rawSnapshot,
+                chat: mergeChat(currentSnapshot.chat, rawSnapshot.chat),
               }
-            : incomingSnapshot;
+            : rawSnapshot;
 
           const currentPrivate = useSonGuessrStore.getState().privateState;
           const tokenToSave = currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
@@ -279,7 +300,7 @@ export function initSonGuessrWs() {
       case "song.game.privateState":
         {
           const result = consumeStateSync(
-            store.privateState,
+            rawPrivateState,
             privateStateRevision,
             evt.payload,
           );
@@ -288,7 +309,8 @@ export function initSonGuessrWs() {
             break;
           }
           privateStateRevision = result.revision;
-          const nextPrivateState = result.state as SonGuessrPrivateState;
+          rawPrivateState = result.state as SonGuessrPrivateState;
+          const nextPrivateState = rawPrivateState;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
           if (nextPrivateState.sessionToken && currentSnapshot?.roomId) {
             saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
@@ -309,6 +331,7 @@ export function initSonGuessrWs() {
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+        resetSonGuessrStateSync();
         useSonGuessrStore.setState({
           roomId: null,
           sessionToken: null,
@@ -323,6 +346,7 @@ export function initSonGuessrWs() {
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+        resetSonGuessrStateSync();
         useSonGuessrStore.setState({
           roomId: null,
           sessionToken: null,

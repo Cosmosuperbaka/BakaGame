@@ -91,6 +91,7 @@ interface SongGuessrRoundPlayerState {
   correct: boolean;
   gaveUp: boolean;
   deadlineAt?: number;
+  inFlight?: boolean;
 }
 
 interface SongGuessrRoundRecord {
@@ -103,6 +104,8 @@ interface SongGuessrRoundRecord {
   startScores: Record<string, number>;
   players: Record<string, SongGuessrRoundPlayerState>;
   settings: SongGuessrSettings;
+  audioReadyDeadlineAt?: number;
+  hardDeadlineAt?: number;
 }
 
 interface SongGuessrRoomRecord {
@@ -131,6 +134,7 @@ interface SongGuessrRoomRecord {
   lastActivityAt: number;
   emptySinceAt?: number;
   automaticRoundLoading?: boolean;
+  manualRoundStarting?: boolean;
   hostReconnectDeadlineAt?: number;
 }
 
@@ -434,16 +438,44 @@ export class SonGuessrService {
 
       if (room.phase === "playing" && room.currentRound) {
         let changed = false;
-        for (const [playerId, state] of Object.entries(room.currentRound.players)) {
-          if (state.correct || state.gaveUp || state.guessesUsed >= room.currentRound.settings.maxGuessesPerRound) continue;
-          if (state.deadlineAt !== undefined && state.deadlineAt <= currentTime) {
+        const round = room.currentRound;
+        const isRoundHardExpired =
+          round.hardDeadlineAt !== undefined && currentTime >= round.hardDeadlineAt;
+
+        for (const [playerId, state] of Object.entries(round.players)) {
+          if (
+            playerId === round.submitterPlayerId &&
+            !this.canTestSubmitterGuess(room, playerId)
+          ) {
+            continue;
+          }
+          if (
+            state.correct ||
+            state.gaveUp ||
+            state.guessesUsed >= round.settings.maxGuessesPerRound
+          ) {
+            continue;
+          }
+
+          const isAudioReadyTimeout =
+            !state.audioReady &&
+            round.audioReadyDeadlineAt !== undefined &&
+            currentTime >= round.audioReadyDeadlineAt;
+          const isGuessTimeout =
+            state.deadlineAt !== undefined && state.deadlineAt <= currentTime;
+
+          if (isAudioReadyTimeout && !state.audioReady) {
+            state.audioReady = true;
+          }
+
+          if (isGuessTimeout || isAudioReadyTimeout || isRoundHardExpired) {
             this.recordTimeout(room, playerId);
             changed = true;
           }
         }
 
-        if (changed) {
-          if (this.isRoundComplete(room)) this.finishRound(room);
+        if (changed || isRoundHardExpired) {
+          if (this.isRoundComplete(room) || isRoundHardExpired) this.finishRound(room);
           this.publishRoom(room);
         }
       }
@@ -1001,12 +1033,17 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     const automatic = room.settings.questionMode === "automatic";
-    if (room.phase !== "waiting" || (automatic && room.automaticRoundLoading)) {
+    if (
+      room.phase !== "waiting" ||
+      (automatic && room.automaticRoundLoading) ||
+      (!automatic && room.manualRoundStarting)
+    ) {
       throw new AppError("INVALID_PHASE", "当前不能开始新游戏");
     }
 
-    // 自动开局会跨越多个异步音乐请求，先占锁再做校验，避免重复点击并发创建两轮。
+    // 自动与手动开局均先占锁，避免重复点击并发创建两轮。
     if (automatic) room.automaticRoundLoading = true;
+    else room.manualRoundStarting = true;
     try {
       if (!room.musicSession) {
         throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录网易云账号");
@@ -1051,6 +1088,7 @@ export class SonGuessrService {
       return { started: true };
     } finally {
       if (automatic) room.automaticRoundLoading = false;
+      else room.manualRoundStarting = false;
     }
   }
 
@@ -1140,6 +1178,8 @@ export class SonGuessrService {
       startScores: Object.fromEntries(Object.values(room.players).map((candidate) => [candidate.id, candidate.score])),
       players: participantStates,
       settings: roundSettings,
+      audioReadyDeadlineAt: this.now() + 15_000,
+      hardDeadlineAt: this.now() + (roundSettings.guessDurationSeconds + 20) * 1_000,
     };
     room.pendingSubmitterPlayerId = undefined;
     room.roundSummary = undefined;
@@ -1267,6 +1307,7 @@ export class SonGuessrService {
     if (!state.audioReady) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     if (state.correct) throw new AppError("ALREADY_CORRECT", "你已经猜对了");
     if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", "你已经放弃本回合");
+    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", "正在校验上一次猜测，请稍候");
     if (state.guessesUsed >= round.settings.maxGuessesPerRound) throw new AppError("NO_MORE_GUESSES", "本回合猜测次数已用完");
 
     if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
@@ -1276,12 +1317,32 @@ export class SonGuessrService {
       throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
     }
 
-    const guessedSong = await this.options.musicProvider.getSongMetadata(
-      songId,
-      room.musicSession?.cookie,
-    );
+    // 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限
+    state.inFlight = true;
     state.guessesUsed += 1;
     player.totalGuesses += 1;
+
+    let guessedSong: SongDetails;
+    try {
+      guessedSong = await this.options.musicProvider.getSongMetadata(
+        songId,
+        room.musicSession?.cookie,
+      );
+    } catch (error) {
+      if (room.phase === "playing" && room.currentRound === round) {
+        state.guessesUsed = Math.max(0, state.guessesUsed - 1);
+        player.totalGuesses = Math.max(0, player.totalGuesses - 1);
+      }
+      state.inFlight = false;
+      throw error;
+    }
+
+    // 异步返回后复验房间与回合状态
+    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
+      state.inFlight = false;
+      throw new AppError("ROUND_EXPIRED", "该回合已结束");
+    }
+    state.inFlight = false;
     const correct = this.isCorrectSong(guessedSong, round.song);
     const attempt: SongGuessAttempt = {
       id: this.createId("song_guess"),
@@ -1398,29 +1459,35 @@ export class SonGuessrService {
         room.automaticRoundLoading = false;
       }
     } else {
-      const previousSubmitterId = previousRound?.submitterPlayerId;
-      room.currentRound = undefined;
-      room.roundSummary = undefined;
-      this.applyQueuedMemberships(room);
-      if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
-        room.pendingSubmitterPlayerId = undefined;
-        room.phase = "waiting";
-        this.resetReadyState(room);
-        this.touch(room);
-        this.publishRoom(room);
-        this.publishLobby();
-        return { nextRound: room.roundNumber + 1, waiting: true };
-      }
-      if (room.settings.autoRotateSubmitter) {
-        const nextSubmitter = this.nextRotatingSubmitter(room, previousSubmitterId);
-        if (nextSubmitter) {
-          room.pendingSubmitterPlayerId = nextSubmitter.id;
-          room.phase = "submittingSong";
+      if (room.manualRoundStarting) throw new AppError("ROUND_BUSY", "正在准备下一回合");
+      room.manualRoundStarting = true;
+      try {
+        const previousSubmitterId = previousRound?.submitterPlayerId;
+        room.currentRound = undefined;
+        room.roundSummary = undefined;
+        this.applyQueuedMemberships(room);
+        if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+          room.pendingSubmitterPlayerId = undefined;
+          room.phase = "waiting";
+          this.resetReadyState(room);
+          this.touch(room);
+          this.publishRoom(room);
+          this.publishLobby();
+          return { nextRound: room.roundNumber + 1, waiting: true };
+        }
+        if (room.settings.autoRotateSubmitter) {
+          const nextSubmitter = this.nextRotatingSubmitter(room, previousSubmitterId);
+          if (nextSubmitter) {
+            room.pendingSubmitterPlayerId = nextSubmitter.id;
+            room.phase = "submittingSong";
+          } else {
+            room.phase = "choosingSubmitter";
+          }
         } else {
           room.phase = "choosingSubmitter";
         }
-      } else {
-        room.phase = "choosingSubmitter";
+      } finally {
+        room.manualRoundStarting = false;
       }
     }
     this.touch(room);
