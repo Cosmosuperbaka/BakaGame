@@ -1188,11 +1188,19 @@ export class RoomService {
 
     this.ensurePhaseNotBlocked(round);
 
+    // 暂存被打断阶段的剩余倒计时毫秒数
+    const timerState = round.phaseTimer ?? room.phaseTimer;
+    const remainingTimerMs =
+      timerState && timerState.endsAt > this.now()
+        ? Math.max(1_000, timerState.endsAt - this.now())
+        : undefined;
+
     this.clearPhaseTimer(room);
     round.blankGuessContext = {
       playerId: player.id,
       reason: "active",
       resumePhase,
+      interruptedRemainingTimerMs: remainingTimerMs,
     };
     round.phase = "blankGuess";
     round.speechMode = undefined;
@@ -1271,9 +1279,14 @@ export class RoomService {
         "白板猜测失败，系统按残局条件结算",
       );
     } else if (round.blankGuessContext?.resumePhase) {
-      round.phase = round.blankGuessContext.resumePhase;
+      const resumePhase = round.blankGuessContext.resumePhase;
+      const remainingTimerMs = round.blankGuessContext.interruptedRemainingTimerMs;
+      round.phase = resumePhase;
       round.blankGuessContext = undefined;
       this.appendSystemMessage(room, "白板猜词未通过，游戏继续");
+      if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
+        this.restoreInterruptedTimer(room, remainingTimerMs);
+      }
     }
 
     this.touchRoom(room);
@@ -1303,6 +1316,10 @@ export class RoomService {
       await this.forceRemovePlayer(room, targetPlayerId, "掉线后被出题人移出");
     } else {
       this.appendSystemMessage(room, `${room.players[targetPlayerId]?.name ?? "玩家"} 的掉线状态已保留`);
+      // 关键修复：若掉线者正是猜词中的白板，选择保留等待时挂载 60 秒倒计时兜底，超时自动按失败结算切回残局，杜绝死锁
+      if (round.phase === "blankGuess" && round.blankGuessContext?.playerId === targetPlayerId) {
+        this.startFallbackBlankGuessTimer(room, 60);
+      }
     }
 
     this.touchRoom(room);
@@ -1409,6 +1426,48 @@ export class RoomService {
     if (room.round?.phaseTimer) {
       room.round.phaseTimer = undefined;
     }
+  }
+
+  private restoreInterruptedTimer(room: RoomRecord, remainingMs: number): void {
+    const round = room.round;
+    if (!round) return;
+    this.clearPhaseTimer(room);
+    const endsAt = this.now() + remainingMs;
+    const durationSeconds = Math.max(1, Math.round(remainingMs / 1000));
+    const timerState: PhaseTimerState = {
+      durationSeconds,
+      endsAt,
+      phase: round.phase,
+      speechMode: round.speechMode,
+      tieBreakStage: round.tieBreak?.stage,
+    };
+    round.phaseTimer = timerState;
+    const timer = setTimeout(() => {
+      void this.handlePhaseTimeout(
+        room.id,
+        round.phase,
+        timerState.speechMode,
+        timerState.tieBreakStage,
+      );
+    }, remainingMs);
+    this.phaseTimerTimeoutByRoomId.set(room.id, timer);
+  }
+
+  private startFallbackBlankGuessTimer(room: RoomRecord, durationSeconds = 60): void {
+    const round = room.round;
+    if (!round || round.phase !== "blankGuess") return;
+    this.clearPhaseTimer(room);
+    const endsAt = this.now() + durationSeconds * 1000;
+    const timerState: PhaseTimerState = {
+      durationSeconds,
+      endsAt,
+      phase: "blankGuess",
+    };
+    round.phaseTimer = timerState;
+    const timer = setTimeout(() => {
+      void this.handlePhaseTimeout(room.id, "blankGuess");
+    }, durationSeconds * 1000);
+    this.phaseTimerTimeoutByRoomId.set(room.id, timer);
   }
 
   private async handlePhaseTimeout(
@@ -1580,14 +1639,30 @@ export class RoomService {
               "白板猜词超时未通过，系统按残局条件结算",
             );
           } else if (ctx.resumePhase) {
-            round.phase = ctx.resumePhase;
+            const resumePhase = ctx.resumePhase;
+            const remainingTimerMs = ctx.interruptedRemainingTimerMs;
+            round.phase = resumePhase;
             round.blankGuessContext = undefined;
             this.appendSystemMessage(room, "白板猜词裁定超时未通过，游戏继续");
+            if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
+              this.restoreInterruptedTimer(room, remainingTimerMs);
+            }
           }
         } else {
           round.blankGuessUsed = true;
-          const draft = ctx.draft ?? ["", ""];
-          const guess = evaluateBlankGuess(round, draft, this.now(), ctx.reason);
+          const draft = ctx.draft;
+          let guess: BlankGuessRecord;
+          if (draft && draft[0].trim() && draft[1].trim()) {
+            guess = evaluateBlankGuess(round, draft, this.now(), ctx.reason);
+          } else {
+            guess = {
+              playerId: ctx.playerId,
+              guessedWords: [draft?.[0] || "", draft?.[1] || ""],
+              success: false,
+              createdAt: this.now(),
+              reason: ctx.reason,
+            };
+          }
           round.blankGuessRecords.push(guess);
           if (guess.success) {
             await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
@@ -1598,9 +1673,14 @@ export class RoomService {
               "白板猜词超时失败，系统按残局条件结算",
             );
           } else if (ctx.resumePhase) {
-            round.phase = ctx.resumePhase;
+            const resumePhase = ctx.resumePhase;
+            const remainingTimerMs = ctx.interruptedRemainingTimerMs;
+            round.phase = resumePhase;
             round.blankGuessContext = undefined;
             this.appendSystemMessage(room, "白板猜词超时失败，游戏继续");
+            if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
+              this.restoreInterruptedTimer(room, remainingTimerMs);
+            }
           }
         }
         this.touchRoom(room);

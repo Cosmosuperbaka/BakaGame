@@ -430,4 +430,17 @@ describe("game store integration", () => {
     expect(chatAfterGameOver[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
     expect(chatAfterGameOver[1]?.text).toBe("已返回公共聊天频道，所有玩家均可见发言");
   });
+
+  it("resets state sync and cleans room state when leaveRoomState or joinRoomState with new roomId is called", () => {
+    useGameStore.getState().joinRoomState("room-a", "token-a");
+    expect(useGameStore.getState().roomId).toBe("room-a");
+
+    useGameStore.getState().joinRoomState("room-b", "token-b");
+    expect(useGameStore.getState().roomId).toBe("room-b");
+
+    useGameStore.getState().leaveRoomState();
+    expect(useGameStore.getState().roomId).toBeNull();
+    expect(useGameStore.getState().snapshot).toBeNull();
+    expect(useGameStore.getState().sessionToken).toBeNull();
+  });
 });

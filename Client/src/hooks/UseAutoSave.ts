@@ -31,6 +31,9 @@ export function useAutoSave<T>(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushRef = useRef<() => void>(() => {});
 
+  // 同步更新 enabledRef，避免因 React 卸载阶段跳过 effect 导致执行过期的 enabled 自动保存
+  enabledRef.current = enabled;
+
   // 这些 ref 在 effect 中更新，避免渲染阶段读写 ref，也让定时器始终拿到最新回调和值。
   useEffect(() => {
     desiredRef.current = value;
@@ -144,6 +147,9 @@ export function useAutoSave<T>(
       if (enabledRef.current) {
         if (savingRef.current) flushAfterUnmountRef.current = true;
         else flushRef.current();
+      } else {
+        pendingRef.current = null;
+        hasPendingRef.current = false;
       }
     };
     // This cleanup is intentionally tied to mount/unmount, not to value changes.

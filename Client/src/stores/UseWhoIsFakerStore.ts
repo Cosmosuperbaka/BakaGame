@@ -78,6 +78,14 @@ let pendingGameOverSnapshot: RoomSnapshot | null = null;
 let phaseResultVisibleUntil = 0;
 let phaseResultTimer: ReturnType<typeof setTimeout> | undefined;
 
+export const resetWhoIsFakerStateSync = () => {
+  snapshotRevision = undefined;
+  privateStateRevision = undefined;
+  syncRequestPending = false;
+  syncedSnapshot = null;
+  clearPhaseResultPresentation();
+};
+
 const PHASE_RESULT_DISPLAY_MS = 1500;
 
 const clearPhaseResultPresentation = () => {
@@ -221,13 +229,13 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
   setRooms: (rooms) => set({ rooms }),
   joinRoomState: (roomId, sessionToken) => {
     if (get().roomId !== roomId) {
-      clearPhaseResultPresentation();
+      resetWhoIsFakerStateSync();
       set({ phaseResultPresentationPending: false });
     }
     set({ roomId, sessionToken, roomClosedAt: null });
   },
   leaveRoomState: () => {
-    clearPhaseResultPresentation();
+    resetWhoIsFakerStateSync();
     lastPlayerChannel = undefined;
     lastRoomAndRoundKey = undefined;
     set({

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check, X, Gamepad2, Copy, Link, ChevronDown, Settings,
@@ -44,13 +44,18 @@ export function WaitingPhase() {
     }
   }, [me, sendCommand, addToast]);
 
+  const [starting, setStarting] = useState(false);
   const handleStart = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
     try {
       await sendCommand("game.advancePhase");
     } catch (e) {
       addToast((e as { message: string }).message, "error");
+    } finally {
+      setStarting(false);
     }
-  }, [sendCommand, addToast]);
+  }, [sendCommand, addToast, starting]);
 
   if (isHost) {
     return (
@@ -61,6 +66,7 @@ export function WaitingPhase() {
         nonHostTotal={nonHostActive.length}
         canSoloStart={canSoloStart}
         allReady={allReady}
+        starting={starting}
         onStart={handleStart}
         sendCommand={sendCommand}
         addToast={addToast}
@@ -112,6 +118,7 @@ interface HostWaitingPanelProps {
   nonHostTotal: number;
   canSoloStart: boolean;
   allReady: boolean;
+  starting?: boolean;
   onStart: () => void;
   sendCommand: (type: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
@@ -119,7 +126,7 @@ interface HostWaitingPanelProps {
 
 function HostWaitingPanel({
   snapshot, showProgress, readyCount, nonHostTotal,
-  canSoloStart, allReady, onStart,
+  canSoloStart, allReady, starting, onStart,
   sendCommand, addToast,
 }: HostWaitingPanelProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -191,7 +198,7 @@ function HostWaitingPanel({
       {/* 开始按钮 */}
       <Button
         size="lg"
-        disabled={!allReady}
+        disabled={!allReady || starting}
         onClick={onStart}
         className="w-full text-base"
       >
@@ -375,7 +382,9 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
     },
   };
   useAutoSave(draft, (payload) => sendCommand("room.updateSettings", payload), {
-    enabled: !isPrivate || snapshot.hasPassword || password.trim().length > 0,
+    enabled:
+      snapshot.status.phase === "waiting" &&
+      (!isPrivate || snapshot.hasPassword || password.trim().length > 0),
     onError: (error) => addToast((error as { message: string }).message, "error"),
   });
 

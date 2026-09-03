@@ -203,6 +203,8 @@ export interface BlankGuessContext {
   reason: BlankGuessReason;
   resumePhase?: Exclude<GamePhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
+  /** 打断发言/投票等原阶段时暂存的剩余倒计时毫秒数，供裁定未通过恢复原阶段时还原。 */
+  interruptedRemainingTimerMs?: number;
   /**
    * 白板正在输入的草稿，全房实时可见。
    * 猜词过程本身是这一阶段的看点，因此不做保密。
