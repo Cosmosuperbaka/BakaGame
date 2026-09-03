@@ -2867,6 +2867,7 @@ test("白板猜词打断发言阶段后，裁定未通过恢复原阶段并还�
   await execute(service, player.connection, {
     id: "enter-blank-guess",
     type: "game.enterBlankGuess",
+    payload: {},
   });
 
   let snapshot = getLastEventPayload<RoomSnapshot>(player.connection, "room.snapshot");
@@ -2926,6 +2927,7 @@ test("白板猜词期间白板掉线且出题人选择等待时，系统强制�
   await execute(service, player.connection, {
     id: "enter-blank-guess",
     type: "game.enterBlankGuess",
+    payload: {},
   });
 
   // 白板掉线

@@ -23,7 +23,7 @@ export interface AppDependencies {
   sonGuessrService?: SonGuessrService;
 }
 
-const messageAckCache = new LRUCache<string, unknown>({
+const messageAckCache = new LRUCache<string, object>({
   max: 2048,
   ttl: 15_000,
 });
@@ -217,7 +217,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
             inFlightMessages.delete(parsedId);
           }
 
-          messageAckCache.set(parsedId, payload);
+          messageAckCache.set(parsedId, (payload as object) ?? {});
           const durationMs = performance.now() - startTime;
           logger.logOperation({
             status: 200,
@@ -333,7 +333,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
             inFlightMessages.delete(parsedId);
           }
 
-          messageAckCache.set(parsedId, payload);
+          messageAckCache.set(parsedId, (payload as object) ?? {});
           logger.logOperation({
             status: 200,
             durationMs: performance.now() - startedAt,

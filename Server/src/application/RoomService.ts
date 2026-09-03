@@ -1,5 +1,6 @@
 import { AppError } from "../domain/Errors";
 import type {
+  BlankGuessRecord,
   ChatChannel,
   ChatMessage,
   ConnectionRecord,
