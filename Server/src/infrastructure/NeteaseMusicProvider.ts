@@ -396,7 +396,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
-  private readonly cache: LRUCache<string, unknown>;
+  private readonly cache: LRUCache<string, any>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
   private readonly queue: PQueue;
@@ -415,7 +415,7 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
-    this.cache = new LRUCache<string, unknown>({
+    this.cache = new LRUCache<string, any>({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
     });
     this.maxConcurrentRequests = Math.max(
