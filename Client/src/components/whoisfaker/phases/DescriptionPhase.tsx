@@ -268,7 +268,7 @@ export function DescriptionPhase() {
       {isQuestioner && mode !== "supplement" ? (
         <div className="flex items-center justify-center gap-3 pt-2">
           {mode === "normal" ? (
-            <SupplementRequestControl canRequest={waitingPlayers.length === 0} />
+            <SupplementRequestControl canRequest={waitingPlayerIds.length === 0} />
           ) : null}
           <Button onClick={handleAdvance} size="lg" className="gap-2 px-6" disabled={advancing}>
             <FastForward className="h-4 w-4" />

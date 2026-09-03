@@ -42,7 +42,7 @@ export class WordBankRepository {
       ) {
         throw new AppError("WORDBANK_CORRUPT", `词库在索引 ${index} 处的条目格式不正确`);
       }
-      return normalizeWordPair(entry);
+      return normalizeWordPair([entry[0], entry[1]]);
     });
   }
 
