@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   compareVersions,
@@ -18,6 +18,8 @@ describe("changelog helpers", () => {
   it("compares numeric version segments instead of lexicographic text", () => {
     expect(compareVersions("v1.10.0", "1.9.9")).toBeGreaterThan(0);
     expect(compareVersions("2.0", "2.0.0")).toBe(0);
+    expect(compareVersions("1.0.0-beta.1", "1.0.0")).toBeLessThan(0);
+    expect(compareVersions("1.0.0-rc.2", "1.0.0-rc.1")).toBeGreaterThan(0);
     expect(resolveLatestVersion([entry("1.9.9"), entry("1.10.0")])).toBe("1.10.0");
   });
 
