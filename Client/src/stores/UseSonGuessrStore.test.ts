@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ServerMessage,
@@ -243,11 +243,11 @@ describe("Songuessr store integration", () => {
     dispose();
   });
 
-  it("normalizes legacy game-over snapshots and lobby entries back to waiting", () => {
+  it("directly preserves server snapshots and lobby entries without fabrication", () => {
     const dispose = initSongGuessrSocket();
-    const legacySnapshot = {
+    const serverSnapshot = {
       ...snapshot,
-      phase: "gameOver",
+      phase: "playing",
       pendingSubmitterPlayerId: "player-1",
       currentRound: {
         roundNumber: 1,
@@ -267,7 +267,7 @@ describe("Songuessr store integration", () => {
           isHost: true,
           correctGuesses: 1,
           totalGuesses: 1,
-          roundStatus: "finished",
+          roundStatus: "playing",
           guessesUsed: 1,
         },
       ],
@@ -276,22 +276,20 @@ describe("Songuessr store integration", () => {
     wsMock.messageHandlers[0]({
       type: "event",
       event: "song.lobby.rooms",
-      payload: [{ ...snapshot, phase: "gameOver" }],
+      payload: [{ ...snapshot, phase: "playing" }],
     });
     wsMock.messageHandlers[0]({
       type: "event",
       event: "song.room.snapshot",
-      payload: { mode: "full", revision: 2, state: legacySnapshot },
+      payload: { mode: "full", revision: 2, state: serverSnapshot },
     });
 
-    expect(useSongGuessrStore.getState().rooms[0]?.phase).toBe("waiting");
+    expect(useSongGuessrStore.getState().rooms[0]?.phase).toBe("playing");
     expect(useSongGuessrStore.getState().snapshot).toMatchObject({
-      phase: "waiting",
-      pendingSubmitterPlayerId: undefined,
-      currentRound: undefined,
-      roundSummary: undefined,
-      finalScores: undefined,
-      players: [expect.objectContaining({ isReady: true, roundStatus: "waiting", guessesUsed: 0 })],
+      phase: "playing",
+      pendingSubmitterPlayerId: "player-1",
+      currentRound: expect.objectContaining({ roundNumber: 1 }),
+      players: [expect.objectContaining({ roundStatus: "playing", guessesUsed: 1 })],
     });
     dispose();
   });
