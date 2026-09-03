@@ -1,6 +1,7 @@
 import { AppError } from "../domain/Errors";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
+import PQueue from "p-queue";
 import type {
   SongDetails,
   SongArtistSearchResult,
@@ -99,13 +100,6 @@ const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
 const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
-
-interface QueuedRequest<T = unknown> {
-  task: () => Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason: unknown) => void;
-  queuedAt: number;
-}
 
 const cloneCacheValue = <T>(value: T): T => structuredClone(value);
 
@@ -405,20 +399,19 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly cache: LRUCache<string, unknown>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
-  private readonly requestQueue: QueuedRequest[] = [];
+  private readonly queue: PQueue;
+  private readonly pendingRejections = new Map<number, (error: unknown) => void>();
+  private requestIdCounter = 0;
   private readonly maxConcurrentRequests: number;
   private readonly minRequestIntervalMs: number;
   private readonly rateLimitCooldownMs: number;
   private readonly maxRateLimitCooldownMs: number;
   private readonly maxQueuedRequests: number;
   private readonly queueTimeoutMs: number;
-  private activeRequests = 0;
-  private lastRequestStartedAt = 0;
   private cooldownUntil = 0;
   private rateLimitStrikes = 0;
   private lastRateLimitAt = 0;
   private lastRateLimitMessage = "操作频繁，请稍候再试";
-  private queueTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.randomCNIP = options.randomCNIP ?? true;
@@ -446,6 +439,12 @@ export class NeteaseMusicProvider implements MusicProvider {
       options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS,
     );
     this.queueTimeoutMs = Math.max(1, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
+    this.queue = new PQueue({
+      concurrency: this.maxConcurrentRequests,
+      ...(this.minRequestIntervalMs > 0
+        ? { interval: this.minRequestIntervalMs, intervalCap: 1 }
+        : {}),
+    });
   }
 
   async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
@@ -874,61 +873,54 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (Date.now() < this.cooldownUntil) {
       return Promise.reject(this.busyError());
     }
-    if (this.requestQueue.length >= this.maxQueuedRequests) {
+    if (this.queue.size >= this.maxQueuedRequests) {
       return Promise.reject(this.busyError("网易云请求排队过多，请稍后重试"));
     }
-    return new Promise<T>((resolve, reject) => {
-      this.requestQueue.push({
-        task,
-        resolve: (value) => resolve(value as T),
-        reject,
-        queuedAt: Date.now(),
-      });
-      this.drainRequestQueue();
+
+    const id = ++this.requestIdCounter;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let rejectHandler: ((err: unknown) => void) | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      rejectHandler = reject;
+      timeoutTimer = setTimeout(() => {
+        if (this.pendingRejections.has(id)) {
+          this.pendingRejections.delete(id);
+          reject(this.busyError("网易云请求等待超时，请稍后重试"));
+        }
+      }, this.queueTimeoutMs);
     });
-  }
 
-  private drainRequestQueue() {
-    if (this.queueTimer) {
-      clearTimeout(this.queueTimer);
-      this.queueTimer = undefined;
-    }
-    const now = Date.now();
-    while (this.requestQueue.length > 0) {
-      const next = this.requestQueue[0];
-      if (now - next.queuedAt <= this.queueTimeoutMs) break;
-      this.requestQueue.shift();
-      next.reject(this.busyError("网易云请求等待超时，请稍后重试"));
-    }
-    if (this.requestQueue.length === 0) return;
-    if (this.activeRequests >= this.maxConcurrentRequests) {
-      const nextExpiryAt = this.requestQueue[0].queuedAt + this.queueTimeoutMs;
-      this.queueTimer = setTimeout(
-        () => this.drainRequestQueue(),
-        Math.max(1, nextExpiryAt - now),
-      );
-      return;
-    }
-
-    const waitMs = Math.max(
-      0,
-      this.cooldownUntil - now,
-      this.lastRequestStartedAt + this.minRequestIntervalMs - now,
-    );
-    if (waitMs > 0) {
-      this.queueTimer = setTimeout(() => this.drainRequestQueue(), waitMs);
-      return;
-    }
-
-    const next = this.requestQueue.shift();
-    if (!next) return;
-    this.activeRequests += 1;
-    this.lastRequestStartedAt = Date.now();
-    void next.task().then(next.resolve, next.reject).finally(() => {
-      this.activeRequests -= 1;
-      this.drainRequestQueue();
+    this.pendingRejections.set(id, (err) => {
+      clearTimeout(timeoutTimer);
+      rejectHandler?.(err);
     });
-    this.drainRequestQueue();
+
+    const executionPromise = this.queue.add(async () => {
+      clearTimeout(timeoutTimer);
+      if (!this.pendingRejections.has(id)) {
+        return;
+      }
+      this.pendingRejections.delete(id);
+
+      if (Date.now() < this.cooldownUntil) {
+        throw this.busyError();
+      }
+      try {
+        const result = await task();
+        if (this.isRateLimitError(result)) {
+          this.enterRateLimitCooldown(result);
+        }
+        return result;
+      } catch (error) {
+        if (this.isRateLimitError(error)) {
+          this.enterRateLimitCooldown(error);
+        }
+        throw error;
+      }
+    }) as Promise<T>;
+
+    return Promise.race([executionPromise, timeoutPromise]);
   }
 
   private enterRateLimitCooldown(error: unknown) {
@@ -940,15 +932,22 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
     this.rateLimitStrikes = Math.min(this.rateLimitStrikes + 1, 8);
     this.lastRateLimitAt = now;
-    const duration = Math.min(
+    const baseDuration = Math.min(
       this.maxRateLimitCooldownMs,
       this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1),
     );
+    // 注入微量随机 Jitter 抖动，防止限流恢复瞬间突发惊群重连
+    const jitter = Math.floor(Math.random() * (baseDuration * 0.05));
+    const duration = Math.min(this.maxRateLimitCooldownMs, baseDuration + jitter);
     this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
 
-    const pending = this.requestQueue.splice(0);
-    for (const request of pending) request.reject(this.busyError(this.lastRateLimitMessage));
-    this.drainRequestQueue();
+    this.queue.clear();
+    const rejections = Array.from(this.pendingRejections.values());
+    this.pendingRejections.clear();
+    const busy = this.busyError(this.lastRateLimitMessage);
+    for (const reject of rejections) {
+      reject(busy);
+    }
   }
 
   private busyError(message = this.lastRateLimitMessage) {
