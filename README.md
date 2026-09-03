@@ -73,12 +73,16 @@ npm run dev   # http://localhost:5173
 
 | 文档 | 内容 |
 |---|---|
-| [Agents/Spec.md](Agents/Spec.md) | 工程开发约束 |
-| [Agents/Design.md](Agents/Design.md) | 前端设计规范 |
-| [Agents/Animation.md](Agents/Animation.md) | 动效设计规范 |
+| [AGENTS.md](AGENTS.md) | Agent 统一引导总览与阅读顺序 |
+| [Agents/Conventions.md](Agents/Conventions.md) | 工作区架构、命令表与代码整洁度规范 |
+| [Agents/Spec.md](Agents/Spec.md) | 工程开发约束、生态标准与 Git 提交规范 |
+| [Agents/Commitment.md](Agents/Commitment.md) | 版本号、提交时机与变更承诺规范 |
+| [Agents/WhoIsFaker.md](Agents/WhoIsFaker.md) | 谁是卧底业务架构与状态机规范 |
+| [Agents/Design.md](Agents/Design.md) | 前端设计规范与房间页布局 |
+| [Agents/Animation.md](Agents/Animation.md) | 动效设计与弹性物理规范 |
+| [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界与网关约束 |
 | [Agents/Testing.md](Agents/Testing.md) | 测试分层与验证流程 |
-| [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界 |
-| [Agents/Commitment.md](Agents/Commitment.md) | 版本号、提交与变更承诺规范 |
+| [Agents/NeteaseMusicApi.md](Agents/NeteaseMusicApi.md) | 网易云音乐接口接入规范 |
 
 ## 版本
 
