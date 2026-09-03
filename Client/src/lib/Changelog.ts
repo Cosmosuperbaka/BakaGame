@@ -63,25 +63,14 @@ export interface ChangelogEntry {
   content: ChangelogContent;
 }
 
-/** 把 "1.2.3" 拆成可比较的数字元组；缺位补 0，非数字段按 0 处理。 */
-const parseVersion = (version: string): number[] =>
-  version
-    .trim()
-    .replace(/^[vV]/, "")
-    .split(".")
-    .map((part) => Number.parseInt(part, 10) || 0);
+import { compareVersions as semverCompare } from "compare-versions";
 
-/** 语义化版本比较：a 比 b 新则为正。逐段按数字比，避免 1.10.0 被判小于 1.9.0。 */
+/**
+ * 语义化版本比较：a 比 b 新则为正（1），旧则为负（-1），相同为 0。
+ * 借助 compare-versions 严格遵循 SemVer 2.0.0 规范，正确支持预发版本与构建元数据。
+ */
 export function compareVersions(a: string, b: string): number {
-  const left = parseVersion(a);
-  const right = parseVersion(b);
-  const length = Math.max(left.length, right.length);
-
-  for (let i = 0; i < length; i++) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+  return semverCompare(a.trim(), b.trim());
 }
 
 /**
