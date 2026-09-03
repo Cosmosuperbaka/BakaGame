@@ -1,7 +1,7 @@
-﻿import type {
+import { compare } from "fast-json-patch";
+import type {
   EventPacket,
   StatePatchOperation,
-  StatePathSegment,
   StateSyncPayload,
 } from "../shared/Index";
 
@@ -59,42 +59,19 @@ const prepareState = (value: unknown): PreparedState => {
 export function buildStatePatch(
   previous: unknown,
   next: unknown,
-  path: StatePathSegment[] = [],
-  operations: StatePatchOperation[] = [],
 ): StatePatchOperation[] {
-  if (sameScalar(previous, next)) return operations;
+  if (sameScalar(previous, next)) return [];
 
-  if (Array.isArray(previous) && Array.isArray(next)) {
-    if (next.length < previous.length) {
-      operations.push({ op: "set", path, value: next });
-      return operations;
-    }
-
-    for (let index = 0; index < previous.length; index += 1) {
-      buildStatePatch(previous[index], next[index], [...path, index], operations);
-    }
-    for (let index = previous.length; index < next.length; index += 1) {
-      operations.push({ op: "set", path: [...path, index], value: next[index] });
-    }
-    return operations;
+  if (
+    previous !== null &&
+    typeof previous === "object" &&
+    next !== null &&
+    typeof next === "object"
+  ) {
+    return compare(previous as object, next as object) as StatePatchOperation[];
   }
 
-  if (isRecord(previous) && isRecord(next)) {
-    for (const key of Object.keys(previous)) {
-      if (!(key in next)) operations.push({ op: "delete", path: [...path, key] });
-    }
-    for (const [key, value] of Object.entries(next)) {
-      if (!(key in previous)) {
-        operations.push({ op: "set", path: [...path, key], value });
-      } else {
-        buildStatePatch(previous[key], value, [...path, key], operations);
-      }
-    }
-    return operations;
-  }
-
-  operations.push({ op: "set", path, value: next });
-  return operations;
+  return [{ op: "replace", path: "", value: next }];
 }
 
 interface ChannelState {

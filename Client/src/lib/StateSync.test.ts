@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { applyStatePatch, consumeStateSync } from "./StateSync";
 
@@ -6,10 +6,10 @@ describe("state sync", () => {
   it("applies nested changes, appends and deletes without mutating the baseline", () => {
     const baseline = { players: [{ id: "p1", online: true }], status: { phase: "waiting" }, old: 1 };
     const next = applyStatePatch(baseline, [
-      { op: "set", path: ["players", 0, "online"], value: false },
-      { op: "set", path: ["players", 1], value: { id: "p2", online: true } },
-      { op: "set", path: ["status", "phase"], value: "description" },
-      { op: "delete", path: ["old"] },
+      { op: "replace", path: "/players/0/online", value: false },
+      { op: "add", path: "/players/1", value: { id: "p2", online: true } },
+      { op: "replace", path: "/status/phase", value: "description" },
+      { op: "remove", path: "/old" },
     ]);
 
     expect(next).toEqual({
@@ -24,7 +24,7 @@ describe("state sync", () => {
       mode: "patch",
       baseRevision: 5,
       revision: 6,
-      operations: [{ op: "set", path: ["value"], value: 2 }],
+      operations: [{ op: "replace", path: "/value", value: 2 }],
     }).needsFullSync).toBe(true);
 
     expect(consumeStateSync(null, undefined, {
@@ -43,7 +43,7 @@ describe("state sync", () => {
   it("正确处理数组元素删除，不生成稀疏数组", () => {
     const baseline = { list: ["a", "b", "c"] };
     const next = applyStatePatch(baseline, [
-      { op: "delete", path: ["list", 1] },
+      { op: "remove", path: "/list/1" },
     ]);
     expect(next.list).toEqual(["a", "c"]);
     expect(next.list.length).toBe(2);

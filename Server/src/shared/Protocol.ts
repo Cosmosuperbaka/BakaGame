@@ -41,9 +41,14 @@ export interface EventPacket {
 
 export type StatePathSegment = string | number;
 
+/** RFC 6902 (JSON Patch) 标准操作定义 */
 export type StatePatchOperation =
-  | { op: "set"; path: StatePathSegment[]; value: unknown }
-  | { op: "delete"; path: StatePathSegment[] };
+  | { op: "add"; path: string; value: unknown }
+  | { op: "remove"; path: string }
+  | { op: "replace"; path: string; value: unknown }
+  | { op: "move"; from: string; path: string }
+  | { op: "copy"; from: string; path: string }
+  | { op: "test"; path: string; value: unknown };
 
 export type StateSyncPayload<T> =
   | {

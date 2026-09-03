@@ -1,6 +1,6 @@
+import { applyPatch, type Operation } from "fast-json-patch";
 import type {
   StatePatchOperation,
-  StatePathSegment,
   StateSyncPayload,
 } from "@/types";
 
@@ -15,40 +15,14 @@ export function isStateSyncPayload<T>(value: unknown): value is StateSyncPayload
     : typeof value.baseRevision === "number" && Array.isArray(value.operations);
 }
 
-const getParent = (root: unknown, path: StatePathSegment[]) => {
-  let parent = root as Record<string | number, unknown>;
-  for (const segment of path.slice(0, -1)) {
-    const next = parent[segment];
-    if (!next || typeof next !== "object") {
-      throw new Error("状态补丁路径不存在");
-    }
-    parent = next as Record<string | number, unknown>;
-  }
-  return parent;
-};
-
 export function applyStatePatch<T>(current: T, operations: StatePatchOperation[]): T {
-  let result = structuredClone(current) as unknown;
-  for (const operation of operations) {
-    if (operation.path.length === 0) {
-      if (operation.op === "delete") throw new Error("不能删除状态根节点");
-      result = structuredClone(operation.value);
-      continue;
-    }
-
-    const parent = getParent(result, operation.path);
-    const key = operation.path.at(-1)!;
-    if (operation.op === "delete") {
-      if (Array.isArray(parent) && typeof key === "number") {
-        parent.splice(key, 1);
-      } else {
-        delete parent[key];
-      }
-    } else {
-      parent[key] = structuredClone(operation.value);
-    }
-  }
-  return result as T;
+  const cloned = structuredClone(current);
+  const result = applyPatch(
+    cloned as object,
+    operations as Operation[],
+    true,
+  );
+  return result.newDocument as T;
 }
 
 export interface StateSyncResult<T> {

@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { createEvent } from "../src/transport/Protocol";
 import { buildStatePatch, StateSyncEncoder } from "../src/transport/StateSync";
@@ -8,17 +8,18 @@ test("状态补丁只编码变化路径与数组追加项", () => {
     { players: [{ id: "p1", ready: false }], chat: [] },
     { players: [{ id: "p1", ready: true }], chat: [{ id: "c1", text: "你好" }] },
   )).toEqual([
-    { op: "set", path: ["players", 0, "ready"], value: true },
-    { op: "set", path: ["chat", 0], value: { id: "c1", text: "你好" } },
+    { op: "add", path: "/chat/0", value: { id: "c1", text: "你好" } },
+    { op: "replace", path: "/players/0/ready", value: true },
   ]);
 });
 
-test("数组缩短时直接发送数组整体替换操作", () => {
+test("数组缩短时精准生成 remove 逆向删除操作", () => {
   expect(buildStatePatch(
     { players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }] },
     { players: [{ id: "p1" }] },
   )).toEqual([
-    { op: "set", path: ["players"], value: [{ id: "p1" }] },
+    { op: "remove", path: "/players/2" },
+    { op: "remove", path: "/players/1" },
   ]);
 });
 
@@ -36,7 +37,7 @@ test("编码器发送首个全量、连续补丁并省略无变化私有状态",
       mode: "patch",
       baseRevision: 1,
       revision: 2,
-      operations: [{ op: "set", path: ["value"], value: 2 }],
+      operations: [{ op: "replace", path: "/value", value: 2 }],
     },
   });
 });
