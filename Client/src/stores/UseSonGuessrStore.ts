@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import type {
   EventPacket,
   ServerMessage,
@@ -66,32 +66,6 @@ const mergeChat = (
   return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
 };
 
-const normalizeRoomSummary = (room: SonGuessrRoomSummary): SonGuessrRoomSummary => {
-  if ((room.phase as string) === "gameOver") {
-    return { ...room, phase: "waiting" };
-  }
-  return room;
-};
-
-const normalizeSnapshot = (snapshot: SonGuessrRoomSnapshot): SonGuessrRoomSnapshot => {
-  if ((snapshot.phase as string) === "gameOver") {
-    return {
-      ...snapshot,
-      phase: "waiting",
-      pendingSubmitterPlayerId: undefined,
-      currentRound: undefined,
-      roundSummary: undefined,
-      finalScores: undefined,
-      players: snapshot.players.map((p) => ({
-        ...p,
-        isReady: true,
-        roundStatus: "waiting" as const,
-        guessesUsed: 0,
-      })),
-    };
-  }
-  return snapshot;
-};
 
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
@@ -267,7 +241,7 @@ export function initSonGuessrWs() {
     switch (evt.event) {
       case "song.lobby.rooms":
         useSonGuessrStore.setState({
-          rooms: (evt.payload as SonGuessrRoomSummary[]).map(normalizeRoomSummary),
+          rooms: evt.payload as SonGuessrRoomSummary[],
         });
         break;
       case "song.room.snapshot":
@@ -282,14 +256,14 @@ export function initSonGuessrWs() {
             break;
           }
           snapshotRevision = result.revision;
-          const normalized = normalizeSnapshot(result.state as SonGuessrRoomSnapshot);
+          const incomingSnapshot = result.state as SonGuessrRoomSnapshot;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          const nextSnapshot = currentSnapshot && currentSnapshot.roomId === normalized.roomId
+          const nextSnapshot = currentSnapshot && currentSnapshot.roomId === incomingSnapshot.roomId
             ? {
-                ...normalized,
-                chat: mergeChat(currentSnapshot.chat, normalized.chat),
+                ...incomingSnapshot,
+                chat: mergeChat(currentSnapshot.chat, incomingSnapshot.chat),
               }
-            : normalized;
+            : incomingSnapshot;
 
           const currentPrivate = useSonGuessrStore.getState().privateState;
           const tokenToSave = currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
