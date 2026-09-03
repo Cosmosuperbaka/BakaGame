@@ -83,3 +83,67 @@ Server/src/
 3. **高内聚低耦合的组件拆分**:
    - 表单弹窗（如 `CreateRoomDialog.tsx`）只负责数据采集与校验回调，禁止隐式绑定具体业务 Store。
    - 跨游戏复用的视觉基建统一收口到 `components/common/` 与 `hooks/`。
+
+---
+
+## 4. 工作区架构与运行环境 (Workspace Structure & Runtime)
+
+本项目由两个完全独立的包组成，**没有根目录级的 package.json 或共享脚本**：
+
+| 包名 | 运行时 / 包管理器 | 源码目录 | 默认端口 |
+|---|---|---|---|
+| `WhoIsFaker_Server` | Bun (`bun:test`, `Bun.env`, `Bun.sleep`) | `Server/` | `4850` |
+| `whoisfaker-client` | Node / npm (Vite, React 19, Vitest) | `Client/` | `5173` |
+
+### 共享协议与契约映射机制 (`@bakagame/shared`)
+- **单一真相源位置**：全库的共享定义统一位于 `Server/src/shared/`（`Model.ts` + `Protocol.ts` + `SonGuessr.ts`），两端共用同一份代码实体。
+- **服务端引入方式**：通过相对路径 `../shared/Index` 引入，并通过 `Server/src/domain/Model.ts` 重新导出。部署时仅挂载 `Server/` 作为应用根目录，因此其引用的所有模块必须物理位于该目录内部。
+- **客户端双映射同步**：前端使用 `@bakagame/shared` 规范说明符，必须在两个位置严格保持同步映射：
+  1. `Client/tsconfig.app.json` 中的 `compilerOptions.paths`（供 `tsc` 类型检查器识别）。
+  2. `Client/vite.config.ts` 中的 `resolve.alias`（供 Vite/Rolldown 打包器解析）。
+  *注：Vite 不会自动读取 tsconfig paths，若仅修改一处会导致本地或生产构建隐蔽失败。*
+- **严禁重新引入文件符号链接依赖**：严禁在 `package.json` 中配置 `file:../packages/...`，npm 与 Bun 会将其解析为宿主机绝对路径软链，导致部署容器环境出现 `ENOENT` 挂起崩溃。
+
+---
+
+## 5. 开发、构建与验证命令 (Workspace Commands)
+
+### 服务端 (`cd Server`)
+```bash
+bun run dev          # 启动热重载开发服务器 (默认端口 4850)
+bun run start        # 启动生产服务器
+bun run check        # 执行 tsc --noEmit 全量静态类型检查
+bun test             # 运行全部 bun:test 单元测试与集成测试
+bun test --coverage  # 运行单测并生成代码覆盖率报告
+bun run docs:openapi # 重新生成并导出 Agents/http-openapi.json
+```
+
+### 客户端 (`cd Client`)
+```bash
+npm run dev          # 启动 Vite 开发服务器 (http://localhost:5173)
+npm run build        # 执行 tsc -b && vite build 生产打包构建
+npm run lint         # 执行 ESLint 严格静态代码检查
+npm test             # 运行 Vitest 单元与集成测试
+npm run test:watch   # 交互式监听单测
+npm run test:coverage# 运行单测并输出覆盖率报告
+npm run test:e2e     # 运行 Playwright 端到端测试 (自动起 Server + Vite)
+npm run verify       # 运行完整质量门禁 (lint + coverage + build + E2E)
+npm run preview      # 本地预览生产构建产物
+```
+
+---
+
+## 6. 环境变量规范 (Environment Variables)
+
+### 服务端 `Server/.env` (参考 `Server/.env.example`)
+```bash
+CLIENT_URL=http://localhost:5173
+SERVER_URL=http://localhost:4850
+SERVER_PORT=4850
+```
+
+### 客户端 `Client/.env` (参考 `Client/.env.example`)
+```bash
+VITE_SERVER_URL=http://localhost:4850
+```
+
