@@ -334,4 +334,20 @@ describe("Songuessr store integration", () => {
       { roomId: "5678", sessionToken: "search-token" },
     );
   });
+
+  it("resets state sync and cleans room state when leaveRoom is invoked", async () => {
+    wsMock.send.mockResolvedValue({});
+    useSongGuessrStore.setState({
+      roomId: "1234",
+      sessionToken: "token-1",
+      snapshot,
+      privateState,
+    });
+
+    await useSongGuessrStore.getState().leaveRoom();
+
+    expect(useSongGuessrStore.getState().roomId).toBeNull();
+    expect(useSongGuessrStore.getState().snapshot).toBeNull();
+    expect(useSongGuessrStore.getState().sessionToken).toBeNull();
+  });
 });

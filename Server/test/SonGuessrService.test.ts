@@ -2176,5 +2176,81 @@ describe("SongGuessrService", () => {
     expect(snapshot.settings.autoFilters.playlist?.id).toBe("87654321");
   });
 
+  test("并发猜歌时前置占锁与配额保护，禁止突破猜测上限", async () => {
+    let metadataCalls = 0;
+    const slowProvider: MusicProvider = {
+      ...provider,
+      getSongMetadata: async (id) => {
+        metadataCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return songs[id as keyof typeof songs] ?? songs.wrong;
+      },
+    };
+    const service = new SongGuessrService({ musicProvider: slowProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, "host-race");
+    const guest = connection(service, "guest-race");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "并发测试玩家");
+    await startRound(service, host, guest, hostState.playerId);
+
+    // 玩家标记音频已就绪
+    await execute(service, guest, {
+      id: "audio-ready",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
+    // 并发发起两次猜歌（故意制造微任务交错）
+    const guess1 = execute(service, guest, {
+      id: "guess-1",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "wrong" },
+    });
+    const guess2 = execute(service, guest, {
+      id: "guess-2",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "wrong" },
+    });
+
+    const results = await Promise.allSettled([guess1, guess2]);
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(rejected.length).toBe(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.code).toBe("GUESS_IN_PROGRESS");
+
+    const snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const guesserPlayer = snapshot.players.find((p) => p.id === guestState.playerId);
+    expect(guesserPlayer?.guessesUsed).toBe(1);
+  });
+
+  test("音频未就绪玩家在超过加载宽限期后由巡检超时结算，避免房间死锁", async () => {
+    let mockTime = 100_000;
+    const service = new SongGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-stall");
+    const guest = connection(service, "guest-stall");
+    await createRoom(service, host);
+    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "卡死玩家");
+    await startRound(service, host, guest, hostState.playerId);
+
+    const initialSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(initialSnapshot.phase).toBe("playing");
+
+    // 时间前移 85 秒（超过 80 秒的回合全局硬超时 hardDeadlineAt）
+    mockTime += 85_000;
+    await service.runHousekeeping();
+
+    const finalSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(finalSnapshot.phase).toBe("roundResult");
+    expect(finalSnapshot.roundSummary).toBeDefined();
+  });
+
 });
 
