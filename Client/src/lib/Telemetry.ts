@@ -9,7 +9,8 @@ export interface TelemetryPayload {
 
 export const reportTelemetry = async (payload: TelemetryPayload): Promise<void> => {
   try {
-    const serverUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+    const rawUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+    const serverUrl = rawUrl.replace(/\/+$/, "");
     await fetch(`${serverUrl}/api/monitoring/telemetry`, {
       method: "POST",
       headers: {

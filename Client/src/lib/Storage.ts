@@ -1,4 +1,4 @@
-﻿import { TEST_ROOM_ID } from "@/config/Constants";
+import { TEST_ROOM_ID } from "@/config/Constants";
 
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
@@ -21,7 +21,17 @@ function getSongSessionKey(roomId: string): string {
 
 function getSessionStorage(): Storage | null {
   try {
+    if (typeof window === "undefined") return null;
     return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getLocalStorage(): Storage | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage;
   } catch {
     return null;
   }
@@ -29,7 +39,7 @@ function getSessionStorage(): Storage | null {
 
 export function getSavedUsername(): string {
   try {
-    return localStorage.getItem(USERNAME_KEY) ?? "";
+    return getLocalStorage()?.getItem(USERNAME_KEY) ?? "";
   } catch {
     return "";
   }
@@ -37,7 +47,7 @@ export function getSavedUsername(): string {
 
 export function saveUsername(name: string): void {
   try {
-    localStorage.setItem(USERNAME_KEY, name);
+    getLocalStorage()?.setItem(USERNAME_KEY, name);
   } catch {
     // 忽略
   }

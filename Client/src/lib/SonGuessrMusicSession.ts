@@ -35,16 +35,25 @@ const parseSession = (raw: string | null, persistent: boolean): StoredSongMusicS
   }
 };
 
-const notifyChanged = () => window.dispatchEvent(new Event(SON_MUSIC_SESSION_CHANGED));
+const notifyChanged = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SON_MUSIC_SESSION_CHANGED));
+  }
+};
 
-export const getStoredSongMusicSession = (): StoredSongMusicSession | null =>
-  parseSession(window.sessionStorage.getItem(SESSION_KEY), false) ??
-  parseSession(window.localStorage.getItem(LOCAL_KEY), true);
+export const getStoredSongMusicSession = (): StoredSongMusicSession | null => {
+  if (typeof window === "undefined") return null;
+  return (
+    parseSession(window.sessionStorage.getItem(SESSION_KEY), false) ??
+    parseSession(window.localStorage.getItem(LOCAL_KEY), true)
+  );
+};
 
 export const saveSongMusicSession = (
   session: Pick<StoredSongMusicSession, "cookie" | "account">,
   persistent: boolean,
 ) => {
+  if (typeof window === "undefined") return;
   window.localStorage.removeItem(LOCAL_KEY);
   window.sessionStorage.removeItem(SESSION_KEY);
   const serialized = JSON.stringify({ cookie: session.cookie, account: session.account });
@@ -56,6 +65,7 @@ export const saveSongMusicSession = (
 };
 
 export const clearStoredSongMusicSession = () => {
+  if (typeof window === "undefined") return;
   window.localStorage.removeItem(LOCAL_KEY);
   window.sessionStorage.removeItem(SESSION_KEY);
   notifyChanged();
