@@ -1,4 +1,4 @@
-﻿import type { ConnectionRecord } from "../domain/Model";
+import type { ConnectionRecord } from "../domain/Model";
 import { AppError } from "../domain/Errors";
 
 export class ConnectionRegistry {
@@ -138,12 +138,14 @@ export class ConnectionRegistry {
     return set ? Array.from(set) : [];
   }
 
+  private failedBroadcasts = 0;
+
   broadcastToLobby(payload: unknown): void {
     for (const conn of this.lobbySubscribers) {
       try {
         conn.send(payload);
       } catch {
-        // 忽略离线连接推送失败
+        this.failedBroadcasts += 1;
       }
     }
   }
@@ -155,7 +157,7 @@ export class ConnectionRegistry {
       try {
         conn.send(payload);
       } catch {
-        // 忽略离线连接推送失败
+        this.failedBroadcasts += 1;
       }
     }
   }
@@ -165,7 +167,7 @@ export class ConnectionRegistry {
       try {
         conn.send(payload);
       } catch {
-        // 忽略已断开连接
+        this.failedBroadcasts += 1;
       }
     }
   }
@@ -179,5 +181,9 @@ export class ConnectionRegistry {
       totalConnections: this.connections.size,
       lobbySubscribers: this.lobbySubscribers.size,
     };
+  }
+
+  get failedBroadcastCount(): number {
+    return this.failedBroadcasts;
   }
 }

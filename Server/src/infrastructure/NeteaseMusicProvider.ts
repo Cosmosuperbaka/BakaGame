@@ -2,6 +2,7 @@ import { AppError } from "../domain/Errors";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
+import { describeError, type EventLogger } from "./EventLogger";
 import type {
   SongDetails,
   SongArtistSearchResult,
@@ -31,6 +32,7 @@ export interface MusicProvider {
 
 export interface NeteaseMusicProviderOptions {
   loadApi?: () => Promise<ApiModule>;
+  logger?: EventLogger;
   /** 通过 Enhanced API 的随机中国出口降低网易云安全风控误判。默认开启。 */
   randomCNIP?: boolean;
   /** 单个 provider 允许同时访问网易云的请求数。 */
@@ -414,7 +416,10 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastRateLimitAt = 0;
   private lastRateLimitMessage = "操作频繁，请稍候再试";
 
+  private readonly logger?: EventLogger;
+
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
+    this.logger = options.logger;
     this.randomCNIP = options.randomCNIP ?? true;
     this.cache = new LRUCache<string, any>({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
@@ -759,8 +764,8 @@ export class NeteaseMusicProvider implements MusicProvider {
           ...(this.randomCNIP ? { realIP: this.ipForCookie() } : {}),
         }));
       this.anonymousCookie = responseCookie(response);
-    } catch {
-      // 匿名令牌不是登录的硬前置条件；上游不可用时继续使用无 Cookie 请求。
+    } catch (error) {
+      this.logger?.warn("注册网易云匿名令牌未成功，继续以无凭据模式运行", describeError(error));
     }
   }
 
@@ -942,9 +947,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     const duration = Math.min(this.maxRateLimitCooldownMs, baseDuration + jitter);
     this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
 
-    this.queue.clear();
     const rejections = Array.from(this.pendingRejections.values());
+    this.queue.clear();
     this.pendingRejections.clear();
+
+    this.logger?.warn("网易云接口触发限流退避", {
+      strikes: this.rateLimitStrikes,
+      cooldownDurationMs: duration,
+      cooldownUntil: new Date(this.cooldownUntil).toISOString(),
+      droppedQueuedRequests: rejections.length,
+      reason: this.lastRateLimitMessage,
+    });
+
     const busy = this.busyError(this.lastRateLimitMessage);
     for (const reject of rejections) {
       reject(busy);

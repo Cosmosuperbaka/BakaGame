@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { RoomService } from "../src/application/RoomService";
 import type { AppEnv } from "../src/config/Env";
 import {
+  describeError,
   EventLogger,
   formatLogEntry,
   formatSystemLog,
+  redactData,
 } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { createApp } from "../src/transport/App";
@@ -88,6 +90,30 @@ test("系统日志支持极简 GIN 风格状态码与列表格式", () => {
       },
     }),
   ).toContain("[BAKA]");
+});
+
+test("describeError 完整保留调用栈与 Cause，且 redactData 对敏感凭据有效脱敏", () => {
+  const innerError = new Error("底层文件损坏");
+  const outerError = new Error("保存房间失败", { cause: innerError });
+  const desc = describeError(outerError);
+
+  expect(desc.errorName).toBe("Error");
+  expect(desc.errorMessage).toBe("保存房间失败");
+  expect(typeof desc.stack).toBe("string");
+  expect((desc.cause as Record<string, unknown>).errorMessage).toBe("底层文件损坏");
+
+  const sensitive = {
+    cookie: "MUSIC_U=abcdef1234567890",
+    sessionToken: "secret-token-xyz",
+    password: "my-password",
+    normalField: "visible",
+  };
+  const redacted = redactData(sensitive) as Record<string, string>;
+  expect(redacted.cookie).toContain("***[REDACTED]");
+  expect(redacted.cookie).not.toContain("1234567890");
+  expect(redacted.sessionToken).toContain("***[REDACTED]");
+  expect(redacted.password).toBe("***[REDACTED]");
+  expect(redacted.normalField).toBe("visible");
 });
 
 test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async () => {

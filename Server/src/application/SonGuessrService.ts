@@ -9,7 +9,7 @@ import {
 import { AppError } from "../domain/Errors";
 import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
-import type { EventLogger } from "../infrastructure/EventLogger";
+import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import type {
   MusicLoginSession,
   MusicProvider,
@@ -276,6 +276,14 @@ export class SonGuessrService {
         0,
       ),
     };
+  }
+
+  notifyShutdown(): void {
+    this.connections.broadcastToAll(
+      createEvent("server.shutdown", {
+        message: "服务器即将关闭，请稍后重新连接",
+      }),
+    );
   }
 
   async unregisterConnection(connectionId: string): Promise<void> {
@@ -599,8 +607,13 @@ export class SonGuessrService {
         if (room.phase === "playing" && room.currentRound === activeRound) {
           activeRound.song.audioUrl = refreshedSong.audioUrl;
         }
-      } catch {
-        // 地址刷新失败不应阻止玩家恢复席位，客户端仍可尝试使用现有地址。
+      } catch (error) {
+        // 地址刷新失败不应阻止玩家恢复席位，记录 warning 告警并允许客户端尝试现有地址。
+        this.options.eventLogger?.warn("重连刷新歌曲播放地址失败", {
+          roomId: room.id,
+          songId: activeRound.song.id,
+          ...describeError(error),
+        });
       }
     }
     this.touch(room);
