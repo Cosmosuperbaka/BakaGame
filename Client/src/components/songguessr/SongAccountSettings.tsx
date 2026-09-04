@@ -19,10 +19,10 @@ import {
   saveSongMusicSession,
   SONG_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
-} from "@/lib/SongguessrMusicSession";
+} from "@/lib/SonGuessrMusicSession";
 import { collapsible, pressable, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SongGuessrMusicAccount, SongGuessrRoomSnapshot } from "@/types";
 
 interface QrCreateResponse extends Record<string, unknown> {
@@ -39,8 +39,8 @@ interface QrCheckResponse extends Record<string, unknown> {
 }
 
 export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [remember, setRemember] = useState(() => getStoredSongMusicSession()?.persistent ?? true);
