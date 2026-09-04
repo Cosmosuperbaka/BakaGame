@@ -1,4 +1,4 @@
-﻿import { useCallback } from "react";
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
@@ -9,7 +9,7 @@ import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "@/components/
 import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore as useSongGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SongGuessrPhase, SongGuessrPlayerView } from "@/types";
+import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
 
 type SongStatus = {
   label: string;
@@ -17,10 +17,10 @@ type SongStatus = {
 };
 
 interface SongPlayerListProps {
-  players: SongGuessrPlayerView[];
+  players: SonGuessrPlayerView[];
   myPlayerId?: string;
   isHost: boolean;
-  phase: SongGuessrPhase;
+  phase: SonGuessrPhase;
   allowSpectators: boolean;
 }
 
@@ -76,7 +76,7 @@ export function SongPlayerList({
     [sendCommand, setNotice],
   );
 
-  const renderRow = (player: SongGuessrPlayerView, hideSpectatorStatus: boolean) => (
+  const renderRow = (player: SonGuessrPlayerView, hideSpectatorStatus: boolean) => (
     <SongPlayerRow
       key={player.id}
       player={player}
@@ -144,10 +144,10 @@ export function SongPlayerList({
 }
 
 interface SongPlayerRowProps {
-  player: SongGuessrPlayerView;
+  player: SonGuessrPlayerView;
   myPlayerId?: string;
   isHostViewer: boolean;
-  phase: SongGuessrPhase;
+  phase: SonGuessrPhase;
   hideSpectatorStatus: boolean;
   onKick: (playerId: string) => void;
   onTransferHost: (playerId: string) => void;
@@ -250,8 +250,8 @@ function SongPlayerRow({
 }
 
 function resolveSongStatus(
-  player: SongGuessrPlayerView,
-  phase: SongGuessrPhase,
+  player: SonGuessrPlayerView,
+  phase: SonGuessrPhase,
   hideSpectatorStatus: boolean,
 ): SongStatus | null {
   if (player.membership === "spectator") {

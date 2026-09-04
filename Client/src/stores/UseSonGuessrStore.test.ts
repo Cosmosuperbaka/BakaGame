@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ServerMessage,
-  SongGuessrPrivateState,
-  SongGuessrRoomSnapshot,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
 } from "@/types";
 
 const wsMock = vi.hoisted(() => ({
@@ -50,15 +50,15 @@ vi.mock("@/lib/SonGuessrWs", () => ({
 
 import {
   getSessionToken,
-  getSonGuessrSessionToken as getSongGuessrSessionToken,
+  getSonGuessrSessionToken,
   saveSessionToken,
-  saveSonGuessrSessionToken as saveSongGuessrSessionToken,
+  saveSonGuessrSessionToken,
 } from "@/lib/Storage";
-import { initSonGuessrWs as initSongGuessrSocket, useSonGuessrStore as useSongGuessrStore } from "./UseSonGuessrStore";
+import { initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
 
-const initialState = useSongGuessrStore.getState();
+const initialState = useSonGuessrStore.getState();
 
-const snapshot: SongGuessrRoomSnapshot = {
+const snapshot: SonGuessrRoomSnapshot = {
   roomId: "1234",
   name: "音乐房间",
   visibility: "public",
@@ -86,7 +86,7 @@ const snapshot: SongGuessrRoomSnapshot = {
   chat: [],
 };
 
-const privateState: SongGuessrPrivateState = {
+const privateState: SonGuessrPrivateState = {
   playerId: "player-1",
   sessionToken: "live-token",
   isSubmitter: false,
@@ -105,7 +105,7 @@ describe("Songuessr store integration", () => {
     wsMock.connect.mockReset();
     wsMock.messageHandlers = [];
     wsMock.statusHandlers = [];
-    useSongGuessrStore.setState(initialState, true);
+    useSonGuessrStore.setState(initialState, true);
   });
 
   afterEach(() => {
@@ -116,7 +116,7 @@ describe("Songuessr store integration", () => {
   it("persists created room sessions in the Songuessr namespace", async () => {
     wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
 
-    await useSongGuessrStore.getState().createRoom({
+    await useSonGuessrStore.getState().createRoom({
       roomId: "1234",
       name: "音乐房间",
       visibility: "public",
@@ -128,9 +128,9 @@ describe("Songuessr store integration", () => {
       "song.room.create",
       expect.objectContaining({ roomId: "1234", userName: "房主" }),
     );
-    expect(getSongGuessrSessionToken("1234")).toBe("created-token");
+    expect(getSonGuessrSessionToken("1234")).toBe("created-token");
     expect(getSessionToken("1234")).toBeNull();
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: "1234",
       sessionToken: "created-token",
     });
@@ -139,10 +139,10 @@ describe("Songuessr store integration", () => {
   it("uses the canonical room id returned by the server", async () => {
     wsMock.send.mockResolvedValue({ roomId: "Oblivionis", sessionToken: "test-token" });
 
-    await useSongGuessrStore.getState().joinRoom("oblivionis", "测试玩家");
+    await useSonGuessrStore.getState().joinRoom("oblivionis", "测试玩家");
 
-    expect(getSongGuessrSessionToken("Oblivionis")).toBe("test-token");
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    expect(getSonGuessrSessionToken("Oblivionis")).toBe("test-token");
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: "Oblivionis",
       sessionToken: "test-token",
     });
@@ -150,8 +150,8 @@ describe("Songuessr store integration", () => {
 
   it("clears the room session after an intentional leave", async () => {
     wsMock.send.mockResolvedValue({ left: true });
-    saveSongGuessrSessionToken("2345", "leave-token");
-    useSongGuessrStore.setState({
+    saveSonGuessrSessionToken("2345", "leave-token");
+    useSonGuessrStore.setState({
       roomId: "2345",
       sessionToken: "leave-token",
       snapshot,
@@ -159,15 +159,15 @@ describe("Songuessr store integration", () => {
       roomClosedAt: Date.now(),
     });
 
-    await useSongGuessrStore.getState().leaveRoom();
+    await useSonGuessrStore.getState().leaveRoom();
 
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.room.leave",
       {},
       { roomId: "2345", sessionToken: "leave-token" },
     );
-    expect(getSongGuessrSessionToken("2345")).toBeNull();
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    expect(getSonGuessrSessionToken("2345")).toBeNull();
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: null,
       sessionToken: null,
       snapshot: null,
@@ -177,24 +177,24 @@ describe("Songuessr store integration", () => {
   });
 
   it("clears only the Songuessr token after a stale reconnect", async () => {
-    saveSongGuessrSessionToken("2345", "stale-song-token");
+    saveSonGuessrSessionToken("2345", "stale-song-token");
     saveSessionToken("2345", "live-faker-token");
     wsMock.send.mockRejectedValue({ code: "SESSION_NOT_FOUND" });
 
-    await expect(useSongGuessrStore.getState().reconnectRoom("2345")).resolves.toBe(false);
+    await expect(useSonGuessrStore.getState().reconnectRoom("2345")).resolves.toBe(false);
 
-    expect(getSongGuessrSessionToken("2345")).toBeNull();
+    expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
-    expect(useSongGuessrStore.getState().roomClosedAt).not.toBeNull();
+    expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
   });
 
   it("keeps the Songuessr session while reconnecting after a temporary disconnect", async () => {
-    saveSongGuessrSessionToken("2346", "live-song-token");
+    saveSonGuessrSessionToken("2346", "live-song-token");
     wsMock.send.mockRejectedValue({ code: "TIMEOUT" });
 
-    await expect(useSongGuessrStore.getState().reconnectRoom("2346")).resolves.toBe(true);
-    expect(getSongGuessrSessionToken("2346")).toBe("live-song-token");
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).resolves.toBe(true);
+    expect(getSonGuessrSessionToken("2346")).toBe("live-song-token");
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: "2346",
       sessionToken: "live-song-token",
       roomClosedAt: null,
@@ -203,13 +203,13 @@ describe("Songuessr store integration", () => {
 
   it("subscribes to the lobby and restores the active room after reconnecting", async () => {
     wsMock.send.mockResolvedValue({});
-    useSongGuessrStore.setState({ roomId: "3456", sessionToken: "live-token" });
-    const dispose = initSongGuessrSocket();
+    useSonGuessrStore.setState({ roomId: "3456", sessionToken: "live-token" });
+    const dispose = initSonGuessrWs();
 
     wsMock.statusHandlers[0](true);
     await Promise.resolve();
 
-    expect(useSongGuessrStore.getState().connected).toBe(true);
+    expect(useSonGuessrStore.getState().connected).toBe(true);
     expect(wsMock.send).toHaveBeenCalledWith("song.lobby.subscribeRooms");
     expect(wsMock.send).toHaveBeenCalledWith("song.room.reconnect", {
       roomId: "3456",
@@ -221,7 +221,7 @@ describe("Songuessr store integration", () => {
   });
 
   it("stores versioned public snapshots and private state from server events", () => {
-    const dispose = initSongGuessrSocket();
+    const dispose = initSonGuessrWs();
 
     wsMock.messageHandlers[0]({
       type: "event",
@@ -234,17 +234,17 @@ describe("Songuessr store integration", () => {
       payload: { mode: "full", revision: 1, state: privateState },
     });
 
-    expect(useSongGuessrStore.getState()).toMatchObject({ snapshot, privateState });
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    expect(useSonGuessrStore.getState()).toMatchObject({ snapshot, privateState });
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: "1234",
       sessionToken: "live-token",
     });
-    expect(getSongGuessrSessionToken("1234")).toBe("live-token");
+    expect(getSonGuessrSessionToken("1234")).toBe("live-token");
     dispose();
   });
 
   it("directly preserves server snapshots and lobby entries without fabrication", () => {
-    const dispose = initSongGuessrSocket();
+    const dispose = initSonGuessrWs();
     const serverSnapshot = {
       ...snapshot,
       phase: "playing",
@@ -271,7 +271,7 @@ describe("Songuessr store integration", () => {
           guessesUsed: 1,
         },
       ],
-    } as unknown as SongGuessrRoomSnapshot;
+    } as unknown as SonGuessrRoomSnapshot;
 
     wsMock.messageHandlers[0]({
       type: "event",
@@ -284,8 +284,8 @@ describe("Songuessr store integration", () => {
       payload: { mode: "full", revision: 2, state: serverSnapshot },
     });
 
-    expect(useSongGuessrStore.getState().rooms[0]?.phase).toBe("playing");
-    expect(useSongGuessrStore.getState().snapshot).toMatchObject({
+    expect(useSonGuessrStore.getState().rooms[0]?.phase).toBe("playing");
+    expect(useSonGuessrStore.getState().snapshot).toMatchObject({
       phase: "playing",
       pendingSubmitterPlayerId: "player-1",
       currentRound: expect.objectContaining({ roundNumber: 1 }),
@@ -299,35 +299,35 @@ describe("Songuessr store integration", () => {
     ["song.room.kicked", "你已被移出房间"],
     ["session.replaced", "当前席位已在另一个标签页接管"],
   ])("clears local authority when receiving %s", (event, notice) => {
-    saveSongGuessrSessionToken("4567", "room-token");
-    useSongGuessrStore.setState({
+    saveSonGuessrSessionToken("4567", "room-token");
+    useSonGuessrStore.setState({
       roomId: "4567",
       sessionToken: "room-token",
       snapshot,
       privateState,
     });
-    const dispose = initSongGuessrSocket();
+    const dispose = initSonGuessrWs();
 
     wsMock.messageHandlers[0]({ type: "event", event, payload: { roomId: "4567" } });
 
-    expect(getSongGuessrSessionToken("4567")).toBeNull();
-    expect(useSongGuessrStore.getState()).toMatchObject({
+    expect(getSonGuessrSessionToken("4567")).toBeNull();
+    expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: null,
       sessionToken: null,
       snapshot: null,
       privateState: null,
       notice: { text: notice, type: "error" },
     });
-    expect(useSongGuessrStore.getState().roomClosedAt).not.toBeNull();
+    expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
     dispose();
   });
 
   it("returns music search results through the authenticated command wrapper", async () => {
     const results = [{ id: "song-1", title: "晴天", artist: "周杰伦" }];
     wsMock.send.mockResolvedValue({ results });
-    useSongGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
 
-    await expect(useSongGuessrStore.getState().searchMusic("晴天")).resolves.toEqual(results);
+    await expect(useSonGuessrStore.getState().searchMusic("晴天")).resolves.toEqual(results);
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.music.search",
       { keyword: "晴天" },
@@ -337,17 +337,17 @@ describe("Songuessr store integration", () => {
 
   it("resets state sync and cleans room state when leaveRoom is invoked", async () => {
     wsMock.send.mockResolvedValue({});
-    useSongGuessrStore.setState({
+    useSonGuessrStore.setState({
       roomId: "1234",
       sessionToken: "token-1",
       snapshot,
       privateState,
     });
 
-    await useSongGuessrStore.getState().leaveRoom();
+    await useSonGuessrStore.getState().leaveRoom();
 
-    expect(useSongGuessrStore.getState().roomId).toBeNull();
-    expect(useSongGuessrStore.getState().snapshot).toBeNull();
-    expect(useSongGuessrStore.getState().sessionToken).toBeNull();
+    expect(useSonGuessrStore.getState().roomId).toBeNull();
+    expect(useSonGuessrStore.getState().snapshot).toBeNull();
+    expect(useSonGuessrStore.getState().sessionToken).toBeNull();
   });
 });

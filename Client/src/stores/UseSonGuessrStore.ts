@@ -414,7 +414,3 @@ export function initSonGuessrWs() {
     unsubStatus();
   };
 }
-
-export const initSongGuessrWs = initSonGuessrWs;
-export const initSonGuessrSocket = initSonGuessrWs;
-export const initSongGuessrSocket = initSonGuessrWs;

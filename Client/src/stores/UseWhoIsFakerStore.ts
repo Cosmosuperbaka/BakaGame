@@ -555,6 +555,3 @@ export function initWhoIsFakerWs() {
     unsubStatus();
   };
 }
-
-export const initWs = initWhoIsFakerWs;
-export const initGameSocket = initWhoIsFakerWs;

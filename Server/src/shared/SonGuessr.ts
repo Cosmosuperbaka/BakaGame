@@ -274,20 +274,3 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.game.finish", Record<string, never>>
   | ClientEnvelope<"song.test.addBot", { count?: number }>
   | ClientEnvelope<"song.test.removeBot", { count?: number }>;
-
-// 兼容别名导出
-export const SON_GUESSR_PHASES = SONGUESSR_PHASES;
-export const SON_GUESSR_MAX_PLAYERS = SONGUESSR_MAX_PLAYERS;
-export const SONG_GUESSR_PHASES = SONGUESSR_PHASES;
-export const SONG_GUESSR_MAX_PLAYERS = SONGUESSR_MAX_PLAYERS;
-export type SongGuessrPhase = SonGuessrPhase;
-export type SongGuessrSettings = SonGuessrSettings;
-export type SongGuessrMusicAccount = SonGuessrMusicAccount;
-export type SongGuessrScore = SonGuessrScore;
-export type SongGuessrRoundSummary = SonGuessrRoundSummary;
-export type SongGuessrPlayerView = SonGuessrPlayerView;
-export type SongGuessrRoomSummary = SonGuessrRoomSummary;
-export type SongGuessrRoomSnapshot = SonGuessrRoomSnapshot;
-export type SongGuessrPrivateState = SonGuessrPrivateState;
-export type SongGuessrClientEnvelope<TType extends string, TPayload> = SonGuessrClientEnvelope<TType, TPayload>;
-export type SongGuessrClientMessage = SonGuessrClientMessage;

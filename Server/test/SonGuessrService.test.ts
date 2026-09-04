@@ -12,9 +12,6 @@ import type {
   SonGuessrClientMessage,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
-  SongGuessrClientMessage,
-  SongGuessrPrivateState,
-  SongGuessrRoomSnapshot,
 } from "../src/shared/Index";
 
 const makeSong = (id: string, title: string, year: number): SongDetails => ({
@@ -71,7 +68,7 @@ const connection = (service: SongGuessrService, id: string): TestConnection => {
 const execute = (
   service: SongGuessrService,
   client: TestConnection,
-  message: SongGuessrClientMessage,
+  message: SonGuessrClientMessage,
 ) => service.execute(client.record.id, message);
 
 const lastEvent = <T>(client: TestConnection, event: string): T =>
@@ -80,7 +77,7 @@ const lastEvent = <T>(client: TestConnection, event: string): T =>
 const createRoom = async (
   service: SongGuessrService,
   host: TestConnection,
-  overrides: Partial<Extract<SongGuessrClientMessage, { type: "song.room.create" }>["payload"]> = {},
+  overrides: Partial<Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]> = {},
 ) => {
   const created = await execute(service, host, {
     id: "create",
@@ -116,7 +113,7 @@ const joinRoom = async (
     roomId,
     payload: password ? { userName, password } : { userName },
   });
-  return lastEvent<SongGuessrPrivateState>(client, "song.game.privateState");
+  return lastEvent<SonGuessrPrivateState>(client, "song.game.privateState");
 };
 
 const startRound = async (
@@ -205,7 +202,7 @@ describe("SongGuessrService", () => {
     });
 
     expect(lastEvent<{ roomId: string }>(guest, "song.room.kicked")).toEqual({ roomId: "1234" });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players)
       .not.toEqual(expect.arrayContaining([expect.objectContaining({ id: guestState.playerId })]));
     await expect(execute(service, guest, {
       id: "chat-after-kick",
@@ -218,7 +215,7 @@ describe("SongGuessrService", () => {
     const service = new SongGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
 
     await execute(service, host, {
       id: "host-watch",
@@ -226,7 +223,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { spectator: true },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ id: hostState.playerId, membership: "spectator", isHost: true }),
       ]));
@@ -237,7 +234,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { spectator: false },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ id: hostState.playerId, membership: "active", isHost: true }),
       ]));
@@ -270,9 +267,9 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { playerId: guestState.playerId },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot").musicAccountReady).toBe(true);
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").musicAccountReady).toBe(true);
     await execute(service, guest, { id: "session-clear", type: "song.auth.clear", roomId: "1234", payload: {} });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(false);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(false);
   });
 
   test("私密房间保留在大厅列表并要求密码加入", async () => {
@@ -309,7 +306,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "玩家");
 
     await expect(execute(service, guest, {
@@ -329,7 +326,7 @@ describe("SongGuessrService", () => {
       account: { userId?: string; nickname: string; avatarUrl?: string };
     };
     expect(login).toHaveProperty("account");
-    const readySnapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const readySnapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(readySnapshot.musicAccountReady).toBe(true);
     expect(JSON.stringify(readySnapshot)).not.toContain("MUSIC_U=host-cookie");
     expect(JSON.stringify(guest.sent)).not.toContain("MUSIC_U=host-cookie");
@@ -348,7 +345,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { playerId: guestState.playerId },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
 
     await execute(service, guest, {
       id: "load-new-host-cookie",
@@ -370,7 +367,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const afterLeave = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const afterLeave = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(afterLeave.hostPlayerId).toBe(hostState.playerId);
     expect(afterLeave.musicAccountReady).toBe(false);
     await execute(service, host, {
@@ -404,14 +401,14 @@ describe("SongGuessrService", () => {
     });
 
     await service.unregisterConnection(host.record.id);
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     expect(snapshot.hostPlayerId).toBe(hostState.playerId);
     expect(snapshot.musicAccountReady).toBe(true);
     expect(JSON.stringify(snapshot)).not.toContain("disconnect-cookie");
     now += HOST_RECONNECT_TIMEOUT_MS + 1;
     await service.runHousekeeping();
-    const transferred = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const transferred = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(transferred.hostPlayerId).toBe(guestState.playerId);
     expect(transferred.musicAccountReady).toBe(true);
   });
@@ -422,13 +419,13 @@ describe("SongGuessrService", () => {
     const host = connection(service, "grace-host");
     const guest = connection(service, "grace-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
 
     await service.unregisterConnection(host.record.id);
     now += HOST_RECONNECT_TIMEOUT_MS - 1;
     await joinRoom(service, guest, "宽限期玩家");
 
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.hostPlayerId).toBe(hostState.playerId);
     expect(snapshot.musicAccountReady).toBe(true);
   });
@@ -460,7 +457,7 @@ describe("SongGuessrService", () => {
     })).rejects.toMatchObject({
       code: "MUSIC_LOGIN_REQUIRED",
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("waiting");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("waiting");
   });
 
   test("开始游戏前会重新校验 Cookie，失效后清除房间账号状态", async () => {
@@ -492,7 +489,7 @@ describe("SongGuessrService", () => {
       payload: {},
     })).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
     expect(statusCalls).toBe(2);
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(false);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(false);
   });
 
   test("开始游戏校验遇到限流时透传上游错误且保留账号状态", async () => {
@@ -528,7 +525,7 @@ describe("SongGuessrService", () => {
       code: "MUSIC_API_RATE_LIMITED",
       message: "操作频繁，请稍候再试",
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
   });
 
   test("非会员不能提交会员专享歌曲", async () => {
@@ -545,7 +542,7 @@ describe("SongGuessrService", () => {
     const guest = connection(service, "guest");
     await createRoom(service, host);
     await joinRoom(service, guest, "玩家");
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await execute(service, guest, {
       id: "ready-before-vip-check",
       type: "song.player.setReady",
@@ -573,7 +570,7 @@ describe("SongGuessrService", () => {
     })).rejects.toMatchObject({
       code: "MUSIC_VIP_REQUIRED",
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase)
       .toBe("submittingSong");
   });
 
@@ -625,7 +622,7 @@ describe("SongGuessrService", () => {
     resolveSong(songs.answer);
 
     await expect(submitPromise).resolves.toEqual({ ignored: true });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
       phase: "choosingSubmitter",
       roundNumber: 0,
     });
@@ -642,7 +639,7 @@ describe("SongGuessrService", () => {
       roomId: "Oblivionis",
       payload: { count: 2 },
     });
-    const withBots = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const withBots = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(withBots.testMode).toBe(true);
     expect(withBots.players.filter((player) => player.isBot)).toHaveLength(2);
     expect(service.getRoomSummaries()).toHaveLength(0);
@@ -651,7 +648,7 @@ describe("SongGuessrService", () => {
     await service.runHousekeeping();
     const replacement = connection(service, "replacement");
     const replacementState = await joinRoom(service, replacement, "新房主", "Oblivionis");
-    expect(lastEvent<SongGuessrRoomSnapshot>(replacement, "song.room.snapshot").hostPlayerId)
+    expect(lastEvent<SonGuessrRoomSnapshot>(replacement, "song.room.snapshot").hostPlayerId)
       .toBe(replacementState.playerId);
 
     await execute(service, replacement, {
@@ -660,7 +657,7 @@ describe("SongGuessrService", () => {
       roomId: "Oblivionis",
       payload: { count: 1 },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(replacement, "song.room.snapshot").players
+    expect(lastEvent<SonGuessrRoomSnapshot>(replacement, "song.room.snapshot").players
       .filter((player) => player.isBot)).toHaveLength(1);
   });
 
@@ -668,14 +665,14 @@ describe("SongGuessrService", () => {
     const service = new SongGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await execute(service, host, {
       id: "add-bot-before-refresh",
       type: "song.test.addBot",
       roomId: "Oblivionis",
       payload: { count: 1 },
     });
-    const botId = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players
+    const botId = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players
       .find((player) => player.isBot)!.id;
 
     await service.unregisterConnection(host.record.id);
@@ -686,7 +683,7 @@ describe("SongGuessrService", () => {
       payload: { roomId: "Oblivionis", sessionToken: hostState.sessionToken },
     });
 
-    expect(lastEvent<SongGuessrRoomSnapshot>(refreshed, "song.room.snapshot").hostPlayerId)
+    expect(lastEvent<SonGuessrRoomSnapshot>(refreshed, "song.room.snapshot").hostPlayerId)
       .toBe(hostState.playerId);
     await expect(execute(service, refreshed, {
       id: "kick-after-refresh",
@@ -700,7 +697,7 @@ describe("SongGuessrService", () => {
     const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
 
     await execute(service, host, {
       id: "add-bot",
@@ -727,8 +724,8 @@ describe("SongGuessrService", () => {
       payload: { songId: "answer" },
     });
 
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
-    expect(lastEvent<SongGuessrPrivateState>(host, "song.game.privateState")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrPrivateState>(host, "song.game.privateState")).toMatchObject({
       isSubmitter: true,
       canGuess: false,
       canGiveUp: true,
@@ -741,7 +738,7 @@ describe("SongGuessrService", () => {
       roomId: "Oblivionis",
       payload: { roundNumber: 1 },
     });
-    expect(lastEvent<SongGuessrPrivateState>(host, "song.game.privateState").canGuess).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").canGuess).toBe(true);
 
     const wrong = await execute(service, host, {
       id: "self-wrong-guess",
@@ -750,7 +747,7 @@ describe("SongGuessrService", () => {
       payload: { songId: "wrong" },
     }) as { attempt: { result: string } };
     expect(wrong.attempt.result).toBe("wrong");
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
 
     const correct = await execute(service, host, {
       id: "self-correct-guess",
@@ -759,7 +756,7 @@ describe("SongGuessrService", () => {
       payload: { songId: "answer" },
     }) as { attempt: { result: string } };
     expect(correct.attempt.result).toBe("correct");
-    const result = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const result = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.correctPlayerIds).toContain(hostState.playerId);
   });
@@ -773,7 +770,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
 
     await execute(service, guest, {
       id: "join",
@@ -806,7 +803,7 @@ describe("SongGuessrService", () => {
       payload: { songId: "answer" },
     });
 
-    const playing = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const playing = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(playing.phase).toBe("playing");
     expect(playing.currentRound?.audioUrl).toBe("https://audio/answer.mp3");
     expect(playing.currentRound).not.toHaveProperty("attempts");
@@ -831,14 +828,14 @@ describe("SongGuessrService", () => {
       payload: { songId: "wrong" },
     }) as { attempt: { feedback: { releaseYearDirection: string } } };
     expect(wrong.attempt.feedback.releaseYearDirection).toBe("higher");
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").visibleAttempts)
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").visibleAttempts)
       .toEqual([
         expect.objectContaining({
           playerName: "玩家",
           guessedSong: expect.objectContaining({ title: "错误歌" }),
         }),
       ]);
-    expect(lastEvent<SongGuessrPrivateState>(host, "song.game.privateState").visibleAttempts)
+    expect(lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").visibleAttempts)
       .toEqual([
         expect.objectContaining({
           playerName: "玩家",
@@ -852,7 +849,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    const result = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const result = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.song.title).toBe("答案歌");
     expect(result.roundSummary?.scores).toEqual(
@@ -876,14 +873,14 @@ describe("SongGuessrService", () => {
     const host = connection(service, "refresh-host");
     const guest = connection(service, "refresh-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "刷新玩家");
     await startRound(service, host, guest, hostState.playerId);
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl)
       .toBe("https://audio/refresh-1.mp3");
 
     await service.unregisterConnection(guest.record.id);
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
 
     const refreshed = connection(service, "refresh-guest-new");
     await execute(service, refreshed, {
@@ -891,7 +888,7 @@ describe("SongGuessrService", () => {
       type: "song.room.reconnect",
       payload: { roomId: "1234", sessionToken: guestState.sessionToken },
     });
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(refreshed, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(refreshed, "song.room.snapshot");
     expect(snapshot).toMatchObject({
       phase: "playing",
       currentRound: {
@@ -899,7 +896,7 @@ describe("SongGuessrService", () => {
         audioUrl: "https://audio/refresh-2.mp3",
       },
     });
-    expect(lastEvent<SongGuessrPrivateState>(refreshed, "song.game.privateState").canGiveUp).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(refreshed, "song.game.privateState").canGiveUp).toBe(true);
   });
 
   test("结算后补发旧 audioReady 会被幂等忽略", async () => {
@@ -907,7 +904,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "stale-ready-host");
     const guest = connection(service, "stale-ready-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     await execute(service, guest, {
@@ -923,7 +920,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { roundNumber: 1 },
     })).resolves.toEqual({ ignored: true });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
   });
 
   test("自动出题按歌单与歌手交集随机选择歌曲且所有正式玩家都可猜", async () => {
@@ -969,7 +966,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
     expect(snapshot.currentRound?.submitterPlayerId).toBe("");
     expect(snapshot.settings.questionMode).toBe("automatic");
@@ -979,7 +976,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { roundNumber: 1 },
     });
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").canGuess).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").canGuess).toBe(true);
   });
 
   test("自动题库热度筛选对大歌单限制单轮上游查询数量", async () => {
@@ -1036,7 +1033,7 @@ describe("SongGuessrService", () => {
       payload: {},
     });
 
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
     expect(popularityCalls).toBeLessThanOrEqual(24);
   });
 
@@ -1164,7 +1161,7 @@ describe("SongGuessrService", () => {
 
     releaseStatus();
     await expect(firstStart).resolves.toEqual({ started: true });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
   });
 
   test("自动模式全员超时结算后可以正常进入第二轮", async () => {
@@ -1223,7 +1220,7 @@ describe("SongGuessrService", () => {
 
     now += 10_001;
     await service.runHousekeeping();
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
       phase: "roundResult",
       roundNumber: 1,
     });
@@ -1234,7 +1231,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
       phase: "playing",
       roundNumber: 2,
       currentRound: { roundNumber: 2 },
@@ -1290,7 +1287,7 @@ describe("SongGuessrService", () => {
         payload: {},
       });
     }
-    const summary = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
+    const summary = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
 
     await expect(execute(service, host, {
       id: "failed-next-command",
@@ -1298,7 +1295,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     })).rejects.toMatchObject({ code: "MUSIC_API_FAILED" });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
       phase: "roundResult",
       roundNumber: 1,
       roundSummary: summary,
@@ -1316,7 +1313,7 @@ describe("SongGuessrService", () => {
     const third = connection(service, "blood-third");
     const spectator = connection(service, "blood-spectator");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const firstState = await joinRoom(service, first, "第一名");
     const secondState = await joinRoom(service, second, "第二名");
     const thirdState = await joinRoom(service, third, "第三名");
@@ -1374,7 +1371,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    let snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    let snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
     expect(snapshot.players).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: firstState.playerId, score: 4 }),
@@ -1386,14 +1383,14 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
     await execute(service, third, {
       id: "guess-third",
       type: "song.game.guess",
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("roundResult");
     expect(snapshot.players).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: firstState.playerId, score: 4 }),
@@ -1412,7 +1409,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "settings-host");
     const guest = connection(service, "settings-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await execute(service, host, {
       id: "hidden-settings",
@@ -1422,7 +1419,7 @@ describe("SongGuessrService", () => {
     });
     await startRound(service, host, guest, hostState.playerId);
 
-    const playing = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const playing = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(playing.settings).toMatchObject({ showLyrics: false, showGuessTimer: false });
     expect(playing.currentRound?.lyricClip.lines).toEqual([]);
     const ready = await execute(service, guest, {
@@ -1432,7 +1429,7 @@ describe("SongGuessrService", () => {
       payload: { roundNumber: 1 },
     }) as { deadlineAt?: number };
     expect(ready.deadlineAt).toBeUndefined();
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt)
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt)
       .toBeUndefined();
   });
 
@@ -1444,7 +1441,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     await execute(service, guest, {
@@ -1466,7 +1463,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const waiting = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const waiting = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(waiting).toMatchObject({ phase: "waiting", roundNumber: 1 });
     expect(waiting.roundSummary).toBeUndefined();
     expect(waiting.finalScores).toBeUndefined();
@@ -1487,7 +1484,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const restarted = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const restarted = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(restarted).toMatchObject({ phase: "choosingSubmitter", roundNumber: 1 });
     expect(restarted.players).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "房主", score: 3 }),
@@ -1505,12 +1502,12 @@ describe("SongGuessrService", () => {
     const lateJoiner = connection(service, "late");
     const observer = connection(service, "observer");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
 
     const lateState = await joinRoom(service, lateJoiner, "中途加入");
-    expect(lastEvent<SongGuessrRoomSnapshot>(lateJoiner, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(lateJoiner, "song.room.snapshot").players)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ id: lateState.playerId, membership: "spectator" }),
       ]));
@@ -1520,7 +1517,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { spectator: false },
     })).resolves.toEqual({ spectator: false, queued: true });
-    expect(lastEvent<SongGuessrRoomSnapshot>(lateJoiner, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(lateJoiner, "song.room.snapshot").players)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({
           id: lateState.playerId,
@@ -1528,7 +1525,7 @@ describe("SongGuessrService", () => {
           nextRoundMembership: "active",
         }),
       ]));
-    expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGuess).toBe(false);
+    expect(lastEvent<SonGuessrPrivateState>(lateJoiner, "song.game.privateState").canGuess).toBe(false);
     const observerState = await joinRoom(service, observer, "旁观出题人");
 
     await execute(service, guest, {
@@ -1543,7 +1540,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").players)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ id: lateState.playerId, membership: "active" }),
       ]));
@@ -1553,16 +1550,16 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { playerId: observerState.playerId },
     });
-    expect(lastEvent<SongGuessrPrivateState>(observer, "song.game.privateState").canSubmitSong).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(observer, "song.game.privateState").canSubmitSong).toBe(true);
     await execute(service, observer, {
       id: "observer-submits",
       type: "song.game.submitSong",
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound)
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound)
       .toMatchObject({ submitterPlayerId: observerState.playerId });
-    expect(lastEvent<SongGuessrPrivateState>(lateJoiner, "song.game.privateState").canGiveUp).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(lateJoiner, "song.game.privateState").canGiveUp).toBe(true);
   });
 
   test("0分数的旁观者掉线立即移除", async () => {
@@ -1588,7 +1585,7 @@ describe("SongGuessrService", () => {
     const guest = connection(service, "offline-queue-guest");
     const lateJoiner = connection(service, "offline-queue-late");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     const lateState = await joinRoom(service, lateJoiner, "离线预约者");
@@ -1626,7 +1623,7 @@ describe("SongGuessrService", () => {
       payload: { songId: "answer" },
     });
 
-    const nextRound = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const nextRound = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(nextRound.phase).toBe("playing");
     expect(nextRound.players).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -1642,7 +1639,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
   });
 
   test("手动模式全员预约旁观后回到等待阶段且不创建空回合", async () => {
@@ -1650,7 +1647,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "all-watch-host");
     const guest = connection(service, "all-watch-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     for (const client of [host, guest]) {
@@ -1674,7 +1671,7 @@ describe("SongGuessrService", () => {
       payload: {},
     });
 
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("waiting");
     expect(snapshot.currentRound).toBeUndefined();
     expect(snapshot.hostPlayerId).toBe(hostState.playerId);
@@ -1756,7 +1753,7 @@ describe("SongGuessrService", () => {
       payload: {},
     });
 
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("waiting");
     expect(snapshot.currentRound).toBeUndefined();
     expect(songLoads).toBe(1);
@@ -1772,7 +1769,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
     await execute(service, guest, {
@@ -1781,7 +1778,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { roundNumber: 1 },
     });
-    const firstDeadline = lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt;
+    const firstDeadline = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt;
     expect(firstDeadline).toBe(now + 60_000);
 
     await expect(execute(service, host, {
@@ -1790,7 +1787,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { maxGuessesPerRound: 1, guessDurationSeconds: 10, lyricsLineCount: 3 },
     })).rejects.toMatchObject({ code: "INVALID_PHASE" });
-    const currentPrivate = lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState");
+    const currentPrivate = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
     expect(currentPrivate.remainingGuesses).toBe(3);
     expect(currentPrivate.guessDeadlineAt).toBe(firstDeadline);
 
@@ -1818,7 +1815,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { songId: "answer" },
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip.lines)
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip.lines)
       .toHaveLength(5);
     now += 1_000;
     await execute(service, guest, {
@@ -1827,7 +1824,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { roundNumber: 2 },
     });
-    const nextPrivate = lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState");
+    const nextPrivate = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
     expect(nextPrivate.remainingGuesses).toBe(3);
     expect(nextPrivate.guessDeadlineAt).toBe(now + 60_000);
   });
@@ -1840,7 +1837,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
 
@@ -1878,7 +1875,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "matching-host");
     const guest = connection(service, "matching-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "匹配玩家");
     await startRound(service, host, guest, hostState.playerId);
     await execute(service, guest, {
@@ -1917,7 +1914,7 @@ describe("SongGuessrService", () => {
       const host = connection(service, `variant-host-${answerTitle}`);
       const guest = connection(service, `variant-guest-${answerTitle}`);
       await createRoom(service, host);
-      const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+      const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
       await joinRoom(service, guest, "版本匹配玩家");
       await startRound(service, host, guest, hostState.playerId);
       await execute(service, guest, {
@@ -1946,7 +1943,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "subtitle-host");
     const guest = connection(service, "subtitle-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "副标题玩家");
     await startRound(service, host, guest, hostState.playerId);
     await execute(service, guest, {
@@ -1969,7 +1966,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "rotate-host");
     const guest = connection(service, "rotate-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "轮流玩家");
     await execute(service, host, {
       id: "rotate-settings",
@@ -1990,11 +1987,11 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    expect(lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
       phase: "submittingSong",
       pendingSubmitterPlayerId: guestState.playerId,
     });
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").canSubmitSong).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").canSubmitSong).toBe(true);
   });
 
   test("玩家可以主动放弃并且只记录一个放弃结果", async () => {
@@ -2005,18 +2002,18 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
 
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").canGiveUp).toBe(true);
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").canGiveUp).toBe(true);
     await execute(service, guest, {
       id: "give-up",
       type: "song.game.giveUp",
       roomId: "1234",
       payload: {},
     });
-    const result = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const result = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.attempts).toEqual([
       expect.objectContaining({ playerName: "玩家", result: "gaveUp" }),
@@ -2034,7 +2031,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
-    const hostPlayerId = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState").playerId;
+    const hostPlayerId = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId;
     await execute(service, guest, {
       id: "join",
       type: "song.room.join",
@@ -2052,15 +2049,15 @@ describe("SongGuessrService", () => {
     await execute(service, host, { id: "choose", type: "song.game.chooseSubmitter", roomId: "1234", payload: { playerId: hostPlayerId } });
     await execute(service, host, { id: "song", type: "song.game.submitSong", roomId: "1234", payload: { songId: "answer" } });
     await execute(service, guest, { id: "audio", type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 1 } });
-    const originalDeadline = lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt;
+    const originalDeadline = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt;
     now += 5_000;
     await execute(service, guest, { id: "audio-again", type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 1 } });
-    expect(lastEvent<SongGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt)
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt)
       .toBe(originalDeadline);
 
     now += 5_000;
     await service.runHousekeeping();
-    const result = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const result = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.attempts[0]).toMatchObject({ result: "timeout", playerName: "玩家" });
     expect(result.roundSummary?.scores).toEqual(
@@ -2074,7 +2071,7 @@ describe("SongGuessrService", () => {
     const guest1 = connection(service, "guest1-spec-test");
     const guest2 = connection(service, "guest2-spec-test");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest1, "玩家1");
     await joinRoom(service, guest2, "玩家2");
     await execute(service, guest1, { id: "ready-1", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
@@ -2092,7 +2089,7 @@ describe("SongGuessrService", () => {
       payload: { spectator: true },
     });
 
-    const queuedSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const queuedSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     const hostPlayerBefore = queuedSnapshot.players.find((p) => p.id === hostState.playerId);
     expect(hostPlayerBefore?.nextRoundMembership).toBe("spectator");
     expect(hostPlayerBefore?.isHost).toBe(true);
@@ -2103,7 +2100,7 @@ describe("SongGuessrService", () => {
 
     await execute(service, host, { id: "next-round", type: "song.game.nextRound", roomId: "1234", payload: {} });
 
-    const nextSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const nextSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     const hostPlayerAfter = nextSnapshot.players.find((p) => p.id === hostState.playerId);
     expect(hostPlayerAfter?.membership).toBe("spectator");
     expect(hostPlayerAfter?.isHost).toBe(true);
@@ -2115,7 +2112,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "toggle-host");
     const guest = connection(service, "toggle-guest");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "玩家");
     await startRound(service, host, guest, hostState.playerId);
 
@@ -2126,7 +2123,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { spectator: true },
     });
-    let snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    let snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.players.find((p) => p.id === guestState.playerId)?.nextRoundMembership).toBe("spectator");
 
     // 玩家第二次点击下轮加入旁观：撤销预约
@@ -2136,7 +2133,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { spectator: true },
     });
-    snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.players.find((p) => p.id === guestState.playerId)?.nextRoundMembership).toBeUndefined();
   });
 
@@ -2152,7 +2149,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { autoFilters: { playlist: { id: "987654321" }, artists: [], minPopularity: 0 } },
     });
-    let snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    let snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.settings.autoFilters.playlist?.id).toBe("987654321");
 
     // 2. 带 Query 参数的标准 URL
@@ -2162,7 +2159,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { autoFilters: { playlist: { id: "https://music.163.com/playlist?id=12345678&userid=999" }, artists: [], minPopularity: 0 } },
     });
-    snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.settings.autoFilters.playlist?.id).toBe("12345678");
 
     // 3. SPA Hash 路由 URL
@@ -2172,7 +2169,7 @@ describe("SongGuessrService", () => {
       roomId: "1234",
       payload: { autoFilters: { playlist: { id: "https://music.163.com/#/playlist?id=87654321" }, artists: [], minPopularity: 0 } },
     });
-    snapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.settings.autoFilters.playlist?.id).toBe("87654321");
   });
 
@@ -2190,7 +2187,7 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host-race");
     const guest = connection(service, "guest-race");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "并发测试玩家");
     await startRound(service, host, guest, hostState.playerId);
 
@@ -2221,7 +2218,7 @@ describe("SongGuessrService", () => {
     expect(rejected.length).toBe(1);
     expect((rejected[0] as PromiseRejectedResult).reason.code).toBe("GUESS_IN_PROGRESS");
 
-    const snapshot = lastEvent<SongGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     const guesserPlayer = snapshot.players.find((p) => p.id === guestState.playerId);
     expect(guesserPlayer?.guessesUsed).toBe(1);
   });
@@ -2236,18 +2233,18 @@ describe("SongGuessrService", () => {
     const host = connection(service, "host-stall");
     const guest = connection(service, "guest-stall");
     await createRoom(service, host);
-    const hostState = lastEvent<SongGuessrPrivateState>(host, "song.game.privateState");
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "卡死玩家");
     await startRound(service, host, guest, hostState.playerId);
 
-    const initialSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const initialSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(initialSnapshot.phase).toBe("playing");
 
     // 时间前移 85 秒（超过 80 秒的回合全局硬超时 hardDeadlineAt）
     mockTime += 85_000;
     await service.runHousekeeping();
 
-    const finalSnapshot = lastEvent<SongGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const finalSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(finalSnapshot.phase).toBe("roundResult");
     expect(finalSnapshot.roundSummary).toBeDefined();
   });

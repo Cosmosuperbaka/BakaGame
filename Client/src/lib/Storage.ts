@@ -100,7 +100,3 @@ export function clearSonGuessrSessionToken(roomId: string): void {
     // 忽略浏览器禁用存储的情况。
   }
 }
-
-export const getSongGuessrSessionToken = getSonGuessrSessionToken;
-export const saveSongGuessrSessionToken = saveSonGuessrSessionToken;
-export const clearSongGuessrSessionToken = clearSonGuessrSessionToken;

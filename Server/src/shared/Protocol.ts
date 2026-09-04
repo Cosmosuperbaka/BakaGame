@@ -61,11 +61,3 @@ export type StateSyncPayload<T> =
     };
 
 export type ServerMessage = AckPacket | ErrorPacket | EventPacket;
-
-// 谁是卧底客户端命令联合类型重导出（保持全库 100% 向后兼容）
-export type {
-  WhoIsFakerClientMessage,
-  ClientMessage,
-  FakerClientMessage,
-  WhoIsFakerClientEnvelope,
-} from "./WhoIsFaker";
