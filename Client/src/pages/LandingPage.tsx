@@ -17,6 +17,7 @@ import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
+import { Badge } from "@/components/ui/Badge";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import {
-  parseChangelogContent,
+  parseChangelogEntry,
   resolveLatestVersion,
   sortEntriesByVersion,
   type ChangelogContent,
@@ -231,25 +232,44 @@ function InlineContent({ nodes }: { nodes: InlineNode[] }) {
 }
 
 function ChangelogBody({ content }: { content: ChangelogContent }) {
-  const blocks = parseChangelogContent(content);
+  const sections = parseChangelogEntry(content);
+
+  if (sections.length === 0) {
+    return <div className="py-2 text-sm text-muted-foreground">暂无详细说明</div>;
+  }
 
   return (
-    <div className="space-y-2 text-sm text-muted-foreground">
-      {blocks.map((block, index) =>
-        block.kind === "list" ? (
-          <ul key={index} className="ml-4 list-outside list-disc space-y-1">
-            {block.items.map((item, itemIndex) => (
-              <li key={itemIndex} className="pl-0.5">
-                <InlineContent nodes={item} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p key={index}>
-            <InlineContent nodes={block.content} />
-          </p>
-        ),
-      )}
+    <div className="space-y-3">
+      {sections.map((section) => (
+        <div key={section.type} className="space-y-1.5" data-testid={`changelog-category-${section.type}`}>
+          <div className="flex items-center gap-1.5">
+            <Badge
+              variant="secondary"
+              className="px-1.5 py-0 font-mono text-[11px] font-medium lowercase"
+            >
+              {section.type}
+            </Badge>
+            <span className="text-xs font-semibold text-foreground">{section.label}</span>
+          </div>
+          <div className="space-y-1 text-sm text-muted-foreground pl-0.5">
+            {section.blocks.map((block, index) =>
+              block.kind === "list" ? (
+                <ul key={index} className="ml-4 list-outside list-disc space-y-1">
+                  {block.items.map((item, itemIndex) => (
+                    <li key={itemIndex} className="pl-0.5">
+                      <InlineContent nodes={item} />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p key={index}>
+                  <InlineContent nodes={block.content} />
+                </p>
+              ),
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
@@ -46,6 +47,28 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
+  it("renders categorized changelog in modal and omits absent categories", async () => {
+    const user = userEvent.setup();
+    renderLandingPage();
+
+    const versionButton = screen.getByRole("button", { name: /V1\.2\.4/ });
+    await user.click(versionButton);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // 检查存在对应更新的分类 Badge 与条目
+    const featBadges = screen.getAllByText("feat");
+    expect(featBadges.length).toBeGreaterThan(0);
+    expect(screen.getByText("Whoisfaker新增观战频道")).toBeInTheDocument();
+
+    const fixBadges = screen.getAllByText("fix");
+    expect(fixBadges.length).toBeGreaterThan(0);
+
+    // 未填写的类型（如 chore、docs）在更新日志中不渲染
+    expect(screen.queryByText("chore")).not.toBeInTheDocument();
+    expect(screen.queryByText("docs")).not.toBeInTheDocument();
+  });
+
   it("formats relative time correctly using Intl.RelativeTimeFormat", () => {
     const fixedNow = 1_700_000_000_000;
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(fixedNow);
@@ -73,4 +96,5 @@ describe("LandingPage", () => {
     }
   });
 });
+
 
