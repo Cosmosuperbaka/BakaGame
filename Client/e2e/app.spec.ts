@@ -186,13 +186,9 @@ test("internal scrolling works without visible scrollbar chrome", async ({ page 
     document.body.append(probe);
 
     const style = getComputedStyle(probe);
-    const webkitScrollbar = getComputedStyle(probe, "::-webkit-scrollbar");
     probe.scrollTo({ left: probe.scrollWidth, top: probe.scrollHeight });
     const measurement = {
       scrollbarWidth: style.getPropertyValue("scrollbar-width"),
-      webkitDisplay: webkitScrollbar.display,
-      webkitWidth: webkitScrollbar.width,
-      webkitHeight: webkitScrollbar.height,
       scrollLeft: probe.scrollLeft,
       scrollTop: probe.scrollTop,
     };
@@ -202,9 +198,6 @@ test("internal scrolling works without visible scrollbar chrome", async ({ page 
 
   expect(result).toEqual({
     scrollbarWidth: "none",
-    webkitDisplay: "none",
-    webkitWidth: "0px",
-    webkitHeight: "0px",
     scrollLeft: 140,
     scrollTop: 160,
   });

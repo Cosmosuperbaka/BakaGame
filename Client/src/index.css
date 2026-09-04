@@ -256,34 +256,6 @@ body,
   scrollbar-color: transparent transparent !important;
   scrollbar-gutter: auto !important;
   scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-#root::-webkit-scrollbar,
-*::-webkit-scrollbar,
-.scrollbar-hidden::-webkit-scrollbar,
-[data-radix-scroll-area-viewport]::-webkit-scrollbar,
-[data-radix-select-viewport]::-webkit-scrollbar {
-  -webkit-appearance: none !important;
-  display: none !important;
-  width: 0 !important;
-  min-width: 0 !important;
-  height: 0 !important;
-  min-height: 0 !important;
-  background: transparent !important;
-}
-
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-track-piece,
-*::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-button,
-*::-webkit-scrollbar-corner {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  background: transparent !important;
 }
 
 [data-radix-scroll-area-scrollbar] {
