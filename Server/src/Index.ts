@@ -25,7 +25,7 @@ let isShuttingDown = false;
 
 const { app, sonGuessrService } = createApp({
   env,
-  roomService,
+  whoIsFakerService: roomService,
   logger,
   isShuttingDown: () => isShuttingDown,
 });

@@ -18,10 +18,8 @@ import { systemRoutes } from "./routes/System";
 
 export interface AppDependencies {
   env: AppEnv;
-  roomService?: RoomService;
-  whoIsFakerService?: RoomService;
+  whoIsFakerService: RoomService;
   logger: EventLogger;
-  songGuessrService?: SonGuessrService | SongGuessrService;
   sonGuessrService?: SonGuessrService;
   isShuttingDown?: () => boolean;
 }
@@ -82,21 +80,18 @@ const isAllowedOrigin = (
 
 export const createApp = ({
   env,
-  roomService,
   whoIsFakerService,
   logger,
-  songGuessrService,
   sonGuessrService,
   isShuttingDown,
 }: AppDependencies) => {
   const decoder = new TextDecoder();
-  const fakerService = whoIsFakerService ?? roomService;
+  const fakerService = whoIsFakerService;
   if (!fakerService) {
-    throw new Error("WhoIsFakerService (or roomService) dependency is required");
+    throw new Error("WhoIsFakerService dependency is required");
   }
   const songService =
     sonGuessrService ??
-    songGuessrService ??
     new SonGuessrService({
       eventLogger: logger,
       musicProvider: new NeteaseMusicProvider({ logger }),
@@ -462,9 +457,7 @@ export const createApp = ({
 
   return {
     app,
-    roomService: fakerService,
     whoIsFakerService: fakerService,
-    songGuessrService: songService,
     sonGuessrService: songService,
   };
 };

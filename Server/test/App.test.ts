@@ -131,7 +131,7 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
   const logger = new EventLogger();
   const { app } = createApp({
     env,
-    roomService,
+    whoIsFakerService: roomService,
     logger,
   });
 
@@ -210,7 +210,7 @@ const startTestServer = () => {
   });
   const { app } = createApp({
     env,
-    roomService,
+    whoIsFakerService: roomService,
     logger: new EventLogger(),
   });
   const started = app.listen({
@@ -401,7 +401,7 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
 
   const { app } = createApp({
     env,
-    roomService,
+    whoIsFakerService: roomService,
     logger,
     isShuttingDown: () => shuttingDown,
   });
