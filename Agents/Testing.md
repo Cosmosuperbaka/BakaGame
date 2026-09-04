@@ -67,6 +67,11 @@ npx playwright test e2e/app.spec.ts
 - 每条测试独立创建房间、连接与临时目录，禁止依赖用例顺序。
 - Vitest 测试只放在 `Client/src`；Playwright 测试只放在 `Client/e2e`。
 - 覆盖率用于识别空白区域，不以低价值断言追求全局百分比。新增核心逻辑必须覆盖主要分支。
+- **行为驱动而非细节绑定**：UI 组件与页面单测绑定 ARIA 角色、语义文本与数据契约，严禁断言特定 Tailwind 原子类名或 DOM 深度层级；E2E 严禁对页面外壳进行 class 字符串全等比对。
+- **异常强断言铁律**：严禁使用裸 `toThrow()`，必须断言明确的业务错误码（如 `code: "INVALID_ROOM_ID"`）或关键错误描述。
+- **状态驱动而非过度 Mock**：Zustand 状态测试使用 `store.setState(...)` 原生注入真实状态上下文，严禁模块级 `vi.mock` 替换全局 Store。
+- **依赖注入与无网络时钟**：包含退避、冷却、抖动的类与服务（如 `NeteaseMusicProvider`）必须构造器注入 `now` 与 `random`，以虚拟时钟进行 0ms 确定性测试；遥测打点等外部 IO 必须参数化注入 `fetcher`，禁止单测滥用 `vi.stubGlobal("fetch")`。
+- **杜绝镜像测试文件**：文件重命名或重构后必须同步清理旧镜像单测文件，严禁双胞胎测试共存。
 
 ## CI 推荐顺序
 
