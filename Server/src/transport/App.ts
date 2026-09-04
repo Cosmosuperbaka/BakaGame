@@ -39,6 +39,14 @@ const sendPacket = (
   ws.send(JSON.stringify(payload));
 };
 
+const isPrivateLanHost = (hostname: string): boolean => {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  return false;
+};
+
 const isAllowedOrigin = (
   origin: string | null | undefined,
   clientUrl?: string,
@@ -47,13 +55,24 @@ const isAllowedOrigin = (
   if (!clientUrl) return true;
   try {
     const originUrl = new URL(origin);
-    const allowedUrl = new URL(clientUrl);
-    if (originUrl.origin === allowedUrl.origin) return true;
-    if (
-      (originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1") &&
-      (allowedUrl.hostname === "localhost" || allowedUrl.hostname === "127.0.0.1")
-    ) {
-      return true;
+    const allowedUrls = clientUrl
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    for (const rawAllowed of allowedUrls) {
+      try {
+        const allowedUrl = new URL(rawAllowed);
+        if (originUrl.origin === allowedUrl.origin) return true;
+        if (
+          isPrivateLanHost(originUrl.hostname) &&
+          isPrivateLanHost(allowedUrl.hostname)
+        ) {
+          return true;
+        }
+      } catch {
+        // 忽略单项解析异常
+      }
     }
   } catch {
     return false;
@@ -88,14 +107,17 @@ export const createApp = ({
       // 部分 iOS WebKit 版本会在 permessage-deflate 协商后立即断开连接。
       // Bun 的协商配置是服务器级别，无法按 UA 稳定切换，因此全局关闭压缩。
       perMessageDeflate: false,
+      // 限制单帧最大载荷 256KB，防止恶意外溢 OOM
+      maxPayloadLength: 256 * 1024,
     },
   })
     // ==================== 原生插件与全局中间件 ====================
     .use(
       cors({
-        origin: env.clientUrl,
-        allowedHeaders: ["content-type"],
-        methods: ["GET", "OPTIONS"],
+        origin: (req: Request) =>
+          isAllowedOrigin(req?.headers?.get("origin"), env.clientUrl),
+        allowedHeaders: ["content-type", "x-trace-id"],
+        methods: ["GET", "POST", "OPTIONS"],
         credentials: true,
       }),
     )
