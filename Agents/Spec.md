@@ -206,3 +206,27 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
 - **遥测上报缓冲队列上限与网络超时**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，超出淘汰最旧日志），导出过程必须挂载 `isFlushing` 并发飞行锁，网络请求必须配置超时中断（`AbortSignal.timeout(5000)`），杜绝上游网络瘫痪引发日志堆积 OOM。
 
+## 13. 测试驱动设计与可测试性架构规范 (Test-Driven Design & Testability Invariants)
+
+代码的可测试性是系统设计优雅程度的试金石。严禁编写不可测、过度 Mock 或过度依赖内部细节的脆弱测试，坚决消灭“虚假高覆盖率”。
+
+### 13.1 行为驱动设计与解除实现细节耦合 (Behavior-Driven Design & Decoupling)
+- **UI 测试基于语义与无障碍契约断言**：UI 组件测试严禁断言特定 Tailwind 原子类名（如 `rounded`、`bg-muted`、`px-1.5`、`border-dashed` 等）或深层 DOM 节点层级（如 `element.parentElement`）。断言必须且只能绑定无障碍角色（`getByRole`、`getByLabelText`）、用户可见文本与核心数据契约。样式重构只要未破坏视觉功能与交互，测试必须始终绿灯。
+- **端到端测试禁止脆弱的 Class 字符串比对**：Playwright E2E 测试中严禁提取两套页面/外壳的全部 class 属性进行严格字符串比对（`toEqual`）。外壳与通用布局的一致性验证必须通过核心 Landmark（`<header>`、`<main>`）、关键导航入口呈现及视口无横向溢出（`scrollWidth <= innerWidth`）等页面级几何与功能契约进行校验。
+- **长连接与事件驱动 Store 测试提供安全分发门面**：测试长连接与全局 Store（如 `UseWhoIsFakerStore`）状态流转时，WebSocket 模拟驱动必须封装高层语义触发门面（如 `emitStatus`、`emitMessage`），严禁在用例中直接使用裸数组下标（如 `statusHandlers[0]()`、`messageHandlers[0]()`）进行盲调，杜绝监听次序微调引发的级联用例挂死。
+
+### 13.2 依赖倒置与杜绝运行时全局污染 (Dependency Injection & Anti-Global Stubbing)
+- **时钟与伪随机数必须支持构造器/参数注入**：所有涉及时间推移、退避重试、熔断冷却、抖动调度或超时过期的类与模块（如 `NeteaseMusicProvider`），严禁在内部写死 `Date.now()` 或 `Math.random()`。必须在构造选项中提供可选的 `now?: () => number` 与 `random?: { nextFloat?: () => number }` 注入槽位。测试中必须通过推进虚拟时钟（Virtual Clock）实现 0ms 异步竞态断言，杜绝依赖真实 `sleep` 造成的测试耗时膨胀与 Flakiness。
+- **网络与外部 IO 驱动参数化解耦**：客户端监控、遥测上报与辅助通信函数（如 `reportTelemetry`），必须通过可选参数（`options?: { serverUrl?: string; fetcher?: typeof fetch }`）支持网络驱动注入。单测中优先通过入参传入受控的 mock 实例，严禁滥用 `vi.stubGlobal("fetch")` 污染全局 runtime，消除并发用例之间的全局上下文竞争隐患。
+
+### 13.3 消除过度 Mock 与原生状态驱动 (Zustand Native State Drive & Anti-Over-Mocking)
+- **禁止模块级粗暴拦截核心状态库**：组件单测中严禁使用 `vi.mock("@/stores/...")` 将全局状态库整体拦截替换为硬编码函数。必须使用 Zustand 原生提供的状态注入能力（如 `useSongGuessrStore.setState(...)`）预置前置数据并重置状态，真实验证组件在真实状态派发下的渲染与动作分发行为。
+- **杜绝“在 Mock 里重写被测系统”的反模式**：测试不得将所有外部与核心依赖全部 Mock 成复杂的假逻辑，使得测试沦为“自己证明自己通过”的无意义仪式。非 IO 的纯业务状态机必须全真运行。
+
+### 13.4 拒绝裸异常断言与深层契约加固 (Explicit Exception & Code Assertions)
+- **严禁无参裸 `toThrow()`**：所有同步与异步异常断言（如 `toThrow()`、`rejects.toThrow()`、`rejects.toMatchObject(...)`），严禁使用不带任何参数的裸断言。
+- **必须校验业务错误码或精确错误描述**：异常断言必须明确校验抛出的核心业务错误码（如 `code: "ROUND_NOT_STARTED"`、`code: "INVALID_ROOM_ID"`、`code: "MUSIC_API_RATE_LIMITED"`）或核心提示词，杜绝代码发生未预期的 `TypeError`（如 `undefined.property`）却被裸 `toThrow()` 误判通过的恶劣假阳性漏洞。
+
+### 13.5 杜绝镜像重复测试套件与死测试 (Zero Redundant Duplicate Suites)
+- **清理重命名遗留的镜像单测**：模块重构、文件重命名或迁移后，必须立即清理历史重复遗留的测试用例文件（如由于大小写或拼写变更残留的同义测试），严禁代码库中长期共存两套逻辑完全重叠的双胞胎单测。
+- **清理路由与全局入口的过载历史 Mock**：在顶层组件测试（如 `App.test.tsx`）中，严禁残留已被重构删除的历史废弃模块 Mock（如已被合并或废弃的上下文与页面引用），确保测试代码整洁精炼。
