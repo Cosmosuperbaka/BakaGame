@@ -90,7 +90,9 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 60 },
     }),
-  ).rejects.toThrow();
+  ).rejects.toMatchObject({
+    code: "ROUND_NOT_STARTED",
+  });
 
   // 添加机器人并开局
   await execute(context.service, connHost, {

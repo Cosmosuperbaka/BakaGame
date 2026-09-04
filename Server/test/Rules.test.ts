@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import {
   assignRoles,
@@ -21,7 +21,9 @@ test("房间号校验：四位数字与测试房间号合法，其余一律拒�
 
   for (const invalid of ["", "12", "12345", "abcd", "12a4", "room", "１２３４"]) {
     expect(isValidRoomId(invalid)).toBe(false);
-    expect(() => ensureRoomId(invalid)).toThrow();
+    expect(() => ensureRoomId(invalid)).toThrow(
+      expect.objectContaining({ code: "INVALID_ROOM_ID" }),
+    );
   }
 
   // 测试房间号统一归一成标准大小写，避免同房间分裂成两间。
@@ -44,7 +46,9 @@ test("弃权票会单独统计且不会成为最高票玩家", () => {
 
 test("词对会修剪空白并按无序去重规则归一化", () => {
   expect(normalizeWordPair([" 狗 ", "猫"])).toHaveLength(2);
-  expect(() => normalizeWordPair(["猫", "猫"])).toThrow();
+  expect(() => normalizeWordPair(["猫", "猫"])).toThrow(
+    expect.objectContaining({ code: "INVALID_WORD_PAIR" }),
+  );
 });
 
 test("阵营配置会校验人数上限", () => {
@@ -57,7 +61,7 @@ test("阵营配置会校验人数上限", () => {
       },
       4,
     ),
-  ).toThrow();
+  ).toThrow(expect.objectContaining({ code: "INVALID_ROLE_CONFIG" }));
 });
 
 test("天使与白板在任意房间人数下都只会各分配一人", () => {
@@ -112,7 +116,7 @@ test("手动身份不能绕过单天使单白板约束", () => {
       { nextInt: (maxExclusive: number) => maxExclusive - 1 },
       manualRoles,
     ),
-  ).toThrow();
+  ).toThrow(expect.objectContaining({ code: "INVALID_MANUAL_ROLES" }));
 });
 
 test("天使从 8 人开启且卧底上限按四分之一向上取整", () => {

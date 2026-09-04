@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { parseSonGuessrMessage, parseSongGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
@@ -73,7 +73,7 @@ test("SonGuessr 协议拒绝非法音频准备回合号", () => {
         type: "song.game.audioReady",
         payload: { roundNumber },
       }),
-    ).toThrow();
+    ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
   }
 });
 
@@ -101,7 +101,7 @@ test("SonGuessr 协议解析旁观、放弃与测试人机命令", () => {
       id: "invalid-bots",
       type: "song.test.removeBot",
       payload: { count },
-    })).toThrow();
+    })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
   }
 });
 
@@ -113,7 +113,9 @@ test("SonGuessr 协议只解析扫码与 Cookie 登录命令", () => {
   })).toMatchObject({ type: "song.auth.qr.check", payload: { key: "qr-key" } });
 
   for (const type of ["song.auth.phone.login", "song.auth.email.login"]) {
-    expect(() => parseSongGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow();
+    expect(() => parseSongGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow(
+      expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" }),
+    );
   }
 
   expect(parseSongGuessrMessage({

@@ -62,7 +62,9 @@ test("词库文件内容损坏时应抛出错误保护数据，阻止破坏性�
     await expect(repository.readAll()).rejects.toThrow("词库文件内容不是合法的 JSON");
 
     // 拒绝盲目写回，阻止破坏性覆盖清空已有文件
-    await expect(repository.savePair(["月亮", "太阳"])).rejects.toThrow();
+    await expect(repository.savePair(["月亮", "太阳"])).rejects.toThrow(
+      "词库文件内容不是合法的 JSON",
+    );
   } finally {
     rmSync(tempDir, { force: true, recursive: true });
   }
