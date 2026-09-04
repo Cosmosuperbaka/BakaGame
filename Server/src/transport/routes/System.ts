@@ -2,19 +2,69 @@ import { Elysia, t } from "elysia";
 
 import type { RoomService } from "../../application/RoomService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
+import { redactData, type EventLogger } from "../../infrastructure/EventLogger";
 
 export interface SystemRoutesDependencies {
   roomService: RoomService;
   sonGuessrService?: SonGuessrService;
+  logger?: EventLogger;
   isShuttingDown?: () => boolean;
 }
 
 export const systemRoutes = ({
   roomService,
   sonGuessrService,
+  logger,
   isShuttingDown,
 }: SystemRoutesDependencies) =>
   new Elysia({ name: "system" })
+    .post(
+      "/api/monitoring/telemetry",
+      async ({ body, headers }) => {
+        const payload = (body ?? {}) as {
+          traceId?: string;
+          level?: "info" | "warn" | "error";
+          message?: string;
+          metadata?: Record<string, unknown>;
+        };
+
+        const traceId =
+          payload.traceId ??
+          (typeof headers["x-trace-id"] === "string" ? headers["x-trace-id"] : undefined);
+        const level =
+          payload.level?.toLowerCase() === "error"
+            ? "ERROR"
+            : payload.level?.toLowerCase() === "warn"
+              ? "WARN"
+              : "INFO";
+        const message = payload.message || "前端上报遥测事件";
+        const sanitizedMeta = payload.metadata
+          ? (redactData(payload.metadata) as Record<string, unknown>)
+          : {};
+
+        if (logger) {
+          if (level === "ERROR") {
+            logger.error(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+          } else if (level === "WARN") {
+            logger.warn(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+          } else {
+            logger.info(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+          }
+        }
+
+        return { ok: true };
+      },
+      {
+        detail: {
+          tags: ["System"],
+          summary: "前端可观测性遥测打点代理",
+          description: "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
+        },
+        response: t.Object({
+          ok: t.Boolean(),
+        }),
+      },
+    )
     .get(
       "/livez",
       () => ({

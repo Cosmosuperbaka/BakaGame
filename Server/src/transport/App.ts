@@ -169,6 +169,7 @@ export const createApp = ({
       systemRoutes({
         roomService,
         sonGuessrService: songService,
+        logger,
         isShuttingDown,
       }),
     )

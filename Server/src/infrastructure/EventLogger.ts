@@ -237,14 +237,23 @@ export const formatLogEntry = (
   return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${payloadStr}`;
 };
 
+import type { OtlpExporter } from "./OtlpExporter";
+
 export class EventLogger {
   private readonly output: LogOutput;
+  private readonly otlpExporter?: OtlpExporter;
 
   constructor(
     output: LogOutputLike = defaultOutput,
     private readonly now: () => number = () => Date.now(),
+    otlpExporter?: OtlpExporter,
   ) {
     this.output = normalizeOutput(output);
+    this.otlpExporter = otlpExporter;
+  }
+
+  get exporter(): OtlpExporter | undefined {
+    return this.otlpExporter;
   }
 
   private emit(
@@ -261,6 +270,17 @@ export class EventLogger {
         context,
       }),
     );
+
+    if (this.otlpExporter?.isEnabled) {
+      const traceId = typeof context?.traceId === "string" ? context.traceId : undefined;
+      this.otlpExporter.enqueue({
+        timestamp: createdAt,
+        level,
+        message,
+        traceId,
+        attributes: context ? (redactData(context) as Record<string, unknown>) : undefined,
+      });
+    }
   }
 
   info(message: string, context?: Record<string, unknown>) {
@@ -301,5 +321,18 @@ export class EventLogger {
   async write(entry: LogEntry): Promise<void> {
     const level = getEventLevel(entry);
     this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
+
+    if (this.otlpExporter?.isEnabled) {
+      this.otlpExporter.enqueue({
+        timestamp: entry.createdAt,
+        level,
+        message: `EVENT ${entry.type}`,
+        attributes: {
+          roomId: entry.roomId,
+          playerId: entry.playerId,
+          payload: entry.payload ? (redactData(entry.payload) as Record<string, unknown>) : undefined,
+        },
+      });
+    }
   }
 }
