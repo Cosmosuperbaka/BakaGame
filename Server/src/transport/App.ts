@@ -21,6 +21,7 @@ export interface AppDependencies {
   logger: EventLogger;
   songGuessrService?: SonGuessrService | SongGuessrService;
   sonGuessrService?: SonGuessrService;
+  isShuttingDown?: () => boolean;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -58,7 +59,14 @@ const isAllowedOrigin = (
   return false;
 };
 
-export const createApp = ({ env, roomService, logger, songGuessrService, sonGuessrService }: AppDependencies) => {
+export const createApp = ({
+  env,
+  roomService,
+  logger,
+  songGuessrService,
+  sonGuessrService,
+  isShuttingDown,
+}: AppDependencies) => {
   const decoder = new TextDecoder();
   const songService =
     sonGuessrService ??
@@ -157,7 +165,13 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
       };
     })
     // ==================== 系统 HTTP 业务模块 ====================
-    .use(systemRoutes({ roomService, sonGuessrService: songService }))
+    .use(
+      systemRoutes({
+        roomService,
+        sonGuessrService: songService,
+        isShuttingDown,
+      }),
+    )
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       upgrade({ headers, request }) {

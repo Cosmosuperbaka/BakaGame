@@ -95,3 +95,43 @@ test("高并发连续保存多个词对时保证数据完整一致且无临时�
   }
 });
 
+test("checkHealth 探测内存模式与损坏文件时的健康状态", async () => {
+  const memRepo = new WordBankRepository(":memory:");
+  expect(await memRepo.checkHealth()).toBe(true);
+
+  const tempDir = mkdtempSync(join(tmpdir(), "word-bank-health-"));
+  try {
+    const filePath = join(tempDir, "word-bank.json");
+    const validRepo = new WordBankRepository(filePath);
+    await validRepo.savePair(["测试", "验证"]);
+    expect(await validRepo.checkHealth()).toBe(true);
+
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(filePath, "invalid json content", "utf8");
+    expect(await validRepo.checkHealth()).toBe(false);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("drainWrites 正确排空写队列并保障最终落盘", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "word-bank-drain-"));
+  try {
+    const filePath = join(tempDir, "word-bank.json");
+    const repo = new WordBankRepository(filePath);
+
+    // 触发写任务但不直接 await savePair
+    const p1 = repo.savePair(["晴天", "雨天"]);
+    const p2 = repo.savePair(["白天", "黑夜"]);
+
+    // 等待排空
+    await repo.drainWrites();
+    await Promise.all([p1, p2]);
+
+    const result = await repo.readAll();
+    expect(result).toHaveLength(2);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+

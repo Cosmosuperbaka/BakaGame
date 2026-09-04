@@ -226,6 +226,7 @@ const startTestServer = () => {
 
   return {
     port,
+    roomService,
     stop: async () => {
       await started.stop(true);
       rmSync(tempDir, { force: true, recursive: true });
@@ -371,6 +372,84 @@ test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并�
 
     socketA.close();
     socketB.close();
+  } finally {
+    await stop();
+  }
+});
+
+test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态", async () => {
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 4899,
+    wordBankPath: ":memory:",
+  };
+  const logger = new EventLogger();
+  let shuttingDown = false;
+  let storageHealthy = true;
+
+  const roomService = new RoomService({
+    wordBankRepository: {
+      checkHealth: async () => storageHealthy,
+      drainWrites: async () => {},
+      readAll: async () => [],
+      savePair: async () => {},
+    } as unknown as WordBankRepository,
+    eventLogger: logger,
+  });
+
+  const { app } = createApp({
+    env,
+    roomService,
+    logger,
+    isShuttingDown: () => shuttingDown,
+  });
+
+  // 1. livez 探针始终返回 200
+  const liveRes = await app.handle(new Request("http://localhost/livez"));
+  expect(liveRes.status).toBe(200);
+  expect(await liveRes.json()).toEqual({ status: "ok" });
+
+  // 2. 健康状态下 readyz 返回 200
+  const readyRes = await app.handle(new Request("http://localhost/readyz"));
+  expect(readyRes.status).toBe(200);
+  expect(await readyRes.json()).toEqual({ status: "ok", ready: true });
+
+  // 3. 存储故障状态下 readyz 返回 503 触发反代摘流
+  storageHealthy = false;
+  const storageFailRes = await app.handle(new Request("http://localhost/readyz"));
+  expect(storageFailRes.status).toBe(503);
+  expect(await storageFailRes.json()).toEqual({ status: "storage_degraded", ready: false });
+
+  // 4. 停机流程启动后 readyz 返回 503
+  storageHealthy = true;
+  shuttingDown = true;
+  const shuttingDownRes = await app.handle(new Request("http://localhost/readyz"));
+  expect(shuttingDownRes.status).toBe(503);
+  expect(await shuttingDownRes.json()).toEqual({ status: "shutting_down", ready: false });
+});
+
+test("RoomService.notifyShutdown 会向所有在线连接广播停机通知", async () => {
+  const { port, stop, roomService } = startTestServer();
+
+  try {
+    const socket = await openSocket(port);
+    const collector = createSocketCollector(socket);
+
+    roomService.notifyShutdown();
+
+    const shutdownEvent = (await collector(
+      (payload) =>
+        (payload as { type?: string }).type === "event" &&
+        (payload as { event?: string }).event === "server.shutdown",
+    )) as { type: string; event: string; payload: { message: string } };
+
+    expect(shutdownEvent.type).toBe("event");
+    expect(shutdownEvent.event).toBe("server.shutdown");
+    expect(shutdownEvent.payload.message).toContain("服务器即将关闭");
+
+    socket.close();
   } finally {
     await stop();
   }

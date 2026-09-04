@@ -96,4 +96,18 @@ export class WordBankRepository {
 
     return allPairs;
   }
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      if (this.filePath === ":memory:") return true;
+      await this.readAll();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async drainWrites(): Promise<void> {
+    await this.writeQueue;
+  }
 }
