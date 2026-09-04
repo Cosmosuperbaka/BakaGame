@@ -40,20 +40,20 @@ export function pendingColumn(status: SpeechStatus): { key: string; playerIds: s
   if (mode === "supplement") {
     return {
       key: `sup-${status.supplementIndex ?? 1}`,
-      playerIds: status.speechOrder ?? status.pendingSupplementPlayerIds ?? [],
+      playerIds: status.speechOrder ?? [],
     };
   }
   if (mode === "tieBreak") {
     if (status.tieBreakStage !== "description") return null;
     return {
       key: `tie-${status.tieBreakIndex ?? 1}`,
-      playerIds: status.speechOrder ?? status.tieBreakCandidateIds ?? [],
+      playerIds: status.speechOrder ?? [],
     };
   }
   if (status.phase !== "description") return null;
   return {
     key: `cycle-${status.day}`,
-    playerIds: status.speechOrder ?? status.descriptionOrder ?? [],
+    playerIds: status.speechOrder ?? [],
   };
 }
 

@@ -165,10 +165,9 @@ const musicLoginError = (body: Record<string, unknown>, fallback: string) => {
 const readLoginAccount = (body: Record<string, unknown>): SonGuessrMusicAccount => {
   const data = asRecord(dataRecord(body));
   const profile = asRecord(body.profile ?? data.profile);
-  const account = asRecord(body.account ?? data.account);
-  const nickname = readString(profile.nickname ?? account.userName ?? account.nickname) ?? "网易云用户";
+  const nickname = readString(profile.nickname) ?? "网易云用户";
   return {
-    userId: readString(profile.userId ?? profile.id ?? account.id ?? account.userId),
+    userId: readString(profile.userId ?? profile.id),
     nickname,
     avatarUrl: normalizeHttpsUrl(profile.avatarUrl ?? profile.avatar),
   };
@@ -654,9 +653,8 @@ export class NeteaseMusicProvider implements MusicProvider {
     const body = responseBody(response);
     const data = asRecord(body.data);
     const profile = asRecord(body.profile ?? data.profile);
-    const account = asRecord(body.account ?? data.account);
     const nestedCode = readNumber(data.code);
-    const userId = readString(profile.userId ?? profile.id ?? account.id ?? account.userId);
+    const userId = readString(profile.userId ?? profile.id);
     if (
       responseCode(body) !== 200 ||
       (nestedCode !== undefined && nestedCode !== 200) ||
