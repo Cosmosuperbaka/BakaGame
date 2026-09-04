@@ -114,7 +114,7 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
 
   const { app } = createApp({
     env,
-    roomService,
+    whoIsFakerService: roomService,
     logger,
   });
 
@@ -175,7 +175,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
   };
   const { app } = createApp({
     env,
-    roomService: new RoomService({
+    whoIsFakerService: new RoomService({
       eventLogger: new EventLogger(),
       wordBankRepository: new WordBankRepository(":memory:"),
     }),

@@ -19,7 +19,7 @@ const run = async () => {
 
   const { app } = createApp({
     env,
-    roomService,
+    whoIsFakerService: roomService,
     logger,
   });
 

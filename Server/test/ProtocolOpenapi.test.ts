@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { RoomService } from "../src/application/RoomService";
 import { AppError } from "../src/domain/Errors";
@@ -239,7 +239,7 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       serverPort: 4850,
       wordBankPath: ":memory:",
     },
-    roomService,
+    whoIsFakerService: roomService,
     logger,
   });
 
