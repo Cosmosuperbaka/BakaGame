@@ -99,12 +99,8 @@ export const formatDuration = (durationMs = 0): string => {
   return `${secs}s`.padStart(13, " ");
 };
 
-// 统一时间戳格式化 YYYY/MM/DD - HH:mm:ss
-const formatTimestamp = (createdAt: number) => {
-  const date = new Date(createdAt);
-
-  return `${date.getFullYear()}/${padNumber(date.getMonth() + 1)}/${padNumber(date.getDate())} - ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}`;
-};
+// 统一时间戳格式化为标准 ISO-8601 UTC 格式
+const formatTimestamp = (createdAt: number) => new Date(createdAt).toISOString();
 
 const getEventLevel = (entry: LogEntry): LogLevel => {
   switch (entry.type) {
@@ -127,10 +123,11 @@ const SENSITIVE_KEYS = new Set([
   "secret",
 ]);
 
-export const redactData = (data: unknown): unknown => {
+export const redactData = (data: unknown, depth = 0): unknown => {
   if (data == null) return data;
+  if (depth >= 5) return "[MAX_DEPTH_EXCEEDED]";
   if (typeof data !== "object") return data;
-  if (Array.isArray(data)) return data.map(redactData);
+  if (Array.isArray(data)) return data.map((item) => redactData(item, depth + 1));
 
   const redacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
@@ -143,7 +140,7 @@ export const redactData = (data: unknown): unknown => {
         redacted[key] = "***[REDACTED]";
       }
     } else {
-      redacted[key] = redactData(value);
+      redacted[key] = redactData(value, depth + 1);
     }
   }
   return redacted;
