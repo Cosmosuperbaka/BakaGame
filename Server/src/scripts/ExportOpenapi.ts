@@ -1,4 +1,4 @@
-﻿import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { RoomService } from "../application/RoomService";
@@ -26,7 +26,7 @@ const run = async () => {
   const response = await app.handle(new Request("http://localhost/openapi/json"));
   const openApiDocument = await response.json();
 
-  const outputPath = resolve(process.cwd(), "../Agents/http-openapi.json");
+  const outputPath = resolve(import.meta.dir, "../../../Agents/http-openapi.json");
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(openApiDocument, null, 2)}\n`, "utf8");
 };
