@@ -43,7 +43,7 @@ import type {
   SongSearchResult,
   SongLyricClip,
 } from "../shared/Index";
-import { createEvent } from "../transport/Protocol";
+import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 
 const DEFAULT_SETTINGS: SongGuessrSettings = {

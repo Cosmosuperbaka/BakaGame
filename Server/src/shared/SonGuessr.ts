@@ -218,18 +218,13 @@ export interface SonGuessrPrivateState {
   visibleAttempts: SongGuessAttempt[];
 }
 
-export interface SonGuessrClientEnvelope<TType extends string, TPayload> {
-  id: string;
-  traceId?: string;
-  type: TType;
-  roomId?: string;
-  sessionToken?: string;
-  payload: TPayload;
-}
+import type { ClientEnvelope } from "./Protocol";
+
+export type SonGuessrClientEnvelope<TType extends string, TPayload> = ClientEnvelope<TType, TPayload>;
 
 export type SonGuessrClientMessage =
-  | SonGuessrClientEnvelope<"song.lobby.subscribeRooms", Record<string, never>>
-  | SonGuessrClientEnvelope<
+  | ClientEnvelope<"song.lobby.subscribeRooms", Record<string, never>>
+  | ClientEnvelope<
       "song.room.create",
       {
         roomId: string;
@@ -240,16 +235,16 @@ export type SonGuessrClientMessage =
         userName: string;
       }
     >
-  | SonGuessrClientEnvelope<"song.room.join", { userName: string; password?: string }>
-  | SonGuessrClientEnvelope<
+  | ClientEnvelope<"song.room.join", { userName: string; password?: string }>
+  | ClientEnvelope<
       "song.room.reconnect",
       { roomId: string; sessionToken: string }
     >
-  | SonGuessrClientEnvelope<"song.room.leave", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.room.requestSync", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.player.setReady", { ready: boolean }>
-  | SonGuessrClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
-  | SonGuessrClientEnvelope<
+  | ClientEnvelope<"song.room.leave", Record<string, never>>
+  | ClientEnvelope<"song.room.requestSync", Record<string, never>>
+  | ClientEnvelope<"song.player.setReady", { ready: boolean }>
+  | ClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
+  | ClientEnvelope<
       "song.room.updateSettings",
       Partial<SonGuessrSettings> & {
         name?: string;
@@ -258,27 +253,27 @@ export type SonGuessrClientMessage =
         allowSpectators?: boolean;
       }
     >
-  | SonGuessrClientEnvelope<"song.room.kick", { playerId: string }>
-  | SonGuessrClientEnvelope<"song.room.transferHost", { playerId: string }>
-  | SonGuessrClientEnvelope<"song.chat.send", { text: string }>
-  | SonGuessrClientEnvelope<"song.auth.qr.create", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.auth.qr.check", { key: string }>
-  | SonGuessrClientEnvelope<"song.auth.useCookie", { cookie: string }>
-  | SonGuessrClientEnvelope<"song.auth.clear", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.music.search", { keyword: string }>
-  | SonGuessrClientEnvelope<"song.music.playlist.resolve", { value: string }>
-  | SonGuessrClientEnvelope<"song.music.artist.search", { keyword: string }>
-  | SonGuessrClientEnvelope<"song.game.start", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
-  | SonGuessrClientEnvelope<"song.game.submitSong", { songId: string }>
-  | SonGuessrClientEnvelope<"song.game.audioReady", { roundNumber: number }>
-  | SonGuessrClientEnvelope<"song.game.guess", { songId: string }>
-  | SonGuessrClientEnvelope<"song.game.giveUp", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.game.skipRound", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.game.nextRound", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.game.finish", Record<string, never>>
-  | SonGuessrClientEnvelope<"song.test.addBot", { count?: number }>
-  | SonGuessrClientEnvelope<"song.test.removeBot", { count?: number }>;
+  | ClientEnvelope<"song.room.kick", { playerId: string }>
+  | ClientEnvelope<"song.room.transferHost", { playerId: string }>
+  | ClientEnvelope<"song.chat.send", { text: string }>
+  | ClientEnvelope<"song.auth.qr.create", Record<string, never>>
+  | ClientEnvelope<"song.auth.qr.check", { key: string }>
+  | ClientEnvelope<"song.auth.useCookie", { cookie: string }>
+  | ClientEnvelope<"song.auth.clear", Record<string, never>>
+  | ClientEnvelope<"song.music.search", { keyword: string }>
+  | ClientEnvelope<"song.music.playlist.resolve", { value: string }>
+  | ClientEnvelope<"song.music.artist.search", { keyword: string }>
+  | ClientEnvelope<"song.game.start", Record<string, never>>
+  | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
+  | ClientEnvelope<"song.game.submitSong", { songId: string }>
+  | ClientEnvelope<"song.game.audioReady", { roundNumber: number }>
+  | ClientEnvelope<"song.game.guess", { songId: string }>
+  | ClientEnvelope<"song.game.giveUp", Record<string, never>>
+  | ClientEnvelope<"song.game.skipRound", Record<string, never>>
+  | ClientEnvelope<"song.game.nextRound", Record<string, never>>
+  | ClientEnvelope<"song.game.finish", Record<string, never>>
+  | ClientEnvelope<"song.test.addBot", { count?: number }>
+  | ClientEnvelope<"song.test.removeBot", { count?: number }>;
 
 // 兼容别名导出
 export const SON_GUESSR_PHASES = SONGUESSR_PHASES;
