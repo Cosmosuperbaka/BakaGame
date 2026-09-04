@@ -1,4 +1,4 @@
-﻿import { Elysia, t } from "elysia";
+import { Elysia, t } from "elysia";
 
 import type { RoomService } from "../../application/RoomService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
@@ -6,10 +6,64 @@ import type { SonGuessrService } from "../../application/SonGuessrService";
 export interface SystemRoutesDependencies {
   roomService: RoomService;
   sonGuessrService?: SonGuessrService;
+  isShuttingDown?: () => boolean;
 }
 
-export const systemRoutes = ({ roomService, sonGuessrService }: SystemRoutesDependencies) =>
+export const systemRoutes = ({
+  roomService,
+  sonGuessrService,
+  isShuttingDown,
+}: SystemRoutesDependencies) =>
   new Elysia({ name: "system" })
+    .get(
+      "/livez",
+      () => ({
+        status: "ok" as const,
+      }),
+      {
+        detail: {
+          tags: ["System"],
+          summary: "K8s / 容器存活探针 (Liveness)",
+          description: "只要服务进程正在运行且事件循环未死锁即返回 200。",
+        },
+        response: t.Object({
+          status: t.Literal("ok"),
+        }),
+      },
+    )
+    .get(
+      "/readyz",
+      async ({ set }) => {
+        if (isShuttingDown?.()) {
+          set.status = 503;
+          return {
+            status: "shutting_down" as const,
+            ready: false,
+          };
+        }
+
+        const storageOk = await roomService.checkStorageReadiness();
+        if (!storageOk) {
+          set.status = 503;
+          return {
+            status: "storage_degraded" as const,
+            ready: false,
+          };
+        }
+
+        return {
+          status: "ok" as const,
+          ready: true,
+        };
+      },
+      {
+        detail: {
+          tags: ["System"],
+          summary: "K8s / 反代就绪探针 (Readiness)",
+          description: "检测持久化依赖就绪度与进程停机标志，未就绪或停机中返回 503 触发摘流。",
+        },
+      },
+    )
     .get(
       "/health",
       () => {
