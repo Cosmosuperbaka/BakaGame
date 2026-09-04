@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -154,7 +154,12 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
       ? "非会员"
       : "会员状态未知";
   const vipExpireLabel = storedSession?.account.vipExpireTime
-    ? `有效期至 ${new Date(storedSession.account.vipExpireTime).toLocaleDateString()}`
+    ? `有效期至 ${new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        timeZone: "Asia/Shanghai",
+      }).format(new Date(storedSession.account.vipExpireTime))}`
     : undefined;
 
   return (
