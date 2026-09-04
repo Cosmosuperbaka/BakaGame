@@ -46,7 +46,8 @@ import {
 import type { LogEntry } from "../infrastructure/EventLogger";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
-import { createEvent, type ClientMessage } from "../transport/Protocol";
+import { createEvent } from "../transport/Packets";
+import type { WhoIsFakerClientMessage, ClientMessage } from "../transport/WhoIsFakerProtocol";
 
 import {
   ROOM_IDLE_TIMEOUT_MS,
@@ -4040,3 +4041,8 @@ export class RoomService {
     await this.options.eventLogger.write(entry);
   }
 }
+
+// 领域服务别名导出，确保平台各小游戏处于平等的架构地位
+export { RoomService as WhoIsFakerService };
+export type { RoomServiceOptions as WhoIsFakerServiceOptions };
+

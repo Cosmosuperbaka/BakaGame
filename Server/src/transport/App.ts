@@ -10,14 +10,16 @@ import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
-import { createAck, createErrorPacket, parseClientMessage } from "./Protocol";
+import { createAck, createErrorPacket } from "./Packets";
+import { parseWhoIsFakerMessage, parseClientMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, parseSongGuessrMessage } from "./SonGuessrProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { systemRoutes } from "./routes/System";
 
 export interface AppDependencies {
   env: AppEnv;
-  roomService: RoomService;
+  roomService?: RoomService;
+  whoIsFakerService?: RoomService;
   logger: EventLogger;
   songGuessrService?: SonGuessrService | SongGuessrService;
   sonGuessrService?: SonGuessrService;
@@ -62,12 +64,17 @@ const isAllowedOrigin = (
 export const createApp = ({
   env,
   roomService,
+  whoIsFakerService,
   logger,
   songGuessrService,
   sonGuessrService,
   isShuttingDown,
 }: AppDependencies) => {
   const decoder = new TextDecoder();
+  const fakerService = whoIsFakerService ?? roomService;
+  if (!fakerService) {
+    throw new Error("WhoIsFakerService (or roomService) dependency is required");
+  }
   const songService =
     sonGuessrService ??
     songGuessrService ??
@@ -167,8 +174,10 @@ export const createApp = ({
     // ==================== 系统 HTTP 业务模块 ====================
     .use(
       systemRoutes({
-        roomService,
+        roomService: fakerService,
+        whoIsFakerService: fakerService,
         sonGuessrService: songService,
+        songGuessrService: songService,
         logger,
         isShuttingDown,
       }),
@@ -190,7 +199,7 @@ export const createApp = ({
         const stateSync = createStateSyncSender((payload) => {
           sendPacket(ws, payload);
         });
-        roomService.registerConnection({
+        fakerService.registerConnection({
           id: connectionId,
           lobbySubscribed: false,
           send: stateSync.send,
@@ -231,7 +240,7 @@ export const createApp = ({
         let traceId: string | undefined;
 
         try {
-          const parsed = parseClientMessage(raw);
+          const parsed = parseWhoIsFakerMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
           traceId = parsed.traceId;
@@ -248,7 +257,7 @@ export const createApp = ({
 
           let payload: unknown;
           try {
-            payload = await roomService.execute(connectionId, parsed);
+            payload = await fakerService.execute(connectionId, parsed);
           } finally {
             inFlightMessages.delete(dedupKey);
           }
@@ -303,7 +312,7 @@ export const createApp = ({
         const connectionId = (ws.data as { connectionId?: string }).connectionId;
 
         if (connectionId) {
-          await roomService.unregisterConnection(connectionId);
+          await fakerService.unregisterConnection(connectionId);
         }
       },
     })
@@ -431,6 +440,8 @@ export const createApp = ({
 
   return {
     app,
+    roomService: fakerService,
+    whoIsFakerService: fakerService,
     songGuessrService: songService,
     sonGuessrService: songService,
   };

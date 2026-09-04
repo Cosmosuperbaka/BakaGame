@@ -157,3 +157,27 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **中国大陆网络免翻直连**：前端无需直连海外云平台（规避 DNS 污染与 GFW 拦截），由后端常驻进程在服务区完成聚合、脱敏与 OTLP 批处理（`OtlpExporter`）上报，保障中国大陆玩家顺畅体验。
 - **标准环境变量支撑**：通过 `OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_HEADERS`、`OTEL_SERVICE_NAME` 支持零配置注入标准 OpenTelemetry 采集栈。
 
+## 11. 平台与多游戏平等架构契约 (Multi-Game Equal Status Architecture Contract)
+
+在 BakaGame 平台中，所有小游戏（包括谁是卧底 `WhoIsFaker`、猜歌达人 `SonGuessr`、未来扩充的 `CCB` 等）具有严格平等的架构地位。严禁将任何单一游戏作为“平台核心/宿主”而将其他游戏贬为“二等公民或附加插件”。
+
+### 11.1 共享模型与协议单向无环分层 (Acyclic Shared Contracts)
+- **分层边界与单一真相源**：
+  1. **平台通用核心层 (`Server/src/shared/Protocol.ts`, `Model.ts`)**：仅承载跨所有游戏通用的数据结构与基础设施契约（如 `ClientEnvelope` 通用信封、`AckPacket`、`ErrorPacket`、`EventPacket`、`StateSyncPayload`、`ROOM_ID_TEST_MODE`、`isValidRoomId`、`RoomVisibility`、`PlayerMembership`、`ChatMessage`、`ConnectionRecord`）。
+  2. **游戏专属领域层 (`Server/src/shared/{GameName}.ts`)**：每个小游戏拥有独立、对等的模型契约文件（如 `WhoIsFaker.ts`、`SonGuessr.ts`、`CCB.ts`）。各个游戏领域层只能单向依赖平台核心层，严禁游戏领域契约之间产生跨游戏横向依赖。
+  3. **统一入口层 (`Server/src/shared/Index.ts`)**：作为 `@bakagame/shared` 的总门面，对等汇集并导出 `Model`、`Protocol` 以及各个子游戏的领域模块。
+- **消除信封与数据包格式的重复定义**：所有游戏的客户端指令信封联合体（如 `WhoIsFakerClientMessage`、`SonGuessrClientMessage`）必须统一基于平台通用的泛型信封 `ClientEnvelope<TType, TPayload>` 进行特化，严禁在各自业务契约中重新手写同构的信封接口。
+
+### 11.2 传输层与协议解析对称性 (Symmetrical Transport & Message Parsing)
+- **核心封包工具剥离 (`Server/src/transport/Packets.ts`)**：
+  - `createAck`、`createErrorPacket`、`createEvent` 属于平台通用传输工具，必须收敛于纯粹的 `Packets.ts`。严禁任何子游戏服务反向引入掺杂其他游戏解析逻辑的协议文件。
+- **解析器与路由入口对称**：
+  - 每个子游戏拥有独立的解析器：`WhoIsFakerProtocol.ts` 导出 `parseWhoIsFakerMessage`，`SonGuessrProtocol.ts` 导出 `parseSonGuessrMessage`。
+  - 网关路由（`App.ts`）对称消费各游戏的专用解析器，并以平等的路由前缀（如 `/api/whoisfaker/ws` 与 `/api/songuessr/ws`）挂载独立的 WebSocket 会话。
+
+### 11.3 服务编排与依赖注入对等性 (Equal Service Orchestration & Dependency Injection)
+- **领域服务命名与别名统一**：
+  - 服务端领域服务统一提供符合领域语义的导出（`RoomService` 导出 `WhoIsFakerService` 别名，与 `SonGuessrService` 对齐）。
+  - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService`（及 `songGuessrService`）具有完全一致的一级依赖注入地位。
+  - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
+

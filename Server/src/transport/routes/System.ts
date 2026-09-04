@@ -5,19 +5,25 @@ import type { SonGuessrService } from "../../application/SonGuessrService";
 import { redactData, type EventLogger } from "../../infrastructure/EventLogger";
 
 export interface SystemRoutesDependencies {
-  roomService: RoomService;
+  roomService?: RoomService;
+  whoIsFakerService?: RoomService;
   sonGuessrService?: SonGuessrService;
+  songGuessrService?: SonGuessrService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
 }
 
 export const systemRoutes = ({
   roomService,
+  whoIsFakerService,
   sonGuessrService,
+  songGuessrService,
   logger,
   isShuttingDown,
-}: SystemRoutesDependencies) =>
-  new Elysia({ name: "system" })
+}: SystemRoutesDependencies) => {
+  const fakerService = whoIsFakerService ?? roomService;
+  const songService = sonGuessrService ?? songGuessrService;
+  return new Elysia({ name: "system" })
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers }) => {
@@ -92,7 +98,7 @@ export const systemRoutes = ({
           };
         }
 
-        const storageOk = await roomService.checkStorageReadiness();
+        const storageOk = fakerService ? await fakerService.checkStorageReadiness() : true;
         if (!storageOk) {
           set.status = 503;
           return {
@@ -117,8 +123,12 @@ export const systemRoutes = ({
     .get(
       "/health",
       () => {
-        const fakerHealth = roomService.getHealthSnapshot();
-        const sonHealth = sonGuessrService?.getHealthSnapshot() ?? {
+        const fakerHealth = fakerService?.getHealthSnapshot() ?? {
+          roomCount: 0,
+          connectionCount: 0,
+          onlinePlayerCount: 0,
+        };
+        const sonHealth = songService?.getHealthSnapshot() ?? {
           roomCount: 0,
           connectionCount: 0,
           onlinePlayerCount: 0,
@@ -145,3 +155,4 @@ export const systemRoutes = ({
         }),
       },
     );
+};
