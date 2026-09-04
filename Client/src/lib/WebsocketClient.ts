@@ -15,6 +15,18 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+export function generateUuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // 兼容局域网 HTTP 等非安全上下文环境
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export class WebSocketClient {
   private socket: WebSocket | null = null;
   private messageHandlers: MessageHandler[] = [];
@@ -39,8 +51,9 @@ export class WebSocketClient {
     }
 
     try {
-      const serverUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
-      this.socket = new WebSocket(serverUrl.replace(/^http/, "ws") + this.path);
+      const rawUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+      const cleanBase = rawUrl.replace(/\/+$/, "");
+      this.socket = new WebSocket(cleanBase.replace(/^http/, "ws") + this.path);
     } catch {
       this.scheduleReconnect();
       return;
@@ -127,7 +140,7 @@ export class WebSocketClient {
         return;
       }
 
-      const traceId = crypto.randomUUID();
+      const traceId = generateUuid();
       const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);

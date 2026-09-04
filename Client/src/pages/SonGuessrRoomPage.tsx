@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -122,8 +122,15 @@ export default function SonGuessrRoomPage() {
   const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
   const [volume, setVolume] = useState(() => {
-    const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
-    return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
+        return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
+      }
+    } catch {
+      // 忽略 SSR 或浏览器隐身沙箱异常
+    }
+    return 0.65;
   });
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
   const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">("idle");
