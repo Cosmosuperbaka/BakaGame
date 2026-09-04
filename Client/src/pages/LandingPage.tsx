@@ -58,6 +58,7 @@ interface GameEntry {
   title: string;
   /** 条目副标题；无副标题时省略 */
   subtitle?: string;
+  available: boolean;
 }
 
 const GAMES: GameEntry[] = [
@@ -66,12 +67,14 @@ const GAMES: GameEntry[] = [
     path: "/whoisfaker",
     icon: "/assets/Faker.webp",
     title: "Who is Faker",
+    available: true,
   },
   {
     id: "songuessr",
     path: "/songuessr",
     icon: "/assets/SongGuessr.webp",
     title: "Songuessr",
+    available: true,
   },
   {
     id: "animecharguessr",
@@ -79,6 +82,7 @@ const GAMES: GameEntry[] = [
     icon: "/assets/CCB.webp",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
+    available: false,
   },
 ];
 
@@ -112,6 +116,47 @@ function GameRow({ game }: { game: GameEntry }) {
   const baseClass =
     "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-xl border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
+  const content = (
+    <>
+      <img
+        src={game.icon}
+        alt=""
+        aria-hidden="true"
+        className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+        {game.subtitle ? (
+          <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+        ) : null}
+      </div>
+      {game.available ? (
+        <motion.span
+          aria-hidden="true"
+          className="shrink-0 text-muted-foreground"
+          animate={{ x: entering ? 8 : 0, color: entering ? "var(--primary)" : undefined }}
+          transition={spring.snap}
+        >
+          <ArrowRight className="h-5 w-5" />
+        </motion.span>
+      ) : (
+        <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+          即将上线
+        </Badge>
+      )}
+    </>
+  );
+
+  if (!game.available) {
+    return (
+      <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
+        <div aria-disabled="true" className={`${baseClass} opacity-60`}>
+          {content}
+        </div>
+      </motion.div>
+    );
+  }
+
   // 点击后先让箭头前移、条目微沉，动效落地再跳转，
   // 使离开当前页读作这次点击的结果而非突然切换。
   const handleEnter = () => {
@@ -129,26 +174,7 @@ function GameRow({ game }: { game: GameEntry }) {
         {...selectable}
         className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
       >
-        <img
-          src={game.icon}
-          alt=""
-          aria-hidden="true"
-          className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
-          {game.subtitle ? (
-            <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
-          ) : null}
-        </div>
-        <motion.span
-          aria-hidden="true"
-          className="shrink-0 text-muted-foreground"
-          animate={{ x: entering ? 8 : 0, color: entering ? "var(--primary)" : undefined }}
-          transition={spring.snap}
-        >
-          <ArrowRight className="h-5 w-5" />
-        </motion.span>
+        {content}
       </motion.button>
     </motion.div>
   );
