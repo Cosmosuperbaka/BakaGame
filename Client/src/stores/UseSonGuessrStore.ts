@@ -231,7 +231,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
   },
 
   searchMusic: async (keyword) => {
-    const result = await sonGuessrWs.send<{ results?: SongSearchResult[]; songs?: SongSearchResult[] }>(
+    const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
       "song.music.search",
       { keyword },
       {
@@ -239,7 +239,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
         sessionToken: get().sessionToken ?? undefined,
       },
     );
-    return result.results ?? result.songs ?? [];
+    return result.results ?? [];
   },
 
   sendCommand: async (type, payload = {}) => {

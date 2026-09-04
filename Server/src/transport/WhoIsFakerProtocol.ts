@@ -19,11 +19,14 @@ export type { ClientEnvelope, ClientMessage, WhoIsFakerClientMessage };
 export const VisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
 export const BooleanSchema = t.Boolean();
 export const PositiveIntSchema = t.Integer({ minimum: 1 });
-export const RoleConfigSchema = t.Object({
-  undercoverCount: t.Integer({ minimum: 0 }),
-  hasAngel: t.Boolean(),
-  hasBlank: t.Boolean(),
-});
+export const RoleConfigSchema = t.Object(
+  {
+    undercoverCount: t.Integer({ minimum: 0 }),
+    hasAngel: t.Boolean(),
+    hasBlank: t.Boolean(),
+  },
+  { additionalProperties: false },
+);
 export const WordPairSchema = t.Tuple([
   t.String({ maxLength: 50 }),
   t.String({ maxLength: 50 }),
@@ -119,13 +122,6 @@ const readRoleConfig = (value: unknown): RoleConfig => {
   const undercoverCount = value.undercoverCount;
   const hasAngel = value.hasAngel;
   const hasBlank = value.hasBlank;
-
-  if ("angelCount" in value || "blankCount" in value) {
-    throw new AppError(
-      "INVALID_MESSAGE",
-      "天使与白板最多各一人，请移除人数配置字段",
-    );
-  }
 
   if (!Value.Check(RoleConfigSchema, value)) {
     if (

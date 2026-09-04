@@ -207,10 +207,10 @@ test("协议解析会为非法消息抛出业务错误", () => {
   ).toThrow(AppError);
 });
 
-test("协议拒绝已移除的特殊角色人数配置", () => {
+test("协议拒绝未定义的多余角色配置字段", () => {
   expect(() =>
     parseClientMessage({
-      id: "legacy-role-count",
+      id: "extra-role-properties",
       type: "room.updateSettings",
       payload: {
         roleConfig: {
