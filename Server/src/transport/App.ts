@@ -11,8 +11,8 @@ import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
-import { parseWhoIsFakerMessage, parseClientMessage } from "./WhoIsFakerProtocol";
-import { parseSonGuessrMessage, parseSongGuessrMessage } from "./SonGuessrProtocol";
+import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
+import { parseSonGuessrMessage } from "./SonGuessrProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { systemRoutes } from "./routes/System";
 
@@ -383,7 +383,7 @@ export const createApp = ({
         let parsedType = "raw";
         let traceId: string | undefined;
         try {
-          const parsed = parseSongGuessrMessage(raw);
+          const parsed = parseSonGuessrMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
           traceId = parsed.traceId;

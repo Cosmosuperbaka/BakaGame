@@ -286,5 +286,3 @@ export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
       throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }
 };
-
-export const parseSongGuessrMessage = parseSonGuessrMessage;

@@ -30,15 +30,6 @@ import type {
   SonGuessrRoundSummary,
   SonGuessrScore,
   SonGuessrSettings,
-  SongGuessrClientMessage,
-  SongGuessrPhase,
-  SongGuessrPlayerView,
-  SongGuessrPrivateState,
-  SongGuessrRoomSnapshot,
-  SongGuessrRoomSummary,
-  SongGuessrRoundSummary,
-  SongGuessrScore,
-  SongGuessrSettings,
   SongAutoFilters,
   SongSearchResult,
   SongLyricClip,
@@ -46,7 +37,7 @@ import type {
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 
-const DEFAULT_SETTINGS: SongGuessrSettings = {
+const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionType: "song",
   questionMode: "manual",
   autoRotateSubmitter: false,
@@ -103,7 +94,7 @@ interface SongGuessrRoundRecord {
   correctPlayerIds: string[];
   startScores: Record<string, number>;
   players: Record<string, SongGuessrRoundPlayerState>;
-  settings: SongGuessrSettings;
+  settings: SonGuessrSettings;
   audioReadyDeadlineAt?: number;
   hardDeadlineAt?: number;
 }
@@ -115,13 +106,13 @@ interface SongGuessrRoomRecord {
   password?: string;
   allowSpectators: boolean;
   hostPlayerId: string;
-  settings: SongGuessrSettings;
-  phase: SongGuessrPhase;
+  settings: SonGuessrSettings;
+  phase: SonGuessrPhase;
   roundNumber: number;
   pendingSubmitterPlayerId?: string;
   currentRound?: SongGuessrRoundRecord;
-  roundSummary?: SongGuessrRoundSummary;
-  finalScores?: SongGuessrScore[];
+  roundSummary?: SonGuessrRoundSummary;
+  finalScores?: SonGuessrScore[];
   musicSession?: {
     ownerPlayerId: string;
     cookie: string;
@@ -145,12 +136,10 @@ export interface SonGuessrServiceOptions {
   eventLogger?: EventLogger;
 }
 
-export type SongGuessrServiceOptions = SonGuessrServiceOptions;
-
 const clampInt = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Math.round(value)));
 
-const cloneSettings = (settings: SongGuessrSettings): SongGuessrSettings => ({
+const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
   ...settings,
   autoFilters: {
     ...settings.autoFilters,
@@ -330,7 +319,7 @@ export class SonGuessrService {
     this.log("song.player.disconnected", room.id, player.id);
   }
 
-  async execute(connectionId: string, message: SongGuessrClientMessage): Promise<unknown> {
+  async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
     const connection = this.connections.getConnection(connectionId);
 
     switch (message.type) {
@@ -492,7 +481,7 @@ export class SonGuessrService {
     }
   }
 
-  getRoomSummaries(): SongGuessrRoomSummary[] {
+  getRoomSummaries(): SonGuessrRoomSummary[] {
     return [...this.rooms.values()]
       .filter((room) => !this.isTestRoom(room))
       .map((room) => this.buildRoomSummary(room))
@@ -501,7 +490,7 @@ export class SonGuessrService {
 
   private createRoom(
     connection: ConnectionRecord,
-    payload: Extract<SongGuessrClientMessage, { type: "song.room.create" }>["payload"],
+    payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"],
   ) {
     this.ensureConnectionFree(connection);
     const roomId = ensureRoomId(payload.roomId);
@@ -538,7 +527,7 @@ export class SonGuessrService {
   private joinRoom(
     connection: ConnectionRecord,
     roomIdValue: string | undefined,
-    payload: Extract<SongGuessrClientMessage, { type: "song.room.join" }>["payload"],
+    payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"],
   ) {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
@@ -708,7 +697,7 @@ export class SonGuessrService {
 
   private updateSettings(
     connection: ConnectionRecord,
-    payload: Extract<SongGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"],
+    payload: Extract<SonGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"],
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -1652,7 +1641,7 @@ export class SonGuessrService {
     });
   }
 
-  private buildRoomSummary(room: SongGuessrRoomRecord): SongGuessrRoomSummary {
+  private buildRoomSummary(room: SongGuessrRoomRecord): SonGuessrRoomSummary {
     return {
       roomId: room.id,
       name: room.name,
@@ -1666,7 +1655,7 @@ export class SonGuessrService {
     };
   }
 
-  private buildRoomSnapshot(room: SongGuessrRoomRecord): SongGuessrRoomSnapshot {
+  private buildRoomSnapshot(room: SongGuessrRoomRecord): SonGuessrRoomSnapshot {
     const round = room.currentRound;
     return {
       roomId: room.id,
@@ -1706,10 +1695,10 @@ export class SonGuessrService {
   private buildPlayerView(
     room: SongGuessrRoomRecord,
     player: SongGuessrPlayerRecord,
-  ): SongGuessrPlayerView {
+  ): SonGuessrPlayerView {
     const round = room.currentRound;
     const state = round?.players[player.id];
-    let roundStatus: SongGuessrPlayerView["roundStatus"] = "waiting";
+    let roundStatus: SonGuessrPlayerView["roundStatus"] = "waiting";
     if (round?.submitterPlayerId === player.id) roundStatus = "submitter";
     else if (player.membership === "spectator") roundStatus = "spectator";
     else if (state?.correct) roundStatus = "correct";
@@ -1739,7 +1728,7 @@ export class SonGuessrService {
   private buildPrivateState(
     room: SongGuessrRoomRecord,
     player: SongGuessrPlayerRecord,
-  ): SongGuessrPrivateState {
+  ): SonGuessrPrivateState {
     const round = room.currentRound;
     const state = round?.players[player.id];
     const isSubmitter = round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
@@ -1787,7 +1776,7 @@ export class SonGuessrService {
   private buildScores(
     room: SongGuessrRoomRecord,
     startScores: Record<string, number>,
-  ): SongGuessrScore[] {
+  ): SonGuessrScore[] {
     return this.activePlayers(room)
       .map((player) => ({
         playerId: player.id,

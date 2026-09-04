@@ -2,14 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
-import type { SongGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrRoomSnapshot } from "@/types";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 
 const snapshot = (musicAccountReady: boolean) => ({
   roomId: "1234",
   musicAccountReady,
-} as SongGuessrRoomSnapshot);
+} as SonGuessrRoomSnapshot);
 
 describe("SongAccountSettings", () => {
   let sendCommand: ReturnType<typeof vi.fn>;

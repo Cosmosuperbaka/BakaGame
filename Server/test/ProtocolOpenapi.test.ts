@@ -9,7 +9,7 @@ import {
   createAck,
   createErrorPacket,
   createEvent,
-  parseClientMessage,
+  parseWhoIsFakerMessage,
 } from "../src/transport/Protocol";
 
 // ==================== 协议与文档测试 ====================
@@ -155,12 +155,12 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
   ] as const;
 
   for (const message of messages) {
-    const parsed = parseClientMessage(JSON.stringify(message));
+    const parsed = parseWhoIsFakerMessage(JSON.stringify(message));
     expect(parsed.type).toBe(message.type);
     expect(parsed.id).toBe(message.id);
   }
 
-  const objectParsed = parseClientMessage({
+  const objectParsed = parseWhoIsFakerMessage({
     id: "23",
     type: "game.resolveDisconnect",
     payload: { playerId: "p5", resolution: "eliminate" },
@@ -168,7 +168,7 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
   expect(objectParsed.type).toBe("game.resolveDisconnect");
 
   expect(() =>
-    parseClientMessage({
+    parseWhoIsFakerMessage({
       id: "invalid-array",
       type: "game.requestSupplement",
       payload: { playerIds: ["p1", 2] },
@@ -179,7 +179,7 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
 test("协议解析会为非法消息抛出业务错误", () => {
   let malformedJsonError: unknown;
   try {
-    parseClientMessage("not-json");
+    parseWhoIsFakerMessage("not-json");
   } catch (error) {
     malformedJsonError = error;
   }
@@ -187,7 +187,7 @@ test("协议解析会为非法消息抛出业务错误", () => {
   expect((malformedJsonError as AppError).code).toBe("INVALID_MESSAGE");
 
   expect(() =>
-    parseClientMessage(
+    parseWhoIsFakerMessage(
       JSON.stringify({
         id: "invalid",
         type: "unknown.type",
@@ -197,7 +197,7 @@ test("协议解析会为非法消息抛出业务错误", () => {
   ).toThrow(AppError);
 
   expect(() =>
-    parseClientMessage(
+    parseWhoIsFakerMessage(
       JSON.stringify({
         id: "invalid",
         type: "game.resolveDisconnect",
@@ -209,7 +209,7 @@ test("协议解析会为非法消息抛出业务错误", () => {
 
 test("协议拒绝未定义的多余角色配置字段", () => {
   expect(() =>
-    parseClientMessage({
+    parseWhoIsFakerMessage({
       id: "extra-role-properties",
       type: "room.updateSettings",
       payload: {

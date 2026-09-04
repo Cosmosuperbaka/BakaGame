@@ -4,8 +4,6 @@ const LOCAL_KEY = "songuessr_netease_session_v1";
 const SESSION_KEY = "songuessr_netease_session_v1_session";
 
 export const SONGUESSR_MUSIC_SESSION_CHANGED = "songuessr-music-session-changed";
-export const SON_MUSIC_SESSION_CHANGED = SONGUESSR_MUSIC_SESSION_CHANGED;
-export const SONG_MUSIC_SESSION_CHANGED = SONGUESSR_MUSIC_SESSION_CHANGED;
 
 export interface StoredSongMusicSession {
   cookie: string;
@@ -37,7 +35,7 @@ const parseSession = (raw: string | null, persistent: boolean): StoredSongMusicS
 
 const notifyChanged = () => {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SON_MUSIC_SESSION_CHANGED));
+    window.dispatchEvent(new Event(SONGUESSR_MUSIC_SESSION_CHANGED));
   }
 };
 

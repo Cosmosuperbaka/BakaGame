@@ -17,13 +17,13 @@ import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
-  SONG_MUSIC_SESSION_CHANGED,
+  SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
 import { collapsible, pressable, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SongGuessrMusicAccount, SongGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
 
 interface QrCreateResponse extends Record<string, unknown> {
   key: string;
@@ -35,10 +35,10 @@ interface QrCheckResponse extends Record<string, unknown> {
   status: "waiting" | "scanned" | "expired" | "authorized";
   message: string;
   cookie?: string;
-  account?: SongGuessrMusicAccount;
+  account?: SonGuessrMusicAccount;
 }
 
-export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
+export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [open, setOpen] = useState(false);
@@ -55,11 +55,11 @@ export function SongAccountSettings({ snapshot }: { snapshot: SongGuessrRoomSnap
 
   useEffect(() => {
     const sync = () => setStoredSession(getStoredSongMusicSession());
-    window.addEventListener(SONG_MUSIC_SESSION_CHANGED, sync);
-    return () => window.removeEventListener(SONG_MUSIC_SESSION_CHANGED, sync);
+    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, sync);
+    return () => window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, sync);
   }, []);
 
-  const completeLogin = useCallback((session: { cookie: string; account: SongGuessrMusicAccount }) => {
+  const completeLogin = useCallback((session: { cookie: string; account: SonGuessrMusicAccount }) => {
     saveSongMusicSession(session, remember);
     setStoredSession({ ...session, persistent: remember });
     setEditing(false);

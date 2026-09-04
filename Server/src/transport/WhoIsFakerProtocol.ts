@@ -550,6 +550,3 @@ export const parseWhoIsFakerMessage = (raw: unknown): ClientMessage => {
   }
   return message;
 };
-
-
-export const parseClientMessage = parseWhoIsFakerMessage;

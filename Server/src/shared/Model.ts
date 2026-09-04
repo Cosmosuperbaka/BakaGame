@@ -47,7 +47,3 @@ export interface ConnectionRecord {
   sendPacket?: (payload: unknown) => void;
   close: (code?: number, reason?: string) => void;
 }
-
-// ==================== 谁是卧底模型重导出（保持全库 100% 向后兼容） ====================
-export * from "./WhoIsFaker";
-

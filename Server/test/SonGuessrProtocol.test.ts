@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { parseSonGuessrMessage, parseSongGuessrMessage } from "../src/transport/SonGuessrProtocol";
+import { parseSonGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
 test("SonGuessr 协议解析房间设置与游戏命令", () => {
   expect(parseSonGuessrMessage({
@@ -106,19 +106,19 @@ test("SonGuessr 协议解析旁观、放弃与测试人机命令", () => {
 });
 
 test("SonGuessr 协议只解析扫码与 Cookie 登录命令", () => {
-  expect(parseSongGuessrMessage({
+  expect(parseSonGuessrMessage({
     id: "qr",
     type: "song.auth.qr.check",
     payload: { key: "qr-key" },
   })).toMatchObject({ type: "song.auth.qr.check", payload: { key: "qr-key" } });
 
   for (const type of ["song.auth.phone.login", "song.auth.email.login"]) {
-    expect(() => parseSongGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow(
+    expect(() => parseSonGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow(
       expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" }),
     );
   }
 
-  expect(parseSongGuessrMessage({
+  expect(parseSonGuessrMessage({
     id: "cookie",
     type: "song.auth.useCookie",
     payload: { cookie: "MUSIC_U=test" },

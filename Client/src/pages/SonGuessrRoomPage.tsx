@@ -54,7 +54,7 @@ import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
-  SON_MUSIC_SESSION_CHANGED as SONG_MUSIC_SESSION_CHANGED,
+  SONGUESSR_MUSIC_SESSION_CHANGED,
 } from "@/lib/SonGuessrMusicSession";
 import {
   backdrop,
@@ -413,8 +413,8 @@ export default function SonGuessrRoomPage() {
 
   useEffect(() => {
     const handleSessionChanged = () => setMusicSessionRevision((revision) => revision + 1);
-    window.addEventListener(SONG_MUSIC_SESSION_CHANGED, handleSessionChanged);
-    return () => window.removeEventListener(SONG_MUSIC_SESSION_CHANGED, handleSessionChanged);
+    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
+    return () => window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
   }, []);
 
   useEffect(() => {
