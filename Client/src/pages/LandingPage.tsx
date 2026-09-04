@@ -296,7 +296,10 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
           />
           <div className="flex items-baseline justify-between gap-3">
             <span className="min-w-0 text-sm break-words">{commit.message}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <span
+              className="shrink-0 text-xs text-muted-foreground"
+              suppressHydrationWarning
+            >
               {formatRelativeTime(commit.date)}
             </span>
           </div>
