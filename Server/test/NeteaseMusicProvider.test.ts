@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
@@ -648,5 +648,45 @@ describe("NeteaseMusicProvider", () => {
     release();
     await expect(active).resolves.toEqual([]);
     expect(calls).toBe(1);
+  });
+
+  test("支持通过注入 now 与 random 驱动限流退避、冷却熔断与恢复", async () => {
+    let virtualTime = 1_700_000_000_000;
+    let upstreamCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 5_000,
+      loadApi: async () => ({
+        cloudsearch: async () => {
+          upstreamCalls += 1;
+          if (upstreamCalls === 1) {
+            return { body: { code: 405, message: "操作太频繁" } };
+          }
+          return { body: { result: { songs: [{ id: 99, name: "恢复歌曲" }] } } };
+        },
+      }),
+    });
+
+    // 1. 触发限流，进入 5s 冷却
+    await expect(provider.search("测试1")).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+    });
+    expect(upstreamCalls).toBe(1);
+
+    // 2. 推进 1 秒，仍在冷却中，本地直接拦截且不请求上游
+    virtualTime += 1_000;
+    await expect(provider.search("测试2")).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+    });
+    expect(upstreamCalls).toBe(1);
+
+    // 3. 推进 5 秒越过冷却期，成功调用并恢复
+    virtualTime += 5_000;
+    const songs = await provider.search("测试3");
+    expect(songs).toHaveLength(1);
+    expect(songs[0]?.id).toBe("99");
+    expect(upstreamCalls).toBe(2);
   });
 });

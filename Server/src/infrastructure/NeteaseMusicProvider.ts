@@ -33,6 +33,8 @@ export interface MusicProvider {
 export interface NeteaseMusicProviderOptions {
   loadApi?: () => Promise<ApiModule>;
   logger?: EventLogger;
+  now?: () => number;
+  random?: { nextFloat?: () => number };
   /** 通过 Enhanced API 的随机中国出口降低网易云安全风控误判。默认开启。 */
   randomCNIP?: boolean;
   /** 单个 provider 允许同时访问网易云的请求数。 */
@@ -177,10 +179,10 @@ const dataRecord = (body: Record<string, unknown>) => asRecord(body.data);
 const readVipAccount = (
   raw: unknown,
   account: SonGuessrMusicAccount,
+  now = Date.now(),
 ): SonGuessrMusicAccount => {
   const body = asRecord(raw);
   const data = asRecord(body.data ?? raw);
-  const now = Date.now();
   const memberships = [
     asRecord(data.associator),
     asRecord(data.musicPackage),
@@ -417,9 +419,13 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastRateLimitMessage = "操作频繁，请稍候再试";
 
   private readonly logger?: EventLogger;
+  private readonly now: () => number;
+  private readonly random: { nextFloat?: () => number };
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.logger = options.logger;
+    this.now = options.now ?? (() => Date.now());
+    this.random = options.random ?? { nextFloat: () => Math.random() };
     this.randomCNIP = options.randomCNIP ?? true;
     this.cache = new LRUCache<string, any>({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
@@ -792,9 +798,8 @@ export class NeteaseMusicProvider implements MusicProvider {
             ),
           );
           // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
-          // 两种形态都必须进入同一冷却逻辑，否则 resolve 形态会被误当成空搜索结果。
+          // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
           if (this.isRateLimitError(response)) {
-            this.enterRateLimitCooldown(response);
             throw this.upstreamError(response);
           }
           return response;
@@ -805,7 +810,6 @@ export class NeteaseMusicProvider implements MusicProvider {
           }
           if ("body" in asRecord(error)) lastErrorResponse = error as ApiResponse;
           if (this.isRateLimitError(error)) {
-            this.enterRateLimitCooldown(error);
             throw this.upstreamError(error);
           }
           // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
@@ -845,7 +849,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!response) return { ...account, vipStatus: "unknown" };
     const body = responseBody(response);
     if (responseCode(body) !== 200) return { ...account, vipStatus: "unknown" };
-    return readVipAccount(body, account);
+    return readVipAccount(body, account, this.now());
   }
 
   private cacheKey(namespace: string, cookie: string | undefined, ...parts: unknown[]) {
@@ -876,7 +880,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
-    if (Date.now() < this.cooldownUntil) {
+    if (this.now() < this.cooldownUntil) {
       return Promise.reject(this.busyError());
     }
     if (this.queue.size >= this.maxQueuedRequests) {
@@ -909,7 +913,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       }
       this.pendingRejections.delete(id);
 
-      if (Date.now() < this.cooldownUntil) {
+      if (this.now() < this.cooldownUntil) {
         throw this.busyError();
       }
       try {
@@ -932,7 +936,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private enterRateLimitCooldown(error: unknown) {
     const body = responseBody(error);
     this.lastRateLimitMessage = responseMessage(body, this.lastRateLimitMessage);
-    const now = Date.now();
+    const now = this.now();
     if (now - this.lastRateLimitAt > this.maxRateLimitCooldownMs) {
       this.rateLimitStrikes = 0;
     }
@@ -943,7 +947,9 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1),
     );
     // 注入微量随机 Jitter 抖动，防止限流恢复瞬间突发惊群重连
-    const jitter = Math.floor(Math.random() * (baseDuration * 0.05));
+    const jitter = Math.floor(
+      (this.random.nextFloat?.() ?? Math.random()) * (baseDuration * 0.05),
+    );
     const duration = Math.min(this.maxRateLimitCooldownMs, baseDuration + jitter);
     this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
 
@@ -968,7 +974,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private busyError(message = this.lastRateLimitMessage) {
     return new AppError("MUSIC_API_RATE_LIMITED", message, {
       upstreamCode: 405,
-      retryAfterMs: Math.max(0, this.cooldownUntil - Date.now()),
+      retryAfterMs: Math.max(0, this.cooldownUntil - this.now()),
     });
   }
 
