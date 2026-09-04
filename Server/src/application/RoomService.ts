@@ -4028,14 +4028,6 @@ export class RoomService {
     return candidates[this.random.nextInt(candidates.length)];
   }
 
-  notifyShutdown(): void {
-    this.connectionRegistry.broadcastToAll(
-      createEvent("server.shutdown", {
-        message: "服务器即将关闭，请稍后重新连接",
-      }),
-    );
-  }
-
   async checkStorageReadiness(): Promise<boolean> {
     return this.options.wordBankRepository.checkHealth();
   }
