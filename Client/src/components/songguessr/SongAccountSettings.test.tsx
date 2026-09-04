@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SongguessrMusicSession";
 import type { SongGuessrRoomSnapshot } from "@/types";
-import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { useSongGuessrStore, type SonGuessrStore } from "@/stores/UseSongGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 
 const snapshot = (musicAccountReady: boolean) => ({
@@ -18,7 +18,7 @@ describe("SongAccountSettings", () => {
     clearStoredSongMusicSession();
     sendCommand = vi.fn();
     useSongGuessrStore.setState({
-      sendCommand,
+      sendCommand: sendCommand as unknown as SonGuessrStore["sendCommand"],
       setNotice: vi.fn(),
     });
   });

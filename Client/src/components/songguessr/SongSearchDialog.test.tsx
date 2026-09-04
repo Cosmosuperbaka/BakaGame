@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { useSongGuessrStore, type SonGuessrStore } from "@/stores/UseSongGuessrStore";
 import { SongSearchDialog } from "./SongSearchDialog";
 
 describe("SongSearchDialog", () => {
@@ -10,7 +10,7 @@ describe("SongSearchDialog", () => {
   beforeEach(() => {
     searchMusic = vi.fn();
     useSongGuessrStore.setState({
-      searchMusic,
+      searchMusic: searchMusic as unknown as SonGuessrStore["searchMusic"],
       setNotice: vi.fn(),
     });
   });
