@@ -66,6 +66,21 @@ export const systemRoutes = ({
           summary: "前端可观测性遥测打点代理",
           description: "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
         },
+        body: t.Object({
+          traceId: t.Optional(t.String({ maxLength: 128 })),
+          level: t.Optional(
+            t.Union([
+              t.Literal("info"),
+              t.Literal("warn"),
+              t.Literal("error"),
+              t.Literal("INFO"),
+              t.Literal("WARN"),
+              t.Literal("ERROR"),
+            ]),
+          ),
+          message: t.Optional(t.String({ maxLength: 1000 })),
+          metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+        }),
         response: t.Object({
           ok: t.Boolean(),
         }),

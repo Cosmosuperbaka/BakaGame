@@ -13,12 +13,14 @@ export interface OtlpLogRecord {
 }
 
 export class OtlpExporter {
+  private static readonly MAX_BUFFER_SIZE = 500;
   private readonly endpoint?: string;
   private readonly headers: Record<string, string>;
   private readonly serviceName: string;
   private buffer: OtlpLogRecord[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isShuttingDown = false;
+  private isFlushing = false;
 
   constructor(config: OtlpExporterConfig = {}) {
     if (config.endpoint) {
@@ -47,6 +49,9 @@ export class OtlpExporter {
 
   enqueue(record: OtlpLogRecord): void {
     if (!this.endpoint || this.isShuttingDown) return;
+    if (this.buffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
+      this.buffer.shift(); // 缓冲区达上限时淘汰最旧条目
+    }
     this.buffer.push(record);
     if (this.buffer.length >= 50) {
       void this.flush();
@@ -54,7 +59,8 @@ export class OtlpExporter {
   }
 
   async flush(): Promise<void> {
-    if (!this.endpoint || this.buffer.length === 0) return;
+    if (!this.endpoint || this.buffer.length === 0 || this.isFlushing) return;
+    this.isFlushing = true;
     const batch = this.buffer;
     this.buffer = [];
 
@@ -96,9 +102,12 @@ export class OtlpExporter {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify({ resourceLogs }),
+        signal: AbortSignal.timeout(5000),
       });
     } catch {
       // 观测服务上报失败时不阻塞业务主流程
+    } finally {
+      this.isFlushing = false;
     }
   }
 

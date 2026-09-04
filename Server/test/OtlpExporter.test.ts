@@ -146,3 +146,65 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
   expect(clientLog).toContain("***[REDACTED]");
   expect(clientLog).not.toContain("plain-user-password");
 });
+
+test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志", async () => {
+  const exporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+  });
+
+  for (let i = 0; i < 550; i++) {
+    exporter.enqueue({
+      timestamp: 1700000000000 + i,
+      level: "INFO",
+      message: `日志条目 ${i}`,
+    });
+  }
+
+  // @ts-expect-error 读取内部 buffer 长度
+  const buffer = exporter.buffer as unknown[];
+  expect(buffer.length).toBeLessThanOrEqual(500);
+});
+
+test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", async () => {
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1:4850",
+    serverListenHost: "127.0.0.1",
+    serverPort: 4850,
+    wordBankPath: ":memory:",
+  };
+  const { app } = createApp({
+    env,
+    roomService: new RoomService({
+      eventLogger: new EventLogger(),
+      wordBankRepository: new WordBankRepository(":memory:"),
+    }),
+    logger: new EventLogger(),
+  });
+
+  // 1. 跨域预检 POST 请求与自定义 x-trace-id
+  const preflightRes = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type, x-trace-id",
+      },
+    }),
+  );
+  expect(preflightRes.headers.get("access-control-allow-methods")).toContain("POST");
+  expect(preflightRes.headers.get("access-control-allow-headers")).toContain("x-trace-id");
+
+  // 2. 局域网私有网段（192.168.x.x）跨端访问放行
+  const lanRes = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://192.168.1.100:5173",
+        "Access-Control-Request-Method": "POST",
+      },
+    }),
+  );
+  expect(lanRes.headers.get("access-control-allow-origin")).toBe("http://192.168.1.100:5173");
+});
