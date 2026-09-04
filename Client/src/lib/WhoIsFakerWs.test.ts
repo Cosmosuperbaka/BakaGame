@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 class MockWebSocket {
   static readonly CONNECTING = 0;
@@ -51,7 +51,7 @@ describe("websocket client", () => {
   });
 
   it("sends the typed envelope and resolves the matching acknowledgement", async () => {
-    const socketApi = await import("./Ws");
+    const socketApi = await import("./WhoIsFakerWs");
     socketApi.connect();
     const socket = MockWebSocket.instances[0];
     socket.open();
@@ -79,7 +79,7 @@ describe("websocket client", () => {
   });
 
   it("rejects pending requests immediately when the connection closes", async () => {
-    const socketApi = await import("./Ws");
+    const socketApi = await import("./WhoIsFakerWs");
     socketApi.connect();
     const socket = MockWebSocket.instances[0];
     socket.open();
@@ -93,7 +93,7 @@ describe("websocket client", () => {
   });
 
   it("notifies status listeners and reconnects with exponential backoff", async () => {
-    const socketApi = await import("./Ws");
+    const socketApi = await import("./WhoIsFakerWs");
     const statuses: boolean[] = [];
     socketApi.onStatus((connected) => statuses.push(connected));
     socketApi.connect();
@@ -109,7 +109,7 @@ describe("websocket client", () => {
   });
 
   it("immediately informs a status listener when the shared socket is already open", async () => {
-    const socketApi = await import("./Ws");
+    const socketApi = await import("./WhoIsFakerWs");
     socketApi.connect();
     MockWebSocket.instances[0].open();
 
