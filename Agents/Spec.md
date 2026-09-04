@@ -117,3 +117,43 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 
 ### 9.5 React 卸载副作用清理必须校验前置业务阶段有效性守卫 (Unmount Safeguard & Phase Guards)
 - **严禁向失效阶段脏回写**：带有自动保存（`useAutoSave`）或防抖延迟写入的 React 组件，在离开视口或 unmount 时，**必须**同步校验当前业务阶段是否依然处于允许保存的合法阶段（如 `snapshot.status.phase === "waiting"`）。组件卸载时若已经开局或阶段已跃迁，必须立即丢弃待提交的脏草稿，严禁向服务端发送非法的配置覆盖请求。
+
+## 10. 可观测性与生产运维就绪度工程铁律 (Observability & Production Readiness)
+
+在无状态容器、微服务架构与云原生部署环境下，必须具备生产级透视能力与自愈容灾能力，杜绝“无日志、吞异常、无 Trace 上下文、粗暴停机导致数据损坏”的运维灾难。
+
+### 10.1 全链路追踪与会话隔离 (Distributed Tracing & Session-Scoped Idempotency)
+- **全局唯一 Trace ID 贯穿始终**：客户端每次与服务端的交互（HTTP 请求、WebSocket 连接与命令交互）必须生成全局唯一的 Trace ID（包含时间戳、单调计数器与随机熵），严禁使用单调自增小整数（如 `req-1`）作为跨连接的请求标识。
+- **传输层幂等缓存必须与会话隔离**：网关或传输层维护的 LRU 缓存与并发飞行锁（In-flight Lock）键，必须使用带有连接唯一 ID 的复合键（`${connectionId}:${id}`）。**绝对严禁**使用客户端传入的原始 ID 作为跨所有租户的全局缓存键，杜绝跨玩家并发响应串扰与串台。
+- **全链路透传与上下文字段保真**：HTTP 网关必须在响应头显式返回 `x-trace-id`；WebSocket 协议中 `createAck`、`createErrorPacket` 必须回传 `traceId`；日志系统必须将 `traceId` 提取为一级索引字段。
+
+### 10.2 结构化日志、堆栈保真与敏感凭据脱敏 (Structured Logging, Stack Fidelity & Sensitive Redaction)
+- **严禁吞异常与裸字符串报错**：杜绝任何形式的空 `catch {}` 或仅打印无上下文的 `console.error("error")`。所有捕获异常必须调用结构化日志接口（如 `eventLogger.error`），并使用 `describeError` 递归保留 `error.name`、`error.message`、`error.stack` 以及 `error.cause` 完整链路。
+- **结构化元数据不丢失**：日志记录函数必须将所有附加业务元数据（如 `roomId`、`playerId`、耗时、阶段快照）全部序列化并输出，严禁只输出静态标题而将上下文丢弃。
+- **敏感信息严格物理脱敏**：
+  1. `cookie`、`sessionToken`、`authorization` 等身份凭证在日志输出或导出前必须经过脱敏拦截器（`redactData`），保留前 4 位用于故障定位，后续字符强制掩码（`abcd***[REDACTED]`）。
+  2. `password`（密码）属于顶级高危凭据，必须 100% 全量掩码（`***[REDACTED]`），绝对严禁保留任何明文字符。
+
+### 10.3 云原生健康检查探针拆分 (Kubernetes Liveness & Readiness Probes)
+- **Liveness 探针 (`/livez`)**：轻量级存活探针。仅验证进程是否存活、事件循环是否运行，未死锁即返回 HTTP 200 `{ status: "ok" }`。探测开销必须为 `O(1)`，不得在此阶段挂载重型数据库或外部 I/O 检查，避免短暂抖动触发容器反复被杀重启。
+- **Readiness 探针 (`/readyz`)**：深度就绪探针。必须检测：
+  1. **停机状态守卫**：若收到停机信号进入优雅停机流程，立即返回 HTTP 503 `{ status: "shutting_down", ready: false }`，使外部负载均衡器/反向代理（Nginx/Ingress）立即停止分配新连接与流量。
+  2. **关键持久化依赖**：检查词库仓储（`wordBankRepository.checkHealth()`）等底层持久化介质读写健康度。若底层磁盘损坏或权限缺失，返回 HTTP 503 `{ status: "storage_degraded", ready: false }`，避免故障节点继续承接业务流量。
+  3. **存量监控兼容**：保留 `/health` 路由，聚合房间、在线连接与玩家数指标，兼容常规监控大屏。
+
+### 10.4 生产级优雅停机编排 (Graceful Shutdown & Watchdog Orchestration)
+- **优雅停机 6 步标准时序**：
+  1. **标记停机状态**：将 `isShuttingDown` 置为 `true`，触发 `/readyz` 熔断返回 503。
+  2. **清除后台轮询**：停止闲置房间清理、心跳超时扫描等定时器，阻止启动新的巡检。
+  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker 与 SonGuessr）全量广播 `server.shutdown` 事件，通知客户端准备重连。
+  4. **流量摘除平滑缓冲窗口**：执行 3 秒（`await Bun.sleep(3000)`）等待，留出反向代理摘流切换与客户端接收停机事件的稳定网络窗口。
+  5. **排空写队列落盘**：等待词库异步持久化队列（`drainPendingWrites`）全部排空，杜绝进程退出引发磁盘文件截断或数据丢失。
+  6. **关闭端口与排空遥测**：停止 HTTP/WebSocket 监听端口（`app.stop(true)`），排空并刷新未导出的 OTLP 遥测日志，正常退出进程。
+- **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
+- **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
+
+### 10.5 Grafana Cloud 接入与免翻墙服务端安全中转 (OTLP Telemetry & Gateway Proxying)
+- **凭据隔离与防泄露**：浏览器端严禁持有 Grafana Cloud API Key 或私有 Basic 认证凭据。所有客户端报错与打点统一发送至同源反代路由 `/api/monitoring/telemetry`。
+- **中国大陆网络免翻直连**：前端无需直连海外云平台（规避 DNS 污染与 GFW 拦截），由后端常驻进程在服务区完成聚合、脱敏与 OTLP 批处理（`OtlpExporter`）上报，保障中国大陆玩家顺畅体验。
+- **标准环境变量支撑**：通过 `OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_HEADERS`、`OTEL_SERVICE_NAME` 支持零配置注入标准 OpenTelemetry 采集栈。
+

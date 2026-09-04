@@ -1,13 +1,21 @@
 import { RoomService } from "./application/RoomService";
 import { readEnv } from "./config/Env";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
+import { OtlpExporter } from "./infrastructure/OtlpExporter";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
 import { createApp } from "./transport/App";
 
 // ==================== 服务启动 ====================
 
 const env = readEnv();
-const logger = new EventLogger();
+const otlpExporter = env.otelEndpoint
+  ? new OtlpExporter({
+      endpoint: env.otelEndpoint,
+      headers: env.otelHeaders,
+      serviceName: env.otelServiceName,
+    })
+  : undefined;
+const logger = new EventLogger(undefined, undefined, otlpExporter);
 const roomService = new RoomService({
   eventLogger: logger,
   wordBankRepository: new WordBankRepository(env.wordBankPath),
@@ -71,6 +79,11 @@ const shutdown = async (signal?: string) => {
 
   // 5. 优雅关闭 HTTP 与 WebSocket 监听端口并关闭存量套接字
   await app.stop(true);
+
+  // 6. 排空并刷新未导出的 OTLP 遥测日志
+  if (otlpExporter) {
+    await otlpExporter.shutdown();
+  }
 
   clearTimeout(watchdog);
   logger.info("服务已完成优雅停机");

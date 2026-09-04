@@ -8,9 +8,31 @@ export interface AppEnv {
   serverListenHost: string;
   serverPort: number;
   wordBankPath: string;
+  otelEndpoint?: string;
+  otelHeaders?: Record<string, string>;
+  otelServiceName?: string;
 }
 
 // ==================== 环境变量解析 ====================
+
+const parseOtelHeaders = (raw?: string): Record<string, string> | undefined => {
+  if (!raw) return undefined;
+  const headers: Record<string, string> = {};
+  for (const part of raw.split(",")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx > 0) {
+      const key = part.slice(0, eqIdx).trim();
+      let value = part.slice(eqIdx + 1).trim();
+      try {
+        value = decodeURIComponent(value);
+      } catch {
+        // 解码异常时退回原始值
+      }
+      headers[key] = value;
+    }
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+};
 
 const normalizeServerUrl = (value: string, port: number): URL => {
   const normalized = new URL(value);
@@ -42,5 +64,8 @@ export const readEnv = (): AppEnv => {
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
     wordBankPath: resolve(process.cwd(), "storage/word-bank.json"),
+    otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),
+    otelServiceName: Bun.env.OTEL_SERVICE_NAME ?? "bakagame-server",
   };
 };
