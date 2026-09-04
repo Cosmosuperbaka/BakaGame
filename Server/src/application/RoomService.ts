@@ -44,7 +44,7 @@ import {
   type RandomSource,
 } from "../domain/Rules";
 import type { LogEntry } from "../infrastructure/EventLogger";
-import { EventLogger } from "../infrastructure/EventLogger";
+import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent, type ClientMessage } from "../transport/Protocol";
 
@@ -706,8 +706,12 @@ export class RoomService {
     this.touchRoom(room);
 
     // 异步后台保存词库，避免阻塞 WebSocket 主流程
-    void this.options.wordBankRepository.savePair(words).catch((error) => {
-      console.error("词库异步保存失败", (error as Error).message);
+    void this.options.wordBankRepository.savePair(words).catch((error: unknown) => {
+      this.options.eventLogger.error("词库异步保存失败", {
+        ...describeError(error),
+        roomId: room.id,
+        playerId: player.id,
+      });
     });
 
     await this.log({

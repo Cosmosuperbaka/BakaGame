@@ -65,7 +65,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
     songGuessrService ??
     new SonGuessrService({
       eventLogger: logger,
-      musicProvider: new NeteaseMusicProvider(),
+      musicProvider: new NeteaseMusicProvider({ logger }),
     });
 
   const app = new Elysia({

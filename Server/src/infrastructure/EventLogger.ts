@@ -1,4 +1,4 @@
-﻿export interface LogEntry {
+export interface LogEntry {
   type: string;
   createdAt: number;
   roomId?: string;
@@ -117,12 +117,51 @@ const getEventLevel = (entry: LogEntry): LogLevel => {
   }
 };
 
+const SENSITIVE_KEYS = new Set([
+  "cookie",
+  "cookies",
+  "sessiontoken",
+  "token",
+  "password",
+  "authorization",
+  "secret",
+]);
+
+export const redactData = (data: unknown): unknown => {
+  if (data == null) return data;
+  if (typeof data !== "object") return data;
+  if (Array.isArray(data)) return data.map(redactData);
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      if (key.toLowerCase() === "password") {
+        redacted[key] = "***[REDACTED]";
+      } else if (typeof value === "string" && value.length > 8) {
+        redacted[key] = `${value.slice(0, 4)}***[REDACTED]`;
+      } else {
+        redacted[key] = "***[REDACTED]";
+      }
+    } else {
+      redacted[key] = redactData(value);
+    }
+  }
+  return redacted;
+};
+
 export const describeError = (error: unknown): Record<string, unknown> => {
   if (error instanceof Error) {
-    return {
+    const desc: Record<string, unknown> = {
       errorName: error.name,
       errorMessage: error.message,
     };
+    if (error.stack) {
+      desc.stack = error.stack;
+    }
+    if ("cause" in error && error.cause) {
+      desc.cause = describeError(error.cause);
+    }
+    return desc;
   }
 
   return {
@@ -158,7 +197,21 @@ export const formatSystemLog = ({
   ).padStart(15, " ");
   const actionStr = `SYS ${message}`;
 
-  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}`;
+  const cleanedContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
+  const extraContext = cleanedContext
+    ? Object.fromEntries(
+        Object.entries(cleanedContext).filter(
+          ([k]) => !["connectionId", "roomId", "playerId", "ip"].includes(k),
+        ),
+      )
+    : undefined;
+
+  const extraStr =
+    extraContext && Object.keys(extraContext).length > 0
+      ? ` | ${JSON.stringify(extraContext)}`
+      : "";
+
+  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${extraStr}`;
 };
 
 // 领域事件日志列格式化
@@ -173,7 +226,15 @@ export const formatLogEntry = (
   const identifierStr = (entry.roomId ?? entry.playerId ?? "system").padStart(15, " ");
   const actionStr = `EVENT ${entry.type} (${headline})`;
 
-  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}`;
+  const cleanedPayload = entry.payload ? redactData(entry.payload) : undefined;
+  const payloadStr =
+    cleanedPayload &&
+    typeof cleanedPayload === "object" &&
+    Object.keys(cleanedPayload as object).length > 0
+      ? ` | ${JSON.stringify(cleanedPayload)}`
+      : "";
+
+  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${payloadStr}`;
 };
 
 export class EventLogger {
