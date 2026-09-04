@@ -2,28 +2,44 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RoomSnapshot, RoundSummary, ServerMessage } from "@/types";
 
-const wsMock = vi.hoisted(() => ({
-  send: vi.fn(),
-  connect: vi.fn(),
-  messageHandlers: [] as Array<(message: ServerMessage) => void>,
-  statusHandlers: [] as Array<(connected: boolean) => void>,
-}));
+const wsMock = vi.hoisted(() => {
+  let messageHandlers: Array<(message: ServerMessage) => void> = [];
+  let statusHandlers: Array<(connected: boolean) => void> = [];
+  return {
+    send: vi.fn(),
+    connect: vi.fn(),
+    getMessageHandlers: () => messageHandlers,
+    getStatusHandlers: () => statusHandlers,
+    clearHandlers: () => {
+      messageHandlers = [];
+      statusHandlers = [];
+    },
+    emitStatus: (connected: boolean) => {
+      statusHandlers.forEach((handler) => handler(connected));
+    },
+    emitMessage: (message: ServerMessage) => {
+      messageHandlers.forEach((handler) => handler(message));
+    },
+    onMessage: (handler: (message: ServerMessage) => void) => {
+      messageHandlers.push(handler);
+      return () => {
+        messageHandlers = messageHandlers.filter((entry) => entry !== handler);
+      };
+    },
+    onStatus: (handler: (connected: boolean) => void) => {
+      statusHandlers.push(handler);
+      return () => {
+        statusHandlers = statusHandlers.filter((entry) => entry !== handler);
+      };
+    },
+  };
+});
 
 vi.mock("@/lib/WhoIsFakerWs", () => ({
   send: wsMock.send,
   connect: wsMock.connect,
-  onMessage: (handler: (message: ServerMessage) => void) => {
-    wsMock.messageHandlers.push(handler);
-    return () => {
-      wsMock.messageHandlers = wsMock.messageHandlers.filter((entry) => entry !== handler);
-    };
-  },
-  onStatus: (handler: (connected: boolean) => void) => {
-    wsMock.statusHandlers.push(handler);
-    return () => {
-      wsMock.statusHandlers = wsMock.statusHandlers.filter((entry) => entry !== handler);
-    };
-  },
+  onMessage: wsMock.onMessage,
+  onStatus: wsMock.onStatus,
 }));
 
 import { getSessionToken, saveSessionToken } from "@/lib/Storage";
@@ -82,8 +98,7 @@ describe("game store integration", () => {
     vi.useFakeTimers();
     wsMock.send.mockReset();
     wsMock.connect.mockReset();
-    wsMock.messageHandlers = [];
-    wsMock.statusHandlers = [];
+    wsMock.clearHandlers();
     useGameStore.setState(initialState, true);
   });
 
@@ -142,7 +157,7 @@ describe("game store integration", () => {
     useGameStore.getState().joinRoomState("3456", "live-token");
     const dispose = initGameSocket();
 
-    wsMock.statusHandlers[0](true);
+    wsMock.emitStatus(true);
     await Promise.resolve();
 
     expect(useGameStore.getState().connected).toBe(true);
@@ -152,8 +167,8 @@ describe("game store integration", () => {
       sessionToken: "live-token",
     });
     dispose();
-    expect(wsMock.messageHandlers).toHaveLength(0);
-    expect(wsMock.statusHandlers).toHaveLength(0);
+    expect(wsMock.getMessageHandlers()).toHaveLength(0);
+    expect(wsMock.getStatusHandlers()).toHaveLength(0);
   });
 
   it("drops local authority when another tab replaces the session", () => {
@@ -161,7 +176,7 @@ describe("game store integration", () => {
     useGameStore.getState().joinRoomState("4567", "replaced-token");
     initGameSocket();
 
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "session.replaced",
       payload: { roomId: "4567" },
@@ -180,7 +195,7 @@ describe("game store integration", () => {
     useGameStore.getState().joinRoomState("5678", "closed-token");
     initGameSocket();
 
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "room.closed",
       payload: { roomId: "5678", reason: "empty" },
@@ -198,7 +213,7 @@ describe("game store integration", () => {
     useGameStore.getState().joinRoomState("6789", "taken-token");
     initGameSocket();
 
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "session.replaced",
       payload: { roomId: "6789" },
@@ -306,12 +321,12 @@ describe("game store integration", () => {
       summary: undefined,
     };
 
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "room.snapshot",
       payload: { mode: "full", revision: 1, state: initialSnapshot },
     });
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "room.snapshot",
       payload: {
@@ -325,7 +340,7 @@ describe("game store integration", () => {
         }],
       },
     });
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "room.snapshot",
       payload: {
@@ -338,7 +353,7 @@ describe("game store integration", () => {
         ],
       },
     });
-    wsMock.messageHandlers[0]({
+    wsMock.emitMessage({
       type: "event",
       event: "room.snapshot",
       payload: {

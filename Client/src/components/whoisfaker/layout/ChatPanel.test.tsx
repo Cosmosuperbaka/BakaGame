@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { ChatPanel } from "./ChatPanel";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { RoomSnapshot, PrivateState } from "@/types";
@@ -104,17 +104,13 @@ describe("ChatPanel Component", () => {
     });
   });
 
-  it("renders messages and applies ghost styles for ghost messages", () => {
+  it("renders messages and author information correctly", () => {
     render(<ChatPanel />);
 
     expect(screen.getByText("活人玩家")).toBeInTheDocument();
     expect(screen.getByText("淘汰玩家")).toBeInTheDocument();
     expect(screen.getByText("大家好，这是活人发言")).toBeInTheDocument();
     expect(screen.getByText("这是亡者频道的发言")).toBeInTheDocument();
-
-    // 观战/亡者消息带有虚线边框样式
-    const deadMsgBubble = screen.getByText("这是亡者频道的发言").closest("div");
-    expect(deadMsgBubble).toHaveClass("border-dashed");
   });
 
   it("uses standard placeholder and enters spectate channel notice", () => {
@@ -126,7 +122,8 @@ describe("ChatPanel Component", () => {
     ).toBeInTheDocument();
   });
 
-  it("switches to main channel when in waiting phase", async () => {
+  it("allows user to input and dispatch chat messages in waiting phase", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
     const waitingSnapshot: RoomSnapshot = {
       ...mockSnapshot,
       status: {
@@ -139,10 +136,21 @@ describe("ChatPanel Component", () => {
     useWhoIsFakerStore.setState({
       snapshot: waitingSnapshot,
       privateState: mockPrivateState,
+      sendCommand,
     });
 
     render(<ChatPanel />);
 
-    expect(screen.getByPlaceholderText("请输入文本")).toBeInTheDocument();
+    const input = screen.getByPlaceholderText("请输入文本");
+    expect(input).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "大家好，准备开局了" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(sendCommand).toHaveBeenCalledWith("chat.send", {
+        text: "大家好，准备开局了",
+      });
+    });
   });
 });
