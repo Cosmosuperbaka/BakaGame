@@ -1,18 +1,9 @@
-﻿import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SongguessrMusicSession";
 import type { SongGuessrRoomSnapshot } from "@/types";
-
-const store = vi.hoisted(() => ({
-  sendCommand: vi.fn(),
-  setNotice: vi.fn(),
-}));
-
-vi.mock("@/stores/UseSongGuessrStore", () => ({
-  useSongGuessrStore: (selector: (state: typeof store) => unknown) => selector(store),
-}));
-
+import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 
 const snapshot = (musicAccountReady: boolean) => ({
@@ -21,14 +12,19 @@ const snapshot = (musicAccountReady: boolean) => ({
 } as SongGuessrRoomSnapshot);
 
 describe("SongAccountSettings", () => {
+  let sendCommand: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     clearStoredSongMusicSession();
-    store.sendCommand.mockReset();
-    store.setNotice.mockReset();
+    sendCommand = vi.fn();
+    useSongGuessrStore.setState({
+      sendCommand,
+      setNotice: vi.fn(),
+    });
   });
 
   it("展开未登录账号配置时自动生成二维码", async () => {
-    store.sendCommand.mockResolvedValue({
+    sendCommand.mockResolvedValue({
       key: "qr-key",
       qrUrl: "https://music.163.com/login?codekey=qr-key",
       qrImage: "data:image/png;base64,dGVzdA==",
@@ -38,7 +34,7 @@ describe("SongAccountSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
 
     await waitFor(() => {
-      expect(store.sendCommand).toHaveBeenCalledWith("song.auth.qr.create");
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create");
     });
     expect(await screen.findByAltText("网易云登录二维码")).toBeInTheDocument();
   });
@@ -54,6 +50,6 @@ describe("SongAccountSettings", () => {
 
     expect(screen.getByText("非会员")).toBeInTheDocument();
     expect(screen.getByText("当前账号不是会员，无法选择会员专享歌曲。")).toBeInTheDocument();
-    expect(store.sendCommand).not.toHaveBeenCalled();
+    expect(sendCommand).not.toHaveBeenCalled();
   });
 });

@@ -1,25 +1,22 @@
-﻿import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const store = vi.hoisted(() => ({
-  searchMusic: vi.fn(),
-  setNotice: vi.fn(),
-}));
-
-vi.mock("@/stores/UseSongGuessrStore", () => ({
-  useSongGuessrStore: (selector: (state: typeof store) => unknown) => selector(store),
-}));
-
+import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
 import { SongSearchDialog } from "./SongSearchDialog";
 
 describe("SongSearchDialog", () => {
+  let searchMusic: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
-    store.searchMusic.mockReset();
-    store.setNotice.mockReset();
+    searchMusic = vi.fn();
+    useSongGuessrStore.setState({
+      searchMusic,
+      setNotice: vi.fn(),
+    });
   });
 
   it("在操作区内嵌显示搜索结果并提交所选歌曲", async () => {
-    store.searchMusic.mockResolvedValue([{
+    searchMusic.mockResolvedValue([{
       id: "song-1",
       title: "测试歌曲",
       artist: "测试歌手",
