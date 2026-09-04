@@ -181,3 +181,28 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService`（及 `songGuessrService`）具有完全一致的一级依赖注入地位。
   - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
 
+## 12. 边界情况与跨环境适应性工程铁律 (Environment & Edge Cases Invariants)
+
+代码必须兼具本地单机开发、多时区全球用户访问、移动端局域网联机、生产多容器编排与大负载边缘网关的跨环境适应性，杜绝“本地开发良好、生产部署爆雷”的隐形缺陷。
+
+### 12.1 时区与时间模型不可变量 (Timezone Invariants & ISO-8601 Standards)
+- **服务端日志与接口时间全量标准化**：服务端控制台日志、持久化记录及 HTTP/WebSocket 接口下发的时间戳，必须严格锁定标准 ISO-8601 UTC 格式（`toISOString()`）或 UTC 毫秒时间戳。严禁使用 `new Date().getHours()` 等裸本地时区函数拼接无时区偏移的日志时间戳，消除跨地域多容器日志采集（Loki/ELK）乱序与时钟漂移。
+- **客户端业务时间显式锁定目标时区**：涉及账号有效期限、账务日、版本生效等业务日期展示时，禁止调用无参 `toLocaleDateString()`。必须通过 `Intl.DateTimeFormat` 显式锁定语言（如 `zh-CN`）与基准时区（如 `Asia/Shanghai`），防止跨时区客户端或不同操作系统语言导致有效日期偏移整天，并消除 SSR 两端 Locale 差异导致的水合崩溃。
+- **相对时间渲染水合保护**：在服务端渲染（SSR/SSG）或混合渲染架构下，动态相对时间计算节点（如 `formatRelativeTime`）必须在渲染标签上标记 `suppressHydrationWarning`，杜绝网络传输延迟引起的水合文本不一致。
+
+### 12.2 跨端非安全上下文与局域网韧性 (Non-Secure Context & LAN Play Resilience)
+- **非安全上下文 UUID 降级**：客户端信封 ID 与 Trace ID 生成严禁硬性假设存在 `crypto.randomUUID()`。在 HTTP 局域网访问（如移动端通过 `http://192.168.x.x` 接入主机联机对局）等非安全上下文（Non-Secure Context）下，必须提供符合 RFC 4122 v4 的伪随机降级生成算法，严禁抛出 `TypeError` 阻断对局。
+- **网关局域网网段放行**：服务端网关层（`App.ts`）的来源校验必须对私有局域网网段（RFC 1918：`192.168.0.0/16`、`10.0.0.0/8`、`172.16.0.0/12`）予以放行，保障真机面对面局域网联机体验。
+- **客户端地址归一化防双斜杠**：前端根据环境变量构建 WebSocket/HTTP 地址时，必须正则剥离基准地址末尾的所有斜杠（`.replace(/\/+$/, "")`），防止拼接产生 `//api` 路径，避免严格反向代理（Nginx/Cloudflare）返回 404 或因不支持 301/308 重定向导致长连接握手失败。
+
+### 12.3 容器网络与部署寻址解耦 (Container Network Binding & Path Decoupling)
+- **监听网卡与公开地址解耦**：服务端内部套接字绑定主机（`serverListenHost`）必须与对外公开地址（`SERVER_URL`）解耦。在容器化环境中默认监听 `0.0.0.0` 全网卡，杜绝仅绑定 `127.0.0.1` 导致外部 Ingress 或 Docker 端口映射连接被拒（`Connection refused`），并支持 `SERVER_LISTEN_HOST` 覆盖。
+- **环境文件寻址必须基于模块定位**：持久化介质（词库 `wordBankPath`、文档导出路径等）默认必须基于当前模块文件路径（`import.meta.dir`）进行稳定相对寻址，杜绝依赖不可控的 `process.cwd()`；同时提供标准环境变量（如 `WORD_BANK_PATH`）以支持云原生外挂数据卷（Persistent Volume）。
+- **环境变量强断言快速失败**：启动期解析环境变量（如 `SERVER_PORT`）时必须校验合法范围（1~65535），非法或空输入立即抛出 `AppError("CONFIG_ERROR", ...)` 快速中断退出，严禁静默回退为 0 导致随机占用系统临时端口。
+
+### 12.4 跨域预检完整性与大载荷防 OOM (CORS Preflight & OOM Defense)
+- **跨域 HTTP 方法与追踪头对称开放**：反向代理与全局 CORS 配置必须对称覆盖所有业务端点的方法（`methods: ["GET", "POST", "OPTIONS"]`），并将分布式追踪头（`allowedHeaders: ["content-type", "x-trace-id"]`）纳入预检放行，严防生产前后端分域部署时遥测打点被静默拦截。
+- **WebSocket 协议层单帧硬上限**：WebSocket 网关必须显式配置单帧载荷上限（`maxPayloadLength: 256 * 1024`，256KB），杜绝恶意攻击者单帧灌入超大包耗尽边缘容器内存。
+- **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
+- **遥测上报缓冲队列上限与网络超时**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，超出淘汰最旧日志），导出过程必须挂载 `isFlushing` 并发飞行锁，网络请求必须配置超时中断（`AbortSignal.timeout(5000)`），杜绝上游网络瘫痪引发日志堆积 OOM。
+
