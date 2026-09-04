@@ -7,11 +7,20 @@ export interface TelemetryPayload {
   metadata?: Record<string, unknown>;
 }
 
-export const reportTelemetry = async (payload: TelemetryPayload): Promise<void> => {
+export interface TelemetryOptions {
+  serverUrl?: string;
+  fetcher?: typeof fetch;
+}
+
+export const reportTelemetry = async (
+  payload: TelemetryPayload,
+  options?: TelemetryOptions,
+): Promise<void> => {
   try {
-    const rawUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+    const rawUrl = options?.serverUrl ?? (import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL);
     const serverUrl = rawUrl.replace(/\/+$/, "");
-    await fetch(`${serverUrl}/api/monitoring/telemetry`, {
+    const fetcher = options?.fetcher ?? fetch;
+    await fetcher(`${serverUrl}/api/monitoring/telemetry`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

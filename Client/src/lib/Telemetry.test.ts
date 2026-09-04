@@ -12,14 +12,15 @@ describe("reportTelemetry", () => {
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     });
 
-    vi.stubGlobal("fetch", mockFetch);
-
-    await reportTelemetry({
-      level: "error",
-      message: "测试报错",
-      traceId: "trace-xyz",
-      metadata: { key: "value" },
-    });
+    await reportTelemetry(
+      {
+        level: "error",
+        message: "测试报错",
+        traceId: "trace-xyz",
+        metadata: { key: "value" },
+      },
+      { fetcher: mockFetch as unknown as typeof fetch },
+    );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(capturedUrl).toContain("/api/monitoring/telemetry");
@@ -27,22 +28,20 @@ describe("reportTelemetry", () => {
     const parsedBody = JSON.parse(capturedOptions?.body as string);
     expect(parsedBody.level).toBe("error");
     expect(parsedBody.message).toBe("测试报错");
-
-    vi.unstubAllGlobals();
   });
 
   it("网络异常时不抛出错误也不中断执行", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new Error("Network connection dropped")),
-    );
+    const failingFetch = vi
+      .fn()
+      .mockRejectedValue(new Error("Network connection dropped")) as unknown as typeof fetch;
 
     await expect(
-      reportTelemetry({
-        message: "网络抖动测试",
-      }),
+      reportTelemetry(
+        {
+          message: "网络抖动测试",
+        },
+        { fetcher: failingFetch },
+      ),
     ).resolves.toBeUndefined();
-
-    vi.unstubAllGlobals();
   });
 });
