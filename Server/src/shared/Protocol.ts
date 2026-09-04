@@ -10,6 +10,7 @@ import type {
 
 export interface ClientEnvelope<TType extends string, TPayload> {
   id: string;
+  traceId?: string;
   type: TType;
   roomId?: string;
   sessionToken?: string;
@@ -19,6 +20,7 @@ export interface ClientEnvelope<TType extends string, TPayload> {
 export interface AckPacket {
   type: "ack";
   id: string;
+  traceId?: string;
   requestType: string;
   payload?: unknown;
 }
@@ -26,6 +28,7 @@ export interface AckPacket {
 export interface ErrorPacket {
   type: "error";
   id: string;
+  traceId?: string;
   error: {
     code: string;
     message: string;

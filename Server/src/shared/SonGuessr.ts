@@ -220,6 +220,7 @@ export interface SonGuessrPrivateState {
 
 export interface SonGuessrClientEnvelope<TType extends string, TPayload> {
   id: string;
+  traceId?: string;
   type: TType;
   roomId?: string;
   sessionToken?: string;
