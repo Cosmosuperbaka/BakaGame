@@ -131,11 +131,12 @@ export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
   if (!isObject(parsed)) throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
 
   const id = readString(parsed.id, "id")!;
+  const traceId = readString(parsed.traceId, "traceId", { optional: true });
   const type = readString(parsed.type, "type")!;
   const roomId = readString(parsed.roomId, "roomId", { optional: true });
   const sessionToken = readString(parsed.sessionToken, "sessionToken", { optional: true });
   const payload = isObject(parsed.payload) ? parsed.payload : {};
-  const envelope = { id, roomId, sessionToken };
+  const envelope = { id, traceId, roomId, sessionToken };
 
   switch (type) {
     case "song.lobby.subscribeRooms":
@@ -151,7 +152,7 @@ export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
       return { ...envelope, type, payload: {} } as SonGuessrClientMessage;
     case "song.room.create":
       return {
-        id,
+        ...envelope,
         type,
         payload: {
           roomId: readString(payload.roomId, "payload.roomId")!,

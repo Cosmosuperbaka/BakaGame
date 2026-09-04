@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -295,3 +295,58 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     await stop();
   }
 });
+
+test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并实现会话隔离", async () => {
+  const { port, stop } = startTestServer();
+
+  try {
+    const customTraceId = "trace-test-123456";
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: { "x-trace-id": customTraceId },
+    });
+    expect(res.headers.get("x-trace-id")).toBe(customTraceId);
+
+    const socketA = await openSocket(port);
+    const socketB = await openSocket(port);
+    const collectorA = createSocketCollector(socketA);
+    const collectorB = createSocketCollector(socketB);
+
+    // Socket A 发送带 traceId 的请求
+    socketA.send(
+      JSON.stringify({
+        id: "req-shared-id",
+        traceId: "trace-client-a",
+        type: "lobby.subscribeRooms",
+        payload: {},
+      }),
+    );
+
+    const ackA = (await collectorA(
+      (payload) => (payload as { type?: string }).type === "ack" && (payload as { id?: string }).id === "req-shared-id",
+    )) as { type: string; id: string; traceId?: string };
+    expect(ackA.type).toBe("ack");
+    expect(ackA.traceId).toBe("trace-client-a");
+
+    // Socket B 发送相同的 id，但不应该命中 Socket A 的缓存，应独立处理
+    socketB.send(
+      JSON.stringify({
+        id: "req-shared-id",
+        traceId: "trace-client-b",
+        type: "lobby.subscribeRooms",
+        payload: {},
+      }),
+    );
+
+    const ackB = (await collectorB(
+      (payload) => (payload as { type?: string }).type === "ack" && (payload as { id?: string }).id === "req-shared-id",
+    )) as { type: string; id: string; traceId?: string };
+    expect(ackB.type).toBe("ack");
+    expect(ackB.traceId).toBe("trace-client-b");
+
+    socketA.close();
+    socketB.close();
+  } finally {
+    await stop();
+  }
+});
+

@@ -89,11 +89,21 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
         serverUrl: env.serverUrl,
       }),
     )
-    // ==================== 原生耗时记录派生 ====================
-    .derive(() => ({
-      startedAt: performance.now(),
-    }))
-    .onAfterHandle(({ request, path, set, startedAt }) => {
+    // ==================== 原生耗时与链路追踪派生 ====================
+    .derive(({ request }) => {
+      const traceId =
+        request?.headers?.get("x-trace-id") ??
+        request?.headers?.get("x-request-id") ??
+        crypto.randomUUID();
+      return {
+        traceId,
+        startedAt: performance.now(),
+      };
+    })
+    .onAfterHandle(({ request, path, set, startedAt, traceId }) => {
+      if (set.headers) {
+        set.headers["x-trace-id"] = traceId;
+      }
       const durationMs = performance.now() - startedAt;
       logger.logOperation({
         status: set.status ? Number(set.status) : 200,
@@ -103,7 +113,10 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
       });
     })
     // ==================== 全局错误生命周期处理 ====================
-    .onError(({ code, error, set, path, request, startedAt }) => {
+    .onError(({ code, error, set, path, request, startedAt, traceId }) => {
+      if (set.headers && traceId) {
+        set.headers["x-trace-id"] = traceId;
+      }
       const durationMs = startedAt ? performance.now() - startedAt : 0;
       let status = 500;
       let errCode = "INTERNAL_ERROR";
@@ -131,10 +144,15 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
         level: status >= 500 ? "ERROR" : "WARN",
       });
 
+      if (status >= 500) {
+        logger.error(`HTTP 500 异常 [${path}]`, describeError(error));
+      }
+
       return {
         error: {
           code: errCode,
           message: errMsg,
+          traceId,
         },
       };
     })
@@ -195,29 +213,32 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
         const startTime = performance.now();
         let parsedId = "unknown";
         let parsedType = "raw";
+        let traceId: string | undefined;
 
         try {
           const parsed = parseClientMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
+          traceId = parsed.traceId;
+          const dedupKey = `${connectionId}:${parsedId}`;
 
-          if (messageAckCache.has(parsedId)) {
-            sendPacket(ws, createAck(parsed, messageAckCache.get(parsedId)));
+          if (messageAckCache.has(dedupKey)) {
+            sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
             return;
           }
-          if (inFlightMessages.has(parsedId)) {
+          if (inFlightMessages.has(dedupKey)) {
             return;
           }
-          inFlightMessages.add(parsedId);
+          inFlightMessages.add(dedupKey);
 
           let payload: unknown;
           try {
             payload = await roomService.execute(connectionId, parsed);
           } finally {
-            inFlightMessages.delete(parsedId);
+            inFlightMessages.delete(dedupKey);
           }
 
-          messageAckCache.set(parsedId, (payload as object) ?? {});
+          messageAckCache.set(dedupKey, (payload as object) ?? {});
           const durationMs = performance.now() - startTime;
           logger.logOperation({
             status: 200,
@@ -238,10 +259,17 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
             });
             sendPacket(
               ws,
-              createErrorPacket(parsedId, error.code, error.message, error.details),
+              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
             );
             return;
           }
+
+          logger.error(`WS 内部异常 [${parsedType}]`, {
+            ...describeError(error),
+            connectionId,
+            traceId,
+            parsedId,
+          });
 
           logger.logOperation({
             status: 500,
@@ -252,7 +280,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
           });
           sendPacket(
             ws,
-            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
+            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
           );
         }
       },
@@ -312,28 +340,31 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
         const startedAt = performance.now();
         let parsedId = "unknown";
         let parsedType = "raw";
+        let traceId: string | undefined;
         try {
           const parsed = parseSongGuessrMessage(raw);
           parsedId = parsed.id;
           parsedType = parsed.type;
+          traceId = parsed.traceId;
+          const dedupKey = `${connectionId}:${parsedId}`;
 
-          if (messageAckCache.has(parsedId)) {
-            sendPacket(ws, createAck(parsed, messageAckCache.get(parsedId)));
+          if (messageAckCache.has(dedupKey)) {
+            sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
             return;
           }
-          if (inFlightMessages.has(parsedId)) {
+          if (inFlightMessages.has(dedupKey)) {
             return;
           }
-          inFlightMessages.add(parsedId);
+          inFlightMessages.add(dedupKey);
 
           let payload: unknown;
           try {
             payload = await songService.execute(connectionId, parsed);
           } finally {
-            inFlightMessages.delete(parsedId);
+            inFlightMessages.delete(dedupKey);
           }
 
-          messageAckCache.set(parsedId, (payload as object) ?? {});
+          messageAckCache.set(dedupKey, (payload as object) ?? {});
           logger.logOperation({
             status: 200,
             durationMs: performance.now() - startedAt,
@@ -352,10 +383,18 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
             });
             sendPacket(
               ws,
-              createErrorPacket(parsedId, error.code, error.message, error.details),
+              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
             );
             return;
           }
+
+          logger.error(`SonGuessr WS 内部异常 [${parsedType}]`, {
+            ...describeError(error),
+            connectionId,
+            traceId,
+            parsedId,
+          });
+
           logger.logOperation({
             status: 500,
             durationMs: performance.now() - startedAt,
@@ -365,7 +404,7 @@ export const createApp = ({ env, roomService, logger, songGuessrService, sonGues
           });
           sendPacket(
             ws,
-            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误"),
+            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
           );
         }
       },

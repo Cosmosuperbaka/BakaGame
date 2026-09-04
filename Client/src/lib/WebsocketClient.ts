@@ -1,4 +1,4 @@
-﻿import type { ServerMessage } from "@/types";
+import type { ServerMessage } from "@/types";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -127,7 +127,8 @@ export class WebSocketClient {
         return;
       }
 
-      const id = `req-${++this.requestCounter}`;
+      const traceId = crypto.randomUUID();
+      const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject({ code: "TIMEOUT", message: "请求超时" });
@@ -139,7 +140,7 @@ export class WebSocketClient {
         timer,
       });
 
-      const envelope: Record<string, unknown> = { id, type, payload };
+      const envelope: Record<string, unknown> = { id, traceId, type, payload };
       if (options?.roomId) envelope.roomId = options.roomId;
       if (options?.sessionToken) envelope.sessionToken = options.sessionToken;
       this.socket.send(JSON.stringify(envelope));

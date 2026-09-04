@@ -231,6 +231,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
   }
 
   const id = readString(parsed.id, "id")!;
+  const traceId = readString(parsed.traceId, "traceId", { optional: true });
   const type = readString(parsed.type, "type")!;
   const roomId = readString(parsed.roomId, "roomId", { optional: true });
   const sessionToken = readString(parsed.sessionToken, "sessionToken", {
@@ -239,7 +240,8 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
   const payload = isObject(parsed.payload) ? parsed.payload : {};
 
   // 这里显式枚举每一类命令，既做运行时校验，也为后续重构留住边界。
-  switch (type) {
+  const message: ClientMessage = (() => {
+    switch (type) {
     case "lobby.subscribeRooms":
       return { id, type, roomId, sessionToken, payload: {} };
     case "room.create":
@@ -546,15 +548,22 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
       };
     default:
       throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
+    }
+  })();
+
+  if (traceId) {
+    (message as { traceId?: string }).traceId = traceId;
   }
+  return message;
 };
 
-export const createAck = <TMessage extends { id: string; type: string }>(
+export const createAck = <TMessage extends { id: string; type: string; traceId?: string }>(
   message: TMessage,
   payload?: unknown,
 ): AckPacket => ({
   type: "ack",
   id: message.id,
+  traceId: message.traceId,
   requestType: message.type,
   payload,
 });
@@ -564,9 +573,11 @@ export const createErrorPacket = (
   code: string,
   message: string,
   details?: unknown,
+  traceId?: string,
 ): ErrorPacket => ({
   type: "error",
   id,
+  traceId,
   error: {
     code,
     message,
