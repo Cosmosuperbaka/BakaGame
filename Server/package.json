@@ -11,6 +11,7 @@
     "test:music:login": "bun test ./integration/NeteaseLogin.integration.ts",
     "test:coverage": "bun test --coverage",
     "verify": "bun run check && bun run test:coverage",
+    "test:grafana": "bun run src/scripts/TestGrafana.ts",
     "docs:openapi": "bun run src/scripts/ExportOpenapi.ts"
   },
   "dependencies": {

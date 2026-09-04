@@ -160,7 +160,6 @@ test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志",
     });
   }
 
-  // @ts-expect-error 读取内部 buffer 长度
   const buffer = exporter.buffer as unknown[];
   expect(buffer.length).toBeLessThanOrEqual(500);
 });
@@ -208,3 +207,68 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
   );
   expect(lanRes.headers.get("access-control-allow-origin")).toBe("http://192.168.1.100:5173");
 });
+
+test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元组 Resource", async () => {
+  let capturedTraceBody: unknown = null;
+  const mockTraceGateway = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      if (req.url.includes("/v1/traces")) {
+        capturedTraceBody = await req.json();
+        return new Response(JSON.stringify({ partialSuccess: {} }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    },
+  });
+
+  const exporter = new OtlpExporter({
+    endpoint: `http://127.0.0.1:${mockTraceGateway.port}/otlp`,
+    headers: { Authorization: "Basic dGVzdA==" },
+    serviceName: "Bakagame-Server",
+    serviceNamespace: "Bakagame",
+    deploymentEnvironment: "production",
+  });
+
+  exporter.enqueueSpan({
+    traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+    spanId: "00f067aa0ba902b7",
+    name: "server.startup",
+    startTime: 1700000000000,
+    endTime: 1700000000050,
+    status: "OK",
+    attributes: { "server.status": "ready" },
+  });
+
+  await exporter.flushSpans();
+  await exporter.shutdown();
+  mockTraceGateway.stop(true);
+
+  expect(capturedTraceBody).toBeTruthy();
+  const body = capturedTraceBody as {
+    resourceSpans: Array<{
+      resource: { attributes: Array<{ key: string; value: { stringValue: string } }> };
+      scopeSpans: Array<{
+        spans: Array<{
+          traceId: string;
+          spanId: string;
+          name: string;
+          status: { code: number };
+        }>;
+      }>;
+    }>;
+  };
+
+  const attrs = Object.fromEntries(
+    body.resourceSpans[0].resource.attributes.map((a) => [a.key, a.value.stringValue]),
+  );
+  expect(attrs["service.name"]).toBe("Bakagame-Server");
+  expect(attrs["service.namespace"]).toBe("Bakagame");
+  expect(attrs["deployment.environment"]).toBe("production");
+
+  const span = body.resourceSpans[0].scopeSpans[0].spans[0];
+  expect(span.name).toBe("server.startup");
+  expect(span.status.code).toBe(1);
+  expect(span.traceId.length).toBe(32);
+  expect(span.spanId.length).toBe(16);
+});
+
