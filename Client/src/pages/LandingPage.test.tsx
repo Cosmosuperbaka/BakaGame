@@ -47,6 +47,21 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
+  it("renders animecharguessr with coming-soon badge and disabled state", () => {
+    renderLandingPage();
+
+    const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
+    expect(ccbEntry).toBeInTheDocument();
+    expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
+    expect(screen.getByText("即将上线")).toBeInTheDocument();
+
+    // 可用游戏为正常 button
+    expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Songuessr/ })).toBeInTheDocument();
+    // CCB 增强版不可作为交互 button
+    expect(screen.queryByRole("button", { name: /二刺猿笑传之猜猜呗/ })).not.toBeInTheDocument();
+  });
+
   it("renders categorized changelog in modal and omits absent categories", async () => {
     const user = userEvent.setup();
     renderLandingPage();
