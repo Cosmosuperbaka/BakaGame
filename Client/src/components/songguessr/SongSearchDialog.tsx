@@ -1,7 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { LoaderCircle, Music2, Search, X } from "lucide-react";
 import type { SongSearchResult } from "@/types";
-import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -23,8 +23,8 @@ export function SongSearchDialog({
   actionLabel,
   onSelect,
 }: SongSearchDialogProps) {
-  const searchMusic = useSongGuessrStore((state) => state.searchMusic);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const searchMusic = useSonGuessrStore((state) => state.searchMusic);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searching, setSearching] = useState(false);

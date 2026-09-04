@@ -1,17 +1,17 @@
-﻿import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { duration, ease, spring } from "@/lib/Motion";
-import { useGameStore } from "@/stores/UseGameStore";
-import { useSongGuessrStore } from "@/stores/UseSongGuessrStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
 
 export function ToastContainer() {
-  const toasts = useGameStore((s) => s.toasts);
+  const toasts = useWhoIsFakerStore((s) => s.toasts);
 
   return <ToastViewport toasts={toasts} />;
 }
 
 export function SongGuessrToastContainer() {
-  const notice = useSongGuessrStore((state) => state.notice);
+  const notice = useSonGuessrStore((state) => state.notice);
   const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
 
   return <ToastViewport toasts={toasts} />;
