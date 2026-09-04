@@ -13,9 +13,30 @@ export interface AppEnv {
   otelEndpoint?: string;
   otelHeaders?: Record<string, string>;
   otelServiceName?: string;
+  otelServiceNamespace?: string;
+  otelDeploymentEnvironment?: string;
 }
 
 // ==================== 环境变量解析 ====================
+
+const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
+  if (!raw) return {};
+  const attrs: Record<string, string> = {};
+  for (const part of raw.split(",")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx > 0) {
+      const key = part.slice(0, eqIdx).trim();
+      let value = part.slice(eqIdx + 1).trim();
+      try {
+        value = decodeURIComponent(value);
+      } catch {
+        // fallback
+      }
+      attrs[key] = value;
+    }
+  }
+  return attrs;
+};
 
 const parseOtelHeaders = (raw?: string): Record<string, string> | undefined => {
   if (!raw) return undefined;
@@ -81,6 +102,21 @@ export const readEnv = (): AppEnv => {
     serverPort,
   );
 
+  const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
+  const otelServiceName =
+    Bun.env.OTEL_SERVICE_NAME ??
+    resourceAttrs["service.name"] ??
+    "Bakagame-Server";
+  const otelServiceNamespace =
+    Bun.env.OTEL_SERVICE_NAMESPACE ??
+    resourceAttrs["service.namespace"] ??
+    "Bakagame";
+  const otelDeploymentEnvironment =
+    Bun.env.DEPLOYMENT_ENVIRONMENT ??
+    Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT ??
+    resourceAttrs["deployment.environment"] ??
+    "production";
+
   return {
     clientUrl: Bun.env.CLIENT_URL ?? "http://localhost:5173",
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
@@ -89,6 +125,8 @@ export const readEnv = (): AppEnv => {
     wordBankPath: resolveDefaultWordBankPath(),
     otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),
-    otelServiceName: Bun.env.OTEL_SERVICE_NAME ?? "bakagame-server",
+    otelServiceName,
+    otelServiceNamespace,
+    otelDeploymentEnvironment,
   };
 };

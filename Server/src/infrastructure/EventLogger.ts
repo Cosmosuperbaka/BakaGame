@@ -277,6 +277,18 @@ export class EventLogger {
         traceId,
         attributes: context ? (redactData(context) as Record<string, unknown>) : undefined,
       });
+
+      if (level === "ERROR" && traceId) {
+        this.otlpExporter.enqueueSpan({
+          traceId,
+          name: message,
+          startTime: createdAt - 1,
+          endTime: createdAt,
+          attributes: context ? (redactData(context) as Record<string, unknown>) : undefined,
+          status: "ERROR",
+          statusMessage: message,
+        });
+      }
     }
   }
 
@@ -313,6 +325,20 @@ export class EventLogger {
     const idStr = identifier.padStart(15, " ");
     const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}`;
     this.output[LEVEL_METHODS[level]](line);
+
+    if (this.otlpExporter?.isEnabled) {
+      this.otlpExporter.enqueueSpan({
+        name: action,
+        startTime: createdAt - durationMs,
+        endTime: createdAt,
+        attributes: {
+          "http.status_code": status,
+          "operation.identifier": identifier,
+          "operation.action": action,
+        },
+        status: status >= 400 ? "ERROR" : "OK",
+      });
+    }
   }
 
   async write(entry: LogEntry): Promise<void> {

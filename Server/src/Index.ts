@@ -13,8 +13,15 @@ const otlpExporter = env.otelEndpoint
       endpoint: env.otelEndpoint,
       headers: env.otelHeaders,
       serviceName: env.otelServiceName,
+      serviceNamespace: env.otelServiceNamespace,
+      deploymentEnvironment: env.otelDeploymentEnvironment,
     })
   : undefined;
+
+if (otlpExporter) {
+  void otlpExporter.sendHeartbeatTrace();
+}
+
 const logger = new EventLogger(undefined, undefined, otlpExporter);
 const roomService = new RoomService({
   eventLogger: logger,
