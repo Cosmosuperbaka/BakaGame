@@ -54,13 +54,71 @@ function parseInline(source: string): InlineNode[] {
   return nodes;
 }
 
-/** 正文来源：单串（内含 \n）或每项一行的数组。 */
-export type ChangelogContent = string | string[];
+/** 更新日志支持的标准分类类型。 */
+export type ChangelogType =
+  | "feat"
+  | "fix"
+  | "chore"
+  | "perf"
+  | "refactor"
+  | "style"
+  | "docs"
+  | "test"
+  | "build"
+  | "ci"
+  | "revert";
+
+/** 各分类在界面展示的中文语义标签。 */
+export const CHANGELOG_TYPE_LABELS: Record<string, string> = {
+  feat: "新功能",
+  fix: "问题修复",
+  chore: "日常维护",
+  perf: "性能优化",
+  refactor: "代码重构",
+  style: "样式与界面",
+  docs: "文档说明",
+  test: "测试补充",
+  build: "构建更新",
+  ci: "持续集成",
+  revert: "变更回退",
+};
+
+/** 标准分类呈现顺序。 */
+export const CHANGELOG_TYPE_ORDER: readonly string[] = [
+  "feat",
+  "fix",
+  "perf",
+  "style",
+  "refactor",
+  "docs",
+  "chore",
+  "test",
+  "build",
+  "ci",
+  "revert",
+];
+
+/** 单个分类的正文来源：单串（内含 \n）或每项一行的数组。 */
+export type ChangelogCategoryContent = string | string[];
+
+/**
+ * 更新日志内容结构：按变更类型聚合的键值对象。
+ * 如某版本有对应类型更新就填入对应类型的，未填写或空的类型不包含。
+ */
+export type ChangelogContent = Partial<Record<ChangelogType, ChangelogCategoryContent>> &
+  Record<string, ChangelogCategoryContent | undefined>;
 
 export interface ChangelogEntry {
   version: string;
   date: string;
   content: ChangelogContent;
+}
+
+/** 解析后的分类区块定义，供页面按需渲染。 */
+export interface ParsedCategorySection {
+  type: string;
+  label: string;
+  blocks: BlockNode[];
 }
 
 import { compareVersions as semverCompare } from "compare-versions";
@@ -91,10 +149,10 @@ export function sortEntriesByVersion<T extends ChangelogEntry>(entries: readonly
 }
 
 /** 把两种写法归一成行数组；数组项自身仍可包含换行。 */
-const toLines = (content: ChangelogContent): string[] =>
+const toLines = (content: ChangelogCategoryContent): string[] =>
   (Array.isArray(content) ? content : [content]).flatMap((chunk) => chunk.split(/\r?\n/));
 
-export function parseChangelogContent(content: ChangelogContent): BlockNode[] {
+export function parseChangelogContent(content: ChangelogCategoryContent): BlockNode[] {
   const blocks: BlockNode[] = [];
   let list: InlineNode[][] | null = null;
 
@@ -121,3 +179,46 @@ export function parseChangelogContent(content: ChangelogContent): BlockNode[] {
 
   return blocks;
 }
+
+/**
+ * 解析单个版本的分类更新日志。
+ * 仅提取有实际非空更新的分类，按规范顺序排列；未填写或为空的分类坚决不包含在结果中。
+ */
+export function parseChangelogEntry(content: ChangelogContent): ParsedCategorySection[] {
+  if (!content || typeof content !== "object") return [];
+
+  const activeKeys = Object.keys(content).filter((key) => {
+    const raw = content[key];
+    if (!raw) return false;
+    if (Array.isArray(raw)) {
+      return raw.some((line) => line.trim().length > 0);
+    }
+    return raw.trim().length > 0;
+  });
+
+  activeKeys.sort((a, b) => {
+    const idxA = CHANGELOG_TYPE_ORDER.indexOf(a);
+    const idxB = CHANGELOG_TYPE_ORDER.indexOf(b);
+    const orderA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+    const orderB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.localeCompare(b);
+  });
+
+  const sections: ParsedCategorySection[] = [];
+  for (const key of activeKeys) {
+    const raw = content[key];
+    if (!raw) continue;
+    const blocks = parseChangelogContent(raw);
+    if (blocks.length > 0) {
+      sections.push({
+        type: key,
+        label: CHANGELOG_TYPE_LABELS[key] ?? key,
+        blocks,
+      });
+    }
+  }
+
+  return sections;
+}
+

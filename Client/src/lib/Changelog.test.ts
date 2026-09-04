@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   compareVersions,
   parseChangelogContent,
+  parseChangelogEntry,
   resolveLatestVersion,
   sortEntriesByVersion,
   type ChangelogEntry,
@@ -11,7 +12,7 @@ import {
 const entry = (version: string): ChangelogEntry => ({
   version,
   date: "2026-08-08",
-  content: version,
+  content: { feat: version },
 });
 
 describe("changelog helpers", () => {
@@ -60,4 +61,42 @@ describe("changelog helpers", () => {
       },
     ]);
   });
+
+  it("parses structured changelog entries and filters out absent or empty categories", () => {
+    const sections = parseChangelogEntry({
+      fix: ["修复断线重连问题"],
+      chore: [],
+      docs: "   ",
+      feat: ["新增房间观战模式", "支持表情包快捷发送"],
+    });
+
+    // chore 和 docs 为空，不应该出现在 sections 中
+    expect(sections.map((s) => s.type)).toEqual(["feat", "fix"]);
+    expect(sections.map((s) => s.label)).toEqual(["新功能", "问题修复"]);
+
+    expect(sections[0].blocks).toHaveLength(2);
+    expect(sections[0].blocks[0]).toEqual({
+      kind: "paragraph",
+      content: [{ kind: "text", text: "新增房间观战模式" }],
+    });
+    expect(sections[1].blocks).toHaveLength(1);
+    expect(sections[1].blocks[0]).toEqual({
+      kind: "paragraph",
+      content: [{ kind: "text", text: "修复断线重连问题" }],
+    });
+  });
+
+  it("sorts categories according to standard semantic order", () => {
+    const sections = parseChangelogEntry({
+      chore: "升级依赖包",
+      fix: "修复已知缺陷",
+      perf: "优化网络封包",
+      feat: "上线全新玩法",
+      custom: "自定义拓展条目",
+    });
+
+    expect(sections.map((s) => s.type)).toEqual(["feat", "fix", "perf", "chore", "custom"]);
+    expect(sections.find((s) => s.type === "custom")?.label).toBe("custom");
+  });
 });
+
