@@ -240,7 +240,7 @@ export const parseClientMessage = (raw: unknown): ClientMessage => {
   const payload = isObject(parsed.payload) ? parsed.payload : {};
 
   // 这里显式枚举每一类命令，既做运行时校验，也为后续重构留住边界。
-  const message: ClientMessage = (() => {
+  const message: ClientMessage = ((): ClientMessage => {
     switch (type) {
     case "lobby.subscribeRooms":
       return { id, type, roomId, sessionToken, payload: {} };
