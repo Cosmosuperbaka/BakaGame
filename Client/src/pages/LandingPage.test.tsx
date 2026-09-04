@@ -51,7 +51,7 @@ describe("LandingPage", () => {
     const user = userEvent.setup();
     renderLandingPage();
 
-    const versionButton = screen.getByRole("button", { name: /V1\.2\.4/ });
+    const versionButton = screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ });
     await user.click(versionButton);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -59,6 +59,7 @@ describe("LandingPage", () => {
     // 检查存在对应更新的分类 Badge 与条目
     const featBadges = screen.getAllByText("feat");
     expect(featBadges.length).toBeGreaterThan(0);
+    expect(screen.getByText("更新日志支持按变更类型分类展示")).toBeInTheDocument();
     expect(screen.getByText("Whoisfaker新增观战频道")).toBeInTheDocument();
 
     const fixBadges = screen.getAllByText("fix");
