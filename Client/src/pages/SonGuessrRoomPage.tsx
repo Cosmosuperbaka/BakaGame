@@ -231,8 +231,8 @@ export default function SonGuessrRoomPage() {
   const round = snapshot?.currentRound;
   const roundNumber = round?.roundNumber;
   const roundAudioUrl = round?.audioUrl;
-  const lyricStartTime = round?.lyricClip.startTime;
-  const lyricEndTime = round?.lyricClip.endTime;
+  const lyricStartTime = round?.lyricClip?.startTime;
+  const lyricEndTime = round?.lyricClip?.endTime;
 
   useEffect(() => {
     sendCommandRef.current = sendCommand;
@@ -984,8 +984,8 @@ function GameStage({
               draggable={false}
               onDragStart={(event) => event.preventDefault()}
             >
-              {snapshot.currentRound.lyricClip.lines.length > 0 ? (
-                snapshot.currentRound.lyricClip.lines.map((line) => (
+              {(snapshot.currentRound?.lyricClip?.lines?.length ?? 0) > 0 ? (
+                snapshot.currentRound?.lyricClip?.lines.map((line) => (
                   <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
                 ))
               ) : (
