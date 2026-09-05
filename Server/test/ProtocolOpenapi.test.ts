@@ -5,12 +5,8 @@ import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { createApp } from "../src/transport/App";
-import {
-  createAck,
-  createErrorPacket,
-  createEvent,
-  parseWhoIsFakerMessage,
-} from "../src/transport/Protocol";
+import { createAck, createErrorPacket, createEvent } from "../src/transport/Packets";
+import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
 
 // ==================== 协议与文档测试 ====================
 

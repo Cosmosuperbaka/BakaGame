@@ -4,7 +4,7 @@ import { GAME_COMMAND_TYPES } from "../src/application/handlers/GameCommandHandl
 import { PLAYER_COMMAND_TYPES } from "../src/application/handlers/PlayerCommandHandler";
 import { ROOM_COMMAND_TYPES } from "../src/application/handlers/RoomCommandHandler";
 import { TEST_COMMAND_TYPES } from "../src/application/handlers/TestCommandHandler";
-import type { ClientMessage } from "../src/transport/Protocol";
+import type { ClientMessage } from "../src/shared/Index";
 
 const ALL_COMMAND_TYPES = [
   "lobby.subscribeRooms",

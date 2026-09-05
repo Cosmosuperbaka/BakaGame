@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { createSongLyricClip, SonGuessrService } from "../src/application/SonGuessrService";
-const SongGuessrService = SonGuessrService;
-type SongGuessrService = SonGuessrService;
 import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
@@ -53,7 +51,7 @@ interface TestConnection {
   sent: Array<{ type?: string; event?: string; payload?: unknown }>;
 }
 
-const connection = (service: SongGuessrService, id: string): TestConnection => {
+const connection = (service: SonGuessrService, id: string): TestConnection => {
   const sent: TestConnection["sent"] = [];
   const record: ConnectionRecord = {
     id,
@@ -66,7 +64,7 @@ const connection = (service: SongGuessrService, id: string): TestConnection => {
 };
 
 const execute = (
-  service: SongGuessrService,
+  service: SonGuessrService,
   client: TestConnection,
   message: SonGuessrClientMessage,
 ) => service.execute(client.record.id, message);
@@ -75,7 +73,7 @@ const lastEvent = <T>(client: TestConnection, event: string): T =>
   client.sent.filter((item) => item.type === "event" && item.event === event).at(-1)!.payload as T;
 
 const createRoom = async (
-  service: SongGuessrService,
+  service: SonGuessrService,
   host: TestConnection,
   overrides: Partial<Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]> = {},
 ) => {
@@ -101,7 +99,7 @@ const createRoom = async (
 };
 
 const joinRoom = async (
-  service: SongGuessrService,
+  service: SonGuessrService,
   client: TestConnection,
   userName: string,
   roomId = "1234",
@@ -117,7 +115,7 @@ const joinRoom = async (
 };
 
 const startRound = async (
-  service: SongGuessrService,
+  service: SonGuessrService,
   host: TestConnection,
   guest: TestConnection,
   submitterPlayerId: string,
@@ -148,7 +146,7 @@ const startRound = async (
   });
 };
 
-describe("SongGuessrService", () => {
+describe("SonGuessrService", () => {
 
   test("歌词不足或歌词跨度过长时降级为固定时长随机片段", () => {
     const fallback = createSongLyricClip([], 5, { nextInt: () => 12_345 }, 180_000);
@@ -169,7 +167,7 @@ describe("SongGuessrService", () => {
   });
 
   test("房间最多容纳十六个在线席位", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host);
 
@@ -188,7 +186,7 @@ describe("SongGuessrService", () => {
   });
 
   test("房主可以踢人且被踢连接立即收到事件", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -212,7 +210,7 @@ describe("SongGuessrService", () => {
   });
 
   test("等待阶段房主也可以按 Whoisfaker 规则切换旁观和玩家席位", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host);
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
@@ -242,7 +240,7 @@ describe("SongGuessrService", () => {
 
   test("断线后的空房间在宽限期后由 housekeeping 自动清理", async () => {
     let now = 0;
-    const service = new SongGuessrService({ musicProvider: provider, now: () => now });
+    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
     const host = connection(service, "host");
     await createRoom(service, host);
 
@@ -256,7 +254,7 @@ describe("SongGuessrService", () => {
   });
 
   test("房主显式离开才立即清理音乐会话，房主转移保留房间会话", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "session-host");
     const guest = connection(service, "session-guest");
     await createRoom(service, host);
@@ -273,7 +271,7 @@ describe("SongGuessrService", () => {
   });
 
   test("私密房间保留在大厅列表并要求密码加入", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host, {
@@ -302,7 +300,7 @@ describe("SongGuessrService", () => {
         account: { userId: "guest-account", nickname: "新房主账号" },
       }),
     };
-    const service = new SongGuessrService({ musicProvider: authProvider });
+    const service = new SonGuessrService({ musicProvider: authProvider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -388,7 +386,7 @@ describe("SongGuessrService", () => {
       }),
     };
     let now = 0;
-    const service = new SongGuessrService({ musicProvider: authProvider, now: () => now });
+    const service = new SonGuessrService({ musicProvider: authProvider, now: () => now });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -415,7 +413,7 @@ describe("SongGuessrService", () => {
 
   test("房主断线宽限期内新玩家加入不会接管房主或音乐会话", async () => {
     let now = 0;
-    const service = new SongGuessrService({ musicProvider: provider, now: () => now });
+    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
     const host = connection(service, "grace-host");
     const guest = connection(service, "grace-guest");
     await createRoom(service, host);
@@ -431,7 +429,7 @@ describe("SongGuessrService", () => {
   });
 
   test("未登录网易云账号时不能开始游戏", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -470,7 +468,7 @@ describe("SongGuessrService", () => {
         return { cookie, account: { nickname: "即将失效", vipStatus: "vip" } };
       },
     };
-    const service = new SongGuessrService({ musicProvider: expiringProvider });
+    const service = new SonGuessrService({ musicProvider: expiringProvider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -504,7 +502,7 @@ describe("SongGuessrService", () => {
         return { cookie, account: { nickname: "限流账号", vipStatus: "vip" } };
       },
     };
-    const service = new SongGuessrService({ musicProvider: rateLimitedProvider });
+    const service = new SonGuessrService({ musicProvider: rateLimitedProvider });
     const host = connection(service, "rate-limit-host");
     const guest = connection(service, "rate-limit-guest");
     await createRoom(service, host);
@@ -537,7 +535,7 @@ describe("SongGuessrService", () => {
       }),
       getSong: async (id) => ({ ...songs[id as keyof typeof songs], requiresVip: true }),
     };
-    const service = new SongGuessrService({ musicProvider: nonVipProvider });
+    const service = new SonGuessrService({ musicProvider: nonVipProvider });
     const host = connection(service, "host");
     const guest = connection(service, "guest");
     await createRoom(service, host);
@@ -583,7 +581,7 @@ describe("SongGuessrService", () => {
       ...provider,
       getSong: async () => pendingSong,
     };
-    const service = new SongGuessrService({ musicProvider: delayedProvider });
+    const service = new SonGuessrService({ musicProvider: delayedProvider });
     const host = connection(service, "pending-host");
     const guest = connection(service, "pending-submitter");
     await createRoom(service, host);
@@ -629,7 +627,7 @@ describe("SongGuessrService", () => {
   });
 
   test("Oblivionis 测试房支持人机并不会进入大厅或被空房清理", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
 
@@ -662,7 +660,7 @@ describe("SongGuessrService", () => {
   });
 
   test("Oblivionis 测试房刷新重连后保留房主权限", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
@@ -694,7 +692,7 @@ describe("SongGuessrService", () => {
   });
 
   test("Oblivionis 测试房允许出题人自己猜且提交歌曲不会被误判为猜对", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
@@ -762,7 +760,7 @@ describe("SongGuessrService", () => {
   });
 
   test("完整迁移出题、逐次猜测、反馈、计分与结算流程", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
       now: () => 1_000,
@@ -869,7 +867,7 @@ describe("SongGuessrService", () => {
         audioUrl: `https://audio/refresh-${++songLoads}.mp3`,
       }),
     };
-    const service = new SongGuessrService({ musicProvider: refreshProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: refreshProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "refresh-host");
     const guest = connection(service, "refresh-guest");
     await createRoom(service, host);
@@ -900,7 +898,7 @@ describe("SongGuessrService", () => {
   });
 
   test("结算后补发旧 audioReady 会被幂等忽略", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "stale-ready-host");
     const guest = connection(service, "stale-ready-guest");
     await createRoom(service, host);
@@ -933,7 +931,7 @@ describe("SongGuessrService", () => {
       getArtistSongs: async () => [songs.answer],
       getSongPopularity: async (songId) => songId === "answer" ? 12_345 : 999,
     };
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: autoProvider,
       random: { nextInt: () => 0 },
     });
@@ -998,7 +996,7 @@ describe("SongGuessrService", () => {
       },
       getSong: async (id) => ({ ...songs.answer, id }),
     };
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: autoProvider,
       random: { nextInt: () => 0 },
     });
@@ -1045,7 +1043,7 @@ describe("SongGuessrService", () => {
         songs: [songs.answer],
       }),
     };
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: playlistOnlyProvider,
       random: { nextInt: () => 0 },
     });
@@ -1089,7 +1087,7 @@ describe("SongGuessrService", () => {
         return { info: { id: playlistId, name: "默认题库", songCount: 1 }, songs: [songs.answer] };
       },
     };
-    const service = new SongGuessrService({ musicProvider: defaultProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: defaultProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "default-host");
     const guest = connection(service, "default-guest");
     await createRoom(service, host);
@@ -1127,7 +1125,7 @@ describe("SongGuessrService", () => {
         songs: [songs.answer],
       }),
     };
-    const service = new SongGuessrService({ musicProvider: autoProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: autoProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "double-start-host");
     const guest = connection(service, "double-start-guest");
     await createRoom(service, host);
@@ -1173,7 +1171,7 @@ describe("SongGuessrService", () => {
         songs: [songs.answer],
       }),
     };
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: autoProvider,
       random: { nextInt: () => 0 },
       now: () => now,
@@ -1248,7 +1246,7 @@ describe("SongGuessrService", () => {
         return { info: { id: "42", name: "测试歌单", songCount: 1 }, songs: [songs.answer] };
       },
     };
-    const service = new SongGuessrService({ musicProvider: failingNextProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: failingNextProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "failed-next-host");
     const guest = connection(service, "failed-next-guest");
     await createRoom(service, host);
@@ -1303,7 +1301,7 @@ describe("SongGuessrService", () => {
   });
 
   test("血战模式首位按正式玩家数计分且不会在首位答对后提前结算", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
     });
@@ -1401,7 +1399,7 @@ describe("SongGuessrService", () => {
   });
 
   test("关闭歌词和猜测时限后不公开歌词且不创建截止时间", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
       now: () => 10_000,
@@ -1434,7 +1432,7 @@ describe("SongGuessrService", () => {
   });
 
   test("回合结算后返回等待阶段保留轮数和累计分数", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
     });
@@ -1493,7 +1491,7 @@ describe("SongGuessrService", () => {
   });
 
   test("中途加入者可以预约下轮席位，旁观真人也可以担任出题人", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
     });
@@ -1563,7 +1561,7 @@ describe("SongGuessrService", () => {
   });
 
   test("0分数的旁观者掉线立即移除", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "spec-host");
     const spectator = connection(service, "spec-spectator");
     await createRoom(service, host);
@@ -1580,7 +1578,7 @@ describe("SongGuessrService", () => {
   });
 
   test("离线旁观者的下轮参战预约不会阻塞回合", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "offline-queue-host");
     const guest = connection(service, "offline-queue-guest");
     const lateJoiner = connection(service, "offline-queue-late");
@@ -1643,7 +1641,7 @@ describe("SongGuessrService", () => {
   });
 
   test("手动模式全员预约旁观后回到等待阶段且不创建空回合", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "all-watch-host");
     const guest = connection(service, "all-watch-guest");
     await createRoom(service, host);
@@ -1694,7 +1692,7 @@ describe("SongGuessrService", () => {
         return provider.getSong(id);
       },
     };
-    const service = new SongGuessrService({ musicProvider: autoProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: autoProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "auto-all-watch-host");
     const guest = connection(service, "auto-all-watch-guest");
     await createRoom(service, host);
@@ -1761,7 +1759,7 @@ describe("SongGuessrService", () => {
 
   test("进行中禁止修改房间设置且回合继续使用开局快照", async () => {
     let now = 20_000;
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
       now: () => now,
@@ -1830,7 +1828,7 @@ describe("SongGuessrService", () => {
   });
 
   test("允许用展示中的歌词原词搜索", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
     });
@@ -1871,7 +1869,7 @@ describe("SongGuessrService", () => {
       getSong: async () => matchingAnswer,
       getSongMetadata: async () => matchingGuess,
     };
-    const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "matching-host");
     const guest = connection(service, "matching-guest");
     await createRoom(service, host);
@@ -1910,7 +1908,7 @@ describe("SongGuessrService", () => {
         getSong: async () => ({ ...songs.answer, title: answerTitle, artist: "歌手甲 / 歌手乙" }),
         getSongMetadata: async () => ({ ...songs.wrong, title: guessTitle, artist: "歌手乙" }),
       };
-      const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+      const service = new SonGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
       const host = connection(service, `variant-host-${answerTitle}`);
       const guest = connection(service, `variant-guest-${answerTitle}`);
       await createRoom(service, host);
@@ -1939,7 +1937,7 @@ describe("SongGuessrService", () => {
       getSong: async () => ({ ...songs.answer, title: "答案歌 -- 第二章", artist: "歌手乙" }),
       getSongMetadata: async () => ({ ...songs.wrong, title: "答案歌", artist: "歌手乙" }),
     };
-    const service = new SongGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: matchingProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "subtitle-host");
     const guest = connection(service, "subtitle-guest");
     await createRoom(service, host);
@@ -1962,7 +1960,7 @@ describe("SongGuessrService", () => {
   });
 
   test("手动模式开启自动轮流后直接轮到下一位正式玩家出题", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "rotate-host");
     const guest = connection(service, "rotate-guest");
     await createRoom(service, host);
@@ -1995,7 +1993,7 @@ describe("SongGuessrService", () => {
   });
 
   test("玩家可以主动放弃并且只记录一个放弃结果", async () => {
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
     });
@@ -2023,7 +2021,7 @@ describe("SongGuessrService", () => {
 
   test("housekeeping 将过期猜测记为超时并在次数耗尽后结算", async () => {
     let now = 10_000;
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
       now: () => now,
@@ -2066,7 +2064,7 @@ describe("SongGuessrService", () => {
   });
 
   test("房主局中预约旁观在回合结束后依然保持房主身份", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "host-spec-test");
     const guest1 = connection(service, "guest1-spec-test");
     const guest2 = connection(service, "guest2-spec-test");
@@ -2108,7 +2106,7 @@ describe("SongGuessrService", () => {
   });
 
   test("局中点击下轮加入旁观或玩家再次点击可撤销预约", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "toggle-host");
     const guest = connection(service, "toggle-guest");
     await createRoom(service, host);
@@ -2138,7 +2136,7 @@ describe("SongGuessrService", () => {
   });
 
   test("歌单 ID 解析支持纯数字、带参数 URL、Hash 路由与移动端链接", async () => {
-    const service = new SongGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host);
 
@@ -2183,7 +2181,7 @@ describe("SongGuessrService", () => {
         return songs[id as keyof typeof songs] ?? songs.wrong;
       },
     };
-    const service = new SongGuessrService({ musicProvider: slowProvider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: slowProvider, random: { nextInt: () => 0 } });
     const host = connection(service, "host-race");
     const guest = connection(service, "guest-race");
     await createRoom(service, host);
@@ -2225,7 +2223,7 @@ describe("SongGuessrService", () => {
 
   test("音频未就绪玩家在超过加载宽限期后由巡检超时结算，避免房间死锁", async () => {
     let mockTime = 100_000;
-    const service = new SongGuessrService({
+    const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
       now: () => mockTime,
@@ -2250,7 +2248,7 @@ describe("SongGuessrService", () => {
   });
 
   test("创建、加入与重连指令直接返回完整快照与私有状态，杜绝客户端加载悬挂", async () => {
-    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const host = connection(service, "host-ack");
     const guest = connection(service, "guest-ack");
 

@@ -2,7 +2,7 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
 import { RoomService } from "../application/RoomService";
-import { SonGuessrService, type SongGuessrService } from "../application/SonGuessrService";
+import { SonGuessrService } from "../application/SonGuessrService";
 import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
@@ -336,10 +336,8 @@ export const createApp = ({
     // ==================== 系统 HTTP 业务模块 ====================
     .use(
       systemRoutes({
-        roomService: fakerService,
         whoIsFakerService: fakerService,
         sonGuessrService: songService,
-        songGuessrService: songService,
         logger,
         isShuttingDown,
       }),

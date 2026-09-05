@@ -1,4 +1,4 @@
-﻿import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +8,7 @@ import { RoomService } from "../src/application/RoomService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { ConnectionRecord } from "../src/domain/Model";
-import type { ClientMessage } from "../src/transport/Protocol";
+import type { ClientMessage } from "../src/shared/Index";
 
 export interface TestConnection {
   record: ConnectionRecord;

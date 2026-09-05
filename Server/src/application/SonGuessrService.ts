@@ -2036,6 +2036,3 @@ export class SonGuessrService {
   }
 }
 
-export const SongGuessrService = SonGuessrService;
-export type SongGuessrService = SonGuessrService;
-

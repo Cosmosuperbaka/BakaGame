@@ -1,6 +1,6 @@
-﻿import { AppError } from "../../domain/Errors";
+import { AppError } from "../../domain/Errors";
 import type { ConnectionRecord } from "../../domain/Model";
-import type { ClientMessage } from "../../transport/Protocol";
+import type { ClientMessage } from "../../shared/Index";
 
 export type CommandResult = unknown | Promise<unknown>;
 

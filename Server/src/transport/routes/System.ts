@@ -5,24 +5,20 @@ import type { SonGuessrService } from "../../application/SonGuessrService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 
 export interface SystemRoutesDependencies {
-  roomService?: RoomService;
   whoIsFakerService?: RoomService;
   sonGuessrService?: SonGuessrService;
-  songGuessrService?: SonGuessrService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
 }
 
 export const systemRoutes = ({
-  roomService,
   whoIsFakerService,
   sonGuessrService,
-  songGuessrService,
   logger,
   isShuttingDown,
 }: SystemRoutesDependencies) => {
-  const fakerService = whoIsFakerService ?? roomService;
-  const songService = sonGuessrService ?? songGuessrService;
+  const fakerService = whoIsFakerService;
+  const songService = sonGuessrService;
   return new Elysia({ name: "system" })
     .post(
       "/api/monitoring/telemetry",
