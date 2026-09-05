@@ -2249,5 +2249,40 @@ describe("SongGuessrService", () => {
     expect(finalSnapshot.roundSummary).toBeDefined();
   });
 
+  test("创建、加入与重连指令直接返回完整快照与私有状态，杜绝客户端加载悬挂", async () => {
+    const service = new SongGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "host-ack");
+    const guest = connection(service, "guest-ack");
+
+    const created = (await createRoom(service, host, { roomId: "9876", userName: "房主Ack" })) as any;
+    expect(created.roomId).toBe("9876");
+    expect(created.snapshot).toBeDefined();
+    expect(created.snapshot.roomId).toBe("9876");
+    expect(created.privateState).toBeDefined();
+    expect(created.privateState.playerId).toBe(created.playerId);
+
+    const joined = (await execute(service, guest, {
+      id: "join-ack",
+      type: "song.room.join",
+      roomId: "9876",
+      payload: { userName: "客人Ack" },
+    })) as any;
+    expect(joined.roomId).toBe("9876");
+    expect(joined.snapshot).toBeDefined();
+    expect(joined.snapshot.roomId).toBe("9876");
+    expect(joined.privateState).toBeDefined();
+    expect(joined.privateState.playerId).toBe(joined.playerId);
+
+    const reconnected = (await execute(service, host, {
+      id: "reconnect-ack",
+      type: "song.room.reconnect",
+      payload: { roomId: "9876", sessionToken: created.sessionToken },
+    })) as any;
+    expect(reconnected.roomId).toBe("9876");
+    expect(reconnected.snapshot).toBeDefined();
+    expect(reconnected.privateState).toBeDefined();
+  });
+
 });
+
 
