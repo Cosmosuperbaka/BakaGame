@@ -93,121 +93,133 @@ const requestFullSync = () => {
     });
 };
 
-export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
-  connected: false,
-  rooms: [],
-  roomId: null,
-  sessionToken: null,
-  snapshot: null,
-  privateState: null,
-  roomClosedAt: null,
-  notice: null,
+export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
+  const applyRoomEnter = (
+    targetRoomId: string,
+    sessionToken: string,
+    payloadSnapshot?: SonGuessrRoomSnapshot,
+    payloadPrivateState?: SonGuessrPrivateState,
+  ) => {
+      saveSonGuessrSessionToken(targetRoomId, sessionToken);
 
-  setNotice: (text, type = "info") => {
-    if (noticeTimer) clearTimeout(noticeTimer);
-    set({ notice: { text, type } });
-    noticeTimer = setTimeout(() => {
-      set({ notice: null });
-      noticeTimer = undefined;
-    }, 3000);
-  },
+      if (rawSnapshot && rawSnapshot.roomId !== targetRoomId && payloadSnapshot?.roomId !== targetRoomId) {
+        resetSonGuessrStateSync();
+      }
 
-  clearNotice: () => {
-    if (noticeTimer) clearTimeout(noticeTimer);
-    noticeTimer = undefined;
-    set({ notice: null });
-  },
+      if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
+        rawSnapshot = payloadSnapshot;
+        snapshotRevision = undefined;
+      }
+      if (payloadPrivateState && (!rawPrivateState || get().roomId !== targetRoomId)) {
+        rawPrivateState = payloadPrivateState;
+        privateStateRevision = undefined;
+      }
 
-  subscribeLobby: async () => {
-    await sonGuessrWs.send("song.lobby.subscribeRooms");
-  },
+      const currentSnapshot = get().snapshot;
+      const currentPrivate = get().privateState;
+      const nextSnapshot =
+        (currentSnapshot?.roomId === targetRoomId ? currentSnapshot : undefined) ??
+        payloadSnapshot ??
+        null;
+      const nextPrivate =
+        (get().roomId === targetRoomId ? currentPrivate : undefined) ??
+        payloadPrivateState ??
+        null;
 
-  createRoom: async (params) => {
-    const res = await sonGuessrWs.send<{
-      roomId?: string;
-      sessionToken: string;
-      snapshot?: SonGuessrRoomSnapshot;
-      privateState?: SonGuessrPrivateState;
-    }>("song.room.create", params);
-
-    const roomId = res.roomId ?? params.roomId;
-    saveSonGuessrSessionToken(roomId, res.sessionToken);
-    resetSonGuessrStateSync();
-    rawSnapshot = res.snapshot ?? null;
-    rawPrivateState = res.privateState ?? null;
-    set({
-      roomId,
-      sessionToken: res.sessionToken,
-      snapshot: res.snapshot ?? null,
-      privateState: res.privateState ?? null,
-      roomClosedAt: null,
-    });
-  },
-
-  joinRoom: async (roomId, userName, password) => {
-    const res = await sonGuessrWs.send<{
-      roomId?: string;
-      sessionToken: string;
-      snapshot?: SonGuessrRoomSnapshot;
-      privateState?: SonGuessrPrivateState;
-    }>("song.room.join", { userName, password }, { roomId });
-
-    const canonicalRoomId = res.roomId ?? roomId;
-    saveSonGuessrSessionToken(canonicalRoomId, res.sessionToken);
-    resetSonGuessrStateSync();
-    rawSnapshot = res.snapshot ?? null;
-    rawPrivateState = res.privateState ?? null;
-    set({
-      roomId: canonicalRoomId,
-      sessionToken: res.sessionToken,
-      snapshot: res.snapshot ?? null,
-      privateState: res.privateState ?? null,
-      roomClosedAt: null,
-    });
-  },
-
-  reconnectRoom: async (roomId) => {
-    const token = getSonGuessrSessionToken(roomId);
-    if (!token) return false;
-
-    try {
-      const res = await sonGuessrWs.send<{
-        roomId?: string;
-        sessionToken: string;
-        snapshot?: SonGuessrRoomSnapshot;
-        privateState?: SonGuessrPrivateState;
-      }>("song.room.reconnect", { roomId, sessionToken: token });
-
-      const canonicalRoomId = res.roomId ?? roomId;
-      saveSonGuessrSessionToken(canonicalRoomId, res.sessionToken);
-      resetSonGuessrStateSync();
-      rawSnapshot = res.snapshot ?? null;
-      rawPrivateState = res.privateState ?? null;
       set({
-        roomId: canonicalRoomId,
-        sessionToken: res.sessionToken,
-        snapshot: res.snapshot ?? null,
-        privateState: res.privateState ?? null,
+        roomId: targetRoomId,
+        sessionToken,
+        snapshot: nextSnapshot,
+        privateState: nextPrivate,
         roomClosedAt: null,
       });
-      return true;
-    } catch (error) {
-      if (!isPermanentRoomError(error)) {
-        set({ roomId, sessionToken: token, roomClosedAt: null });
-        return true;
-      }
-      clearSonGuessrSessionToken(roomId);
-      resetSonGuessrStateSync();
-      set({
-        roomId: null,
-        sessionToken: null,
-        snapshot: null,
-        privateState: null,
-        roomClosedAt: Date.now(),
-      });
-      return false;
-    }
-  },
+    };
+
+    return {
+      connected: false,
+      rooms: [],
+      roomId: null,
+      sessionToken: null,
+      snapshot: null,
+      privateState: null,
+      roomClosedAt: null,
+      notice: null,
+
+      setNotice: (text, type = "info") => {
+        if (noticeTimer) clearTimeout(noticeTimer);
+        set({ notice: { text, type } });
+        noticeTimer = setTimeout(() => {
+          set({ notice: null });
+          noticeTimer = undefined;
+        }, 3000);
+      },
+
+      clearNotice: () => {
+        if (noticeTimer) clearTimeout(noticeTimer);
+        noticeTimer = undefined;
+        set({ notice: null });
+      },
+
+      subscribeLobby: async () => {
+        await sonGuessrWs.send("song.lobby.subscribeRooms");
+      },
+
+      createRoom: async (params) => {
+        const res = await sonGuessrWs.send<{
+          roomId?: string;
+          sessionToken: string;
+          snapshot?: SonGuessrRoomSnapshot;
+          privateState?: SonGuessrPrivateState;
+        }>("song.room.create", params);
+
+        const targetRoomId = res.roomId ?? params.roomId;
+        applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
+      },
+
+      joinRoom: async (roomId, userName, password) => {
+        const res = await sonGuessrWs.send<{
+          roomId?: string;
+          sessionToken: string;
+          snapshot?: SonGuessrRoomSnapshot;
+          privateState?: SonGuessrPrivateState;
+        }>("song.room.join", { userName, password }, { roomId });
+
+        const targetRoomId = res.roomId ?? roomId;
+        applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
+      },
+
+      reconnectRoom: async (roomId) => {
+        const token = getSonGuessrSessionToken(roomId);
+        if (!token) return false;
+
+        try {
+          const res = await sonGuessrWs.send<{
+            roomId?: string;
+            sessionToken: string;
+            snapshot?: SonGuessrRoomSnapshot;
+            privateState?: SonGuessrPrivateState;
+          }>("song.room.reconnect", { roomId, sessionToken: token });
+
+          const targetRoomId = res.roomId ?? roomId;
+          applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
+          return true;
+        } catch (error) {
+          if (!isPermanentRoomError(error)) {
+            set({ roomId, sessionToken: token, roomClosedAt: null });
+            return true;
+          }
+          clearSonGuessrSessionToken(roomId);
+          resetSonGuessrStateSync();
+          set({
+            roomId: null,
+            sessionToken: null,
+            snapshot: null,
+            privateState: null,
+            roomClosedAt: Date.now(),
+          });
+          return false;
+        }
+      },
 
   leaveRoom: async () => {
     const { roomId, sessionToken } = get();
@@ -249,7 +261,8 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => ({
       sessionToken: sessionToken ?? undefined,
     });
   },
-}));
+};
+});
 
 export const useSongGuessrStore = useSonGuessrStore;
 
