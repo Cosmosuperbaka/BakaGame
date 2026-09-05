@@ -95,7 +95,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - 同一事实只能通过一个生产通道发布。若版本化状态已经包含该变化，不得再广播客户端不消费的重复事件；聊天等列表变化也不得同时由事件追加和状态补丁追加。
 - 文本输入、高频草稿和自动保存必须防抖或合并，连续修改只提交最新值；不得按每个按键触发全房广播。
 - 生产 WebSocket 必须优先保证各平台连接兼容性。当前 Bun 无法按客户端稳定控制 `permessage-deflate` 协商，且该扩展会导致部分 iOS WebKit 客户端无法连接，因此全局关闭消息压缩；只有在运行时支持可靠的按客户端协商且完成 iOS 回归后才允许重新启用。
-- 修改公开快照、私有状态、广播频率或传输封包时，必须运行 `Server/test/network-capacity.test.ts`。基线为 150 个 WhoIsFaker 在线玩家、每秒 12 次状态变化、每分钟一次全量校准，并计入 WebSocket 帧与 15% 传输余量；估算出口不得超过 6 Mbps。
+- 修改公开快照、私有状态、广播频率或传输封包时，必须运行 `Server/test/NetworkCapacity.test.ts`。基线为 150 个 WhoIsFaker 在线玩家、每秒 12 次状态变化、每分钟一次全量校准，并计入 WebSocket 帧与 15% 传输余量；估算出口不得超过 6 Mbps。
 
 ## 8. 杜绝过度防御性编程、掩耳盗铃式兜底与补丁式修 Bug
 
@@ -202,9 +202,9 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   - 网关路由（`App.ts`）对称消费各游戏的专用解析器，并以平等的路由前缀（如 `/api/whoisfaker/ws` 与 `/api/songuessr/ws`）挂载独立的 WebSocket 会话。
 
 ### 11.3 服务编排与依赖注入对等性 (Equal Service Orchestration & Dependency Injection)
-- **领域服务命名与别名统一**：
-  - 服务端领域服务统一提供符合领域语义的导出（`RoomService` 导出 `WhoIsFakerService` 别名，与 `SonGuessrService` 对齐）。
-  - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService`（及 `songGuessrService`）具有完全一致的一级依赖注入地位。
+- **领域服务命名与单一真相源**：
+  - 服务端领域服务统一提供符合领域语义的命名与导出（`RoomService` 导出 `WhoIsFakerService` 语义别名，与 `SonGuessrService` 严格对齐）。
+  - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService` 具有完全一致的一级依赖注入地位，坚决杜绝 `songGuessrService` 或 `roomService` 等双轨冗余别名字段。
   - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
 
 ## 12. 边界情况与跨环境适应性工程铁律 (Environment & Edge Cases Invariants)

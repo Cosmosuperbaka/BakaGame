@@ -44,10 +44,10 @@ npm run verify
 
 ```bash
 cd Server
-bun test test/room-service.test.ts
+bun test test/RoomService.test.ts
 
 cd Client
-npx vitest run src/lib/ws.test.ts
+npx vitest run src/lib/WebsocketClient.test.ts
 npx playwright test e2e/app.spec.ts
 ```
 
@@ -63,7 +63,7 @@ npx playwright test e2e/app.spec.ts
 
 - 修复缺陷时至少补一条能在修复前失败的回归测试。
 - 业务状态机优先从 `RoomService.execute` 真实入口测试，不直接调用私有实现。
-- 纯规则和连接注册表使用无网络的单元测试；HTTP/WS 交互放在 `app.test.ts` 或 Playwright。
+- 纯规则和连接注册表使用无网络的单元测试；HTTP/WS 交互放在 `App.test.ts` 或 Playwright。
 - 每条测试独立创建房间、连接与临时目录，禁止依赖用例顺序。
 - Vitest 测试只放在 `Client/src`；Playwright 测试只放在 `Client/e2e`。
 - 覆盖率用于识别空白区域，不以低价值断言追求全局百分比。新增核心逻辑必须覆盖主要分支。

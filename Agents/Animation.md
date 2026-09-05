@@ -36,7 +36,7 @@
 - `hover` 可以使用简单的线性或匀速渐变（颜色、边框、阴影）。
 - **其余所有动效**（点击反馈、点击后的过渡、进出场、布局变化、跨区域位移）必须是非线性的：使用 `spring.*` 弹性过渡，或 `duration.*` 配 `ease.*` 曲线。
 - 禁止 `ease: "linear"`，唯一例外是持续旋转的加载指示（`spinner`），因为匀速旋转本身就是「进行中」的正确表达。
-- 禁止 framer-motion 的字符串简写（`"easeOut"`、`"easeInOut"` 等），必须从 `lib/motion.ts` 取值。
+- 禁止 framer-motion 的字符串简写（`"easeOut"`、`"easeInOut"` 等），必须从 `lib/Motion.ts` 取值。
 
 ### 2.4 点击之间必须有状态延续或视觉因果
 
@@ -48,16 +48,16 @@
 
 ### 2.5 禁止写死数值
 
-- 所有时长、曲线、弹性参数、缩放幅度只能取自 `Client/src/lib/motion.ts`。
+- 所有时长、曲线、弹性参数、缩放幅度只能取自 `Client/src/lib/Motion.ts`。
 - 业务组件内不得出现裸数字时长、裸贝塞尔数组或自行编写的 `whileTap`。
-- 需要新的动效语汇时，先在 `lib/motion.ts` 中定义具名令牌并写清适用场景，再在组件中引用。
+- 需要新的动效语汇时，先在 `lib/Motion.ts` 中定义具名令牌并写清适用场景，再在组件中引用。
 
 ### 2.6 禁止使用不存在的动画类
 
 - 项目**未安装** `tailwindcss-animate`。`animate-in`、`animate-out`、`zoom-in-95`、`fade-out-0`、`slide-in-from-top-2` 等类名全部无效，写了等于没有动画。
 - Radix 浮层的开合动画只有两种正确做法：
   - 能包 `AnimatePresence` 的（`Dialog`）由 framer-motion 接管，退出动画播完再卸载。
-  - 只受 `data-state` 驱动、无法包裹的（`Select`、`Tooltip`）由 `index.css` 中的 `overlay-emerge` / `overlay-retract` 关键帧提供，曲线与 `lib/motion.ts` 保持一致。
+  - 只受 `data-state` 驱动、无法包裹的（`Select`、`Tooltip`）由 `index.css` 中的 `overlay-emerge` / `overlay-retract` 关键帧提供，曲线与 `lib/Motion.ts` 保持一致。
 
 ## 3. 六个维度
 
@@ -163,7 +163,7 @@
 
 ## 5. 编排变体清单
 
-`lib/motion.ts` 中的具名变体及其语义。新增变体必须在此登记。
+`lib/Motion.ts` 中的具名变体及其语义。新增变体必须在此登记。
 
 | 变体 | 语义 |
 |---|---|
