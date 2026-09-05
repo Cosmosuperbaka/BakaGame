@@ -95,7 +95,7 @@ type(scope): 中文摘要
 - `content` 为按变更类型聚合的键值对象（如 `feat`、`fix`、`chore`、`perf`、`style`、`refactor`、`docs` 等）。
 - **按需填入**：某版本有对应类型更新就填入对应类型；无对应类型更新或未填写的类型**直接省略**，严禁填写空数组或空字符串占位。前端页面仅渲染存在有效更新的类型，无更新的类型在对应版本中绝不显示。
 - 更新日志直接从源码导入，随前端构建产物发布，不放入 `public/` 的固定 URL。
-- 构建期生成的数据同样不得落在 `public/`：文件名不带 hash，CDN 会按 `immutable` 长期缓存，内容更新后老用户取不到。表情包清单由 `vite.config.ts` 的 `sticker-manifest` 插件以虚拟模块 `virtual:sticker-manifest` 提供，在 `lib/stickers.ts` 中用动态 `import` 按需加载，声明见 `Client/src/vite-env.d.ts`。
+- 构建期生成的数据同样不得落在 `public/`：文件名不带 hash，CDN 会按 `immutable` 长期缓存，内容更新后老用户取不到。表情包清单由 `vite.config.ts` 的 `sticker-manifest` 插件以虚拟模块 `virtual:sticker-manifest` 提供，在 `lib/Stickers.ts` 中用动态 `import` 按需加载，声明见 `Client/src/vite-env.d.ts`。
 
 ### content 语法与语气规范
 

@@ -22,13 +22,13 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
-`Server/src/transport/protocol.ts` 与 `RoomService` 的业务校验；应用校验也不能替代代理层的
+`Server/src/transport/WhoIsFakerProtocol.ts` 与 `RoomService` 的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
 ## 带宽与容量基线
 
 实时状态采用带修订号的增量同步，首次连接、重连、修订缺口和周期校准才发送全量。
-生产发布前必须运行 `bun test test/network-capacity.test.ts`；其固定验收目标是单台
+生产发布前必须运行 `bun test test/NetworkCapacity.test.ts`；其固定验收目标是单台
 6 Mbps 出口承载 150 名 WhoIsFaker 玩家，并在每秒 12 次房间变化与每分钟一次全量校准下
 保留 15% 的 TLS/TCP/IP 传输余量。代理的带宽监控应按应用出口持续核对这一预算；超过预算时
 优先检查新增快照字段、重复事件和广播频率，不得通过取消最终同步或延长到不可接受的状态延迟来过测。

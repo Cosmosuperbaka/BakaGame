@@ -2,7 +2,7 @@
 
 本文档记录网易云音乐 API Enhanced 的官方资料、图片中的接口注意事项，以及
 BakaGame Songuessr 的实际接入约束。所有后续修改
-`Server/src/infrastructure/netease-music-provider.ts` 或 Songuessr 音乐请求时，必须先阅读本文档。
+`Server/src/infrastructure/NeteaseMusicProvider.ts` 或 Songuessr 音乐请求时，必须先阅读本文档。
 
 ## 资料与版本
 

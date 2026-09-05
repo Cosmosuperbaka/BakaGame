@@ -21,8 +21,8 @@
 - 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
 - 条件类名使用项目现有的 `cn` 工具，组件变体沿用 `class-variance-authority`。
 - 动效使用项目已有的 `framer-motion`，只用于状态切换、列表变化、面板进入退出和必要反馈。
-- 动效令牌统一维护于 `Client/src/lib/motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
-- 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/motion.ts` 保持一致。
+- 动效令牌统一维护于 `Client/src/lib/Motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
+- 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/Motion.ts` 保持一致。
 - 全局色值、圆角或字体基线应在现有主题变量和公共组件中统一维护，避免在业务组件中散落重复定义。
 
 ## 3. 颜色与信息层级
