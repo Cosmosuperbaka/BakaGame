@@ -253,3 +253,34 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
   expect(createErrorPacket("err", "CODE", "message").type).toBe("error");
   expect(createEvent("room.snapshot", {}).type).toBe("event");
 });
+
+test("WhoIsFaker 协议严格拦截 payload null 与未声明脏字段", () => {
+  // 1. 拒绝 payload: null
+  expect(() =>
+    parseWhoIsFakerMessage({
+      id: "null-payload",
+      type: "room.leave",
+      payload: null,
+    }),
+  ).toThrow(AppError);
+
+  // 2. 拒绝未声明的信封脏字段
+  expect(() =>
+    parseWhoIsFakerMessage({
+      id: "extra-envelope",
+      type: "room.leave",
+      payload: {},
+      extraProp: "attack",
+    }),
+  ).toThrow(AppError);
+
+  // 3. 拒绝未声明的 payload 脏字段
+  expect(() =>
+    parseWhoIsFakerMessage({
+      id: "extra-payload",
+      type: "room.leave",
+      payload: { unexpected: true },
+    }),
+  ).toThrow(AppError);
+});
+
