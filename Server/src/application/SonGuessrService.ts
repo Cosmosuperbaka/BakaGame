@@ -521,7 +521,13 @@ export class SonGuessrService {
     this.publishRoom(room);
     this.publishLobby();
     this.log("song.room.created", room.id, player.id);
-    return { roomId, playerId: player.id, sessionToken: player.sessionToken };
+    return {
+      roomId,
+      playerId: player.id,
+      sessionToken: player.sessionToken,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: this.buildPrivateState(room, player),
+    };
   }
 
   private joinRoom(
@@ -569,7 +575,13 @@ export class SonGuessrService {
     this.publishRoom(room);
     this.publishLobby();
     this.log("song.room.joined", room.id, player.id);
-    return { roomId: room.id, playerId: player.id, sessionToken: player.sessionToken };
+    return {
+      roomId: room.id,
+      playerId: player.id,
+      sessionToken: player.sessionToken,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: this.buildPrivateState(room, player),
+    };
   }
 
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
@@ -608,7 +620,13 @@ export class SonGuessrService {
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
-    return { roomId: room.id, playerId: player.id, sessionToken: player.sessionToken };
+    return {
+      roomId: room.id,
+      playerId: player.id,
+      sessionToken: player.sessionToken,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: this.buildPrivateState(room, player),
+    };
   }
 
   private leaveRoom(connection: ConnectionRecord) {
