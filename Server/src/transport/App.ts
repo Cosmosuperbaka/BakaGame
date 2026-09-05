@@ -28,13 +28,153 @@ const messageAckCache = new LRUCache<string, object>({
   max: 2048,
   ttl: 15_000,
 });
-const inFlightMessages = new Set<string>();
+type InFlightOutcome =
+  | { success: true; payload: unknown }
+  | { success: false; error: unknown };
+
+const inFlightOperations = new Map<string, Promise<InFlightOutcome>>();
 
 const sendPacket = (
   ws: { send: (data: string) => unknown },
   payload: unknown,
 ) => {
   ws.send(JSON.stringify(payload));
+};
+
+const executeWithDeduplication = async ({
+  ws,
+  connectionId,
+  parsed,
+  startTime,
+  logger,
+  execute,
+  serviceName,
+}: {
+  ws: { send: (data: string) => unknown };
+  connectionId: string;
+  parsed: { id: string; type: string; traceId?: string };
+  startTime: number;
+  logger: EventLogger;
+  execute: () => Promise<unknown>;
+  serviceName?: string;
+}) => {
+  const parsedId = parsed.id;
+  const parsedType = parsed.type;
+  const traceId = parsed.traceId;
+  const dedupKey = `${connectionId}:${parsedId}`;
+
+  // 1. 已有完成缓存：直接回放 ACK
+  if (messageAckCache.has(dedupKey)) {
+    sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
+    return;
+  }
+
+  // 2. 正在飞行中：等待其结果并回放响应，避免网络重传被静默丢弃
+  const inFlight = inFlightOperations.get(dedupKey);
+  if (inFlight) {
+    const outcome = await inFlight;
+    const durationMs = performance.now() - startTime;
+    if (outcome.success) {
+      logger.logOperation({
+        status: 200,
+        durationMs,
+        identifier: connectionId,
+        action: `WS ${parsedType} (replay)`,
+      });
+      sendPacket(ws, createAck(parsed, outcome.payload));
+    } else if (isAppError(outcome.error)) {
+      logger.logOperation({
+        status: 400,
+        durationMs,
+        identifier: connectionId,
+        action: `WS ${parsedType} (replay)`,
+        level: "WARN",
+      });
+      sendPacket(
+        ws,
+        createErrorPacket(parsedId, outcome.error.code, outcome.error.message, outcome.error.details, traceId),
+      );
+    } else {
+      logger.logOperation({
+        status: 500,
+        durationMs,
+        identifier: connectionId,
+        action: `WS ${parsedType} (replay)`,
+        level: "ERROR",
+      });
+      sendPacket(
+        ws,
+        createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+      );
+    }
+    return;
+  }
+
+  // 3. 首次执行：启动执行并缓存 Promise
+  const executePromise = (async (): Promise<InFlightOutcome> => {
+    try {
+      const payload = await execute();
+      return { success: true, payload };
+    } catch (error) {
+      return { success: false, error };
+    }
+  })();
+
+  inFlightOperations.set(dedupKey, executePromise);
+  let outcome: InFlightOutcome;
+  try {
+    outcome = await executePromise;
+  } finally {
+    inFlightOperations.delete(dedupKey);
+  }
+
+  const durationMs = performance.now() - startTime;
+  if (outcome.success) {
+    messageAckCache.set(dedupKey, (outcome.payload as object) ?? {});
+    logger.logOperation({
+      status: 200,
+      durationMs,
+      identifier: connectionId,
+      action: `WS ${parsedType}`,
+    });
+    sendPacket(ws, createAck(parsed, outcome.payload));
+  } else {
+    const error = outcome.error;
+    if (isAppError(error)) {
+      logger.logOperation({
+        status: 400,
+        durationMs,
+        identifier: connectionId,
+        action: `WS ${parsedType}`,
+        level: "WARN",
+      });
+      sendPacket(
+        ws,
+        createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
+      );
+      return;
+    }
+
+    const logPrefix = serviceName ? `${serviceName} ` : "";
+    logger.error(`${logPrefix}WS 内部异常 [${parsedType}]`, {
+      ...describeError(error),
+      connectionId,
+      traceId,
+      parsedId,
+    });
+
+    logger.logOperation({
+      status: 500,
+      durationMs,
+      identifier: connectionId,
+      action: `WS ${parsedType}`,
+      level: "ERROR",
+    });
+    sendPacket(
+      ws,
+      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+    );
+  }
 };
 
 const isPrivateLanHost = (hostname: string): boolean => {
@@ -266,33 +406,15 @@ export const createApp = ({
           parsedId = parsed.id;
           parsedType = parsed.type;
           traceId = parsed.traceId;
-          const dedupKey = `${connectionId}:${parsedId}`;
 
-          if (messageAckCache.has(dedupKey)) {
-            sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
-            return;
-          }
-          if (inFlightMessages.has(dedupKey)) {
-            return;
-          }
-          inFlightMessages.add(dedupKey);
-
-          let payload: unknown;
-          try {
-            payload = await fakerService.execute(connectionId, parsed);
-          } finally {
-            inFlightMessages.delete(dedupKey);
-          }
-
-          messageAckCache.set(dedupKey, (payload as object) ?? {});
-          const durationMs = performance.now() - startTime;
-          logger.logOperation({
-            status: 200,
-            durationMs,
-            identifier: connectionId,
-            action: `WS ${parsedType}`,
+          await executeWithDeduplication({
+            ws,
+            connectionId,
+            parsed,
+            startTime,
+            logger,
+            execute: () => fakerService.execute(connectionId, parsed),
           });
-          sendPacket(ws, createAck(parsed, payload));
         } catch (error) {
           const durationMs = performance.now() - startTime;
           if (isAppError(error)) {
@@ -392,32 +514,16 @@ export const createApp = ({
           parsedId = parsed.id;
           parsedType = parsed.type;
           traceId = parsed.traceId;
-          const dedupKey = `${connectionId}:${parsedId}`;
 
-          if (messageAckCache.has(dedupKey)) {
-            sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
-            return;
-          }
-          if (inFlightMessages.has(dedupKey)) {
-            return;
-          }
-          inFlightMessages.add(dedupKey);
-
-          let payload: unknown;
-          try {
-            payload = await songService.execute(connectionId, parsed);
-          } finally {
-            inFlightMessages.delete(dedupKey);
-          }
-
-          messageAckCache.set(dedupKey, (payload as object) ?? {});
-          logger.logOperation({
-            status: 200,
-            durationMs: performance.now() - startedAt,
-            identifier: connectionId,
-            action: `WS ${parsedType}`,
+          await executeWithDeduplication({
+            ws,
+            connectionId,
+            parsed,
+            startTime: startedAt,
+            logger,
+            execute: () => songService.execute(connectionId, parsed),
+            serviceName: "SonGuessr",
           });
-          sendPacket(ws, createAck(parsed, payload));
         } catch (error) {
           if (isAppError(error)) {
             logger.logOperation({

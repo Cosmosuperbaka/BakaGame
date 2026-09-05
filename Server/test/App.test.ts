@@ -455,3 +455,46 @@ test("RoomService.notifyShutdown 会向所有在线连接广播停机通知", as
   }
 });
 
+test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包", async () => {
+  const { port, stop } = startTestServer();
+
+  try {
+    const socket = await openSocket(port);
+    const messages: Array<{ type?: string; id?: string }> = [];
+    socket.onmessage = (event) => {
+      messages.push(JSON.parse(event.data as string));
+    };
+
+    const req = {
+      id: "req-dedup-concurrency",
+      type: "lobby.subscribeRooms",
+      payload: {},
+    };
+
+    // 连续并发发送两个完全相同的帧，模拟网络重传
+    socket.send(JSON.stringify(req));
+    socket.send(JSON.stringify(req));
+
+    // 等待两次回应
+    const start = Date.now();
+    while (
+      messages.filter((m) => m.id === "req-dedup-concurrency").length < 2 &&
+      Date.now() - start < 3000
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    const acks = messages.filter(
+      (m) => m.type === "ack" && m.id === "req-dedup-concurrency",
+    );
+    // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
+    expect(acks).toHaveLength(2);
+    expect(acks[0]).toEqual(acks[1]);
+
+    socket.close();
+  } finally {
+    await stop();
+  }
+});
+
+
