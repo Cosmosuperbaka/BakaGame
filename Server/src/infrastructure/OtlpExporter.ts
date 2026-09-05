@@ -46,6 +46,15 @@ export const formatOtlpSpanId = (spanId?: string): string => {
   return clean.padEnd(16, "0");
 };
 
+export const toUnixNanoString = (timeMs: number): string => {
+  if (!Number.isFinite(timeMs) || timeMs < 0) {
+    return String(BigInt(Date.now()) * 1_000_000n);
+  }
+  const ms = Math.trunc(timeMs);
+  const nanos = Math.round((timeMs - ms) * 1_000_000);
+  return String(BigInt(ms) * 1_000_000n + BigInt(nanos));
+};
+
 const toAnyValue = (v: unknown): Record<string, unknown> => {
   if (typeof v === "boolean") return { boolValue: v };
   if (typeof v === "number") {
@@ -92,7 +101,7 @@ export class OtlpExporter {
 
     if (this.logsEndpoint || this.tracesEndpoint) {
       this.flushTimer = setInterval(() => {
-        void this.flush();
+        void this.flush().catch(() => {});
       }, 3000);
       if (typeof this.flushTimer?.unref === "function") {
         this.flushTimer.unref();
@@ -180,35 +189,35 @@ export class OtlpExporter {
     this.logBuffer = [];
 
     this.flushingLogsPromise = (async () => {
-      const resourceLogs = [
-        {
-          resource: {
-            attributes: this.getResourceAttributes(),
-          },
-          scopeLogs: [
-            {
-              scope: { name: "bakagame-logger" },
-              logRecords: batch.map((item) => ({
-                timeUnixNano: String(BigInt(item.timestamp) * 1_000_000n),
-                severityNumber: item.level === "ERROR" ? 17 : item.level === "WARN" ? 13 : 9,
-                severityText: item.level,
-                body: { stringValue: item.message },
-                attributes: Object.entries({
-                  ...(item.attributes ?? {}),
-                  ...(item.traceId ? { trace_id: item.traceId } : {}),
-                }).map(([k, v]) => ({
-                  key: k,
-                  value: {
-                    stringValue: typeof v === "string" ? v : JSON.stringify(v),
-                  },
-                })),
-              })),
-            },
-          ],
-        },
-      ];
-
       try {
+        const resourceLogs = [
+          {
+            resource: {
+              attributes: this.getResourceAttributes(),
+            },
+            scopeLogs: [
+              {
+                scope: { name: "bakagame-logger" },
+                logRecords: batch.map((item) => ({
+                  timeUnixNano: toUnixNanoString(item.timestamp),
+                  severityNumber: item.level === "ERROR" ? 17 : item.level === "WARN" ? 13 : 9,
+                  severityText: item.level,
+                  body: { stringValue: item.message },
+                  attributes: Object.entries({
+                    ...(item.attributes ?? {}),
+                    ...(item.traceId ? { trace_id: item.traceId } : {}),
+                  }).map(([k, v]) => ({
+                    key: k,
+                    value: {
+                      stringValue: typeof v === "string" ? v : JSON.stringify(v),
+                    },
+                  })),
+                })),
+              },
+            ],
+          },
+        ];
+
         await fetch(this.logsEndpoint!, {
           method: "POST",
           headers: this.headers,
@@ -216,7 +225,7 @@ export class OtlpExporter {
           signal: AbortSignal.timeout(5000),
         });
       } catch {
-        // 观测服务上报失败时不阻塞业务主流程
+        // 观测服务上报失败或组装异常时不阻塞业务主流程
       } finally {
         this.flushingLogsPromise = null;
       }
@@ -236,37 +245,37 @@ export class OtlpExporter {
     this.spanBuffer = [];
 
     this.flushingSpansPromise = (async () => {
-      const resourceSpans = [
-        {
-          resource: {
-            attributes: this.getResourceAttributes(),
-          },
-          scopeSpans: [
-            {
-              scope: { name: "bakagame-tracer", version: "1.0.0" },
-              spans: batch.map((item) => ({
-                traceId: formatOtlpTraceId(item.traceId),
-                spanId: formatOtlpSpanId(item.spanId),
-                ...(item.parentSpanId ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) } : {}),
-                name: item.name,
-                kind: 1, // SPAN_KIND_INTERNAL
-                startTimeUnixNano: String(BigInt(item.startTime) * 1_000_000n),
-                endTimeUnixNano: String(BigInt(item.endTime) * 1_000_000n),
-                attributes: Object.entries(item.attributes ?? {}).map(([k, v]) => ({
-                  key: k,
-                  value: toAnyValue(v),
-                })),
-                status: {
-                  code: item.status === "ERROR" ? 2 : 1,
-                  ...(item.statusMessage ? { message: item.statusMessage } : {}),
-                },
-              })),
-            },
-          ],
-        },
-      ];
-
       try {
+        const resourceSpans = [
+          {
+            resource: {
+              attributes: this.getResourceAttributes(),
+            },
+            scopeSpans: [
+              {
+                scope: { name: "bakagame-tracer", version: "1.0.0" },
+                spans: batch.map((item) => ({
+                  traceId: formatOtlpTraceId(item.traceId),
+                  spanId: formatOtlpSpanId(item.spanId),
+                  ...(item.parentSpanId ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) } : {}),
+                  name: item.name,
+                  kind: 1, // SPAN_KIND_INTERNAL
+                  startTimeUnixNano: toUnixNanoString(item.startTime),
+                  endTimeUnixNano: toUnixNanoString(item.endTime),
+                  attributes: Object.entries(item.attributes ?? {}).map(([k, v]) => ({
+                    key: k,
+                    value: toAnyValue(v),
+                  })),
+                  status: {
+                    code: item.status === "ERROR" ? 2 : 1,
+                    ...(item.statusMessage ? { message: item.statusMessage } : {}),
+                  },
+                })),
+              },
+            ],
+          },
+        ];
+
         await fetch(this.tracesEndpoint!, {
           method: "POST",
           headers: this.headers,
@@ -274,7 +283,7 @@ export class OtlpExporter {
           signal: AbortSignal.timeout(5000),
         });
       } catch {
-        // 观测服务上报失败时不阻塞业务主流程
+        // 观测服务上报失败或组装异常时不阻塞业务主流程
       } finally {
         this.flushingSpansPromise = null;
       }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { OtlpExporter } from "../src/infrastructure/OtlpExporter";
+import { OtlpExporter, toUnixNanoString } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createApp } from "../src/transport/App";
 import { RoomService } from "../src/application/RoomService";
@@ -354,4 +354,65 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
   );
   expect(rejectNestedRes.status).toBe(422);
 });
+
+test("toUnixNanoString 兼容整型与高精度浮点毫秒并防止 BigInt RangeError", () => {
+  // 1. 整数毫秒
+  expect(toUnixNanoString(1700000000000)).toBe("1700000000000000000");
+
+  // 2. 浮点毫秒 (如 Date.now() - performance.now() 产生的非整数时间戳)
+  const floatMs = 1725553948737.4182;
+  const nanoStr = toUnixNanoString(floatMs);
+  expect(nanoStr.startsWith("1725553948737418")).toBe(true);
+  expect(() => BigInt(nanoStr)).not.toThrow();
+
+  // 3. 边界值：NaN, 负数, Infinity 回退到当前时间纳秒且不崩溃
+  expect(() => toUnixNanoString(Number.NaN)).not.toThrow();
+  expect(() => toUnixNanoString(-100)).not.toThrow();
+  expect(() => toUnixNanoString(Infinity)).not.toThrow();
+});
+
+test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandledRejection", async () => {
+  let capturedTrace: any = null;
+  const mockServer = Bun.serve({
+    port: 0,
+    fetch(req) {
+      return req.json().then((body) => {
+        capturedTrace = body;
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+    },
+  });
+
+  const exporter = new OtlpExporter({
+    endpoint: `http://127.0.0.1:${mockServer.port}/otlp`,
+  });
+
+  // 模拟从 EventLogger.logOperation 传入的浮点 startTime
+  const now = 1725553948738;
+  const durationMs = 0.5818;
+  exporter.enqueueSpan({
+    name: "WS room.join",
+    startTime: now - durationMs, // 1725553948737.4182 (浮点数)
+    endTime: now,
+    status: "OK",
+  });
+
+  exporter.enqueue({
+    timestamp: now + 0.123, // 浮点 timestamp
+    level: "INFO",
+    message: "浮点打点",
+  });
+
+  // 必须平稳 flush，不抛出 RangeError: Not an integer
+  await expect(exporter.flush()).resolves.toBeUndefined();
+  await exporter.shutdown();
+  mockServer.stop(true);
+
+  expect(capturedTrace).toBeTruthy();
+  const span = capturedTrace.resourceSpans[0].scopeSpans[0].spans[0];
+  expect(span.name).toBe("WS room.join");
+  expect(span.startTimeUnixNano.startsWith("1725553948737418")).toBe(true);
+  expect(span.endTimeUnixNano).toBe("1725553948738000000");
+});
+
 
