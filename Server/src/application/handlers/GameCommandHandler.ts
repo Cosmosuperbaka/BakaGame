@@ -1,5 +1,5 @@
 import type { ConnectionRecord } from "../../domain/Model";
-import type { ClientMessage } from "../../transport/Protocol";
+import type { ClientMessage } from "../../shared/Index";
 import {
   type CommandHandler,
   type CommandResult,

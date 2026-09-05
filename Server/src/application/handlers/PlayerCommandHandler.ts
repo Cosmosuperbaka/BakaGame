@@ -1,4 +1,4 @@
-﻿import { AppError } from "../../domain/Errors";
+import { AppError } from "../../domain/Errors";
 import type {
   ConnectionRecord,
   PlayerRecord,
@@ -6,7 +6,7 @@ import type {
 } from "../../domain/Model";
 import { normalizeName } from "../../domain/Rules";
 import type { LogEntry } from "../../infrastructure/EventLogger";
-import type { ClientMessage } from "../../transport/Protocol";
+import type { ClientMessage } from "../../shared/Index";
 import {
   type CommandHandler,
   ownsCommand,

@@ -1,7 +1,7 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import type { ConnectionRecord } from "../src/shared/Index";
-import { createAck } from "../src/transport/Protocol";
+import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
 
