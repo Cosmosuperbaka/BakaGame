@@ -11,6 +11,7 @@ export const SONGUESSR_PHASES = [
 export type SonGuessrPhase = (typeof SONGUESSR_PHASES)[number];
 
 export const SONGUESSR_MAX_PLAYERS = 16;
+export const MAX_SONGUESSR_COOKIE_LENGTH = 16_384;
 
 export type SongQuestionType = "song" | "anime";
 export type SongQuestionMode = "manual" | "automatic";
