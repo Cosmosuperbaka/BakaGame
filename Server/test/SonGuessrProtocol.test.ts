@@ -124,3 +124,63 @@ test("SonGuessr 协议只解析扫码与 Cookie 登录命令", () => {
     payload: { cookie: "MUSIC_U=test" },
   })).toMatchObject({ type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } });
 });
+
+test("SonGuessr 协议严格拦截 payload null 与未知属性", () => {
+  // 1. 拒绝 payload: null
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "null-payload",
+      type: "song.room.leave",
+      payload: null,
+    }),
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+
+  // 2. 拒绝未声明的信封脏字段
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "extra-envelope",
+      type: "song.room.leave",
+      payload: {},
+      extraField: "hacker",
+    }),
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+
+  // 3. 拒绝未声明的 payload 脏字段
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "extra-payload",
+      type: "song.room.leave",
+      payload: { dirty: 123 },
+    }),
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
+test("SonGuessr 协议支持 16,384 字符合法 Cookie 并拦截超长凭据", () => {
+  // 501~16384 字符的 Cookie 应被正常解析放行
+  const validLongCookie = "MUSIC_U=" + "a".repeat(1000);
+  const parsed = parseSonGuessrMessage({
+    id: "long-cookie",
+    type: "song.auth.useCookie",
+    payload: { cookie: validLongCookie },
+  });
+  expect((parsed.payload as { cookie: string }).cookie).toBe(validLongCookie);
+
+  const maxValidCookie = "a".repeat(16_384);
+  const parsedMax = parseSonGuessrMessage({
+    id: "max-cookie",
+    type: "song.auth.useCookie",
+    payload: { cookie: maxValidCookie },
+  });
+  expect((parsedMax.payload as { cookie: string }).cookie).toBe(maxValidCookie);
+
+  // 超过 16384 字符必须被拦截
+  const tooLongCookie = "a".repeat(16_385);
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "too-long-cookie",
+      type: "song.auth.useCookie",
+      payload: { cookie: tooLongCookie },
+    }),
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+

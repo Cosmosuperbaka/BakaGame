@@ -14,7 +14,7 @@ import type {
   MusicLoginSession,
   MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
-import { SONGUESSR_MAX_PLAYERS } from "../shared/Index";
+import { MAX_SONGUESSR_COOKIE_LENGTH, SONGUESSR_MAX_PLAYERS } from "../shared/Index";
 import type {
   ChatMessage,
   SongDetails,
@@ -1000,7 +1000,7 @@ export class SonGuessrService {
 
   private requireMusicCookie(value: string): string {
     const cookie = value.trim();
-    if (!cookie || cookie.length > 16_384) {
+    if (!cookie || cookie.length > MAX_SONGUESSR_COOKIE_LENGTH) {
       throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态无效");
     }
     return cookie;

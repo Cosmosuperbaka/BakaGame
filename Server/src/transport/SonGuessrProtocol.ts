@@ -1,11 +1,12 @@
-import { t } from "elysia";
+import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
-import type {
-  RoomVisibility,
-  SongArtistFilter,
-  SonGuessrClientMessage,
-  SonGuessrSettings,
+import {
+  MAX_SONGUESSR_COOKIE_LENGTH,
+  type RoomVisibility,
+  type SongArtistFilter,
+  type SonGuessrClientMessage,
+  type SonGuessrSettings,
 } from "../shared/Index";
 
 export const SongVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
@@ -18,271 +19,306 @@ export const MinPopularitySchema = t.Union([
   t.Literal(100_000),
 ]);
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+export const SongPlaylistFilterSchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 64 }),
+    name: t.Optional(t.String({ maxLength: 128 })),
+    songCount: t.Optional(t.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
 
-const MAX_DEFAULT_STRING_LENGTH = 500;
+export const SongArtistFilterSchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 64 }),
+    name: t.String({ minLength: 1, maxLength: 128 }),
+  },
+  { additionalProperties: false },
+);
 
-const readString = (
-  value: unknown,
-  field: string,
-  options: { optional?: boolean; allowEmpty?: boolean; maxLength?: number } = {},
-): string | undefined => {
-  if (value == null && options.optional) return undefined;
-  if (typeof value !== "string") throw new AppError("INVALID_MESSAGE", `${field} 必须为字符串`);
-  const maxLength = options.maxLength ?? MAX_DEFAULT_STRING_LENGTH;
-  if (value.length > maxLength) {
-    throw new AppError("INVALID_MESSAGE", `${field} 长度不能超过 ${maxLength} 个字符`);
-  }
-  if (!options.allowEmpty && !value.trim()) throw new AppError("INVALID_MESSAGE", `${field} 不能为空`);
-  return value;
+export const SongAutoFiltersSchema = t.Object(
+  {
+    playlist: t.Optional(SongPlaylistFilterSchema),
+    artists: t.Optional(t.Array(SongArtistFilterSchema)),
+    minPopularity: t.Optional(MinPopularitySchema),
+  },
+  { additionalProperties: false },
+);
+
+const EmptyPayloadSchema = t.Object({}, { additionalProperties: false });
+
+const createMessageSchema = <TType extends string, TPayload extends TSchema>(
+  type: TType,
+  payload: TPayload,
+) =>
+  t.Object(
+    {
+      id: t.String({ minLength: 1, maxLength: 128 }),
+      type: t.Literal(type),
+      traceId: t.Optional(t.String({ maxLength: 128 })),
+      roomId: t.Optional(t.String({ maxLength: 32 })),
+      sessionToken: t.Optional(t.String({ maxLength: 128 })),
+      payload,
+    },
+    { additionalProperties: false },
+  );
+
+export const SonGuessrMessageSchemas = {
+  "song.lobby.subscribeRooms": createMessageSchema("song.lobby.subscribeRooms", EmptyPayloadSchema),
+  "song.room.create": createMessageSchema(
+    "song.room.create",
+    t.Object(
+      {
+        roomId: t.String({ minLength: 1, maxLength: 32 }),
+        name: t.String({ minLength: 1, maxLength: 40 }),
+        visibility: SongVisibilitySchema,
+        password: t.Optional(t.String({ maxLength: 64 })),
+        allowSpectators: t.Boolean(),
+        userName: t.String({ minLength: 1, maxLength: 32 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.join": createMessageSchema(
+    "song.room.join",
+    t.Object(
+      {
+        userName: t.String({ minLength: 1, maxLength: 32 }),
+        password: t.Optional(t.String({ maxLength: 64 })),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.reconnect": createMessageSchema(
+    "song.room.reconnect",
+    t.Object(
+      {
+        roomId: t.String({ minLength: 1, maxLength: 32 }),
+        sessionToken: t.String({ minLength: 1, maxLength: 128 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.leave": createMessageSchema("song.room.leave", EmptyPayloadSchema),
+  "song.room.requestSync": createMessageSchema("song.room.requestSync", EmptyPayloadSchema),
+  "song.player.setReady": createMessageSchema(
+    "song.player.setReady",
+    t.Object(
+      {
+        ready: t.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.player.setSpectator": createMessageSchema(
+    "song.player.setSpectator",
+    t.Object(
+      {
+        spectator: t.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.updateSettings": createMessageSchema(
+    "song.room.updateSettings",
+    t.Object(
+      {
+        name: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+        visibility: t.Optional(SongVisibilitySchema),
+        password: t.Optional(t.String({ maxLength: 64 })),
+        allowSpectators: t.Optional(t.Boolean()),
+        questionType: t.Optional(QuestionTypeSchema),
+        questionMode: t.Optional(QuestionModeSchema),
+        autoRotateSubmitter: t.Optional(t.Boolean()),
+        autoFilters: t.Optional(SongAutoFiltersSchema),
+        lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+        showLyrics: t.Optional(t.Boolean()),
+        maxGuessesPerRound: t.Optional(t.Integer({ minimum: 1 })),
+        guessDurationSeconds: t.Optional(t.Integer({ minimum: 5 })),
+        bloodMode: t.Optional(t.Boolean()),
+        showGuessTimer: t.Optional(t.Boolean()),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.kick": createMessageSchema(
+    "song.room.kick",
+    t.Object(
+      {
+        playerId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.room.transferHost": createMessageSchema(
+    "song.room.transferHost",
+    t.Object(
+      {
+        playerId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.chat.send": createMessageSchema(
+    "song.chat.send",
+    t.Object(
+      {
+        text: t.String({ minLength: 1, maxLength: 500 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.auth.qr.create": createMessageSchema("song.auth.qr.create", EmptyPayloadSchema),
+  "song.auth.qr.check": createMessageSchema(
+    "song.auth.qr.check",
+    t.Object(
+      {
+        key: t.String({ minLength: 1, maxLength: 256 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.auth.useCookie": createMessageSchema(
+    "song.auth.useCookie",
+    t.Object(
+      {
+        cookie: t.String({ minLength: 1, maxLength: MAX_SONGUESSR_COOKIE_LENGTH }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.auth.clear": createMessageSchema("song.auth.clear", EmptyPayloadSchema),
+  "song.music.search": createMessageSchema(
+    "song.music.search",
+    t.Object(
+      {
+        keyword: t.String({ minLength: 1, maxLength: 200 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.music.playlist.resolve": createMessageSchema(
+    "song.music.playlist.resolve",
+    t.Object(
+      {
+        value: t.String({ minLength: 1, maxLength: 500 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.music.artist.search": createMessageSchema(
+    "song.music.artist.search",
+    t.Object(
+      {
+        keyword: t.String({ minLength: 1, maxLength: 200 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.start": createMessageSchema("song.game.start", EmptyPayloadSchema),
+  "song.game.chooseSubmitter": createMessageSchema(
+    "song.game.chooseSubmitter",
+    t.Object(
+      {
+        playerId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.submitSong": createMessageSchema(
+    "song.game.submitSong",
+    t.Object(
+      {
+        songId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.audioReady": createMessageSchema(
+    "song.game.audioReady",
+    t.Object(
+      {
+        roundNumber: t.Integer({ minimum: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.guess": createMessageSchema(
+    "song.game.guess",
+    t.Object(
+      {
+        songId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.giveUp": createMessageSchema("song.game.giveUp", EmptyPayloadSchema),
+  "song.game.skipRound": createMessageSchema("song.game.skipRound", EmptyPayloadSchema),
+  "song.game.nextRound": createMessageSchema("song.game.nextRound", EmptyPayloadSchema),
+  "song.game.finish": createMessageSchema("song.game.finish", EmptyPayloadSchema),
+  "song.test.addBot": createMessageSchema(
+    "song.test.addBot",
+    t.Object(
+      {
+        count: t.Optional(t.Integer({ minimum: 1 })),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.test.removeBot": createMessageSchema(
+    "song.test.removeBot",
+    t.Object(
+      {
+        count: t.Optional(t.Integer({ minimum: 1 })),
+      },
+      { additionalProperties: false },
+    ),
+  ),
 };
 
-const readBoolean = (value: unknown, field: string, optional = false): boolean | undefined => {
-  if (value == null && optional) return undefined;
-  if (typeof value !== "boolean") throw new AppError("INVALID_MESSAGE", `${field} 必须为布尔值`);
-  return value;
-};
+export const SonGuessrClientMessageSchema = t.Union(
+  Object.values(SonGuessrMessageSchemas),
+);
 
-const readNumber = (value: unknown, field: string): number | undefined => {
-  if (value == null) return undefined;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new AppError("INVALID_MESSAGE", `${field} 必须为数字`);
-  }
-  return value;
-};
-
-const readPositiveInteger = (value: unknown, field: string): number => {
-  const number = readNumber(value, field);
-  if (number === undefined || !Number.isInteger(number) || number < 1) {
-    throw new AppError("INVALID_MESSAGE", `${field} 必须为正整数`);
-  }
-  return number;
-};
-
-const readOptionalPositiveInteger = (value: unknown, field: string): number | undefined => {
-  if (value == null) return undefined;
-  return readPositiveInteger(value, field);
-};
-
-const readVisibility = (value: unknown, optional = false): RoomVisibility | undefined => {
-  if (value == null && optional) return undefined;
-  if (!Value.Check(SongVisibilitySchema, value)) {
-    throw new AppError("INVALID_MESSAGE", "visibility 必须为 public 或 private");
-  }
-  return value as RoomVisibility;
-};
-
-const readQuestionType = (value: unknown): SonGuessrSettings["questionType"] | undefined => {
-  if (value == null) return undefined;
-  if (!Value.Check(QuestionTypeSchema, value)) {
-    throw new AppError("INVALID_MESSAGE", "questionType 必须为 song 或 anime");
-  }
-  return value;
-};
-
-const readQuestionMode = (value: unknown): SonGuessrSettings["questionMode"] | undefined => {
-  if (value == null) return undefined;
-  if (!Value.Check(QuestionModeSchema, value)) {
-    throw new AppError("INVALID_MESSAGE", "questionMode 必须为 manual 或 automatic");
-  }
-  return value;
-};
-
-const readAutoFilters = (value: unknown): SonGuessrSettings["autoFilters"] | undefined => {
-  if (value == null) return undefined;
-  if (!isObject(value)) throw new AppError("INVALID_MESSAGE", "autoFilters 必须为对象");
-  const playlistValue = value.playlist;
-  let playlist: SonGuessrSettings["autoFilters"]["playlist"];
-  if (playlistValue != null) {
-    if (!isObject(playlistValue)) throw new AppError("INVALID_MESSAGE", "autoFilters.playlist 必须为对象");
-    playlist = {
-      id: readString(playlistValue.id, "autoFilters.playlist.id")!,
-      name: readString(playlistValue.name, "autoFilters.playlist.name", { optional: true }),
-      songCount: readOptionalPositiveInteger(playlistValue.songCount, "autoFilters.playlist.songCount"),
-    };
-  }
-  if (!Array.isArray(value.artists)) {
-    throw new AppError("INVALID_MESSAGE", "autoFilters.artists 必须为数组");
-  }
-  const artists = value.artists.map((artist, index): SongArtistFilter => {
-    if (!isObject(artist)) throw new AppError("INVALID_MESSAGE", `autoFilters.artists.${index} 必须为对象`);
-    return {
-      id: readString(artist.id, `autoFilters.artists.${index}.id`)!,
-      name: readString(artist.name, `autoFilters.artists.${index}.name`)!,
-    };
-  });
-  const minPopularity = readNumber(value.minPopularity, "autoFilters.minPopularity");
-  if (!Value.Check(MinPopularitySchema, minPopularity)) {
-    throw new AppError("INVALID_MESSAGE", "autoFilters.minPopularity 不是支持的热度档位");
-  }
-  return { playlist, artists, minPopularity: minPopularity as 0 | 1_000 | 10_000 | 100_000 };
-};
-
+/**
+ * 严格类型校验与解析 SonGuessr 客户端消息。
+ * 遵循 TypeBox 单一真相源，所有 Schema 均开启 additionalProperties: false，拒绝非法 payload: null 与脏字段。
+ */
 export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
-  let parsed: unknown = raw;
+  let parsed = raw;
   if (typeof raw === "string") {
     try {
-      parsed = JSON.parse(raw) as unknown;
+      parsed = JSON.parse(raw);
     } catch {
-      throw new AppError("INVALID_MESSAGE", "消息必须为合法 JSON");
+      throw new AppError("INVALID_MESSAGE", "消息必须为合法 JSON 字符串");
     }
   }
-  if (!isObject(parsed)) throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
 
-  const id = readString(parsed.id, "id")!;
-  const traceId = readString(parsed.traceId, "traceId", { optional: true });
-  const type = readString(parsed.type, "type")!;
-  const roomId = readString(parsed.roomId, "roomId", { optional: true });
-  const sessionToken = readString(parsed.sessionToken, "sessionToken", { optional: true });
-  const payload = isObject(parsed.payload) ? parsed.payload : {};
-  const envelope = { id, traceId, roomId, sessionToken };
-
-  switch (type) {
-    case "song.lobby.subscribeRooms":
-    case "song.room.leave":
-    case "song.room.requestSync":
-    case "song.auth.qr.create":
-    case "song.auth.clear":
-    case "song.game.start":
-    case "song.game.giveUp":
-    case "song.game.skipRound":
-    case "song.game.nextRound":
-    case "song.game.finish":
-      return { ...envelope, type, payload: {} } as SonGuessrClientMessage;
-    case "song.room.create":
-      return {
-        ...envelope,
-        type,
-        payload: {
-          roomId: readString(payload.roomId, "payload.roomId")!,
-          name: readString(payload.name, "payload.name")!,
-          visibility: readVisibility(payload.visibility)!,
-          password: readString(payload.password, "payload.password", { optional: true }),
-          allowSpectators: readBoolean(payload.allowSpectators, "payload.allowSpectators")!,
-          userName: readString(payload.userName, "payload.userName")!,
-        },
-      };
-    case "song.room.join":
-      return {
-        ...envelope,
-        type,
-        payload: {
-          userName: readString(payload.userName, "payload.userName")!,
-          password: readString(payload.password, "payload.password", { optional: true }),
-        },
-      };
-    case "song.room.reconnect":
-      return {
-        id,
-        type,
-        payload: {
-          roomId: readString(payload.roomId, "payload.roomId")!,
-          sessionToken: readString(payload.sessionToken, "payload.sessionToken")!,
-        },
-      };
-    case "song.player.setReady":
-      return {
-        ...envelope,
-        type,
-        payload: { ready: readBoolean(payload.ready, "payload.ready")! },
-      };
-    case "song.player.setSpectator":
-      return {
-        ...envelope,
-        type,
-        payload: { spectator: readBoolean(payload.spectator, "payload.spectator")! },
-      };
-    case "song.test.addBot":
-    case "song.test.removeBot":
-      return {
-        ...envelope,
-        type,
-        payload: { count: readOptionalPositiveInteger(payload.count, "payload.count") },
-      } as SonGuessrClientMessage;
-    case "song.room.updateSettings": {
-      const settings: Partial<SonGuessrSettings> = {
-        questionType: readQuestionType(payload.questionType),
-        questionMode: readQuestionMode(payload.questionMode),
-        autoRotateSubmitter: readBoolean(payload.autoRotateSubmitter, "payload.autoRotateSubmitter", true),
-        autoFilters: readAutoFilters(payload.autoFilters),
-        lyricsLineCount: readNumber(payload.lyricsLineCount, "payload.lyricsLineCount"),
-        showLyrics: readBoolean(payload.showLyrics, "payload.showLyrics", true),
-        maxGuessesPerRound: readNumber(payload.maxGuessesPerRound, "payload.maxGuessesPerRound"),
-        guessDurationSeconds: readNumber(payload.guessDurationSeconds, "payload.guessDurationSeconds"),
-        bloodMode: readBoolean(payload.bloodMode, "payload.bloodMode", true),
-        showGuessTimer: readBoolean(payload.showGuessTimer, "payload.showGuessTimer", true),
-      };
-      return {
-        ...envelope,
-        type,
-        payload: {
-          ...settings,
-          name: readString(payload.name, "payload.name", { optional: true }),
-          visibility: readVisibility(payload.visibility, true),
-          password: readString(payload.password, "payload.password", { optional: true, allowEmpty: true }),
-          allowSpectators: readBoolean(payload.allowSpectators, "payload.allowSpectators", true),
-        },
-      };
-    }
-    case "song.room.kick":
-    case "song.room.transferHost":
-    case "song.game.chooseSubmitter":
-      return {
-        ...envelope,
-        type,
-        payload: { playerId: readString(payload.playerId, "payload.playerId")! },
-      } as SonGuessrClientMessage;
-    case "song.chat.send":
-      return {
-        ...envelope,
-        type,
-        payload: { text: readString(payload.text, "payload.text")! },
-      };
-    case "song.auth.qr.check":
-      return {
-        ...envelope,
-        type,
-        payload: { key: readString(payload.key, "payload.key")! },
-      };
-    case "song.auth.useCookie":
-      return {
-        ...envelope,
-        type,
-        payload: { cookie: readString(payload.cookie, "payload.cookie")! },
-      };
-    case "song.music.search":
-      return {
-        ...envelope,
-        type,
-        payload: { keyword: readString(payload.keyword, "payload.keyword")! },
-      };
-    case "song.music.playlist.resolve":
-      return {
-        ...envelope,
-        type,
-        payload: { value: readString(payload.value, "payload.value")! },
-      };
-    case "song.music.artist.search":
-      return {
-        ...envelope,
-        type,
-        payload: { keyword: readString(payload.keyword, "payload.keyword")! },
-      };
-    case "song.game.submitSong":
-    case "song.game.guess":
-      return {
-        ...envelope,
-        type,
-        payload: { songId: readString(payload.songId, "payload.songId")! },
-      } as SonGuessrClientMessage;
-    case "song.game.audioReady":
-      return {
-        ...envelope,
-        type,
-        payload: { roundNumber: readPositiveInteger(payload.roundNumber, "payload.roundNumber") },
-      };
-    default:
-      throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
   }
+
+  const msgObj = parsed as Record<string, unknown>;
+  const type = msgObj.type;
+  if (typeof type !== "string") {
+    throw new AppError("INVALID_MESSAGE", "消息类型 type 必须为字符串");
+  }
+
+  const schema = (SonGuessrMessageSchemas as Record<string, TSchema>)[type];
+  if (!schema) {
+    throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
+  }
+
+  if (msgObj.payload === null || typeof msgObj.payload !== "object" || Array.isArray(msgObj.payload)) {
+    throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
+  }
+
+  const errors = [...Value.Errors(schema, parsed)];
+  if (errors.length > 0) {
+    const first = errors[0];
+    const path = first.path ? ` (${first.path})` : "";
+    throw new AppError("INVALID_MESSAGE", `消息校验失败${path}: ${first.message}`);
+  }
+
+  return parsed as SonGuessrClientMessage;
 };
