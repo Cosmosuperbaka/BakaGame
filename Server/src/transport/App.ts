@@ -159,6 +159,11 @@ export const createApp = ({
         set.status = 400;
         errCode = error.code;
         errMsg = error.message;
+      } else if (String(code) === "VALIDATION") {
+        status = 422;
+        set.status = 422;
+        errCode = "VALIDATION_ERROR";
+        errMsg = (error as { message?: string })?.message ?? "请求载荷格式错误";
       } else if (code === "NOT_FOUND") {
         status = 404;
         set.status = 404;
