@@ -7,40 +7,30 @@ interface AutoSaveOptions {
   onError?: (error: unknown) => void;
 }
 
-/** 文本输入防抖、所有提交串行；保存期间发生的新修改只保留最后一份草稿。 */
+/**
+ * 文本输入防抖、显式串行保存队列。
+ * 纯 Effect 驱动，严禁在渲染阶段读写 ref。
+ */
 export function useAutoSave<T>(
   value: T,
   save: (value: T) => Promise<unknown>,
   options: AutoSaveOptions = {},
 ) {
-  const delayMs = options.delayMs ?? 400;
-  const enabled = options.enabled ?? true;
+  const { delayMs = 400, enabled = true, onError } = options;
 
-  const desiredRef = useRef<T>(value);
+  const callbacksRef = useRef({ save, onError, delayMs, enabled });
+  const isMountedRef = useRef(true);
   const savedValueRef = useRef<T>(value);
-  const saveRef = useRef(save);
-  const errorRef = useRef(options.onError);
-  const enabledRef = useRef(enabled);
-  const pendingRef = useRef<T | null>(null);
-  const hasPendingRef = useRef(false);
-  const savingRef = useRef(false);
-  const failedValueRef = useRef<T | null>(null);
-  const hasFailedRef = useRef(false);
-  const mountedRef = useRef(true);
-  const flushAfterUnmountRef = useRef(false);
+  const pendingValueRef = useRef<{ value: T } | null>(null);
+  const failedValueRef = useRef<{ value: T } | null>(null);
+  const isSavingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flushRef = useRef<() => void>(() => {});
+  const processQueueRef = useRef<() => void>(() => {});
 
-  // 同步更新 enabledRef，避免因 React 卸载阶段跳过 effect 导致执行过期的 enabled 自动保存
-  enabledRef.current = enabled;
-
-  // 这些 ref 在 effect 中更新，避免渲染阶段读写 ref，也让定时器始终拿到最新回调和值。
+  // 在提交阶段同步最新的配置与回调引用，杜绝在 render 阶段访问或写入 ref
   useEffect(() => {
-    desiredRef.current = value;
-    saveRef.current = save;
-    errorRef.current = options.onError;
-    enabledRef.current = enabled;
-  }, [enabled, options.onError, save, value]);
+    callbacksRef.current = { save, onError, delayMs, enabled };
+  });
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -49,109 +39,102 @@ export function useAutoSave<T>(
     }
   }, []);
 
-  const flush = useCallback(() => {
+  // 显式串行保存队列处理器
+  const processQueue = useCallback(() => {
     clearTimer();
-    if (savingRef.current || !enabledRef.current) return;
+    const { save: currentSave, onError: currentOnError, enabled: currentEnabled } = callbacksRef.current;
 
-    const desired = desiredRef.current;
-    let pendingToSave: T;
+    // 若当前未启用或上一个保存仍未返回，保持等待
+    if (!currentEnabled || isSavingRef.current) return;
 
-    if (hasPendingRef.current) {
-      pendingToSave = pendingRef.current as T;
-    } else if (!equal(desired, savedValueRef.current)) {
-      pendingToSave = desired;
-    } else {
+    if (!pendingValueRef.current) return;
+    const targetValue = pendingValueRef.current.value;
+
+    // 若与已成功保存的值深度一致，或与上次失败的值相同且未重新编辑，则丢弃
+    if (
+      equal(targetValue, savedValueRef.current) ||
+      (failedValueRef.current && equal(targetValue, failedValueRef.current.value))
+    ) {
+      pendingValueRef.current = null;
       return;
     }
 
-    pendingRef.current = null;
-    hasPendingRef.current = false;
-    savingRef.current = true;
+    pendingValueRef.current = null;
+    isSavingRef.current = true;
 
-    void Promise.resolve(saveRef.current(pendingToSave))
+    void Promise.resolve(currentSave(targetValue))
       .then(() => {
-        savedValueRef.current = pendingToSave;
+        savedValueRef.current = targetValue;
         failedValueRef.current = null;
-        hasFailedRef.current = false;
       })
       .catch((error) => {
-        // 失败值等待下一次用户修改，避免服务异常时自动保存无限重试。
-        failedValueRef.current = pendingToSave;
-        hasFailedRef.current = true;
-        errorRef.current?.(error);
+        failedValueRef.current = { value: targetValue };
+        currentOnError?.(error);
       })
       .finally(() => {
-        savingRef.current = false;
-        // 如果请求进行期间用户又改过值（包括改回旧值），补交最新草稿，
-        // 防止服务端完成顺序把界面上的最后修改覆盖掉。
-        const latest = desiredRef.current;
-        if (
-          (mountedRef.current || flushAfterUnmountRef.current) &&
-          enabledRef.current &&
-          !equal(latest, savedValueRef.current) &&
-          (!hasFailedRef.current || !equal(latest, failedValueRef.current))
-        ) {
-          pendingRef.current = latest;
-          hasPendingRef.current = true;
-          timerRef.current = setTimeout(() => flushRef.current(), Math.max(0, delayMs));
+        isSavingRef.current = false;
+        // 保存完成后，若飞行期间产生了新草稿，接力排期或立即执行
+        if (callbacksRef.current.enabled && pendingValueRef.current) {
+          const nextTarget = pendingValueRef.current.value;
+          if (
+            !equal(nextTarget, savedValueRef.current) &&
+            (!failedValueRef.current || !equal(nextTarget, failedValueRef.current.value))
+          ) {
+            if (isMountedRef.current) {
+              clearTimer();
+              timerRef.current = setTimeout(
+                () => processQueueRef.current(),
+                Math.max(0, callbacksRef.current.delayMs),
+              );
+            } else {
+              processQueueRef.current();
+            }
+            return;
+          }
+          pendingValueRef.current = null;
         }
-        flushAfterUnmountRef.current = false;
       });
-  }, [clearTimer, delayMs]);
+  }, [clearTimer]);
 
   useEffect(() => {
-    flushRef.current = flush;
-  }, [flush]);
+    processQueueRef.current = processQueue;
+  }, [processQueue]);
 
+  // 监听值变化与启用状态
   useEffect(() => {
     if (!enabled) {
       clearTimer();
-      pendingRef.current = null;
-      hasPendingRef.current = false;
+      pendingValueRef.current = null;
       failedValueRef.current = null;
-      hasFailedRef.current = false;
       return;
     }
 
-    if (hasFailedRef.current && !equal(value, failedValueRef.current)) {
-      failedValueRef.current = null;
-      hasFailedRef.current = false;
-    }
+    // 检查实质内容是否与已保存值或上一次失败值相同
+    const isSaved = equal(value, savedValueRef.current);
+    const isFailed = failedValueRef.current ? equal(value, failedValueRef.current.value) : false;
 
-    const desired = desiredRef.current;
-    const isSaved = equal(desired, savedValueRef.current);
-    const isFailed = hasFailedRef.current && equal(desired, failedValueRef.current);
-
-    if ((isSaved || isFailed) && !savingRef.current) {
+    if (isSaved || isFailed) {
       clearTimer();
-      pendingRef.current = null;
-      hasPendingRef.current = false;
+      pendingValueRef.current = null;
       return;
     }
 
-    // 覆盖尚未发送的旧草稿；若旧请求正在飞行，则保留这一份作为补偿提交。
-    pendingRef.current = desired;
-    hasPendingRef.current = true;
+    pendingValueRef.current = { value };
     clearTimer();
-    timerRef.current = setTimeout(() => flushRef.current(), Math.max(0, delayMs));
+    timerRef.current = setTimeout(processQueue, Math.max(0, delayMs));
+
     return clearTimer;
-  }, [clearTimer, delayMs, enabled, flush, value]);
+  }, [clearTimer, delayMs, enabled, processQueue, value]);
 
+  // 组件卸载阶段刷新最新草稿
   useEffect(() => {
-    mountedRef.current = true;
-
+    isMountedRef.current = true;
     return () => {
-      mountedRef.current = false;
+      isMountedRef.current = false;
       clearTimer();
-      // 卸载前把最后一份草稿放入串行队列，避免切换页面丢设置。
-      if (enabledRef.current) {
-        if (savingRef.current) flushAfterUnmountRef.current = true;
-        else flushRef.current();
-      } else {
-        pendingRef.current = null;
-        hasPendingRef.current = false;
+      if (callbacksRef.current.enabled && pendingValueRef.current) {
+        processQueueRef.current();
       }
     };
-    // This cleanup is intentionally tied to mount/unmount, not to value changes.
   }, [clearTimer]);
 }
