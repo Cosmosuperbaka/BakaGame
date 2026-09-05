@@ -123,14 +123,24 @@ const SENSITIVE_KEYS = new Set([
   "secret",
 ]);
 
-export const redactData = (data: unknown, depth = 0): unknown => {
+export const sanitizeLogText = (text: string, maxLength = 500): string => {
+  return text.replace(/[\r\n\x00-\x1f\x7f]/g, " ").slice(0, maxLength);
+};
+
+export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknown => {
   if (data == null) return data;
   if (depth >= 5) return "[MAX_DEPTH_EXCEEDED]";
   if (typeof data !== "object") return data;
-  if (Array.isArray(data)) return data.map((item) => redactData(item, depth + 1));
+  if (Array.isArray(data)) {
+    return data.slice(0, maxProperties).map((item) => redactData(item, depth + 1, maxProperties));
+  }
 
   const redacted: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+  const entries = Object.entries(data as Record<string, unknown>);
+  const limit = Math.min(entries.length, maxProperties);
+
+  for (let i = 0; i < limit; i++) {
+    const [key, value] = entries[i];
     if (SENSITIVE_KEYS.has(key.toLowerCase())) {
       if (key.toLowerCase() === "password") {
         redacted[key] = "***[REDACTED]";
@@ -140,9 +150,14 @@ export const redactData = (data: unknown, depth = 0): unknown => {
         redacted[key] = "***[REDACTED]";
       }
     } else {
-      redacted[key] = redactData(value, depth + 1);
+      redacted[key] = redactData(value, depth + 1, maxProperties);
     }
   }
+
+  if (entries.length > maxProperties) {
+    redacted["_truncated"] = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
+  }
+
   return redacted;
 };
 
@@ -185,14 +200,15 @@ export const formatSystemLog = ({
   const statusCode = status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
   const timestampStr = formatTimestamp(createdAt);
   const durationStr = formatDuration(durationMs);
-  const identifierStr = (
+  const rawIdentifier = (
     (context?.connectionId as string) ??
     (context?.roomId as string) ??
     (context?.playerId as string) ??
     (context?.ip as string) ??
     "system"
-  ).padStart(15, " ");
-  const actionStr = `SYS ${message}`;
+  );
+  const identifierStr = sanitizeLogText(String(rawIdentifier), 32).padStart(15, " ");
+  const actionStr = `SYS ${sanitizeLogText(message, 1000)}`;
 
   const cleanedContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
   const extraContext = cleanedContext
@@ -205,7 +221,7 @@ export const formatSystemLog = ({
 
   const extraStr =
     extraContext && Object.keys(extraContext).length > 0
-      ? ` | ${JSON.stringify(extraContext)}`
+      ? ` | ${sanitizeLogText(JSON.stringify(extraContext), 2048)}`
       : "";
 
   return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${extraStr}`;
@@ -220,15 +236,16 @@ export const formatLogEntry = (
   const statusCode = entry.status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
   const timestampStr = formatTimestamp(entry.createdAt);
   const durationStr = formatDuration(entry.durationMs ?? 0);
-  const identifierStr = (entry.roomId ?? entry.playerId ?? "system").padStart(15, " ");
-  const actionStr = `EVENT ${entry.type} (${headline})`;
+  const rawIdentifier = entry.roomId ?? entry.playerId ?? "system";
+  const identifierStr = sanitizeLogText(String(rawIdentifier), 32).padStart(15, " ");
+  const actionStr = `EVENT ${sanitizeLogText(entry.type, 64)} (${sanitizeLogText(headline, 64)})`;
 
   const cleanedPayload = entry.payload ? redactData(entry.payload) : undefined;
   const payloadStr =
     cleanedPayload &&
     typeof cleanedPayload === "object" &&
     Object.keys(cleanedPayload as object).length > 0
-      ? ` | ${JSON.stringify(cleanedPayload)}`
+      ? ` | ${sanitizeLogText(JSON.stringify(cleanedPayload), 2048)}`
       : "";
 
   return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${payloadStr}`;

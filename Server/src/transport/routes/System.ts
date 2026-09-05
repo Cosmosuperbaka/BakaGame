@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 
 import type { RoomService } from "../../application/RoomService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
-import { redactData, type EventLogger } from "../../infrastructure/EventLogger";
+import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 
 export interface SystemRoutesDependencies {
   roomService?: RoomService;
@@ -29,32 +29,47 @@ export const systemRoutes = ({
       async ({ body, headers }) => {
         const payload = (body ?? {}) as {
           traceId?: string;
-          level?: "info" | "warn" | "error";
+          level?: "info" | "warn" | "error" | "INFO" | "WARN" | "ERROR";
           message?: string;
-          metadata?: Record<string, unknown>;
+          metadata?: Record<string, string | number | boolean | null>;
         };
 
-        const traceId =
+        const rawTrace =
           payload.traceId ??
           (typeof headers["x-trace-id"] === "string" ? headers["x-trace-id"] : undefined);
+        const traceId = rawTrace ? sanitizeLogText(rawTrace, 64) : undefined;
         const level =
           payload.level?.toLowerCase() === "error"
             ? "ERROR"
             : payload.level?.toLowerCase() === "warn"
               ? "WARN"
               : "INFO";
-        const message = payload.message || "前端上报遥测事件";
-        const sanitizedMeta = payload.metadata
-          ? (redactData(payload.metadata) as Record<string, unknown>)
-          : {};
+        const message = sanitizeLogText(payload.message || "前端上报遥测事件", 500);
+
+        // 白名单隔离：丢弃外部试图伪造系统连接/房间/玩家标识的字段
+        const FORBIDDEN_KEYS = new Set(["connectionid", "roomid", "playerid", "ip", "identifier"]);
+        const safeMetadata: Record<string, unknown> = {};
+        if (payload.metadata && typeof payload.metadata === "object") {
+          for (const [key, value] of Object.entries(payload.metadata)) {
+            if (!FORBIDDEN_KEYS.has(key.toLowerCase())) {
+              safeMetadata[key] = typeof value === "string" ? sanitizeLogText(value, 256) : value;
+            }
+          }
+        }
+        const sanitizedMeta = redactData(safeMetadata) as Record<string, unknown>;
 
         if (logger) {
+          const logContext = {
+            source: "client_telemetry",
+            traceId,
+            ...sanitizedMeta,
+          };
           if (level === "ERROR") {
-            logger.error(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+            logger.error(`[CLIENT] ${message}`, logContext);
           } else if (level === "WARN") {
-            logger.warn(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+            logger.warn(`[CLIENT] ${message}`, logContext);
           } else {
-            logger.info(`[CLIENT] ${message}`, { traceId, ...sanitizedMeta });
+            logger.info(`[CLIENT] ${message}`, logContext);
           }
         }
 
@@ -66,21 +81,35 @@ export const systemRoutes = ({
           summary: "前端可观测性遥测打点代理",
           description: "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
         },
-        body: t.Object({
-          traceId: t.Optional(t.String({ maxLength: 128 })),
-          level: t.Optional(
-            t.Union([
-              t.Literal("info"),
-              t.Literal("warn"),
-              t.Literal("error"),
-              t.Literal("INFO"),
-              t.Literal("WARN"),
-              t.Literal("ERROR"),
-            ]),
-          ),
-          message: t.Optional(t.String({ maxLength: 1000 })),
-          metadata: t.Optional(t.Record(t.String(), t.Unknown())),
-        }),
+        body: t.Object(
+          {
+            traceId: t.Optional(t.String({ maxLength: 64, pattern: "^[a-zA-Z0-9_.-]+$" })),
+            level: t.Optional(
+              t.Union([
+                t.Literal("info"),
+                t.Literal("warn"),
+                t.Literal("error"),
+                t.Literal("INFO"),
+                t.Literal("WARN"),
+                t.Literal("ERROR"),
+              ]),
+            ),
+            message: t.Optional(t.String({ maxLength: 500 })),
+            metadata: t.Optional(
+              t.Record(
+                t.String({ maxLength: 32, pattern: "^[a-zA-Z0-9_.-]+$" }),
+                t.Union([
+                  t.String({ maxLength: 256 }),
+                  t.Number(),
+                  t.Boolean(),
+                  t.Null(),
+                ]),
+                { maxProperties: 16 },
+              ),
+            ),
+          },
+          { additionalProperties: false },
+        ),
         response: t.Object({
           ok: t.Boolean(),
         }),

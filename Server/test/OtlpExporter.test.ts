@@ -272,3 +272,86 @@ test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元
   expect(span.spanId.length).toBe(16);
 });
 
+test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶意载荷并防身份伪造", async () => {
+  const loggedLines: string[] = [];
+  const logger = new EventLogger((line) => loggedLines.push(line));
+
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 4899,
+    wordBankPath: ":memory:",
+  };
+
+  const roomService = new RoomService({
+    wordBankRepository: new WordBankRepository(":memory:"),
+    eventLogger: logger,
+  });
+
+  const { app } = createApp({
+    env,
+    whoIsFakerService: roomService,
+    logger,
+  });
+
+  // 1. 尝试伪造内部连接标识与注入换行
+  const normalRes = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level: "info",
+        message: "正常打点\r\n[BAKA] 伪造的日志行",
+        metadata: {
+          connectionId: "fake-admin-conn",
+          ip: "10.0.0.1",
+          customField: "safe_value\nwith_newline",
+        },
+      }),
+    }),
+  );
+  expect(normalRes.status).toBe(200);
+
+  const clientLog = loggedLines.find((l) => l.includes("正常打点"));
+  expect(clientLog).toBeTruthy();
+  // 确认日志单行未被拆分成多行，换行已被清洗为空格
+  expect(clientLog).not.toContain("\n[BAKA]");
+  expect(clientLog).not.toContain("\r");
+  // 确认 identifier 依然保持 safe 默认（system），未被 fake-admin-conn 篡改
+  expect(clientLog).toContain("         system | SYS [CLIENT] 正常打点  [BAKA] 伪造的日志行");
+  expect(clientLog).not.toContain("fake-admin-conn |");
+
+  // 2. 尝试传入过多键（超过 16 个）
+  const tooManyKeys: Record<string, string> = {};
+  for (let i = 0; i < 20; i++) {
+    tooManyKeys[`key_${i}`] = "val";
+  }
+  const rejectKeysRes = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "超多键上报",
+        metadata: tooManyKeys,
+      }),
+    }),
+  );
+  expect(rejectKeysRes.status).toBe(422);
+
+  // 3. 尝试传入嵌套对象
+  const rejectNestedRes = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "嵌套对象上报",
+        metadata: {
+          nested: { deeply: "nested" },
+        },
+      }),
+    }),
+  );
+  expect(rejectNestedRes.status).toBe(422);
+});
+
