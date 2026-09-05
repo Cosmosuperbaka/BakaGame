@@ -136,6 +136,63 @@ describe("Songuessr store integration", () => {
     });
   });
 
+  it("preserves pushed snapshot and private state when createRoom resolves without payload states", async () => {
+    const dispose = initSonGuessrWs();
+    const liveSnapshot = { ...snapshot, roomId: "1234" };
+    const livePrivate = { ...privateState, sessionToken: "created-token" };
+
+    wsMock.send.mockImplementation(async (type) => {
+      if (type === "song.room.create") {
+        wsMock.messageHandlers[0]({
+          type: "event",
+          event: "song.room.snapshot",
+          payload: { mode: "full", revision: 1, state: liveSnapshot },
+        });
+        wsMock.messageHandlers[0]({
+          type: "event",
+          event: "song.game.privateState",
+          payload: { mode: "full", revision: 1, state: livePrivate },
+        });
+        return { roomId: "1234", sessionToken: "created-token" };
+      }
+      return {};
+    });
+
+    await useSonGuessrStore.getState().createRoom({
+      roomId: "1234",
+      name: "音乐房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+    });
+
+    expect(useSonGuessrStore.getState().snapshot).toMatchObject({ roomId: "1234" });
+    expect(useSonGuessrStore.getState().privateState).toMatchObject({ sessionToken: "created-token" });
+    dispose();
+  });
+
+  it("adopts snapshot and privateState returned directly in RPC response", async () => {
+    const rpcSnapshot = { ...snapshot, roomId: "5678" };
+    const rpcPrivate = { ...privateState, sessionToken: "rpc-token" };
+    wsMock.send.mockResolvedValue({
+      roomId: "5678",
+      sessionToken: "rpc-token",
+      snapshot: rpcSnapshot,
+      privateState: rpcPrivate,
+    });
+
+    await useSonGuessrStore.getState().createRoom({
+      roomId: "5678",
+      name: "新房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "玩家",
+    });
+
+    expect(useSonGuessrStore.getState().snapshot).toMatchObject({ roomId: "5678" });
+    expect(useSonGuessrStore.getState().privateState).toMatchObject({ sessionToken: "rpc-token" });
+  });
+
   it("uses the canonical room id returned by the server", async () => {
     wsMock.send.mockResolvedValue({ roomId: "Oblivionis", sessionToken: "test-token" });
 
