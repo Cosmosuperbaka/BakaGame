@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("framer-motion", () => ({
   MotionConfig: ({ children }: { children: ReactNode }) => children,
+  motion: {
+    div: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <div {...props}>{children}</div>
+    ),
+  },
 }));
 vi.mock("@/components/ui/Tooltip", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
@@ -30,6 +35,14 @@ import App from "./App";
 describe("application routing regressions", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
+  });
+
+  it("mounts the landing page on root path", async () => {
+    window.history.replaceState({}, "", "/");
+    render(<App />);
+
+    expect(await screen.findByText("landing-page")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 
   it.each(["/animecharguessr"])(
