@@ -1,4 +1,5 @@
 import { DEFAULT_SERVER_URL } from "@/config/Constants";
+import { captureClientMessage, isClientSentryEnabled } from "./Sentry";
 
 export interface TelemetryPayload {
   level?: "info" | "warn" | "error";
@@ -28,6 +29,17 @@ export const reportTelemetry = async (
       },
       body: JSON.stringify(payload),
     });
+
+    if (isClientSentryEnabled()) {
+      captureClientMessage(
+        payload.message,
+        payload.level === "error" ? "error" : payload.level === "warn" ? "warning" : "info",
+        {
+          traceId: payload.traceId,
+          ...payload.metadata,
+        },
+      );
+    }
   } catch {
     // 客户端监控上报失败不阻断用户交互
   }
