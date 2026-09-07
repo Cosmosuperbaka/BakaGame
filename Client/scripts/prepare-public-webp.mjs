@@ -26,32 +26,47 @@ const outputName = (name) => `${path.basename(name, path.extname(name))}.webp`;
 
 export function stickerAssetUrl(relativePath, contents) {
   const normalizedPath = relativePath.split(path.sep).join("/");
-  const extension = path.extname(normalizedPath).toLowerCase();
   const digest = createHash("sha256")
     .update(normalizedPath, "utf8")
     .update("\0", "utf8")
     .update(contents)
     .digest("hex")
     .slice(0, 24);
-  return `/stickers/${digest}${extension}`;
+  return `/stickers/${digest}.webp`;
 }
 
-async function copyStickerAssets(source, relativeDirectory = "") {
+async function copyStickerAssets(source, relativeDirectory = "", assetMap = {}) {
   const entries = await readdir(source, { withFileTypes: true });
   await Promise.all(entries.map(async (entry) => {
     const sourcePath = path.join(source, entry.name);
     const relativePath = path.join(relativeDirectory, entry.name);
     if (entry.isDirectory()) {
-      await copyStickerAssets(sourcePath, relativePath);
+      await copyStickerAssets(sourcePath, relativePath, assetMap);
       return;
     }
-    if (!entry.isFile() || !stickerExtensions.has(path.extname(entry.name).toLowerCase())) return;
+    const extension = path.extname(entry.name).toLowerCase();
+    if (!entry.isFile() || !stickerExtensions.has(extension)) return;
 
     const contents = await readFile(sourcePath);
     const assetUrl = stickerAssetUrl(relativePath, contents);
     const targetPath = path.join(outputDir, assetUrl.slice(1));
     await mkdir(path.dirname(targetPath), { recursive: true });
-    await cp(sourcePath, targetPath);
+
+    if (extension !== ".webp") {
+      const legacyNormalizedPath = relativePath.split(path.sep).join("/");
+      const legacyDigest = createHash("sha256")
+        .update(legacyNormalizedPath, "utf8")
+        .update("\0", "utf8")
+        .update(contents)
+        .digest("hex")
+        .slice(0, 24);
+      const legacyUrl = `/stickers/${legacyDigest}${extension}`;
+      assetMap[legacyUrl] = assetUrl;
+    }
+
+    await sharp(sourcePath, { animated: true })
+      .webp({ quality: 82, alphaQuality: 90, effort: 4 })
+      .toFile(targetPath);
   }));
 }
 
@@ -106,7 +121,7 @@ export async function preparePublicWebp() {
   const assetMap = {};
   await Promise.all([
     convertDirectory(sourceDir, outputDir, "", assetMap),
-    copyStickerAssets(path.join(sourceDir, "emojis")),
+    copyStickerAssets(path.join(sourceDir, "emojis"), "", assetMap),
   ]);
   return { publicDir: outputDir, assetMap };
 }
