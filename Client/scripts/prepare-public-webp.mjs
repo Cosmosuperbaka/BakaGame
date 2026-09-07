@@ -55,7 +55,9 @@ async function copyStickerAssets(source, relativeDirectory = "") {
   }));
 }
 
-async function convertDirectory(source, output) {
+const toWebPath = (...parts) => "/" + parts.filter(Boolean).join("/").replace(/\\+/g, "/").replace(/^\/+/, "");
+
+async function convertDirectory(source, output, relativeDir = "", assetMap = {}) {
   await mkdir(output, { recursive: true });
   const entries = await readdir(source, { withFileTypes: true });
   const outputNames = new Set();
@@ -74,8 +76,9 @@ async function convertDirectory(source, output) {
 
   await Promise.all(entries.map(async (entry) => {
     const sourcePath = path.join(source, entry.name);
+    const childRelative = path.join(relativeDir, entry.name);
     if (entry.isDirectory()) {
-      await convertDirectory(sourcePath, path.join(output, entry.name));
+      await convertDirectory(sourcePath, path.join(output, entry.name), childRelative, assetMap);
       return;
     }
     if (!entry.isFile()) return;
@@ -86,6 +89,12 @@ async function convertDirectory(source, output) {
       return;
     }
 
+    if (extension !== ".webp") {
+      const sourceWebPath = toWebPath(relativeDir, entry.name);
+      const targetWebPath = toWebPath(relativeDir, outputName(entry.name));
+      assetMap[sourceWebPath] = targetWebPath;
+    }
+
     await sharp(sourcePath, { animated: true })
       .webp({ quality: 82, alphaQuality: 90, effort: 4 })
       .toFile(path.join(output, outputName(entry.name)));
@@ -94,11 +103,12 @@ async function convertDirectory(source, output) {
 
 export async function preparePublicWebp() {
   await rm(outputDir, { recursive: true, force: true });
+  const assetMap = {};
   await Promise.all([
-    convertDirectory(sourceDir, outputDir),
+    convertDirectory(sourceDir, outputDir, "", assetMap),
     copyStickerAssets(path.join(sourceDir, "emojis")),
   ]);
-  return outputDir;
+  return { publicDir: outputDir, assetMap };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

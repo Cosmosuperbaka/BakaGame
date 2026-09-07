@@ -65,21 +65,21 @@ const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
-    icon: "/assets/Faker.webp",
+    icon: "/assets/Faker.png",
     title: "Who is Faker",
     available: true,
   },
   {
     id: "songuessr",
     path: "/songuessr",
-    icon: "/assets/SongGuessr.webp",
+    icon: "/assets/SongGuessr.gif",
     title: "Songuessr",
     available: true,
   },
   {
     id: "animecharguessr",
     path: "/animecharguessr",
-    icon: "/assets/CCB.webp",
+    icon: "/assets/CCB.jpg",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
     available: false,
@@ -356,7 +356,7 @@ export default function LandingPage() {
         >
           Baka
           <img
-            src="/assets/logo.webp"
+            src="/assets/logo.gif"
             alt=""
             aria-hidden="true"
             className="h-12 rounded-md object-cover sm:h-14 md:h-16 [@media(max-height:680px)]:h-9"

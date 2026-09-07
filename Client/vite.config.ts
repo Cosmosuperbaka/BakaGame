@@ -216,13 +216,74 @@ function stickerManifestPlugin(emojiDir: string) {
   }
 }
 
+// ==================== Vite 插件：静态图片 WebP 自动映射 ====================
+// 允许源码中直接使用真实源文件路径（如 /assets/Faker.png），
+// 开发模式下通过中间件自动透明 rewrite 到 .webp，
+// 构建打包时通过 transform 自动改写 HTML 与代码中的路径至最终 .webp 产物。
+
+export function webpAssetPlugin(assetMap: Record<string, string>) {
+  return {
+    name: 'webp-asset-mapping',
+    configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, _res: unknown, next: () => void) => void) => void } }) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url) {
+          const [pathname, query] = req.url.split('?')
+          const target = assetMap[pathname]
+          if (target) {
+            req.url = target + (query ? `?${query}` : '')
+          }
+        }
+        next()
+      })
+    },
+    transformIndexHtml(html: string) {
+      let transformed = html
+      for (const [sourcePath, targetPath] of Object.entries(assetMap)) {
+        transformed = transformed.replaceAll(sourcePath, targetPath)
+      }
+      return transformed.replace(/<link\b([^>]*\brel=["']icon["'][^>]*\bhref=["'][^"']*\.webp["'][^>]*)>/gi, (match) => {
+        return match.replace(/type=["']image\/[a-z0-9+]+["']/i, 'type="image/webp"')
+      }).replace(/<link\b([^>]*\bhref=["'][^"']*\.webp["'][^>]*\brel=["']icon["'][^>]*)>/gi, (match) => {
+        return match.replace(/type=["']image\/[a-z0-9+]+["']/i, 'type="image/webp"')
+      })
+    },
+    transform(code: string, id: string) {
+      if (id.includes('node_modules') || id.startsWith('\0')) return null
+
+      let hasMatch = false
+      for (const sourcePath of Object.keys(assetMap)) {
+        if (code.includes(sourcePath)) {
+          hasMatch = true
+          break
+        }
+      }
+      if (!hasMatch) return null
+
+      let transformed = code
+      for (const [sourcePath, targetPath] of Object.entries(assetMap)) {
+        transformed = transformed.replaceAll(sourcePath, targetPath)
+      }
+      return {
+        code: transformed,
+        map: null,
+      }
+    },
+  }
+}
+
 export default defineConfig(async () => {
-  const publicDir = await preparePublicWebp()
+  const { publicDir, assetMap } = await preparePublicWebp()
   const emojiDir = path.resolve(__dirname, './public/emojis')
 
   return {
     publicDir,
-    plugins: [react(), tailwindcss(), commitHistoryPlugin(), stickerManifestPlugin(emojiDir)],
+    plugins: [
+      react(),
+      tailwindcss(),
+      commitHistoryPlugin(),
+      stickerManifestPlugin(emojiDir),
+      webpAssetPlugin(assetMap),
+    ],
     resolve: {
       alias: [
         { find: '@bakagame/shared', replacement: path.resolve(__dirname, '../Server/src/shared/Index.ts') },
