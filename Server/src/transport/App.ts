@@ -15,6 +15,7 @@ import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "./SonGuessrProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { systemRoutes } from "./routes/System";
+import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -322,7 +323,11 @@ export const createApp = ({
       });
 
       if (status >= 500) {
-        logger.error(`HTTP 500 异常 [${path}]`, describeError(error));
+        logger.error(`HTTP 500 异常 [${path}]`, {
+          ...describeError(error),
+          error: error instanceof Error ? error : new Error(String(error)),
+          traceId,
+        });
       }
 
       return {
@@ -340,6 +345,11 @@ export const createApp = ({
         sonGuessrService: songService,
         logger,
         isShuttingDown,
+      }),
+    )
+    .use(
+      sentryTunnelRoutes({
+        allowedProjectIds: env.sentryAllowedProjectIds,
       }),
     )
     // ==================== WebSocket 入口 ====================
@@ -432,6 +442,7 @@ export const createApp = ({
 
           logger.error(`WS 内部异常 [${parsedType}]`, {
             ...describeError(error),
+            error: error instanceof Error ? error : new Error(String(error)),
             connectionId,
             traceId,
             parsedId,
@@ -540,6 +551,7 @@ export const createApp = ({
 
           logger.error(`SonGuessr WS 内部异常 [${parsedType}]`, {
             ...describeError(error),
+            error: error instanceof Error ? error : new Error(String(error)),
             connectionId,
             traceId,
             parsedId,

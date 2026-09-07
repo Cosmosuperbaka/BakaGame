@@ -2,12 +2,14 @@ import { RoomService } from "./application/RoomService";
 import { readEnv } from "./config/Env";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
+import { initServerSentry } from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
 import { createApp } from "./transport/App";
 
 // ==================== 服务启动 ====================
 
 const env = readEnv();
+initServerSentry(env);
 const otlpExporter = env.otelEndpoint
   ? new OtlpExporter({
       endpoint: env.otelEndpoint,
@@ -108,11 +110,17 @@ process.on("SIGINT", () => handleSignal("SIGINT"));
 process.on("SIGTERM", () => handleSignal("SIGTERM"));
 
 process.on("unhandledRejection", (reason) => {
-  logger.error("未捕获的异步 Promise 拒绝 (unhandledRejection)", describeError(reason));
+  logger.error("未捕获的异步 Promise 拒绝 (unhandledRejection)", {
+    ...describeError(reason),
+    error: reason instanceof Error ? reason : new Error(String(reason)),
+  });
 });
 
 process.on("uncaughtException", (error) => {
-  logger.error("未捕获的同步全局异常 (uncaughtException)", describeError(error));
+  logger.error("未捕获的同步全局异常 (uncaughtException)", {
+    ...describeError(error),
+    error: error instanceof Error ? error : new Error(String(error)),
+  });
   void shutdown("uncaughtException");
 });
 
