@@ -118,7 +118,7 @@ describe("webpAssetPlugin", () => {
 });
 
 describe("preparePublicWebp", () => {
-  it("generates valid publicDir and accurate assetMap from public assets", async () => {
+  it("generates valid publicDir and accurate assetMap from public assets and emojis", async () => {
     const { publicDir, assetMap } = await preparePublicWebp();
     expect(publicDir).toContain(".generated-public");
     expect(assetMap["/assets/Faker.png"]).toBe("/assets/Faker.webp");
@@ -126,5 +126,14 @@ describe("preparePublicWebp", () => {
     expect(assetMap["/assets/SongGuessr.gif"]).toBe("/assets/SongGuessr.webp");
     expect(assetMap["/assets/favicon.png"]).toBe("/assets/favicon.webp");
     expect(assetMap["/assets/logo.gif"]).toBe("/assets/logo.webp");
+
+    // 验证表情包旧格式向新 .webp 格式的兼容映射已被收录进 assetMap
+    const stickerMappings = Object.entries(assetMap).filter(([k]) => k.startsWith("/stickers/"));
+    expect(stickerMappings.length).toBeGreaterThan(0);
+    for (const [legacyUrl, webpUrl] of stickerMappings) {
+      expect(legacyUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png)$/);
+      expect(webpUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.webp$/);
+    }
   });
 });
+
