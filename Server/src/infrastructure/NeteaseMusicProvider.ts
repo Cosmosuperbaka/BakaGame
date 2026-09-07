@@ -11,6 +11,7 @@ import type {
   SongLyricLine,
   SongPlaylistInfo,
   SongSearchResult,
+  SongChorus,
 } from "../shared/Index";
 
 type ApiResponse = { body?: unknown } | unknown;
@@ -22,6 +23,7 @@ export interface MusicProvider {
   getSong(songId: string, cookie?: string): Promise<SongDetails>;
   getSongMetadata(songId: string, cookie?: string): Promise<SongDetails>;
   getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
+  getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
   createQrLogin?(): Promise<MusicQrLogin>;
   checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
@@ -98,6 +100,7 @@ const SONG_WIKI_CACHE_TTL_MS = 30 * 60_000;
 const COLLECTION_CACHE_TTL_MS = 5 * 60_000;
 const ARTIST_SONGS_CACHE_TTL_MS = 10 * 60_000;
 const POPULARITY_CACHE_TTL_MS = 30 * 60_000;
+const SONG_CHORUS_CACHE_TTL_MS = 30 * 60_000;
 const DEFAULT_CACHE_MAX_ENTRIES = 512;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
@@ -516,6 +519,29 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
+  async getSongChorus(songId: string, cookie?: string): Promise<SongChorus | undefined> {
+    const id = songId.trim();
+    if (!id) return undefined;
+    return this.cached(
+      this.cacheKey("song-chorus", undefined, id),
+      SONG_CHORUS_CACHE_TTL_MS,
+      async () => {
+        const response = await this.callOptional(["song_chorus"], { id }, cookie);
+        if (!response) return undefined;
+        const body = responseBody(response);
+        const list = asArray(body.chorus ?? asRecord(body.data).chorus ?? body.data);
+        const item = asRecord(list[0]);
+        const startTime = readNumber(item.startTime);
+        if (startTime === undefined) return undefined;
+        const endTime = readNumber(item.endTime);
+        return {
+          startTime,
+          ...(endTime !== undefined && endTime > startTime ? { endTime } : {}),
+        };
+      },
+    );
+  }
+
   async getPlaylistSongs(playlistId: string, cookie?: string) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
@@ -699,17 +725,21 @@ export class NeteaseMusicProvider implements MusicProvider {
         )
       : Promise.resolve(undefined);
     const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
+    const chorusPromise = includeResources
+      ? this.getSongChorus(id, cookie).catch(() => undefined)
+      : Promise.resolve(undefined);
     const urlPromise = includeResources
       // song_url_v1 在当前 API Enhanced 版本中可能因缺少 xeapi 公钥直接抛错；
       // 优先使用稳定的 song_url，并保留 v1 作为后备。
       ? this.call(["song_url", "song_url_v1"], { id, level: "standard", br: 320000 }, cookie)
       : Promise.resolve(undefined);
 
-    const [wikiResponse, lyricResponse, urlResponse, popularity] = await Promise.all([
+    const [wikiResponse, lyricResponse, urlResponse, popularity, chorus] = await Promise.all([
       wikiPromise,
       lyricPromise,
       urlPromise,
       popularityPromise,
+      chorusPromise,
     ]);
 
     const songRecord = asRecord(rawSong);
@@ -741,6 +771,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         aliases: wiki.aliases,
         tags: wiki.tags,
       },
+      chorus,
     };
   }
 

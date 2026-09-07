@@ -228,11 +228,35 @@ export default function SonGuessrRoomPage() {
     if (roomClosedAt && !leavingRef.current) navigate("/songuessr", { replace: true });
   }, [navigate, roomClosedAt]);
 
+  const isPlayingPhase = snapshot?.phase === "playing";
+  const isRoundResultPhase = snapshot?.phase === "roundResult";
+
   const round = snapshot?.currentRound;
-  const roundNumber = round?.roundNumber;
-  const roundAudioUrl = round?.audioUrl;
-  const lyricStartTime = round?.lyricClip?.startTime;
-  const lyricEndTime = round?.lyricClip?.endTime;
+  const roundSummary = snapshot?.roundSummary;
+
+  const currentPhaseRoundNumber = isPlayingPhase
+    ? round?.roundNumber
+    : isRoundResultPhase
+      ? roundSummary?.roundNumber
+      : undefined;
+
+  const currentAudioUrl = isPlayingPhase
+    ? round?.audioUrl
+    : isRoundResultPhase
+      ? roundSummary?.song?.audioUrl
+      : undefined;
+
+  const currentClipStartTime = isPlayingPhase
+    ? round?.lyricClip?.startTime
+    : isRoundResultPhase
+      ? (roundSummary?.song?.chorus?.startTime ?? 0)
+      : undefined;
+
+  const currentClipEndTime = isPlayingPhase
+    ? round?.lyricClip?.endTime
+    : isRoundResultPhase
+      ? roundSummary?.song?.chorus?.endTime
+      : undefined;
 
   useEffect(() => {
     sendCommandRef.current = sendCommand;
@@ -242,30 +266,32 @@ export default function SonGuessrRoomPage() {
     const audio = audioRef.current;
     if (
       !audio ||
-      roundNumber === undefined ||
-      !roundAudioUrl ||
-      lyricStartTime === undefined ||
-      lyricEndTime === undefined
+      currentPhaseRoundNumber === undefined ||
+      !currentAudioUrl ||
+      currentClipStartTime === undefined
     ) return;
-    const loadKey = `${roomId}:${roundNumber}:${roundAudioUrl}:${lyricStartTime}:${lyricEndTime}:${audioRetryToken}`;
+    const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
     setAudioStatus("loading");
     setAudioPlaybackState("idle");
     audio.volume = volumeRef.current;
-    const startSeconds = lyricStartTime / 1_000;
-    const endSeconds = lyricEndTime / 1_000;
+    const startSeconds = currentClipStartTime / 1_000;
+    const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
 
     const moveToStart = () => {
       if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
     };
     const stopAtEnd = () => {
-      if (audio.currentTime >= endSeconds) {
+      if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
         audio.pause();
         audio.currentTime = startSeconds;
         setAudioPlaybackState("completed");
       }
     };
     const keepPlaybackInClip = () => {
-      if (audio.currentTime < startSeconds - 0.25 || audio.currentTime >= endSeconds) {
+      if (
+        audio.currentTime < startSeconds - 0.25 ||
+        (endSeconds !== undefined && audio.currentTime >= endSeconds)
+      ) {
         audio.currentTime = startSeconds;
       }
     };
@@ -283,13 +309,14 @@ export default function SonGuessrRoomPage() {
         (player) => player.id === currentPrivateState?.playerId,
       );
       if (
+        isPlayingPhase &&
         currentPrivateState &&
         !(currentPrivateState.isSubmitter && !currentSnapshot?.testMode) &&
         currentPlayer?.membership === "active" &&
         audioReadyKey.current !== loadKey
       ) {
         audioReadyKey.current = loadKey;
-        void sendCommandRef.current("song.game.audioReady", { roundNumber }).catch(() => {
+        void sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber }).catch(() => {
           if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
         });
       }
@@ -322,7 +349,7 @@ export default function SonGuessrRoomPage() {
     audio.addEventListener("canplaythrough", ready);
     audio.addEventListener("loadeddata", ready);
     audio.addEventListener("error", failed);
-    audio.src = roundAudioUrl;
+    audio.src = currentAudioUrl;
     audio.load();
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) moveToStart();
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) ready();
@@ -345,16 +372,25 @@ export default function SonGuessrRoomPage() {
       audio.removeEventListener("loadeddata", ready);
       audio.removeEventListener("error", failed);
     };
-  }, [audioRetryToken, lyricEndTime, lyricStartTime, roomId, roundAudioUrl, roundNumber]);
+  }, [
+    audioRetryToken,
+    currentAudioUrl,
+    currentClipEndTime,
+    currentClipStartTime,
+    currentPhaseRoundNumber,
+    isPlayingPhase,
+    roomId,
+    snapshot?.phase,
+  ]);
 
   // 音频可能先于房间私有状态完成加载；私有状态到达后补发一次准备通知。
   useEffect(() => {
     if (
       audioStatus !== "ready" ||
-      roundNumber === undefined ||
-      !roundAudioUrl ||
-      lyricStartTime === undefined ||
-      lyricEndTime === undefined
+      !isPlayingPhase ||
+      currentPhaseRoundNumber === undefined ||
+      !currentAudioUrl ||
+      currentClipStartTime === undefined
     ) return;
     const currentPlayer = snapshot?.players.find((player) => player.id === privateState?.playerId);
     if (
@@ -362,25 +398,27 @@ export default function SonGuessrRoomPage() {
       (privateState.isSubmitter && !snapshot?.testMode) ||
       currentPlayer?.membership !== "active"
     ) return;
-    const loadKey = `${roomId}:${roundNumber}:${roundAudioUrl}:${lyricStartTime}:${lyricEndTime}:${audioRetryToken}`;
+    const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
     if (audioReadyKey.current === loadKey) return;
     audioReadyKey.current = loadKey;
-    void sendCommandRef.current("song.game.audioReady", { roundNumber }).catch(() => {
+    void sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber }).catch(() => {
       if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
     });
   }, [
     audioRetryToken,
     audioStatus,
-    lyricEndTime,
-    lyricStartTime,
+    currentAudioUrl,
+    currentClipEndTime,
+    currentClipStartTime,
+    currentPhaseRoundNumber,
+    isPlayingPhase,
     privateState,
     privateState?.isSubmitter,
     privateState?.playerId,
     roomId,
-    roundAudioUrl,
-    roundNumber,
-    snapshot?.testMode,
+    snapshot?.phase,
     snapshot?.players,
+    snapshot?.testMode,
   ]);
 
   const playAudio = useCallback(async () => {
@@ -389,12 +427,14 @@ export default function SonGuessrRoomPage() {
       !audio ||
       audioStatus !== "ready" ||
       audioPlaybackState === "playing" ||
-      lyricStartTime === undefined ||
-      lyricEndTime === undefined
+      currentClipStartTime === undefined
     ) return;
-    const startSeconds = lyricStartTime / 1_000;
-    const endSeconds = lyricEndTime / 1_000;
-    if (audio.currentTime < startSeconds - 0.25 || audio.currentTime >= endSeconds) {
+    const startSeconds = currentClipStartTime / 1_000;
+    const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
+    if (
+      audio.currentTime < startSeconds - 0.25 ||
+      (endSeconds !== undefined && audio.currentTime >= endSeconds)
+    ) {
       audio.currentTime = startSeconds;
     }
     try {
@@ -402,7 +442,22 @@ export default function SonGuessrRoomPage() {
     } catch {
       setAudioPlaybackState("idle");
     }
-  }, [audioPlaybackState, audioStatus, lyricEndTime, lyricStartTime]);
+  }, [audioPlaybackState, audioStatus, currentClipEndTime, currentClipStartTime]);
+
+  const pauseAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.pause();
+    setAudioPlaybackState("idle");
+  }, []);
+
+  const toggleAudio = useCallback(async () => {
+    if (audioPlaybackState === "playing") {
+      pauseAudio();
+    } else {
+      await playAudio();
+    }
+  }, [audioPlaybackState, pauseAudio, playAudio]);
 
 
   useEffect(() => {
@@ -606,7 +661,7 @@ export default function SonGuessrRoomPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <audio
         ref={audioRef}
-        src={roundAudioUrl}
+        src={currentAudioUrl}
         className="hidden"
         preload="auto"
         playsInline
@@ -713,6 +768,8 @@ export default function SonGuessrRoomPage() {
               audioStatus={audioStatus}
               audioPlaybackState={audioPlaybackState}
               onPlayAudio={() => void playAudio()}
+              onPauseAudio={pauseAudio}
+              onToggleAudio={() => void toggleAudio()}
               onRetryAudio={() => setAudioRetryToken((token) => token + 1)}
               openSearch={setSearchMode}
               searchMode={searchMode}
@@ -790,6 +847,8 @@ interface SongGameAreaProps {
   audioStatus: "loading" | "ready" | "error";
   audioPlaybackState: "idle" | "playing" | "completed";
   onPlayAudio: () => void;
+  onPauseAudio?: () => void;
+  onToggleAudio?: () => void;
   onRetryAudio: () => void;
   openSearch: (mode: "submit" | "guess") => void;
   searchMode: "submit" | "guess" | null;
@@ -855,6 +914,7 @@ function GameStage({
   audioStatus,
   audioPlaybackState,
   onPlayAudio,
+  onToggleAudio,
   onRetryAudio,
   openSearch,
   run,
@@ -1038,6 +1098,14 @@ function GameStage({
 
   if (snapshot.phase === "roundResult" && snapshot.roundSummary) {
     const summary = snapshot.roundSummary;
+    const chorus = summary.song.chorus;
+    const formatTime = (ms: number) => {
+      const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+    };
+
     return (
       <div className="mx-auto max-w-2xl space-y-5">
         <PhaseHeader icon={Music2} title="答案揭晓" />
@@ -1059,7 +1127,49 @@ function GameStage({
                 {summary.song.releaseYear ? <Badge variant="outline">{summary.song.releaseYear}</Badge> : null}
                 {summary.song.language ? <Badge variant="outline">{summary.song.language}</Badge> : null}
                 {summary.song.encyclopedia.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+                {chorus ? (
+                  <Badge variant="secondary" className="gap-1 font-mono">
+                    <Music2 className="h-3 w-3" />
+                    副歌 {formatTime(chorus.startTime)}{chorus.endTime ? ` - ${formatTime(chorus.endTime)}` : ""}
+                  </Badge>
+                ) : null}
               </div>
+
+              {summary.song.audioUrl ? (
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={onToggleAudio ?? onPlayAudio}
+                    disabled={audioStatus === "loading"}
+                    aria-label={audioPlaybackState === "playing" ? "暂停副歌" : "播放副歌"}
+                  >
+                    {audioPlaybackState === "playing" ? (
+                      <>
+                        <Volume2 className="h-4 w-4 animate-pulse text-primary" />
+                        <span>暂停副歌</span>
+                      </>
+                    ) : audioPlaybackState === "completed" ? (
+                      <>
+                        <RotateCcw className="h-4 w-4" />
+                        <span>重播副歌</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        <span>播放副歌</span>
+                      </>
+                    )}
+                  </Button>
+                  {audioStatus === "error" ? (
+                    <Button variant="ghost" size="sm" onClick={onRetryAudio} className="text-xs text-destructive">
+                      音频加载失败，点击重试
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
               {summary.song.encyclopedia.aliases?.length ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   别名：{summary.song.encyclopedia.aliases.join("、")}

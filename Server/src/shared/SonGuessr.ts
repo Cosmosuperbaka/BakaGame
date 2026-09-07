@@ -98,6 +98,11 @@ export interface SongEncyclopedia {
   tags: string[];
 }
 
+export interface SongChorus {
+  startTime: number;
+  endTime?: number;
+}
+
 export interface SongDetails extends SongSearchResult {
   audioUrl: string;
   lyrics: SongLyricLine[];
@@ -105,6 +110,7 @@ export interface SongDetails extends SongSearchResult {
   popularity?: number;
   language?: string;
   encyclopedia: SongEncyclopedia;
+  chorus?: SongChorus;
 }
 
 export type SongGuessDirection = "higher" | "lower" | "equal" | "unknown";
@@ -145,6 +151,8 @@ export interface SonGuessrRoundSummary {
     popularity?: number;
     language?: string;
     encyclopedia: SongEncyclopedia;
+    audioUrl?: string;
+    chorus?: SongChorus;
   };
   submitterPlayerId: string;
   correctPlayerIds: string[];

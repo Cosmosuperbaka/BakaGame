@@ -29,6 +29,7 @@ const makeSong = (id: string, title: string, year: number): SongDetails => ({
   popularity: id === "answer" ? 90 : 60,
   language: "国语",
   encyclopedia: { summary: "百科", tags: ["流行", id] },
+  chorus: { startTime: 50_000, endTime: 90_000 },
 });
 
 const songs = {
@@ -757,6 +758,8 @@ describe("SonGuessrService", () => {
     const result = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.correctPlayerIds).toContain(hostState.playerId);
+    expect(result.roundSummary?.song.audioUrl).toBe("https://audio/answer.mp3");
+    expect(result.roundSummary?.song.chorus).toEqual({ startTime: 50_000, endTime: 90_000 });
   });
 
   test("完整迁移出题、逐次猜测、反馈、计分与结算流程", async () => {
