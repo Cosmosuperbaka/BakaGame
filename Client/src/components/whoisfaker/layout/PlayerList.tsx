@@ -1,4 +1,4 @@
-﻿import { useCallback } from "react";
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import {
@@ -282,7 +282,7 @@ export function PlayerList(props: PlayerListProps) {
           <div
             key={column.key}
             className={cn(
-              "flex items-center whitespace-nowrap px-4 text-[11px] font-semibold tracking-wide",
+              "flex items-center whitespace-nowrap px-4 font-sans text-[11px] font-semibold tracking-wide",
               withRule && "mt-3",
               DESCRIPTION_HEAD_TONES[column.tone],
             )}
@@ -449,7 +449,7 @@ function SpectatorToggle({
     <Button
       variant="ghost"
       size="sm"
-      className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
+      className="mt-1 h-8 justify-start gap-1.5 px-2 font-sans text-xs text-muted-foreground"
       onClick={() => onToggle(spectator)}
     >
       {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -472,10 +472,10 @@ export function PlayerGroupTitle({
       className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
-      <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+      <h3 className="font-sans text-[11px] font-semibold tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="font-sans text-[11px] tabular-nums text-muted-foreground/70">
         {count}
       </span>
       <span className="h-px flex-1 bg-border/70" />
@@ -567,7 +567,7 @@ export function PlayerRow(props: PlayerRowProps) {
         <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
       ) : null}
       {/* 得分居右 */}
-      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+      <span className="shrink-0 font-sans text-xs tabular-nums text-muted-foreground">
         {player.score}<span className="ml-0.5 text-[10px]">分</span>
       </span>
     </div>
@@ -664,7 +664,7 @@ function MarkButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
+        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 font-sans text-xs font-semibold transition-colors",
         "border-r last:border-r-0",
         selected
           ? roleSelectedTones[option]
@@ -696,7 +696,7 @@ function ManageButton({
         {...tappable}
         onClick={onClick}
         className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
+          "flex w-full items-center gap-2 px-4 py-2.5 font-sans text-xs font-medium transition-colors",
           "border-t first:border-t-0",
           destructive
             ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"

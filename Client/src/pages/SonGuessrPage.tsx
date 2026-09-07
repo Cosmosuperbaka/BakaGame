@@ -203,7 +203,7 @@ export default function SonGuessrPage() {
                             {room.hasPassword && <Lock className="h-4 w-4 text-muted-foreground" />}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
-                            房间号 {room.roomId}
+                            房间号: <span className="font-mono">{room.roomId}</span>
                           </div>
                         </div>
                       </div>
@@ -211,7 +211,7 @@ export default function SonGuessrPage() {
                         <Badge variant="outline" className="font-normal text-xs">
                           {phaseLabels[room.phase]}
                         </Badge>
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5 font-sans tabular-nums">
                           <Users className="h-4 w-4" />
                           {room.onlineCount}/{room.playerCount}
                         </span>

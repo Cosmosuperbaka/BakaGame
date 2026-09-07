@@ -1,10 +1,10 @@
-﻿import { cn } from "@/lib/Utils";
+import { cn } from "@/lib/Utils";
 
 export type PlayerStatusTone = "default" | "emerald" | "violet" | "red" | "amber";
 
 /** 玩家栏统一使用的浅底状态徽章；Whoisfaker 与 Songuessr 共用这一套样式。 */
 export const PLAYER_BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center rounded bg-muted px-1.5 py-0.5 font-sans text-[11px] font-semibold leading-none tracking-normal";
 
 /** 玩家栏共用的行布局；游戏房间只需在此基础上追加自己的状态内容。 */
 export const PLAYER_ROW_BASE =
