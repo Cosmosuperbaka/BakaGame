@@ -82,11 +82,12 @@ fetch(url, { credentials: "include" });
 所有歌曲相关请求都经过 `NeteaseMusicProvider`：
 
 - 搜索：`cloudsearch`/`search`。
-- 出题歌曲详情：`song_detail`、时间轴歌词、播放地址和可选歌曲百科。
+- 出题歌曲详情：`song_detail`、时间轴歌词、播放地址、可选歌曲百科以及副歌时间（`song_chorus`）。
 - 猜测歌曲：只读取元数据，不请求歌词或音频。
 - 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
+副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`，服务端缓存 30 分钟。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
 
 ### 歌词清洗
 
@@ -100,9 +101,10 @@ fetch(url, { credentials: "include" });
 
 ### 音频播放
 
-- 浏览器不显示原生 `<audio controls>`，用户不能暂停、拖动或跳过当前片段。
-- 音频加载完成后自动开始播放；播放期间不提供暂停、拖动或进度控制，播放到歌词片段结束后才允许使用歌词区域右上角的方形“重播音频”按钮。
-- 若浏览器的自动播放策略拦截开始播放，只显示同一位置的小型播放后备按钮，不得恢复原生音频进度控件。
+- 浏览器不显示原生 `<audio controls>`，用户不能拖动当前片段。
+- **竞猜阶段**：音频加载完成后自动开始播放；播放期间不提供暂停、拖动或进度控制，播放到歌词片段结束后才允许使用歌词区域右上角的方形“重播音频”按钮。
+- **结算阶段**：进入 `roundResult` 阶段后，由 `roundSummary` 透传答案歌曲的 `audioUrl` 与 `chorus`。客户端自动从副歌起点（`chorus.startTime`，缺失时为 0）起播，播放至副歌终点（`chorus.endTime`，缺失时为整曲结束）。结算卡片提供副歌区间展示与播放/暂停/重播交互控件。
+- 若浏览器的自动播放策略拦截开始播放，显示手动播放/重播后备按钮，不得恢复原生音频进度控件。
 - 音频加载必须监听至少 `canplay`、`loadeddata` 和 `error`，并设置超时与重试入口；不能只依赖 `canplaythrough`。
 - 音频资源必须使用 HTTPS、支持 Range，并在浏览器端满足 CORS 要求。
 

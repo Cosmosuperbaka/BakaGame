@@ -1570,6 +1570,8 @@ export class SonGuessrService {
       roundNumber: round.number,
       song: {
         ...this.publicSong(round.song),
+        audioUrl: round.song.audioUrl,
+        chorus: round.song.chorus,
         releaseYear: round.song.releaseYear,
         popularity: round.song.popularity,
         language: round.song.language,

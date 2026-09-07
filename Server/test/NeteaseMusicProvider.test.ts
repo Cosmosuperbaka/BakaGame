@@ -689,4 +689,60 @@ describe("NeteaseMusicProvider", () => {
     expect(songs[0]?.id).toBe("99");
     expect(upstreamCalls).toBe(2);
   });
+
+  test("获取歌曲副歌并支持空数据安全降级与全量加载装配", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        song_chorus: async ({ id }: { id: string | number }) => {
+          if (String(id) === "100") {
+            return {
+              body: {
+                code: 200,
+                chorus: [{ id: 100, startTime: 45_000, endTime: 85_000, ugcLocked: 0 }],
+              },
+            };
+          }
+          return {
+            body: {
+              code: 200,
+              chorus: [],
+            },
+          };
+        },
+        song_detail: async () => ({
+          body: {
+            songs: [
+              {
+                id: 100,
+                name: "副歌测试曲",
+                ar: [{ id: 1, name: "歌手" }],
+                al: { id: 1, name: "专辑" },
+                dt: 240_000,
+              },
+            ],
+          },
+        }),
+        song_url: async () => ({
+          body: {
+            data: [{ id: 100, url: "http://music.example.com/100.mp3" }],
+          },
+        }),
+        lyric_new: async () => ({
+          body: {
+            lrc: { lyric: "[00:10.00]第一句歌词\n[00:20.00]第二句歌词" },
+          },
+        }),
+      }),
+    });
+
+    const chorusNormal = await provider.getSongChorus("100");
+    expect(chorusNormal).toEqual({ startTime: 45_000, endTime: 85_000 });
+
+    const chorusEmpty = await provider.getSongChorus("200");
+    expect(chorusEmpty).toBeUndefined();
+
+    const fullSong = await provider.getSong("100");
+    expect(fullSong.chorus).toEqual({ startTime: 45_000, endTime: 85_000 });
+    expect(fullSong.audioUrl).toBe("https://music.example.com/100.mp3");
+  });
 });
