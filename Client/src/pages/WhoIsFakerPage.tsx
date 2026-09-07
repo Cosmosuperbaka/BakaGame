@@ -207,7 +207,7 @@ export default function WhoIsFakerPage() {
                             )}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
-                            房间号: {room.roomId}
+                            房间号: <span className="font-mono">{room.roomId}</span>
                           </div>
                         </div>
                       </div>
@@ -215,7 +215,7 @@ export default function WhoIsFakerPage() {
                         <Badge variant="outline" className="font-normal text-xs">
                           {PHASE_LABELS[room.phase] ?? room.phase}
                         </Badge>
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5 font-sans tabular-nums">
                           <Users className="h-4 w-4" />
                           {room.onlineCount}/{room.playerCount}
                         </span>
