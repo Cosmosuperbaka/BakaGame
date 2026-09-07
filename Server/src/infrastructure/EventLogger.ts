@@ -252,6 +252,7 @@ export const formatLogEntry = (
 };
 
 import type { OtlpExporter } from "./OtlpExporter";
+import { captureServerException, captureServerMessage, isServerSentryEnabled } from "./Sentry";
 
 export class EventLogger {
   private readonly output: LogOutput;
@@ -305,6 +306,15 @@ export class EventLogger {
           status: "ERROR",
           statusMessage: message,
         });
+      }
+    }
+
+    if (level === "ERROR" && isServerSentryEnabled()) {
+      const err = context?.error;
+      if (err instanceof Error) {
+        captureServerException(err, context);
+      } else {
+        captureServerMessage(message, "error", context);
       }
     }
   }

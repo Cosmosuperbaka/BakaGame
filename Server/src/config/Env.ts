@@ -15,6 +15,8 @@ export interface AppEnv {
   otelServiceName?: string;
   otelServiceNamespace?: string;
   otelDeploymentEnvironment?: string;
+  sentryDsn?: string;
+  sentryAllowedProjectIds?: string[];
 }
 
 // ==================== 环境变量解析 ====================
@@ -128,5 +130,10 @@ export const readEnv = (): AppEnv => {
     otelServiceName,
     otelServiceNamespace,
     otelDeploymentEnvironment,
+    sentryDsn: Bun.env.SENTRY_DSN,
+    sentryAllowedProjectIds: (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 };
