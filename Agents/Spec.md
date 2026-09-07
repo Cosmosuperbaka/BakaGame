@@ -178,10 +178,15 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
 - **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
 
-### 10.5 Grafana Cloud 接入与免翻墙服务端安全中转 (OTLP Telemetry & Gateway Proxying)
-- **凭据隔离与防泄露**：浏览器端严禁持有 Grafana Cloud API Key 或私有 Basic 认证凭据。所有客户端报错与打点统一发送至同源反代路由 `/api/monitoring/telemetry`。
-- **中国大陆网络免翻直连**：前端无需直连海外云平台（规避 DNS 污染与 GFW 拦截），由后端常驻进程在服务区完成聚合、脱敏与 OTLP 批处理（`OtlpExporter`）上报，保障中国大陆玩家顺畅体验。
-- **标准环境变量支撑**：通过 `OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_HEADERS`、`OTEL_SERVICE_NAME` 支持零配置注入标准 OpenTelemetry 采集栈。
+### 10.5 Sentry 全栈异常托管与同源隧道防拦截架构 (Sentry & Tunnel Gateway)
+- **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。
+- **同源隧道反代与防广告拦截 (Sentry Tunnel)**：前端 Sentry 上报统一通过服务端同源反代路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，彻底免疫浏览器广告拦截插件（AdBlocker）误杀，保障中国大陆玩家顺畅直连。
+- **标准环境变量支撑**：前端通过 `VITE_SENTRY_DSN` 注入客户端上报凭据；服务端通过 `SENTRY_DSN` 与 `SENTRY_ALLOWED_PROJECT_IDS` 注入服务端凭据与隧道校验白名单。现有标准 OpenTelemetry（`OTEL_EXPORTER_OTLP_*`）与 EventLogger 继续保障对局事件落盘审计与双轨观测。
+
+### 10.6 绝对凭据隔离与防密钥泄漏铁律 (Zero-Secrets & Credential Isolation Invariant)
+- **严禁向 Git 仓库提交真实凭据**：无论属于公钥、私钥、Token 还是项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），一律绝对严禁写入被 Git 追踪的任何文件。
+- **示例文件与测试用例全量 Dummy 化**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`），严禁粘贴任何真实环境的 DSN 与实际项目标识。
+- **真实凭据单一物理隔离**：真实配置必须且只能存在于被 `.gitignore` 严格忽略的本地私有 `.env`、`.env.local` 文件或云原生容器平台环境变量中。代码默认值与 Fallback 严禁携带任何现网项目标识。
 
 ## 11. 平台与多游戏平等架构契约 (Multi-Game Equal Status Architecture Contract)
 
