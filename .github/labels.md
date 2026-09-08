@@ -1,6 +1,6 @@
 # Issue 标签规范
 
-标签清单的机器可读源为 [.github/labels.yml](labels.yml)，本文档说明分组与使用规则。标签名与 commit 的 `type` / `scope`（见 [Agents/versioning.md](../Agents/versioning.md)）保持同一套词汇，减少记忆成本。
+标签清单的机器可读源为 [.github/labels.yml](labels.yml)，本文档说明分组与使用规则。标签名与 commit 的 `type` / `scope`（见 [Agents/Commitment.md](../Agents/Commitment.md)）保持同一套词汇，减少记忆成本。
 
 ## 分组
 

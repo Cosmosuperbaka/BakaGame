@@ -235,7 +235,16 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **跨域 HTTP 方法与追踪头对称开放**：反向代理与全局 CORS 配置必须对称覆盖所有业务端点的方法（`methods: ["GET", "POST", "OPTIONS"]`），并将分布式追踪头（`allowedHeaders: ["content-type", "x-trace-id"]`）纳入预检放行，严防生产前后端分域部署时遥测打点被静默拦截。
 - **WebSocket 协议层单帧硬上限**：WebSocket 网关必须显式配置单帧载荷上限（`maxPayloadLength: 256 * 1024`，256KB），杜绝恶意攻击者单帧灌入超大包耗尽边缘容器内存。
 - **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
-- **遥测上报缓冲队列上限与网络超时**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，超出淘汰最旧日志），导出过程必须挂载 `isFlushing` 并发飞行锁，网络请求必须配置超时中断（`AbortSignal.timeout(5000)`），杜绝上游网络瘫痪引发日志堆积 OOM。
+- **OTLP 链路导出失败不丢数据、有限指数退避重试与有界淘汰指标契约**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，积压溢出淘汰最旧数据，准确统计 `droppedCount` 指标）；严格校验上游响应 `response.ok`，在遇到 5xx/429 或网络异常时未发送批次必须安全回退至队列头部，杜绝静默丢数据；基于连续失败次数引入有限指数退避重试（基础 1000ms，最大 30000ms），在退避窗口内拦截无效调用；导出过程挂载 `isFlushing` 飞行并发锁与 5s 网络超时中断，并在停机时提供排空契约。
+
+### 12.5 Sentry 同源反代隧道与安全边界规范 (Sentry Tunnel & SSRF Defense)
+- **严格权威主机白名单**：Sentry 同源转发隧道（`SentryTunnel.ts`）严禁使用 `host.includes("sentry")` 等模糊匹配。必须配置精确的官方权威摄取域名白名单（`*.ingest.sentry.io`、`*.ingest.us.sentry.io`、`*.ingest.de.sentry.io` 等）或显式配置的私有部署主机，彻底封堵 `sentry.evil.example` 等恶意 SSRF 攻击。
+- **严格协议、默认端口与路径校验**：隧道仅放行 `https:` 协议与 443 默认端口，杜绝探测内网非常规端口与明文未加密连接；上游目标路径必须强校验合法的 Project ID 正则格式（`/^\/([0-9a-zA-Z_-]+)$/`），杜绝任意路径代理穿透。
+- **载荷上限与错误脱敏**：隧道单次转发载荷严格限制为 256KB（超限快速返回 413），配置 5s fetch 超时中断与应用级滑动窗口限流；任何上游错误必须脱敏为通用安全响应（如 `502 Bad Gateway`），严禁向下游暴露内部网络拓扑与未处理异常堆栈。
+
+### 12.6 状态持久化与自动保存阶段守卫规范 (Auto-Save Lifecycle & Phase Guards)
+- **非对局配置保存遵循等待阶段守卫**：客户端配置自动保存 Hook（`useAutoSave`）在处理房间设置、题目选项等非对局状态时，必须遵循 `phase === "waiting"` 阶段守卫。
+- **视口脱离与组件卸载保护**：当配置组件离开视口、失焦或发生组件卸载（unmount）刷新残余队列时，若当前对局已开始（如已进入出题、描述、猜歌、投票、结算等阶段），必须立即终止残余的静默写提交，严禁用卸载时遗留的历史旧表单快照覆盖对局进行中的服务端权威状态。
 
 ## 13. 测试驱动设计与可测试性架构规范 (Test-Driven Design & Testability Invariants)
 
@@ -247,7 +256,8 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **长连接与事件驱动 Store 测试提供安全分发门面**：测试长连接与全局 Store（如 `UseWhoIsFakerStore`）状态流转时，WebSocket 模拟驱动必须封装高层语义触发门面（如 `emitStatus`、`emitMessage`），严禁在用例中直接使用裸数组下标（如 `statusHandlers[0]()`、`messageHandlers[0]()`）进行盲调，杜绝监听次序微调引发的级联用例挂死。
 
 ### 13.2 依赖倒置与杜绝运行时全局污染 (Dependency Injection & Anti-Global Stubbing)
-- **时钟与伪随机数必须支持构造器/参数注入**：所有涉及时间推移、退避重试、熔断冷却、抖动调度或超时过期的类与模块（如 `NeteaseMusicProvider`），严禁在内部写死 `Date.now()` 或 `Math.random()`。必须在构造选项中提供可选的 `now?: () => number` 与 `random?: { nextFloat?: () => number }` 注入槽位。测试中必须通过推进虚拟时钟（Virtual Clock）实现 0ms 异步竞态断言，杜绝依赖真实 `sleep` 造成的测试耗时膨胀与 Flakiness。
+- **时钟与伪随机数必须支持构造器/参数注入**：所有涉及时间推移、退避重试、熔断冷却、抖动调度或超时过期的类与模块（如 `NeteaseMusicProvider`、`OtlpExporter`），严禁在内部写死 `Date.now()` 或 `Math.random()`。必须在构造选项中提供可选的 `now?: () => number` 与 `random?: { nextFloat?: () => number }` 注入槽位。测试中必须通过推进虚拟时钟（Virtual Clock）实现 0ms 异步竞态断言，杜绝依赖真实 `sleep` 造成的测试耗时膨胀与 Flakiness。
+- **第三方 API 与网络服务测试杜绝真实时钟等待**：在测试第三方外部服务、网络重试、限流防抖或定时心跳时，严禁使用真实 `Bun.sleep(...)`、`setTimeout` 或硬编码毫秒等待。必须强制注入虚拟时钟或受控 Promise 门面；对网络伪造 IP（如网易云 `X-Real-IP`）等随机源，必须通过参数注入确定性伪随机数生成器，消除并发用例间的随机源污染与断言 Flakiness。
 - **网络与外部 IO 驱动参数化解耦**：客户端监控、遥测上报与辅助通信函数（如 `reportTelemetry`），必须通过可选参数（`options?: { serverUrl?: string; fetcher?: typeof fetch }`）支持网络驱动注入。单测中优先通过入参传入受控的 mock 实例，严禁滥用 `vi.stubGlobal("fetch")` 污染全局 runtime，消除并发用例之间的全局上下文竞争隐患。
 
 ### 13.3 消除过度 Mock 与原生状态驱动 (Zustand Native State Drive & Anti-Over-Mocking)
