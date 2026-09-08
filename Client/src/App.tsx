@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
+import { VersionUpdateNotice } from "@/components/VersionUpdateNotice";
 
 const LandingPage = lazy(() => import("@/pages/LandingPage"));
 const WhoIsFakerPage = lazy(() => import("@/pages/WhoIsFakerPage"));
@@ -36,6 +37,7 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
+          <VersionUpdateNotice />
         </TooltipProvider>
       </MotionConfig>
     </BrowserRouter>
