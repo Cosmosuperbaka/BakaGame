@@ -67,7 +67,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("配置 sentryDsn 时成功调用 Sentry.init 并标记为已启用", () => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation(() => {});
+      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
       const env = createMockEnv({
         sentryDsn: "https://mock@o0.ingest.sentry.io/1",
         otelDeploymentEnvironment: "staging",
@@ -108,7 +108,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   describe("已初始化状态的上下文注入与异常上报", () => {
     beforeEach(() => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation(() => {});
+      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
       initServerSentry(createMockEnv());
       initSpy.mockRestore();
     });
@@ -128,9 +128,9 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
         },
       };
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
         return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
-      });
+      }) as any);
       const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
 
       const testError = new Error("Database connection timeout");
@@ -155,10 +155,10 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("captureServerException 在无 context 时安全上报", () => {
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
         const dummyScope = { setTag: () => dummyScope, setExtras: () => dummyScope };
         return fn(dummyScope) as ReturnType<typeof Sentry.withScope>;
-      });
+      }) as any);
       const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
 
       const err = new Error("Simple error");
@@ -185,9 +185,9 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
         },
       };
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
         return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
-      });
+      }) as any);
       const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
 
       captureServerMessage("High memory alert", "warning", {
@@ -206,7 +206,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   describe("flushServerSentry & closeServerSentry 优雅停机排空", () => {
     beforeEach(() => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation(() => {});
+      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
       initServerSentry(createMockEnv());
       initSpy.mockRestore();
     });
