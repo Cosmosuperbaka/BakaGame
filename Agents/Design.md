@@ -45,11 +45,11 @@
   - 英文衬线首选：`"Libre Baskerville"`, `"Lora Variable"`, `"Lora"`, `Georgia`；
   - 中文矢量衬线：`@fontsource-variable/noto-serif-sc`（`"Noto Serif SC Variable"`, `"Noto Serif SC"`）；
   - 系统衬线回退链（参考 Jacob 字体指南）：`STZhongsong`, `STSong`, `"Noto Serif CJK SC"`, `"Noto Serif CJK"`, `"Source Han Serif SC"`, `PMingLiu`, `SimSun`, `"WenQuanYi Bitmap Song"`, `"Times New Roman"`, `Times`, `serif`。
-- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态：
-  1. 玩家列表分组标题与计数（`PlayerGroupTitle`，如玩家数、旁观数）；
-  2. 玩家准备/等待/出题/旁观微型状态标签（`PlayerStatusPill` / `PLAYER_BADGE_BASE`）；
-  3. 玩家栏分数展示（`tabular-nums font-sans text-xs`）；
-  4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`）。
+- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态，且统一采用常规字重（`font-normal`，禁止使用 `font-semibold`，避免 11px/12px 小字号在黑体下因笔画过粗导致字怀糊死）：
+  1. 玩家列表分组标题与计数（`PlayerGroupTitle`，`font-normal text-[11px]`）；
+  2. 玩家准备/等待/出题/旁观微型状态标签（`PlayerStatusPill` / `PLAYER_BADGE_BASE`，`font-normal text-[11px]`）；
+  3. 玩家栏分数展示（`font-normal tabular-nums font-sans text-xs`）；
+  4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`，`font-normal font-sans text-[11px]`）。
   除上述 4 处微型文本外，严禁在聊天气泡正文、提及高亮、系统提示、顶栏天数/轮数/词语提示、通用徽章（`Badge.tsx`）或操作按钮上滥用 `font-sans`。
 - 无衬线字体栈（`--font-sans-serif` / `--font-sans`）参考 Jacob 字体指南：`-apple-system`, `BlinkMacSystemFont`, `"Apple Color Emoji"`, `"Segoe UI Emoji"`, `"Segoe UI Symbol"`, `"Segoe UI"`, `"PingFang SC"`, `HarmonyOS_Regular`, `"Hiragino Sans GB"`, `"Microsoft YaHei"`, `"Helvetica Neue"`, `Helvetica`, `"Noto Sans SC Variable"`, `"Noto Sans SC"`, `"Source Han Sans SC"`, `"Noto Sans CJK SC"`, `"WenQuanYi Micro Hei"`, `Arial`, `sans-serif`。
 - 等宽字体栈（`--font-mono`）以 `@fontsource-variable/jetbrains-mono`（`JetBrains Mono Variable` / `JetBrains Mono`）为最优先，后接 `ui-monospace`、`SF Mono`、`SFMono-Regular`、`Cascadia Code`、`Segoe UI Mono`、`Source Code Pro`、`Menlo`、`Consolas`、`Liberation Mono`、`monospace`。择机用于房间号（`#roomId`）、分享链接、提交哈希、时间戳等具有代码或数据特征的内容。
