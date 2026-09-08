@@ -1505,6 +1505,7 @@ function SongQuestionSettings({
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
+      enabled: snapshot.status.phase === "waiting",
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
@@ -1708,6 +1709,7 @@ function SongGameSettings({
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
+      enabled: snapshot.status.phase === "waiting",
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
@@ -1791,7 +1793,9 @@ function SongRoomSettings({
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
-      enabled: !isPrivate || snapshot.hasPassword || password.trim().length > 0,
+      enabled:
+        snapshot.status.phase === "waiting" &&
+        (!isPrivate || snapshot.hasPassword || password.trim().length > 0),
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
