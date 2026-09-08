@@ -45,6 +45,15 @@ Object.defineProperty(window, "sessionStorage", {
   writable: true,
 });
 
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = ResizeObserver;
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
