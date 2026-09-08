@@ -15,7 +15,7 @@ import {
   splitMentions,
 } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
-import { useSonGuessrStore as useSongGuessrStore } from "@/stores/UseSonGuessrStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useAutoScrollToBottom } from "@/hooks/UseAutoScrollToBottom";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
@@ -61,11 +61,11 @@ function MessageText({
 }
 
 export function SongChatPanel() {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
-  const chat = useSongGuessrStore((state) => state.snapshot?.chat ?? []);
-  const players = useSongGuessrStore((state) => state.snapshot?.players);
-  const myId = useSongGuessrStore((state) => state.privateState?.playerId);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const chat = useSonGuessrStore((state) => state.snapshot?.chat ?? []);
+  const players = useSonGuessrStore((state) => state.snapshot?.players);
+  const myId = useSonGuessrStore((state) => state.privateState?.playerId);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);

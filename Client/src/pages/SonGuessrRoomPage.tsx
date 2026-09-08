@@ -49,7 +49,7 @@ import { SongAccountSettings } from "@/components/songguessr/SongAccountSettings
 import { SongPlayerList } from "@/components/songguessr/SongPlayerList";
 import { SongSearchDialog } from "@/components/songguessr/SongSearchDialog";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import { sonGuessrWs as songGuessrWs } from "@/lib/SonGuessrWs";
+import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
@@ -72,7 +72,7 @@ import {
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
-import { useSonGuessrStore as useSongGuessrStore } from "@/stores/UseSonGuessrStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
 import type {
   SongArtistFilter,
@@ -80,10 +80,10 @@ import type {
   SongPlaylistInfo,
   SongGuessAttempt,
   SongGuessDirection,
-  SonGuessrMusicAccount as SongGuessrMusicAccount,
-  SonGuessrPrivateState as SongGuessrPrivateState,
-  SonGuessrPlayerView as SongGuessrPlayerView,
-  SonGuessrRoomSnapshot as SongGuessrRoomSnapshot,
+  SonGuessrMusicAccount,
+  SonGuessrPrivateState,
+  SonGuessrPlayerView,
+  SonGuessrRoomSnapshot,
 } from "@/types";
 
 const SONG_VOLUME_KEY = "songuessr_volume";
@@ -101,17 +101,17 @@ export default function SonGuessrRoomPage() {
   const roomId = routeRoomId.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()
     ? ROOM_ID_TEST_MODE
     : routeRoomId.trim();
-  const snapshot = useSongGuessrStore((state) => state.snapshot);
-  const privateState = useSongGuessrStore((state) => state.privateState);
-  const storedRoomId = useSongGuessrStore((state) => state.roomId);
-  const roomClosedAt = useSongGuessrStore((state) => state.roomClosedAt);
-  const connected = useSongGuessrStore((state) => state.connected);
-  const createRoom = useSongGuessrStore((state) => state.createRoom);
-  const joinRoom = useSongGuessrStore((state) => state.joinRoom);
-  const reconnectRoom = useSongGuessrStore((state) => state.reconnectRoom);
-  const leaveRoom = useSongGuessrStore((state) => state.leaveRoom);
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const snapshot = useSonGuessrStore((state) => state.snapshot);
+  const privateState = useSonGuessrStore((state) => state.privateState);
+  const storedRoomId = useSonGuessrStore((state) => state.roomId);
+  const roomClosedAt = useSonGuessrStore((state) => state.roomClosedAt);
+  const connected = useSonGuessrStore((state) => state.connected);
+  const createRoom = useSonGuessrStore((state) => state.createRoom);
+  const joinRoom = useSonGuessrStore((state) => state.joinRoom);
+  const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
+  const leaveRoom = useSonGuessrStore((state) => state.leaveRoom);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const alreadyInRoom = storedRoomId === roomId && snapshot?.roomId === roomId;
   const [joining, setJoining] = useState(!alreadyInRoom);
   const [needsName, setNeedsName] = useState(false);
@@ -195,7 +195,7 @@ export default function SonGuessrRoomPage() {
     const tryEnter = async () => {
       setJoining(true);
       try {
-        await songGuessrWs.waitForConnection(8_000);
+        await sonGuessrWs.waitForConnection(8_000);
       } catch {
         if (!cancelled) {
           setNotice("连接服务器超时，请刷新重试", "error");
@@ -208,7 +208,7 @@ export default function SonGuessrRoomPage() {
         if (!cancelled) setJoining(false);
         return;
       }
-      if (cancelled || useSongGuessrStore.getState().roomClosedAt) return;
+      if (cancelled || useSonGuessrStore.getState().roomClosedAt) return;
       const savedName = getSavedUsername();
       if (!savedName) {
         setJoining(false);
@@ -302,7 +302,7 @@ export default function SonGuessrRoomPage() {
       moveToStart();
       readyState = true;
       setAudioStatus("ready");
-      const state = useSongGuessrStore.getState();
+      const state = useSonGuessrStore.getState();
       const currentPrivateState = state.privateState;
       const currentSnapshot = state.snapshot;
       const currentPlayer = currentSnapshot?.players.find(
@@ -494,7 +494,7 @@ export default function SonGuessrRoomPage() {
     const mountKey = `${snapshot.roomId}:${privateState.playerId}:${storedSession.cookie}`;
     if (mountedMusicSessionRef.current === mountKey) return;
     mountedMusicSessionRef.current = mountKey;
-    void sendCommand<{ account: SongGuessrMusicAccount }>("song.auth.useCookie", { cookie: storedSession.cookie })
+    void sendCommand<{ account: SonGuessrMusicAccount }>("song.auth.useCookie", { cookie: storedSession.cookie })
       .then((result) => {
         if (!result?.account) return;
         saveSongMusicSession(
@@ -837,9 +837,9 @@ export default function SonGuessrRoomPage() {
 }
 
 interface SongGameAreaProps {
-  snapshot: SongGuessrRoomSnapshot;
-  privateState: SongGuessrPrivateState;
-  me?: SongGuessrPlayerView;
+  snapshot: SonGuessrRoomSnapshot;
+  privateState: SonGuessrPrivateState;
+  me?: SonGuessrPlayerView;
   isHost: boolean;
   secondsLeft: number;
   volume: number;
@@ -1209,8 +1209,8 @@ function SongWaitingPhase({
   isHost,
   run,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
-  me?: SongGuessrPlayerView;
+  snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
   isHost: boolean;
   run: SongGameAreaProps["run"];
 }) {
@@ -1277,7 +1277,7 @@ function SongHostWaitingPanel({
   canStart,
   run,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
+  snapshot: SonGuessrRoomSnapshot;
   showProgress: boolean;
   readyCount: number;
   nonHostTotal: number;
@@ -1361,7 +1361,7 @@ function SongHostWaitingPanel({
 
 function SongRoomLinkShare({ roomId }: { roomId: string }) {
   const [copied, setCopied] = useState(false);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const shareUrl = `${window.location.origin}/songuessr/room/${roomId}`;
 
   const handleCopy = async () => {
@@ -1455,10 +1455,10 @@ function SettingsAccordion({
 function SongQuestionSettings({
   snapshot,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
+  snapshot: SonGuessrRoomSnapshot;
 }) {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
   const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
   const [autoRotateSubmitter, setAutoRotateSubmitter] = useState(snapshot.settings.autoRotateSubmitter);
@@ -1505,7 +1505,7 @@ function SongQuestionSettings({
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
-      enabled: snapshot.status.phase === "waiting",
+      enabled: snapshot.phase === "waiting",
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
@@ -1687,10 +1687,10 @@ function SongQuestionSettings({
 function SongGameSettings({
   snapshot,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
+  snapshot: SonGuessrRoomSnapshot;
 }) {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
   const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
   const [showGuessTimer, setShowGuessTimer] = useState(snapshot.settings.showGuessTimer);
@@ -1709,7 +1709,7 @@ function SongGameSettings({
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
-      enabled: snapshot.status.phase === "waiting",
+      enabled: snapshot.phase === "waiting",
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
@@ -1775,10 +1775,10 @@ function SongGameSettings({
 function SongRoomSettings({
   snapshot,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
+  snapshot: SonGuessrRoomSnapshot;
 }) {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [name, setName] = useState(snapshot.name);
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
@@ -1794,7 +1794,7 @@ function SongRoomSettings({
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
       enabled:
-        snapshot.status.phase === "waiting" &&
+        snapshot.phase === "waiting" &&
         (!isPrivate || snapshot.hasPassword || password.trim().length > 0),
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
@@ -1916,7 +1916,7 @@ function CountStepper({
   );
 }
 
-function SongSettingsPreview({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
+function SongSettingsPreview({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const items = [
     snapshot.settings.questionMode === "automatic"
       ? "自动出题"
@@ -1939,7 +1939,7 @@ function SongSettingsPreview({ snapshot }: { snapshot: SongGuessrRoomSnapshot })
   );
 }
 
-function SongAutoFilterSummary({ snapshot }: { snapshot: SongGuessrRoomSnapshot }) {
+function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const filters = snapshot.settings.autoFilters;
   const popularityLabel = filters.minPopularity === 0
     ? "不限热度"
@@ -2011,7 +2011,7 @@ function SongTestController({
   snapshot,
   run,
 }: {
-  snapshot: SongGuessrRoomSnapshot;
+  snapshot: SonGuessrRoomSnapshot;
   run: SongGameAreaProps["run"];
 }) {
   const [open, setOpen] = useState(true);

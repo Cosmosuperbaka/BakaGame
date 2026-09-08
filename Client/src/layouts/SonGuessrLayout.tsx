@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Outlet, useMatch } from "react-router-dom";
 import { SonGuessrProvider } from "@/contexts/SonGuessrContext";
-import { SongGuessrToastContainer } from "@/components/Toast";
+import { SonGuessrToastContainer } from "@/components/Toast";
 import { VersionUpdateNotice } from "@/components/VersionUpdateNotice";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
@@ -14,7 +14,7 @@ export function SonGuessrLayout() {
       <Suspense fallback={<PageLoadingFallback />}>
         <Outlet />
       </Suspense>
-      <SongGuessrToastContainer />
+      <SonGuessrToastContainer />
       <VersionUpdateNotice active={active} />
     </SonGuessrProvider>
   );

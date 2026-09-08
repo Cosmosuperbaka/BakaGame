@@ -30,22 +30,6 @@ vi.mock("@/lib/SonGuessrWs", () => ({
       };
     },
   },
-  songGuessrWs: {
-    send: wsMock.send,
-    connect: wsMock.connect,
-    onMessage: (handler: (message: ServerMessage) => void) => {
-      wsMock.messageHandlers.push(handler);
-      return () => {
-        wsMock.messageHandlers = wsMock.messageHandlers.filter((entry) => entry !== handler);
-      };
-    },
-    onStatus: (handler: (connected: boolean) => void) => {
-      wsMock.statusHandlers.push(handler);
-      return () => {
-        wsMock.statusHandlers = wsMock.statusHandlers.filter((entry) => entry !== handler);
-      };
-    },
-  },
 }));
 
 import {

@@ -8,7 +8,7 @@ import { PlayerGroupTitle, PLAYER_ROW_HEIGHT } from "@/components/whoisfaker/lay
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "@/components/whoisfaker/layout/PlayerStatusPill";
 import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { useSonGuessrStore as useSongGuessrStore } from "@/stores/UseSonGuessrStore";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
 
 type SongStatus = {
@@ -31,8 +31,8 @@ export function SongPlayerList({
   phase,
   allowSpectators,
 }: SongPlayerListProps) {
-  const sendCommand = useSongGuessrStore((state) => state.sendCommand);
-  const setNotice = useSongGuessrStore((state) => state.setNotice);
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
   const me = players.find((player) => player.id === myPlayerId);
