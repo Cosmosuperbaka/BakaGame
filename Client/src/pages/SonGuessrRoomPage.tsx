@@ -140,6 +140,7 @@ export default function SonGuessrRoomPage() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioReadyKey = useRef<string | null>(null);
   const audioAutoPlayKey = useRef<string | null>(null);
+  const audioFailureKey = useRef<string | null>(null);
   const sendCommandRef = useRef(sendCommand);
   const leavingRef = useRef(false);
   const volumeRef = useRef(volume);
@@ -333,6 +334,12 @@ export default function SonGuessrRoomPage() {
       if (disposed || readyState) return;
       setAudioPlaybackState("idle");
       setAudioStatus("error");
+      if (audioFailureKey.current !== loadKey && isPlayingPhase && currentPhaseRoundNumber !== undefined) {
+        audioFailureKey.current = loadKey;
+        void sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber }).catch(() => {
+          if (audioFailureKey.current === loadKey) audioFailureKey.current = null;
+        });
+      }
     };
     const playing = () => setAudioPlaybackState("playing");
     const completed = () => {

@@ -243,6 +243,13 @@ export const SonGuessrMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
+  "song.game.audioFailed": createMessageSchema(
+    "song.game.audioFailed",
+    t.Object(
+      { roundNumber: t.Integer({ minimum: 1 }) },
+      { additionalProperties: false },
+    ),
+  ),
   "song.game.guess": createMessageSchema(
     "song.game.guess",
     t.Object(
