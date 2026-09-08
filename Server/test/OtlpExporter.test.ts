@@ -415,4 +415,146 @@ test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandle
   expect(span.endTimeUnixNano).toBe("1725553948738000000");
 });
 
+test("EventLogger.logOperation 正确接收并透传 traceId 至 enqueueSpan 及其 attributes", () => {
+  let capturedSpan: any = null;
+  const mockExporter = {
+    isEnabled: true,
+    enqueueSpan: (span: any) => {
+      capturedSpan = span;
+    },
+    enqueue: () => {},
+  } as unknown as OtlpExporter;
+
+  const logger = new EventLogger(() => {}, () => 1700000000000, mockExporter);
+  const testTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+
+  logger.logOperation({
+    status: 200,
+    durationMs: 50,
+    identifier: "test-conn-1",
+    action: "WS game.vote",
+    traceId: testTraceId,
+  });
+
+  expect(capturedSpan).toBeTruthy();
+  expect(capturedSpan.traceId).toBe(testTraceId);
+  expect(capturedSpan.name).toBe("WS game.vote");
+  expect(capturedSpan.attributes["trace.id"]).toBe(testTraceId);
+  expect(capturedSpan.attributes["http.status_code"]).toBe(200);
+});
+
+test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async () => {
+  const operations: Array<{ action: string; traceId?: string }> = [];
+  const mockLogger = {
+    logOperation: (entry: { action: string; traceId?: string }) => {
+      operations.push({ action: entry.action, traceId: entry.traceId });
+    },
+    error: () => {},
+    warn: () => {},
+    info: () => {},
+    write: async () => {},
+  } as unknown as EventLogger;
+
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 4899,
+    wordBankPath: ":memory:",
+  };
+
+  const roomService = new RoomService({
+    wordBankRepository: new WordBankRepository(":memory:"),
+    eventLogger: mockLogger,
+  });
+
+  const { app } = createApp({
+    env,
+    whoIsFakerService: roomService,
+    logger: mockLogger,
+  });
+
+  // 1. 成功请求
+  const resSuccess = await app.handle(
+    new Request("http://localhost/livez", {
+      headers: { "x-trace-id": "custom-trace-success-123" },
+    }),
+  );
+  expect(resSuccess.status).toBe(200);
+  const successOp = operations.find((o) => o.action.includes("/livez"));
+  expect(successOp).toBeTruthy();
+  expect(successOp?.traceId).toBe("custom-trace-success-123");
+
+  // 2. 404 请求
+  const resNotFound = await app.handle(
+    new Request("http://localhost/non-existent-path", {
+      headers: { "x-trace-id": "custom-trace-404-456" },
+    }),
+  );
+  expect(resNotFound.status).toBe(404);
+  const notFoundOp = operations.find((o) => o.action.includes("/non-existent-path"));
+  expect(notFoundOp).toBeTruthy();
+  expect(notFoundOp?.traceId).toBe("custom-trace-404-456");
+});
+
+test("POST /api/monitoring/telemetry 滑动窗口限流与采样控制", async () => {
+  const { systemRoutes, TelemetryRateLimiter } = await import(
+    "../src/transport/routes/System"
+  );
+  const loggedEntries: Array<{ level: string; msg: string; ctx: any }> = [];
+  const mockLogger = {
+    info: (msg: string, ctx: any) => loggedEntries.push({ level: "INFO", msg, ctx }),
+    warn: (msg: string, ctx: any) => loggedEntries.push({ level: "WARN", msg, ctx }),
+    error: (msg: string, ctx: any) => loggedEntries.push({ level: "ERROR", msg, ctx }),
+  } as unknown as EventLogger;
+
+  // 1. 测试限流（限制单 IP 最多 2 次）
+  const rateLimiter = new TelemetryRateLimiter({ ipMaxRequests: 2, windowMs: 60_000 });
+  const app = systemRoutes({
+    logger: mockLogger,
+    rateLimiter,
+    sampleRate: 0.0, // 0 采样率，除 ERROR 外全丢弃
+  });
+
+  const headers = {
+    "Content-Type": "application/json",
+    "x-forwarded-for": "203.0.113.10",
+  };
+
+  const r1 = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ level: "error", message: "重大错误" }),
+    }),
+  );
+  expect(r1.status).toBe(200);
+
+  const r2 = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ level: "info", message: "普通打点" }),
+    }),
+  );
+  expect(r2.status).toBe(200);
+
+  // 第 3 次触发 429 限流
+  const r3 = await app.handle(
+    new Request("http://localhost/api/monitoring/telemetry", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ level: "info", message: "频繁打点" }),
+    }),
+  );
+  expect(r3.status).toBe(429);
+  const r3Json = (await r3.json()) as { error?: string };
+  expect(r3Json.error).toBe("Too Many Requests");
+
+  // 2. 验证采样控制：sampleRate=0.0 时 ERROR 依然 100% 记录，而 INFO 被丢弃
+  expect(loggedEntries.some((e) => e.level === "ERROR" && e.msg.includes("重大错误"))).toBe(true);
+  expect(loggedEntries.some((e) => e.level === "INFO" && e.msg.includes("普通打点"))).toBe(false);
+});
+
+
 

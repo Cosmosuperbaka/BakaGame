@@ -31,6 +31,7 @@ describe("reportTelemetry", () => {
   });
 
   it("网络异常时不抛出错误也不中断执行", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const failingFetch = vi
       .fn()
       .mockRejectedValue(new Error("Network connection dropped")) as unknown as typeof fetch;
@@ -43,5 +44,34 @@ describe("reportTelemetry", () => {
         { fetcher: failingFetch },
       ),
     ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("当服务端返回非 2xx 响应时记录告警且不中断交互", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    for (const status of [422, 429, 500]) {
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "Upstream issue" }), { status }),
+      ) as unknown as typeof fetch;
+
+      await expect(
+        reportTelemetry(
+          {
+            level: "warn",
+            message: `状态码 ${status} 拦截测试`,
+          },
+          { fetcher: mockFetch },
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`HTTP ${status}`),
+      );
+    }
+
+    warnSpy.mockRestore();
   });
 });
