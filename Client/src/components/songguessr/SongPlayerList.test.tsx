@@ -14,6 +14,9 @@ const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGues
   isBot: false,
   isHost: false,
   roundStatus: "waiting",
+  correctGuesses: 0,
+  totalGuesses: 0,
+  guessesUsed: 0,
   ...overrides,
 });
 
