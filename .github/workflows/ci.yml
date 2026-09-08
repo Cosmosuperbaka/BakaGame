@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install server dependencies
+        working-directory: Server
+        run: bun install
+
+      - name: Type check server
+        working-directory: Server
+        run: bun run check
+
+      - name: Run server tests
+        working-directory: Server
+        run: bun test
+
+  client:
+    name: Client CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: Client
+        run: npm ci
+
+      - name: Lint client
+        working-directory: Client
+        run: npm run lint
+
+      - name: Run client tests
+        working-directory: Client
+        run: npm test
+
+      - name: Build client
+        working-directory: Client
+        run: npm run build
+
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [server, client]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: Server
+        run: bun install
+
+      - name: Install client dependencies
+        working-directory: Client
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: Client
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        working-directory: Client
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: Client/playwright-report/
+          retention-days: 14
