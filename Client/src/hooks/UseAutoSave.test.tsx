@@ -163,4 +163,102 @@ describe("useAutoSave", () => {
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenLastCalledWith(2);
   });
+
+  it("clears pending debounced draft and cancels timer when enabled changes from true to false", async () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(
+      ({ value, enabled }) => useAutoSave(value, save, { enabled }),
+      {
+        initialProps: { value: 0, enabled: true },
+      },
+    );
+
+    // 产生新草稿（在防抖等待期内）
+    rerender({ value: 1, enabled: true });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(save).not.toHaveBeenCalled();
+
+    // 阶段切换，enabled 从 true 变为 false
+    rerender({ value: 1, enabled: false });
+
+    // 时间推进超过防抖延迟及更久
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+
+    // 待处理防抖草稿已被清除，定时器取消，不向外发送请求
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger save on unmount when enabled is false", async () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { rerender, unmount } = renderHook(
+      ({ value, enabled }) => useAutoSave(value, save, { enabled }),
+      {
+        initialProps: { value: 0, enabled: false },
+      },
+    );
+
+    // 在 enabled === false 状态下更新值
+    rerender({ value: 1, enabled: false });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(save).not.toHaveBeenCalled();
+
+    // 卸载组件
+    unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 绝对不向外触发保存
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("discards subsequent draft queued during in-flight save when enabled becomes false", async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: () => void;
+    const first = new Promise<void>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const save = vi
+      .fn()
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce(undefined);
+    const { rerender } = renderHook(
+      ({ value, enabled }) => useAutoSave(value, save, { enabled }),
+      {
+        initialProps: { value: 0, enabled: true },
+      },
+    );
+
+    // 触发第一次保存，进入飞行中（in-flight）
+    rerender({ value: 1, enabled: true });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(1);
+
+    // 第一次保存仍在飞行中，产生新值 2
+    rerender({ value: 2, enabled: true });
+
+    // 阶段切换，enabled 变为 false
+    rerender({ value: 2, enabled: false });
+
+    // 第一次保存完成
+    await act(async () => {
+      resolveFirst();
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    // 后续草稿已被丢弃，不会发送后续保存
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

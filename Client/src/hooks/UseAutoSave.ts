@@ -73,6 +73,10 @@ export function useAutoSave<T>(
       })
       .finally(() => {
         isSavingRef.current = false;
+        if (!callbacksRef.current.enabled) {
+          pendingValueRef.current = null;
+          return;
+        }
         // 保存完成后，若飞行期间产生了新草稿，接力排期或立即执行
         if (callbacksRef.current.enabled && pendingValueRef.current) {
           const nextTarget = pendingValueRef.current.value;
