@@ -287,7 +287,7 @@ function SpectatorToggle({
     <Button
       variant={selected ? "secondary" : "ghost"}
       size="sm"
-      className="mt-1 h-8 w-full min-w-0 justify-start gap-1.5 px-2 font-sans text-xs text-muted-foreground"
+      className="mt-1 h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
       onClick={() => onToggle(spectator)}
     >
       {spectator ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
@@ -318,7 +318,7 @@ function ManageButton({
         {...tappable}
         onClick={onClick}
         className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 font-sans text-xs font-medium transition-colors",
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
           "border-t first:border-t-0",
           destructive
             ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"

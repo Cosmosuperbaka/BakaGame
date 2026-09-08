@@ -40,16 +40,18 @@
 
 ## 4. 字体与文案
 
-- 全站排版采用衬线体（Serif）作为主要视觉基线：页面主体（`body`）默认使用 `var(--font-serif)`，延续 Vintage Paper 的复古、典雅质感。标题、游戏阶段说明、对话卡片、操作按钮等默认继承衬线体。
-- 衬线字体栈（`--font-serif`）由 `STZhongsong`、`STSong`、`@fontsource-variable/noto-serif-sc`（`Noto Serif SC Variable` / `Noto Serif SC`）、`Noto Serif CJK`、`Source Han Serif SC`、`PMingLiu`、`SimSun`、`WenQuanYi Bitmap Song`、`Times New Roman`、`Times`、`serif` 构成，同源思源宋体别名已统一收敛。
-- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）专用于微型密集文本与状态展示：在小字号场景（11px/12px），无衬线体具备更清晰的点阵辨识度。以下场景强制使用 `font-sans`：
-  - 玩家列表分组标题与计数（`PlayerGroupTitle`，如玩家数、旁观数、已离场数）；
-  - 玩家准备/等待/出题/旁观状态标签（`PlayerStatusPill`、`RoleBadge` 等微型徽章）；
-  - 玩家栏分数展示（`tabular-nums font-sans text-xs`）；
-  - 聊天面板发言者姓名（`msg.playerName`）、提及候选列表（`candidates`）、系统公告（`msg.system`）；
-  - 顶栏天数、轮数与视角徽章（“主持人视角”、“旁观视角”、“出题人视角”）；
-  - 通用微型徽章（`Badge`，如大厅房间人数 `${onlineCount}/${playerCount}` 与阶段标签）。
-- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）由 `-apple-system`、`BlinkMacSystemFont`、`Segoe UI`、`PingFang SC`、`HarmonyOS Sans SC`、`HarmonyOS Sans`、`HarmonyOS_Regular`、`Hiragino Sans GB`、`Microsoft YaHei`、`Helvetica Neue`、`Helvetica`、`@fontsource-variable/noto-sans-sc`（`Noto Sans SC Variable` / `Noto Sans SC`）、`Source Han Sans SC`、`Noto Sans CJK SC`、`WenQuanYi Micro Hei`、`Arial`、`sans-serif` 构成，同源思源黑体别名已统一收敛。
+- 全站排版采用衬线体（Serif）作为主要视觉基线：页面主体（`body`）默认使用 `var(--font-serif)` 并配合 `antialiased` 抗锯齿优化，延续 Vintage Paper 的复古、典雅质感。标题、游戏阶段说明、对话气泡、系统消息、全局徽章、顶栏信息及操作按钮等默认继承衬线体。
+- 衬线字体栈（`--font-serif`）严格遵守西文字体置顶原则，杜绝中文字体自带西文导致的屏显发虚与字形劣化：
+  - 英文衬线首选：`"Libre Baskerville"`, `"Lora Variable"`, `"Lora"`, `Georgia`；
+  - 中文矢量衬线：`@fontsource-variable/noto-serif-sc`（`"Noto Serif SC Variable"`, `"Noto Serif SC"`）；
+  - 系统衬线回退链（参考 Jacob 字体指南）：`STZhongsong`, `STSong`, `"Noto Serif CJK SC"`, `"Noto Serif CJK"`, `"Source Han Serif SC"`, `PMingLiu`, `SimSun`, `"WenQuanYi Bitmap Song"`, `"Times New Roman"`, `Times`, `serif`。
+- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态：
+  1. 玩家列表分组标题与计数（`PlayerGroupTitle`，如玩家数、旁观数）；
+  2. 玩家准备/等待/出题/旁观微型状态标签（`PlayerStatusPill` / `PLAYER_BADGE_BASE`）；
+  3. 玩家栏分数展示（`tabular-nums font-sans text-xs`）；
+  4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`）。
+  除上述 4 处微型文本外，严禁在聊天气泡正文、提及高亮、系统提示、顶栏天数/轮数/词语提示、通用徽章（`Badge.tsx`）或操作按钮上滥用 `font-sans`。
+- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）参考 Jacob 字体指南：`-apple-system`, `BlinkMacSystemFont`, `"Apple Color Emoji"`, `"Segoe UI Emoji"`, `"Segoe UI Symbol"`, `"Segoe UI"`, `"PingFang SC"`, `HarmonyOS_Regular`, `"Hiragino Sans GB"`, `"Microsoft YaHei"`, `"Helvetica Neue"`, `Helvetica`, `"Noto Sans SC Variable"`, `"Noto Sans SC"`, `"Source Han Sans SC"`, `"Noto Sans CJK SC"`, `"WenQuanYi Micro Hei"`, `Arial`, `sans-serif`。
 - 等宽字体栈（`--font-mono`）以 `@fontsource-variable/jetbrains-mono`（`JetBrains Mono Variable` / `JetBrains Mono`）为最优先，后接 `ui-monospace`、`SF Mono`、`SFMono-Regular`、`Cascadia Code`、`Segoe UI Mono`、`Source Code Pro`、`Menlo`、`Consolas`、`Liberation Mono`、`monospace`。择机用于房间号（`#roomId`）、分享链接、提交哈希、时间戳等具有代码或数据特征的内容。
 - 字距由 `--tracking-normal` 统一控制，业务组件不单独设置 `letter-spacing`。
 - 全局字号基线由 `html { font-size: 120%; }` 控制，不在局部通过视口宽度动态缩放字体。

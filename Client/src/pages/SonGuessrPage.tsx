@@ -211,7 +211,7 @@ export default function SonGuessrPage() {
                         <Badge variant="outline" className="font-normal text-xs">
                           {phaseLabels[room.phase]}
                         </Badge>
-                        <span className="flex items-center gap-1.5 font-sans tabular-nums">
+                        <span className="flex items-center gap-1.5 tabular-nums">
                           <Users className="h-4 w-4" />
                           {room.onlineCount}/{room.playerCount}
                         </span>
