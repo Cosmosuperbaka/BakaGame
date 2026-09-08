@@ -185,6 +185,7 @@ function HostWaitingPanel({
             >
               <div className="border-t px-4 py-4">
                 <InlineSettings
+                  key={snapshot.status.roundId || snapshot.roomId}
                   snapshot={snapshot}
                   sendCommand={sendCommand}
                   addToast={addToast}
@@ -333,10 +334,6 @@ interface InlineSettingsProps {
 
 function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps) {
   const limits = snapshot.roleLimits;
-  const [prevRoleConfig, setPrevRoleConfig] = useState(snapshot.settings.roleConfig);
-  const [prevName, setPrevName] = useState(snapshot.name);
-  const [prevVisibility, setPrevVisibility] = useState(snapshot.visibility);
-  const [prevAllowSpectators, setPrevAllowSpectators] = useState(snapshot.allowSpectators);
 
   const [name, setName] = useState(snapshot.name);
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
@@ -346,29 +343,6 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
 
-  // 外部配置或人数上限变化时直接在渲染期同步，避免 useEffect 引起多余二次渲染与 linter 告警。
-  if (snapshot.name !== prevName) {
-    setPrevName(snapshot.name);
-    setName(snapshot.name);
-  }
-  if (snapshot.visibility !== prevVisibility) {
-    setPrevVisibility(snapshot.visibility);
-    setIsPrivate(snapshot.visibility === "private");
-  }
-  if (snapshot.allowSpectators !== prevAllowSpectators) {
-    setPrevAllowSpectators(snapshot.allowSpectators);
-    setAllowSpectators(snapshot.allowSpectators);
-  }
-  if (
-    snapshot.settings.roleConfig.undercoverCount !== prevRoleConfig.undercoverCount ||
-    snapshot.settings.roleConfig.hasAngel !== prevRoleConfig.hasAngel ||
-    snapshot.settings.roleConfig.hasBlank !== prevRoleConfig.hasBlank
-  ) {
-    setPrevRoleConfig(snapshot.settings.roleConfig);
-    setUndercoverCount(snapshot.settings.roleConfig.undercoverCount);
-    setHasAngel(snapshot.settings.roleConfig.hasAngel);
-    setHasBlank(snapshot.settings.roleConfig.hasBlank);
-  }
 
   const draft = {
     name: name || undefined,
