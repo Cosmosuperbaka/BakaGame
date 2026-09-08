@@ -276,6 +276,7 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
   | ClientEnvelope<"song.game.submitSong", { songId: string }>
   | ClientEnvelope<"song.game.audioReady", { roundNumber: number }>
+  | ClientEnvelope<"song.game.audioFailed", { roundNumber: number }>
   | ClientEnvelope<"song.game.guess", { songId: string }>
   | ClientEnvelope<"song.game.giveUp", Record<string, never>>
   | ClientEnvelope<"song.game.skipRound", Record<string, never>>

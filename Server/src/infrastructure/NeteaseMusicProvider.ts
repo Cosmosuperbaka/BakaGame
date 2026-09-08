@@ -21,6 +21,7 @@ type ApiModule = Record<string, unknown>;
 export interface MusicProvider {
   search(keyword: string, limit?: number, cookie?: string): Promise<SongSearchResult[]>;
   getSong(songId: string, cookie?: string): Promise<SongDetails>;
+  refreshSongAudio?(songId: string, cookie?: string): Promise<string>;
   getSongMetadata(songId: string, cookie?: string): Promise<SongDetails>;
   getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
   getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
@@ -50,6 +51,7 @@ export interface NeteaseMusicProviderOptions {
   maxQueuedRequests?: number;
   queueTimeoutMs?: number;
   cacheMaxEntries?: number;
+  cacheMaxBytes?: number;
 }
 
 export interface MusicLoginSession {
@@ -96,16 +98,17 @@ const randomChineseIp = (random?: { nextFloat?: () => number }) => {
 };
 
 
-const SEARCH_CACHE_TTL_MS = 2 * 60_000;
-const SONG_CACHE_TTL_MS = 3 * 60_000;
-const SONG_METADATA_CACHE_TTL_MS = 10 * 60_000;
-const SONG_LYRICS_CACHE_TTL_MS = 10 * 60_000;
-const SONG_WIKI_CACHE_TTL_MS = 30 * 60_000;
-const COLLECTION_CACHE_TTL_MS = 5 * 60_000;
-const ARTIST_SONGS_CACHE_TTL_MS = 10 * 60_000;
-const POPULARITY_CACHE_TTL_MS = 30 * 60_000;
-const SONG_CHORUS_CACHE_TTL_MS = 30 * 60_000;
+const SEARCH_CACHE_TTL_MS = 6 * 60 * 60_000;
+const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
+const SONG_LYRICS_CACHE_TTL_MS = 24 * 60 * 60_000;
+const SONG_WIKI_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
+const COLLECTION_CACHE_TTL_MS = 6 * 60 * 60_000;
+const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60_000;
+const POPULARITY_CACHE_TTL_MS = 6 * 60 * 60_000;
+const SONG_CHORUS_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
+const AUDIO_URL_CACHE_TTL_MS = 10 * 60_000;
 const DEFAULT_CACHE_MAX_ENTRIES = 512;
+const DEFAULT_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
@@ -113,7 +116,17 @@ const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
 
-const cloneCacheValue = <T>(value: T): T => structuredClone(value);
+type CacheEntry = {
+  value: unknown;
+  softExpireAt: number;
+  hardExpireAt: number;
+  lastAccessAt: number;
+  hits: number;
+  priority: number;
+  size: number;
+};
+
+const cloneCacheValue = <T>(value: T): T => value === undefined ? value : structuredClone(value);
 
 const normalizeHttpsUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
@@ -407,7 +420,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
-  private readonly cache: LRUCache<string, any>;
+  private readonly cache: LRUCache<string, CacheEntry>;
+  private readonly refreshers = new Map<string, { ttlMs: number; loader: () => Promise<unknown> }>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
   private readonly queue: PQueue;
@@ -427,14 +441,19 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly logger?: EventLogger;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
+  private readonly maintenanceTimer: ReturnType<typeof setInterval>;
+  private lastUserRequestAt: number;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.logger = options.logger;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? { nextFloat: () => Math.random() };
+    this.lastUserRequestAt = this.now();
     this.randomCNIP = options.randomCNIP ?? true;
-    this.cache = new LRUCache<string, any>({
+    this.cache = new LRUCache<string, CacheEntry>({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+      maxSize: Math.max(1, options.cacheMaxBytes ?? DEFAULT_CACHE_MAX_BYTES),
+      sizeCalculation: (entry) => entry.size,
     });
     this.maxConcurrentRequests = Math.max(
       1,
@@ -463,6 +482,8 @@ export class NeteaseMusicProvider implements MusicProvider {
         ? { interval: this.minRequestIntervalMs, intervalCap: 1 }
         : {}),
     });
+    this.maintenanceTimer = setInterval(() => { void this.runCacheMaintenance(); }, 60_000);
+    (this.maintenanceTimer as unknown as { unref?: () => void }).unref?.();
   }
 
   async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
@@ -490,11 +511,16 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getSong(songId: string, cookie?: string): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
-    return this.cached(
-      this.cacheKey("song", cookie, id),
-      SONG_CACHE_TTL_MS,
-      () => this.loadSong(id, true, cookie),
-    );
+    return this.loadSong(id, true, cookie);
+  }
+
+  async refreshSongAudio(songId: string, cookie?: string): Promise<string> {
+    const id = songId.trim();
+    if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
+    const key = this.cacheKey("audio", cookie, id);
+    this.cache.delete(key);
+    this.refreshers.delete(key);
+    return this.loadAudioUrl(id, cookie, true);
   }
 
   async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
@@ -732,11 +758,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const chorusPromise = includeResources
       ? this.getSongChorus(id, cookie).catch(() => undefined)
       : Promise.resolve(undefined);
-    const urlPromise = includeResources
-      // song_url_v1 在当前 API Enhanced 版本中可能因缺少 xeapi 公钥直接抛错；
-      // 优先使用稳定的 song_url，并保留 v1 作为后备。
-      ? this.call(["song_url", "song_url_v1"], { id, level: "standard", br: 320000 }, cookie)
-      : Promise.resolve(undefined);
+    const urlPromise = includeResources ? this.loadAudioUrl(id, cookie) : Promise.resolve("");
 
     const [wikiResponse, lyricResponse, urlResponse, popularity, chorus] = await Promise.all([
       wikiPromise,
@@ -754,8 +776,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     let audioUrl = "";
     let lyrics: SongLyricLine[] = [];
     if (includeResources) {
-      const urlBody = responseBody(urlResponse);
-      audioUrl = normalizeAudioUrl(asRecord(asArray(urlBody.data)[0]).url) ?? "";
+      audioUrl = urlResponse;
       const lyricBody = responseBody(lyricResponse);
       const lrc = asRecord(lyricBody.lrc ?? lyricBody.yrc);
       lyrics = sanitizeLyrics(parseLrc(readString(lrc.lyric) ?? ""), base);
@@ -790,6 +811,26 @@ export class NeteaseMusicProvider implements MusicProvider {
       })();
     }
     return this.apiPromise;
+  }
+
+  private async loadAudioUrl(songId: string, cookie?: string, force = false): Promise<string> {
+    const key = this.cacheKey("audio", cookie, songId);
+    const value = await this.cached(
+      key,
+      AUDIO_URL_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["song_url", "song_url_v1"], {
+          id: songId,
+          level: "standard",
+          br: 320000,
+        }, cookie);
+        const body = responseBody(response);
+        return normalizeAudioUrl(asRecord(asArray(body.data)[0]).url) ?? "";
+      },
+      { force, priority: 4 },
+    );
+    if (!value) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
+    return value;
   }
 
   private async prepareAnonymousSession(api: ApiModule) {
@@ -896,24 +937,90 @@ export class NeteaseMusicProvider implements MusicProvider {
     return [namespace, scope, ...parts].map(String).join(":");
   }
 
-  private async cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
-    if (ttlMs > 0) {
-      const cached = this.cache.get(key) as T | undefined;
-      if (cached !== undefined) return cloneCacheValue(cached);
+  private async cached<T>(
+    key: string,
+    ttlMs: number,
+    loader: () => Promise<T>,
+    options: { force?: boolean; priority?: number; background?: boolean } = {},
+  ): Promise<T> {
+    const now = this.now();
+    if (!options.background) this.lastUserRequestAt = now;
+    const entry = this.cache.get(key);
+    const hardTtl = Math.max(ttlMs, ttlMs * 3);
+    if (!options.force && entry) {
+      if (now < entry.hardExpireAt) {
+        entry.lastAccessAt = now;
+        entry.hits += 1;
+        if (now >= entry.softExpireAt) void this.refreshCacheEntry(key, ttlMs, loader, options.priority ?? entry.priority);
+        return cloneCacheValue(entry.value as T);
+      }
+      this.cache.delete(key);
+      this.refreshers.delete(key);
     }
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) return cloneCacheValue(await existing);
 
+    this.refreshers.set(key, { ttlMs, loader });
     const request = loader().then((value) => {
-      if (value !== undefined && ttlMs > 0) {
-        this.cache.set(key, value, { ttl: ttlMs });
-      }
+      const fetchedAt = this.now();
+      const serializedSize = value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
+      this.cache.set(key, {
+        value,
+        softExpireAt: fetchedAt + ttlMs * 0.8,
+        hardExpireAt: fetchedAt + hardTtl,
+        lastAccessAt: fetchedAt,
+        hits: 1,
+        priority: options.priority ?? 1,
+        size: serializedSize,
+      });
       return value;
     }).finally(() => {
       if (this.inFlight.get(key) === request) this.inFlight.delete(key);
     });
     this.inFlight.set(key, request);
     return cloneCacheValue(await request);
+  }
+
+  private async refreshCacheEntry(
+    key: string,
+    ttlMs: number,
+    loader: () => Promise<unknown>,
+    priority: number,
+  ) {
+    if (this.inFlight.has(key) || this.now() < this.cooldownUntil || this.queue.size > 0) return;
+    try {
+      await this.cached(key, ttlMs, loader, { priority, force: true, background: true });
+    } catch (error) {
+      this.logger?.warn("网易云缓存预刷新失败", { key, error: describeError(error) });
+    }
+  }
+
+  private async runCacheMaintenance() {
+    if (this.queue.size > 0 || this.now() < this.cooldownUntil) return;
+    const now = this.now();
+    if (now - this.lastUserRequestAt > 30 * 60_000) {
+      for (const [key, entry] of this.cache.entries()) {
+        if (entry.hits <= 1 && now - entry.lastAccessAt > 30 * 60_000) {
+          this.cache.delete(key);
+          this.refreshers.delete(key);
+        }
+      }
+      for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
+      return;
+    }
+    const candidates = [...this.cache.entries()]
+      .filter(([, entry]) => now >= entry.hardExpireAt || now >= entry.softExpireAt)
+      .sort(([, left], [, right]) => (right.priority + right.hits) - (left.priority + left.hits));
+    for (const [key, entry] of candidates.slice(0, 4)) {
+      const refresher = this.refreshers.get(key);
+      if (!refresher) {
+        this.cache.delete(key);
+        continue;
+      }
+      if (now >= entry.hardExpireAt) this.cache.delete(key);
+      await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
+    }
+    for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
   }
 
   private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
