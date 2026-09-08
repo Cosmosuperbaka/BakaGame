@@ -11,7 +11,7 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { PrivatePlayerState, RoomSnapshot } from "@/types";
+import type { PrivateState, RoomSnapshot } from "@/types";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();
@@ -83,12 +83,14 @@ const createMockSnapshot = (overrides: Partial<RoomSnapshot> = {}): RoomSnapshot
 });
 
 const createMockPrivateState = (
-  overrides: Partial<PrivatePlayerState> = {},
-): PrivatePlayerState => ({
+  overrides: Partial<PrivateState> = {},
+): PrivateState => ({
   playerId: "player-1",
   sessionToken: "token-1",
   isQuestioner: false,
-  canSpeak: false,
+  canSubmitBlankGuess: false,
+  blankGuessUsed: false,
+  nightActionSubmitted: false,
   ...overrides,
 });
 
@@ -154,9 +156,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             roundId: "round-100",
             started: true,
             day: 1,
-            speakingPlayerId: "player-2",
             speechOrder: ["player-2", "player-3", "player-1"],
-            speakerIndex: 0,
           },
           players: [
             {
@@ -201,8 +201,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
               playerId: "player-2",
               playerName: "玩家小红",
               text: "这个东西是圆形的",
-              day: 1,
-              roundNumber: 1,
+              createdAt: Date.now(),
             },
           ],
         }),
@@ -263,7 +262,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
           ],
         }),
         privateState: createMockPrivateState({
-          myCurrentVoteTargetId: null,
+          myCurrentVoteTargetId: undefined,
         }),
       });
     });
@@ -293,12 +292,12 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             winner: "undercover",
             reason: "卧底成功隐藏到最后，获得胜利",
             awardedScores: [
-              { playerId: "player-2", playerName: "玩家小红", delta: 3, total: 8 },
+              { playerId: "player-2", delta: 3 },
             ],
             revealedRoles: [
-              { playerId: "player-1", role: "civilian", playerName: "房主小明" },
-              { playerId: "player-2", role: "undercover", playerName: "玩家小红" },
-              { playerId: "player-3", role: "civilian", playerName: "玩家小强" },
+              { playerId: "player-1", role: "civilian" },
+              { playerId: "player-2", role: "undercover" },
+              { playerId: "player-3", role: "civilian" },
             ],
             descriptions: [],
             blankGuesses: [],
@@ -337,8 +336,8 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             reason: "白板成功猜对词语，获得胜利",
             awardedScores: [],
             revealedRoles: [
-              { playerId: "player-1", role: "civilian", playerName: "房主小明" },
-              { playerId: "player-2", role: "blank", playerName: "玩家小红" },
+              { playerId: "player-1", role: "civilian" },
+              { playerId: "player-2", role: "blank" },
             ],
             descriptions: [],
             blankGuesses: [],
