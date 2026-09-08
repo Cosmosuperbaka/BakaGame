@@ -371,6 +371,8 @@ export class SonGuessrService {
         return this.submitSong(connection, message.payload.songId);
       case "song.game.audioReady":
         return this.audioReady(connection, message.payload.roundNumber);
+      case "song.game.audioFailed":
+        return this.audioFailed(connection, message.payload.roundNumber);
       case "song.game.guess":
         return this.guess(connection, message.payload.songId);
       case "song.game.giveUp":
@@ -1314,6 +1316,23 @@ export class SonGuessrService {
     this.touch(room);
     this.publishPrivateState(room, player);
     return { deadlineAt: state.deadlineAt };
+  }
+
+  private async audioFailed(connection: ConnectionRecord, roundNumber: number) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = room.currentRound;
+    if (room.phase !== "playing" || !round || round.number !== roundNumber) return { ignored: true };
+    if (player.membership !== "active" || (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id))) {
+      return { ignored: true };
+    }
+    const refresh = this.options.musicProvider.refreshSongAudio;
+    if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
+    const audioUrl = await refresh.call(this.options.musicProvider, round.song.id, room.musicSession?.cookie);
+    if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
+    round.song.audioUrl = audioUrl;
+    this.touch(room);
+    this.publishRoom(room);
+    return { refreshed: true };
   }
 
   private async guess(connection: ConnectionRecord, songId: string) {
