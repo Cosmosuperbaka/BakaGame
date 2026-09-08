@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("framer-motion", () => ({
   MotionConfig: ({ children }: { children: ReactNode }) => children,
+  AnimatePresence: ({ children }: { children: ReactNode }) => children,
   motion: {
     div: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
       <div {...props}>{children}</div>
@@ -23,6 +24,9 @@ vi.mock("@/contexts/SonGuessrContext", () => ({
 vi.mock("@/components/Toast", () => ({
   ToastContainer: () => null,
   SonGuessrToastContainer: () => null,
+}));
+vi.mock("@/components/VersionUpdateNotice", () => ({
+  VersionUpdateNotice: () => null,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
 vi.mock("@/pages/WhoIsFakerPage", () => ({ default: () => <h1>faker-lobby</h1> }));

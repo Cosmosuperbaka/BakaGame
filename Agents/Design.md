@@ -78,6 +78,7 @@
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
+- 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角取 `rounded-xl`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
 ## 7. 页面布局
