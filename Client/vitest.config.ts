@@ -27,7 +27,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@bakagame/shared": path.resolve(__dirname, "../Server/src/shared/index.ts"),
+      "@bakagame/shared": path.resolve(__dirname, "../Server/src/shared/Index.ts"),
     },
   },
   test: {
