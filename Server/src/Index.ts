@@ -2,7 +2,7 @@ import { RoomService } from "./application/RoomService";
 import { readEnv } from "./config/Env";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
-import { initServerSentry } from "./infrastructure/Sentry";
+import { closeServerSentry, flushServerSentry, initServerSentry } from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
 import { createApp } from "./transport/App";
 
@@ -93,6 +93,10 @@ const shutdown = async (signal?: string) => {
   if (otlpExporter) {
     await otlpExporter.shutdown();
   }
+
+  // 7. 排空并关闭 Sentry 异常监控客户端
+  await flushServerSentry(2000);
+  await closeServerSentry(2000);
 
   clearTimeout(watchdog);
   logger.info("服务已完成优雅停机");
