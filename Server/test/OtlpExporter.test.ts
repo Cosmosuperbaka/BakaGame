@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { OtlpExporter, toUnixNanoString } from "../src/infrastructure/OtlpExporter";
+import { OtlpExporter, toUnixNanoString, type OtlpFetcher } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createApp } from "../src/transport/App";
 import { RoomService } from "../src/application/RoomService";
@@ -554,6 +554,269 @@ test("POST /api/monitoring/telemetry 滑动窗口限流与采样控制", async (
   // 2. 验证采样控制：sampleRate=0.0 时 ERROR 依然 100% 记录，而 INFO 被丢弃
   expect(loggedEntries.some((e) => e.level === "ERROR" && e.msg.includes("重大错误"))).toBe(true);
   expect(loggedEntries.some((e) => e.level === "INFO" && e.msg.includes("普通打点"))).toBe(false);
+});
+
+test("OtlpExporter 遇到 503 响应不会清空丢弃日志，保留在缓冲区并在重试成功后排空", async () => {
+  let simulatedStatus = 503;
+  let callCount = 0;
+  let virtualTime = 1700000000000;
+
+  const mockFetcher: OtlpFetcher = async () => {
+    callCount++;
+    if (simulatedStatus === 503) {
+      return new Response("Service Unavailable", { status: 503 });
+    }
+    return new Response(JSON.stringify({ partialSuccess: {} }), { status: 200 });
+  };
+
+  const exporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+    fetcher: mockFetcher,
+    now: () => virtualTime,
+  });
+
+  exporter.enqueue({
+    timestamp: virtualTime,
+    level: "ERROR",
+    message: "关键系统错误",
+  });
+
+  expect(exporter.buffer.length).toBe(1);
+
+  // 1. 第一次导出：上游返回 503 失败
+  const flushResult1 = await exporter.flushLogs();
+  expect(flushResult1).toBe(false);
+  expect(callCount).toBe(1);
+  // 核心断言：彻底修复 {"calls":1,"buffer":0} 丢数据缺陷，数据保留在缓冲区中
+  expect(exporter.buffer.length).toBe(1);
+  expect(exporter.buffer[0].message).toBe("关键系统错误");
+
+  let stats = exporter.getStats();
+  expect(stats.totalAttempts).toBe(1);
+  expect(stats.failureCount).toBe(1);
+  expect(stats.successCount).toBe(0);
+  expect(stats.consecutiveFailures).toBe(1);
+  expect(stats.droppedCount).toBe(0);
+
+  // 2. 在退避窗口内（1000ms）再次触发，应直接跳过网络调用并返回 false
+  virtualTime += 500;
+  const inBackoffResult = await exporter.flushLogs();
+  expect(inBackoffResult).toBe(false);
+  expect(callCount).toBe(1); // 未发起额外网络请求
+  expect(exporter.buffer.length).toBe(1);
+
+  // 3. 跨过退避窗口，上游服务恢复（200 OK）
+  virtualTime += 600; // 500 + 600 = 1100ms > 1000ms
+  simulatedStatus = 200;
+  const flushResult2 = await exporter.flushLogs();
+  expect(flushResult2).toBe(true);
+  expect(callCount).toBe(2);
+  expect(exporter.buffer.length).toBe(0); // 成功排空
+
+  stats = exporter.getStats();
+  expect(stats.totalAttempts).toBe(2);
+  expect(stats.successCount).toBe(1);
+  expect(stats.failureCount).toBe(1);
+  expect(stats.consecutiveFailures).toBe(0); // 连续失败清零
+  expect(stats.droppedCount).toBe(0);
+
+  await exporter.shutdown();
+});
+
+test("OtlpExporter 在网络异常与请求超时下安全重新入队，杜绝数据丢失", async () => {
+  let virtualTime = 1700000000000;
+  let simulatedError: "network" | "timeout" | null = "network";
+
+  const mockFetcher: OtlpFetcher = async () => {
+    if (simulatedError === "network") {
+      throw new Error("fetch failed: ECONNREFUSED");
+    }
+    if (simulatedError === "timeout") {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  };
+
+  const exporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+    fetcher: mockFetcher,
+    now: () => virtualTime,
+  });
+
+  exporter.enqueue({
+    timestamp: virtualTime,
+    level: "WARN",
+    message: "网络抖动警告",
+  });
+
+  // 1. 网络异常触发重新入队
+  const netResult = await exporter.flushLogs();
+  expect(netResult).toBe(false);
+  expect(exporter.buffer.length).toBe(1);
+  expect(exporter.getStats().failureCount).toBe(1);
+  expect(exporter.getStats().consecutiveFailures).toBe(1);
+
+  // 2. 超时异常触发重新入队（推进时钟跨过 1000ms 退避）
+  virtualTime += 1500;
+  simulatedError = "timeout";
+  const timeoutResult = await exporter.flushLogs();
+  expect(timeoutResult).toBe(false);
+  expect(exporter.buffer.length).toBe(1);
+  expect(exporter.getStats().failureCount).toBe(2);
+  expect(exporter.getStats().consecutiveFailures).toBe(2);
+
+  // 3. 恢复正常并成功导出（连续失败 2 次退避为 2000ms，推进 2500ms）
+  virtualTime += 2500;
+  simulatedError = null;
+  const okResult = await exporter.flushLogs();
+  expect(okResult).toBe(true);
+  expect(exporter.buffer.length).toBe(0);
+  expect(exporter.getStats().successCount).toBe(1);
+  expect(exporter.getStats().consecutiveFailures).toBe(0);
+
+  await exporter.shutdown();
+});
+
+test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录并累加 droppedCount", async () => {
+  let virtualTime = 1700000000000;
+  const mockFetcher: OtlpFetcher = async () => {
+    return new Response("Service Unavailable", { status: 503 });
+  };
+
+  const exporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+    fetcher: mockFetcher,
+    now: () => virtualTime,
+  });
+
+  // 压入 550 条日志
+  for (let i = 0; i < 550; i++) {
+    exporter.enqueue({
+      timestamp: virtualTime + i,
+      level: "INFO",
+      message: `日志条目 ${i}`,
+    });
+  }
+
+  // 等待在途由于 50 条触发的自动 flush 失败并重新入队，触发淘汰
+  await exporter.flushLogs();
+
+  // 容量上限 500，溢出的 50 条被淘汰
+  expect(exporter.buffer.length).toBe(500);
+  expect(exporter.getStats().droppedCount).toBe(50);
+  expect(exporter.buffer[0].message).toBe("日志条目 50");
+  expect(exporter.buffer[499].message).toBe("日志条目 549");
+
+  // 退避窗口期内继续压入 10 条，直接在 enqueue 触发淘汰
+  for (let i = 550; i < 560; i++) {
+    exporter.enqueue({
+      timestamp: virtualTime + i,
+      level: "INFO",
+      message: `日志条目 ${i}`,
+    });
+  }
+
+  expect(exporter.buffer.length).toBe(500);
+  expect(exporter.getStats().droppedCount).toBe(60);
+  expect(exporter.buffer[0].message).toBe("日志条目 60");
+  expect(exporter.buffer[499].message).toBe("日志条目 559");
+
+  await exporter.shutdown();
+});
+
+test("sendHeartbeatTrace 在未配置端点、503、网络异常下返回 false，仅在 200 时返回 true", async () => {
+  // 1. 未配置端点
+  const disabledExporter = new OtlpExporter();
+  expect(await disabledExporter.sendHeartbeatTrace()).toBe(false);
+  await disabledExporter.shutdown();
+
+  // 2. 503 异常返回 false
+  const failFetcher: OtlpFetcher = async () => new Response("503", { status: 503 });
+  const failExporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/traces",
+    fetcher: failFetcher,
+  });
+  expect(await failExporter.sendHeartbeatTrace()).toBe(false);
+  expect(failExporter.getStats().failureCount).toBe(1);
+  await failExporter.shutdown();
+
+  // 3. 网络异常返回 false
+  const errFetcher: OtlpFetcher = async () => {
+    throw new Error("Network is down");
+  };
+  const errExporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/traces",
+    fetcher: errFetcher,
+  });
+  expect(await errExporter.sendHeartbeatTrace()).toBe(false);
+  expect(errExporter.getStats().failureCount).toBe(1);
+  await errExporter.shutdown();
+
+  // 4. 200 成功返回 true
+  const okFetcher: OtlpFetcher = async () => new Response("{}", { status: 200 });
+  const okExporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/traces",
+    fetcher: okFetcher,
+  });
+  expect(await okExporter.sendHeartbeatTrace()).toBe(true);
+  expect(okExporter.getStats().successCount).toBe(1);
+  expect(okExporter.getStats().consecutiveFailures).toBe(0);
+  await okExporter.shutdown();
+});
+
+test("OtlpExporter 指数退避窗口（1s, 2s, 4s...最大 30s）计算与运行统计指标完整性", async () => {
+  let virtualTime = 100000;
+  let callCount = 0;
+
+  const mockFetcher: OtlpFetcher = async () => {
+    callCount++;
+    return new Response("503", { status: 503 });
+  };
+
+  const exporter = new OtlpExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+    fetcher: mockFetcher,
+    now: () => virtualTime,
+  });
+
+  exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "m1" });
+
+  // 失败 1: 退避 1000ms (1000 * 2^0)
+  expect(await exporter.flushLogs()).toBe(false);
+  expect(callCount).toBe(1);
+  expect(exporter.getStats().consecutiveFailures).toBe(1);
+
+  // 推进 500ms，在窗口内，被拦截
+  virtualTime += 500;
+  expect(await exporter.flushLogs()).toBe(false);
+  expect(callCount).toBe(1);
+
+  // 推进 600ms (累计 1100ms > 1000ms)，触发第 2 次失败，退避 2000ms (1000 * 2^1)
+  virtualTime += 600;
+  expect(await exporter.flushLogs()).toBe(false);
+  expect(callCount).toBe(2);
+  expect(exporter.getStats().consecutiveFailures).toBe(2);
+
+  // 推进 1500ms，在 2000ms 窗口内，被拦截
+  virtualTime += 1500;
+  expect(await exporter.flushLogs()).toBe(false);
+  expect(callCount).toBe(2);
+
+  // 推进 600ms (累计 2100ms > 2000ms)，触发第 3 次失败，退避 4000ms (1000 * 2^2)
+  virtualTime += 600;
+  expect(await exporter.flushLogs()).toBe(false);
+  expect(callCount).toBe(3);
+  expect(exporter.getStats().consecutiveFailures).toBe(3);
+
+  // 验证完整统计指标快照
+  const stats = exporter.getStats();
+  expect(stats.totalAttempts).toBe(3);
+  expect(stats.failureCount).toBe(3);
+  expect(stats.successCount).toBe(0);
+  expect(stats.consecutiveFailures).toBe(3);
+  expect(stats.droppedCount).toBe(0);
+
+  await exporter.shutdown();
 });
 
 
