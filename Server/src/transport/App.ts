@@ -350,6 +350,8 @@ export const createApp = ({
     .use(
       sentryTunnelRoutes({
         allowedProjectIds: env.sentryAllowedProjectIds,
+        sentryDsn: env.sentryDsn,
+        logger,
       }),
     )
     // ==================== WebSocket 入口 ====================
