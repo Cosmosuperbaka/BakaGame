@@ -49,7 +49,7 @@ function MessageText({
           <span
             key={index}
             className={cn(
-              "rounded-md px-1 font-sans font-medium",
+              "rounded-md px-1 font-medium",
               isMe && !isGhost
                 ? "bg-primary-foreground/20"
                 : "bg-primary/12 text-primary",
@@ -164,7 +164,7 @@ export function ChatPanel() {
                     exit="exit"
                     className="flex justify-center py-1"
                   >
-                    <span className="rounded-full bg-muted/40 px-3 py-0.5 text-center font-sans text-xs text-muted-foreground/75 [overflow-wrap:anywhere]">
+                    <span className="rounded-full bg-muted/40 px-3 py-0.5 text-center text-xs text-muted-foreground/75 [overflow-wrap:anywhere]">
                       {msg.text}
                     </span>
                   </motion.div>
@@ -270,7 +270,7 @@ export function ChatPanel() {
                   )}
                 >
                   <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate font-sans font-medium">{player.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
                 </motion.button>
               ))}
             </motion.div>

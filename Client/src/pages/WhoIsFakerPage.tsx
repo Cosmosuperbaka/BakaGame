@@ -215,7 +215,7 @@ export default function WhoIsFakerPage() {
                         <Badge variant="outline" className="font-normal text-xs">
                           {PHASE_LABELS[room.phase] ?? room.phase}
                         </Badge>
-                        <span className="flex items-center gap-1.5 font-sans tabular-nums">
+                        <span className="flex items-center gap-1.5 tabular-nums">
                           <Users className="h-4 w-4" />
                           {room.onlineCount}/{room.playerCount}
                         </span>

@@ -282,7 +282,7 @@ export function PlayerList(props: PlayerListProps) {
           <div
             key={column.key}
             className={cn(
-              "flex items-center whitespace-nowrap px-4 font-sans text-[11px] font-semibold tracking-wide",
+              "flex items-center whitespace-nowrap px-4 text-[11px] font-semibold tracking-wide",
               withRule && "mt-3",
               DESCRIPTION_HEAD_TONES[column.tone],
             )}
@@ -449,7 +449,7 @@ function SpectatorToggle({
     <Button
       variant="ghost"
       size="sm"
-      className="mt-1 h-8 justify-start gap-1.5 px-2 font-sans text-xs text-muted-foreground"
+      className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
       onClick={() => onToggle(spectator)}
     >
       {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -664,7 +664,7 @@ function MarkButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 font-sans text-xs font-semibold transition-colors",
+        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
         "border-r last:border-r-0",
         selected
           ? roleSelectedTones[option]
@@ -696,7 +696,7 @@ function ManageButton({
         {...tappable}
         onClick={onClick}
         className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 font-sans text-xs font-medium transition-colors",
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
           "border-t first:border-t-0",
           destructive
             ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"

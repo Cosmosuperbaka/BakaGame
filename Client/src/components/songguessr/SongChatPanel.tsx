@@ -46,7 +46,7 @@ function MessageText({
           <span
             key={index}
             className={cn(
-              "rounded-md px-1 font-sans font-medium",
+              "rounded-md px-1 font-medium",
               isMe ? "bg-primary-foreground/20" : "bg-primary/12 text-primary",
             )}
           >
@@ -153,7 +153,7 @@ export function SongChatPanel() {
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="min-w-0 whitespace-pre-wrap py-1 text-center font-sans text-xs text-muted-foreground/70 [overflow-wrap:anywhere]"
+                    className="min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]"
                   >
                     {message.text}
                   </motion.div>
@@ -249,7 +249,7 @@ export function SongChatPanel() {
                   )}
                 >
                   <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate font-sans font-medium">{player.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
                 </motion.button>
               ))}
             </motion.div>
