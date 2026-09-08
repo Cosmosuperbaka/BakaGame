@@ -762,9 +762,11 @@ describe("NeteaseMusicProvider", () => {
   });
 
   test("获取歌曲副歌并支持空数据安全降级与全量加载装配", async () => {
+    let chorusCalls = 0;
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({
         song_chorus: async ({ id }: { id: string | number }) => {
+          chorusCalls += 1;
           if (String(id) === "100") {
             return {
               body: {
@@ -811,9 +813,29 @@ describe("NeteaseMusicProvider", () => {
 
     const chorusEmpty = await provider.getSongChorus("200");
     expect(chorusEmpty).toBeUndefined();
+    await expect(provider.getSongChorus("200")).resolves.toBeUndefined();
+    expect(chorusCalls).toBe(2);
 
     const fullSong = await provider.getSong("100");
     expect(fullSong.chorus).toEqual({ startTime: 45_000, endTime: 85_000 });
     expect(fullSong.audioUrl).toBe("https://music.example.com/100.mp3");
+  });
+
+  test("播放地址命中短缓存，并支持强制刷新", async () => {
+    let urlCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 7, name: "缓存曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 7, url: `http://music.example.com/${++urlCalls}.mp3` }] } }),
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]缓存歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("7")).resolves.toMatchObject({ audioUrl: "https://music.example.com/1.mp3" });
+    await expect(provider.getSong("7")).resolves.toMatchObject({ audioUrl: "https://music.example.com/1.mp3" });
+    expect(urlCalls).toBe(1);
+    await expect(provider.refreshSongAudio!("7")).resolves.toBe("https://music.example.com/2.mp3");
+    expect(urlCalls).toBe(2);
   });
 });
