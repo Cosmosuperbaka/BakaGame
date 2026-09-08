@@ -389,4 +389,48 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
     expect(screen.getByText("Songuessr 游戏大厅")).toBeInTheDocument();
   });
+
+  it("结算阶段保持简洁无控制按钮，且全局单例 audio 禁用原生 autoplay", () => {
+    const { container } = renderRoomPage();
+
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          phase: "roundResult",
+          roundNumber: 1,
+          roundSummary: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            correctPlayerIds: ["player-1"],
+            attempts: [],
+            song: {
+              id: "song-101",
+              title: "夜空中最亮的星",
+              artist: "逃跑计划",
+              album: "世界",
+              audioUrl: "https://audio.example.com/star.mp3",
+              durationMs: 250_000,
+              requiresVip: false,
+              chorus: { startTime: 65_000, endTime: 90_000 },
+              encyclopedia: { tags: ["流行"] },
+            },
+            scores: [],
+          },
+        }),
+      });
+    });
+
+    // 验证结算卡片展示歌曲信息
+    expect(screen.getByRole("heading", { name: "答案揭晓" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "夜空中最亮的星" })).toBeInTheDocument();
+
+    // 验证副歌时间徽章与手动播放/重播副歌按钮不存在
+    expect(screen.queryByText(/副歌/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /播放副歌|暂停副歌|重播副歌/ })).not.toBeInTheDocument();
+
+    // 验证 audio 节点存在且未设置原生 autoPlay 属性，防止切台自动从头大音量播放
+    const audio = container.querySelector("audio");
+    expect(audio).toBeInTheDocument();
+    expect(audio).not.toHaveAttribute("autoplay");
+  });
 });

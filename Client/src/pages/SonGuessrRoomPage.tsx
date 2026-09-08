@@ -140,6 +140,7 @@ export default function SonGuessrRoomPage() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioReadyKey = useRef<string | null>(null);
   const audioAutoPlayKey = useRef<string | null>(null);
+  const loadedAudioUrlRef = useRef<string | null>(null);
   const sendCommandRef = useRef(sendCommand);
   const leavingRef = useRef(false);
   const volumeRef = useRef(volume);
@@ -269,7 +270,13 @@ export default function SonGuessrRoomPage() {
       currentPhaseRoundNumber === undefined ||
       !currentAudioUrl ||
       currentClipStartTime === undefined
-    ) return;
+    ) {
+      if (audio) {
+        audio.pause();
+        loadedAudioUrlRef.current = null;
+      }
+      return;
+    }
     const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
     setAudioStatus("loading");
     setAudioPlaybackState("idle");
@@ -278,6 +285,7 @@ export default function SonGuessrRoomPage() {
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
 
     const moveToStart = () => {
+      audio.volume = volumeRef.current;
       if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
     };
     const stopAtEnd = () => {
@@ -288,6 +296,7 @@ export default function SonGuessrRoomPage() {
       }
     };
     const keepPlaybackInClip = () => {
+      audio.volume = volumeRef.current;
       if (
         audio.currentTime < startSeconds - 0.25 ||
         (endSeconds !== undefined && audio.currentTime >= endSeconds)
@@ -299,6 +308,7 @@ export default function SonGuessrRoomPage() {
     let disposed = false;
     const ready = () => {
       if (disposed) return;
+      audio.volume = volumeRef.current;
       moveToStart();
       readyState = true;
       setAudioStatus("ready");
@@ -324,6 +334,8 @@ export default function SonGuessrRoomPage() {
       // 加载完成后自动播放；浏览器禁止自动播放时保留小型播放按钮作为后备。
       if (audioAutoPlayKey.current !== loadKey) {
         audioAutoPlayKey.current = loadKey;
+        audio.volume = volumeRef.current;
+        moveToStart();
         void audio.play().catch(() => {
           if (!disposed) setAudioPlaybackState("idle");
         });
@@ -334,7 +346,10 @@ export default function SonGuessrRoomPage() {
       setAudioPlaybackState("idle");
       setAudioStatus("error");
     };
-    const playing = () => setAudioPlaybackState("playing");
+    const playing = () => {
+      audio.volume = volumeRef.current;
+      setAudioPlaybackState("playing");
+    };
     const completed = () => {
       audio.currentTime = startSeconds;
       setAudioPlaybackState("completed");
@@ -349,8 +364,11 @@ export default function SonGuessrRoomPage() {
     audio.addEventListener("canplaythrough", ready);
     audio.addEventListener("loadeddata", ready);
     audio.addEventListener("error", failed);
-    audio.src = currentAudioUrl;
-    audio.load();
+    if (loadedAudioUrlRef.current !== currentAudioUrl) {
+      loadedAudioUrlRef.current = currentAudioUrl;
+      audio.src = currentAudioUrl;
+      audio.load();
+    }
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) moveToStart();
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) ready();
     const loadTimeout = window.setTimeout(() => {
@@ -382,6 +400,23 @@ export default function SonGuessrRoomPage() {
     roomId,
     snapshot?.phase,
   ]);
+
+  useEffect(() => {
+    const syncAudioOnActive = () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.volume = volumeRef.current;
+      if (audioPlaybackState === "completed" || audioPlaybackState === "idle") {
+        audio.pause();
+      }
+    };
+    document.addEventListener("visibilitychange", syncAudioOnActive);
+    window.addEventListener("focus", syncAudioOnActive);
+    return () => {
+      document.removeEventListener("visibilitychange", syncAudioOnActive);
+      window.removeEventListener("focus", syncAudioOnActive);
+    };
+  }, [audioPlaybackState, audioStatus]);
 
   // 音频可能先于房间私有状态完成加载；私有状态到达后补发一次准备通知。
   useEffect(() => {
@@ -437,27 +472,13 @@ export default function SonGuessrRoomPage() {
     ) {
       audio.currentTime = startSeconds;
     }
+    audio.volume = volumeRef.current;
     try {
       await audio.play();
     } catch {
       setAudioPlaybackState("idle");
     }
   }, [audioPlaybackState, audioStatus, currentClipEndTime, currentClipStartTime]);
-
-  const pauseAudio = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.pause();
-    setAudioPlaybackState("idle");
-  }, []);
-
-  const toggleAudio = useCallback(async () => {
-    if (audioPlaybackState === "playing") {
-      pauseAudio();
-    } else {
-      await playAudio();
-    }
-  }, [audioPlaybackState, pauseAudio, playAudio]);
 
 
   useEffect(() => {
@@ -548,9 +569,26 @@ export default function SonGuessrRoomPage() {
     await enterWithName(pendingJoinName, passwordDraft);
   };
 
+  const audioNode = (
+    <audio
+      ref={(node) => {
+        audioRef.current = node;
+        if (node) {
+          node.volume = volumeRef.current;
+        }
+      }}
+      className="hidden"
+      preload="auto"
+      playsInline
+      crossOrigin="anonymous"
+    />
+  );
+
   if (joining || needsName || needsPassword || !snapshot || !privateState || snapshot.roomId !== roomId) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
+      <>
+        {audioNode}
+        <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
         {!needsName && !needsPassword ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -627,7 +665,8 @@ export default function SonGuessrRoomPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -658,16 +697,9 @@ export default function SonGuessrRoomPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <audio
-        ref={audioRef}
-        src={currentAudioUrl}
-        className="hidden"
-        preload="auto"
-        playsInline
-        autoPlay
-        crossOrigin="anonymous"
-      />
+    <>
+      {audioNode}
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <Button
@@ -768,8 +800,6 @@ export default function SonGuessrRoomPage() {
               audioStatus={audioStatus}
               audioPlaybackState={audioPlaybackState}
               onPlayAudio={() => void playAudio()}
-              onPauseAudio={pauseAudio}
-              onToggleAudio={() => void toggleAudio()}
               onRetryAudio={() => setAudioRetryToken((token) => token + 1)}
               openSearch={setSearchMode}
               searchMode={searchMode}
@@ -833,6 +863,7 @@ export default function SonGuessrRoomPage() {
       </div>
 
     </div>
+    </>
   );
 }
 
@@ -847,8 +878,6 @@ interface SongGameAreaProps {
   audioStatus: "loading" | "ready" | "error";
   audioPlaybackState: "idle" | "playing" | "completed";
   onPlayAudio: () => void;
-  onPauseAudio?: () => void;
-  onToggleAudio?: () => void;
   onRetryAudio: () => void;
   openSearch: (mode: "submit" | "guess") => void;
   searchMode: "submit" | "guess" | null;
@@ -914,7 +943,6 @@ function GameStage({
   audioStatus,
   audioPlaybackState,
   onPlayAudio,
-  onToggleAudio,
   onRetryAudio,
   openSearch,
   run,
@@ -1098,13 +1126,6 @@ function GameStage({
 
   if (snapshot.phase === "roundResult" && snapshot.roundSummary) {
     const summary = snapshot.roundSummary;
-    const chorus = summary.song.chorus;
-    const formatTime = (ms: number) => {
-      const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-    };
 
     return (
       <div className="mx-auto max-w-2xl space-y-5">
@@ -1127,48 +1148,7 @@ function GameStage({
                 {summary.song.releaseYear ? <Badge variant="outline">{summary.song.releaseYear}</Badge> : null}
                 {summary.song.language ? <Badge variant="outline">{summary.song.language}</Badge> : null}
                 {summary.song.encyclopedia.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
-                {chorus ? (
-                  <Badge variant="secondary" className="gap-1 font-mono">
-                    <Music2 className="h-3 w-3" />
-                    副歌 {formatTime(chorus.startTime)}{chorus.endTime ? ` - ${formatTime(chorus.endTime)}` : ""}
-                  </Badge>
-                ) : null}
               </div>
-
-              {summary.song.audioUrl ? (
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={onToggleAudio ?? onPlayAudio}
-                    disabled={audioStatus === "loading"}
-                    aria-label={audioPlaybackState === "playing" ? "暂停副歌" : "播放副歌"}
-                  >
-                    {audioPlaybackState === "playing" ? (
-                      <>
-                        <Volume2 className="h-4 w-4 animate-pulse text-primary" />
-                        <span>暂停副歌</span>
-                      </>
-                    ) : audioPlaybackState === "completed" ? (
-                      <>
-                        <RotateCcw className="h-4 w-4" />
-                        <span>重播副歌</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-4 w-4" />
-                        <span>播放副歌</span>
-                      </>
-                    )}
-                  </Button>
-                  {audioStatus === "error" ? (
-                    <Button variant="ghost" size="sm" onClick={onRetryAudio} className="text-xs text-destructive">
-                      音频加载失败，点击重试
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
 
               {summary.song.encyclopedia.aliases?.length ? (
                 <p className="mt-3 text-xs text-muted-foreground">
