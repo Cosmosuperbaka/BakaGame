@@ -103,7 +103,7 @@ fetch(url, { credentials: "include" });
 
 - 浏览器不显示原生 `<audio controls>`，用户不能拖动当前片段。
 - **竞猜阶段**：音频加载完成后自动开始播放；播放期间不提供暂停、拖动或进度控制，播放到歌词片段结束后才允许使用歌词区域右上角的方形“重播音频”按钮。
-- **结算阶段**：进入 `roundResult` 阶段后，由 `roundSummary` 透传答案歌曲的 `audioUrl` 与 `chorus`。客户端自动从副歌起点（`chorus.startTime`，缺失时为 0）起播，播放至副歌终点（`chorus.endTime`，缺失时为整曲结束）。结算卡片提供副歌区间展示与播放/暂停/重播交互控件。
+- **结算阶段**：进入 `roundResult` 阶段后，由 `roundSummary` 透传答案歌曲的 `audioUrl` 与 `chorus`。客户端自动从副歌起点（`chorus.startTime`，缺失时为 0）起播，播放至副歌终点（`chorus.endTime`，缺失时为整曲结束）。结算卡片保持简洁紧凑，不展示副歌时间徽章与播放/暂停控制按钮；客户端全局常驻单例 `<audio>` 并在切台与前台恢复时自动同步音量，防止切台原生重播或音量失控。
 - 若浏览器的自动播放策略拦截开始播放，显示手动播放/重播后备按钮，不得恢复原生音频进度控件。
 - 音频加载必须监听至少 `canplay`、`loadeddata` 和 `error`，并设置超时与重试入口；不能只依赖 `canplaythrough`。
 - 音频资源必须使用 HTTPS、支持 Range，并在浏览器端满足 CORS 要求。
