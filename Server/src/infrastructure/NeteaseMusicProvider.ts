@@ -85,12 +85,16 @@ const readString = (value: unknown): string | undefined => {
 const readNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
-const randomChineseIp = () => [
-  116,
-  25 + Math.floor(Math.random() * 70),
-  Math.floor(Math.random() * 256),
-  Math.floor(Math.random() * 256),
-].join(".");
+const randomChineseIp = (random?: { nextFloat?: () => number }) => {
+  const rand = random?.nextFloat ?? Math.random;
+  return [
+    116,
+    25 + Math.floor(rand() * 70),
+    Math.floor(rand() * 256),
+    Math.floor(rand() * 256),
+  ].join(".");
+};
+
 
 const SEARCH_CACHE_TTL_MS = 2 * 60_000;
 const SONG_CACHE_TTL_MS = 3 * 60_000;
@@ -862,6 +866,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
       if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") throw error;
+      this.logger?.warn("网易云可选接口调用降级", {
+        endpoints: names,
+        error: describeError(error),
+      });
       return undefined;
     }
   }
@@ -1035,7 +1043,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       : "anonymous";
     const existing = this.ipByScope.get(scope);
     if (existing) return existing;
-    const ip = randomChineseIp();
+    const ip = randomChineseIp(this.random);
     this.ipByScope.set(scope, ip);
     if (this.ipByScope.size > 128) {
       const oldest = this.ipByScope.keys().next().value;

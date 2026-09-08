@@ -470,13 +470,19 @@ describe("NeteaseMusicProvider", () => {
 
   test("搜索缓存会合并并发请求并保持有界", async () => {
     let calls = 0;
+    let finishFirstSearch!: () => void;
+    const firstSearchBlocker = new Promise<void>((resolve) => {
+      finishFirstSearch = resolve;
+    });
     const provider = new NeteaseMusicProvider({
       cacheMaxEntries: 1,
       minRequestIntervalMs: 0,
       loadApi: async () => ({
         cloudsearch: async ({ keywords }: { keywords: string }) => {
           calls += 1;
-          await Bun.sleep(5);
+          if (calls === 1) {
+            await firstSearchBlocker;
+          }
           return {
             body: {
               result: {
@@ -488,11 +494,13 @@ describe("NeteaseMusicProvider", () => {
       }),
     });
 
-    const concurrent = await Promise.all([
+    const concurrentPromise = Promise.all([
       provider.search("同一首歌"),
       provider.search("同一首歌"),
       provider.search("同一首歌"),
     ]);
+    finishFirstSearch();
+    const concurrent = await concurrentPromise;
     expect(calls).toBe(1);
     concurrent[0].push({ id: "local", title: "本地改动", artist: "测试" });
     expect(concurrent[1]).toHaveLength(1);
@@ -526,13 +534,38 @@ describe("NeteaseMusicProvider", () => {
     expect(requests.every((params) => params.randomCNIP === true)).toBe(true);
   });
 
+  test("支持注入 random 生成确定性伪装中国 IP", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      random: { nextFloat: () => 0.5 },
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await provider.search("测试歌曲", 20, "MUSIC_U=user-deterministic");
+    // 25 + Math.floor(0.5 * 70) = 60, Math.floor(0.5 * 256) = 128
+    expect(requests[0]?.realIP).toBe("116.60.128.128");
+  });
+
   test("上游 405 会透传消息、清空队列并在冷却期快速失败", async () => {
     let calls = 0;
+    let virtualTime = 1_000;
     let rejectFirst!: (reason: unknown) => void;
+    let notifyFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
     const firstResponse = new Promise<never>((_resolve, reject) => {
       rejectFirst = reject;
     });
     const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
       maxConcurrentRequests: 1,
       minRequestIntervalMs: 0,
       rateLimitCooldownMs: 30,
@@ -541,7 +574,10 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         cloudsearch: async () => {
           calls += 1;
-          if (calls === 1) return firstResponse;
+          if (calls === 1) {
+            notifyFirstStarted();
+            return firstResponse;
+          }
           return { body: { result: { songs: [] } } };
         },
       }),
@@ -552,8 +588,7 @@ describe("NeteaseMusicProvider", () => {
       provider.search("请求二"),
       provider.search("请求三"),
     ];
-    while (calls === 0) await Bun.sleep(1);
-    await Bun.sleep(1);
+    await firstStarted;
     rejectFirst({
       status: 405,
       body: {
@@ -581,14 +616,17 @@ describe("NeteaseMusicProvider", () => {
     });
     expect(calls).toBe(1);
 
-    await Bun.sleep(35);
+    virtualTime += 50;
     await expect(provider.search("冷却结束")).resolves.toEqual([]);
     expect(calls).toBe(2);
   });
 
   test("上游正常返回 405 body 时同样进入冷却并透传消息", async () => {
     let calls = 0;
+    let virtualTime = 1_000;
     const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
       minRequestIntervalMs: 0,
       rateLimitCooldownMs: 30,
       maxRateLimitCooldownMs: 30,
@@ -613,7 +651,7 @@ describe("NeteaseMusicProvider", () => {
     });
     expect(calls).toBe(1);
 
-    await Bun.sleep(35);
+    virtualTime += 50;
     await expect(provider.search("冷却结束恢复")).resolves.toEqual([]);
     expect(calls).toBe(2);
   });
@@ -621,6 +659,10 @@ describe("NeteaseMusicProvider", () => {
   test("排队请求会过期而不是等待活动请求结束后补发", async () => {
     let calls = 0;
     let release!: () => void;
+    let notifyFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
     const blocker = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -631,14 +673,17 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         cloudsearch: async () => {
           calls += 1;
-          if (calls === 1) await blocker;
+          if (calls === 1) {
+            notifyFirstStarted();
+            await blocker;
+          }
           return { body: { result: { songs: [] } } };
         },
       }),
     });
 
     const active = provider.search("活动请求");
-    while (calls === 0) await Bun.sleep(1);
+    await firstStarted;
     const queued = provider.search("陈旧请求");
     await expect(queued).rejects.toMatchObject({
       code: "MUSIC_API_RATE_LIMITED",
@@ -648,6 +693,32 @@ describe("NeteaseMusicProvider", () => {
     release();
     await expect(active).resolves.toEqual([]);
     expect(calls).toBe(1);
+  });
+
+  test("可选接口调用失败时记录采样告警日志并降级", async () => {
+    const warnings: Array<{ message: string; meta: unknown }> = [];
+    const fakeLogger = {
+      warn: (message: string, meta: unknown) => {
+        warnings.push({ message, meta });
+      },
+    } as any;
+
+    const provider = new NeteaseMusicProvider({
+      logger: fakeLogger,
+      loadApi: async () => ({
+        song_red_count: async () => {
+          throw new Error("上游网络抖动");
+        },
+      }),
+    });
+
+    const popularity = await provider.getSongPopularity("123");
+    expect(popularity).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe("网易云可选接口调用降级");
+    expect(warnings[0]?.meta).toMatchObject({
+      endpoints: ["song_red_count"],
+    });
   });
 
   test("支持通过注入 now 与 random 驱动限流退避、冷却熔断与恢复", async () => {
