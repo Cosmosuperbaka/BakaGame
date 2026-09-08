@@ -472,10 +472,10 @@ export function PlayerGroupTitle({
       className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
-      <h3 className="font-sans text-[11px] font-semibold tracking-wide text-muted-foreground">
+      <h3 className="font-sans text-[11px] font-normal tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <span className="font-sans text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="font-sans text-[11px] font-normal tabular-nums text-muted-foreground/70">
         {count}
       </span>
       <span className="h-px flex-1 bg-border/70" />
@@ -567,7 +567,7 @@ export function PlayerRow(props: PlayerRowProps) {
         <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
       ) : null}
       {/* 得分居右 */}
-      <span className="shrink-0 font-sans text-xs tabular-nums text-muted-foreground">
+      <span className="shrink-0 font-sans text-xs font-normal tabular-nums text-muted-foreground">
         {player.score}<span className="ml-0.5 text-[10px]">分</span>
       </span>
     </div>

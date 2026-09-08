@@ -178,7 +178,7 @@ export function SongChatPanel() {
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <span className="font-sans text-[11px] text-muted-foreground/60 mb-0.5 px-1">
+                  <span className="font-sans text-[11px] font-normal text-muted-foreground/60 mb-0.5 px-1">
                     {message.playerName}
                   </span>
                   <div
