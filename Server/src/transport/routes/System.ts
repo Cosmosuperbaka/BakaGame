@@ -4,11 +4,84 @@ import type { RoomService } from "../../application/RoomService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 
+export class SlidingWindowRateLimiter {
+  private readonly windows = new Map<string, number[]>();
+  private readonly windowMs: number;
+  private readonly maxRequests: number;
+
+  constructor(options: { windowMs?: number; maxRequests?: number } = {}) {
+    this.windowMs = options.windowMs ?? 60_000;
+    this.maxRequests = options.maxRequests ?? 60;
+  }
+
+  public allow(key: string, now = Date.now()): boolean {
+    const windowStart = now - this.windowMs;
+    const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
+    if (timestamps.length >= this.maxRequests) {
+      this.windows.set(key, timestamps);
+      return false;
+    }
+    timestamps.push(now);
+    this.windows.set(key, timestamps);
+
+    if (this.windows.size > 1000) {
+      for (const [k, ts] of this.windows.entries()) {
+        const valid = ts.filter((t) => t > windowStart);
+        if (valid.length === 0) {
+          this.windows.delete(k);
+        } else {
+          this.windows.set(k, valid);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  public reset(): void {
+    this.windows.clear();
+  }
+}
+
+export class TelemetryRateLimiter {
+  private readonly ipLimiter: SlidingWindowRateLimiter;
+  private readonly globalLimiter: SlidingWindowRateLimiter;
+
+  constructor(options: {
+    ipMaxRequests?: number;
+    globalMaxRequests?: number;
+    windowMs?: number;
+  } = {}) {
+    this.ipLimiter = new SlidingWindowRateLimiter({
+      windowMs: options.windowMs ?? 60_000,
+      maxRequests: options.ipMaxRequests ?? 60,
+    });
+    this.globalLimiter = new SlidingWindowRateLimiter({
+      windowMs: options.windowMs ?? 60_000,
+      maxRequests: options.globalMaxRequests ?? 1000,
+    });
+  }
+
+  public allow(ip: string, now = Date.now()): boolean {
+    if (!this.globalLimiter.allow("__global__", now)) {
+      return false;
+    }
+    return this.ipLimiter.allow(ip, now);
+  }
+
+  public reset(): void {
+    this.ipLimiter.reset();
+    this.globalLimiter.reset();
+  }
+}
+
 export interface SystemRoutesDependencies {
   whoIsFakerService?: RoomService;
   sonGuessrService?: SonGuessrService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
+  rateLimiter?: TelemetryRateLimiter;
+  sampleRate?: number;
 }
 
 export const systemRoutes = ({
@@ -16,13 +89,29 @@ export const systemRoutes = ({
   sonGuessrService,
   logger,
   isShuttingDown,
+  rateLimiter,
+  sampleRate = 1.0,
 }: SystemRoutesDependencies) => {
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
+  const limiter = rateLimiter ?? new TelemetryRateLimiter();
+
   return new Elysia({ name: "system" })
     .post(
       "/api/monitoring/telemetry",
-      async ({ body, headers }) => {
+      async ({ body, headers, set }) => {
+        const clientIp =
+          (typeof headers["x-forwarded-for"] === "string"
+            ? headers["x-forwarded-for"].split(",")[0]?.trim()
+            : undefined) ||
+          (typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"].trim() : undefined) ||
+          "127.0.0.1";
+
+        if (!limiter.allow(clientIp)) {
+          set.status = 429;
+          return { error: "Too Many Requests" };
+        }
+
         const payload = (body ?? {}) as {
           traceId?: string;
           level?: "info" | "warn" | "error" | "INFO" | "WARN" | "ERROR";
@@ -54,7 +143,10 @@ export const systemRoutes = ({
         }
         const sanitizedMeta = redactData(safeMetadata) as Record<string, unknown>;
 
-        if (logger) {
+        const isError = level === "ERROR";
+        const shouldSample = isError || sampleRate >= 1.0 || Math.random() < sampleRate;
+
+        if (logger && shouldSample) {
           const logContext = {
             source: "client_telemetry",
             traceId,
@@ -106,9 +198,10 @@ export const systemRoutes = ({
           },
           { additionalProperties: false },
         ),
-        response: t.Object({
-          ok: t.Boolean(),
-        }),
+        response: {
+          200: t.Object({ ok: t.Boolean() }),
+          429: t.Object({ error: t.String() }),
+        },
       },
     )
     .get(

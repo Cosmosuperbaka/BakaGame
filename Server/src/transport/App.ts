@@ -81,6 +81,7 @@ const executeWithDeduplication = async ({
         durationMs,
         identifier: connectionId,
         action: `WS ${parsedType} (replay)`,
+        traceId,
       });
       sendPacket(ws, createAck(parsed, outcome.payload));
     } else if (isAppError(outcome.error)) {
@@ -90,6 +91,7 @@ const executeWithDeduplication = async ({
         identifier: connectionId,
         action: `WS ${parsedType} (replay)`,
         level: "WARN",
+        traceId,
       });
       sendPacket(
         ws,
@@ -102,6 +104,7 @@ const executeWithDeduplication = async ({
         identifier: connectionId,
         action: `WS ${parsedType} (replay)`,
         level: "ERROR",
+        traceId,
       });
       sendPacket(
         ws,
@@ -137,6 +140,7 @@ const executeWithDeduplication = async ({
       durationMs,
       identifier: connectionId,
       action: `WS ${parsedType}`,
+      traceId,
     });
     sendPacket(ws, createAck(parsed, outcome.payload));
   } else {
@@ -148,6 +152,7 @@ const executeWithDeduplication = async ({
         identifier: connectionId,
         action: `WS ${parsedType}`,
         level: "WARN",
+        traceId,
       });
       sendPacket(
         ws,
@@ -170,6 +175,7 @@ const executeWithDeduplication = async ({
       identifier: connectionId,
       action: `WS ${parsedType}`,
       level: "ERROR",
+      traceId,
     });
     sendPacket(
       ws,
@@ -283,12 +289,19 @@ export const createApp = ({
         durationMs,
         identifier: request.headers.get("x-forwarded-for") ?? "127.0.0.1",
         action: `HTTP ${request.method} ${path}`,
+        traceId,
       });
     })
     // ==================== 全局错误生命周期处理 ====================
     .onError(({ code, error, set, path, request, startedAt, traceId }) => {
-      if (set.headers && traceId) {
-        set.headers["x-trace-id"] = traceId;
+      const activeTraceId =
+        traceId ??
+        request?.headers?.get("x-trace-id") ??
+        request?.headers?.get("x-request-id") ??
+        crypto.randomUUID();
+
+      if (set.headers && activeTraceId) {
+        set.headers["x-trace-id"] = activeTraceId;
       }
       const durationMs = startedAt ? performance.now() - startedAt : 0;
       let status = 500;
@@ -320,13 +333,14 @@ export const createApp = ({
         identifier: request?.headers?.get("x-forwarded-for") ?? "127.0.0.1",
         action: `HTTP ${request?.method ?? "GET"} ${path}`,
         level: status >= 500 ? "ERROR" : "WARN",
+        traceId: activeTraceId,
       });
 
       if (status >= 500) {
         logger.error(`HTTP 500 异常 [${path}]`, {
           ...describeError(error),
           error: error instanceof Error ? error : new Error(String(error)),
-          traceId,
+          traceId: activeTraceId,
         });
       }
 
@@ -334,7 +348,7 @@ export const createApp = ({
         error: {
           code: errCode,
           message: errMsg,
-          traceId,
+          traceId: activeTraceId,
         },
       };
     })
@@ -434,6 +448,7 @@ export const createApp = ({
               identifier: connectionId,
               action: `WS ${parsedType}`,
               level: "WARN",
+              traceId,
             });
             sendPacket(
               ws,
@@ -456,6 +471,7 @@ export const createApp = ({
             identifier: connectionId,
             action: `WS ${parsedType}`,
             level: "ERROR",
+            traceId,
           });
           sendPacket(
             ws,
@@ -543,6 +559,7 @@ export const createApp = ({
               identifier: connectionId,
               action: `WS ${parsedType}`,
               level: "WARN",
+              traceId,
             });
             sendPacket(
               ws,
@@ -565,6 +582,7 @@ export const createApp = ({
             identifier: connectionId,
             action: `WS ${parsedType}`,
             level: "ERROR",
+            traceId,
           });
           sendPacket(
             ws,

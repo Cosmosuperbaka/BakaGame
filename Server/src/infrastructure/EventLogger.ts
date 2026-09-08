@@ -339,6 +339,7 @@ export class EventLogger {
     action,
     level = "INFO",
     createdAt = this.now(),
+    traceId,
   }: {
     status?: number;
     durationMs?: number;
@@ -346,6 +347,7 @@ export class EventLogger {
     action: string;
     level?: LogLevel;
     createdAt?: number;
+    traceId?: string;
   }) {
     const timestampStr = formatTimestamp(createdAt);
     const durationStr = formatDuration(durationMs);
@@ -355,6 +357,7 @@ export class EventLogger {
 
     if (this.otlpExporter?.isEnabled) {
       this.otlpExporter.enqueueSpan({
+        traceId,
         name: action,
         startTime: createdAt - durationMs,
         endTime: createdAt,
@@ -362,6 +365,7 @@ export class EventLogger {
           "http.status_code": status,
           "operation.identifier": identifier,
           "operation.action": action,
+          ...(traceId ? { "trace.id": traceId } : {}),
         },
         status: status >= 400 ? "ERROR" : "OK",
       });

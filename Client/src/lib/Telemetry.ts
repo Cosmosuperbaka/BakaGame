@@ -21,7 +21,7 @@ export const reportTelemetry = async (
     const rawUrl = options?.serverUrl ?? (import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL);
     const serverUrl = rawUrl.replace(/\/+$/, "");
     const fetcher = options?.fetcher ?? fetch;
-    await fetcher(`${serverUrl}/api/monitoring/telemetry`, {
+    const response = await fetcher(`${serverUrl}/api/monitoring/telemetry`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -29,6 +29,11 @@ export const reportTelemetry = async (
       },
       body: JSON.stringify(payload),
     });
+
+    if (!response.ok) {
+      console.warn(`[Telemetry] 上报遥测失败: HTTP ${response.status}`);
+      throw new Error(`[Telemetry] HTTP ${response.status}`);
+    }
 
     if (isClientSentryEnabled()) {
       captureClientMessage(
@@ -40,7 +45,10 @@ export const reportTelemetry = async (
         },
       );
     }
-  } catch {
-    // 客户端监控上报失败不阻断用户交互
+  } catch (error) {
+    // 客户端监控上报失败不阻断用户交互，但记录本地告警
+    if (!(error instanceof Error && error.message.includes("[Telemetry]"))) {
+      console.warn("[Telemetry] 上报异常:", error);
+    }
   }
 };
