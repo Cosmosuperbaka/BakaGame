@@ -22,7 +22,7 @@ vi.mock("@/contexts/SonGuessrContext", () => ({
 }));
 vi.mock("@/components/Toast", () => ({
   ToastContainer: () => null,
-  SongGuessrToastContainer: () => null,
+  SonGuessrToastContainer: () => null,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
 vi.mock("@/pages/WhoIsFakerPage", () => ({ default: () => <h1>faker-lobby</h1> }));

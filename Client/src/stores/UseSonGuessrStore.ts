@@ -45,8 +45,6 @@ export interface SonGuessrStore {
   ) => Promise<T>;
 }
 
-export type SongGuessrStore = SonGuessrStore;
-
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
@@ -263,8 +261,6 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   },
 };
 });
-
-export const useSongGuessrStore = useSonGuessrStore;
 
 export function initSonGuessrWs() {
   const unsubMsg = sonGuessrWs.onMessage((msg: ServerMessage) => {

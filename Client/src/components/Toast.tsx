@@ -10,7 +10,7 @@ export function ToastContainer() {
   return <ToastViewport toasts={toasts} />;
 }
 
-export function SongGuessrToastContainer() {
+export function SonGuessrToastContainer() {
   const notice = useSonGuessrStore((state) => state.notice);
   const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
 
