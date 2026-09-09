@@ -184,10 +184,11 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **同源隧道反代与防广告拦截 (Sentry Tunnel)**：前端 Sentry 上报统一通过服务端同源反代路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，彻底免疫浏览器广告拦截插件（AdBlocker）误杀，保障中国大陆玩家顺畅直连。
 - **标准环境变量支撑**：前端通过 `VITE_SENTRY_DSN` 注入客户端上报凭据；服务端通过 `SENTRY_DSN` 与 `SENTRY_ALLOWED_PROJECT_IDS` 注入服务端凭据与隧道校验白名单。现有标准 OpenTelemetry（`OTEL_EXPORTER_OTLP_*`）与 EventLogger 继续保障对局事件落盘审计与双轨观测。
 
-### 10.6 绝对凭据隔离与防密钥泄漏铁律 (Zero-Secrets & Credential Isolation Invariant)
-- **严禁向 Git 仓库提交真实凭据**：无论属于公钥、私钥、Token 还是项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），一律绝对严禁写入被 Git 追踪的任何文件。
-- **示例文件与测试用例全量 Dummy 化**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`），严禁粘贴任何真实环境的 DSN 与实际项目标识。
-- **真实凭据单一物理隔离**：真实配置必须且只能存在于被 `.gitignore` 严格忽略的本地私有 `.env`、`.env.local` 文件或云原生容器平台环境变量中。代码默认值与 Fallback 严禁携带任何现网项目标识。
+### 10.6 绝对凭据隔离与防私有服务及密钥泄漏铁律 (Zero-Secrets & Credential/Mirror Isolation Invariant)
+- **严禁向 Git 仓库提交真实凭据与私有域名**：无论属于公钥、私钥、Token、项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），还是开发者个人或自建的私有服务端点（如自建 Bangumi 图床镜像、私有反向代理域名、内网穿透与自建 API 地址），一律绝对严禁写入被 Git 追踪的任何文件。
+- **示例文件与测试用例全量 Dummy 化与安全缺省**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`、`https://mirror.example.com`）或留空安全缺省值（如 `BANGUMI_IMAGE_URL=`），严禁粘贴任何真实环境的 DSN、实际项目标识与私有镜像域名。
+- **私有凭据与自建服务单一物理隔离**：真实配置必须且只能存在于被 `.gitignore` 严格忽略的本地私有 `.env`、`.env.local` 文件或云原生容器平台环境变量中。代码默认值与 Fallback 严禁携带任何现网项目标识或自建私有域名。
+- **本地未推送提交泄漏必须立即净化提交历史**：若在本地尚未推送到远端的提交中误写入了私有凭据或私有域名，严禁通过仅仅追加一个覆盖提交草草掩盖，必须在分支推送前通过变基（Rebase）彻底净化未推送提交历史，从 Git 对象树根源消灭泄露痕迹。
 
 ## 11. 平台与多游戏平等架构契约 (Multi-Game Equal Status Architecture Contract)
 
