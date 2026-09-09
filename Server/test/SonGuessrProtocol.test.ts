@@ -65,6 +65,28 @@ test("SonGuessr 协议解析题目设置与自动筛选", () => {
   });
 });
 
+test("SonGuessr 协议解析听歌猜番新筛选并拒绝旧字段", () => {
+  expect(parseSonGuessrMessage({
+    id: "anime-filters",
+    type: "song.room.updateSettings",
+    payload: {
+      animeAutoFilters: {
+        startYear: 2016,
+        endYear: 2026,
+        ranking: "all",
+        subjectLimit: 50,
+        songMinPopularity: 10_000,
+        trackKinds: ["opening", "ending"],
+      },
+    },
+  })).toMatchObject({ payload: { animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 10_000, trackKinds: ["opening", "ending"] } } });
+  expect(() => parseSonGuessrMessage({
+    id: "legacy-anime-filters",
+    type: "song.room.updateSettings",
+    payload: { animeAutoFilters: { topN: 50 } },
+  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
 test("SonGuessr 协议解析听歌猜番搜索与游戏命令", () => {
   expect(parseSonGuessrMessage({
     id: "bangumi-search",

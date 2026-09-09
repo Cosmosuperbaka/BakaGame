@@ -43,6 +43,28 @@ describe("BangumiProvider", () => {
     expect(extractBangumiMusicTracks([])).toEqual([]);
   });
 
+  test("搜索请求携带年份范围过滤", async () => {
+    let requestBody: unknown;
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.example",
+      fetcher: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return response({ data: [] });
+      },
+    });
+
+    await provider.searchSubjects("", 20, { startYear: 2016, endYear: 2026 });
+
+    expect(requestBody).toEqual({
+      keyword: "",
+      sort: "heat",
+      filter: {
+        type: [2],
+        air_date: [">=2016-01-01", "<2027-01-01"],
+      },
+    });
+  });
+
   test("并发请求合并且 429 映射为业务错误", async () => {
     let calls = 0;
     const provider = new BangumiProvider({

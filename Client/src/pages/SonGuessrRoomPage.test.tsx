@@ -433,4 +433,56 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(audio).toBeInTheDocument();
     expect(audio).not.toHaveAttribute("autoplay");
   });
+
+  it("听歌猜番结算展示关联歌曲、曲目类型和过滤后的作品标签", () => {
+    renderRoomPage();
+
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          settings: {
+            ...createMockSnapshot().settings,
+            questionType: "anime",
+          },
+          phase: "roundResult",
+          roundNumber: 1,
+          roundSummary: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            correctPlayerIds: ["player-1"],
+            attempts: [],
+            song: {
+              id: "song-101",
+              title: "主题曲",
+              artist: "测试歌手",
+              audioUrl: "https://audio.example.com/theme.mp3",
+              requiresVip: false,
+              encyclopedia: { tags: [] },
+            },
+            anime: {
+              id: "anime-101",
+              name: "Anime Original",
+              nameCn: "番剧中文名",
+              imageUrl: "https://img.example/anime.jpg",
+              year: 2024,
+              rating: 8.8,
+              ratingCount: 1000,
+              tags: ["动作", "奇幻", "2024", "电视", "冒险", "校园", "超能力"],
+              metaTags: ["TV"],
+            },
+            animeTrack: { title: "主题曲", artist: "测试歌手", kind: "opening" },
+            scores: [],
+          },
+        }),
+      });
+    });
+
+    expect(screen.getByText("番剧中文名")).toBeInTheDocument();
+    expect(screen.getByText(/关联歌曲：主题曲 · 测试歌手 · OP/)).toBeInTheDocument();
+    expect(screen.getByText("动作")).toBeInTheDocument();
+    expect(screen.getByText("冒险")).toBeInTheDocument();
+    expect(screen.queryByText("2024", { selector: "[data-slot='badge']" })).not.toBeInTheDocument();
+    expect(screen.queryByText("TV")).not.toBeInTheDocument();
+    expect(screen.queryByText("超能力")).not.toBeInTheDocument();
+  });
 });
