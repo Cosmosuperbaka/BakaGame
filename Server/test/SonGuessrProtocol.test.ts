@@ -65,6 +65,45 @@ test("SonGuessr 协议解析题目设置与自动筛选", () => {
   });
 });
 
+test("SonGuessr 协议解析听歌猜番搜索与游戏命令", () => {
+  expect(parseSonGuessrMessage({
+    id: "bangumi-search",
+    type: "song.bangumi.search",
+    roomId: "1234",
+    sessionToken: "token",
+    payload: { keyword: "命运石之门" },
+  })).toMatchObject({
+    type: "song.bangumi.search",
+    payload: { keyword: "命运石之门" },
+  });
+
+  expect(parseSonGuessrMessage({
+    id: "submit-anime",
+    type: "song.game.submitAnime",
+    roomId: "1234",
+    payload: { subjectId: "10380" },
+  })).toMatchObject({
+    type: "song.game.submitAnime",
+    payload: { subjectId: "10380" },
+  });
+
+  expect(parseSonGuessrMessage({
+    id: "guess-anime",
+    type: "song.game.guessAnime",
+    roomId: "1234",
+    payload: { subjectId: "1701" },
+  })).toMatchObject({
+    type: "song.game.guessAnime",
+    payload: { subjectId: "1701" },
+  });
+
+  expect(() => parseSonGuessrMessage({
+    id: "dirty-anime",
+    type: "song.game.guessAnime",
+    payload: { subjectId: "1701", extra: true },
+  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
 test("SonGuessr 协议拒绝非法音频准备回合号", () => {
   for (const roundNumber of ["1", 0, -1, 1.5]) {
     expect(() =>
@@ -183,4 +222,3 @@ test("SonGuessr 协议支持 16,384 字符合法 Cookie 并拦截超长凭据", 
     }),
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
-
