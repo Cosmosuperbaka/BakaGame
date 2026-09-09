@@ -128,4 +128,35 @@ describe("BangumiProvider", () => {
     await expect(provider.searchSubjects("冷却后")).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" } satisfies Partial<AppError>);
     expect(calls).toBe(2);
   });
+
+  test("解析 OST、Remix、角色曲、插曲、同人音乐等具体曲目类型", () => {
+    const infobox = [
+      {
+        key: "主题歌",
+        value: "OP1: 炎 - LiSA\nED1: from the edge\nOST: Main Theme - 泽野弘之\nRemix: Gurenge (Remix)\n角色歌: 灶门炭治郎之歌 - 花江夏树\nIN: 战斗曲\n同人音乐: 东方同人曲\n印象曲: 黎明之歌",
+      },
+      {
+        key: "原声带",
+        value: [{ k: "OST", v: "Original Sound Track Vol.1" }],
+      },
+      {
+        key: "角色曲",
+        value: "Hero Song - 声优",
+      },
+    ];
+
+    const tracks = extractBangumiMusicTracks(infobox);
+    expect(tracks).toEqual(expect.arrayContaining([
+      { title: "炎", artist: "LiSA", kind: "opening" },
+      { title: "from the edge", artist: undefined, kind: "ending" },
+      { title: "Main Theme", artist: "泽野弘之", kind: "ost" },
+      { title: "Gurenge (Remix)", artist: undefined, kind: "remix" },
+      { title: "灶门炭治郎之歌", artist: "花江夏树", kind: "character" },
+      { title: "战斗曲", artist: undefined, kind: "insert" },
+      { title: "东方同人曲", artist: undefined, kind: "doujin" },
+      { title: "黎明之歌", artist: undefined, kind: "image" },
+      { title: "Original Sound Track Vol.1", artist: undefined, kind: "ost" },
+      { title: "Hero Song", artist: "声优", kind: "character" },
+    ]));
+  });
 });
