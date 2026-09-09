@@ -24,6 +24,7 @@
 - 动效令牌统一维护于 `Client/src/lib/Motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
 - 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/Motion.ts` 保持一致。
 - 全局色值、圆角或字体基线应在现有主题变量和公共组件中统一维护，避免在业务组件中散落重复定义。
+- 全站图片全局禁止原生拖拽与幽灵虚影：在 `Client/src/index.css` 声明 `img { -webkit-user-drag: none; user-drag: none; }` 并在应用启动入口通过 `setupGlobalImageProtection()` 拦截原生 `dragstart` 事件，确保全平台/全浏览器（包括 WebKit、Chromium、Gecko 及移动端）下所有 `<img>` 标签天然免于误触与幽灵框，杜绝在业务组件中人肉散落 `draggable={false}` 补丁。
 
 ## 3. 颜色与信息层级
 

@@ -4,8 +4,10 @@ import * as Sentry from "@sentry/react";
 import "./index.css";
 import App from "./App";
 import { initClientSentry } from "./lib/Sentry";
+import { setupGlobalImageProtection } from "./lib/ImageProtection";
 
 initClientSentry();
+setupGlobalImageProtection();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
