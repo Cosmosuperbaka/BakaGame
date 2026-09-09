@@ -6,9 +6,9 @@
 
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
-| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化 |
-| 后端服务回归 | `Server/test/RoomService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 游戏流程与人机 |
-| 协议与传输集成 | `Server/test/ProtocolOpenapi.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云音乐接口 Mock 与解析 |
+| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts`、`BangumiProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化、Bangumi 图片重写与请求缓存 |
+| 后端服务回归 | `Server/test/RoomService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、人机 |
+| 协议与传输集成 | `Server/test/ProtocolOpenapi.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云与 Bangumi 接口 Mock 与解析 |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -24,6 +24,7 @@ bun test
 bun run test:coverage
 bun run verify
 bun test test/NetworkCapacity.test.ts
+bun test test/BangumiProvider.test.ts test/SonGuessrService.test.ts
 
 # 需要本地 Server/.env 中存在 NETEASE_COOKIE；不会在常规 bun test 中执行
 bun run test:music:real

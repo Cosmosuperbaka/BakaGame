@@ -25,6 +25,11 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 `Server/src/transport/WhoIsFakerProtocol.ts` 与 `RoomService` 的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
+听歌猜番还需要在服务端配置 `BANGUMI_API_URL` 和可选的 `BANGUMI_IMAGE_URL`。这两个地址
+只允许由服务端访问；客户端不得直连 Bangumi，代理也不得把 `lain.bgm.tv` 原始图片地址暴露
+给浏览器。发布前应验证镜像支持 `/v0/search/subjects` 与 `/v0/subjects/{id}`，并确认图片
+镜像保留原始路径、查询参数和片段。
+
 ## 带宽与容量基线
 
 实时状态采用带修订号的增量同步，首次连接、重连、修订缺口和周期校准才发送全量。

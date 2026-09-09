@@ -26,6 +26,7 @@
   - **严苛验证闭环**：任何依赖替换与重构必须通过 TypeScript 类型检查（`bun run check`）、所有单测及全量回归测试（`npm run lint`、`npm test`、`bun test`、`npm run build`）。
 - 后端基于 Elysia 开发。涉及 Elysia 的实现方式、接口或行为时，应优先参考其中文官方文档：<https://elysia.zhcndoc.com/>。
 - 修改 Songuessr 的网易云音乐请求、Cookie、歌词清洗、播放地址或真实接口测试前，必须阅读 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)，并遵守其中的缓存、频率限制、版权和凭据隔离约束。
+- 修改听歌猜番的 Bangumi 请求、番剧筛选、主题曲解析或图床地址前，必须阅读 [`Agents/BangumiApi.md`](BangumiApi.md)，并遵守服务端请求、缓存限流、图片重写和答案隐私约束。
 - 使用框架能力时仍须遵循本仓库现有架构、类型协议和代码组织方式。
 
 ## 3. 前端样式保持项目一致性

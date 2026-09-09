@@ -12,10 +12,11 @@ Before changing anything in this repository, locate and read the relevant author
 3. **[`Agents/Commitment.md`](Agents/Commitment.md)** — **Commitment & Versioning**: Immediate atomic commit timing ("commit immediately per point, do not accumulate"), SemVer 2.0 versioning, **strict 100% Chinese commit message rule (max 12 chars)**, strict 4-scope enum (`Faker` | `Song` | `CCB` | `Core`), and user-facing changelog syntax and tone constraints.
 4. **[`Agents/WhoIsFaker.md`](Agents/WhoIsFaker.md)** — **WhoIsFaker Domain Architecture**: Typed envelope protocol, dual snapshot model, disconnect handling, complete 9-phase state machine, supplement speeches, blank player guessing & adjudication, and test mode (`Oblivionis`).
 5. **[`Agents/NeteaseMusicApi.md`](Agents/NeteaseMusicApi.md)** — **Songuessr & Music Provider**: Netease cloud music API proxy, rate limits, caching, and credential isolation.
-6. **[`Agents/Design.md`](Agents/Design.md)** — **Frontend Visual & Layout Specs**: Vintage-paper theme, Tailwind v4 semantic variables, three-section topbar, desktop/mobile history overlay matrix, and component usage.
-7. **[`Agents/Animation.md`](Agents/Animation.md)** — **Motion & Interaction**: Framer-motion tokens (`@/lib/Motion`), spring physics, origin-anchored transitions, and spatial causality rules.
-8. **[`Agents/Deployment.md`](Agents/Deployment.md)** — **Production & Edge Gateway**: Reverse proxy boundaries, TLS termination, WebSocket quotas, and port isolation.
-9. **[`Agents/Testing.md`](Agents/Testing.md)** — **Testing & Verification Matrix**: `bun:test` backend suites, Vitest frontend suites, Playwright E2E workflows, and CI verification pipelines.
+6. **[`Agents/BangumiApi.md`](Agents/BangumiApi.md)** — **Songuessr & Bangumi Provider**: Bangumi API 镜像、图片重写、缓存、限流与番剧筛选。
+7. **[`Agents/Design.md`](Agents/Design.md)** — **Frontend Visual & Layout Specs**: Vintage-paper theme, Tailwind v4 semantic variables, three-section topbar, desktop/mobile history overlay matrix, and component usage.
+8. **[`Agents/Animation.md`](Agents/Animation.md)** — **Motion & Interaction**: Framer-motion tokens (`@/lib/Motion`), spring physics, origin-anchored transitions, and spatial causality rules.
+9. **[`Agents/Deployment.md`](Agents/Deployment.md)** — **Production & Edge Gateway**: Reverse proxy boundaries, TLS termination, WebSocket quotas, and port isolation.
+10. **[`Agents/Testing.md`](Agents/Testing.md)** — **Testing & Verification Matrix**: `bun:test` backend suites, Vitest frontend suites, Playwright E2E workflows, and CI verification pipelines.
 
 ## Critical Workspace Rules
 

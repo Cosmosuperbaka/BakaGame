@@ -3,7 +3,7 @@
 基于 WebSocket 的实时多人派对游戏合集，包含两款游戏：
 
 - **WhoIsFaker（谁是卧底）**：线上版"谁是卧底"。发言、投票、平票加赛、补充发言、夜间行动、白板猜词等完整流程；8 人以上可出现白板，10 人以上可出现天使；支持断线重连、聊天、观战与补位。
-- **Songuessr（听歌猜歌）**：接入网易云音乐，在线听片段竞猜歌曲。
+- **Songuessr（听歌猜歌）**：接入网易云音乐，在线听片段竞猜歌曲或 Bangumi 番剧。
 
 所有游戏状态由服务端持有并经 WebSocket 推送，客户端不持有权威状态；服务端无数据库，房间状态全部在内存中。
 
@@ -27,6 +27,7 @@ cd BakaGame
 # 启动服务端，默认端口 4850
 cd Server
 cp .env.example .env
+# 按需修改 BANGUMI_API_URL 与 BANGUMI_IMAGE_URL
 bun install
 bun run dev
 
@@ -83,6 +84,7 @@ npm run dev   # http://localhost:5173
 | [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界与网关约束 |
 | [Agents/Testing.md](Agents/Testing.md) | 测试分层与验证流程 |
 | [Agents/NeteaseMusicApi.md](Agents/NeteaseMusicApi.md) | 网易云音乐接口接入规范 |
+| [Agents/BangumiApi.md](Agents/BangumiApi.md) | Bangumi 接口、番剧筛选与图床镜像规范 |
 
 ## 版本
 
