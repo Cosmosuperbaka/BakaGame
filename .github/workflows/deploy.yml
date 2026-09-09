@@ -1,0 +1,102 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Pre-deployment Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install server dependencies
+        working-directory: Server
+        run: bun install
+
+      - name: Type check server
+        working-directory: Server
+        run: bun run check
+
+      - name: Run server tests
+        working-directory: Server
+        run: bun test
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: [verify]
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            echo "========================================="
+            echo "🚀 开始执行 BakaGame 后端自动部署流程"
+            echo "========================================="
+
+            # 1. 切换至项目仓库目录
+            cd /BakaGame
+            echo "==> 当前工作目录: $(pwd)"
+
+            # 2. 拉取远端最新代码并硬对齐 main 分支
+            echo "==> 拉取远端最新代码..."
+            git fetch origin main
+            git reset --hard origin/main
+            CURRENT_COMMIT=$(git rev-parse --short HEAD)
+            echo "==> 已对齐至最新提交: $CURRENT_COMMIT"
+
+            # 3. 检查并同步服务端依赖
+            echo "==> 检查并安装服务端依赖..."
+            sudo docker exec -w /app BakaGame bun install --frozen-lockfile || sudo docker exec -w /app BakaGame bun install
+
+            # 4. 重启后端 Docker 容器
+            echo "==> 重启 BakaGame 容器..."
+            sudo docker restart BakaGame
+
+            # 5. 等待服务就绪并执行健康检查
+            echo "==> 等待服务就绪并执行健康检查..."
+            HEALTH_URL="http://127.0.0.1:4850/health"
+            MAX_RETRIES=15
+            RETRY_COUNT=0
+            HEALTHY=false
+
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              RESPONSE=$(curl -s -f "$HEALTH_URL" || true)
+              if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+                echo "✅ 健康检查通过: $RESPONSE"
+                HEALTHY=true
+                break
+              fi
+              echo "⏳ 等待服务启动中 ($RETRY_COUNT/$MAX_RETRIES)..."
+              sleep 2
+            done
+
+            if [ "$HEALTHY" = false ]; then
+              echo "❌ 错误: 服务在 30 秒内未能通过健康检查！"
+              echo "==> 最近 50 行容器日志："
+              sudo docker logs --tail 50 BakaGame
+              exit 1
+            fi
+
+            echo "========================================="
+            echo "🎉 BakaGame 后端部署成功！版本: $CURRENT_COMMIT"
+            echo "========================================="
