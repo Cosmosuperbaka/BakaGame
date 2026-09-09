@@ -5,7 +5,9 @@ import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import type { BangumiProvider } from "../src/infrastructure/BangumiProvider";
 import type {
+  BangumiSubjectDetails,
   SongDetails,
   SonGuessrClientMessage,
   SonGuessrPrivateState,
@@ -35,6 +37,27 @@ const makeSong = (id: string, title: string, year: number): SongDetails => ({
 const songs = {
   answer: makeSong("answer", "答案歌", 2022),
   wrong: makeSong("wrong", "错误歌", 2018),
+};
+
+const anime: BangumiSubjectDetails = {
+  id: "anime-answer",
+  name: "Answer Anime",
+  nameCn: "答案番剧",
+  imageUrl: "https://img.example/anime.jpg",
+  year: 2024,
+  rating: 8.8,
+  ratingCount: 1200,
+  tags: ["奇幻"],
+  metaTags: ["动画"],
+  summary: "测试番剧简介",
+  musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+};
+
+const wrongAnime: BangumiSubjectDetails = {
+  ...anime,
+  id: "anime-wrong",
+  name: "Wrong Anime",
+  nameCn: "错误番剧",
 };
 
 const provider: MusicProvider = {
@@ -148,6 +171,121 @@ const startRound = async (
 };
 
 describe("SonGuessrService", () => {
+
+  test("听歌猜番提交后只向出题人公开答案，并按 subject ID 完成猜测结算", async () => {
+    const bangumiProvider = {
+      getSubject: async (subjectId: string) => subjectId === anime.id ? anime : wrongAnime,
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiProvider;
+    const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
+    const host = connection(service, "anime-host");
+    const guest = connection(service, "anime-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "猜番玩家");
+    await execute(service, host, {
+      id: "anime-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, guest, {
+      id: "anime-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "anime-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "anime-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "anime-submit",
+      type: "song.game.submitAnime",
+      roomId: "1234",
+      payload: { subjectId: anime.id },
+    });
+
+    expect(lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").submittedAnime?.id).toBe(anime.id);
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").submittedAnime).toBeUndefined();
+    await execute(service, guest, {
+      id: "anime-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    await expect(execute(service, guest, {
+      id: "anime-wrong-guess",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: wrongAnime.id },
+    })).resolves.toMatchObject({ attempt: { result: "wrong", guessedAnime: { id: wrongAnime.id } } });
+    await execute(service, guest, {
+      id: "anime-correct-guess",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: anime.id },
+    });
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    expect(snapshot.phase).toBe("roundResult");
+    expect(snapshot.roundSummary?.anime?.id).toBe(anime.id);
+    expect(snapshot.roundSummary?.attempts.map((attempt) => attempt.guessedAnime?.id)).toEqual([wrongAnime.id, anime.id]);
+  });
+
+  test("听歌猜番自动出题沿用 Bangumi 筛选并跳过无主题曲条目", async () => {
+    const noMusicAnime: BangumiSubjectDetails = { ...wrongAnime, id: "anime-no-music", musicTracks: [] };
+    const requestedFilters: unknown[] = [];
+    const bangumiProvider = {
+      searchSubjects: async (_keyword: string, _limit: number, filters: unknown) => {
+        requestedFilters.push(filters);
+        return [noMusicAnime, anime];
+      },
+      getSubject: async (subjectId: string) => subjectId === noMusicAnime.id ? noMusicAnime : anime,
+    } as unknown as BangumiProvider;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      bangumiProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "anime-auto-host");
+    const guest = connection(service, "anime-auto-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "自动猜番玩家");
+    await execute(service, host, {
+      id: "anime-auto-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionType: "anime",
+        questionMode: "automatic",
+        animeAutoFilters: { startYear: 2020, minRating: 8, topN: 2, tags: ["奇幻"] },
+      },
+    });
+    await execute(service, guest, {
+      id: "anime-auto-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "anime-auto-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    expect(requestedFilters).toEqual([{ startYear: 2020, minRating: 8, topN: 2, tags: ["奇幻"] }]);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.submitterPlayerId).toBe("");
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").submittedAnime).toBeUndefined();
+  });
 
   test("歌词不足或歌词跨度过长时降级为固定时长随机片段", () => {
     const fallback = createSongLyricClip([], 5, { nextInt: () => 12_345 }, 180_000);
