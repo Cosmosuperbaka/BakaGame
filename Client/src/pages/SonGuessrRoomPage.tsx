@@ -1075,7 +1075,9 @@ function GameStage({
             </div>
           </div>
           {snapshot.settings.questionMode === "automatic" ? (
-            <SongAutoFilterSummary snapshot={snapshot} />
+            snapshot.settings.questionType === "anime"
+              ? <AnimeAutoFilterSummary snapshot={snapshot} />
+              : <SongAutoFilterSummary snapshot={snapshot} />
           ) : null}
           {snapshot.settings.showLyrics ? (
             <div
@@ -1146,7 +1148,7 @@ function GameStage({
         <section className="rounded-md bg-muted p-4">
           <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
             {snapshot.settings.questionType === "anime" && summary.anime ? (
-              <>{summary.anime.imageUrl ? <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-md" /> : <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background/60"><Film className="h-9 w-9" /></div>}<div className="min-w-0 flex-1"><h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2><p className="mt-1 text-muted-foreground">{summary.anime.name}</p><div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">{summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}{summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}{summary.anime.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div></div></>
+              <>{summary.anime.imageUrl ? <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-md" /> : <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background/60"><Film className="h-9 w-9" /></div>}<div className="min-w-0 flex-1"><h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2><p className="mt-1 text-muted-foreground">{summary.anime.name}</p><p className="mt-2 text-sm text-primary">关联歌曲：{summary.song.title} · {summary.song.artist} · {summary.animeTrack?.kind === "opening" ? "OP" : summary.animeTrack?.kind === "ending" ? "ED" : summary.animeTrack?.kind === "insert" ? "插曲" : "其它"}</p><div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">{summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}{summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}{summary.anime.tags.slice(0, 5).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div></div></>
             ) : summary.song.pictureUrl ? (
               <img src={summary.song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-md" />
             ) : (
@@ -1685,18 +1687,30 @@ function SongQuestionSettings({
       {questionMode === "automatic" && questionType === "anime" ? (
         <div className="space-y-3 rounded-md bg-muted/40 p-3">
           <Label className="text-xs">番剧筛选</Label>
-          <div className="grid grid-cols-2 gap-2">
-            <Input type="number" placeholder="起始年份" value={animeFilters.startYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, startYear: e.target.value ? Number(e.target.value) : undefined }))} />
-            <Input type="number" placeholder="结束年份" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} />
-            <Input type="number" min="0" max="10" step="0.1" placeholder="最低评分" value={animeFilters.minRating ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, minRating: e.target.value ? Number(e.target.value) : undefined }))} />
-            <Input type="number" min="0" placeholder="最低评分人数" value={animeFilters.minRatingCount ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, minRatingCount: e.target.value ? Number(e.target.value) : undefined }))} />
-            <Input type="number" min="1" max="1000" placeholder="候选数量" value={animeFilters.topN ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, topN: e.target.value ? Number(e.target.value) : undefined }))} />
-            <Input placeholder="标签，逗号分隔" value={animeFilters.tags?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, tags: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
-            <Input placeholder="元标签，逗号分隔" value={animeFilters.metaTags?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, metaTags: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
-            <Input placeholder="目录 ID，逗号分隔" value={animeFilters.catalogIds?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, catalogIds: e.target.value.split(",").map(Number).filter((v) => Number.isFinite(v) && v > 0) }))} />
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-20 text-sm text-muted-foreground">年份范围</span>
+              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.startYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, startYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="起始年份" />
+              <span className="text-muted-foreground">-</span>
+              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="结束年份" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-20 text-sm text-muted-foreground">热度范围</span>
+              <div className="flex rounded-md border bg-background p-1">
+                {(["all", "year"] as const).map((ranking) => <Button key={ranking} type="button" size="sm" variant={(animeFilters.ranking ?? "all") === ranking ? "default" : "ghost"} onClick={() => setAnimeFilters((f) => ({ ...f, ranking }))}>{ranking === "all" ? "总榜" : "年榜"}</Button>)}
+              </div>
+              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" min="1" max="1000" value={animeFilters.subjectLimit ?? 50} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectLimit: e.target.value ? Number(e.target.value) : undefined }))} aria-label="作品数量" />
+              <span className="text-sm text-muted-foreground">部</span>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">网易云歌曲热度</Label>
+              <div className="grid grid-cols-4 gap-1.5">{([0, 1_000, 10_000, 100_000] as const).map((value) => <Button key={value} type="button" size="sm" variant={(animeFilters.songMinPopularity ?? 0) === value ? "default" : "outline"} onClick={() => setAnimeFilters((f) => ({ ...f, songMinPopularity: value }))}>{value === 0 ? "不限" : `${value}+`}</Button>)}</div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">歌曲类型</Label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{([ ["opening", "OP"], ["ending", "ED"], ["insert", "插曲"], ["theme", "其它"] ] as const).map(([kind, label]) => { const selected = (animeFilters.trackKinds ?? ["opening", "ending", "insert", "theme"]).includes(kind); return <Button key={kind} type="button" size="sm" variant={selected ? "default" : "outline"} onClick={() => setAnimeFilters((f) => { const current = f.trackKinds ?? ["opening", "ending", "insert", "theme"]; const next = selected ? current.filter((item) => item !== kind) : [...current, kind]; return { ...f, trackKinds: next.length > 0 ? next : current }; })}>{label}</Button>; })}</div>
+            </div>
           </div>
-          <Input placeholder="自定义 subject ID，逗号分隔" value={animeFilters.subjectIds?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectIds: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
-          <p className="text-[11px] text-muted-foreground">自动出题会从符合筛选的番剧中寻找可播放主题曲。</p>
         </div>
       ) : null}
 
@@ -1970,6 +1984,22 @@ function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }
       {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
       {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
       <Badge variant="outline">{popularityLabel}</Badge>
+    </div>
+  );
+}
+
+function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
+  const filters = snapshot.settings.animeAutoFilters ?? {};
+  const kinds = filters.trackKinds ?? ["opening", "ending", "insert", "theme"];
+  const kindLabel = kinds.map((kind) => kind === "opening" ? "OP" : kind === "ending" ? "ED" : kind === "insert" ? "插曲" : "其它").join("、");
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+      <span className="font-medium text-primary">自动出题筛选</span>
+      <Badge variant="outline">番剧作品</Badge>
+      {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}
+      <Badge variant="outline">{filters.ranking === "year" ? "年榜" : "总榜"}前{filters.subjectLimit ?? 50}部</Badge>
+      <Badge variant="outline">歌曲 {kindLabel}</Badge>
+      <Badge variant="outline">网易云热度 ≥ {(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}</Badge>
     </div>
   );
 }
