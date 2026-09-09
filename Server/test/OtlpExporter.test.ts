@@ -105,6 +105,8 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
 
   const roomService = new RoomService({
@@ -171,6 +173,8 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
     serverListenHost: "127.0.0.1",
     serverPort: 4850,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
   const { app } = createApp({
     env,
@@ -282,6 +286,8 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
 
   const roomService = new RoomService({
@@ -461,6 +467,8 @@ test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async 
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
 
   const roomService = new RoomService({
@@ -818,6 +826,5 @@ test("OtlpExporter 指数退避窗口（1s, 2s, 4s...最大 30s）计算与运�
 
   await exporter.shutdown();
 });
-
 
 

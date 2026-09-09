@@ -18,6 +18,8 @@ const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
   serverListenHost: "0.0.0.0",
   serverPort: 3000,
   wordBankPath: "data/words.json",
+  bangumiApiUrl: "https://api.bgm.tv",
+  bangumiImageUrl: "",
   sentryDsn: "https://mockkey@o000000.ingest.sentry.io/100001",
   sentryAllowedProjectIds: ["100001"],
   ...overrides,

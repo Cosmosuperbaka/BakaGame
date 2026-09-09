@@ -123,6 +123,8 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
     serverListenHost: "127.0.0.1",
     serverPort: 0,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
   const roomService = new RoomService({
     eventLogger: new EventLogger(),
@@ -203,6 +205,8 @@ const startTestServer = () => {
     serverListenHost: "127.0.0.1",
     serverPort: 0,
     wordBankPath: join(tempDir, "word-bank.json"),
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
   const roomService = new RoomService({
     eventLogger: new EventLogger(),
@@ -384,6 +388,8 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
     wordBankPath: ":memory:",
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
   };
   const logger = new EventLogger();
   let shuttingDown = false;
