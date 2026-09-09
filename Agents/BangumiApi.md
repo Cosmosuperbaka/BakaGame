@@ -14,7 +14,7 @@ BANGUMI_IMAGE_URL=
 ```
 
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像。`BANGUMI_IMAGE_URL` 为空时保留
-原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv` 的 HTTPS 图片链接。重写结果
+原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv` 的图片链接。重写结果
 使用镜像源和原链接的 pathname、query、hash，其他主机名和无效 URL 原样返回。
 
 ## 请求边界
@@ -42,4 +42,3 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 `song.bangumi.search` 只返回公开条目摘要；`song.game.submitAnime` 和
 `song.game.guessAnime` 只传输 subject ID。当前回合的番剧答案仅在出题人的私有状态、旁观者
 私有状态或回合结算摘要中公开，猜测玩家在结算前只能看到自己的猜测记录。
-
