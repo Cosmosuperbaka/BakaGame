@@ -59,4 +59,51 @@ describe("BangumiProvider", () => {
     const limited = new BangumiProvider({ apiUrl: "https://api.example", fetcher: async () => response({}, 429) });
     await expect(limited.searchSubjects("x")).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" } satisfies Partial<AppError>);
   });
+
+  test("有界缓存淘汰旧结果，队列限制并发请求", async () => {
+    let calls = 0;
+    let active = 0;
+    let maximumActive = 0;
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.example",
+      cacheMaxEntries: 1,
+      maxConcurrentRequests: 1,
+      fetcher: async () => {
+        calls += 1;
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return response({ data: [{ id: calls, name: "番剧" }] });
+      },
+    });
+    await Promise.all([provider.searchSubjects("甲"), provider.searchSubjects("乙"), provider.searchSubjects("丙")]);
+    await provider.searchSubjects("甲");
+
+    expect(maximumActive).toBe(1);
+    expect(calls).toBe(4);
+  });
+
+  test("触发 429 后拒绝冷却期请求且不再访问上游", async () => {
+    let now = 1_000;
+    let calls = 0;
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.example",
+      now: () => now,
+      fetcher: async () => {
+        calls += 1;
+        return response({}, 429);
+      },
+    });
+    await expect(provider.searchSubjects("第一次")).rejects.toMatchObject({
+      code: "BANGUMI_RATE_LIMITED",
+      details: { retryAfterMs: 5_000 },
+    } satisfies Partial<AppError>);
+    await expect(provider.searchSubjects("第二次")).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" } satisfies Partial<AppError>);
+    expect(calls).toBe(1);
+
+    now += 5_000;
+    await expect(provider.searchSubjects("冷却后")).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" } satisfies Partial<AppError>);
+    expect(calls).toBe(2);
+  });
 });
