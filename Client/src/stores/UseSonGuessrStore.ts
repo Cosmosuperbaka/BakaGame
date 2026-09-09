@@ -6,6 +6,7 @@ import type {
   SonGuessrRoomSnapshot,
   SonGuessrRoomSummary,
   SongSearchResult,
+  BangumiSubjectSearchResult,
 } from "@/types";
 import {
   clearSonGuessrSessionToken,
@@ -39,6 +40,7 @@ export interface SonGuessrStore {
   reconnectRoom: (roomId: string) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
+  searchBangumi: (keyword: string) => Promise<BangumiSubjectSearchResult[]>;
   sendCommand: <T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload?: Record<string, unknown>,
@@ -243,6 +245,18 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   searchMusic: async (keyword) => {
     const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
       "song.music.search",
+      { keyword },
+      {
+        roomId: get().roomId ?? undefined,
+        sessionToken: get().sessionToken ?? undefined,
+      },
+    );
+    return result.results ?? [];
+  },
+
+  searchBangumi: async (keyword) => {
+    const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
+      "song.bangumi.search",
       { keyword },
       {
         roomId: get().roomId ?? undefined,
