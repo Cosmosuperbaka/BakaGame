@@ -234,6 +234,8 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       serverListenHost: "127.0.0.1",
       serverPort: 4850,
       wordBankPath: ":memory:",
+      bangumiApiUrl: "https://api.bgm.tv",
+      bangumiImageUrl: "",
     },
     whoIsFakerService: roomService,
     logger,

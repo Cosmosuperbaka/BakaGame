@@ -17,6 +17,8 @@ export interface AppEnv {
   otelDeploymentEnvironment?: string;
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
+  bangumiApiUrl: string;
+  bangumiImageUrl: string;
 }
 
 // ==================== 环境变量解析 ====================
@@ -135,5 +137,7 @@ export const readEnv = (): AppEnv => {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
+    bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
   };
 };

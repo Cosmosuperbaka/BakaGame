@@ -71,4 +71,29 @@ describe("readEnv 环境变量与启动断言", () => {
       }
     }
   });
+
+  it("读取 Bangumi API 与图床镜像地址并移除尾斜杠", () => {
+    const originalApiUrl = Bun.env.BANGUMI_API_URL;
+    const originalImageUrl = Bun.env.BANGUMI_IMAGE_URL;
+    try {
+      delete Bun.env.BANGUMI_API_URL;
+      delete Bun.env.BANGUMI_IMAGE_URL;
+      expect(readEnv()).toMatchObject({
+        bangumiApiUrl: "https://api.bgm.tv",
+        bangumiImageUrl: "",
+      });
+
+      Bun.env.BANGUMI_API_URL = "https://api.example.test///";
+      Bun.env.BANGUMI_IMAGE_URL = "https://lain.example.test/";
+      expect(readEnv()).toMatchObject({
+        bangumiApiUrl: "https://api.example.test",
+        bangumiImageUrl: "https://lain.example.test",
+      });
+    } finally {
+      if (originalApiUrl !== undefined) Bun.env.BANGUMI_API_URL = originalApiUrl;
+      else delete Bun.env.BANGUMI_API_URL;
+      if (originalImageUrl !== undefined) Bun.env.BANGUMI_IMAGE_URL = originalImageUrl;
+      else delete Bun.env.BANGUMI_IMAGE_URL;
+    }
+  });
 });
