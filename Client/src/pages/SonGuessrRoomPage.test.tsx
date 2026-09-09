@@ -478,12 +478,107 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
 
     expect(screen.getByText("番剧中文名")).toBeInTheDocument();
-    expect(screen.getByText(/关联歌曲：主题曲 · 测试歌手 · OP/)).toBeInTheDocument();
+    expect(screen.getByText("关联歌曲")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "主题曲" })).toBeInTheDocument();
+    expect(screen.getByText("OP")).toBeInTheDocument();
+    expect(screen.getByText("测试歌手")).toBeInTheDocument();
     expect(screen.getByText("动作")).toBeInTheDocument();
     expect(screen.getByText("冒险")).toBeInTheDocument();
     expect(screen.queryByText("2024", { selector: "[data-slot='badge']" })).not.toBeInTheDocument();
     expect(screen.queryByText("TV")).not.toBeInTheDocument();
     expect(screen.queryByText("超能力")).not.toBeInTheDocument();
+  });
+
+  it("听歌猜番结算曲目类型具体展示（OST、Remix、角色曲）且不展示其它", () => {
+    renderRoomPage();
+
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          settings: {
+            ...createMockSnapshot().settings,
+            questionType: "anime",
+          },
+          phase: "roundResult",
+          roundNumber: 1,
+          roundSummary: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            correctPlayerIds: ["player-1"],
+            attempts: [],
+            song: {
+              id: "song-ost",
+              title: "Main Theme",
+              artist: "泽野弘之",
+              album: "Anime Original Soundtrack",
+              audioUrl: "https://audio.example.com/ost.mp3",
+              requiresVip: false,
+              releaseYear: 2023,
+              language: "日语",
+              encyclopedia: {
+                tags: ["原声集", "热血"],
+                aliases: ["主旋律"],
+                summary: "动画经典原声音乐。",
+              },
+            },
+            anime: {
+              id: "anime-102",
+              name: "Anime Title",
+              nameCn: "热血动画",
+              imageUrl: "https://img.example/anime2.jpg",
+              year: 2023,
+              rating: 9.0,
+              ratingCount: 2000,
+              tags: ["战斗", "机甲"],
+              metaTags: ["TV"],
+            },
+            animeTrack: { title: "Main Theme", artist: "泽野弘之", kind: "ost" },
+            scores: [],
+          },
+        }),
+      });
+    });
+
+    expect(screen.getByText("热血动画")).toBeInTheDocument();
+    expect(screen.getByText("关联歌曲")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Main Theme" })).toBeInTheDocument();
+    expect(screen.getByText("OST")).toBeInTheDocument();
+    expect(screen.getByText(/泽野弘之 · Anime Original Soundtrack/)).toBeInTheDocument();
+    expect(screen.getAllByText("2023")).toHaveLength(2);
+    expect(screen.getByText("日语")).toBeInTheDocument();
+    expect(screen.getByText("原声集")).toBeInTheDocument();
+    expect(screen.getByText(/别名：主旋律/)).toBeInTheDocument();
+    expect(screen.getByText("动画经典原声音乐。")).toBeInTheDocument();
+    expect(screen.queryByText("其它")).not.toBeInTheDocument();
+  });
+
+  it("出题设置中不展示歌曲类型筛选按钮", () => {
+    renderRoomPage();
+
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          settings: {
+            ...createMockSnapshot().settings,
+            questionType: "anime",
+            questionMode: "automatic",
+          },
+          phase: "waiting",
+        }),
+      });
+    });
+
+    // 展开题目设置手风琴
+    const questionSettingsButton = screen.getByRole("button", { name: /题目设置/ });
+    act(() => {
+      questionSettingsButton.click();
+    });
+
+    expect(screen.getByText("番剧筛选")).toBeInTheDocument();
+    expect(screen.getByText("年份范围")).toBeInTheDocument();
+    expect(screen.getByText("热度范围")).toBeInTheDocument();
+    expect(screen.getByText("网易云歌曲热度")).toBeInTheDocument();
+    expect(screen.queryByText("歌曲类型")).not.toBeInTheDocument();
   });
 
   it("竞猜阶段歌词片段与纯音乐展示正确区分", () => {
