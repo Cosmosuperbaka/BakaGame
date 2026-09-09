@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createSongLyricClip, SonGuessrService } from "../src/application/SonGuessrService";
+import { createSongLyricClip, isSongTitleMatch, SonGuessrService } from "../src/application/SonGuessrService";
 import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
@@ -367,6 +367,125 @@ describe("SonGuessrService", () => {
     await execute(service, guest, { id: "ready", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
     await execute(service, host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} });
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl).toBe(high.audioUrl);
+  });
+
+  test("歌名匹配度门禁精准识别兼容版本并拒绝无关歌曲", () => {
+    expect(isSongTitleMatch("答案歌", "答案歌")).toBe(true);
+    expect(isSongTitleMatch("Cagayake!GIRLS [5人Ver.]", "Cagayake!GIRLS")).toBe(true);
+    expect(isSongTitleMatch("だんご大家族", "メグメル／だんご大家族")).toBe(true);
+    expect(isSongTitleMatch("TAKE ME HIGHER (コロムビア・カヴァー・ヴァージョン)", "石原立也")).toBe(false);
+    expect(isSongTitleMatch("战斗! 原始回归", "轻音少女")).toBe(false);
+    expect(isSongTitleMatch("A", "B")).toBe(false);
+  });
+
+  test("听歌猜番拒绝歌名与曲目不匹配的异形歌曲", async () => {
+    const unrelated = { ...songs.wrong, id: "unrelated", title: "TAKE ME HIGHER" };
+    const matched = { ...songs.answer, id: "matched", title: "答案歌" };
+    const bangumiProvider = {
+      searchSubjects: async () => [anime],
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+      }),
+    } as unknown as BangumiProvider;
+
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [unrelated, matched], // 异形歌排第一，匹配歌排第二
+      getSong: async (id) => id === "unrelated" ? unrelated : matched,
+    };
+
+    const service = new SonGuessrService({ musicProvider, bangumiProvider });
+    const host = connection(service, "anime-mismatch-host");
+    const guest = connection(service, "anime-mismatch-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "猜番玩家");
+    await execute(service, host, {
+      id: "settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime", questionMode: "automatic" },
+    });
+    await execute(service, guest, { id: "ready", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+    await execute(service, host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} });
+
+    // 必须跳过排在第一的 TAKE ME HIGHER，精准选出匹配的答案歌
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl).toBe(matched.audioUrl);
+  });
+
+  test("自动猜番多轮之间优先避开最近出过的番剧与歌曲", async () => {
+    const anime1 = { ...anime, id: "anime-1", name: "番剧一" };
+    const anime2 = { ...anime, id: "anime-2", name: "番剧二" };
+    const song1 = { ...songs.answer, id: "song-1", title: "歌曲一" };
+    const song2 = { ...songs.answer, id: "song-2", title: "歌曲二" };
+
+    const bangumiProvider = {
+      searchSubjects: async () => [anime1, anime2],
+      getSubject: async (id: string) => id === "anime-1"
+        ? { ...anime1, musicTracks: [{ title: "歌曲一", kind: "opening" }] }
+        : { ...anime2, musicTracks: [{ title: "歌曲二", kind: "opening" }] },
+    } as unknown as BangumiProvider;
+
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async (query) => query.includes("歌曲一") ? [song1] : [song2],
+      getSong: async (id) => id === "song-1" ? song1 : song2,
+    };
+
+    const service = new SonGuessrService({
+      musicProvider,
+      bangumiProvider,
+      random: { nextInt: () => 0 }, // 永远尝试第0个
+    });
+
+    const host = connection(service, "anime-dedup-host");
+    const guest = connection(service, "anime-dedup-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "防重玩家");
+    await execute(service, host, {
+      id: "settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime", questionMode: "automatic" },
+    });
+    await execute(service, guest, { id: "ready", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+
+    // 第 1 轮开始
+    await execute(service, host, { id: "start-1", type: "song.game.start", roomId: "1234", payload: {} });
+    const round1 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
+    expect(round1?.audioUrl).toBe(song1.audioUrl);
+
+    // 音频就绪并猜对结束第 1 轮
+    await execute(service, guest, { id: "audio-1", type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 1 } });
+    await execute(service, guest, {
+      id: "guess-1",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: "anime-1" },
+    });
+    await execute(service, host, { id: "giveup-1", type: "song.game.giveUp", roomId: "1234", payload: {} });
+    const summary1 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
+    expect(summary1?.anime?.id).toBe("anime-1");
+    expect(summary1?.song.id).toBe("song-1");
+
+    // 开始第 2 轮
+    await execute(service, host, { id: "next-2", type: "song.game.nextRound", roomId: "1234", payload: {} });
+    const round2 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
+
+    // 第 2 轮必须优先避让 anime-1，选择 anime-2 和 song-2
+    expect(round2?.audioUrl).toBe(song2.audioUrl);
+
+    await execute(service, guest, { id: "audio-2", type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 2 } });
+    await execute(service, guest, {
+      id: "guess-2",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: "anime-2" },
+    });
+    await execute(service, host, { id: "giveup-2", type: "song.game.giveUp", roomId: "1234", payload: {} });
+    const summary2 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
+    expect(summary2?.anime?.id).toBe("anime-2");
+    expect(summary2?.song.id).toBe("song-2");
   });
 
   test("歌词不足或歌词跨度过长时降级为固定时长随机片段", () => {

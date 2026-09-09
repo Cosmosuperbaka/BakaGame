@@ -136,6 +136,8 @@ interface SongGuessrRoomRecord {
   automaticRoundLoading?: boolean;
   manualRoundStarting?: boolean;
   hostReconnectDeadlineAt?: number;
+  recentSongIds?: string[];
+  recentSubjectIds?: string[];
 }
 
 export interface SonGuessrServiceOptions {
@@ -195,6 +197,18 @@ const stripSongVersionInfo = (value: string) => {
 
 const normalizeSongTitle = (value: string) =>
   normalizeSongText(stripSongVersionInfo(value));
+
+export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string): boolean => {
+  const normCandidate = normalizeSongTitle(candidateTitle);
+  const normExpected = normalizeSongTitle(expectedTitle);
+  if (!normCandidate || !normExpected) return false;
+  if (normCandidate === normExpected) return true;
+  const minLen = Math.min(normCandidate.length, normExpected.length);
+  if (minLen >= 2 && (normCandidate.includes(normExpected) || normExpected.includes(normCandidate))) {
+    return true;
+  }
+  return false;
+};
 
 const normalizedArtists = (value: string) =>
   new Set(
@@ -535,6 +549,8 @@ export class SonGuessrService {
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
+      recentSongIds: [],
+      recentSubjectIds: [],
     };
 
     this.rooms.set(roomId, room);
@@ -1250,25 +1266,56 @@ export class SonGuessrService {
     const allowedKinds = new Set(filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
     const candidates = anime.musicTracks.filter((track) => allowedKinds.has(track.kind)).slice(0, 24);
     const minPopularity = filters.songMinPopularity ?? 0;
+    const recentSongIds = new Set(room.recentSongIds ?? []);
+    let fallbackRecent: { song: SongDetails; track: BangumiMusicTrack } | undefined;
+
     for (const track of candidates) {
-      const keyword = track.artist ? `${track.title} ${track.artist}` : track.title;
-      let results: SongSearchResult[] = [];
-      try {
-        results = await provider.search(keyword, 8, room.musicSession?.cookie);
-      } catch {
-        continue;
+      const queries: string[] = [];
+      if (track.artist) {
+        queries.push(`${track.title} ${track.artist}`);
+      } else {
+        if (anime.name) queries.push(`${track.title} ${anime.name}`);
+        if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
+        queries.push(track.title);
       }
-      for (const candidate of results) {
+
+      const triedSongIds = new Set<string>();
+      for (const query of queries) {
+        let results: SongSearchResult[] = [];
         try {
-          const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
-          if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
-          if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
-          return { song, track: { ...track, kind: this.refineTrackKind(track.kind, song) } };
+          results = await provider.search(query, 8, room.musicSession?.cookie);
         } catch {
-          // 单首歌曲不可播放时继续尝试同曲目的其他版本。
+          continue;
+        }
+
+        for (const candidate of results) {
+          if (triedSongIds.has(candidate.id)) continue;
+          triedSongIds.add(candidate.id);
+
+          if (!isSongTitleMatch(candidate.title, track.title)) continue;
+
+          try {
+            const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
+            if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
+            if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
+
+            const resolved = { song, track: { ...track, kind: this.refineTrackKind(track.kind, song) } };
+            if (recentSongIds.has(song.id)) {
+              if (!fallbackRecent) fallbackRecent = resolved;
+              continue;
+            }
+            return resolved;
+          } catch {
+            // 单首歌曲不可播放时继续尝试同曲目的其他版本。
+          }
         }
       }
     }
+
+    if (fallbackRecent) {
+      return fallbackRecent;
+    }
+
     throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
   }
 
@@ -1344,6 +1391,14 @@ export class SonGuessrService {
     room.pendingSubmitterPlayerId = undefined;
     room.roundSummary = undefined;
     room.phase = "playing";
+
+    const recentSongIds = room.recentSongIds ?? [];
+    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)].slice(0, 10);
+    if (anime) {
+      const recentSubjectIds = room.recentSubjectIds ?? [];
+      room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(0, 10);
+    }
+
     this.appendSystemMessage(room, `第 ${roundNumber} 轮开始`);
     return roundNumber;
   }
@@ -1362,7 +1417,9 @@ export class SonGuessrService {
         startYear: year,
         endYear: year,
       } : filters);
-      const pool = [...candidates];
+      const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
+      const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
+      const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
       while (pool.length > 0) {
         const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
         try {
@@ -1380,7 +1437,9 @@ export class SonGuessrService {
     if (candidates.length === 0) {
       throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
     }
-    const pool = [...candidates];
+    const recentSongIds = new Set(room.recentSongIds ?? []);
+    const freshCandidates = candidates.filter((s) => !recentSongIds.has(s.id));
+    const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
     while (pool.length > 0) {
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
       if (room.musicSession?.account.vipStatus === "nonVip" && selected.requiresVip) continue;
