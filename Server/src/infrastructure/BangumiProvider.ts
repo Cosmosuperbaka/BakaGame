@@ -167,10 +167,6 @@ export class BangumiProvider {
       filter: {
         type: [2],
         ...(filters.startYear || filters.endYear ? { air_date: [`>=${filters.startYear ?? 1900}-01-01`, `<${(filters.endYear ?? 2200) + 1}-01-01`] } : {}),
-        ...(filters.minRating !== undefined ? { rating: [`>=${filters.minRating}`] } : {}),
-        ...(filters.tags?.length ? { tag: filters.tags } : {}),
-        ...(filters.metaTags?.length ? { meta_tags: filters.metaTags } : {}),
-        ...(filters.catalogIds?.length ? { catalog: filters.catalogIds } : {}),
       },
     };
     const key = `search:${JSON.stringify(payload)}:${limit}`;
@@ -183,8 +179,6 @@ export class BangumiProvider {
       return asArray(asRecord(body).data)
         .map((item) => normalizeSubject(item, this.imageUrl))
         .filter((item): item is BangumiSubjectSearchResult => Boolean(item))
-        .filter((item) => item.rating === undefined || item.rating >= (filters.minRating ?? 0))
-        .filter((item) => item.ratingCount === undefined || item.ratingCount >= (filters.minRatingCount ?? 0))
         .slice(0, limit);
     });
   }
@@ -206,14 +200,8 @@ export class BangumiProvider {
   }
 
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
-    const subjectIds = filters.subjectIds?.filter(Boolean) ?? [];
-    let candidates: BangumiSubjectSearchResult[];
-    if (subjectIds.length > 0) {
-      candidates = await Promise.all(subjectIds.map((id) => this.getSubject(id))).then((items) => items);
-    } else {
-      const result = await this.searchSubjects("", Math.min(filters.topN ?? 50, 50), filters);
-      candidates = result;
-    }
+    const result = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
+    const candidates = result;
     if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
     const selected = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
     return this.getSubject(selected.id);
