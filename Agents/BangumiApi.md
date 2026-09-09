@@ -23,8 +23,8 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 
 - `POST /v0/search/subjects` 用于条目搜索和自动出题筛选，查询类型固定为动画（type 2）。
 - `GET /v0/subjects/{id}` 用于读取条目详情、图片、评分、标签和 infobox。
-- 搜索结果缓存 6 小时，条目详情缓存 24 小时；相同键的并发请求共享一个 Promise。
-- 同时最多执行 3 个请求；上游返回 429 时进入 5 秒冷却并返回 `BANGUMI_RATE_LIMITED`。
+- 搜索结果缓存 6 小时，条目详情缓存 24 小时；缓存为最多 512 项的 LRU，且相同键的并发请求共享一个 Promise。
+- 请求由并发数为 3 的队列调度；上游返回 429 时进入 5 秒冷却、取消等待请求，并返回 `BANGUMI_RATE_LIMITED`。
 - 上游非 2xx、返回无效 JSON 或未配置 Provider 时转换为明确的 Bangumi 业务错误。
 
 ## 番剧题目
