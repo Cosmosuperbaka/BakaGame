@@ -273,3 +273,13 @@ body,
 [data-radix-scroll-area-scrollbar] {
   display: none !important;
 }
+
+/* 全站图片禁止原生拖拽与幽灵悬浮虚影，保障纯净手势与点击体验。
+   规则故意不置于 cascade layer，确保无条件覆盖组件库或外部引入的图片。 */
+img {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+}
