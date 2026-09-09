@@ -376,6 +376,19 @@ describe("Songuessr store integration", () => {
     );
   });
 
+  it("returns Bangumi search results through the authenticated command wrapper", async () => {
+    const results = [{ id: "subject-1", name: "Test Anime", nameCn: "测试番剧", tags: [], metaTags: [] }];
+    wsMock.send.mockResolvedValue({ results });
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+
+    await expect(useSonGuessrStore.getState().searchBangumi("测试番剧")).resolves.toEqual(results);
+    expect(wsMock.send).toHaveBeenCalledWith(
+      "song.bangumi.search",
+      { keyword: "测试番剧" },
+      { roomId: "5678", sessionToken: "search-token" },
+    );
+  });
+
   it("resets state sync and cleans room state when leaveRoom is invoked", async () => {
     wsMock.send.mockResolvedValue({});
     useSonGuessrStore.setState({
