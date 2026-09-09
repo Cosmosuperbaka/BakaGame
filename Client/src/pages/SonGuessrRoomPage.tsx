@@ -9,6 +9,7 @@ import {
   Copy,
   Eye,
   Flag,
+  Film,
   FlaskConical,
   Gamepad2,
   Globe,
@@ -48,6 +49,7 @@ import { SongChatPanel } from "@/components/songguessr/SongChatPanel";
 import { SongAccountSettings } from "@/components/songguessr/SongAccountSettings";
 import { SongPlayerList } from "@/components/songguessr/SongPlayerList";
 import { SongSearchDialog } from "@/components/songguessr/SongSearchDialog";
+import { BangumiSearchDialog } from "@/components/songguessr/BangumiSearchDialog";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import {
@@ -80,6 +82,8 @@ import type {
   SongPlaylistInfo,
   SongGuessAttempt,
   SongGuessDirection,
+  BangumiSubjectSearchResult,
+  AnimeAutoFilters,
   SonGuessrMusicAccount,
   SonGuessrPrivateState,
   SonGuessrPlayerView,
@@ -812,7 +816,11 @@ export default function SonGuessrRoomPage() {
               searchMode={searchMode}
               closeSearch={() => setSearchMode(null)}
               onSelectSearchSong={async (songId, mode) => {
-                await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
+                if (snapshot.settings.questionType === "anime") {
+                  await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", { subjectId: songId });
+                } else {
+                  await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
+                }
               }}
               run={run}
             />
@@ -918,18 +926,14 @@ function SongGameArea(props: SongGameAreaProps) {
               <GameStage {...props} />
             </motion.div>
           </AnimatePresence>
-          {props.searchMode ? (
+          {props.searchMode && props.snapshot.settings.questionType === "anime" ? (
+            <BangumiSearchDialog open onOpenChange={(open) => { if (!open) props.closeSearch(); }} title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"} description="番剧信息只会在回合结束后公开。" actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"} onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)} />
+          ) : props.searchMode ? (
             <SongSearchDialog
               open
-              onOpenChange={(open) => {
-                if (!open) props.closeSearch();
-              }}
+              onOpenChange={(open) => { if (!open) props.closeSearch(); }}
               title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
-              description={
-                props.searchMode === "submit"
-                  ? "歌曲信息只会在回合结束后公开。"
-                  : "每次错误猜测会提供年代、热度、语种与标签反馈。"
-              }
+              description={props.searchMode === "submit" ? "歌曲信息只会在回合结束后公开。" : "每次错误猜测会提供年代、热度、语种与标签反馈。"}
               actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
               onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
             />
@@ -1001,21 +1005,21 @@ function GameStage({
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-6 text-center">
         <PhaseHeader
-          icon={Music2}
-          title={privateState.canSubmitSong ? "轮到你出题" : "等待出题人选歌"}
+          icon={snapshot.settings.questionType === "anime" ? Film : Music2}
+          title={privateState.canSubmitSong ? "轮到你出题" : snapshot.settings.questionType === "anime" ? "等待出题人选番" : "等待出题人选歌"}
         />
         {privateState.canSubmitSong ? (
           <>
             <p className="text-sm text-muted-foreground">
-              搜索一首可播放的网易云音乐歌曲。
+              {snapshot.settings.questionType === "anime" ? "搜索一部有主题曲的番剧。" : "搜索一首可播放的网易云音乐歌曲。"}
             </p>
             <Button size="lg" className="min-w-[120px] gap-2" onClick={() => openSearch("submit")}>
-              <Music2 className="h-4 w-4" />选择歌曲
+              {snapshot.settings.questionType === "anime" ? <Film className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
             </Button>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {submitter?.name ?? "出题人"} 正在选择歌曲
+            {submitter?.name ?? "出题人"} 正在选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
           </p>
         )}
       </div>
@@ -1029,7 +1033,7 @@ function GameStage({
     );
     return (
       <div className="mx-auto max-w-2xl space-y-5">
-        <PhaseHeader icon={Headphones} title="听歌猜曲" />
+        <PhaseHeader icon={Headphones} title={snapshot.settings.questionType === "anime" ? "听歌猜番" : "听歌猜曲"} />
         <section className="space-y-5 rounded-md bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1092,7 +1096,9 @@ function GameStage({
               本房间已关闭歌词提示，请根据音乐进行猜测
             </div>
           )}
-          {privateState.submittedSong ? (
+          {snapshot.settings.questionType === "anime" && privateState.submittedAnime ? (
+            <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
+          ) : privateState.submittedSong ? (
             <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
               本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
             </div>
@@ -1103,7 +1109,7 @@ function GameStage({
             <div className="flex flex-col gap-2 sm:flex-row">
               {privateState.canGuess ? (
                 <Button className="flex-1 gap-2" onClick={() => openSearch("guess")}>
-                  <Play className="h-4 w-4" />提交猜测（剩余 {privateState.remainingGuesses} 次）
+                  <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "番剧猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
                 </Button>
               ) : null}
               {privateState.canGiveUp ? (
@@ -1136,17 +1142,19 @@ function GameStage({
 
     return (
       <div className="mx-auto max-w-2xl space-y-5">
-        <PhaseHeader icon={Music2} title="答案揭晓" />
+        <PhaseHeader icon={snapshot.settings.questionType === "anime" ? Film : Music2} title="答案揭晓" />
         <section className="rounded-md bg-muted p-4">
           <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-            {summary.song.pictureUrl ? (
+            {snapshot.settings.questionType === "anime" && summary.anime ? (
+              <>{summary.anime.imageUrl ? <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-md" /> : <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background/60"><Film className="h-9 w-9" /></div>}<div className="min-w-0 flex-1"><h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2><p className="mt-1 text-muted-foreground">{summary.anime.name}</p><div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">{summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}{summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}{summary.anime.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div></div></>
+            ) : summary.song.pictureUrl ? (
               <img src={summary.song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-md" />
             ) : (
               <div className="flex h-28 w-28 items-center justify-center rounded-md bg-background/60">
                 <Music2 className="h-9 w-9" />
               </div>
             )}
-            <div className="min-w-0 flex-1">
+            {snapshot.settings.questionType === "song" ? <div className="min-w-0 flex-1">
               <h2 className="break-words text-2xl font-bold">{summary.song.title}</h2>
               <p className="mt-1 text-muted-foreground">
                 {summary.song.artist}{summary.song.album ? ` · ${summary.song.album}` : ""}
@@ -1167,7 +1175,7 @@ function GameStage({
                   {summary.song.encyclopedia.summary}
                 </p>
               ) : null}
-            </div>
+            </div> : null}
           </div>
         </section>
         <ScoreTable scores={summary.scores} />
@@ -1456,6 +1464,7 @@ function SongQuestionSettings({
   const [artistResults, setArtistResults] = useState<SongArtistSearchResult[]>([]);
   const [searchingArtists, setSearchingArtists] = useState(false);
   const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
+  const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
 
   const resolvePlaylist = async () => {
     try {
@@ -1489,6 +1498,7 @@ function SongQuestionSettings({
       questionMode,
       autoRotateSubmitter,
       autoFilters: { playlist, artists, minPopularity },
+      animeAutoFilters: animeFilters,
     },
     (payload) => sendCommand("song.room.updateSettings", payload),
     {
@@ -1510,8 +1520,13 @@ function SongQuestionSettings({
         >
           听歌识曲
         </Button>
-        <Button type="button" variant="outline" className="h-10" disabled>
-          听歌识番（即将推出）
+        <Button
+          type="button"
+          variant={questionType === "anime" ? "default" : "outline"}
+          className="h-10"
+          onClick={() => setQuestionType("anime")}
+        >
+          听歌识番
         </Button>
       </div>
 
@@ -1544,7 +1559,7 @@ function SongQuestionSettings({
         </div>
       ) : null}
 
-      {questionMode === "automatic" ? (
+      {questionMode === "automatic" && questionType === "song" ? (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">
           <div className="space-y-2">
             <Label className="text-xs">歌单筛选</Label>
@@ -1664,6 +1679,24 @@ function SongQuestionSettings({
               未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {questionMode === "automatic" && questionType === "anime" ? (
+        <div className="space-y-3 rounded-md bg-muted/40 p-3">
+          <Label className="text-xs">番剧筛选</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Input type="number" placeholder="起始年份" value={animeFilters.startYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, startYear: e.target.value ? Number(e.target.value) : undefined }))} />
+            <Input type="number" placeholder="结束年份" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} />
+            <Input type="number" min="0" max="10" step="0.1" placeholder="最低评分" value={animeFilters.minRating ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, minRating: e.target.value ? Number(e.target.value) : undefined }))} />
+            <Input type="number" min="0" placeholder="最低评分人数" value={animeFilters.minRatingCount ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, minRatingCount: e.target.value ? Number(e.target.value) : undefined }))} />
+            <Input type="number" min="1" max="1000" placeholder="候选数量" value={animeFilters.topN ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, topN: e.target.value ? Number(e.target.value) : undefined }))} />
+            <Input placeholder="标签，逗号分隔" value={animeFilters.tags?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, tags: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
+            <Input placeholder="元标签，逗号分隔" value={animeFilters.metaTags?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, metaTags: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
+            <Input placeholder="目录 ID，逗号分隔" value={animeFilters.catalogIds?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, catalogIds: e.target.value.split(",").map(Number).filter((v) => Number.isFinite(v) && v > 0) }))} />
+          </div>
+          <Input placeholder="自定义 subject ID，逗号分隔" value={animeFilters.subjectIds?.join(",") ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectIds: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) }))} />
+          <p className="text-[11px] text-muted-foreground">自动出题会从符合筛选的番剧中寻找可播放主题曲。</p>
         </div>
       ) : null}
 
@@ -2173,7 +2206,9 @@ function AttemptList({
               )}
               <span className="min-w-0 break-words text-sm">
                 {showPlayerName ? `${attempt.playerName}：` : ""}
-                {attempt.guessedSong
+                {attempt.guessedAnime
+                  ? (attempt.guessedAnime.nameCn || attempt.guessedAnime.name)
+                  : attempt.guessedSong
                   ? `${attempt.guessedSong.title} · ${attempt.guessedSong.artist}`
                   : attempt.result === "gaveUp"
                     ? "投降"
