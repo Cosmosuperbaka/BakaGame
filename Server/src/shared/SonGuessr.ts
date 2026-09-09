@@ -33,11 +33,48 @@ export interface SongAutoFilters {
   minPopularity: 0 | 1_000 | 10_000 | 100_000;
 }
 
+export interface BangumiSubjectSearchResult {
+  id: string;
+  name: string;
+  nameCn: string;
+  imageUrl?: string;
+  year?: number;
+  rating?: number;
+  ratingCount?: number;
+  tags: string[];
+  metaTags: string[];
+}
+
+export interface BangumiMusicTrack {
+  title: string;
+  artist?: string;
+  kind: "opening" | "ending" | "insert" | "theme";
+}
+
+export interface BangumiSubjectDetails extends BangumiSubjectSearchResult {
+  summary?: string;
+  locked?: boolean;
+  musicTracks: BangumiMusicTrack[];
+}
+
+export interface AnimeAutoFilters {
+  startYear?: number;
+  endYear?: number;
+  minRating?: number;
+  minRatingCount?: number;
+  topN?: number;
+  tags?: string[];
+  metaTags?: string[];
+  catalogIds?: number[];
+  subjectIds?: string[];
+}
+
 export interface SonGuessrSettings {
   questionType: SongQuestionType;
   questionMode: SongQuestionMode;
   autoRotateSubmitter: boolean;
   autoFilters: SongAutoFilters;
+  animeAutoFilters?: AnimeAutoFilters;
   lyricsLineCount: number;
   showLyrics: boolean;
   bloodMode: boolean;
@@ -132,6 +169,7 @@ export interface SongGuessAttempt {
   createdAt: number;
   result: "wrong" | "timeout" | "correct" | "gaveUp";
   guessedSong?: SongSearchResult;
+  guessedAnime?: BangumiSubjectSearchResult;
   feedback?: SongGuessFeedback;
 }
 
@@ -154,6 +192,7 @@ export interface SonGuessrRoundSummary {
     audioUrl?: string;
     chorus?: SongChorus;
   };
+  anime?: BangumiSubjectDetails;
   submitterPlayerId: string;
   correctPlayerIds: string[];
   attempts: SongGuessAttempt[];
@@ -224,6 +263,7 @@ export interface SonGuessrPrivateState {
   remainingGuesses: number;
   guessDeadlineAt?: number;
   submittedSong?: SongSearchResult;
+  submittedAnime?: BangumiSubjectSearchResult;
   visibleAttempts: SongGuessAttempt[];
 }
 
@@ -272,12 +312,15 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.music.search", { keyword: string }>
   | ClientEnvelope<"song.music.playlist.resolve", { value: string }>
   | ClientEnvelope<"song.music.artist.search", { keyword: string }>
+  | ClientEnvelope<"song.bangumi.search", { keyword: string }>
   | ClientEnvelope<"song.game.start", Record<string, never>>
   | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
   | ClientEnvelope<"song.game.submitSong", { songId: string }>
+  | ClientEnvelope<"song.game.submitAnime", { subjectId: string }>
   | ClientEnvelope<"song.game.audioReady", { roundNumber: number }>
   | ClientEnvelope<"song.game.audioFailed", { roundNumber: number }>
   | ClientEnvelope<"song.game.guess", { songId: string }>
+  | ClientEnvelope<"song.game.guessAnime", { subjectId: string }>
   | ClientEnvelope<"song.game.giveUp", Record<string, never>>
   | ClientEnvelope<"song.game.skipRound", Record<string, never>>
   | ClientEnvelope<"song.game.nextRound", Record<string, never>>

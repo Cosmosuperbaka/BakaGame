@@ -33,7 +33,11 @@ import type {
   SongAutoFilters,
   SongSearchResult,
   SongLyricClip,
+  BangumiSubjectDetails,
+  BangumiSubjectSearchResult,
+  AnimeAutoFilters,
 } from "../shared/Index";
+import type { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 
@@ -42,6 +46,7 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionMode: "manual",
   autoRotateSubmitter: false,
   autoFilters: { artists: [], minPopularity: 0 },
+  animeAutoFilters: {},
   lyricsLineCount: 5,
   showLyrics: true,
   bloodMode: false,
@@ -89,6 +94,7 @@ interface SongGuessrRoundRecord {
   number: number;
   submitterPlayerId: string;
   song: SongDetails;
+  anime?: BangumiSubjectDetails;
   lyricClip: SongLyricClip;
   attempts: SongGuessAttempt[];
   correctPlayerIds: string[];
@@ -131,6 +137,7 @@ interface SongGuessrRoomRecord {
 
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
+  bangumiProvider?: BangumiProvider;
   now?: () => number;
   random?: RandomSource;
   eventLogger?: EventLogger;
@@ -146,6 +153,13 @@ const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
     playlist: settings.autoFilters.playlist ? { ...settings.autoFilters.playlist } : undefined,
     artists: settings.autoFilters.artists.map((artist) => ({ ...artist })),
   },
+  animeAutoFilters: settings.animeAutoFilters ? {
+    ...settings.animeAutoFilters,
+    tags: settings.animeAutoFilters.tags ? [...settings.animeAutoFilters.tags] : undefined,
+    metaTags: settings.animeAutoFilters.metaTags ? [...settings.animeAutoFilters.metaTags] : undefined,
+    catalogIds: settings.animeAutoFilters.catalogIds ? [...settings.animeAutoFilters.catalogIds] : undefined,
+    subjectIds: settings.animeAutoFilters.subjectIds ? [...settings.animeAutoFilters.subjectIds] : undefined,
+  } : {},
 });
 
 const normalizeSongText = (value: string) =>
@@ -363,18 +377,24 @@ export class SonGuessrService {
         return this.resolvePlaylist(connection, message.payload.value);
       case "song.music.artist.search":
         return this.searchArtists(connection, message.payload.keyword);
+      case "song.bangumi.search":
+        return this.searchBangumi(connection, message.payload.keyword);
       case "song.game.start":
         return this.startGame(connection);
       case "song.game.chooseSubmitter":
         return this.chooseSubmitter(connection, message.payload.playerId);
       case "song.game.submitSong":
         return this.submitSong(connection, message.payload.songId);
+      case "song.game.submitAnime":
+        return this.submitAnime(connection, message.payload.subjectId);
       case "song.game.audioReady":
         return this.audioReady(connection, message.payload.roundNumber);
       case "song.game.audioFailed":
         return this.audioFailed(connection, message.payload.roundNumber);
       case "song.game.guess":
         return this.guess(connection, message.payload.songId);
+      case "song.game.guessAnime":
+        return this.guessAnime(connection, message.payload.subjectId);
       case "song.game.giveUp":
         return this.giveUp(connection);
       case "song.game.skipRound":
@@ -735,12 +755,7 @@ export class SonGuessrService {
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
     }
 
-    if (payload.questionType !== undefined) {
-      if (payload.questionType === "anime") {
-        throw new AppError("FEATURE_NOT_AVAILABLE", "听歌识番即将推出");
-      }
-      room.settings.questionType = payload.questionType;
-    }
+    if (payload.questionType !== undefined) room.settings.questionType = payload.questionType;
     if (payload.questionMode !== undefined) {
       room.settings.questionMode = payload.questionMode;
     }
@@ -749,6 +764,9 @@ export class SonGuessrService {
     }
     if (payload.autoFilters !== undefined) {
       room.settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
+    }
+    if (payload.animeAutoFilters !== undefined) {
+      room.settings.animeAutoFilters = this.normalizeAnimeAutoFilters(payload.animeAutoFilters);
     }
 
     if (payload.lyricsLineCount !== undefined) {
@@ -803,6 +821,13 @@ export class SonGuessrService {
     return {
       results: await search.call(this.options.musicProvider, keyword, 20, room.musicSession?.cookie),
     };
+  }
+
+  private async searchBangumi(connection: ConnectionRecord, keyword: string) {
+    this.requireRoomPlayer(connection);
+    const provider = this.options.bangumiProvider;
+    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+    return { results: await provider.searchSubjects(keyword, 20) };
   }
 
   private parsePlaylistId(value: string): string {
@@ -861,6 +886,24 @@ export class SonGuessrService {
       ? filters.minPopularity
       : 0;
     return { playlist, artists, minPopularity };
+  }
+
+  private normalizeAnimeAutoFilters(filters: AnimeAutoFilters): AnimeAutoFilters {
+    const normalizeList = (values: string[] | undefined, max: number) =>
+      values?.map((value) => value.trim().slice(0, 64)).filter(Boolean).slice(0, max);
+    const startYear = filters.startYear && clampInt(filters.startYear, 1900, 2200);
+    const endYear = filters.endYear && clampInt(filters.endYear, 1900, 2200);
+    return {
+      startYear,
+      endYear: endYear && startYear ? Math.max(startYear, endYear) : endYear,
+      minRating: filters.minRating === undefined ? undefined : Math.max(0, Math.min(10, filters.minRating)),
+      minRatingCount: filters.minRatingCount === undefined ? undefined : Math.max(0, Math.round(filters.minRatingCount)),
+      topN: filters.topN === undefined ? undefined : clampInt(filters.topN, 1, 1000),
+      tags: normalizeList(filters.tags, 32),
+      metaTags: normalizeList(filters.metaTags, 32),
+      catalogIds: filters.catalogIds?.map((id) => Math.max(1, Math.round(id))).slice(0, 32),
+      subjectIds: normalizeList(filters.subjectIds, 64),
+    };
   }
 
   private kick(connection: ConnectionRecord, targetPlayerId: string) {
@@ -1165,7 +1208,70 @@ export class SonGuessrService {
     return { roundNumber };
   }
 
-  private installRound(room: SongGuessrRoomRecord, song: SongDetails, submitterPlayerId: string): number {
+  private async submitAnime(connection: ConnectionRecord, subjectId: string) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.settings.questionType !== "anime") {
+      throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
+    }
+    if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
+      throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交番剧");
+    }
+    const provider = this.options.bangumiProvider;
+    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+    const submitterId = player.id;
+    const anime = await provider.getSubject(subjectId);
+    const song = await this.resolveAnimeSong(room, anime);
+    if (
+      room.phase !== "submittingSong" ||
+      room.pendingSubmitterPlayerId !== submitterId ||
+      room.players[submitterId] !== player ||
+      player.membership === "kicked" ||
+      !player.online
+    ) return { ignored: true };
+    const roundNumber = this.installRound(room, song, player.id, anime);
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    if (this.isRoundComplete(room)) {
+      this.finishRound(room);
+      this.publishRoom(room);
+    }
+    return { roundNumber };
+  }
+
+  private async resolveAnimeSong(room: SongGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<SongDetails> {
+    const provider = this.options.musicProvider;
+    if (anime.musicTracks.length === 0) {
+      throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
+    }
+    const candidates = anime.musicTracks.slice(0, 24);
+    for (const track of candidates) {
+      const keyword = track.artist ? `${track.title} ${track.artist}` : track.title;
+      let results: SongSearchResult[] = [];
+      try {
+        results = await provider.search(keyword, 8, room.musicSession?.cookie);
+      } catch {
+        continue;
+      }
+      for (const candidate of results) {
+        try {
+          const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
+          if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
+          return song;
+        } catch {
+          // 单首歌曲不可播放时继续尝试同曲目的其他版本。
+        }
+      }
+    }
+    throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
+  }
+
+  private installRound(
+    room: SongGuessrRoomRecord,
+    song: SongDetails,
+    submitterPlayerId: string,
+    anime?: BangumiSubjectDetails,
+  ): number {
     this.applyQueuedMemberships(room);
     if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
       throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
@@ -1194,6 +1300,7 @@ export class SonGuessrService {
       number: roundNumber,
       submitterPlayerId,
       song,
+      anime,
       lyricClip,
       attempts: [],
       correctPlayerIds: [],
@@ -1211,6 +1318,28 @@ export class SonGuessrService {
   }
 
   private async startAutomaticRound(room: SongGuessrRoomRecord): Promise<void> {
+    if (room.settings.questionType === "anime") {
+      const provider = this.options.bangumiProvider;
+      if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+      const filters = room.settings.animeAutoFilters ?? {};
+      const poolSize = Math.min(filters.topN ?? 50, 50);
+      const candidates = filters.subjectIds?.length
+        ? await Promise.all(filters.subjectIds.map((id) => provider.getSubject(id)))
+        : await provider.searchSubjects("", poolSize, filters);
+      const pool = [...candidates];
+      while (pool.length > 0) {
+        const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
+        try {
+          const anime = await provider.getSubject(selected.id);
+          const song = await this.resolveAnimeSong(room, anime);
+          this.installRound(room, song, "", anime);
+          return;
+        } catch (error) {
+          if (error instanceof AppError && error.code === "BANGUMI_RATE_LIMITED") throw error;
+        }
+      }
+      throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
+    }
     const candidates = await this.resolveAutomaticCandidates(room);
     if (candidates.length === 0) {
       throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
@@ -1423,6 +1552,86 @@ export class SonGuessrService {
     };
   }
 
+  private async guessAnime(connection: ConnectionRecord, subjectId: string) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = this.requireActiveRound(room);
+    if (room.settings.questionType !== "anime" || !round.anime) {
+      throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
+    }
+    const state = round.players[player.id];
+    if (!state || player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
+    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
+      throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
+    }
+    if (!state.audioReady) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
+    if (state.correct) throw new AppError("ALREADY_CORRECT", "你已经猜对了");
+    if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", "你已经放弃本回合");
+    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", "正在校验上一次猜测，请稍候");
+    if (state.guessesUsed >= round.settings.maxGuessesPerRound) throw new AppError("NO_MORE_GUESSES", "本回合猜测次数已用完");
+    if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
+      this.recordTimeout(room, player.id);
+      if (this.isRoundComplete(room)) this.finishRound(room);
+      this.publishRoom(room);
+      throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
+    }
+
+    const provider = this.options.bangumiProvider;
+    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+    state.inFlight = true;
+    state.guessesUsed += 1;
+    player.totalGuesses += 1;
+    let guessedAnime: BangumiSubjectDetails;
+    try {
+      guessedAnime = await provider.getSubject(subjectId);
+    } catch (error) {
+      if (room.phase === "playing" && room.currentRound === round) {
+        state.guessesUsed = Math.max(0, state.guessesUsed - 1);
+        player.totalGuesses = Math.max(0, player.totalGuesses - 1);
+      }
+      state.inFlight = false;
+      throw error;
+    }
+    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
+      state.inFlight = false;
+      throw new AppError("ROUND_EXPIRED", "该回合已结束");
+    }
+    state.inFlight = false;
+    const correct = guessedAnime.id === round.anime.id;
+    const attempt: SongGuessAttempt = {
+      id: this.createId("song_guess"),
+      playerId: player.id,
+      playerName: player.name,
+      guessNumber: state.guessesUsed,
+      createdAt: this.now(),
+      result: correct ? "correct" : "wrong",
+      guessedAnime: this.publicAnime(guessedAnime),
+    };
+    round.attempts.push(attempt);
+    if (correct) {
+      state.correct = true;
+      state.deadlineAt = undefined;
+      player.correctGuesses += 1;
+      const formalPlayerCount = this.activePlayers(room).length;
+      player.score += round.settings.bloodMode
+        ? formalPlayerCount - round.correctPlayerIds.length
+        : SCORING.correct;
+      round.correctPlayerIds.push(player.id);
+    } else if (state.guessesUsed < round.settings.maxGuessesPerRound) {
+      state.deadlineAt = round.settings.showGuessTimer
+        ? this.now() + round.settings.guessDurationSeconds * 1_000
+        : undefined;
+    } else {
+      state.deadlineAt = undefined;
+    }
+    if (this.isRoundComplete(room)) this.finishRound(room);
+    this.touch(room);
+    this.publishRoom(room);
+    return {
+      attempt,
+      remainingGuesses: Math.max(0, round.settings.maxGuessesPerRound - state.guessesUsed),
+    };
+  }
+
   private giveUp(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
@@ -1596,6 +1805,7 @@ export class SonGuessrService {
         language: round.song.language,
         encyclopedia: round.song.encyclopedia,
       },
+      ...(round.anime ? { anime: round.anime } : {}),
       submitterPlayerId: round.submitterPlayerId,
       correctPlayerIds: [...round.correctPlayerIds],
       attempts: [...round.attempts],
@@ -1804,6 +2014,10 @@ export class SonGuessrService {
         (isSubmitter || player.membership === "spectator") && round
           ? this.publicSong(round.song)
           : undefined,
+      submittedAnime:
+        (isSubmitter || player.membership === "spectator") && round?.anime
+          ? this.publicAnime(round.anime)
+          : undefined,
       visibleAttempts: round
         ? round.attempts.filter(
             (attempt) => canObserveAllAttempts || attempt.playerId === player.id,
@@ -1948,6 +2162,20 @@ export class SonGuessrService {
       pictureUrl: song.pictureUrl,
       durationMs: song.durationMs,
       requiresVip: song.requiresVip,
+    };
+  }
+
+  private publicAnime(anime: BangumiSubjectDetails): BangumiSubjectSearchResult {
+    return {
+      id: anime.id,
+      name: anime.name,
+      nameCn: anime.nameCn,
+      imageUrl: anime.imageUrl,
+      year: anime.year,
+      rating: anime.rating,
+      ratingCount: anime.ratingCount,
+      tags: anime.tags,
+      metaTags: anime.metaTags,
     };
   }
 
