@@ -46,11 +46,149 @@ const parseYear = (value: unknown) => {
   return match ? Number(match[0]) : undefined;
 };
 
+const STAFF_KEY_PATTERN =
+  /分[镜鏡]|演出|作画|動画|动画|制作|製作|设定|設定|设计|設計|监[督修]|企画|企划|录音|録音|混音|音效|音响|音響|选曲|選曲|协助|協力|协力|角色[设設]|主要角色|CAST|STAFF|作[词詞]|作曲|编曲|編曲|制作人|制片人/i;
+
+const KIND_PRIORITY: Record<BangumiMusicTrackKind, number> = {
+  opening: 1,
+  ending: 2,
+  insert: 3,
+  theme: 4,
+  character: 5,
+  ost: 6,
+  single: 7,
+  collection: 8,
+  remix: 9,
+  image: 10,
+  doujin: 11,
+  vocal: 12,
+  vocaloid: 13,
+  arrange: 14,
+  artistAlbum: 15,
+  drama: 16,
+  radio: 17,
+  reading: 18,
+};
+
+const VERSION_MARKER_PATTERN =
+  /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
+const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
+const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
+const BARE_VERSION_SUFFIX_PATTERN =
+  /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
+const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
+
+const stripTrackVersion = (value: string) => {
+  let result = value.replace(
+    BRACKETED_VERSION_PATTERN,
+    (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+  );
+  while (true) {
+    const next = result
+      .replace(
+        DECORATED_VERSION_SUFFIX_PATTERN,
+        (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+      )
+      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
+      .replace(FEAT_SUFFIX_PATTERN, "");
+    if (next === result) return result;
+    result = next;
+  }
+};
+
+const extractPerformers = (infobox: unknown): string[] => {
+  const artists: string[] = [];
+  for (const entry of asArray(infobox)) {
+    const record = asRecord(entry);
+    const key = readString(record.key ?? record.name) ?? "";
+    if (!/演出/.test(key) || !/歌|曲|主题|插入/.test(key)) continue;
+    const text = readString(record.value);
+    const values = asArray(record.value);
+    const rawList = text ? [text] : values.map((v) => typeof v === "string" ? v : readString(asRecord(v).v ?? asRecord(v).value)).filter(Boolean) as string[];
+    for (const raw of rawList) {
+      for (const item of raw.split(/[\r\n/／；;,，]+/)) {
+        const cleaned = item
+          .replace(/[（(【\[][^）)】\]]*[）)】\]]/g, "")
+          .trim();
+        if (cleaned && cleaned.length >= 2 && cleaned.length <= 50 && !/^(?:OP|ED|IN|TM)\d*$/i.test(cleaned)) {
+          artists.push(cleaned);
+        }
+      }
+    }
+  }
+  return [...new Set(artists)];
+};
+
+const extractRelatedMusicTracks = (
+  relations: unknown,
+  performers: string[] = [],
+): BangumiMusicTrack[] => {
+  const tracks: BangumiMusicTrack[] = [];
+  for (const item of asArray(relations)) {
+    const record = asRecord(item);
+    if (record.type !== 3) continue;
+    const relation = readString(record.relation) ?? "";
+    const rawName = readString(record.name) ?? "";
+    if (!rawName) continue;
+
+    let kind = normalizeKind(relation);
+    if (kind === "theme" && relation === "其他") {
+      if (/原声|soundtrack|\bost\b/i.test(rawName)) kind = "ost";
+      else if (/remix|重混/i.test(rawName)) kind = "remix";
+      else if (/drama|广播剧|ドラマ/i.test(rawName)) kind = "drama";
+    }
+
+    const quoteMatches = [...rawName.matchAll(/「([^」]+)」/g)].map((m) => m[1].trim()).filter(Boolean);
+    const subTitle = quoteMatches.length > 0 ? quoteMatches.at(-1) : undefined;
+    let artist: string | undefined;
+    if (quoteMatches.length > 0) {
+      let remaining = rawName;
+      for (const q of quoteMatches) {
+        remaining = remaining.replace(`「${q}」`, "");
+      }
+      remaining = remaining.replace(/TVアニメ|キャラクターソング|イメージソング|[「」]/gi, "").trim();
+      const artistMatch = remaining.match(/[/／]\s*(.+)$/) || remaining.match(/^(.+?)\s*[/／]/);
+      if (artistMatch) artist = artistMatch[1].trim();
+      else if (remaining.length >= 2 && remaining.length <= 20) artist = remaining;
+    }
+    if (!artist && performers.length === 1) {
+      artist = performers[0];
+    }
+
+    if (subTitle && subTitle.length >= 2) {
+      tracks.push({ title: subTitle, artist, kind });
+    }
+
+    const stripped = stripTrackVersion(rawName).trim();
+    if (stripped && stripped !== rawName && stripped.length >= 2) {
+      tracks.push({ title: stripped, artist, kind });
+    }
+
+    const splitCandidates = rawName
+      .split(/\s*[\/／]\s*/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 2 && !/^(?:instrumental|off\s*vocal|tv\s*size|ver(?:sion)?)$/i.test(s));
+
+    if (splitCandidates.length > 1) {
+      for (const part of splitCandidates) {
+        if (artist && part.toLowerCase() === artist.toLowerCase()) continue;
+        const cleanPart = stripTrackVersion(part).trim();
+        if (cleanPart.length >= 2) {
+          tracks.push({ title: cleanPart, artist, kind });
+        }
+      }
+    }
+
+    tracks.push({ title: rawName, artist, kind });
+  }
+  return tracks;
+};
+
 const normalizeKind = (key: string): BangumiMusicTrackKind => {
   const normalized = key.trim();
   if (/片头|片頭|opening|\bop\d*\b/i.test(normalized)) return "opening";
   if (/片尾|ending|\bed\d*\b/i.test(normalized)) return "ending";
-  if (/插[入]?曲|insert|\bin\d*\b/i.test(normalized)) return "insert";
+  if (/插[入]?[曲歌]|insert|\bin\d*\b/i.test(normalized)) return "insert";
   if (/原声|soundtrack|\bost\b/i.test(normalized)) return "ost";
   if (/角色[歌曲]|character(?:\s*song)?/i.test(normalized)) return "character";
   if (/\bremix\b|重混/i.test(normalized)) return "remix";
@@ -92,11 +230,20 @@ const parseTrackText = (value: string, fallbackKind: BangumiMusicTrackKind): Ban
   return result;
 };
 
-const extractTracks = (infobox: unknown): BangumiMusicTrack[] => {
+const extractTracks = (
+  infobox: unknown,
+  relations?: unknown,
+  performers: string[] = [],
+): BangumiMusicTrack[] => {
   const tracks: BangumiMusicTrack[] = [];
+  if (relations) {
+    tracks.push(...extractRelatedMusicTracks(relations, performers));
+  }
+
   for (const entry of asArray(infobox)) {
     const record = asRecord(entry);
     const key = readString(record.key ?? record.name) ?? "";
+    if (STAFF_KEY_PATTERN.test(key)) continue;
     if (!/(主题|片头|片尾|插入|插曲|opening|ending|insert|\bop\b|\bed\b|\bin\b|\btm\b|原声|\bost\b|soundtrack|remix|重混|角色|character|同人|印象|vocaloid|drama|vocal|radio|arrange|单曲|精选|朗读|艺人)/i.test(key)) continue;
     const kind = normalizeKind(key);
     const values = asArray(record.value);
@@ -117,6 +264,7 @@ const extractTracks = (infobox: unknown): BangumiMusicTrack[] => {
         let trackKind = kind;
         let artist = rawArtist;
         if (rawKey) {
+          if (STAFF_KEY_PATTERN.test(rawKey)) continue;
           if (/(主题|片头|片尾|插入|插曲|opening|ending|insert|\bop\b|\bed\b|\bin\b|\btm\b|原声|\bost\b|soundtrack|remix|重混|角色|character|同人|印象|vocaloid|drama|vocal|radio|arrange|单曲|精选|朗读|艺人)/i.test(rawKey)) {
             trackKind = normalizeKind(rawKey);
           } else if (!artist) {
@@ -139,12 +287,14 @@ const extractTracks = (infobox: unknown): BangumiMusicTrack[] => {
     }
   }
   const seen = new Set<string>();
-  return tracks.filter((track) => {
-    const key = `${track.kind}:${track.title.toLowerCase()}:${track.artist?.toLowerCase() ?? ""}`;
+  const uniqueTracks = tracks.filter((track) => {
+    const key = `${track.kind}:${track.title.trim().toLowerCase()}:${track.artist?.trim().toLowerCase() ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+
+  return uniqueTracks.sort((a, b) => (KIND_PRIORITY[a.kind] ?? 99) - (KIND_PRIORITY[b.kind] ?? 99));
 };
 
 export const rewriteBangumiImageUrl = (value: unknown, imageUrl = "") => {
@@ -238,14 +388,18 @@ export class BangumiProvider {
     const id = subjectId.trim();
     if (!id) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
     return this.cached(`subject:${id}`, SUBJECT_TTL_MS, async () => {
-      const body = await this.requestJson(`/v0/subjects/${encodeURIComponent(id)}`);
+      const [body, relationsBody] = await Promise.all([
+        this.requestJson(`/v0/subjects/${encodeURIComponent(id)}`),
+        this.requestJson(`/v0/subjects/${encodeURIComponent(id)}/subjects`).catch(() => []),
+      ]);
       const subject = normalizeSubject(body, this.imageUrl);
       if (!subject) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+      const performers = extractPerformers(asRecord(body).infobox);
       return {
         ...subject,
         summary: readString(asRecord(body).summary),
         locked: asRecord(body).locked === true,
-        musicTracks: extractTracks(asRecord(body).infobox),
+        musicTracks: extractTracks(asRecord(body).infobox, relationsBody, performers),
       };
     });
   }

@@ -159,4 +159,65 @@ describe("BangumiProvider", () => {
       { title: "Hero Song", artist: "声优", kind: "character" },
     ]));
   });
+
+  test("严格排除 Staff、分镜、演出与主要角色等非曲目字段", () => {
+    const infobox = [
+      { key: "OP・ED 分镜", value: "石原立也 / 山田尚子" },
+      { key: "OP・ED 演出", value: "石原立也 / 山田尚子" },
+      { key: "OP・ED 动画制作", value: "京都アニメーション" },
+      { key: "主题歌作词", value: "Ayase" },
+      { key: "主题歌作曲", value: "Ayase" },
+      { key: "主题歌编曲", value: "Ayase" },
+      { key: "角色设定", value: "堀口悠紀子" },
+      { key: "主要角色", value: "平沢唯、秋山澪" },
+      { key: "音响监督", value: "鶴岡陽太" },
+      { key: "音乐制作", value: "ポニーキャニオン" },
+    ];
+
+    const tracks = extractBangumiMusicTracks(infobox);
+    expect(tracks).toEqual([]);
+  });
+
+  test("解析关联音乐条目并支持单曲拆分与歌手关联", async () => {
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.example",
+      fetcher: async (url) => {
+        if (url.endsWith("/subjects/101/subjects")) {
+          return response([
+            { id: 1001, type: 3, relation: "片头曲", name: "メグメル／だんご大家族" },
+            { id: 1002, type: 3, relation: "片尾曲", name: "Don’t say “lazy”" },
+            { id: 1003, type: 3, relation: "插入歌", name: "ふわふわ時間" },
+            { id: 1004, type: 3, relation: "角色歌", name: "TVアニメ「日常」キャラクターソング 「なののネジ回りラプソディ」／東雲なの" },
+            { id: 1005, type: 1, relation: "书籍", name: "漫画原作" }, // 非音乐类型
+          ]);
+        }
+        return response({
+          id: 101,
+          name: "Test Anime",
+          name_cn: "测试番剧",
+          infobox: [
+            { key: "OP・ED 分镜", value: "监督甲" },
+            { key: "主题歌演出", value: "YOASOBI（OP1）" },
+          ],
+        });
+      },
+    });
+
+    const subject = await provider.getSubject("101");
+    // 不包含 staff
+    expect(subject.musicTracks.find((t) => t.title === "监督甲")).toBeUndefined();
+    // 包含关联音乐并拆分
+    expect(subject.musicTracks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "メグメル", kind: "opening" }),
+      expect.objectContaining({ title: "だんご大家族", kind: "opening" }),
+      expect.objectContaining({ title: "Don’t say “lazy”", kind: "ending" }),
+      expect.objectContaining({ title: "ふわふわ時間", kind: "insert" }),
+      expect.objectContaining({ title: "なののネジ回りラプソディ", artist: "東雲なの", kind: "character" }),
+    ]));
+    // OP 和 ED 排在 character 之前
+    const opIndex = subject.musicTracks.findIndex((t) => t.kind === "opening");
+    const charIndex = subject.musicTracks.findIndex((t) => t.kind === "character");
+    expect(opIndex).toBeLessThan(charIndex);
+  });
 });
+
