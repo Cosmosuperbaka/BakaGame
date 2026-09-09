@@ -1031,13 +1031,14 @@ function GameStage({
     const hasGivenUp = privateState.visibleAttempts.some(
       (attempt) => attempt.playerId === privateState.playerId && attempt.result === "gaveUp",
     );
+    const hasLyrics = (snapshot.currentRound.lyricClip?.lines?.length ?? 0) > 0;
     return (
       <div className="mx-auto max-w-2xl space-y-5">
         <PhaseHeader icon={Headphones} title={snapshot.settings.questionType === "anime" ? "听歌猜番" : "听歌猜曲"} />
         <section className="space-y-5 rounded-md bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {snapshot.settings.showLyrics ? "歌词片段" : "音乐片段"}
+              {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
             </h3>
             <div className="flex items-center gap-2">
               {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
@@ -1085,12 +1086,12 @@ function GameStage({
               draggable={false}
               onDragStart={(event) => event.preventDefault()}
             >
-              {(snapshot.currentRound?.lyricClip?.lines?.length ?? 0) > 0 ? (
-                snapshot.currentRound?.lyricClip?.lines.map((line) => (
+              {hasLyrics ? (
+                snapshot.currentRound.lyricClip.lines.map((line) => (
                   <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">本房间未显示歌词提示</p>
+                <p className="text-sm text-muted-foreground">当前歌曲为纯音乐或无歌词</p>
               )}
             </div>
           ) : (

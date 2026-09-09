@@ -108,6 +108,7 @@ fetch(url, { credentials: "include" });
 - 删除中文和英文作词、作曲、编曲、制作、录音、混音、母带、乐器演奏及发行署名行，包括 `Production Coordination`、`Keyboards & Programming`、`Drums`、`Strings Arranged & Conducted`、`Recorded at`、`Engineered by` 等变体。
 - 过滤后的歌词行数达到设置要求时，交给 `createSongLyricClip` 选择连续歌词片段；单句跨度超过 12 秒的候选片段必须跳过，避免截取过长间奏。
 - 歌词缺失或过滤后的行数不足时，允许纯音乐或未上传歌词的歌曲出题，改为在歌曲时长内随机截取 `设置歌词行数 * 6` 秒的音频片段。
+- 竞猜阶段当前歌曲为纯音乐或无歌词时，标题更正显示为“音乐片段”，内容区域提示“当前歌曲为纯音乐或无歌词”，避免误导玩家为房间关闭歌词显示。
 
 ### 音频播放
 

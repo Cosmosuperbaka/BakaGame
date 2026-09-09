@@ -485,4 +485,82 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.queryByText("TV")).not.toBeInTheDocument();
     expect(screen.queryByText("超能力")).not.toBeInTheDocument();
   });
+
+  it("竞猜阶段歌词片段与纯音乐展示正确区分", () => {
+    renderRoomPage();
+
+    // 1. 开启歌词且有歌词：展示“歌词片段”与歌词行
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          phase: "playing",
+          settings: {
+            ...createMockSnapshot().settings,
+            showLyrics: true,
+          },
+          currentRound: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            audioUrl: "https://audio.example.com/star.mp3",
+            lyricClip: {
+              startTime: 10_000,
+              endTime: 15_000,
+              lines: [{ time: 10_000, endTime: 15_000, text: "夜空中最亮的星" }],
+            },
+          },
+        }),
+        privateState: createMockPrivateState({ canGuess: true }),
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "歌词片段" })).toBeInTheDocument();
+    expect(screen.getByText("夜空中最亮的星")).toBeInTheDocument();
+
+    // 2. 开启歌词但无歌词/纯音乐：展示“音乐片段”与“当前歌曲为纯音乐或无歌词”
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          phase: "playing",
+          settings: {
+            ...createMockSnapshot().settings,
+            showLyrics: true,
+          },
+          currentRound: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            audioUrl: "https://audio.example.com/star.mp3",
+            lyricClip: { startTime: 0, endTime: 10_000, lines: [] },
+          },
+        }),
+        privateState: createMockPrivateState({ canGuess: true }),
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "音乐片段" })).toBeInTheDocument();
+    expect(screen.getByText("当前歌曲为纯音乐或无歌词")).toBeInTheDocument();
+    expect(screen.queryByText("本房间未显示歌词提示")).not.toBeInTheDocument();
+
+    // 3. 关闭歌词：展示“音乐片段”与“本房间已关闭歌词提示，请根据音乐进行猜测”
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          phase: "playing",
+          settings: {
+            ...createMockSnapshot().settings,
+            showLyrics: false,
+          },
+          currentRound: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            audioUrl: "https://audio.example.com/star.mp3",
+            lyricClip: { startTime: 0, endTime: 10_000, lines: [] },
+          },
+        }),
+        privateState: createMockPrivateState({ canGuess: true }),
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "音乐片段" })).toBeInTheDocument();
+    expect(screen.getByText("本房间已关闭歌词提示，请根据音乐进行猜测")).toBeInTheDocument();
+  });
 });
