@@ -25,10 +25,11 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@bakagame/shared": path.resolve(__dirname, "../Server/src/shared/Index.ts"),
-    },
+    alias: [
+      { find: "@bakagame/shared", replacement: path.resolve(__dirname, "../Server/src/shared/Index.ts") },
+      { find: "@/types", replacement: path.resolve(__dirname, "./src/types/Index.ts") },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
   },
   test: {
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
