@@ -237,6 +237,8 @@ describe("SonGuessrService", () => {
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.phase).toBe("roundResult");
     expect(snapshot.roundSummary?.anime?.id).toBe(anime.id);
+    expect(snapshot.roundSummary?.animeTrack).toEqual({ title: "答案歌", artist: "测试歌手", kind: "opening" });
+    expect(snapshot.roundSummary?.song.title).toBe("答案歌");
     expect(snapshot.roundSummary?.attempts.map((attempt) => attempt.guessedAnime?.id)).toEqual([wrongAnime.id, anime.id]);
   });
 
@@ -266,7 +268,7 @@ describe("SonGuessrService", () => {
       payload: {
         questionType: "anime",
         questionMode: "automatic",
-        animeAutoFilters: { startYear: 2020, minRating: 8, topN: 2, tags: ["奇幻"] },
+        animeAutoFilters: { startYear: 2020, endYear: 2024, ranking: "all", subjectLimit: 2, songMinPopularity: 0, trackKinds: ["opening"] },
       },
     });
     await execute(service, guest, {
@@ -282,9 +284,88 @@ describe("SonGuessrService", () => {
       payload: {},
     });
 
-    expect(requestedFilters).toEqual([{ startYear: 2020, minRating: 8, topN: 2, tags: ["奇幻"] }]);
+    expect(requestedFilters).toEqual([{ startYear: 2020, endYear: 2024, ranking: "all", subjectLimit: 2, songMinPopularity: 0, trackKinds: ["opening"] }]);
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.submitterPlayerId).toBe("");
     expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").submittedAnime).toBeUndefined();
+  });
+
+  test("听歌猜番年榜在设置年份范围内选择年份查询", async () => {
+    const requestedFilters: unknown[] = [];
+    const bangumiProvider = {
+      searchSubjects: async (_keyword: string, _limit: number, filters: unknown) => {
+        requestedFilters.push(filters);
+        return [anime];
+      },
+      getSubject: async () => anime,
+    } as unknown as BangumiProvider;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      bangumiProvider,
+      random: { nextInt: (max: number) => Math.max(0, max - 1) },
+    });
+    const host = connection(service, "anime-year-host");
+    const guest = connection(service, "anime-year-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "年榜玩家");
+    await execute(service, host, {
+      id: "year-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionType: "anime",
+        questionMode: "automatic",
+        animeAutoFilters: { startYear: 2020, endYear: 2022, ranking: "year", subjectLimit: 3 },
+      },
+    });
+    await execute(service, guest, {
+      id: "year-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "year-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    expect(requestedFilters).toEqual([{
+      startYear: 2022,
+      endYear: 2022,
+      ranking: "year",
+      subjectLimit: 3,
+      songMinPopularity: 0,
+      trackKinds: ["opening", "ending", "insert", "theme"],
+    }]);
+  });
+
+  test("听歌猜番歌曲热度不达标时优先尝试同作品其它曲目", async () => {
+    const low = { ...songs.wrong, id: "low", title: "低热度歌", popularity: 10 };
+    const high = { ...songs.answer, id: "high", title: "高热度歌", popularity: 100_000 };
+    const bangumiProvider = {
+      searchSubjects: async () => [anime],
+      getSubject: async () => ({ ...anime, musicTracks: [
+        { title: "低热度歌", artist: "测试歌手", kind: "opening" },
+        { title: "高热度歌", artist: "测试歌手", kind: "ending" },
+      ] }),
+    } as unknown as BangumiProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async (keyword) => keyword.includes("低热度歌") ? [low] : [high],
+      getSong: async (id) => id === "low" ? low : high,
+    };
+    const service = new SonGuessrService({ musicProvider, bangumiProvider });
+    const host = connection(service, "anime-hotness-host");
+    const guest = connection(service, "anime-hotness-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "热度玩家");
+    await execute(service, host, { id: "settings", type: "song.room.updateSettings", roomId: "1234", payload: {
+      questionType: "anime", questionMode: "automatic", animeAutoFilters: { songMinPopularity: 100_000, trackKinds: ["opening", "ending"] },
+    } });
+    await execute(service, guest, { id: "ready", type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+    await execute(service, host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} });
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl).toBe(high.audioUrl);
   });
 
   test("歌词不足或歌词跨度过长时降级为固定时长随机片段", () => {
