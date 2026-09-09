@@ -1,4 +1,6 @@
 import { AppError } from "../domain/Errors";
+import { LRUCache } from "lru-cache";
+import PQueue from "p-queue";
 import type {
   AnimeAutoFilters,
   BangumiMusicTrack,
@@ -15,10 +17,16 @@ export interface BangumiProviderOptions {
   now?: () => number;
   maxConcurrentRequests?: number;
   rateLimitCooldownMs?: number;
+  cacheMaxEntries?: number;
+  maxQueuedRequests?: number;
 }
 
 const SEARCH_TTL_MS = 6 * 60 * 60_000;
 const SUBJECT_TTL_MS = 24 * 60 * 60_000;
+const DEFAULT_CACHE_MAX_ENTRIES = 512;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
+const DEFAULT_MAX_QUEUED_REQUESTS = 64;
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -39,7 +47,7 @@ const parseYear = (value: unknown) => {
 
 const normalizeKind = (key: string): BangumiMusicTrack["kind"] => {
   if (/片头|片頭|opening|\bop\b/i.test(key)) return "opening";
-  if (/片尾|片尾|ending|\bed\b/i.test(key)) return "ending";
+  if (/片尾|ending|\bed\b/i.test(key)) return "ending";
   if (/插入|insert/i.test(key)) return "insert";
   return "theme";
 };
@@ -127,11 +135,13 @@ export class BangumiProvider {
   private readonly now: () => number;
   private readonly imageUrl: string;
   private readonly apiUrl: string;
-  private readonly maxConcurrent: number;
   private readonly cooldownMs: number;
-  private activeRequests = 0;
+  private readonly maxQueuedRequests: number;
+  private readonly queue: PQueue;
+  private readonly pendingRejections = new Map<number, (error: AppError) => void>();
+  private requestIdCounter = 0;
   private cooldownUntil = 0;
-  private readonly cache = new Map<string, { value: unknown; expiresAt: number }>();
+  private readonly cache: LRUCache<string, { value: unknown; expiresAt: number }>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
   constructor(options: BangumiProviderOptions) {
@@ -139,8 +149,14 @@ export class BangumiProvider {
     this.now = options.now ?? (() => Date.now());
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
     this.imageUrl = options.imageUrl?.replace(/\/+$/, "") ?? "";
-    this.maxConcurrent = Math.max(1, options.maxConcurrentRequests ?? 3);
-    this.cooldownMs = Math.max(500, options.rateLimitCooldownMs ?? 5_000);
+    this.cooldownMs = Math.max(500, options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS);
+    this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
+    this.cache = new LRUCache({
+      max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+    });
+    this.queue = new PQueue({
+      concurrency: Math.max(1, options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS),
+    });
   }
 
   async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}): Promise<BangumiSubjectSearchResult[]> {
@@ -206,39 +222,70 @@ export class BangumiProvider {
   private async cached<T>(key: string, ttl: number, loader: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key);
     if (hit && hit.expiresAt > this.now()) return structuredClone(hit.value) as T;
+    if (hit) this.cache.delete(key);
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
-    if (existing) return existing;
+    if (existing) return structuredClone(await existing);
     const request = loader().then((value) => {
-      this.cache.set(key, { value: structuredClone(value), expiresAt: this.now() + ttl });
-      return value;
-    }).finally(() => this.inFlight.delete(key));
+      const cachedValue = structuredClone(value);
+      this.cache.set(key, { value: cachedValue, expiresAt: this.now() + ttl });
+      return cachedValue;
+    }).finally(() => {
+      if (this.inFlight.get(key) === request) this.inFlight.delete(key);
+    });
     this.inFlight.set(key, request);
-    return request;
+    return structuredClone(await request);
   }
 
   private async requestJson(path: string, init?: RequestInit): Promise<unknown> {
-    while (this.activeRequests >= this.maxConcurrent || this.now() < this.cooldownUntil) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    this.activeRequests += 1;
-    try {
-      const response = await this.fetcher(`${this.apiUrl}${path}`, init);
-      if (response.status === 429) {
-        this.cooldownUntil = this.now() + this.cooldownMs;
-        throw new AppError("BANGUMI_RATE_LIMITED", "Bangumi 请求过于频繁，请稍后重试");
-      }
-      if (!response.ok) throw new AppError("BANGUMI_UPSTREAM_ERROR", `Bangumi 请求失败（${response.status}）`);
+    return this.scheduleRequest(async () => {
       try {
-        return await response.json();
-      } catch {
-        throw new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 返回了无效数据");
+        const response = await this.fetcher(`${this.apiUrl}${path}`, init);
+        if (response.status === 429) {
+          this.enterRateLimitCooldown();
+          throw this.rateLimitError();
+        }
+        if (!response.ok) throw new AppError("BANGUMI_UPSTREAM_ERROR", `Bangumi 请求失败（${response.status}）`);
+        try {
+          return await response.json();
+        } catch {
+          throw new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 返回了无效数据");
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求失败", { cause: String(error) });
       }
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求失败", { cause: String(error) });
-    } finally {
-      this.activeRequests -= 1;
-    }
+    });
+  }
+
+  private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
+    if (this.now() < this.cooldownUntil) return Promise.reject(this.rateLimitError());
+    if (this.queue.size >= this.maxQueuedRequests) return Promise.reject(this.rateLimitError("Bangumi 请求排队过多，请稍后重试"));
+
+    const id = ++this.requestIdCounter;
+    const cancelled = new Promise<never>((_, reject) => {
+      this.pendingRejections.set(id, reject);
+    });
+    const execution = this.queue.add(async () => {
+      this.pendingRejections.delete(id);
+      if (this.now() < this.cooldownUntil) throw this.rateLimitError();
+      return task();
+    }) as Promise<T>;
+    return Promise.race([execution, cancelled]).finally(() => this.pendingRejections.delete(id));
+  }
+
+  private enterRateLimitCooldown() {
+    this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + this.cooldownMs);
+    const error = this.rateLimitError();
+    const rejections = [...this.pendingRejections.values()];
+    this.queue.clear();
+    this.pendingRejections.clear();
+    for (const reject of rejections) reject(error);
+  }
+
+  private rateLimitError(message = "Bangumi 请求过于频繁，请稍后重试") {
+    return new AppError("BANGUMI_RATE_LIMITED", message, {
+      retryAfterMs: Math.max(0, this.cooldownUntil - this.now()),
+    });
   }
 }
 
