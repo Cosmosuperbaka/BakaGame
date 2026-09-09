@@ -60,13 +60,10 @@ export interface BangumiSubjectDetails extends BangumiSubjectSearchResult {
 export interface AnimeAutoFilters {
   startYear?: number;
   endYear?: number;
-  minRating?: number;
-  minRatingCount?: number;
-  topN?: number;
-  tags?: string[];
-  metaTags?: string[];
-  catalogIds?: number[];
-  subjectIds?: string[];
+  ranking?: "all" | "year";
+  subjectLimit?: number;
+  songMinPopularity?: SongAutoFilters["minPopularity"];
+  trackKinds?: BangumiMusicTrack["kind"][];
 }
 
 export interface SonGuessrSettings {
@@ -192,7 +189,8 @@ export interface SonGuessrRoundSummary {
     audioUrl?: string;
     chorus?: SongChorus;
   };
-  anime?: BangumiSubjectDetails;
+  anime?: BangumiSubjectSearchResult;
+  animeTrack?: BangumiMusicTrack;
   submitterPlayerId: string;
   correctPlayerIds: string[];
   attempts: SongGuessAttempt[];

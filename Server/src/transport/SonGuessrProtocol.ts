@@ -49,13 +49,13 @@ export const AnimeAutoFiltersSchema = t.Object(
   {
     startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
     endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
-    minRating: t.Optional(t.Number({ minimum: 0, maximum: 10 })),
-    minRatingCount: t.Optional(t.Integer({ minimum: 0 })),
-    topN: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
-    tags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 })),
-    metaTags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 })),
-    catalogIds: t.Optional(t.Array(t.Integer({ minimum: 1 }), { maxItems: 32 })),
-    subjectIds: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 32 }), { maxItems: 64 })),
+    ranking: t.Optional(t.Union([t.Literal("all"), t.Literal("year")])),
+    subjectLimit: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
+    songMinPopularity: t.Optional(MinPopularitySchema),
+    trackKinds: t.Optional(t.Array(
+      t.Union([t.Literal("opening"), t.Literal("ending"), t.Literal("insert"), t.Literal("theme")]),
+      { maxItems: 4 },
+    )),
   },
   { additionalProperties: false },
 );

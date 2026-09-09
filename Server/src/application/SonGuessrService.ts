@@ -35,6 +35,7 @@ import type {
   SongLyricClip,
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
+  BangumiMusicTrack,
   AnimeAutoFilters,
 } from "../shared/Index";
 import type { BangumiProvider } from "../infrastructure/BangumiProvider";
@@ -46,7 +47,7 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionMode: "manual",
   autoRotateSubmitter: false,
   autoFilters: { artists: [], minPopularity: 0 },
-  animeAutoFilters: {},
+  animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 0, trackKinds: ["opening", "ending", "insert", "theme"] },
   lyricsLineCount: 5,
   showLyrics: true,
   bloodMode: false,
@@ -95,6 +96,7 @@ interface SongGuessrRoundRecord {
   submitterPlayerId: string;
   song: SongDetails;
   anime?: BangumiSubjectDetails;
+  animeTrack?: BangumiMusicTrack;
   lyricClip: SongLyricClip;
   attempts: SongGuessAttempt[];
   correctPlayerIds: string[];
@@ -155,11 +157,8 @@ const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
   },
   animeAutoFilters: settings.animeAutoFilters ? {
     ...settings.animeAutoFilters,
-    tags: settings.animeAutoFilters.tags ? [...settings.animeAutoFilters.tags] : undefined,
-    metaTags: settings.animeAutoFilters.metaTags ? [...settings.animeAutoFilters.metaTags] : undefined,
-    catalogIds: settings.animeAutoFilters.catalogIds ? [...settings.animeAutoFilters.catalogIds] : undefined,
-    subjectIds: settings.animeAutoFilters.subjectIds ? [...settings.animeAutoFilters.subjectIds] : undefined,
-  } : {},
+    trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ["opening", "ending", "insert", "theme"])],
+  } : undefined,
 });
 
 const normalizeSongText = (value: string) =>
@@ -889,20 +888,20 @@ export class SonGuessrService {
   }
 
   private normalizeAnimeAutoFilters(filters: AnimeAutoFilters): AnimeAutoFilters {
-    const normalizeList = (values: string[] | undefined, max: number) =>
-      values?.map((value) => value.trim().slice(0, 64)).filter(Boolean).slice(0, max);
     const startYear = filters.startYear && clampInt(filters.startYear, 1900, 2200);
     const endYear = filters.endYear && clampInt(filters.endYear, 1900, 2200);
+    const trackKinds = (filters.trackKinds ?? ["opening", "ending", "insert", "theme"])
+      .filter((kind, index, all) => ["opening", "ending", "insert", "theme"].includes(kind) && all.indexOf(kind) === index);
+    const songMinPopularity = [0, 1_000, 10_000, 100_000].includes(filters.songMinPopularity ?? 0)
+      ? (filters.songMinPopularity ?? 0)
+      : 0;
     return {
       startYear,
       endYear: endYear && startYear ? Math.max(startYear, endYear) : endYear,
-      minRating: filters.minRating === undefined ? undefined : Math.max(0, Math.min(10, filters.minRating)),
-      minRatingCount: filters.minRatingCount === undefined ? undefined : Math.max(0, Math.round(filters.minRatingCount)),
-      topN: filters.topN === undefined ? undefined : clampInt(filters.topN, 1, 1000),
-      tags: normalizeList(filters.tags, 32),
-      metaTags: normalizeList(filters.metaTags, 32),
-      catalogIds: filters.catalogIds?.map((id) => Math.max(1, Math.round(id))).slice(0, 32),
-      subjectIds: normalizeList(filters.subjectIds, 64),
+      ranking: filters.ranking === "year" ? "year" : "all",
+      subjectLimit: clampInt(filters.subjectLimit ?? 50, 1, 1000),
+      songMinPopularity,
+      trackKinds: trackKinds.length > 0 ? trackKinds as AnimeAutoFilters["trackKinds"] : ["opening", "ending", "insert", "theme"],
     };
   }
 
@@ -1220,7 +1219,7 @@ export class SonGuessrService {
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     const submitterId = player.id;
     const anime = await provider.getSubject(subjectId);
-    const song = await this.resolveAnimeSong(room, anime);
+    const resolved = await this.resolveAnimeSong(room, anime);
     if (
       room.phase !== "submittingSong" ||
       room.pendingSubmitterPlayerId !== submitterId ||
@@ -1228,7 +1227,7 @@ export class SonGuessrService {
       player.membership === "kicked" ||
       !player.online
     ) return { ignored: true };
-    const roundNumber = this.installRound(room, song, player.id, anime);
+    const roundNumber = this.installRound(room, resolved.song, player.id, anime, resolved.track);
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -1239,12 +1238,17 @@ export class SonGuessrService {
     return { roundNumber };
   }
 
-  private async resolveAnimeSong(room: SongGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<SongDetails> {
+  private async resolveAnimeSong(room: SongGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
     const provider = this.options.musicProvider;
     if (anime.musicTracks.length === 0) {
       throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
     }
-    const candidates = anime.musicTracks.slice(0, 24);
+    const filters = room.settings.questionMode === "automatic"
+      ? room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!
+      : {};
+    const allowedKinds = new Set(filters.trackKinds ?? ["opening", "ending", "insert", "theme"]);
+    const candidates = anime.musicTracks.filter((track) => allowedKinds.has(track.kind)).slice(0, 24);
+    const minPopularity = filters.songMinPopularity ?? 0;
     for (const track of candidates) {
       const keyword = track.artist ? `${track.title} ${track.artist}` : track.title;
       let results: SongSearchResult[] = [];
@@ -1257,7 +1261,8 @@ export class SonGuessrService {
         try {
           const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
           if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
-          return song;
+          if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
+          return { song, track };
         } catch {
           // 单首歌曲不可播放时继续尝试同曲目的其他版本。
         }
@@ -1271,6 +1276,7 @@ export class SonGuessrService {
     song: SongDetails,
     submitterPlayerId: string,
     anime?: BangumiSubjectDetails,
+    animeTrack?: BangumiMusicTrack,
   ): number {
     this.applyQueuedMemberships(room);
     if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
@@ -1301,6 +1307,7 @@ export class SonGuessrService {
       submitterPlayerId,
       song,
       anime,
+      animeTrack,
       lyricClip,
       attempts: [],
       correctPlayerIds: [],
@@ -1322,17 +1329,22 @@ export class SonGuessrService {
       const provider = this.options.bangumiProvider;
       if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
       const filters = room.settings.animeAutoFilters ?? {};
-      const poolSize = Math.min(filters.topN ?? 50, 50);
-      const candidates = filters.subjectIds?.length
-        ? await Promise.all(filters.subjectIds.map((id) => provider.getSubject(id)))
-        : await provider.searchSubjects("", poolSize, filters);
+      const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
+      const year = filters.ranking === "year" && filters.startYear && filters.endYear
+        ? filters.startYear + this.random.nextInt(filters.endYear - filters.startYear + 1)
+        : undefined;
+      const candidates = await provider.searchSubjects("", poolSize, year ? {
+        ...filters,
+        startYear: year,
+        endYear: year,
+      } : filters);
       const pool = [...candidates];
       while (pool.length > 0) {
         const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
         try {
           const anime = await provider.getSubject(selected.id);
-          const song = await this.resolveAnimeSong(room, anime);
-          this.installRound(room, song, "", anime);
+          const resolved = await this.resolveAnimeSong(room, anime);
+          this.installRound(room, resolved.song, "", anime, resolved.track);
           return;
         } catch (error) {
           if (error instanceof AppError && error.code === "BANGUMI_RATE_LIMITED") throw error;
@@ -1805,7 +1817,8 @@ export class SonGuessrService {
         language: round.song.language,
         encyclopedia: round.song.encyclopedia,
       },
-      ...(round.anime ? { anime: round.anime } : {}),
+      ...(round.anime ? { anime: this.publicAnime(round.anime) } : {}),
+      ...(round.animeTrack ? { animeTrack: round.animeTrack } : {}),
       submitterPlayerId: round.submitterPlayerId,
       correctPlayerIds: [...round.correctPlayerIds],
       attempts: [...round.attempts],
@@ -2174,8 +2187,8 @@ export class SonGuessrService {
       year: anime.year,
       rating: anime.rating,
       ratingCount: anime.ratingCount,
-      tags: anime.tags,
-      metaTags: anime.metaTags,
+      tags: anime.tags.filter((tag) => !tag.includes("20")).slice(0, 5),
+      metaTags: [],
     };
   }
 
