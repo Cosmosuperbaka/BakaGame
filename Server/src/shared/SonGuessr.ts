@@ -45,10 +45,72 @@ export interface BangumiSubjectSearchResult {
   metaTags: string[];
 }
 
+export type BangumiMusicTrackKind =
+  | "opening"
+  | "ending"
+  | "insert"
+  | "theme"
+  | "ost"
+  | "character"
+  | "remix"
+  | "doujin"
+  | "image"
+  | "vocaloid"
+  | "drama"
+  | "vocal"
+  | "radio"
+  | "arrange"
+  | "single"
+  | "collection"
+  | "reading"
+  | "artistAlbum";
+
+export const ALL_BANGUMI_TRACK_KINDS: readonly BangumiMusicTrackKind[] = [
+  "opening",
+  "ending",
+  "insert",
+  "theme",
+  "ost",
+  "character",
+  "remix",
+  "doujin",
+  "image",
+  "vocaloid",
+  "drama",
+  "vocal",
+  "radio",
+  "arrange",
+  "single",
+  "collection",
+  "reading",
+  "artistAlbum",
+] as const;
+
+export const BANGUMI_TRACK_KIND_LABELS: Record<BangumiMusicTrackKind, string> = {
+  opening: "OP",
+  ending: "ED",
+  insert: "插曲",
+  theme: "主题曲",
+  ost: "OST",
+  character: "角色曲",
+  remix: "Remix",
+  doujin: "同人音乐",
+  image: "印象曲",
+  vocaloid: "Vocaloid",
+  drama: "Drama",
+  vocal: "VOCAL",
+  radio: "Radio",
+  arrange: "Arrange",
+  single: "单曲",
+  collection: "精选集",
+  reading: "朗读剧",
+  artistAlbum: "艺人专辑",
+};
+
 export interface BangumiMusicTrack {
   title: string;
   artist?: string;
-  kind: "opening" | "ending" | "insert" | "theme";
+  kind: BangumiMusicTrackKind;
 }
 
 export interface BangumiSubjectDetails extends BangumiSubjectSearchResult {

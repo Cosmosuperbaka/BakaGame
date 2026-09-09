@@ -14,7 +14,7 @@ import type {
   MusicLoginSession,
   MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
-import { MAX_SONGUESSR_COOKIE_LENGTH, SONGUESSR_MAX_PLAYERS } from "../shared/Index";
+import { ALL_BANGUMI_TRACK_KINDS, MAX_SONGUESSR_COOKIE_LENGTH, SONGUESSR_MAX_PLAYERS } from "../shared/Index";
 import type {
   ChatMessage,
   SongDetails,
@@ -36,6 +36,7 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
   BangumiMusicTrack,
+  BangumiMusicTrackKind,
   AnimeAutoFilters,
 } from "../shared/Index";
 import type { BangumiProvider } from "../infrastructure/BangumiProvider";
@@ -47,7 +48,7 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionMode: "manual",
   autoRotateSubmitter: false,
   autoFilters: { artists: [], minPopularity: 0 },
-  animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 0, trackKinds: ["opening", "ending", "insert", "theme"] },
+  animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 0, trackKinds: [...ALL_BANGUMI_TRACK_KINDS] },
   lyricsLineCount: 5,
   showLyrics: true,
   bloodMode: false,
@@ -157,7 +158,7 @@ const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
   },
   animeAutoFilters: settings.animeAutoFilters ? {
     ...settings.animeAutoFilters,
-    trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ["opening", "ending", "insert", "theme"])],
+    trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)],
   } : undefined,
 });
 
@@ -890,8 +891,8 @@ export class SonGuessrService {
   private normalizeAnimeAutoFilters(filters: AnimeAutoFilters): AnimeAutoFilters {
     const startYear = filters.startYear && clampInt(filters.startYear, 1900, 2200);
     const endYear = filters.endYear && clampInt(filters.endYear, 1900, 2200);
-    const trackKinds = (filters.trackKinds ?? ["opening", "ending", "insert", "theme"])
-      .filter((kind, index, all) => ["opening", "ending", "insert", "theme"].includes(kind) && all.indexOf(kind) === index);
+    const trackKinds = (filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)
+      .filter((kind, index, all) => ALL_BANGUMI_TRACK_KINDS.includes(kind) && all.indexOf(kind) === index);
     const songMinPopularity = [0, 1_000, 10_000, 100_000].includes(filters.songMinPopularity ?? 0)
       ? (filters.songMinPopularity ?? 0)
       : 0;
@@ -901,7 +902,7 @@ export class SonGuessrService {
       ranking: filters.ranking === "year" ? "year" : "all",
       subjectLimit: clampInt(filters.subjectLimit ?? 50, 1, 1000),
       songMinPopularity,
-      trackKinds: trackKinds.length > 0 ? trackKinds as AnimeAutoFilters["trackKinds"] : ["opening", "ending", "insert", "theme"],
+      trackKinds: trackKinds.length > 0 ? trackKinds as AnimeAutoFilters["trackKinds"] : [...ALL_BANGUMI_TRACK_KINDS],
     };
   }
 
@@ -1246,7 +1247,7 @@ export class SonGuessrService {
     const filters = room.settings.questionMode === "automatic"
       ? room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!
       : {};
-    const allowedKinds = new Set(filters.trackKinds ?? ["opening", "ending", "insert", "theme"]);
+    const allowedKinds = new Set(filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
     const candidates = anime.musicTracks.filter((track) => allowedKinds.has(track.kind)).slice(0, 24);
     const minPopularity = filters.songMinPopularity ?? 0;
     for (const track of candidates) {
@@ -1262,13 +1263,36 @@ export class SonGuessrService {
           const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
           if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
           if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
-          return { song, track };
+          return { song, track: { ...track, kind: this.refineTrackKind(track.kind, song) } };
         } catch {
           // 单首歌曲不可播放时继续尝试同曲目的其他版本。
         }
       }
     }
     throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
+  }
+
+  private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
+    if (kind !== "theme") return kind;
+    const text = `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`;
+    if (/原声|soundtrack|\bost\b/i.test(text)) return "ost";
+    if (/角色[歌曲]|character(?:\s*song)?/i.test(text)) return "character";
+    if (/\bremix\b|重混/i.test(text)) return "remix";
+    if (/同人/i.test(text)) return "doujin";
+    if (/印象[曲歌]|image(?:\s*song)?/i.test(text)) return "image";
+    if (/vocaloid/i.test(text)) return "vocaloid";
+    if (/\bdrama\b|广播剧|廣播劇/i.test(text)) return "drama";
+    if (/\bvocal\b/i.test(text)) return "vocal";
+    if (/\bradio\b|广播|廣播/i.test(text)) return "radio";
+    if (/\barrange\b|改编|改編|编曲|編曲/i.test(text)) return "arrange";
+    if (/单曲|單曲|\bsingle\b/i.test(text)) return "single";
+    if (/精选|精選|\bbest\b|collection/i.test(text)) return "collection";
+    if (/朗读|朗讀/i.test(text)) return "reading";
+    if (/艺人|藝人|album/i.test(text)) return "artistAlbum";
+    if (/片头|片頭|opening|\bop\d*\b/i.test(text)) return "opening";
+    if (/片尾|ending|\bed\d*\b/i.test(text)) return "ending";
+    if (/插[入]?曲|insert|\bin\d*\b/i.test(text)) return "insert";
+    return kind;
   }
 
   private installRound(

@@ -6,12 +6,13 @@ import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/co
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { BangumiProvider } from "../src/infrastructure/BangumiProvider";
-import type {
-  BangumiSubjectDetails,
-  SongDetails,
-  SonGuessrClientMessage,
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
+import {
+  ALL_BANGUMI_TRACK_KINDS,
+  type BangumiSubjectDetails,
+  type SongDetails,
+  type SonGuessrClientMessage,
+  type SonGuessrPrivateState,
+  type SonGuessrRoomSnapshot,
 } from "../src/shared/Index";
 
 const makeSong = (id: string, title: string, year: number): SongDetails => ({
@@ -336,7 +337,7 @@ describe("SonGuessrService", () => {
       ranking: "year",
       subjectLimit: 3,
       songMinPopularity: 0,
-      trackKinds: ["opening", "ending", "insert", "theme"],
+      trackKinds: [...ALL_BANGUMI_TRACK_KINDS],
     }]);
   });
 
