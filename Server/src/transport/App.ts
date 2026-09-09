@@ -7,6 +7,7 @@ import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
+import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
@@ -242,6 +243,10 @@ export const createApp = ({
     new SonGuessrService({
       eventLogger: logger,
       musicProvider: new NeteaseMusicProvider({ logger }),
+      bangumiProvider: new BangumiProvider({
+        apiUrl: env.bangumiApiUrl,
+        imageUrl: env.bangumiImageUrl,
+      }),
     });
 
   const app = new Elysia({

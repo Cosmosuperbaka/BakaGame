@@ -45,6 +45,21 @@ export const SongAutoFiltersSchema = t.Object(
   { additionalProperties: false },
 );
 
+export const AnimeAutoFiltersSchema = t.Object(
+  {
+    startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
+    endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
+    minRating: t.Optional(t.Number({ minimum: 0, maximum: 10 })),
+    minRatingCount: t.Optional(t.Integer({ minimum: 0 })),
+    topN: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
+    tags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 })),
+    metaTags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 })),
+    catalogIds: t.Optional(t.Array(t.Integer({ minimum: 1 }), { maxItems: 32 })),
+    subjectIds: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 32 }), { maxItems: 64 })),
+  },
+  { additionalProperties: false },
+);
+
 const EmptyPayloadSchema = t.Object({}, { additionalProperties: false });
 
 const createMessageSchema = <TType extends string, TPayload extends TSchema>(
@@ -131,6 +146,7 @@ export const SonGuessrMessageSchemas = {
         questionMode: t.Optional(QuestionModeSchema),
         autoRotateSubmitter: t.Optional(t.Boolean()),
         autoFilters: t.Optional(SongAutoFiltersSchema),
+        animeAutoFilters: t.Optional(AnimeAutoFiltersSchema),
         lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
         showLyrics: t.Optional(t.Boolean()),
         maxGuessesPerRound: t.Optional(t.Integer({ minimum: 1 })),
@@ -215,6 +231,13 @@ export const SonGuessrMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
+  "song.bangumi.search": createMessageSchema(
+    "song.bangumi.search",
+    t.Object(
+      { keyword: t.String({ minLength: 1, maxLength: 200 }) },
+      { additionalProperties: false },
+    ),
+  ),
   "song.game.start": createMessageSchema("song.game.start", EmptyPayloadSchema),
   "song.game.chooseSubmitter": createMessageSchema(
     "song.game.chooseSubmitter",
@@ -231,6 +254,13 @@ export const SonGuessrMessageSchemas = {
       {
         songId: t.String({ minLength: 1, maxLength: 64 }),
       },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.submitAnime": createMessageSchema(
+    "song.game.submitAnime",
+    t.Object(
+      { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
       { additionalProperties: false },
     ),
   ),
@@ -256,6 +286,13 @@ export const SonGuessrMessageSchemas = {
       {
         songId: t.String({ minLength: 1, maxLength: 64 }),
       },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.game.guessAnime": createMessageSchema(
+    "song.game.guessAnime",
+    t.Object(
+      { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
       { additionalProperties: false },
     ),
   ),
