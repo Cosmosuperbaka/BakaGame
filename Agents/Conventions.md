@@ -140,10 +140,13 @@ npm run preview      # 本地预览生产构建产物
 CLIENT_URL=http://localhost:5173
 SERVER_URL=http://localhost:4850
 SERVER_PORT=4850
+BANGUMI_API_URL=https://api.bgm.tv
+BANGUMI_IMAGE_URL=
 ```
+
+`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不能直接请求 Bangumi 或使用 `lain.bgm.tv` 原始地址。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash
 VITE_SERVER_URL=http://localhost:4850
 ```
-
