@@ -2,6 +2,9 @@
 
 本项目没有根级 `package.json`。服务端和客户端是两个独立包，验证时必须分别进入对应目录。
 
+完整的覆盖矩阵、生产资源冒烟、过时测试治理、分阶段实施和 CI 门禁见
+[`Agents/TestingOptimizationPlan.md`](TestingOptimizationPlan.md)。本文件保留稳定的运行约定；方案文档负责记录本轮审查后的可执行目标。
+
 ## 测试分层
 
 | 层级 | 位置 | 运行器 | 主要职责 |
@@ -73,6 +76,10 @@ npx playwright test e2e/app.spec.ts
 - **状态驱动而非过度 Mock**：Zustand 状态测试使用 `store.setState(...)` 原生注入真实状态上下文，严禁模块级 `vi.mock` 替换全局 Store。
 - **依赖注入与无网络时钟**：包含退避、冷却、抖动的类与服务（如 `NeteaseMusicProvider`）必须构造器注入 `now` 与 `random`，以虚拟时钟进行 0ms 确定性测试；遥测打点等外部 IO 必须参数化注入 `fetcher`，禁止单测滥用 `vi.stubGlobal("fetch")`。
 - **杜绝镜像测试文件**：文件重命名或重构后必须同步清理旧镜像单测文件，严禁双胞胎测试共存。
+- **生产资源必须冒烟**：客户端生产构建后必须通过 preview 服务器检查入口 HTML、固定 WebP、所有哈希贴纸、SPA 路由和资源 MIME；只测试 Vite 插件函数不算资源验证。
+- **异步夹具必须排空**：测试删除临时目录或关闭服务前，必须等待所有持久化写队列和异步任务结束；未处理 Promise rejection、console error 和非预期 4xx 必须令测试失败。
+- **覆盖率必须进 CI**：`Server` 执行 `bun run test:coverage`，`Client` 执行 `npm run test:coverage`；覆盖率用于阻止回退，核心模块的主要分支不得以全局平均值掩盖。
+- **开发服务器不代表生产**：Playwright 的资源冒烟使用 `npm run build` 后的 `vite preview`；真实房间 E2E 可以使用开发服务器，但必须另有生产构建冒烟。
 
 ## CI 推荐顺序
 
