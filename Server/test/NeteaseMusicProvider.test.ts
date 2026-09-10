@@ -185,12 +185,34 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         login_qr_key: async (params: Record<string, unknown>) => {
           calls.push("login_qr_key");
-          expect(params.cookie).toEqual({});
+          expect(params.cookie).toEqual({
+            os: "pc",
+            appver: "3.1.29.205117",
+            osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+            channel: "netease",
+            mobilename: "BakaGame",
+            model: "BakaGame",
+          });
+          expect(String(params.ua)).toContain("NeteaseMusicDesktop");
           return { body: { data: { code: 200, unikey: "qr-key" } } };
         },
         login_qr_create: async (params: Record<string, unknown>) => {
           calls.push("login_qr_create");
-          expect(params).toMatchObject({ key: "qr-key", qrimg: true, randomCNIP: false });
+          expect(params).toMatchObject({
+            key: "qr-key",
+            qrimg: true,
+            platform: "BakaGame",
+            randomCNIP: false,
+            cookie: {
+              os: "pc",
+              appver: "3.1.29.205117",
+              osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+              channel: "netease",
+              mobilename: "BakaGame",
+              model: "BakaGame",
+            },
+          });
+          expect(String(params.ua)).toContain("NeteaseMusicDesktop");
           return {
             body: {
               code: 200,
@@ -198,9 +220,25 @@ describe("NeteaseMusicProvider", () => {
             },
           };
         },
-        login_qr_check: async () => {
+        login_qr_check: async (params: Record<string, unknown>) => {
           calls.push("login_qr_check");
+          expect(params.cookie).toEqual({
+            os: "pc",
+            appver: "3.1.29.205117",
+            osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+            channel: "netease",
+            mobilename: "BakaGame",
+            model: "BakaGame",
+          });
+          expect(String(params.ua)).toContain("NeteaseMusicDesktop");
           return { body: { code: 803, message: "授权登录成功", cookie: "MUSIC_U=qr-cookie" } };
+        },
+        deviceinfo_center_upload: async (params: Record<string, unknown>) => {
+          calls.push("deviceinfo_center_upload");
+          expect(params.deviceName).toBe("BakaGame");
+          expect(String(params.cookie)).toContain("MUSIC_U=qr-cookie");
+          expect(String(params.cookie)).toContain("os=pc");
+          return { body: { code: 200, data: {} } };
         },
         login_status: async (params: Record<string, unknown>) => {
           calls.push("login_status");
@@ -238,8 +276,84 @@ describe("NeteaseMusicProvider", () => {
       "login_qr_key",
       "login_qr_create",
       "login_qr_check",
+      "deviceinfo_center_upload",
       "login_status",
     ]);
+  });
+
+  test("支持自定义登录设备名称并在扫码登录成功时自动上报", async () => {
+    let uploadedDeviceName: string | undefined;
+    let capturedCreate: Record<string, unknown> | undefined;
+    const provider = new NeteaseMusicProvider({
+      deviceName: "CustomMusicBox",
+      loadApi: async () => ({
+        login_qr_key: async (params: Record<string, unknown>) => {
+          expect(params.cookie).toEqual({
+            os: "pc",
+            appver: "3.1.29.205117",
+            osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+            channel: "netease",
+            mobilename: "CustomMusicBox",
+            model: "CustomMusicBox",
+          });
+          return { body: { data: { code: 200, unikey: "custom-key" } } };
+        },
+        login_qr_create: async (params: Record<string, unknown>) => {
+          capturedCreate = params;
+          return {
+            body: {
+              code: 200,
+              data: { qrurl: "https://music.163.com/login?codekey=custom-key", qrimg: "data:image/png;base64,custom" },
+            },
+          };
+        },
+        login_qr_check: async () => ({
+          body: { code: 803, message: "授权成功", cookie: "MUSIC_U=custom-cookie" },
+        }),
+        deviceinfo_center_upload: async (params: Record<string, unknown>) => {
+          uploadedDeviceName = String(params.deviceName);
+          return { body: { code: 200, data: {} } };
+        },
+        login_status: async () => ({
+          body: {
+            data: {
+              code: 200,
+              profile: { userId: 99, nickname: "自定义设备用户" },
+            },
+          },
+        }),
+      }),
+    });
+
+    await provider.createQrLogin();
+    expect(capturedCreate?.platform).toBe("CustomMusicBox");
+    expect(capturedCreate?.cookie).toEqual({
+      os: "pc",
+      appver: "3.1.29.205117",
+      osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+      channel: "netease",
+      mobilename: "CustomMusicBox",
+      model: "CustomMusicBox",
+    });
+
+    await provider.checkQrLogin("custom-key");
+    expect(uploadedDeviceName).toBe("CustomMusicBox");
+  });
+
+  test("uploadDeviceInfo 在接口异常时记录告警且不中断流程", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        deviceinfo_center_upload: async () => {
+          throw new Error("网络超时或被风控");
+        },
+      }),
+    });
+
+    const success = await provider.uploadDeviceInfo("MUSIC_U=fake-cookie");
+    expect(success).toBe(false);
+
+    // 空 Cookie 场景直接返回 false
+    await expect(provider.uploadDeviceInfo("   ")).resolves.toBe(false);
   });
 
   test("扫码接口被网易云风控拦截时不向客户端暴露提醒链接", async () => {

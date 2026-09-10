@@ -28,6 +28,7 @@ export interface MusicProvider {
   createQrLogin?(): Promise<MusicQrLogin>;
   checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
+  uploadDeviceInfo?(cookie: string, deviceName?: string): Promise<boolean>;
   getPlaylistSongs?(playlistId: string, cookie?: string): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
   searchArtists?(keyword: string, limit?: number, cookie?: string): Promise<SongArtistSearchResult[]>;
   getArtistSongs?(artistId: string, cookie?: string): Promise<SongSearchResult[]>;
@@ -38,6 +39,8 @@ export interface NeteaseMusicProviderOptions {
   logger?: EventLogger;
   now?: () => number;
   random?: { nextFloat?: () => number };
+  /** 网易云登录设备展示名称，默认 BakaGame。 */
+  deviceName?: string;
   /** 通过 Enhanced API 的随机中国出口降低网易云安全风控误判。默认开启。 */
   randomCNIP?: boolean;
   /** 单个 provider 允许同时访问网易云的请求数。 */
@@ -438,6 +441,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastRateLimitAt = 0;
   private lastRateLimitMessage = "操作频繁，请稍候再试";
 
+  readonly deviceName: string;
   private readonly logger?: EventLogger;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
@@ -445,6 +449,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastUserRequestAt: number;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
+    this.deviceName = options.deviceName?.trim() || "BakaGame";
     this.logger = options.logger;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? { nextFloat: () => Math.random() };
@@ -653,8 +658,32 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
+  private loginCookie(): Record<string, unknown> {
+    return {
+      os: "pc",
+      appver: "3.1.29.205117",
+      osver: "Microsoft-Windows-10-Professional-build-19045-64bit",
+      channel: "netease",
+      mobilename: this.deviceName,
+      model: this.deviceName,
+    };
+  }
+
+  private loginUserAgent(): string {
+    return "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.29.205117";
+  }
+
   async createQrLogin(): Promise<MusicQrLogin> {
-    const keyResponse = await this.call(["login_qr_key"], {}, undefined, this.randomCNIP, true, false);
+    const loginCookie = this.loginCookie();
+    const loginUa = this.loginUserAgent();
+    const keyResponse = await this.call(
+      ["login_qr_key"],
+      { ua: loginUa },
+      loginCookie,
+      this.randomCNIP,
+      true,
+      false,
+    );
     const keyBody = responseBody(keyResponse);
     if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
@@ -662,8 +691,8 @@ export class NeteaseMusicProvider implements MusicProvider {
 
     const qrResponse = await this.call(
       ["login_qr_create"],
-      { key, qrimg: true },
-      undefined,
+      { key, qrimg: true, platform: this.deviceName, ua: loginUa },
+      loginCookie,
       this.randomCNIP,
       true,
       false,
@@ -682,8 +711,8 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!key) throw new AppError("INVALID_LOGIN", "二维码登录密钥不能为空");
     const response = await this.call(
       ["login_qr_check"],
-      { key },
-      undefined,
+      { key, ua: this.loginUserAgent() },
+      this.loginCookie(),
       this.randomCNIP,
       true,
       false,
@@ -698,8 +727,42 @@ export class NeteaseMusicProvider implements MusicProvider {
 
     const cookie = responseCookie(response);
     if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录 Cookie");
+    await this.uploadDeviceInfo(cookie, this.deviceName);
     const session = await this.getLoginStatus(cookie);
     return { status: "authorized", message, session };
+  }
+
+  async uploadDeviceInfo(
+    cookieValue: string,
+    deviceName = this.deviceName,
+  ): Promise<boolean> {
+    const cookie = cookieValue.trim();
+    if (!cookie) return false;
+    const name = deviceName.trim() || this.deviceName;
+    try {
+      const response = await this.callOptional(
+        ["deviceinfo_center_upload"],
+        { deviceName: name },
+        `${cookie}; os=pc`,
+      );
+      if (response) return true;
+      if (this.options.loadApi) {
+        return false;
+      }
+      const requestModule = await import("@neteasecloudmusicapienhanced/api/util/request");
+      const request = (requestModule.default ?? requestModule) as (...args: unknown[]) => Promise<unknown>;
+      const createOptionModule = await import("@neteasecloudmusicapienhanced/api/util/option");
+      const createOption = (createOptionModule.default ?? createOptionModule) as (...args: unknown[]) => unknown;
+      await request(
+        "/api/deviceinfo/center/upload",
+        { deviceName: name },
+        createOption({ cookie: `${cookie}; os=pc` }, "eapi"),
+      );
+      return true;
+    } catch (error) {
+      this.logger?.warn("上报网易云设备名称未成功，保持原设备名运行", describeError(error));
+      return false;
+    }
   }
 
   async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
@@ -852,7 +915,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async call(
     names: string[],
     params: Record<string, unknown>,
-    cookie?: string,
+    cookie?: string | Record<string, unknown>,
     randomCNIP = this.randomCNIP,
     preserveErrorResponse = false,
     includeAnonymousCookie = true,
@@ -900,7 +963,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async callOptional(
     names: string[],
     params: Record<string, unknown>,
-    cookie?: string,
+    cookie?: string | Record<string, unknown>,
   ): Promise<ApiResponse | undefined> {
     try {
       return await this.call(names, params, cookie);
@@ -1144,9 +1207,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     return responseCode(body) === 405 || readNumber(asRecord(error).status) === 405;
   }
 
-  private ipForCookie(cookie?: string) {
-    const scope = cookie?.trim()
-      ? createHash("sha256").update(cookie.trim()).digest("hex").slice(0, 16)
+  private ipForCookie(cookie?: string | Record<string, unknown>) {
+    const cookieStr = typeof cookie === "string" ? cookie : JSON.stringify(cookie ?? "");
+    const scope = cookieStr?.trim()
+      ? createHash("sha256").update(cookieStr.trim()).digest("hex").slice(0, 16)
       : "anonymous";
     const existing = this.ipByScope.get(scope);
     if (existing) return existing;
@@ -1161,7 +1225,7 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private withCookie(
     params: Record<string, unknown>,
-    cookie?: string,
+    cookie?: string | Record<string, unknown>,
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
   ): Record<string, unknown> {

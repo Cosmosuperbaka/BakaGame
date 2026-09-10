@@ -84,7 +84,8 @@ fetch(url, { credentials: "include" });
 - 搜索：`cloudsearch`/`search`。
 - 出题歌曲详情：`song_detail`、时间轴歌词、播放地址、可选歌曲百科以及副歌时间（`song_chorus`）。
 - 猜测歌曲：只读取元数据，不请求歌词或音频。
-- 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。
+- 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。创建二维码与扫码轮询采用官方 PC 客户端契约（`os: "pc"`, `channel: "netease"`, `appver: "3.1.29.205117"`, `User-Agent: NeteaseMusicDesktop/...`），并携带自定义 `deviceName`（默认 `BakaGame`）。
+- 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
 副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
