@@ -29,7 +29,9 @@ export const createTestContext = () => {
     wordBankRepository: new WordBankRepository(join(tempDir, "word-bank.json")),
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // 先排空生产写队列，再清理临时目录，避免异步 rename 竞态产生 ENOENT。
+    await service.drainPendingWrites();
     rmSync(tempDir, { force: true, recursive: true });
   });
 
