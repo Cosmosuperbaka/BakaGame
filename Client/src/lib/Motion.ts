@@ -121,7 +121,7 @@ export function listContainer(count: number): Variants {
 export const listItem: Variants = {
   initial: { opacity: 0, scale: 0.94 },
   animate: { opacity: 1, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, scale: 0.965, transition: { duration: duration.instant } },
+  exit: { opacity: 0, scale: 0.965, pointerEvents: "none", transition: { duration: duration.instant } },
 };
 
 /**
