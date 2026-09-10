@@ -159,15 +159,15 @@ function SongSettlementDetails({
         <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
           {song.releaseYear ? <Badge variant="outline">{song.releaseYear}</Badge> : null}
           {song.language ? <Badge variant="outline">{song.language}</Badge> : null}
-          {song.encyclopedia.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+          {song.encyclopedia?.tags?.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
         </div>
 
-        {song.encyclopedia.aliases?.length ? (
+        {song.encyclopedia?.aliases?.length ? (
           <p className="mt-3 text-xs text-muted-foreground">
             别名：{song.encyclopedia.aliases.join("、")}
           </p>
         ) : null}
-        {song.encyclopedia.summary ? (
+        {song.encyclopedia?.summary ? (
           <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
             {song.encyclopedia.summary}
           </p>
@@ -228,6 +228,13 @@ export default function SonGuessrRoomPage() {
   const leavingRef = useRef(false);
   const volumeRef = useRef(volume);
   const mountedMusicSessionRef = useRef<string | null>(null);
+  const inFlightCommandsRef = useRef<Set<string>>(new Set());
+  const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
+
+  const isPending = useCallback(
+    (type: string) => Boolean(pendingCommands[type]),
+    [pendingCommands],
+  );
 
   const enterWithName = useCallback(
     async (name: string, password?: string) => {
@@ -764,6 +771,9 @@ export default function SonGuessrRoomPage() {
   const isSpectator = me?.membership === "spectator";
 
   const run = async (type: string, payload: Record<string, unknown> = {}, success?: string) => {
+    if (inFlightCommandsRef.current.has(type)) return;
+    inFlightCommandsRef.current.add(type);
+    setPendingCommands((prev) => ({ ...prev, [type]: true }));
     try {
       await sendCommand(type, payload);
       if (success) setNotice(success, "success");
@@ -776,6 +786,14 @@ export default function SonGuessrRoomPage() {
         return;
       }
       setNotice(appError.message ?? "操作失败", "error");
+    } finally {
+      inFlightCommandsRef.current.delete(type);
+      setPendingCommands((prev) => {
+        if (!prev[type]) return prev;
+        const next = { ...prev };
+        delete next[type];
+        return next;
+      });
     }
   };
 
@@ -901,6 +919,7 @@ export default function SonGuessrRoomPage() {
                 }
               }}
               run={run}
+              isPending={isPending}
             />
           </main>
         </section>
@@ -977,6 +996,7 @@ interface SongGameAreaProps {
   closeSearch: () => void;
   onSelectSearchSong: (songId: string, mode: "submit" | "guess") => Promise<void>;
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  isPending?: (type: string) => boolean;
 }
 
 function SongGameArea(props: SongGameAreaProps) {
@@ -1018,7 +1038,7 @@ function SongGameArea(props: SongGameAreaProps) {
           ) : null}
         </div>
       </ScrollArea>
-      {props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} /> : null}
+      {props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} /> : null}
     </div>
   );
 }
@@ -1035,9 +1055,10 @@ function GameStage({
   onRetryAudio,
   openSearch,
   run,
+  isPending,
 }: SongGameAreaProps) {
   if (snapshot.phase === "waiting") {
-    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} />;
+    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
   }
 
   if (snapshot.phase === "choosingSubmitter") {
@@ -1197,9 +1218,17 @@ function GameStage({
                 <Button
                   variant="outline"
                   className="gap-2"
+                  disabled={isPending?.("song.game.giveUp")}
+                  loading={isPending?.("song.game.giveUp")}
                   onClick={() => void run("song.game.giveUp")}
                 >
-                  <Flag className="h-4 w-4" />投降
+                  {isPending?.("song.game.giveUp") ? (
+                    "正在放弃..."
+                  ) : (
+                    <>
+                      <Flag className="h-4 w-4" />投降
+                    </>
+                  )}
                 </Button>
               ) : null}
             </div>
@@ -1220,6 +1249,8 @@ function GameStage({
 
   if (snapshot.phase === "roundResult" && snapshot.roundSummary) {
     const summary = snapshot.roundSummary;
+    const isNextRound = Boolean(isPending?.("song.game.nextRound"));
+    const isFinishing = Boolean(isPending?.("song.game.finish"));
 
     return (
       <div className="mx-auto max-w-2xl space-y-5">
@@ -1268,12 +1299,24 @@ function GameStage({
         <ScoreTable scores={summary.scores} />
         {isHost ? (
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => void run("song.game.finish")}>返回等待阶段</Button>
             <Button
-              disabled={snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady}
+              variant="outline"
+              disabled={isFinishing || isNextRound}
+              loading={isFinishing}
+              onClick={() => void run("song.game.finish")}
+            >
+              {isFinishing ? "正在返回..." : "返回等待阶段"}
+            </Button>
+            <Button
+              disabled={
+                (snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady) ||
+                isNextRound ||
+                isFinishing
+              }
+              loading={isNextRound}
               onClick={() => void run("song.game.nextRound")}
             >
-              再来一轮
+              {isNextRound ? "正在准备下一轮..." : "再来一轮"}
             </Button>
           </div>
         ) : null}
@@ -1282,7 +1325,7 @@ function GameStage({
   }
 
   // 阶段快照不完整时直接回退到可操作的等待界面，避免留下悬空页面。
-  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} />;
+  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
 }
 
 function SongWaitingPhase({
@@ -1290,17 +1333,20 @@ function SongWaitingPhase({
   me,
   isHost,
   run,
+  isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   me?: SonGuessrPlayerView;
   isHost: boolean;
   run: SongGameAreaProps["run"];
+  isPending?: (type: string) => boolean;
 }) {
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const nonHostActive = activePlayers.filter((player) => !player.isHost);
   const readyCount = nonHostActive.filter((player) => player.isReady).length;
   const showProgress = nonHostActive.length > 0;
   const allReady = activePlayers.length >= 2 && nonHostActive.every((player) => player.isReady);
+  const isReadyPending = Boolean(isPending?.("song.player.setReady"));
 
   if (isHost) {
     return (
@@ -1312,6 +1358,7 @@ function SongWaitingPhase({
         allReady={allReady}
         canStart={allReady && snapshot.musicAccountReady}
         run={run}
+        isPending={isPending}
       />
     );
   }
@@ -1340,10 +1387,18 @@ function SongWaitingPhase({
         <Button
           variant={me.isReady ? "outline" : "default"}
           size="lg"
+          disabled={isReadyPending}
+          loading={isReadyPending}
           onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
           className="gap-2 min-w-[120px]"
         >
-          {me.isReady ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
+          {isReadyPending ? (
+            me.isReady ? "正在取消..." : "正在准备..."
+          ) : me.isReady ? (
+            <><X className="h-4 w-4" />取消准备</>
+          ) : (
+            <><Check className="h-4 w-4" />准备</>
+          )}
         </Button>
       ) : null}
     </div>
@@ -1358,6 +1413,7 @@ function SongHostWaitingPanel({
   allReady,
   canStart,
   run,
+  isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   showProgress: boolean;
@@ -1366,10 +1422,12 @@ function SongHostWaitingPanel({
   allReady: boolean;
   canStart: boolean;
   run: SongGameAreaProps["run"];
+  isPending?: (type: string) => boolean;
 }) {
   const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const isStarting = Boolean(isPending?.("song.game.start"));
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
@@ -1425,11 +1483,14 @@ function SongHostWaitingPanel({
 
       <Button
         size="lg"
-        disabled={!canStart}
+        disabled={!canStart || isStarting}
+        loading={isStarting}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {!snapshot.musicAccountReady && allReady
+        {isStarting
+          ? "正在开始游戏..."
+          : !snapshot.musicAccountReady && allReady
           ? "请先扫码登录网易云账号"
           : allReady
           ? "开始游戏"
@@ -1550,10 +1611,13 @@ function SongQuestionSettings({
   const [artists, setArtists] = useState<SongArtistFilter[]>(snapshot.settings.autoFilters.artists);
   const [artistResults, setArtistResults] = useState<SongArtistSearchResult[]>([]);
   const [searchingArtists, setSearchingArtists] = useState(false);
+  const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
   const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
   const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
 
   const resolvePlaylist = async () => {
+    if (resolvingPlaylist) return;
+    setResolvingPlaylist(true);
     try {
       const result = await sendCommand<{ playlist: SongPlaylistInfo }>("song.music.playlist.resolve", {
         value: playlistDraft,
@@ -1562,6 +1626,8 @@ function SongQuestionSettings({
       setNotice(`已读取歌单：${result.playlist.name}（${result.playlist.songCount} 首）`, "success");
     } catch (error) {
       setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
+    } finally {
+      setResolvingPlaylist(false);
     }
   };
 
@@ -1663,8 +1729,15 @@ function SongQuestionSettings({
                 placeholder="粘贴网易云歌单链接或 ID"
                 className="h-9"
               />
-              <Button type="button" size="sm" variant="outline" onClick={() => void resolvePlaylist()}>
-                读取
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={resolvingPlaylist}
+                loading={resolvingPlaylist}
+                onClick={() => void resolvePlaylist()}
+              >
+                {resolvingPlaylist ? "读取中" : "读取"}
               </Button>
             </div>
             {playlist ? (
@@ -1705,7 +1778,14 @@ function SongQuestionSettings({
                 placeholder="输入歌手名后搜索"
                 className="h-9"
               />
-              <Button type="button" size="sm" variant="outline" onClick={() => void searchArtists()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={searchingArtists}
+                loading={searchingArtists}
+                onClick={() => void searchArtists()}
+              >
                 {searchingArtists ? "搜索中" : "搜索"}
               </Button>
             </div>
@@ -2143,9 +2223,11 @@ function VolumeControl({
 function SongTestController({
   snapshot,
   run,
+  isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   run: SongGameAreaProps["run"];
+  isPending?: (type: string) => boolean;
 }) {
   const [open, setOpen] = useState(true);
   const botCount = snapshot.players.filter((player) => player.isBot).length;
@@ -2196,7 +2278,8 @@ function SongTestController({
                       size="sm"
                       className="h-7 flex-1 gap-1 text-xs"
                       aria-label="移除一个测试人机"
-                      disabled={botCount === 0}
+                      disabled={botCount === 0 || isPending?.("song.test.removeBot")}
+                      loading={isPending?.("song.test.removeBot")}
                       onClick={() => void run("song.test.removeBot", { count: 1 })}
                     >
                       <Minus className="h-3 w-3" />
@@ -2210,7 +2293,8 @@ function SongTestController({
                       size="sm"
                       className="h-7 flex-1 gap-1 text-xs"
                       aria-label="添加一个测试人机"
-                      disabled={snapshot.players.length >= snapshot.maxPlayers}
+                      disabled={snapshot.players.length >= snapshot.maxPlayers || isPending?.("song.test.addBot")}
+                      loading={isPending?.("song.test.addBot")}
                       onClick={() => void run("song.test.addBot", { count: 1 })}
                     >
                       <Plus className="h-3 w-3" />

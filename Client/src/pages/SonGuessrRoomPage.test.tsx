@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -657,5 +657,110 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     expect(screen.getByRole("heading", { name: "音乐片段" })).toBeInTheDocument();
     expect(screen.getByText("本房间已关闭歌词提示，请根据音乐进行猜测")).toBeInTheDocument();
+  });
+
+  it("点击“开始游戏”后按钮进入 loading 禁用状态并展示旋转图标，防止重复提交", async () => {
+    let resolveCommand: (val?: unknown) => void = () => {};
+    const pendingPromise = new Promise((resolve) => {
+      resolveCommand = resolve;
+    });
+    const sendCommandSpy = vi.fn().mockImplementation(() => pendingPromise);
+
+    useSonGuessrStore.setState({
+      sendCommand: sendCommandSpy,
+    });
+
+    renderRoomPage();
+
+    const startButton = screen.getByRole("button", { name: "开始游戏" });
+    expect(startButton).toBeEnabled();
+    expect(screen.queryByTestId("button-spinner")).not.toBeInTheDocument();
+
+    // 点击开始游戏
+    fireEvent.click(startButton);
+
+    // 校验请求已发出，按钮进入 loading 禁用态并渲染 spinner 与动态文案
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.start", {});
+    expect(startButton).toBeDisabled();
+    expect(startButton).toHaveAttribute("aria-busy", "true");
+    expect(within(startButton).getByTestId("button-spinner")).toBeInTheDocument();
+    expect(within(startButton).getByText("正在开始游戏...")).toBeInTheDocument();
+
+    // 再次点击被拦截，防止并发重发
+    fireEvent.click(startButton);
+    expect(sendCommandSpy).toHaveBeenCalledTimes(1);
+
+    // 请求完成响应后解除 loading 态
+    await act(async () => {
+      resolveCommand({});
+    });
+
+    expect(screen.queryByTestId("button-spinner")).not.toBeInTheDocument();
+  });
+
+  it("结算阶段点击“再来一轮”后按钮进入 loading 禁用状态且“返回等待阶段”同步禁用，防止并发冲突", async () => {
+    let resolveCommand: (val?: unknown) => void = () => {};
+    const pendingPromise = new Promise((resolve) => {
+      resolveCommand = resolve;
+    });
+    const sendCommandSpy = vi.fn().mockImplementation(() => pendingPromise);
+
+    useSonGuessrStore.setState({
+      sendCommand: sendCommandSpy,
+      snapshot: createMockSnapshot({
+        phase: "roundResult",
+        roundNumber: 1,
+        roundSummary: {
+          roundNumber: 1,
+          submitterPlayerId: "player-1",
+          correctPlayerIds: ["player-1"],
+          attempts: [],
+          song: {
+            id: "song-101",
+            title: "夜空中最亮的星",
+            artist: "逃跑计划",
+            album: "世界",
+            audioUrl: "https://audio.example.com/star.mp3",
+            durationMs: 250_000,
+            requiresVip: false,
+            encyclopedia: {
+              tags: ["流行", "摇滚"],
+            },
+          },
+          scores: [],
+        },
+      }),
+    });
+
+    renderRoomPage();
+
+    const nextRoundButton = screen.getByRole("button", { name: "再来一轮" });
+    const finishButton = screen.getByRole("button", { name: "返回等待阶段" });
+
+    expect(nextRoundButton).toBeEnabled();
+    expect(finishButton).toBeEnabled();
+
+    // 点击再来一轮
+    fireEvent.click(nextRoundButton);
+
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.nextRound", {});
+    expect(nextRoundButton).toBeDisabled();
+    expect(nextRoundButton).toHaveAttribute("aria-busy", "true");
+    expect(within(nextRoundButton).getByTestId("button-spinner")).toBeInTheDocument();
+    expect(within(nextRoundButton).getByText("正在准备下一轮...")).toBeInTheDocument();
+
+    // 旁边的返回等待按钮同步禁用，防止阶段跳转冲突
+    expect(finishButton).toBeDisabled();
+
+    // 再次点击被拦截
+    fireEvent.click(nextRoundButton);
+    expect(sendCommandSpy).toHaveBeenCalledTimes(1);
+
+    // 请求完成
+    await act(async () => {
+      resolveCommand({});
+    });
+
+    expect(within(nextRoundButton).queryByTestId("button-spinner")).not.toBeInTheDocument();
   });
 });

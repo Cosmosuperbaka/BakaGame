@@ -1,8 +1,9 @@
-﻿import * as React from "react"
+import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { motion, type HTMLMotionProps } from "framer-motion"
 import { cva, type VariantProps } from "class-variance-authority"
-import { pressable, pressableStrong } from "@/lib/Motion"
+import { Loader2 } from "lucide-react"
+import { pressable, pressableStrong, spinner } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 const buttonVariants = cva(
@@ -36,24 +37,30 @@ export interface ButtonProps
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
   children?: React.ReactNode
+  loading?: boolean
 }
 
 /**
  * 按压反馈随变体分级：主要与危险操作幅度更大，确认感更强；
  * link 是文本入口，只保留下划线，不做尺度变化。
  * asChild 交由外层元素承担交互，此时不叠加动效避免双重缩放。
+ * loading 态强制禁用并展示 spinner，抑制悬浮与点击缩放。
  */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, disabled, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, disabled, loading = false, children, ...props }, ref) => {
     const classes = cn(buttonVariants({ variant, size, className }))
+    const isDisabled = Boolean(disabled || loading)
 
     if (asChild) {
       return (
         <Slot
           className={classes}
           ref={ref}
+          aria-busy={loading ? true : undefined}
           {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
-        />
+        >
+          {children}
+        </Slot>
       )
     }
 
@@ -68,10 +75,23 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <motion.button
         className={classes}
         ref={ref}
-        disabled={disabled}
-        {...(disabled ? undefined : feedback)}
+        disabled={isDisabled}
+        aria-busy={loading ? true : undefined}
+        {...(isDisabled ? undefined : feedback)}
         {...props}
-      />
+      >
+        {loading ? (
+          <motion.span
+            {...spinner}
+            className="inline-flex items-center justify-center shrink-0"
+            aria-hidden="true"
+            data-testid="button-spinner"
+          >
+            <Loader2 className="size-4" />
+          </motion.span>
+        ) : null}
+        {children}
+      </motion.button>
     )
   }
 )
