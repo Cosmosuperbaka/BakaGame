@@ -162,7 +162,7 @@ export default function WhoIsFakerPage() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <AnimatePresence mode="popLayout" initial={false}>
+          <AnimatePresence initial={false}>
             {rooms.length === 0 ? (
               <motion.div
                 key="empty"
@@ -183,6 +183,7 @@ export default function WhoIsFakerPage() {
                   animate="animate"
                   exit="exit"
                   layout="position"
+                  className="rounded-xl bg-card"
                   {...selectable}
                 >
                   <Card
