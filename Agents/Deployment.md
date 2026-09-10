@@ -53,7 +53,7 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 3. **代码与依赖同步**：
    - 切换至 `/BakaGame` 仓库目录。
    - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支。
-   - 在 `BakaGame` Docker 容器内部执行 `bun install --frozen-lockfile`（失败时平滑降级为 `bun install`），将依赖同步至挂载目录 `/app/node_modules`。
+   - 自适应探测容器内部（注入完整 PATH 支持 `/root/.bun/bin`、`/usr/local/bin` 等非常规环境变量路径）或宿主机环境中的 Bun 运行时，执行 `bun install --frozen-lockfile`（失败时平滑降级为 `bun install`），将依赖同步至共享挂载目录 `/app/node_modules`。
 4. **容器热重启**：
    - 执行 `sudo docker restart BakaGame` 热重启后端服务。
 5. **就绪探测与健康检查**：
