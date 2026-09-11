@@ -22,7 +22,7 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
-`Server/src/transport/WhoIsFakerProtocol.ts` 与 `RoomService` 的业务校验；应用校验也不能替代代理层的
+`Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`）的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
 听歌猜番还需要在服务端配置 `BANGUMI_API_URL` 和可选的 `BANGUMI_IMAGE_URL`。这两个地址

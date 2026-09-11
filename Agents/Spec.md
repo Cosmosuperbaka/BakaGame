@@ -210,7 +210,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 
 ### 11.3 服务编排与依赖注入对等性 (Equal Service Orchestration & Dependency Injection)
 - **领域服务命名与单一真相源**：
-  - 服务端领域服务统一提供符合领域语义的命名与导出（`RoomService` 导出 `WhoIsFakerService` 语义别名，与 `SonGuessrService` 严格对齐）。
+  - 服务端领域服务统一由具名核心实体独立提供（由 `WhoIsFakerService` 与 `SonGuessrService` 严格对齐），坚决杜绝任何一方使用泛化的 `RoomService` 或建立过渡期兼容导出别名。
   - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService` 具有完全一致的一级依赖注入地位，坚决杜绝 `songGuessrService` 或 `roomService` 等双轨冗余别名字段。
   - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
 
@@ -272,7 +272,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **网络与外部 IO 驱动参数化解耦**：客户端监控、遥测上报与辅助通信函数（如 `reportTelemetry`），必须通过可选参数（`options?: { serverUrl?: string; fetcher?: typeof fetch }`）支持网络驱动注入。单测中优先通过入参传入受控的 mock 实例，严禁滥用 `vi.stubGlobal("fetch")` 污染全局 runtime，消除并发用例之间的全局上下文竞争隐患。
 
 ### 13.3 消除过度 Mock 与原生状态驱动 (Zustand Native State Drive & Anti-Over-Mocking)
-- **禁止模块级粗暴拦截核心状态库**：组件单测中严禁使用 `vi.mock("@/stores/...")` 将全局状态库整体拦截替换为硬编码函数。必须使用 Zustand 原生提供的状态注入能力（如 `useSongGuessrStore.setState(...)`）预置前置数据并重置状态，真实验证组件在真实状态派发下的渲染与动作分发行为。
+- **禁止模块级粗暴拦截核心状态库**：组件单测中严禁使用 `vi.mock("@/stores/...")` 将全局状态库整体拦截替换为硬编码函数。必须使用 Zustand 原生提供的状态注入能力（如 `UseSonGuessrStore.setState(...)`）预置前置数据并重置状态，真实验证组件在真实状态派发下的渲染与动作分发行为。
 - **杜绝“在 Mock 里重写被测系统”的反模式**：测试不得将所有外部与核心依赖全部 Mock 成复杂的假逻辑，使得测试沦为“自己证明自己通过”的无意义仪式。非 IO 的纯业务状态机必须全真运行。
 
 ### 13.4 拒绝裸异常断言与深层契约加固 (Explicit Exception & Code Assertions)
