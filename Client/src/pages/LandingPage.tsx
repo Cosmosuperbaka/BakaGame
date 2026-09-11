@@ -7,7 +7,6 @@ import {
   iconTappable,
   pressable,
   selectable,
-  spring,
   useOriginTracker,
 } from "@/lib/Motion";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
@@ -162,7 +161,7 @@ function GameRow({ game }: { game: GameEntry }) {
   if (!game.subModes) {
     if (!game.available) {
       return (
-        <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
+        <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
           <div aria-disabled="true" className={`${cardContainerClass} opacity-60`}>
             <div className="flex w-full items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -190,14 +189,8 @@ function GameRow({ game }: { game: GameEntry }) {
 
     const isEntering = enteringPath === game.path;
     return (
-      <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
-        <motion.button
-          type="button"
-          onClick={() => handleEnter(game.path)}
-          animate={isEntering ? { scale: 0.99 } : { scale: 1 }}
-          {...selectable}
-          className={`group ${cardContainerClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
-        >
+      <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
+        <div className={cardContainerClass}>
           <div className="flex w-full items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <img
@@ -213,16 +206,22 @@ function GameRow({ game }: { game: GameEntry }) {
                 ) : null}
               </div>
             </div>
-            <motion.span
-              aria-hidden="true"
-              className="shrink-0 text-muted-foreground"
-              animate={{ x: isEntering ? 8 : 0, color: isEntering ? "var(--primary)" : undefined }}
-              transition={spring.snap}
-            >
-              <ArrowRight className="h-5 w-5" />
-            </motion.span>
           </div>
-        </motion.button>
+
+          <div className="w-full pt-1">
+            <motion.button
+              type="button"
+              aria-label={`${game.title} 开始游戏`}
+              onClick={() => handleEnter(game.path)}
+              animate={isEntering ? { scale: 0.98 } : { scale: 1 }}
+              {...selectable}
+              className="group flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+            >
+              <span>开始游戏</span>
+              <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
+            </motion.button>
+          </div>
+        </div>
       </motion.div>
     );
   }
@@ -231,7 +230,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const isWholeGameDisabled = !game.available;
 
   return (
-    <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
+    <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
       <div
         aria-disabled={isWholeGameDisabled ? "true" : undefined}
         className={`${cardContainerClass} ${isWholeGameDisabled ? "opacity-75" : ""}`}
