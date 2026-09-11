@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react";
 import { DEFAULT_SERVER_URL } from "@/config/Constants";
+import commitHistory from "virtual:commit-history";
 
 export interface SentrySdkDriver {
   init: (options: Sentry.BrowserOptions) => void;
@@ -24,6 +25,9 @@ export interface SentryOptions {
   dsn?: string;
   serverUrl?: string;
   tracesSampleRate?: number;
+  replaysSessionSampleRate?: number;
+  replaysOnErrorSampleRate?: number;
+  profilesSampleRate?: number;
 }
 
 export const initClientSentry = (
@@ -45,7 +49,18 @@ export const initClientSentry = (
     dsn,
     tunnel,
     environment: import.meta.env.MODE,
+    release: commitHistory.currentCommit !== "dev" ? `bakagame-client@${commitHistory.currentCommit}` : undefined,
     tracesSampleRate: options?.tracesSampleRate ?? 0.1,
+    replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,
+    replaysOnErrorSampleRate: options?.replaysOnErrorSampleRate ?? 1,
+    profilesSampleRate: options?.profilesSampleRate ?? 0.1,
+    enableLogs: true,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+      Sentry.browserProfilingIntegration(),
+      Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
+    ],
     ignoreErrors: [
       "ResizeObserver loop limit exceeded",
       "ResizeObserver loop completed with undelivered notifications",
@@ -91,6 +106,60 @@ export const captureClientMessage = (
     }
     activeDriver.captureMessage(message, level);
   });
+};
+
+type ClientLogLevel = "info" | "warning" | "error";
+
+const toClientAttributes = (
+  context?: Record<string, unknown>,
+): Record<string, string | number | boolean | null> | undefined => {
+  if (!context) return undefined;
+  return Object.fromEntries(
+    Object.entries(context).filter(([, value]) =>
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean",
+    ),
+  ) as Record<string, string | number | boolean | null>;
+};
+
+export const captureClientLog = (
+  message: string,
+  level: ClientLogLevel = "info",
+  context?: Record<string, unknown>,
+): void => {
+  if (!isInitialized) return;
+  const attributes = toClientAttributes(context);
+  if (level === "error") Sentry.logger.error(message, attributes as never);
+  else if (level === "warning") Sentry.logger.warn(message, attributes as never);
+  else Sentry.logger.info(message, attributes as never);
+};
+
+export const countClientMetric = (
+  name: string,
+  value = 1,
+  attributes?: Record<string, string | number | boolean>,
+): void => {
+  if (!isInitialized || !Number.isFinite(value)) return;
+  Sentry.metrics.count(name, value, { attributes });
+};
+
+export const recordClientMetric = (
+  name: string,
+  value: number,
+  attributes?: Record<string, string | number | boolean>,
+): void => {
+  if (!isInitialized || !Number.isFinite(value)) return;
+  Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes });
+};
+
+export const withClientSpan = async <T>(
+  name: string,
+  callback: (span: Sentry.Span) => Promise<T> | T,
+  attributes?: Record<string, string | number | boolean>,
+): Promise<T> => {
+  return Sentry.startSpan({ name, op: "bakagame.client", attributes }, callback);
 };
 
 /** 单测重置辅助函数，消除测试间的状态污染 */
