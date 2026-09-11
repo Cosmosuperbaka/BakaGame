@@ -144,6 +144,17 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
+function ComingSoonBadge({ className = "" }: { className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={`shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs font-normal leading-none text-muted-foreground border-border/80 ${className}`}
+    >
+      即将上线
+    </Badge>
+  );
+}
+
 function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();
   const [enteringPath, setEnteringPath] = useState<string | null>(null);
@@ -155,32 +166,30 @@ function GameRow({ game }: { game: GameEntry }) {
   };
 
   const cardContainerClass =
-    "flex h-full min-h-0 w-full flex-col justify-between gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+    "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-xs transition-colors hover:border-primary/40 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   // 单一入口游戏（如 Who is Faker）
   if (!game.subModes) {
     if (!game.available) {
       return (
         <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
-          <div aria-disabled="true" className={`${cardContainerClass} opacity-60`}>
-            <div className="flex w-full items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
+          <div aria-disabled="true" className={cardContainerClass}>
+            <div className="flex w-full items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <img
                   src={game.icon}
                   alt=""
                   aria-hidden="true"
-                  className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+                  className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+                  <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
                   {game.subtitle ? (
-                    <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
                   ) : null}
                 </div>
               </div>
-              <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-                即将上线
-              </Badge>
+              <ComingSoonBadge />
             </div>
           </div>
         </motion.div>
@@ -191,31 +200,31 @@ function GameRow({ game }: { game: GameEntry }) {
     return (
       <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
         <div className={cardContainerClass}>
-          <div className="flex w-full items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               <img
                 src={game.icon}
                 alt=""
                 aria-hidden="true"
-                className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+                className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
               />
               <div className="min-w-0 flex-1">
-                <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+                <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
                 {game.subtitle ? (
-                  <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
                 ) : null}
               </div>
             </div>
           </div>
 
-          <div className="w-full pt-1">
+          <div className="w-full">
             <motion.button
               type="button"
               aria-label={`${game.title} 开始游戏`}
               onClick={() => handleEnter(game.path)}
               animate={isEntering ? { scale: 0.98 } : { scale: 1 }}
               {...selectable}
-              className="group flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+              className="group flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
             >
               <span>开始游戏</span>
               <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
@@ -233,34 +242,30 @@ function GameRow({ game }: { game: GameEntry }) {
     <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
       <div
         aria-disabled={isWholeGameDisabled ? "true" : undefined}
-        className={`${cardContainerClass} ${isWholeGameDisabled ? "opacity-75" : ""}`}
+        className={cardContainerClass}
       >
         {/* 卡片头部：图标、标题与主状态 */}
-        <div className="flex w-full items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <img
               src={game.icon}
               alt=""
               aria-hidden="true"
-              className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+              className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
             />
             <div className="min-w-0 flex-1">
-              <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+              <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
               {game.subtitle ? (
-                <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
               ) : null}
             </div>
           </div>
-          {isWholeGameDisabled && (
-            <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-              即将上线
-            </Badge>
-          )}
+          {isWholeGameDisabled && <ComingSoonBadge />}
         </div>
 
         {/* 子模式按钮行 */}
         <div
-          className={`grid w-full gap-2 pt-1 ${
+          className={`grid w-full gap-2 ${
             game.subModes.length === 2 ? "grid-cols-2" : "grid-cols-3 gap-1.5"
           }`}
         >
@@ -273,14 +278,10 @@ function GameRow({ game }: { game: GameEntry }) {
                 <div
                   key={mode.id}
                   aria-disabled="true"
-                  className="flex h-9 items-center justify-center gap-1 rounded-md border border-dashed border-border/80 bg-muted/30 px-2 text-center text-xs text-muted-foreground select-none"
+                  className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/20 px-1.5 text-center text-xs text-muted-foreground select-none"
                 >
                   <span className="truncate">{mode.title}</span>
-                  {!isWholeGameDisabled && (
-                    <span className="shrink-0 rounded bg-muted px-1 py-0.2 text-[10px] text-muted-foreground/80">
-                      待上线
-                    </span>
-                  )}
+                  {!isWholeGameDisabled && <ComingSoonBadge />}
                 </div>
               );
             }
@@ -289,13 +290,14 @@ function GameRow({ game }: { game: GameEntry }) {
               <motion.button
                 key={mode.id}
                 type="button"
+                aria-label={`${game.title} ${mode.title}`}
                 onClick={() => handleEnter(mode.path)}
                 animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
                 {...selectable}
-                className="group flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium shadow-xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+                className="group flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
               >
                 <span className="truncate">{mode.title}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
+                <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
               </motion.button>
             );
           })}
@@ -492,7 +494,7 @@ export default function LandingPage() {
 
       <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
         <motion.div
-          className="flex w-full flex-col gap-2.5 sm:grid sm:min-h-[clamp(8.5rem,28svh,12rem)] sm:grid-cols-3 sm:items-stretch sm:gap-3.5"
+          className="flex w-full flex-col gap-2.5 sm:grid sm:grid-cols-3 sm:items-stretch sm:gap-3.5"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"

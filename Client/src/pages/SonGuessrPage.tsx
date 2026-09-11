@@ -88,32 +88,20 @@ export default function SonGuessrPage() {
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
       <header className="border-b border-border/40 pb-4 pt-6 md:pt-8 px-6">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-muted-foreground -ml-2 h-8 px-2"
-              onClick={() => navigate("/")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">返回主页</span>
-            </Button>
-            <div className="h-4 w-px bg-border/60" />
-            <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
-              <span>Songuessr</span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Input
-              value={userName}
-              onChange={(event) => setUserName(event.target.value)}
-              placeholder="输入用户名"
-              className="h-8 w-32 sm:w-44 text-xs sm:text-sm bg-card"
-              maxLength={20}
-            />
-          </div>
+        <div className="max-w-3xl mx-auto flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground -ml-2 h-8 px-2"
+            onClick={() => navigate("/")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>返回主页</span>
+          </Button>
+          <div className="h-4 w-px bg-border/60" />
+          <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
+            <span>Songuessr</span>
+          </h1>
         </div>
       </header>
 
@@ -125,17 +113,26 @@ export default function SonGuessrPage() {
               {rooms.length}
             </span>
           </div>
-          <Button
-            size="sm"
-            onClick={(event) => {
-              createOrigin.capture(event);
-              setCreateOpen(true);
-            }}
-            className="h-8 gap-1.5 shadow-2xs text-xs sm:text-sm"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            创建房间
-          </Button>
+          <div className="flex items-center gap-2.5">
+            <Input
+              value={userName}
+              onChange={(event) => setUserName(event.target.value)}
+              placeholder="输入用户名"
+              className="h-8 w-28 sm:w-36 text-xs sm:text-sm bg-card"
+              maxLength={20}
+            />
+            <Button
+              size="sm"
+              onClick={(event) => {
+                createOrigin.capture(event);
+                setCreateOpen(true);
+              }}
+              className="h-8 gap-1.5 shadow-2xs text-xs sm:text-sm shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              创建房间
+            </Button>
+          </div>
         </div>
 
         <motion.div
