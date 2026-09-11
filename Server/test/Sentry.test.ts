@@ -4,6 +4,7 @@ import type { AppEnv } from "../src/config/Env";
 import {
   _resetServerSentryForTest,
   captureServerException,
+  captureServerCheckIn,
   captureServerMessage,
   closeServerSentry,
   flushServerSentry,
@@ -88,6 +89,21 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       expect(await flushServerSentry()).toBe(true);
       expect(await closeServerSentry()).toBe(true);
     });
+  });
+
+  it("已初始化时发送服务心跳检查", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    initServerSentry(createMockEnv());
+    initSpy.mockRestore();
+    const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
+
+    captureServerCheckIn();
+
+    expect(checkInSpy).toHaveBeenCalledWith({
+      monitorSlug: "bakagame-server-heartbeat",
+      status: "ok",
+    });
+    checkInSpy.mockRestore();
   });
 
   describe("已初始化状态的上下文注入与异常上报", () => {

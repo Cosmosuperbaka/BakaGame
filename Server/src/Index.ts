@@ -2,7 +2,12 @@ import { RoomService } from "./application/RoomService";
 import { readEnv } from "./config/Env";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
-import { closeServerSentry, flushServerSentry, initServerSentry } from "./infrastructure/Sentry";
+import {
+  captureServerCheckIn,
+  closeServerSentry,
+  flushServerSentry,
+  initServerSentry,
+} from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
 import { createApp } from "./transport/App";
 
@@ -10,6 +15,7 @@ import { createApp } from "./transport/App";
 
 const env = readEnv();
 initServerSentry(env);
+captureServerCheckIn();
 const otlpExporter = env.otelEndpoint
   ? new OtlpExporter({
       endpoint: env.otelEndpoint,
@@ -50,6 +56,10 @@ const intervalId = setInterval(() => {
   });
 }, 10_000);
 
+// Cron Monitor 每 5 分钟检查一次，4 分钟上报一次以留出网络与调度余量。
+const sentryHeartbeatIntervalId = setInterval(captureServerCheckIn, 4 * 60_000);
+sentryHeartbeatIntervalId.unref();
+
 const server = app.listen({
   // 公开地址使用 SERVER_URL，实际监听地址优先回落到本机可绑定地址。
   hostname: env.serverListenHost,
@@ -75,6 +85,7 @@ const shutdown = async (signal?: string) => {
 
   // 1. 清理后台定时任务，不再触发新的闲置扫描
   clearInterval(intervalId);
+  clearInterval(sentryHeartbeatIntervalId);
 
   // 2. 向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机通知
   roomService.notifyShutdown();
