@@ -37,11 +37,11 @@
 ```
 Client/src/
 ├── components/
-│   ├── common/              # 跨游戏复用组件（PhaseHeader.tsx, EmojiPicker.tsx, CreateRoomDialog.tsx 等）
+│   ├── common/              # 跨游戏复用组件（ChatPanel.tsx, PlayerStatusPill.tsx, PhaseHeader.tsx, EmojiPicker.tsx, CreateRoomDialog.tsx 等）
 │   ├── whoisfaker/
 │   │   ├── phases/          # 谁是卧底各阶段内容（WaitingPhase.tsx, DescriptionPhase.tsx, VotingPhase.tsx 等）
-│   │   └── layout/          # 房间布局与专属组件（GameArea.tsx, PlayerList.tsx, ChatPanel.tsx, TestController.tsx 等）
-│   ├── songguessr/          # 猜歌游戏专属组件（SongPlayerList.tsx, SongChatPanel.tsx, SongSearchDialog.tsx 等）
+│   │   └── layout/          # 房间布局与专属组件（GameArea.tsx, PlayerList.tsx, TestController.tsx 等）
+│   ├── songuessr/           # 猜歌游戏专属组件（PlayerList.tsx, SongSearchDialog.tsx, BangumiSearchDialog.tsx 等）
 │   └── ui/                  # 基础 UI 原子组件（Button.tsx, Input.tsx, Dialog.tsx 等）
 ├── config/                  # 领域视觉与静态配置（WhoIsFakerPresentation.ts, Constants.ts）
 ├── contexts/                # 顶层 Context 与 Socket 生命周期连接器

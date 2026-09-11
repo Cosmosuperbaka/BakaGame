@@ -4,8 +4,13 @@ import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { PlayerGroupTitle, PLAYER_ROW_HEIGHT } from "@/components/whoisfaker/layout/PlayerList";
-import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "@/components/whoisfaker/layout/PlayerStatusPill";
+import {
+  PLAYER_ME_MARK,
+  PLAYER_ROW_BASE,
+  PLAYER_ROW_HEIGHT,
+  PlayerGroupTitle,
+  PlayerStatusPill,
+} from "@/components/common/PlayerStatusPill";
 import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -16,7 +21,7 @@ type SongStatus = {
   tone: "default" | "emerald" | "violet" | "amber";
 };
 
-interface SongPlayerListProps {
+export interface PlayerListProps {
   players: SonGuessrPlayerView[];
   myPlayerId?: string;
   isHost: boolean;
@@ -24,13 +29,13 @@ interface SongPlayerListProps {
   allowSpectators: boolean;
 }
 
-export function SongPlayerList({
+export function PlayerList({
   players,
   myPlayerId,
   isHost,
   phase,
   allowSpectators,
-}: SongPlayerListProps) {
+}: PlayerListProps) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const activePlayers = players.filter((player) => player.membership === "active");

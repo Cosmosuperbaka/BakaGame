@@ -214,6 +214,15 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService` 具有完全一致的一级依赖注入地位，坚决杜绝 `songGuessrService` 或 `roomService` 等双轨冗余别名字段。
   - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
 
+### 11.4 客户端组件复用与表现层对等契约 (Equal Component Architecture & Zero Cross-Game Infiltration)
+- **跨游戏交互基建强制提升至 `common/`**：凡是涉及两个及以上游戏同构的核心交互组件（如聊天面板 `ChatPanel`、玩家状态胶囊徽章与行布局基底 `PlayerStatusPill`、玩家分组标题 `PlayerGroupTitle`、表情包选择器 `EmojiPicker` 等），**必须且只能**提升至 `Client/src/components/common/`，通过解耦的 Props 与回调注入驱动数据，严禁直接硬编码耦合任何单个游戏的专属 Store。
+- **严禁游戏领域跨目录横向依赖 (Zero Cross-Game Infiltration)**：任何游戏专属子目录（如 `components/whoisfaker/` 与 `components/songuessr/`）之间，**绝对严禁**产生横向交叉导入（例如严禁猜歌组件从 `whoisfaker/` 导入 UI 组件、布局或样式常量）。所有通用能力必须且只能由 `components/common/` 向上提供。
+- **目录命名与组件命名绝对平等 (Equal Namespace & Symmetrical Naming)**：
+  1. **目录拼写严格单一真相源**：游戏组件目录必须遵循 `Conventions.md` 约定的全小写单一规范（如统一使用 `components/songuessr/`，严禁拼写漂移如 `songguessr`）。
+  2. **消除命名特权与二等公民双标**：在各游戏的专属子目录内，组件必须遵循对等的命名法则（如各自命名为 `PlayerList.tsx`），严禁一方霸占无前缀基础短名，而另一方被强加冗余的游戏前缀（如 `SongPlayerList`）。
+  3. **全局基础 UI 容器去特定业务耦合**：全局通用弹层与容器组件（如 `Toast.tsx`）严禁被单一游戏独占无前缀基础名，且严禁基础 UI 组件反向依赖特定业务 Store。
+- **系统消息与阶段提醒样式标准**：聊天流中的系统提示与阶段流转通知，统一采用**无背景纯文本居中展示**（`min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70`），坚决杜绝嵌套灰色胶囊药丸背景（`rounded-full bg-muted/40`），保持全站纸质复古质感与通透排版。
+
 ## 12. 边界情况与跨环境适应性工程铁律 (Environment & Edge Cases Invariants)
 
 代码必须兼具本地单机开发、多时区全球用户访问、移动端局域网联机、生产多容器编排与大负载边缘网关的跨环境适应性，杜绝“本地开发良好、生产部署爆雷”的隐形缺陷。
