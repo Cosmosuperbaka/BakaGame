@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ServerMessage,
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
+import {
+  SERVER_SHUTDOWN_MESSAGE,
+  type ServerMessage,
+  type SonGuessrPrivateState,
+  type SonGuessrRoomSnapshot,
 } from "@/types";
+
 
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),
@@ -227,7 +229,9 @@ describe("Songuessr store integration", () => {
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
     expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
+    expect(useSonGuessrStore.getState().notice).toEqual({ text: "会话已失效，请重新加入", type: "error" });
   });
+
 
   it("keeps the Songuessr session while reconnecting after a temporary disconnect", async () => {
     saveSonGuessrSessionToken("2346", "live-song-token");
@@ -339,7 +343,9 @@ describe("Songuessr store integration", () => {
     ["song.room.closed", "房间已关闭"],
     ["song.room.kicked", "你已被移出房间"],
     ["session.replaced", "当前席位已在另一个标签页接管"],
+    ["server.shutdown", SERVER_SHUTDOWN_MESSAGE],
   ])("clears local authority when receiving %s", (event, notice) => {
+
     saveSonGuessrSessionToken("4567", "room-token");
     useSonGuessrStore.setState({
       roomId: "4567",

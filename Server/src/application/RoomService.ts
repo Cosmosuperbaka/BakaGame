@@ -44,10 +44,15 @@ import {
   type RandomSource,
 } from "../domain/Rules";
 import type { LogEntry } from "../infrastructure/EventLogger";
+
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
+import { SERVER_SHUTDOWN_MESSAGE } from "../shared/Index";
 import type { WhoIsFakerClientMessage, ClientMessage } from "../transport/WhoIsFakerProtocol";
+
+
+
 
 import {
   ROOM_IDLE_TIMEOUT_MS,
@@ -295,10 +300,11 @@ export class RoomService {
   notifyShutdown(): void {
     this.connectionRegistry.broadcastToAll(
       createEvent("server.shutdown", {
-        message: "服务器即将关闭，请稍后重新连接",
+        message: SERVER_SHUTDOWN_MESSAGE,
       }),
     );
   }
+
 
   getHealthSnapshot() {
     return {

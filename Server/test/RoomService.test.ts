@@ -4,7 +4,9 @@ import {
   PHASE_RESULT_DISPLAY_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
 } from "../src/config/Constants";
+import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
+
 import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./Helpers";
 
 interface JoinedPlayer {
@@ -2110,10 +2112,11 @@ test("服务关闭通知会广播到所有连接", () => {
 
   service.notifyShutdown();
 
-  expect(getLastEventPayload<{ message: string }>(connection, "server.shutdown")?.message).toContain(
-    "服务器即将关闭",
+  expect(getLastEventPayload<{ message: string }>(connection, "server.shutdown")?.message).toBe(
+    SERVER_SHUTDOWN_MESSAGE,
   );
 });
+
 
 test("真实结算结果展示结束前不能返回等待阶段", async () => {
   const { service, advanceTime } = createTestContext();

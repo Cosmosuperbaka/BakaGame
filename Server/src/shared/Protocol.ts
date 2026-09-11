@@ -61,3 +61,7 @@ export type StateSyncPayload<T> =
     };
 
 export type ServerMessage = AckPacket | ErrorPacket | EventPacket;
+
+export const SERVER_SHUTDOWN_MESSAGE =
+  "服务器已关闭，这通常是因为更新导致的重启，请重新进入游戏。若长时间不可用则可能为未知Bug，请加入QQ群反馈。";
+

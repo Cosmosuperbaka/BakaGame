@@ -14,6 +14,7 @@ import type {
   EventPacket,
   DaybreakNotice,
 } from "@/types";
+import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
 
 export interface ToastItem {
   id: number;
@@ -47,8 +48,9 @@ export interface WhoIsFakerGameState {
   applyIncomingSnapshot: (snapshot: RoomSnapshot | null) => void;
   setPrivateState: (privateState: PrivateState | null) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
-  addToast: (text: string, type?: "info" | "error" | "success") => void;
+  addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
+
 
   // Async Business Actions
   subscribeLobby: () => Promise<void>;
@@ -342,11 +344,12 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
       daybreakNoticeTimer = undefined;
     }, 4500);
   },
-  addToast: (text, type = "info") => {
+  addToast: (text, type = "info", durationMs = 3000) => {
     const id = ++toastCounter;
     set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
-    setTimeout(() => get().removeToast(id), 3000);
+    setTimeout(() => get().removeToast(id), durationMs);
   },
+
   removeToast: (id) =>
     set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
@@ -410,8 +413,17 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
       clearSessionToken(roomId);
       get().leaveRoomState();
       get().markRoomClosed();
+      const code = (error as { code?: string } | null)?.code;
+      const message =
+        code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+          ? "会话已失效，请重新加入"
+          : code === "PLAYER_KICKED"
+            ? "你已被移出房间"
+            : "房间已解散或不存在";
+      get().addToast(message, "error");
       return false;
     }
+
   },
 
   leaveRoom: async () => {
@@ -517,9 +529,16 @@ export function initWhoIsFakerWs() {
         currentStore.addToast("您的连接已被新标签页替代", "error");
         break;
       }
-      case "server.shutdown":
-        currentStore.addToast("服务器即将关闭", "error");
+      case "server.shutdown": {
+        const payload = evt.payload as { message?: string } | undefined;
+        const message = payload?.message || SERVER_SHUTDOWN_MESSAGE;
+        const closedRoomId = currentStore.roomId;
+        if (closedRoomId) clearSessionToken(closedRoomId);
+        currentStore.leaveRoomState();
+        currentStore.markRoomClosed();
+        currentStore.addToast(message, "error", 10000);
         break;
+      }
     }
   });
 
@@ -543,10 +562,19 @@ export function initWhoIsFakerWs() {
           clearSessionToken(roomId);
           useWhoIsFakerStore.getState().leaveRoomState();
           useWhoIsFakerStore.getState().markRoomClosed();
+          const code = (error as { code?: string } | null)?.code;
+          const message =
+            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+              ? "会话已失效，请重新加入"
+              : code === "PLAYER_KICKED"
+                ? "你已被移出房间"
+                : "房间已解散或不存在";
+          useWhoIsFakerStore.getState().addToast(message, "error");
         });
       }
     }
   });
+
 
   ws.connect();
 

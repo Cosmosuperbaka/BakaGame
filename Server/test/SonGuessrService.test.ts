@@ -8,7 +8,9 @@ import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { BangumiProvider } from "../src/infrastructure/BangumiProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
+  SERVER_SHUTDOWN_MESSAGE,
   type BangumiSubjectDetails,
+
   type SongDetails,
   type SonGuessrClientMessage,
   type SonGuessrPrivateState,
@@ -2623,6 +2625,18 @@ describe("SonGuessrService", () => {
     expect(reconnected.privateState).toBeDefined();
   });
 
+  test("服务停机通知会广播到所有猜歌连接", () => {
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+    });
+    const client = connection(service, "shutdown-client");
+    service.notifyShutdown();
+    expect(lastEvent<{ message: string }>(client, "server.shutdown")?.message).toBe(
+      SERVER_SHUTDOWN_MESSAGE,
+    );
+  });
 });
+
 
 
