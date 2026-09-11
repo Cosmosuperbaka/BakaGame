@@ -23,6 +23,7 @@ export const isClientSentryEnabled = (): boolean => isInitialized;
 
 export interface SentryOptions {
   dsn?: string;
+  release?: string;
   serverUrl?: string;
   tracesSampleRate?: number;
   replaysSessionSampleRate?: number;
@@ -49,7 +50,10 @@ export const initClientSentry = (
     dsn,
     tunnel,
     environment: import.meta.env.MODE,
-    release: commitHistory.currentCommit !== "dev" ? `bakagame-client@${commitHistory.currentCommit}` : undefined,
+    release:
+      options?.release ??
+      import.meta.env.VITE_SENTRY_RELEASE ??
+      (commitHistory.currentCommit !== "dev" ? `bakagame-client@${commitHistory.currentCommit}` : undefined),
     tracesSampleRate: options?.tracesSampleRate ?? 0.1,
     replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,
     replaysOnErrorSampleRate: options?.replaysOnErrorSampleRate ?? 1,
