@@ -19,13 +19,18 @@ export const resolveServerRelease = (): string | undefined => {
     if (proc.exitCode === 0) {
       const hash = proc.stdout.toString().trim();
       if (hash) {
-        return hash;
+        return `bakagame-server@${hash}`;
       }
     }
   } catch {
     // 降级：无 git 环境或非 git 目录
   }
   return undefined;
+};
+
+const resolveSampleRate = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
 };
 
 export const initServerSentry = (env: AppEnv): void => {
@@ -39,7 +44,14 @@ export const initServerSentry = (env: AppEnv): void => {
     dsn: env.sentryDsn,
     environment: env.otelDeploymentEnvironment || process.env.NODE_ENV || "production",
     release,
-    tracesSampleRate: 0.1,
+    tracesSampleRate: resolveSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
+    integrations: [
+      Sentry.httpIntegration(),
+      Sentry.httpServerIntegration(),
+      Sentry.bunRuntimeMetricsIntegration(),
+      Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
+    ],
+    enableLogs: true,
     // 忽略预期的客户端断开连接错误
     ignoreErrors: [
       "WebSocket is not open",
@@ -48,6 +60,83 @@ export const initServerSentry = (env: AppEnv): void => {
   });
 
   isInitialized = true;
+};
+
+type SentryLogLevel = "info" | "warning" | "error";
+
+const toSentryAttributes = (context?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (!context) return undefined;
+  return Object.fromEntries(
+    Object.entries(context).filter(([, value]) =>
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean",
+    ),
+  );
+};
+
+export const captureServerLog = (
+  message: string,
+  level: SentryLogLevel = "info",
+  context?: Record<string, unknown>,
+): void => {
+  if (!isInitialized) return;
+  const attributes = toSentryAttributes(context);
+  const logger = Sentry.logger;
+  if (level === "error") logger.error(message, attributes as never);
+  else if (level === "warning") logger.warn(message, attributes as never);
+  else logger.info(message, attributes as never);
+};
+
+export const recordServerMetric = (
+  name: string,
+  value: number,
+  attributes?: Record<string, string | number | boolean>,
+): void => {
+  if (!isInitialized || !Number.isFinite(value)) return;
+  Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes });
+};
+
+export const countServerMetric = (
+  name: string,
+  value = 1,
+  attributes?: Record<string, string | number | boolean>,
+): void => {
+  if (!isInitialized || !Number.isFinite(value)) return;
+  Sentry.metrics.count(name, value, { attributes });
+};
+
+export const captureServerOperation = ({
+  name,
+  durationMs,
+  status,
+  attributes,
+  startTime,
+}: {
+  name: string;
+  durationMs: number;
+  status: number;
+  attributes?: Record<string, string | number | boolean>;
+  startTime?: number;
+}): void => {
+  if (!isInitialized) return;
+  const startedAt = startTime ?? Date.now() - Math.max(0, durationMs);
+  Sentry.startSpan(
+    {
+      name,
+      op: "bakagame.operation",
+      startTime: new Date(startedAt),
+      attributes: {
+        ...attributes,
+        "http.status_code": status,
+        "operation.duration_ms": durationMs,
+      },
+    },
+    (span) => {
+      span.setStatus({ code: status >= 400 ? 2 : 1 });
+    },
+  );
 };
 
 export const flushServerSentry = async (timeoutMs = 2000): Promise<boolean> => {
