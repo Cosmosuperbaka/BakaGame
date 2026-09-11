@@ -300,6 +300,7 @@ export interface WhoIsFakerRoomSummary {
   allowSpectators: boolean;
   hasPassword: boolean;
   playerCount: number;
+  spectatorCount: number;
   onlineCount: number;
   phase: GamePhase;
   testMode: boolean;

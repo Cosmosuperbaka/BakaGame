@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { listItem, selectable, backdrop, spinner, spring } from "@/lib/Motion";
+import { listItem, selectable, backdrop, spring, listContainer } from "@/lib/Motion";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import { ArrowLeft, RefreshCw, Plus, Lock, Users, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Lock, Users, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -19,8 +19,8 @@ import {
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import { PHASE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { randomRoomId } from "@/lib/Random";
+import { cn } from "@/lib/Utils";
 import type { RoomSummary } from "@/types";
 
 export default function WhoIsFakerPage() {
@@ -29,31 +29,18 @@ export default function WhoIsFakerPage() {
   const createRoom = useWhoIsFakerStore((state) => state.createRoom);
   const joinRoom = useWhoIsFakerStore((state) => state.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
-  const subscribeLobby = useWhoIsFakerStore((state) => state.subscribeLobby);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
 
   const [userName, setUserName] = useState(getSavedUsername);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
   const createOrigin = useOriginTracker();
   const joinOrigin = useOriginTracker();
 
   useEffect(() => {
     if (userName.trim()) saveUsername(userName.trim());
   }, [userName]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await subscribeLobby();
-    } catch {
-      addToast("刷新失败", "error");
-    } finally {
-      setRefreshing(false);
-    }
-  }, [subscribeLobby, addToast]);
 
   const handleJoinRoom = useCallback(
     async (room: RoomSummary, event: React.MouseEvent<HTMLElement>) => {
@@ -95,10 +82,15 @@ export default function WhoIsFakerPage() {
   }, [joinTarget, joinPassword, userName, joinRoom, navigate, addToast]);
 
   return (
-    <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background">
-      <header className="pt-12 md:pt-16 pb-5 md:pb-6 px-6">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.swift}
+      className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
+    >
+      <header className="pt-10 md:pt-14 pb-4 md:pb-6 px-6">
         <div className="max-w-3xl mx-auto">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-3">
             <Button
               variant="ghost"
               size="sm"
@@ -109,59 +101,55 @@ export default function WhoIsFakerPage() {
               返回主页
             </Button>
           </div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
-            <span>Who is</span>
-            <img
-              src="/assets/Faker.png"
-              alt="Faker"
-              className="h-[1.4em] w-[1.4em] rounded-md object-cover"
-            />
-          </h1>
+          <div className="flex items-center justify-between">
+            <h1 className="flex items-center gap-2.5 text-3xl font-bold tracking-tight md:text-4xl">
+              <span>Who is</span>
+              <img
+                src="/assets/Faker.png"
+                alt="Faker"
+                className="h-[1.35em] w-[1.35em] rounded-md object-cover shadow-sm"
+              />
+            </h1>
+          </div>
         </div>
       </header>
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-10">
-        <div className="mb-5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 md:flex">
-          <h2 className="col-span-3 shrink-0 text-xl font-semibold md:col-auto">房间列表</h2>
-          <div className="hidden flex-1 md:block" />
-          <Input
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            placeholder="用户名"
-            className="h-9 min-w-0 w-full text-sm md:w-40"
-            maxLength={20}
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            aria-label="刷新房间列表"
-          >
-            {/* 刷新中持续旋转；结束时缓出停下，不做角度回弹 */}
-            <motion.span
-              className="inline-flex"
-              animate={refreshing ? spinner.animate : { rotate: 0 }}
-              transition={refreshing ? spinner.transition : spring.settle}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl font-semibold tracking-tight">房间列表</h2>
+            <Badge variant="secondary" className="text-xs font-normal tabular-nums px-2 py-0.5">
+              {rooms.length} 间
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <Input
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              placeholder="输入用户名"
+              className="h-9 min-w-0 flex-1 sm:w-44 text-sm"
+              maxLength={20}
+            />
+            <Button
+              size="default"
+              onClick={(event) => {
+                createOrigin.capture(event);
+                setCreateOpen(true);
+              }}
+              className="h-9 shrink-0 gap-1.5 shadow-sm"
             >
-              <RefreshCw className="h-4 w-4" />
-            </motion.span>
-          </Button>
-          <Button
-            size="default"
-            onClick={(event) => {
-              createOrigin.capture(event);
-              setCreateOpen(true);
-            }}
-            className="shrink-0 gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            创建房间
-          </Button>
+              <Plus className="h-4 w-4" />
+              创建房间
+            </Button>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <motion.div
+          className="flex flex-col gap-3"
+          variants={listContainer(rooms.length)}
+          initial="initial"
+          animate="animate"
+        >
           <AnimatePresence initial={false}>
             {rooms.length === 0 ? (
               <motion.div
@@ -175,62 +163,91 @@ export default function WhoIsFakerPage() {
                 暂无房间，点击上方按钮创建一个吧
               </motion.div>
             ) : (
-              rooms.map((room) => (
-                <motion.div
-                  key={room.roomId}
-                  variants={listItem}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  layout="position"
-                  className="rounded-md bg-card"
-                  {...selectable}
-                >
-                  <Card
-                    role="button"
-                    tabIndex={0}
-                    className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    onClick={(event) => handleJoinRoom(room, event)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        handleJoinRoom(room, event as unknown as React.MouseEvent<HTMLElement>);
-                      }
-                    }}
+              rooms.map((room) => {
+                const isWaiting = room.phase === "waiting" || room.phase === "gameOver";
+                return (
+                  <motion.div
+                    key={room.roomId}
+                    variants={listItem}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    layout="position"
+                    className="rounded-md bg-card"
+                    {...selectable}
                   >
-                    <CardContent className="py-4 px-5 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <div className="text-base font-medium flex items-center gap-2">
-                            {room.name}
-                            {room.hasPassword && (
-                              <Lock className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground mt-1">
-                            房间号: <span className="font-mono">{room.roomId}</span>
+                    <Card
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      onClick={(event) => handleJoinRoom(room, event)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleJoinRoom(room, event as unknown as React.MouseEvent<HTMLElement>);
+                        }
+                      }}
+                    >
+                      <CardContent className="p-4 sm:py-4 sm:px-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="min-w-0">
+                            <div className="text-base font-medium flex items-center gap-2 truncate">
+                              <span className="truncate">{room.name}</span>
+                              {room.hasPassword && (
+                                <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-0.5 sm:mt-1">
+                              房间号: <span className="font-mono">{room.roomId}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <Badge variant="outline" className="font-normal text-xs">
-                          {PHASE_LABELS[room.phase] ?? room.phase}
-                        </Badge>
-                        <span className="flex items-center gap-1.5 tabular-nums">
-                          <Users className="h-4 w-4" />
-                          {room.onlineCount}/{room.playerCount}
-                        </span>
-                        {room.allowSpectators && (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 text-sm text-muted-foreground shrink-0 border-t border-border/30 pt-2.5 sm:border-0 sm:pt-0">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={isWaiting ? "outline" : "secondary"}
+                              className={cn(
+                                "text-xs font-normal",
+                                isWaiting
+                                  ? "text-muted-foreground border-border/80"
+                                  : "bg-primary/10 text-primary border border-primary/20",
+                              )}
+                            >
+                              {isWaiting ? "等待中" : "游戏中"}
+                            </Badge>
+                            {room.allowSpectators ? (
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-normal gap-1 text-muted-foreground border-border/80"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                可观战
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-normal gap-1 text-muted-foreground/45 border-dashed border-border/60"
+                              >
+                                <EyeOff className="h-3.5 w-3.5" />
+                                禁观战
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 tabular-nums text-xs sm:text-sm text-muted-foreground">
+                            <Users className="h-4 w-4 text-muted-foreground/70" />
+                            <span>{room.playerCount}玩家 {room.spectatorCount}观战</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
       </main>
 
       <CreateRoomDialog
@@ -278,6 +295,6 @@ export default function WhoIsFakerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

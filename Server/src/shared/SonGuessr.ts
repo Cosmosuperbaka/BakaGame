@@ -282,6 +282,7 @@ export interface SonGuessrRoomSummary {
   allowSpectators: boolean;
   hasPassword: boolean;
   playerCount: number;
+  spectatorCount: number;
   onlineCount: number;
   maxPlayers: number;
   phase: SonGuessrPhase;

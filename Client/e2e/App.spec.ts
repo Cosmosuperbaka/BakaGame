@@ -61,8 +61,9 @@ test("landing page exposes both playable games and keeps placeholders disabled",
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Who is Faker" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Songuessr" })).toBeVisible();
-  await expect(page.locator('[aria-disabled="true"]')).toHaveCount(1);
+  await expect(page.getByText("Songuessr")).toBeVisible();
+  await expect(page.getByRole("button", { name: "多人模式" })).toBeVisible();
+  await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
   await page.getByRole("button", { name: "Who is Faker" }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
@@ -142,7 +143,7 @@ test("removed and unknown routes fall back to a live page", async ({ page }) => 
 
 test("Songuessr is reachable from the landing page", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Songuessr" }).click();
+  await page.getByRole("button", { name: "多人模式" }).click();
 
   await expect(page).toHaveURL(/\/songuessr$/);
   await expect(page.getByRole("heading", { name: "Songuessr" })).toBeVisible();

@@ -13,7 +13,8 @@ const mockRooms: RoomSummary[] = [
     name: "测试房间一",
     phase: "waiting",
     playerCount: 4,
-    onlineCount: 2,
+    spectatorCount: 1,
+    onlineCount: 5,
     hasPassword: true,
     allowSpectators: true,
     visibility: "public",
@@ -24,6 +25,7 @@ const mockRooms: RoomSummary[] = [
     name: "测试房间二",
     phase: "description",
     playerCount: 6,
+    spectatorCount: 0,
     onlineCount: 6,
     hasPassword: false,
     allowSpectators: false,
@@ -66,11 +68,15 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("测试房间一")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
-    expect(screen.getByText("2/4")).toBeInTheDocument();
+    expect(screen.getByText("4玩家 1观战")).toBeInTheDocument();
+    expect(screen.getByText("等待中")).toBeInTheDocument();
+    expect(screen.getByText("可观战")).toBeInTheDocument();
 
     expect(screen.getByText("测试房间二")).toBeInTheDocument();
     expect(screen.getByText("9999")).toBeInTheDocument();
-    expect(screen.getByText("6/6")).toBeInTheDocument();
+    expect(screen.getByText("6玩家 0观战")).toBeInTheDocument();
+    expect(screen.getByText("游戏中")).toBeInTheDocument();
+    expect(screen.getByText("禁观战")).toBeInTheDocument();
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("测试房间一");
