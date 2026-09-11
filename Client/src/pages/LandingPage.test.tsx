@@ -55,11 +55,15 @@ describe("LandingPage", () => {
     expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
     expect(screen.getByText("即将上线")).toBeInTheDocument();
 
-    // 可用游戏为正常 button
+    // 可用游戏：Who is Faker 为正常入口 button；Songuessr 提供多人模式交互 button 与单人模式
     expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Songuessr/ })).toBeInTheDocument();
-    // CCB 增强版不可作为交互 button
+    expect(screen.getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
+    expect(screen.getByText("单人模式")).toBeInTheDocument();
+
+    // CCB 增强版整体标记即将上线，子按钮均不可作为交互 button
     expect(screen.queryByRole("button", { name: /二刺猿笑传之猜猜呗/ })).not.toBeInTheDocument();
+    expect(screen.getByText("排位赛")).toBeInTheDocument();
+    expect(screen.getByText("锦标赛")).toBeInTheDocument();
   });
 
   it("renders categorized changelog in modal and omits absent categories", async () => {

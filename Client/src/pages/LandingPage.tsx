@@ -50,15 +50,23 @@ const changelog: ChangelogData = changelogData;
 
 type CommitEntry = (typeof commitHistory.commits)[number];
 
+interface GameSubMode {
+  id: string;
+  title: string;
+  path?: string;
+  available: boolean;
+}
+
 interface GameEntry {
   id: string;
-  path: string;
+  path?: string;
   icon: string;
   /** 条目主标题 */
   title: string;
   /** 条目副标题；无副标题时省略 */
   subtitle?: string;
   available: boolean;
+  subModes?: GameSubMode[];
 }
 
 const GAMES: GameEntry[] = [
@@ -71,18 +79,46 @@ const GAMES: GameEntry[] = [
   },
   {
     id: "songuessr",
-    path: "/songuessr",
     icon: "/assets/SongGuessr.gif",
     title: "Songuessr",
     available: true,
+    subModes: [
+      {
+        id: "singleplayer",
+        title: "单人模式",
+        available: false,
+      },
+      {
+        id: "multiplayer",
+        title: "多人模式",
+        path: "/songuessr",
+        available: true,
+      },
+    ],
   },
   {
     id: "animecharguessr",
-    path: "/animecharguessr",
     icon: "/assets/CCB.jpg",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
     available: false,
+    subModes: [
+      {
+        id: "multiplayer",
+        title: "多人模式",
+        available: false,
+      },
+      {
+        id: "ranked",
+        title: "排位赛",
+        available: false,
+      },
+      {
+        id: "tournament",
+        title: "锦标赛",
+        available: false,
+      },
+    ],
   },
 ];
 
@@ -111,71 +147,161 @@ const EXTERNAL_LINKS: ExternalLink[] = [
 
 function GameRow({ game }: { game: GameEntry }) {
   const navigate = useNavigate();
-  const [entering, setEntering] = useState(false);
+  const [enteringPath, setEnteringPath] = useState<string | null>(null);
 
-  const baseClass =
-    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+  const handleEnter = (targetPath?: string) => {
+    if (!targetPath || enteringPath) return;
+    setEnteringPath(targetPath);
+    window.setTimeout(() => navigate(targetPath), 140);
+  };
 
-  const content = (
-    <>
-      <img
-        src={game.icon}
-        alt=""
-        aria-hidden="true"
-        className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
-        {game.subtitle ? (
-          <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
-        ) : null}
-      </div>
-      {game.available ? (
-        <motion.span
-          aria-hidden="true"
-          className="shrink-0 text-muted-foreground"
-          animate={{ x: entering ? 8 : 0, color: entering ? "var(--primary)" : undefined }}
-          transition={spring.snap}
-        >
-          <ArrowRight className="h-5 w-5" />
-        </motion.span>
-      ) : (
-        <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-          即将上线
-        </Badge>
-      )}
-    </>
-  );
+  const cardContainerClass =
+    "flex h-full min-h-0 w-full flex-col justify-between gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
-  if (!game.available) {
+  // 单一入口游戏（如 Who is Faker）
+  if (!game.subModes) {
+    if (!game.available) {
+      return (
+        <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
+          <div aria-disabled="true" className={`${cardContainerClass} opacity-60`}>
+            <div className="flex w-full items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={game.icon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+                  {game.subtitle ? (
+                    <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+                  ) : null}
+                </div>
+              </div>
+              <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+                即将上线
+              </Badge>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
+
+    const isEntering = enteringPath === game.path;
     return (
       <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
-        <div aria-disabled="true" className={`${baseClass} opacity-60`}>
-          {content}
-        </div>
+        <motion.button
+          type="button"
+          onClick={() => handleEnter(game.path)}
+          animate={isEntering ? { scale: 0.99 } : { scale: 1 }}
+          {...selectable}
+          className={`group ${cardContainerClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
+        >
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src={game.icon}
+                alt=""
+                aria-hidden="true"
+                className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+                {game.subtitle ? (
+                  <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+                ) : null}
+              </div>
+            </div>
+            <motion.span
+              aria-hidden="true"
+              className="shrink-0 text-muted-foreground"
+              animate={{ x: isEntering ? 8 : 0, color: isEntering ? "var(--primary)" : undefined }}
+              transition={spring.snap}
+            >
+              <ArrowRight className="h-5 w-5" />
+            </motion.span>
+          </div>
+        </motion.button>
       </motion.div>
     );
   }
 
-  // 点击后先让箭头前移、条目微沉，动效落地再跳转，
-  // 使离开当前页读作这次点击的结果而非突然切换。
-  const handleEnter = () => {
-    if (entering) return;
-    setEntering(true);
-    window.setTimeout(() => navigate(game.path), 140);
-  };
+  // 包含子模式入口的游戏（如 Songuessr 与 CCB）
+  const isWholeGameDisabled = !game.available;
 
   return (
     <motion.div data-testid={`game-entry-${game.id}`} variants={listItem}>
-      <motion.button
-        type="button"
-        onClick={handleEnter}
-        animate={entering ? { scale: 0.99 } : { scale: 1 }}
-        {...selectable}
-        className={`group ${baseClass} cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
+      <div
+        aria-disabled={isWholeGameDisabled ? "true" : undefined}
+        className={`${cardContainerClass} ${isWholeGameDisabled ? "opacity-75" : ""}`}
       >
-        {content}
-      </motion.button>
+        {/* 卡片头部：图标、标题与主状态 */}
+        <div className="flex w-full items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={game.icon}
+              alt=""
+              aria-hidden="true"
+              className="h-11 w-11 shrink-0 rounded-md object-cover sm:h-12 sm:w-12 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="break-words text-base leading-tight font-semibold sm:text-xl [@media(max-height:680px)]:text-base">{game.title}</div>
+              {game.subtitle ? (
+                <div className="mt-0.5 sm:mt-1 truncate text-xs text-muted-foreground sm:text-sm">{game.subtitle}</div>
+              ) : null}
+            </div>
+          </div>
+          {isWholeGameDisabled && (
+            <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+              即将上线
+            </Badge>
+          )}
+        </div>
+
+        {/* 子模式按钮行 */}
+        <div
+          className={`grid w-full gap-2 pt-1 ${
+            game.subModes.length === 2 ? "grid-cols-2" : "grid-cols-3 gap-1.5"
+          }`}
+        >
+          {game.subModes.map((mode) => {
+            const isModeAvailable = !isWholeGameDisabled && mode.available;
+            const isSubEntering = enteringPath === mode.path;
+
+            if (!isModeAvailable) {
+              return (
+                <div
+                  key={mode.id}
+                  aria-disabled="true"
+                  className="flex h-9 items-center justify-center gap-1 rounded-md border border-dashed border-border/80 bg-muted/30 px-2 text-center text-xs text-muted-foreground select-none"
+                >
+                  <span className="truncate">{mode.title}</span>
+                  {!isWholeGameDisabled && (
+                    <span className="shrink-0 rounded bg-muted px-1 py-0.2 text-[10px] text-muted-foreground/80">
+                      待上线
+                    </span>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <motion.button
+                key={mode.id}
+                type="button"
+                onClick={() => handleEnter(mode.path)}
+                animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
+                {...selectable}
+                className="group flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium shadow-xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+              >
+                <span className="truncate">{mode.title}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -367,7 +493,7 @@ export default function LandingPage() {
 
       <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
         <motion.div
-          className="flex w-full flex-col gap-2.5 sm:grid sm:h-[clamp(7rem,26svh,11rem)] sm:grid-cols-3 sm:items-stretch sm:gap-3"
+          className="flex w-full flex-col gap-2.5 sm:grid sm:min-h-[clamp(8.5rem,28svh,12rem)] sm:grid-cols-3 sm:items-stretch sm:gap-3.5"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
