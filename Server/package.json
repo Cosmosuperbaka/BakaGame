@@ -10,6 +10,7 @@
     "test:music:real": "bun test ./integration/NeteaseMusicProvider.integration.ts",
     "test:music:login": "bun test ./integration/NeteaseLogin.integration.ts",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage && bun run scripts/CheckCoverage.ts",
+    "test:production-smoke": "bun run scripts/ProductionSmoke.ts",
     "verify": "bun run check && bun run test:coverage",
     "test:grafana": "bun run src/scripts/TestGrafana.ts",
     "docs:openapi": "bun run src/scripts/ExportOpenapi.ts"
