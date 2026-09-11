@@ -87,16 +87,18 @@ try {
 
   const whoIsFaker = await openSocket("/api/whoisfaker/ws");
   sockets.push(whoIsFaker);
+  const whoAckPromise = waitForAck(whoIsFaker, "smoke-who");
   whoIsFaker.send(JSON.stringify({ id: "smoke-who", type: "lobby.subscribeRooms", payload: {} }));
-  const whoAck = await waitForAck(whoIsFaker, "smoke-who");
+  const whoAck = await whoAckPromise;
   if (whoAck.requestType !== "lobby.subscribeRooms") {
     throw new Error("WhoIsFaker 订阅 ACK 类型异常");
   }
 
   const sonGuessr = await openSocket("/api/songuessr/ws");
   sockets.push(sonGuessr);
+  const songAckPromise = waitForAck(sonGuessr, "smoke-song");
   sonGuessr.send(JSON.stringify({ id: "smoke-song", type: "song.lobby.subscribeRooms", payload: {} }));
-  const songAck = await waitForAck(sonGuessr, "smoke-song");
+  const songAck = await songAckPromise;
   if (songAck.requestType !== "song.lobby.subscribeRooms") {
     throw new Error("SonGuessr 订阅 ACK 类型异常");
   }
