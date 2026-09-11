@@ -24,15 +24,19 @@ jobs:
 
       - name: Install server dependencies
         working-directory: Server
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Type check server
         working-directory: Server
         run: bun run check
 
-      - name: Run server tests
+      - name: Run server tests with coverage
         working-directory: Server
-        run: bun test
+        run: bun run test:coverage
+
+      - name: Smoke test production server
+        working-directory: Server
+        run: bun run test:production-smoke
 
   deploy:
     name: Deploy to Server
