@@ -23,15 +23,15 @@ jobs:
 
       - name: Install server dependencies
         working-directory: Server
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Type check server
         working-directory: Server
         run: bun run check
 
-      - name: Run server tests
+      - name: Run server tests with coverage
         working-directory: Server
-        run: bun test
+        run: bun run test:coverage
 
   client:
     name: Client CI
@@ -55,13 +55,17 @@ jobs:
         working-directory: Client
         run: npm run lint
 
-      - name: Run client tests
+      - name: Run client tests with coverage
         working-directory: Client
-        run: npm test
+        run: npm run test:coverage
 
       - name: Build client
         working-directory: Client
         run: npm run build
+
+      - name: Smoke test production assets
+        working-directory: Client
+        run: node scripts/asset-smoke.mjs
 
   e2e:
     name: End-to-End Tests
