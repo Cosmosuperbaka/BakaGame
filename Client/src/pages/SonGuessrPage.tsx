@@ -87,53 +87,55 @@ export default function SonGuessrPage() {
       transition={spring.swift}
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
-      <header className="pt-10 md:pt-14 pb-4 md:pb-6 px-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex items-center gap-2 mb-3">
+      <header className="border-b border-border/40 pb-4 pt-6 md:pt-8 px-6">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <Button
               variant="ghost"
               size="sm"
-              className="gap-1.5 text-muted-foreground -ml-2 h-8"
+              className="gap-1.5 text-muted-foreground -ml-2 h-8 px-2"
               onClick={() => navigate("/")}
             >
               <ArrowLeft className="h-4 w-4" />
-              返回主页
+              <span className="hidden sm:inline">返回主页</span>
             </Button>
+            <div className="h-4 w-px bg-border/60" />
+            <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
+              <span>Songuessr</span>
+            </h1>
           </div>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Songuessr</h1>
-          </div>
-        </div>
-      </header>
 
-      <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pb-10">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-xl font-semibold tracking-tight">房间列表</h2>
-            <Badge variant="secondary" className="text-xs font-normal tabular-nums px-2 py-0.5">
-              {rooms.length} 间
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex items-center gap-2 shrink-0">
             <Input
               value={userName}
               onChange={(event) => setUserName(event.target.value)}
               placeholder="输入用户名"
-              className="h-9 min-w-0 flex-1 sm:w-44 text-sm"
+              className="h-8 w-32 sm:w-44 text-xs sm:text-sm bg-card"
               maxLength={20}
             />
-            <Button
-              size="default"
-              onClick={(event) => {
-                createOrigin.capture(event);
-                setCreateOpen(true);
-              }}
-              className="h-9 shrink-0 gap-1.5 shadow-sm"
-            >
-              <Plus className="h-4 w-4" />
-              创建房间
-            </Button>
           </div>
+        </div>
+      </header>
+
+      <main className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-10 pt-6 pb-10">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">房间列表</h2>
+            <span className="text-xs font-mono text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md">
+              {rooms.length}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={(event) => {
+              createOrigin.capture(event);
+              setCreateOpen(true);
+            }}
+            className="h-8 gap-1.5 shadow-2xs text-xs sm:text-sm"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            创建房间
+          </Button>
         </div>
 
         <motion.div
@@ -150,9 +152,11 @@ export default function SonGuessrPage() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="text-center py-20 text-muted-foreground text-base"
+                className="flex flex-col items-center justify-center rounded-md border border-dashed border-border/80 bg-card/30 py-16 text-center shadow-2xs"
               >
-                暂无房间，点击上方按钮创建一个吧
+                <p className="text-sm text-muted-foreground">
+                  暂无房间，点击上方按钮创建一个吧
+                </p>
               </motion.div>
             ) : (
               rooms.map((room) => {
