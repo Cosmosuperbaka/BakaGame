@@ -182,6 +182,7 @@ export function SongChatPanel() {
                     {message.playerName}
                   </span>
                   <div
+                    data-testid="chat-message-bubble"
                     className={cn(
                       "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere]",
                       safeStickerPath ? "p-1.5" : "px-3 py-1.5",

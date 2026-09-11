@@ -5,14 +5,24 @@ import { TooltipProvider } from "@/components/ui/Tooltip";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { VersionUpdateNotice } from "@/components/VersionUpdateNotice";
 
-const LandingPage = lazy(() => import("@/pages/LandingPage"));
-const WhoIsFakerPage = lazy(() => import("@/pages/WhoIsFakerPage"));
-const WhoIsFakerRoomPage = lazy(() => import("@/pages/WhoIsFakerRoomPage"));
-const SonGuessrPage = lazy(() => import("@/pages/SonGuessrPage"));
-const SonGuessrRoomPage = lazy(() => import("@/pages/SonGuessrRoomPage"));
+const retryLazyImport = <T,>(loader: () => Promise<T>, key: string): Promise<T> =>
+  loader().catch((error) => {
+    const marker = `bakagame:chunk-retry:${key}`;
+    if (sessionStorage.getItem(marker) !== "1") {
+      sessionStorage.setItem(marker, "1");
+      window.location.reload();
+    }
+    throw error;
+  });
 
-const WhoIsFakerLayout = lazy(() => import("@/layouts/WhoIsFakerLayout"));
-const SonGuessrLayout = lazy(() => import("@/layouts/SonGuessrLayout"));
+const LandingPage = lazy(() => retryLazyImport(() => import("@/pages/LandingPage"), "landing"));
+const WhoIsFakerPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFakerPage"), "faker"));
+const WhoIsFakerRoomPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFakerRoomPage"), "faker-room"));
+const SonGuessrPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrPage"), "song"));
+const SonGuessrRoomPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrRoomPage"), "song-room"));
+
+const WhoIsFakerLayout = lazy(() => retryLazyImport(() => import("@/layouts/WhoIsFakerLayout"), "faker-layout"));
+const SonGuessrLayout = lazy(() => retryLazyImport(() => import("@/layouts/SonGuessrLayout"), "song-layout"));
 
 function App() {
   return (
