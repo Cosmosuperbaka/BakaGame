@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { AppEnv } from "../config/Env";
-import changelog from "../../../Client/src/data/changelog.json";
 
 let isInitialized = false;
 
@@ -10,19 +11,29 @@ export const _resetServerSentryForTest = (): void => {
   isInitialized = false;
 };
 
-const resolveLatestProjectVersion = (): string | undefined => {
-  const versions = changelog.entries
+const PROJECT_VERSION_FALLBACK = "1.3.2";
+
+const resolveLatestProjectVersion = (): string => {
+  try {
+    const changelogPath = resolve(import.meta.dir, "../../../Client/src/data/changelog.json");
+    const changelog = JSON.parse(readFileSync(changelogPath, "utf8")) as {
+      entries?: Array<{ version?: unknown }>;
+    };
+    const versions = (changelog.entries ?? [])
     .map((entry) => entry.version)
-    .filter((version): version is string => /^\d+\.\d+\.\d+$/.test(version));
-  if (versions.length === 0) return undefined;
-  return versions.sort((a, b) => {
+    .filter((version): version is string => typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version));
+    if (versions.length === 0) return PROJECT_VERSION_FALLBACK;
+    return versions.sort((a, b) => {
     const left = a.split(".").map(Number);
     const right = b.split(".").map(Number);
     for (let index = 0; index < 3; index += 1) {
       if (left[index] !== right[index]) return right[index] - left[index];
     }
     return 0;
-  })[0];
+    })[0] ?? PROJECT_VERSION_FALLBACK;
+  } catch {
+    return PROJECT_VERSION_FALLBACK;
+  }
 };
 
 export const resolveServerRelease = (): string | undefined => {
@@ -31,8 +42,7 @@ export const resolveServerRelease = (): string | undefined => {
     if (proc.exitCode === 0) {
       const hash = proc.stdout.toString().trim();
       if (hash) {
-        const version = resolveLatestProjectVersion();
-        return version ? `V${version}（${hash}）` : undefined;
+        return `V${resolveLatestProjectVersion()}（${hash}）`;
       }
     }
   } catch {
