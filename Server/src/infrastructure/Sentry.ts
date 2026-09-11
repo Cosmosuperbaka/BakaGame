@@ -77,10 +77,13 @@ export const initServerSentry = (env: AppEnv): void => {
       Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
     ],
     enableLogs: true,
-    // 忽略预期的客户端断开连接错误
+    // 忽略预期的客户端断开连接错误与同源反代网络波动
     ignoreErrors: [
       "WebSocket is not open",
       "Connection reset by peer",
+      "Sentry tunnel upstream unavailable",
+      "Sentry tunnel upstream timeout",
+      "Internal Sentry tunnel error",
     ],
   });
 
