@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -20,6 +20,14 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
   const daybreakNotice = useWhoIsFakerStore((s) => s.daybreakNotice);
   const isTestRoom = snapshot?.testMode ?? false;
   const phaseRef = useRef<HTMLDivElement>(null);
+  const [wordDraft, setWordDraft] = useState({ civilianWord: "", undercoverWord: "", blankHint: "" });
+
+  const currentPhase = snapshot?.status.phase;
+  useEffect(() => {
+    if (currentPhase === "waiting") {
+      setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
+    }
+  }, [currentPhase]);
 
   if (!snapshot) return null;
 
@@ -48,7 +56,7 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
               ref={phaseRef}
               style={{ willChange: "transform, opacity" }}
             >
-              <PhaseContent />
+              <PhaseContent wordDraft={wordDraft} onWordDraftChange={setWordDraft} />
             </motion.div>
           </AnimatePresence>
         </div>
@@ -101,14 +109,22 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
   );
 }
 
-function PhaseContent() {
+type WordDraft = { civilianWord: string; undercoverWord: string; blankHint: string };
+
+function PhaseContent({
+  wordDraft,
+  onWordDraftChange,
+}: {
+  wordDraft: WordDraft;
+  onWordDraftChange: (draft: WordDraft) => void;
+}) {
   const phase = useWhoIsFakerStore((s) => s.snapshot?.status.phase);
   const tieBreakStage = useWhoIsFakerStore((s) => s.snapshot?.status.tieBreakStage);
 
   switch (phase) {
     case "waiting":          return <WaitingPhase />;
     case "assigningQuestioner": return <AssignQuestionerPhase />;
-    case "wordSubmission":   return <WordSubmissionPhase />;
+    case "wordSubmission":   return <WordSubmissionPhase wordDraft={wordDraft} onWordDraftChange={onWordDraftChange} />;
     case "description":      return <DescriptionPhase />;
     case "tieBreak":         return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
     case "voting":           return <VotingPhase />;

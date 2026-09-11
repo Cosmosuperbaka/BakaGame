@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -25,16 +25,19 @@ const ROLE_FULL_LABELS: Record<PlayerRole, string> = {
   blank: "白板",
 };
 
-export function WordSubmissionPhase() {
+type WordDraft = { civilianWord: string; undercoverWord: string; blankHint: string };
+
+export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraft: WordDraft; onWordDraftChange: (draft: WordDraft) => void }) {
   const snapshot = useGameStore((s) => s.snapshot)!;
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
   const isQuestioner = privateState?.isQuestioner ?? false;
 
-  const [civilianWord, setCivilianWord] = useState("");
-  const [undercoverWord, setUndercoverWord] = useState("");
-  const [blankHint, setBlankHint] = useState("");
+  const { civilianWord, undercoverWord, blankHint } = wordDraft;
+  const setCivilianWord = (value: string) => onWordDraftChange({ ...wordDraft, civilianWord: value });
+  const setUndercoverWord = (value: string) => onWordDraftChange({ ...wordDraft, undercoverWord: value });
+  const setBlankHint = (value: string) => onWordDraftChange({ ...wordDraft, blankHint: value });
 
   // 默认启用随机分配身份
   const [isRandomRole, setIsRandomRole] = useState(true);
