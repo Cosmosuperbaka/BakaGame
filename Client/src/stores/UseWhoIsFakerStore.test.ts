@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RoomSnapshot, RoundSummary, ServerMessage } from "@/types";
+import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
+
+
 
 const wsMock = vi.hoisted(() => {
   let messageHandlers: Array<(message: ServerMessage) => void> = [];
@@ -137,7 +140,11 @@ describe("game store integration", () => {
     expect(getSessionToken("2345")).toBeNull();
     expect(useGameStore.getState().roomId).toBeNull();
     expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+    expect(useGameStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ text: "会话已失效，请重新加入", type: "error" }),
+    );
   });
+
 
   it("keeps the room session while a reconnect request fails transiently", async () => {
     saveSessionToken("2346", "live-token");
@@ -221,6 +228,30 @@ describe("game store integration", () => {
 
     expect(useGameStore.getState().roomClosedAt).not.toBeNull();
   });
+
+  it("leaves room, clears token, and displays shutdown message on server.shutdown", () => {
+    saveSessionToken("7890", "shutdown-token");
+    useGameStore.getState().joinRoomState("7890", "shutdown-token");
+    initGameSocket();
+
+    wsMock.emitMessage({
+      type: "event",
+      event: "server.shutdown",
+      payload: {},
+    });
+
+    expect(getSessionToken("7890")).toBeNull();
+    expect(useGameStore.getState().roomId).toBeNull();
+    expect(useGameStore.getState().snapshot).toBeNull();
+    expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+    expect(useGameStore.getState().toasts).toContainEqual(
+      expect.objectContaining({
+        text: SERVER_SHUTDOWN_MESSAGE,
+        type: "error",
+      }),
+    );
+  });
+
 
   it("keeps the current round summary when a transient game-over snapshot omits it", () => {
     useGameStore.getState().setSnapshot(gameOverSnapshot("round-1", roundSummary));

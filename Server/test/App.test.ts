@@ -13,7 +13,9 @@ import {
   redactData,
 } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
+import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import { createApp } from "../src/transport/App";
+
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 
@@ -453,9 +455,10 @@ test("RoomService.notifyShutdown 会向所有在线连接广播停机通知", as
 
     expect(shutdownEvent.type).toBe("event");
     expect(shutdownEvent.event).toBe("server.shutdown");
-    expect(shutdownEvent.payload.message).toContain("服务器即将关闭");
+    expect(shutdownEvent.payload.message).toBe(SERVER_SHUTDOWN_MESSAGE);
 
     socket.close();
+
   } finally {
     await stop();
   }

@@ -14,7 +14,12 @@ import type {
   MusicLoginSession,
   MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
-import { ALL_BANGUMI_TRACK_KINDS, MAX_SONGUESSR_COOKIE_LENGTH, SONGUESSR_MAX_PLAYERS } from "../shared/Index";
+import {
+  ALL_BANGUMI_TRACK_KINDS,
+  MAX_SONGUESSR_COOKIE_LENGTH,
+  SERVER_SHUTDOWN_MESSAGE,
+  SONGUESSR_MAX_PLAYERS,
+} from "../shared/Index";
 import type {
   ChatMessage,
   SongDetails,
@@ -39,6 +44,7 @@ import type {
   BangumiMusicTrackKind,
   AnimeAutoFilters,
 } from "../shared/Index";
+
 import type { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
@@ -298,10 +304,11 @@ export class SonGuessrService {
   notifyShutdown(): void {
     this.connections.broadcastToAll(
       createEvent("server.shutdown", {
-        message: "服务器即将关闭，请稍后重新连接",
+        message: SERVER_SHUTDOWN_MESSAGE,
       }),
     );
   }
+
 
   async unregisterConnection(connectionId: string): Promise<void> {
     const connection = this.connections.unregisterConnection(connectionId);

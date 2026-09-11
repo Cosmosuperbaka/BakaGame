@@ -8,6 +8,7 @@ import type {
   SongSearchResult,
   BangumiSubjectSearchResult,
 } from "@/types";
+import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
 import {
   clearSonGuessrSessionToken,
   getSonGuessrSessionToken,
@@ -25,8 +26,9 @@ export interface SonGuessrStore {
   privateState: SonGuessrPrivateState | null;
   roomClosedAt: number | null;
   notice: { text: string; type: "info" | "error" | "success" } | null;
-  setNotice: (text: string, type?: "info" | "error" | "success") => void;
+  setNotice: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   clearNotice: () => void;
+
   subscribeLobby: () => Promise<void>;
   createRoom: (params: {
     roomId: string;
@@ -145,14 +147,15 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       roomClosedAt: null,
       notice: null,
 
-      setNotice: (text, type = "info") => {
+      setNotice: (text, type = "info", durationMs = 3000) => {
         if (noticeTimer) clearTimeout(noticeTimer);
         set({ notice: { text, type } });
         noticeTimer = setTimeout(() => {
           set({ notice: null });
           noticeTimer = undefined;
-        }, 3000);
+        }, durationMs);
       },
+
 
       clearNotice: () => {
         if (noticeTimer) clearTimeout(noticeTimer);
@@ -217,8 +220,17 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             privateState: null,
             roomClosedAt: Date.now(),
           });
+          const code = (error as { code?: string } | null)?.code;
+          const message =
+            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+              ? "会话已失效，请重新加入"
+              : code === "PLAYER_KICKED"
+                ? "你已被移出房间"
+                : "房间已解散或不存在";
+          get().setNotice(message, "error");
           return false;
         }
+
       },
 
   leaveRoom: async () => {
@@ -395,9 +407,22 @@ export function initSonGuessrWs() {
         useSonGuessrStore.getState().setNotice("当前席位已在另一个标签页接管", "error");
         break;
       }
-      case "server.shutdown":
-        store.setNotice("服务器即将关闭", "error");
+      case "server.shutdown": {
+        const payload = evt.payload as { message?: string } | undefined;
+        const message = payload?.message || SERVER_SHUTDOWN_MESSAGE;
+        const closedRoomId = useSonGuessrStore.getState().roomId;
+        if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+        resetSonGuessrStateSync();
+        useSonGuessrStore.setState({
+          roomId: null,
+          sessionToken: null,
+          snapshot: null,
+          privateState: null,
+          roomClosedAt: Date.now(),
+        });
+        useSonGuessrStore.getState().setNotice(message, "error", 10000);
         break;
+      }
     }
   });
 
@@ -425,10 +450,19 @@ export function initSonGuessrWs() {
             privateState: null,
             roomClosedAt: Date.now(),
           });
+          const code = (error as { code?: string } | null)?.code;
+          const message =
+            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+              ? "会话已失效，请重新加入"
+              : code === "PLAYER_KICKED"
+                ? "你已被移出房间"
+                : "房间已解散或不存在";
+          useSonGuessrStore.getState().setNotice(message, "error");
         });
       }
     }
   });
+
 
   sonGuessrWs.connect();
 
