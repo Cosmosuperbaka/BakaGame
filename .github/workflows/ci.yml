@@ -33,6 +33,18 @@ jobs:
         working-directory: Server
         run: bun run test:coverage
 
+      - name: Smoke test production server
+        working-directory: Server
+        run: bun run test:production-smoke
+
+      - name: Upload server coverage
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: server-coverage
+          path: Server/coverage/
+          retention-days: 14
+
   client:
     name: Client CI
     runs-on: ubuntu-latest
@@ -67,6 +79,14 @@ jobs:
         working-directory: Client
         run: node scripts/asset-smoke.mjs
 
+      - name: Upload client coverage
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: client-coverage
+          path: Client/coverage/
+          retention-days: 14
+
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
@@ -87,7 +107,7 @@ jobs:
 
       - name: Install server dependencies
         working-directory: Server
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Install client dependencies
         working-directory: Client

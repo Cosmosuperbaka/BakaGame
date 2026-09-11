@@ -252,7 +252,15 @@ export const formatLogEntry = (
 };
 
 import type { OtlpExporter } from "./OtlpExporter";
-import { captureServerException, captureServerMessage, isServerSentryEnabled } from "./Sentry";
+import {
+  captureServerException,
+  captureServerLog,
+  captureServerMessage,
+  captureServerOperation,
+  countServerMetric,
+  isServerSentryEnabled,
+  recordServerMetric,
+} from "./Sentry";
 
 export class EventLogger {
   private readonly output: LogOutput;
@@ -317,6 +325,8 @@ export class EventLogger {
         captureServerMessage(message, "error", context);
       }
     }
+
+    captureServerLog(message, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", context);
   }
 
   info(message: string, context?: Record<string, unknown>) {
@@ -355,6 +365,25 @@ export class EventLogger {
     const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}`;
     this.output[LEVEL_METHODS[level]](line);
 
+    captureServerOperation({
+      name: action,
+      durationMs,
+      status,
+      startTime: createdAt - durationMs,
+      attributes: {
+        "operation.identifier": identifier,
+        ...(traceId ? { "trace.id": traceId } : {}),
+      },
+    });
+    countServerMetric("bakagame.operations", 1, {
+      status,
+      operation: action,
+    });
+    recordServerMetric("bakagame.operation.duration", durationMs, {
+      status,
+      operation: action,
+    });
+
     if (this.otlpExporter?.isEnabled) {
       this.otlpExporter.enqueueSpan({
         traceId,
@@ -375,6 +404,13 @@ export class EventLogger {
   async write(entry: LogEntry): Promise<void> {
     const level = getEventLevel(entry);
     this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
+
+    captureServerLog(`EVENT ${entry.type}`, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", {
+      roomId: entry.roomId,
+      playerId: entry.playerId,
+      ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
+    });
+    countServerMetric("bakagame.events", 1, { event: entry.type, level });
 
     if (this.otlpExporter?.isEnabled) {
       this.otlpExporter.enqueue({

@@ -16,6 +16,30 @@ async function expectActionAreaScrollable(page: Page) {
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
+function installPageQualityGuards(page: Page) {
+  const failures: string[] = [];
+  let sentryRateLimitObserved = false;
+  page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      !(message.text().includes("429 (Too Many Requests)") && sentryRateLimitObserved)
+    ) {
+      failures.push(`console: ${message.text()}`);
+    }
+  });
+  page.on("response", (response) => {
+    if (response.status() === 429 && new URL(response.url()).pathname === "/api/monitoring/sentry") {
+      sentryRateLimitObserved = true;
+      return;
+    }
+    if (response.status() >= 400) {
+      failures.push(`http ${response.status()}: ${response.url()}`);
+    }
+  });
+  return async () => expect(failures, failures.join("\n")).toEqual([]);
+}
+
 async function removeAllTestBots(page: Page) {
   const bots = page.getByLabel("测试人机", { exact: true });
   const removeBot = page.getByRole("button", { name: "移除一个测试人机" });
@@ -32,6 +56,7 @@ async function removeAllTestBots(page: Page) {
 }
 
 test("landing page exposes both playable games and keeps placeholders disabled", async ({ page }) => {
+  const assertPageQuality = installPageQualityGuards(page);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
@@ -42,6 +67,7 @@ test("landing page exposes both playable games and keeps placeholders disabled",
   await expect(page).toHaveURL(/\/whoisfaker$/);
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
   await expect(page.getByAltText("Faker")).toBeVisible();
+  await assertPageQuality();
 });
 
 test("landing game entries stay horizontal and clear of the footer", async ({ page }) => {
@@ -189,18 +215,15 @@ test("internal scrolling works without visible scrollbar chrome", async ({ page 
 });
 
 test("stickers load from stable paths and long chat messages stay inside both panels", async ({ page }) => {
+  const assertPageQuality = installPageQualityGuards(page);
   const unique = Date.now().toString(36);
   const measureBubble = async (text: string) => {
-    const textNode = page.getByText(text, { exact: true }).last();
-    await expect(textNode).toBeVisible();
-    return textNode.evaluate((element) => {
-      const candidate = element as HTMLElement;
-      const bubble = candidate.className.includes("max-w-[85%]")
-        ? candidate
-        : candidate.parentElement!;
+    const bubble = page.getByTestId("chat-message-bubble").filter({ hasText: text }).last();
+    await expect(bubble).toBeVisible();
+    return bubble.evaluate((element) => {
       return {
-        clientWidth: bubble.clientWidth,
-        scrollWidth: bubble.scrollWidth,
+        clientWidth: (element as HTMLElement).clientWidth,
+        scrollWidth: (element as HTMLElement).scrollWidth,
       };
     });
   };
@@ -241,6 +264,7 @@ test("stickers load from stable paths and long chat messages stay inside both pa
   await page.getByRole("button", { name: "发送消息" }).click();
   const songMetrics = await measureBubble(songMessage);
   expect(songMetrics.scrollWidth).toBeLessThanOrEqual(songMetrics.clientWidth + 1);
+  await assertPageQuality();
 });
 
 test("two browser sessions can create and join the same server room", async ({ browser, page }) => {

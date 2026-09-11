@@ -5,6 +5,12 @@ import {
   DEFAULT_SERVER_URL,
   MAX_RECONNECT_DELAY_MS,
 } from "@/config/Constants";
+import {
+  captureClientLog,
+  countClientMetric,
+  recordClientMetric,
+  withClientSpan,
+} from "@/lib/Sentry";
 
 type MessageHandler = (message: ServerMessage) => void;
 type StatusHandler = (connected: boolean) => void;
@@ -61,6 +67,8 @@ export class WebSocketClient {
 
     this.socket.onopen = () => {
       this.reconnectAttempts = 0;
+      captureClientLog("WebSocket 已连接", "info", { path: this.path });
+      countClientMetric("bakagame.websocket.connections", 1, { path: this.path });
       this.statusHandlers.forEach((handler) => handler(true));
       const resolvers = this.connectResolvers;
       this.connectResolvers = [];
@@ -90,6 +98,8 @@ export class WebSocketClient {
 
     this.socket.onclose = () => {
       this.socket = null;
+      captureClientLog("WebSocket 已断开", "warning", { path: this.path });
+      countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       for (const [id, pending] of this.pendingRequests) {
         clearTimeout(pending.timer);
         pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
@@ -134,30 +144,58 @@ export class WebSocketClient {
       }
     }
 
-    return new Promise((resolve, reject) => {
-      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-        reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
-        return;
-      }
+    const startedAt = performance.now();
+    return withClientSpan(
+      `WS ${type}`,
+      async (span) => {
+        try {
+          const result = await new Promise<T>((resolve, reject) => {
+            if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+              reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+              return;
+            }
 
-      const traceId = generateUuid();
-      const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
-      const timer = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject({ code: "TIMEOUT", message: "请求超时" });
-      }, options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+            const traceId = generateUuid();
+            const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
+            const timer = setTimeout(() => {
+              this.pendingRequests.delete(id);
+              reject({ code: "TIMEOUT", message: "请求超时" });
+            }, options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
 
-      this.pendingRequests.set(id, {
-        resolve: resolve as (payload: Record<string, unknown>) => void,
-        reject,
-        timer,
-      });
+            this.pendingRequests.set(id, {
+              resolve: resolve as (payload: Record<string, unknown>) => void,
+              reject,
+              timer,
+            });
 
-      const envelope: Record<string, unknown> = { id, traceId, type, payload };
-      if (options?.roomId) envelope.roomId = options.roomId;
-      if (options?.sessionToken) envelope.sessionToken = options.sessionToken;
-      this.socket.send(JSON.stringify(envelope));
-    });
+            const envelope: Record<string, unknown> = { id, traceId, type, payload };
+            if (options?.roomId) envelope.roomId = options.roomId;
+            if (options?.sessionToken) envelope.sessionToken = options.sessionToken;
+            this.socket.send(JSON.stringify(envelope));
+          });
+
+          const durationMs = performance.now() - startedAt;
+          span.setStatus({ code: 1 });
+          span.setAttribute("ws.duration_ms", durationMs);
+          countClientMetric("bakagame.websocket.commands", 1, { path: this.path, command: type, status: "ok" });
+          recordClientMetric("bakagame.websocket.command.duration", durationMs, { path: this.path, command: type });
+          return result;
+        } catch (error) {
+          const durationMs = performance.now() - startedAt;
+          span.setStatus({ code: 2 });
+          span.setAttribute("ws.duration_ms", durationMs);
+          countClientMetric("bakagame.websocket.commands", 1, { path: this.path, command: type, status: "error" });
+          recordClientMetric("bakagame.websocket.command.duration", durationMs, { path: this.path, command: type });
+          captureClientLog("WebSocket 命令失败", "error", {
+            path: this.path,
+            command: type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+      },
+      { "ws.path": this.path, "ws.command": type },
+    );
   }
 
   onMessage(handler: MessageHandler): () => void {

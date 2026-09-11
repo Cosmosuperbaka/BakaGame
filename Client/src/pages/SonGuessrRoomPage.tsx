@@ -416,7 +416,7 @@ export default function SonGuessrRoomPage() {
         audioReadyKey.current !== loadKey
       ) {
         audioReadyKey.current = loadKey;
-        void sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber }).catch(() => {
+        void Promise.resolve(sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })).catch(() => {
           if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
         });
       }
@@ -426,7 +426,7 @@ export default function SonGuessrRoomPage() {
         audioAutoPlayKey.current = loadKey;
         audio.volume = volumeRef.current;
         moveToStart();
-        void audio.play().catch(() => {
+        void Promise.resolve(audio.play()).catch(() => {
           if (!disposed) setAudioPlaybackState("idle");
         });
       }
@@ -437,7 +437,7 @@ export default function SonGuessrRoomPage() {
       setAudioStatus("error");
       if (audioFailureKey.current !== loadKey && isPlayingPhase && currentPhaseRoundNumber !== undefined) {
         audioFailureKey.current = loadKey;
-        void sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber }).catch(() => {
+        void Promise.resolve(sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber })).catch(() => {
           if (audioFailureKey.current === loadKey) audioFailureKey.current = null;
         });
       }
@@ -532,7 +532,7 @@ export default function SonGuessrRoomPage() {
     const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
     if (audioReadyKey.current === loadKey) return;
     audioReadyKey.current = loadKey;
-    void sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber }).catch(() => {
+    void Promise.resolve(sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })).catch(() => {
       if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
     });
   }, [

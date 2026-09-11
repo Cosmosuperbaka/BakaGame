@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -21,13 +21,6 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
   const isTestRoom = snapshot?.testMode ?? false;
   const phaseRef = useRef<HTMLDivElement>(null);
   const [wordDraft, setWordDraft] = useState({ civilianWord: "", undercoverWord: "", blankHint: "" });
-
-  const currentPhase = snapshot?.status.phase;
-  useEffect(() => {
-    if (currentPhase === "waiting") {
-      setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
-    }
-  }, [currentPhase]);
 
   if (!snapshot) return null;
 
@@ -52,6 +45,9 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
                 if (definition !== "animate") return;
                 const node = phaseRef.current;
                 if (node) node.style.transform = "";
+                if (phase === "waiting") {
+                  setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
+                }
               }}
               ref={phaseRef}
               style={{ willChange: "transform, opacity" }}
