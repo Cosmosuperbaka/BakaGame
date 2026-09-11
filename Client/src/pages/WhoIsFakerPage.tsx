@@ -124,7 +124,7 @@ export default function WhoIsFakerPage() {
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               placeholder="输入用户名"
-              className="h-8 w-28 sm:w-36 text-xs sm:text-sm bg-card"
+              className="h-8 w-28 sm:w-36 text-xs sm:text-sm bg-card/60 border-border/70 shadow-2xs"
               maxLength={20}
             />
             <Button
