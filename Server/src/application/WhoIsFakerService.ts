@@ -74,14 +74,14 @@ import { createPlayerCommandHandler } from "./handlers/PlayerCommandHandler";
 import { createRoomCommandHandler } from "./handlers/RoomCommandHandler";
 import { createTestCommandHandler } from "./handlers/TestCommandHandler";
 
-export interface RoomServiceOptions {
+export interface WhoIsFakerServiceOptions {
   now?: () => number;
   random?: RandomSource;
   wordBankRepository: WordBankRepository;
   eventLogger: EventLogger;
 }
 
-export class RoomService {
+export class WhoIsFakerService {
   // ==================== 房间与状态机总控 ====================
 
   private readonly rooms = new Map<string, RoomRecord>();
@@ -94,7 +94,7 @@ export class RoomService {
   private readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
   private idCounter = 0;
 
-  constructor(private readonly options: RoomServiceOptions) {
+  constructor(private readonly options: WhoIsFakerServiceOptions) {
     this.now = options.now ?? (() => Date.now());
     this.random =
       options.random ??
@@ -4047,8 +4047,4 @@ export class RoomService {
     await this.options.eventLogger.write(entry);
   }
 }
-
-// 领域服务别名导出，确保平台各小游戏处于平等的架构地位
-export { RoomService as WhoIsFakerService };
-export type { RoomServiceOptions as WhoIsFakerServiceOptions };
 

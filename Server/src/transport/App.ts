@@ -1,7 +1,7 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
-import { RoomService } from "../application/RoomService";
+import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
 import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
@@ -20,7 +20,7 @@ import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 
 export interface AppDependencies {
   env: AppEnv;
-  whoIsFakerService: RoomService;
+  whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
   sonGuessrService?: SonGuessrService;
   isShuttingDown?: () => boolean;

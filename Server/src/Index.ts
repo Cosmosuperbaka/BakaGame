@@ -1,4 +1,4 @@
-import { RoomService } from "./application/RoomService";
+import { WhoIsFakerService } from "./application/WhoIsFakerService";
 import { readEnv } from "./config/Env";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
@@ -32,7 +32,7 @@ if (otlpExporter) {
 }
 
 const logger = new EventLogger(undefined, undefined, otlpExporter);
-const roomService = new RoomService({
+const whoIsFakerService = new WhoIsFakerService({
   eventLogger: logger,
   wordBankRepository: new WordBankRepository(env.wordBankPath),
 });
@@ -41,7 +41,7 @@ let isShuttingDown = false;
 
 const { app, sonGuessrService } = createApp({
   env,
-  whoIsFakerService: roomService,
+  whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,
 });
@@ -49,7 +49,7 @@ const { app, sonGuessrService } = createApp({
 // 定时执行房间闲置清理与掉线超时检查。
 // 最短超时窗口为 10 分钟，10 s 轮询足够精度，无需1 s 高频空转。
 const intervalId = setInterval(() => {
-  void roomService.runHousekeeping().catch((error: unknown) => {
+  void whoIsFakerService.runHousekeeping().catch((error: unknown) => {
     logger.error("房间清理任务执行失败", describeError(error));
   });
   void sonGuessrService.runHousekeeping().catch((error: unknown) => {
@@ -67,7 +67,7 @@ const sentryRuntimeMetricsIntervalId = setInterval(() => {
 sentryRuntimeMetricsIntervalId.unref();
 
 function reportRuntimeMetrics(): void {
-  const faker = roomService.getHealthSnapshot();
+  const faker = whoIsFakerService.getHealthSnapshot();
   const songuessr = sonGuessrService.getHealthSnapshot();
   gaugeServerMetric("bakagame.players.online", faker.onlinePlayerCount + songuessr.onlinePlayerCount);
   gaugeServerMetric("bakagame.rooms.active", faker.roomCount + songuessr.roomCount);
@@ -105,14 +105,14 @@ const shutdown = async (signal?: string) => {
   clearInterval(sentryRuntimeMetricsIntervalId);
 
   // 2. 向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机通知
-  roomService.notifyShutdown();
+  whoIsFakerService.notifyShutdown();
   sonGuessrService.notifyShutdown();
 
   // 3. 预留 3 秒摘流与客户端接收停机协议窗口，使反向代理 / K8s Ingress 切换节点
   await Bun.sleep(3000);
 
   // 4. 等待未完成的词库持久化写入队列全部排空落盘
-  await roomService.drainPendingWrites();
+  await whoIsFakerService.drainPendingWrites();
 
   // 5. 优雅关闭 HTTP 与 WebSocket 监听端口并关闭存量套接字
   await app.stop(true);

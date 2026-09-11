@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { RoomService } from "../application/RoomService";
+import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { readEnv } from "../config/Env";
 import { EventLogger } from "../infrastructure/EventLogger";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
@@ -12,14 +12,14 @@ import { createApp } from "../transport/App";
 const run = async () => {
   const env = readEnv();
   const logger = new EventLogger();
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     eventLogger: logger,
     wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
 
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
   });
 

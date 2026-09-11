@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { RoomService } from "../src/application/RoomService";
+import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
@@ -223,7 +223,7 @@ test("协议拒绝未定义的多余角色配置字段", () => {
 
 test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async () => {
   const logger = new EventLogger();
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     eventLogger: logger,
     wordBankRepository: new WordBankRepository(":memory:"),
   });
@@ -237,7 +237,7 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       bangumiApiUrl: "https://api.bgm.tv",
       bangumiImageUrl: "",
     },
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
   });
 
