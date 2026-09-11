@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/react";
 import { DEFAULT_SERVER_URL } from "@/config/Constants";
 import commitHistory from "virtual:commit-history";
+import changelog from "@/data/changelog.json";
+import { resolveLatestVersion } from "@/lib/Changelog";
 
 export interface SentrySdkDriver {
   init: (options: Sentry.BrowserOptions) => void;
@@ -50,7 +52,7 @@ export const initClientSentry = (
     tunnel,
     environment: import.meta.env.MODE,
     release: commitHistory.currentCommit !== "dev"
-      ? `bakagame-client@${commitHistory.currentCommit}`
+      ? `V${resolveLatestVersion(changelog.entries) ?? "0.0.0"}（${commitHistory.currentCommit}）`
       : undefined,
     tracesSampleRate: options?.tracesSampleRate ?? 0.1,
     replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,

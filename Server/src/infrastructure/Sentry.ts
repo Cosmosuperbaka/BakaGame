@@ -15,7 +15,7 @@ export const resolveServerRelease = (): string | undefined => {
     if (proc.exitCode === 0) {
       const hash = proc.stdout.toString().trim();
       if (hash) {
-        return `bakagame-server@${hash}`;
+        return `V1.3.2（${hash}）`;
       }
     }
   } catch {
