@@ -119,6 +119,23 @@ describe("LandingPage", () => {
       nowSpy.mockRestore();
     }
   });
+
+  it("handles game entry navigation clicks smoothly without throwing ReferenceError", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderLandingPage();
+
+    const fakerButton = screen.getByRole("button", { name: "Who is Faker 开始游戏" });
+    expect(fakerButton).toBeInTheDocument();
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(fakerButton);
+    vi.advanceTimersByTime(200);
+
+    const songButton = screen.getByRole("button", { name: "Songuessr 多人模式" });
+    expect(songButton).toBeInTheDocument();
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(songButton);
+    vi.advanceTimersByTime(200);
+
+    vi.useRealTimers();
+  });
 });
 
 
