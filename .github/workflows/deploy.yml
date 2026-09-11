@@ -70,95 +70,11 @@ jobs:
             CURRENT_COMMIT=$(git rev-parse --short HEAD)
             echo "==> 已对齐至最新提交: $CURRENT_COMMIT"
 
-            # 3. 检查并同步服务端依赖
-            echo "==> 检查并安装服务端依赖..."
-
-            # 探测容器内工作目录（优先 /app，其次 /BakaGame/Server）
-            CONTAINER_WORKDIR="/app"
-            if sudo docker exec BakaGame test -f /BakaGame/Server/package.json 2>/dev/null; then
-              CONTAINER_WORKDIR="/BakaGame/Server"
-            elif sudo docker exec BakaGame test -f /app/package.json 2>/dev/null; then
-              CONTAINER_WORKDIR="/app"
-            fi
-
-            INSTALLED=false
-
-            # 3.1 尝试在容器内寻找并执行 bun（支持非标准 PATH、/root/.bun/bin 等）
-            CONTAINER_BUN_SCRIPT='
-              export PATH="$HOME/.bun/bin:/root/.bun/bin:/home/bun/.bun/bin:/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:$PATH"
-              BUN_CMD=""
-              if command -v bun >/dev/null 2>&1; then
-                BUN_CMD=$(command -v bun)
-              elif [ -x "/root/.bun/bin/bun" ]; then
-                BUN_CMD="/root/.bun/bin/bun"
-              elif [ -x "/usr/local/bin/bun" ]; then
-                BUN_CMD="/usr/local/bin/bun"
-              elif [ -x "/home/bun/.bun/bin/bun" ]; then
-                BUN_CMD="/home/bun/.bun/bin/bun"
-              else
-                BUN_CMD=$(find /root /home /usr /opt -name bun -type f -perm -111 2>/dev/null | head -n 1 || true)
-              fi
-              if [ -n "$BUN_CMD" ] && [ -x "$BUN_CMD" ]; then
-                echo "==> 容器内部发现 Bun: $BUN_CMD"
-                "$BUN_CMD" install --frozen-lockfile || "$BUN_CMD" install
-                exit 0
-              fi
-              exit 127
-            '
-
-            CONTAINER_STATUS=0
-            sudo docker exec -w "$CONTAINER_WORKDIR" BakaGame sh -c "$CONTAINER_BUN_SCRIPT" || CONTAINER_STATUS=$?
-
-            if [ "$CONTAINER_STATUS" -eq 0 ]; then
-              echo "✅ 容器内服务端依赖同步完成"
-              INSTALLED=true
-            else
-              echo "==> 容器内未定位到 Bun (退出码: $CONTAINER_STATUS)，转为检测宿主机环境..."
-            fi
-
-            # 3.2 若容器内无 Bun，尝试在宿主机寻找并执行 bun（依赖通过卷挂载与容器共享）
-            if [ "$INSTALLED" = false ]; then
-              export PATH="$HOME/.bun/bin:/root/.bun/bin:/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:$PATH"
-              HOST_BUN=""
-              if command -v bun >/dev/null 2>&1; then
-                HOST_BUN=$(command -v bun)
-              elif [ -x "$HOME/.bun/bin/bun" ]; then
-                HOST_BUN="$HOME/.bun/bin/bun"
-              elif [ -x "/home/ubuntu/.bun/bin/bun" ]; then
-                HOST_BUN="/home/ubuntu/.bun/bin/bun"
-              elif [ -x "/root/.bun/bin/bun" ]; then
-                HOST_BUN="/root/.bun/bin/bun"
-              elif [ -x "/usr/local/bin/bun" ]; then
-                HOST_BUN="/usr/local/bin/bun"
-              else
-                HOST_BUN=$(find /home /root /usr /opt -name bun -type f -perm -111 2>/dev/null | head -n 1 || true)
-              fi
-
-              if [ -n "$HOST_BUN" ]; then
-                echo "==> 宿主机发现 Bun: $HOST_BUN，正在为 /BakaGame/Server 安装依赖..."
-                cd /BakaGame/Server
-                "$HOST_BUN" install --frozen-lockfile || "$HOST_BUN" install || sudo "$HOST_BUN" install
-                cd /BakaGame
-                echo "✅ 宿主机服务端依赖同步完成"
-                INSTALLED=true
-              fi
-            fi
-
-            # 3.3 若两者均未找到，输出全面诊断信息并退出
-            if [ "$INSTALLED" = false ]; then
-              echo "❌ 错误: 未能在容器内或宿主机上找到可用的 Bun 可执行文件！"
-              echo "==> 容器诊断信息："
-              sudo docker inspect --format='Image: {{.Config.Image}} | Cmd: {{json .Config.Cmd}} | Entrypoint: {{json .Config.Entrypoint}}' BakaGame || true
-              echo "==> 容器挂载信息："
-              sudo docker inspect --format='{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' BakaGame || true
-              exit 1
-            fi
-
-            # 4. 重启后端 Docker 容器
+            # 3. 重启后端 Docker 容器（容器启动入口自带依赖同步与环境初始化）
             echo "==> 重启 BakaGame 容器..."
             sudo docker restart BakaGame
 
-            # 5. 等待服务就绪并执行健康检查
+            # 4. 等待服务就绪并执行健康检查
             echo "==> 等待服务就绪并执行健康检查..."
             HEALTH_URL="http://127.0.0.1:4850/health"
             MAX_RETRIES=15
