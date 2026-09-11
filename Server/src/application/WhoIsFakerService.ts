@@ -2749,14 +2749,21 @@ export class WhoIsFakerService {
   }
 
   private buildRoomSummary(room: RoomRecord): RoomSummary {
+    const activeCount = Object.values(room.players).filter(
+      (player) => player.membership === "active" && player.online,
+    ).length;
+    const spectatorCount = Object.values(room.players).filter(
+      (player) => player.membership === "spectator" && player.online,
+    ).length;
     return {
       roomId: room.id,
       name: room.settings.name,
       visibility: room.settings.visibility,
       allowSpectators: room.settings.allowSpectators,
       hasPassword: Boolean(room.settings.password),
-      playerCount: Object.keys(room.players).length,
-      onlineCount: this.getOnlineCount(room),
+      playerCount: activeCount,
+      spectatorCount,
+      onlineCount: activeCount + spectatorCount,
       phase: room.round?.phase ?? "waiting",
       testMode: room.id === ROOM_ID_TEST_MODE,
     };

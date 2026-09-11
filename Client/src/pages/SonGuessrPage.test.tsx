@@ -13,7 +13,8 @@ const mockRooms: SonGuessrRoomSummary[] = [
     name: "绫地喰喰的房间",
     phase: "playing",
     playerCount: 2,
-    onlineCount: 2,
+    spectatorCount: 3,
+    onlineCount: 5,
     maxPlayers: 8,
     visibility: "public",
     hasPassword: true,
@@ -23,7 +24,8 @@ const mockRooms: SonGuessrRoomSummary[] = [
     roomId: "1234",
     name: "日常听歌房",
     phase: "waiting",
-    playerCount: 8,
+    playerCount: 5,
+    spectatorCount: 0,
     onlineCount: 5,
     maxPlayers: 8,
     visibility: "public",
@@ -66,13 +68,15 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("绫地喰喰的房间")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
-    expect(screen.getByText("2/2")).toBeInTheDocument();
-    expect(screen.getByText("猜歌中")).toBeInTheDocument();
+    expect(screen.getByText("2玩家 3观战")).toBeInTheDocument();
+    expect(screen.getByText("游戏中")).toBeInTheDocument();
+    expect(screen.getByText("可观战")).toBeInTheDocument();
 
     expect(screen.getByText("日常听歌房")).toBeInTheDocument();
     expect(screen.getByText("1234")).toBeInTheDocument();
-    expect(screen.getByText("5/8")).toBeInTheDocument();
+    expect(screen.getByText("5玩家 0观战")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
+    expect(screen.getByText("禁观战")).toBeInTheDocument();
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("绫地喰喰的房间");

@@ -1994,14 +1994,21 @@ export class SonGuessrService {
   }
 
   private buildRoomSummary(room: SonGuessrRoomRecord): SonGuessrRoomSummary {
+    const activeCount = Object.values(room.players).filter(
+      (player) => player.membership === "active" && player.online,
+    ).length;
+    const spectatorCount = Object.values(room.players).filter(
+      (player) => player.membership === "spectator" && player.online,
+    ).length;
     return {
       roomId: room.id,
       name: room.name,
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
       hasPassword: Boolean(room.password),
-      playerCount: this.activePlayers(room).length,
-      onlineCount: this.onlineCount(room),
+      playerCount: activeCount,
+      spectatorCount,
+      onlineCount: activeCount + spectatorCount,
       maxPlayers: SONGUESSR_MAX_PLAYERS,
       phase: room.phase,
     };
