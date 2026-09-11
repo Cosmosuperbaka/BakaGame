@@ -74,12 +74,12 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(screen.getByText("5/8")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
 
-    // 验证外层卡片容器应用了 rounded-xl 与 bg-card 实底类，杜绝透光穿透
+    // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("绫地喰喰的房间");
     const cardElement = roomOneName.closest('[role="button"]');
     expect(cardElement).toBeInTheDocument();
     const motionWrapper = cardElement?.parentElement;
     expect(motionWrapper).toHaveClass("bg-card");
-    expect(motionWrapper).toHaveClass("rounded-xl");
+    expect(motionWrapper).toHaveClass("rounded-md");
   });
 });

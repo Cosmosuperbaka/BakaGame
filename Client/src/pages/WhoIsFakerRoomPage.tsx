@@ -478,7 +478,7 @@ export default function WhoIsFakerRoomPage() {
       <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
 
         {/* 玩家栏 + 游戏区（共享同一个 section 以便 aside 绝对定位覆盖游戏区） */}
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
+        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
 
           {/* 布局占位：使游戏区不因 aside 展开而收缩 */}
           <div
@@ -489,7 +489,7 @@ export default function WhoIsFakerRoomPage() {
 
           {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
           <motion.aside
-            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-xl border bg-panel md:flex"
+            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
             initial={false}
             animate={{
               width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
@@ -525,7 +525,7 @@ export default function WhoIsFakerRoomPage() {
               </motion.div>
             )}
 
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
               <PlayerList
                 players={snapshot.players}
                 hostPlayerId={snapshot.hostPlayerId}
@@ -547,14 +547,14 @@ export default function WhoIsFakerRoomPage() {
               分层，不会越过玩家面板去盖住骑缝的展开按钮。 */}
           <main
             ref={stageRef}
-            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel"
+            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel"
           >
             <GameArea wordRevealed={wordRevealed} />
           </main>
         </section>
 
         {/* 右栏：聊天（桌面） */}
-        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
+        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
           <ChatPanel
             messages={snapshot?.chat ?? []}
             players={snapshot?.players ?? []}

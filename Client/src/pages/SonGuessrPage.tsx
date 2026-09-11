@@ -181,7 +181,7 @@ export default function SonGuessrPage() {
                   animate="animate"
                   exit="exit"
                   layout="position"
-                  className="rounded-xl bg-card"
+                  className="rounded-md bg-card"
                   {...selectable}
                 >
                   <Card

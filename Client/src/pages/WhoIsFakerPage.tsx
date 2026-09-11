@@ -114,7 +114,7 @@ export default function WhoIsFakerPage() {
             <img
               src="/assets/Faker.png"
               alt="Faker"
-              className="h-[1.4em] w-[1.4em] rounded-[10px] object-cover"
+              className="h-[1.4em] w-[1.4em] rounded-md object-cover"
             />
           </h1>
         </div>
@@ -183,7 +183,7 @@ export default function WhoIsFakerPage() {
                   animate="animate"
                   exit="exit"
                   layout="position"
-                  className="rounded-xl bg-card"
+                  className="rounded-md bg-card"
                   {...selectable}
                 >
                   <Card

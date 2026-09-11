@@ -114,7 +114,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const [entering, setEntering] = useState(false);
 
   const baseClass =
-    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-xl border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+    "flex h-full min-h-0 w-full flex-row sm:flex-col items-center sm:items-start justify-between gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-4 text-left shadow-xs [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   const content = (
     <>
