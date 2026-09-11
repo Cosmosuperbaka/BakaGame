@@ -99,4 +99,32 @@ describe("application routing regressions", () => {
     expect(await screen.findByText("song-lobby")).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe("/songuessr"));
   });
+
+  it("handles dynamic chunk loading failure by triggering reload and suppressing error leak", async () => {
+    const { retryLazyImport } = await import("./App");
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, reload: reloadMock },
+    });
+
+    sessionStorage.clear();
+    const failingLoader = vi.fn().mockRejectedValue(new TypeError("Failed to fetch dynamically imported module"));
+
+    const pendingPromise = retryLazyImport(failingLoader, "test-chunk");
+    await Promise.resolve();
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("bakagame:chunk-retry:test-chunk")).toBe("1");
+
+    // 验证第二次失败时抛出错误
+    await expect(retryLazyImport(failingLoader, "test-chunk")).rejects.toThrow("Failed to fetch");
+
+    // pendingPromise 保持挂起不 reject
+    let rejected = false;
+    pendingPromise.catch(() => {
+      rejected = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(rejected).toBe(false);
+  });
 });
