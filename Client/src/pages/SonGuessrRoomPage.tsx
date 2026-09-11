@@ -882,7 +882,7 @@ export default function SonGuessrRoomPage() {
       </header>
 
       <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden rounded-xl md:gap-3">
+        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
           <div
             className="hidden shrink-0 md:block"
             style={{ width: PLAYER_COLUMN_WIDTH }}
@@ -890,12 +890,12 @@ export default function SonGuessrRoomPage() {
           />
 
           <motion.aside
-            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-xl border bg-panel md:flex"
+            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
             initial={false}
             animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
           >
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
               <PlayerList
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
@@ -906,7 +906,7 @@ export default function SonGuessrRoomPage() {
             </div>
           </motion.aside>
 
-          <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-panel">
+          <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
             <SongGameArea
               snapshot={snapshot}
               privateState={privateState}
@@ -935,7 +935,7 @@ export default function SonGuessrRoomPage() {
           </main>
         </section>
 
-        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
+        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
           <ChatPanel
             messages={snapshot.chat ?? []}
             players={snapshot.players}
