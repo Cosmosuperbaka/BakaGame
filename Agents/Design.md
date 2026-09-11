@@ -67,7 +67,7 @@
 - 页面和主要面板以稳定的 `flex`、`grid`、固定侧栏宽度和 `min-w-0` 管理布局，避免内容变化导致界面跳动。
 - 常规控件高度沿用公共组件：默认按钮和输入框为 `h-9`，紧凑操作为 `h-8`，主要阶段操作通常为 `h-10`。
 - 常规内容间距优先使用 `gap-2` 至 `gap-4`、`space-y-3` 至 `space-y-6`；游戏主区域内边距沿用 `p-6 md:p-8`。
-- 圆角基线由 `--radius: 0.25rem` 控制，整体偏方正。全站只使用三档：内联控件（按钮、输入框、徽章、状态标签、单元格、弹出层内的小控件）使用 `rounded-md`；主要面板、内容卡片、弹窗与聊天气泡使用 `rounded-xl`；只有真正的圆形元素（开关滑块、滚动条、加载指示、时间线圆点）使用 `rounded-full`。不使用 `rounded-lg`、`rounded-2xl` 等中间档，聊天气泡通过单侧 `rounded-sm` 区分消息方向。圆角类名沿用不变，不在组件内写死像素圆角。
+- 圆角基线由 `--radius: 0.25rem` 控制，整体偏方正。全站统一使用标准圆角 `rounded-md`：内联控件（按钮、输入框、徽章、状态标签、单元格）、主要面板、内容卡片、弹窗（`Dialog`）、新版本提示浮层（`VersionUpdateNotice`）与聊天气泡均统一采用 `rounded-md`；只有真正的圆形元素（开关滑块、滚动条、加载指示、时间线圆点）使用 `rounded-full`。严禁混用 `rounded-xl`、`rounded-lg`、`rounded-2xl` 等非标圆角，亦不得在组件内写死像素圆角。
 - 主要结构通过一层轻边框区分。阴影统一取自 `--shadow-*`，为带横向偏移的暖色投影；常规区域使用 `shadow-sm` 或 `shadow-2xs`，只有移动端抽屉、弹窗等浮层可使用 `shadow-lg` 以上层级。
 - 不在卡片中嵌套装饰性卡片，不把普通页面区块全部做成悬浮卡片。
 
@@ -79,7 +79,7 @@
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
-- 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角取 `rounded-xl`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效。
+- 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
 ## 7. 页面布局

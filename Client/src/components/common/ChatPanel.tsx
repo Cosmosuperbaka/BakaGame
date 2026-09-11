@@ -226,7 +226,7 @@ export function ChatPanel({
                   <div
                     data-testid="chat-message-bubble"
                     className={cn(
-                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-md text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
                       safeStickerPath ? "p-1.5" : "px-3.5 py-2",
                       isMe
                         ? isGhost
@@ -282,7 +282,7 @@ export function ChatPanel({
               style={{ originY: 1 }}
               role="listbox"
               aria-label="提及玩家"
-              className="absolute bottom-full left-3 right-3 z-50 mb-1 overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur-md"
+              className="absolute bottom-full left-3 right-3 z-50 mb-1 overflow-hidden rounded-md border bg-background/95 shadow-lg backdrop-blur-md"
             >
               {candidates.map((player, index) => (
                 <motion.button

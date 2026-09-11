@@ -68,9 +68,9 @@ export function BangumiSearchDialog({ open, onOpenChange, title, description, ac
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={close} aria-label="关闭搜索"><X className="h-4 w-4" /></Button>
       </div>
       <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input autoFocus value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (!value.trim()) setResults([]); }} placeholder="输入番剧名称" className="pl-9" /></div>
-      <ScrollArea className="h-[min(45vh,24rem)] rounded-xl border bg-muted/25"><div className="space-y-2 p-3">
+      <ScrollArea className="h-[min(45vh,24rem)] rounded-md border bg-muted/25"><div className="space-y-2 p-3">
         {searching ? <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />正在查询 Bangumi</div> : results.length > 0 ? results.map((subject) => (
-          <div key={subject.id} className="flex items-center gap-3 rounded-xl bg-card p-3 shadow-sm">
+          <div key={subject.id} className="flex items-center gap-3 rounded-md bg-card p-3 shadow-sm">
             {subject.imageUrl ? <img src={subject.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <div className="flex h-14 w-10 items-center justify-center rounded bg-muted"><Film className="h-5 w-5 text-muted-foreground" /></div>}
             <div className="min-w-0 flex-1 break-words"><div className="font-medium">{subject.nameCn || subject.name}</div><div className="text-xs text-muted-foreground">{subject.name}{subject.year ? ` · ${subject.year}` : ""}{subject.rating ? ` · ${subject.rating.toFixed(1)} 分` : ""}</div></div>
             <Button size="sm" disabled={Boolean(submittingId)} onClick={() => void choose(subject)}>{submittingId === subject.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : actionLabel}</Button>

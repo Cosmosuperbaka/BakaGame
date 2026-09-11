@@ -1,4 +1,4 @@
-﻿import * as React from "react"
+import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { AnimatePresence, motion } from "framer-motion"
 import { X } from "lucide-react"
@@ -75,7 +75,7 @@ const DialogContent = React.forwardRef<
           style={originStyle}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
-            "scrollbar-hidden gap-4 overflow-y-auto rounded-xl border bg-popover p-6 text-popover-foreground shadow-lg",
+            "scrollbar-hidden gap-4 overflow-y-auto rounded-md border bg-popover p-6 text-popover-foreground shadow-lg",
             className
           )}
         >

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { RefObject } from "react";
 import { duration, ease, spring } from "@/lib/Motion";
@@ -93,7 +93,7 @@ export function AssignedWord({
     <motion.div
       ref={wordRef}
       aria-hidden={revealed ? undefined : "true"}
-      className="pointer-events-none fixed left-0 top-0 z-[60] whitespace-nowrap rounded-xl bg-primary/10 px-6 py-3 text-[2.25rem] font-bold leading-tight text-primary"
+      className="pointer-events-none fixed left-0 top-0 z-[60] whitespace-nowrap rounded-md bg-primary/10 px-6 py-3 text-[2.25rem] font-bold leading-tight text-primary"
       style={{ originX: 0, originY: 0 }}
       animate={
         placement

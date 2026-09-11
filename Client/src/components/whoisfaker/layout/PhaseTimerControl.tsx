@@ -119,7 +119,7 @@ export function PhaseTimerControl({ className }: Props = {}) {
             exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } }}
             transition={spring.swift}
             className={cn(
-              "relative overflow-hidden rounded-xl border p-3 shadow-xs transition-colors duration-300",
+              "relative overflow-hidden rounded-md border p-3 shadow-xs transition-colors duration-300",
               isCritical
                 ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
                 : isWarning
@@ -203,7 +203,7 @@ export function PhaseTimerControl({ className }: Props = {}) {
       {canControl && !phaseTimer && (
         <div
           data-testid="host-timer-bar"
-          className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-border/70 bg-background/80 p-2.5 shadow-2xs backdrop-blur-md"
+          className="flex flex-wrap items-center justify-between gap-2.5 rounded-md border border-border/70 bg-background/80 p-2.5 shadow-2xs backdrop-blur-md"
         >
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
