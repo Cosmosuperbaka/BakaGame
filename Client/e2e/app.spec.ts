@@ -23,6 +23,9 @@ function installPageQualityGuards(page: Page) {
     if (message.type() === "error") failures.push(`console: ${message.text()}`);
   });
   page.on("response", (response) => {
+    if (response.status() === 429 && new URL(response.url()).pathname === "/api/monitoring/sentry") {
+      return;
+    }
     if (response.status() >= 400) {
       failures.push(`http ${response.status()}: ${response.url()}`);
     }
