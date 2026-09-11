@@ -18,12 +18,19 @@ async function expectActionAreaScrollable(page: Page) {
 
 function installPageQualityGuards(page: Page) {
   const failures: string[] = [];
+  let sentryRateLimitObserved = false;
   page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
   page.on("console", (message) => {
-    if (message.type() === "error") failures.push(`console: ${message.text()}`);
+    if (
+      message.type() === "error" &&
+      !(message.text().includes("429 (Too Many Requests)") && sentryRateLimitObserved)
+    ) {
+      failures.push(`console: ${message.text()}`);
+    }
   });
   page.on("response", (response) => {
     if (response.status() === 429 && new URL(response.url()).pathname === "/api/monitoring/sentry") {
+      sentryRateLimitObserved = true;
       return;
     }
     if (response.status() >= 400) {
