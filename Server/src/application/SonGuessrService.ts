@@ -72,7 +72,7 @@ const SCORING = {
   submitterNobodyCorrect: 5,
 } as const;
 
-interface SongGuessrPlayerRecord {
+interface SonGuessrPlayerRecord {
   id: string;
   sessionToken: string;
   name: string;
@@ -89,7 +89,7 @@ interface SongGuessrPlayerRecord {
   connectionId?: string;
 }
 
-interface SongGuessrRoundPlayerState {
+interface SonGuessrRoundPlayerState {
   audioReady: boolean;
   guessesUsed: number;
   correct: boolean;
@@ -98,7 +98,7 @@ interface SongGuessrRoundPlayerState {
   inFlight?: boolean;
 }
 
-interface SongGuessrRoundRecord {
+interface SonGuessrRoundRecord {
   number: number;
   submitterPlayerId: string;
   song: SongDetails;
@@ -108,13 +108,13 @@ interface SongGuessrRoundRecord {
   attempts: SongGuessAttempt[];
   correctPlayerIds: string[];
   startScores: Record<string, number>;
-  players: Record<string, SongGuessrRoundPlayerState>;
+  players: Record<string, SonGuessrRoundPlayerState>;
   settings: SonGuessrSettings;
   audioReadyDeadlineAt?: number;
   hardDeadlineAt?: number;
 }
 
-interface SongGuessrRoomRecord {
+interface SonGuessrRoomRecord {
   id: string;
   name: string;
   visibility: RoomVisibility;
@@ -125,7 +125,7 @@ interface SongGuessrRoomRecord {
   phase: SonGuessrPhase;
   roundNumber: number;
   pendingSubmitterPlayerId?: string;
-  currentRound?: SongGuessrRoundRecord;
+  currentRound?: SonGuessrRoundRecord;
   roundSummary?: SonGuessrRoundSummary;
   finalScores?: SonGuessrScore[];
   musicSession?: {
@@ -133,7 +133,7 @@ interface SongGuessrRoomRecord {
     cookie: string;
     account: MusicLoginSession["account"];
   };
-  players: Record<string, SongGuessrPlayerRecord>;
+  players: Record<string, SonGuessrPlayerRecord>;
   chat: ChatMessage[];
   createdAt: number;
   updatedAt: number;
@@ -273,7 +273,7 @@ export const createSongLyricClip = (
 };
 
 export class SonGuessrService {
-  private readonly rooms = new Map<string, SongGuessrRoomRecord>();
+  private readonly rooms = new Map<string, SonGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
   private readonly now: () => number;
   private readonly random: RandomSource;
@@ -541,7 +541,7 @@ export class SonGuessrService {
 
     const player = this.createPlayer(payload.userName, true);
     const now = this.now();
-    const room: SongGuessrRoomRecord = {
+    const room: SonGuessrRoomRecord = {
       id: roomId,
       name: normalizeWord(payload.name),
       visibility: payload.visibility,
@@ -1047,7 +1047,7 @@ export class SonGuessrService {
   }
 
   private installMusicSession(
-    room: SongGuessrRoomRecord,
+    room: SonGuessrRoomRecord,
     ownerPlayerId: string,
     session: MusicLoginSession,
   ): MusicLoginSession {
@@ -1074,7 +1074,7 @@ export class SonGuessrService {
     return cookie;
   }
 
-  private clearMusicSession(room: SongGuessrRoomRecord, ownerPlayerId?: string): boolean {
+  private clearMusicSession(room: SonGuessrRoomRecord, ownerPlayerId?: string): boolean {
     if (!room.musicSession) return false;
     if (ownerPlayerId && room.musicSession.ownerPlayerId !== ownerPlayerId) return false;
     room.musicSession = undefined;
@@ -1262,7 +1262,7 @@ export class SonGuessrService {
     return { roundNumber };
   }
 
-  private async resolveAnimeSong(room: SongGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
+  private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
     const provider = this.options.musicProvider;
     if (anime.musicTracks.length === 0) {
       throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
@@ -1350,7 +1350,7 @@ export class SonGuessrService {
   }
 
   private installRound(
-    room: SongGuessrRoomRecord,
+    room: SonGuessrRoomRecord,
     song: SongDetails,
     submitterPlayerId: string,
     anime?: BangumiSubjectDetails,
@@ -1376,7 +1376,7 @@ export class SonGuessrService {
           guessesUsed: candidate.isBot ? roundSettings.maxGuessesPerRound : 0,
           correct: false,
           gaveUp: candidate.isBot,
-        } satisfies SongGuessrRoundPlayerState,
+        } satisfies SonGuessrRoundPlayerState,
       ]),
     );
     room.roundNumber = roundNumber;
@@ -1410,7 +1410,7 @@ export class SonGuessrService {
     return roundNumber;
   }
 
-  private async startAutomaticRound(room: SongGuessrRoomRecord): Promise<void> {
+  private async startAutomaticRound(room: SonGuessrRoomRecord): Promise<void> {
     if (room.settings.questionType === "anime") {
       const provider = this.options.bangumiProvider;
       if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
@@ -1458,7 +1458,7 @@ export class SonGuessrService {
     throw new AppError("MUSIC_VIP_REQUIRED", "筛选结果全部为会员歌曲，当前账号无法开始");
   }
 
-  private async resolveAutomaticCandidates(room: SongGuessrRoomRecord): Promise<SongSearchResult[]> {
+  private async resolveAutomaticCandidates(room: SonGuessrRoomRecord): Promise<SongSearchResult[]> {
     const filters = room.settings.autoFilters;
     const cookie = room.musicSession?.cookie;
     const sets: SongSearchResult[][] = [];
@@ -1863,7 +1863,7 @@ export class SonGuessrService {
     return { waiting: true, roundNumber: room.roundNumber };
   }
 
-  private recordTimeout(room: SongGuessrRoomRecord, playerId: string) {
+  private recordTimeout(room: SonGuessrRoomRecord, playerId: string) {
     const round = room.currentRound;
     const state = round?.players[playerId];
     const player = room.players[playerId];
@@ -1885,7 +1885,7 @@ export class SonGuessrService {
       : undefined;
   }
 
-  private finishRound(room: SongGuessrRoomRecord) {
+  private finishRound(room: SonGuessrRoomRecord) {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;
     const submitter = room.players[round.submitterPlayerId];
@@ -1944,7 +1944,7 @@ export class SonGuessrService {
     return [...normalizedArtists(guess.artist)].some((artist) => answerArtists.has(artist));
   }
 
-  private applyQueuedMemberships(room: SongGuessrRoomRecord) {
+  private applyQueuedMemberships(room: SonGuessrRoomRecord) {
     for (const player of Object.values(room.players)) {
       const membership = player.nextRoundMembership;
       if (!membership || player.membership === "kicked") continue;
@@ -1956,14 +1956,14 @@ export class SonGuessrService {
     }
   }
 
-  private resetReadyState(room: SongGuessrRoomRecord) {
+  private resetReadyState(room: SonGuessrRoomRecord) {
     for (const candidate of Object.values(room.players)) {
       candidate.isReady = candidate.membership === "active" &&
         (candidate.id === room.hostPlayerId || candidate.isBot);
     }
   }
 
-  private nextRotatingSubmitter(room: SongGuessrRoomRecord, previousSubmitterId?: string) {
+  private nextRotatingSubmitter(room: SonGuessrRoomRecord, previousSubmitterId?: string) {
     const candidates = Object.values(room.players)
       .filter((player) => player.online && player.membership === "active" && !player.isBot)
       .sort((left, right) => left.joinedAt - right.joinedAt);
@@ -1972,7 +1972,7 @@ export class SonGuessrService {
     return candidates[(previousIndex + 1 + candidates.length) % candidates.length];
   }
 
-  private canTestSubmitterGuess(room: SongGuessrRoomRecord, playerId: string) {
+  private canTestSubmitterGuess(room: SonGuessrRoomRecord, playerId: string) {
     return Boolean(
       this.isTestRoom(room) &&
       room.currentRound?.submitterPlayerId === playerId &&
@@ -1980,7 +1980,7 @@ export class SonGuessrService {
     );
   }
 
-  private isRoundComplete(room: SongGuessrRoomRecord) {
+  private isRoundComplete(room: SonGuessrRoomRecord) {
     const round = room.currentRound;
     if (!round) return false;
     const guessers = this.activePlayers(room).filter(
@@ -1993,7 +1993,7 @@ export class SonGuessrService {
     });
   }
 
-  private buildRoomSummary(room: SongGuessrRoomRecord): SonGuessrRoomSummary {
+  private buildRoomSummary(room: SonGuessrRoomRecord): SonGuessrRoomSummary {
     return {
       roomId: room.id,
       name: room.name,
@@ -2007,7 +2007,7 @@ export class SonGuessrService {
     };
   }
 
-  private buildRoomSnapshot(room: SongGuessrRoomRecord): SonGuessrRoomSnapshot {
+  private buildRoomSnapshot(room: SonGuessrRoomRecord): SonGuessrRoomSnapshot {
     const round = room.currentRound;
     return {
       roomId: room.id,
@@ -2045,8 +2045,8 @@ export class SonGuessrService {
   }
 
   private buildPlayerView(
-    room: SongGuessrRoomRecord,
-    player: SongGuessrPlayerRecord,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
   ): SonGuessrPlayerView {
     const round = room.currentRound;
     const state = round?.players[player.id];
@@ -2078,8 +2078,8 @@ export class SonGuessrService {
   }
 
   private buildPrivateState(
-    room: SongGuessrRoomRecord,
-    player: SongGuessrPlayerRecord,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
   ): SonGuessrPrivateState {
     const round = room.currentRound;
     const state = round?.players[player.id];
@@ -2130,7 +2130,7 @@ export class SonGuessrService {
   }
 
   private buildScores(
-    room: SongGuessrRoomRecord,
+    room: SonGuessrRoomRecord,
     startScores: Record<string, number>,
   ): SonGuessrScore[] {
     return this.activePlayers(room)
@@ -2145,7 +2145,7 @@ export class SonGuessrService {
       .sort((left, right) => right.score - left.score || left.playerName.localeCompare(right.playerName));
   }
 
-  private publishRoom(room: SongGuessrRoomRecord, targetConnection?: ConnectionRecord) {
+  private publishRoom(room: SonGuessrRoomRecord, targetConnection?: ConnectionRecord) {
     const snapshot = this.buildRoomSnapshot(room);
     const connections = targetConnection
       ? [targetConnection]
@@ -2159,12 +2159,12 @@ export class SonGuessrService {
     }
   }
 
-  private publishPrivateState(room: SongGuessrRoomRecord, player: SongGuessrPlayerRecord) {
+  private publishPrivateState(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
     const connection = this.connections.findConnectionByPlayer(room.id, player.id);
     connection?.send(createEvent("song.game.privateState", this.buildPrivateState(room, player)));
   }
 
-  private publishRoomCalibration(room: SongGuessrRoomRecord) {
+  private publishRoomCalibration(room: SonGuessrRoomRecord) {
     const snapshot = this.buildRoomSnapshot(room);
     for (const connection of this.connections.getRoomConnections(room.id)) {
       connection.sendStateSyncCalibration?.(createEvent("song.room.snapshot", snapshot));
@@ -2182,7 +2182,7 @@ export class SonGuessrService {
     this.connections.broadcastToLobby(createEvent("song.lobby.rooms", this.getRoomSummaries()));
   }
 
-  private closeRoom(room: SongGuessrRoomRecord, reason: string) {
+  private closeRoom(room: SonGuessrRoomRecord, reason: string) {
     this.connections.broadcastToRoom(room.id, createEvent("song.room.closed", { roomId: room.id, reason }));
     for (const connection of this.connections.getRoomConnections(room.id)) {
       connection.roomId = undefined;
@@ -2194,8 +2194,8 @@ export class SonGuessrService {
   }
 
   private attachConnection(
-    room: SongGuessrRoomRecord,
-    player: SongGuessrPlayerRecord,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
     connection: ConnectionRecord,
   ) {
     const previous = this.connections.findConnectionByPlayer(room.id, player.id);
@@ -2213,7 +2213,7 @@ export class SonGuessrService {
     connection.playerId = player.id;
   }
 
-  private appendSystemMessage(room: SongGuessrRoomRecord, text: string) {
+  private appendSystemMessage(room: SonGuessrRoomRecord, text: string) {
     room.chat = [
       ...room.chat,
       {
@@ -2227,7 +2227,7 @@ export class SonGuessrService {
     ].slice(-CHAT_LIMIT);
   }
 
-  private createPlayer(nameValue: string, host: boolean, isBot = false): SongGuessrPlayerRecord {
+  private createPlayer(nameValue: string, host: boolean, isBot = false): SonGuessrPlayerRecord {
     const name = this.requireName(nameValue);
     const now = this.now();
     return {
@@ -2246,11 +2246,11 @@ export class SonGuessrService {
     };
   }
 
-  private activePlayers(room: SongGuessrRoomRecord) {
+  private activePlayers(room: SonGuessrRoomRecord) {
     return Object.values(room.players).filter((player) => player.membership === "active");
   }
 
-  private onlineCount(room: SongGuessrRoomRecord) {
+  private onlineCount(room: SonGuessrRoomRecord) {
     return Object.values(room.players).filter(
       (player) => player.online && player.membership !== "kicked",
     ).length;
@@ -2292,7 +2292,7 @@ export class SonGuessrService {
     return { room, player };
   }
 
-  private requireActiveRound(room: SongGuessrRoomRecord) {
+  private requireActiveRound(room: SonGuessrRoomRecord) {
     if (room.phase !== "playing" || !room.currentRound) {
       throw new AppError("NO_ACTIVE_ROUND", "当前没有进行中的回合");
     }
@@ -2312,11 +2312,11 @@ export class SonGuessrService {
     }
   }
 
-  private ensureHost(room: SongGuessrRoomRecord, playerId: string) {
+  private ensureHost(room: SonGuessrRoomRecord, playerId: string) {
     if (room.hostPlayerId !== playerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
 
-  private ensurePassword(room: SongGuessrRoomRecord, password?: string) {
+  private ensurePassword(room: SonGuessrRoomRecord, password?: string) {
     if (room.visibility === "private" && room.password !== password?.trim()) {
       throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
     }
@@ -2334,7 +2334,7 @@ export class SonGuessrService {
     return normalized;
   }
 
-  private reassignHost(room: SongGuessrRoomRecord) {
+  private reassignHost(room: SonGuessrRoomRecord) {
     const next = Object.values(room.players)
       .filter((player) => player.online && player.membership === "active" && !player.isBot)
       .sort((left, right) => left.joinedAt - right.joinedAt)[0]
@@ -2350,7 +2350,7 @@ export class SonGuessrService {
     }
   }
 
-  private transferHostAfterDisconnect(room: SongGuessrRoomRecord) {
+  private transferHostAfterDisconnect(room: SonGuessrRoomRecord) {
     const previousHost = room.players[room.hostPlayerId];
     if (!previousHost || previousHost.online || previousHost.membership === "kicked") {
       room.hostReconnectDeadlineAt = undefined;
@@ -2363,11 +2363,11 @@ export class SonGuessrService {
     this.publishLobby();
   }
 
-  private isTestRoom(room: SongGuessrRoomRecord) {
+  private isTestRoom(room: SonGuessrRoomRecord) {
     return room.id.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase();
   }
 
-  private touch(room: SongGuessrRoomRecord) {
+  private touch(room: SonGuessrRoomRecord) {
     room.updatedAt = this.now();
     room.lastActivityAt = this.now();
   }
