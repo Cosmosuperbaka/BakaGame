@@ -71,6 +71,9 @@ export const initClientSentry = (
       "NetworkError when attempting to fetch resource.",
       "The play() request was interrupted by a new load request.",
       "The play() request was interrupted by a call to pause().",
+      /Failed to fetch dynamically imported module/i,
+      /error loading dynamically imported module/i,
+      /Loading chunk [\d]+ failed/i,
     ],
   });
 
