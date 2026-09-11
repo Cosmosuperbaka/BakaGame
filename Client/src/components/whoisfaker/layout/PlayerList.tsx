@@ -23,7 +23,15 @@ import {
 import { PendingSpeech, SubmittedSpeech } from "./PendingSpeech";
 import { ROLE_COLORS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
-import { PLAYER_BADGE_BASE, PLAYER_ME_MARK, PLAYER_ROW_BASE, PlayerStatusPill } from "./PlayerStatusPill";
+import {
+  PLAYER_BADGE_BASE,
+  PLAYER_GROUP_TITLE_HEIGHT,
+  PLAYER_ME_MARK,
+  PLAYER_ROW_BASE,
+  PLAYER_ROW_HEIGHT,
+  PlayerGroupTitle,
+  PlayerStatusPill,
+} from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import {
   buildKnownRoleMap,
@@ -77,7 +85,7 @@ const roleSelectedTones: Record<PlayerMark, string> = {
 };
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-10";
+export { PLAYER_ROW_HEIGHT, PlayerGroupTitle };
 
 /**
  * 玩家列宽度。分界线、行内首列与面板宽度都由此推导。
@@ -85,17 +93,6 @@ export const PLAYER_ROW_HEIGHT = "min-h-10";
  * 写成像素常量会让分界线落进玩家列内部。
  */
 export { PLAYER_COLUMN_WIDTH } from "./PlayerListLayout";
-
-/**
- * 发言列的列宽由整列最长的一句决定：`max-content` 取本列所有格子的最大需求宽度，
- * `minmax` 保证短列也不会窄到不可读。
- *
- * 列宽必须跨行一致，因此宽度只能由**同一个** grid 计算。玩家行各自是一层
- * 包裹容器，靠 `grid-template-columns: subgrid` 继承外层的列轨道，
- * 而不是各自再算一遍 —— 否则每行会按自己那一句单独取宽，列就对不齐了。
- */
-/** 分组标题行高。展开发言历史时列标题沿用同一高度，保证两侧起始行一致。 */
-const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
 export interface PlayerListProps {
   players: PublicPlayerView[];
@@ -455,31 +452,6 @@ function SpectatorToggle({
       {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
       {spectator ? "加入旁观" : "取消旁观"}
     </Button>
-  );
-}
-
-export function PlayerGroupTitle({
-  label,
-  count,
-  withRule = false,
-}: {
-  label: string;
-  count: number;
-  withRule?: boolean;
-}) {
-  return (
-    <div
-      className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
-      style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
-    >
-      <h3 className="font-sans text-[11px] font-normal tracking-wide text-muted-foreground">
-        {label}
-      </h3>
-      <span className="font-sans text-[11px] font-normal tabular-nums text-muted-foreground/70">
-        {count}
-      </span>
-      <span className="h-px flex-1 bg-border/70" />
-    </div>
   );
 }
 

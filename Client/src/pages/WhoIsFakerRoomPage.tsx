@@ -43,7 +43,7 @@ import {
 import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { AssignedWord } from "@/components/whoisfaker/layout/AssignedWord";
 import { GameArea } from "@/components/whoisfaker/layout/GameArea";
-import { ChatPanel } from "@/components/whoisfaker/layout/ChatPanel";
+import { ChatPanel } from "@/components/common/ChatPanel";
 import { isValidRoomId, type PlayerRole, type PublicPlayerView } from "@/types";
 
 export default function WhoIsFakerRoomPage() {
@@ -58,8 +58,20 @@ export default function WhoIsFakerRoomPage() {
   const reconnectRoom = useWhoIsFakerStore((s) => s.reconnectRoom);
   const leaveRoom = useWhoIsFakerStore((s) => s.leaveRoom);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const roomClosedAt = useWhoIsFakerStore((s) => s.roomClosedAt);
   const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
+
+  const handleSendChatMessage = useCallback(
+    async (text: string) => {
+      try {
+        await sendCommand("chat.send", { text });
+      } catch (e) {
+        addToast((e as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, addToast],
+  );
 
   const [joining, setJoining] = useState(!alreadyInRoom);
   // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
@@ -543,7 +555,12 @@ export default function WhoIsFakerRoomPage() {
 
         {/* 右栏：聊天（桌面） */}
         <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
-          <ChatPanel />
+          <ChatPanel
+            messages={snapshot?.chat ?? []}
+            players={snapshot?.players ?? []}
+            myPlayerId={privateState?.playerId}
+            onSendMessage={handleSendChatMessage}
+          />
         </aside>
 
         {/* 移动端玩家列表覆盖层 */}
@@ -608,7 +625,12 @@ export default function WhoIsFakerRoomPage() {
               exit={{ x: "100%", transition: { duration: duration.quick, ease: ease.inOut } }}
               className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col overflow-hidden border-l bg-panel shadow-xl lg:hidden"
             >
-              <ChatPanel />
+              <ChatPanel
+                messages={snapshot?.chat ?? []}
+                players={snapshot?.players ?? []}
+                myPlayerId={privateState?.playerId}
+                onSendMessage={handleSendChatMessage}
+              />
             </motion.aside>
           )}
         </AnimatePresence>

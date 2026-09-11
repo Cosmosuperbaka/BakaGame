@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { SonGuessrPlayerView } from "@/types";
-import { SongPlayerList } from "./SongPlayerList";
+import { PlayerList } from "./PlayerList";
 
 const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGuessrPlayerView => ({
   id: "player-1",
@@ -20,7 +20,7 @@ const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGues
   ...overrides,
 });
 
-describe("SongPlayerList", () => {
+describe("SonGuessr PlayerList", () => {
   it("渲染房主标识与玩家基础信息", () => {
     const players: SonGuessrPlayerView[] = [
       createMockPlayer({ id: "host-1", name: "房主小艾", isHost: true }),
@@ -28,7 +28,7 @@ describe("SongPlayerList", () => {
     ];
 
     render(
-      <SongPlayerList
+      <PlayerList
         players={players}
         myPlayerId="host-1"
         isHost
@@ -49,7 +49,7 @@ describe("SongPlayerList", () => {
     ];
 
     render(
-      <SongPlayerList
+      <PlayerList
         players={players}
         myPlayerId="p1"
         isHost={false}
@@ -70,7 +70,7 @@ describe("SongPlayerList", () => {
     ];
 
     render(
-      <SongPlayerList
+      <PlayerList
         players={players}
         myPlayerId="p1"
         isHost={false}
@@ -90,7 +90,7 @@ describe("SongPlayerList", () => {
     ];
 
     render(
-      <SongPlayerList
+      <PlayerList
         players={players}
         myPlayerId="p1"
         isHost={false}

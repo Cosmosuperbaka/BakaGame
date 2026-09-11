@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
-import { duration, ease, popover, spring, tappable } from "@/lib/Motion";
+import { chatMessageLaunch, duration, ease, popover, tappable } from "@/lib/Motion";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
   applyMention,
@@ -15,27 +15,57 @@ import {
   splitMentions,
 } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useAutoScrollToBottom } from "@/hooks/UseAutoScrollToBottom";
+import type { ChatMessage } from "@/types";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
 const MENTION_LIMIT = 6;
 
+/** 系统提示 / 阶段提醒动效：从中线展开 */
 const systemMessage = {
   initial: { opacity: 0, scaleY: 0.6 },
   animate: { opacity: 1, scaleY: 1, transition: { duration: duration.base, ease: ease.out } },
   exit: { opacity: 0, transition: { duration: duration.instant } },
 };
 
-/** 消息正文：命中房间成员的 `@名字` 高亮，其余按普通文本渲染。 */
+/** 提及联想与高亮匹配所需的最小玩家契约 */
+export interface ChatMentionPlayer {
+  id: string;
+  name: string;
+}
+
+export interface ChatPanelProps {
+  /** 聊天消息列表（按时间戳正序） */
+  messages: ChatMessage[];
+  /** 房间成员列表（用于 @提及 解析与候选联想匹配） */
+  players?: ChatMentionPlayer[];
+  /** 当前玩家 ID（用于区分左右气泡与自身高亮） */
+  myPlayerId?: string;
+  /** 发送文本消息回调 */
+  onSendMessage: (text: string) => Promise<void> | void;
+  /** 发送表情包回调（未传入时默认以 STICKER_PREFIX 拼接入 onSendMessage） */
+  onSendSticker?: (path: string) => Promise<void> | void;
+  /** 发送失败异常处理回调 */
+  onError?: (error: unknown) => void;
+  /** 输入框占位符，缺省为 "请输入文本" */
+  placeholder?: string;
+  /** 输入框最大长度，缺省为 200 */
+  maxLength?: number;
+  /** 外层容器扩展类名 */
+  className?: string;
+}
+
+/** 消息正文：命中房间成员的 `@名字` 高亮，其余按普通文本渲染 */
 function MessageText({
   text,
   players,
   isMe,
+  isGhost,
 }: {
   text: string;
-  players: Array<{ id: string; name: string }>;
+  players: ChatMentionPlayer[];
   isMe: boolean;
+  isGhost?: boolean;
 }) {
   const segments = splitMentions(text, players);
 
@@ -47,7 +77,9 @@ function MessageText({
             key={index}
             className={cn(
               "rounded-md px-1 font-medium",
-              isMe ? "bg-primary-foreground/20" : "bg-primary/12 text-primary",
+              isMe && !isGhost
+                ? "bg-primary-foreground/20"
+                : "bg-primary/12 text-primary",
             )}
           >
             {segment.text}
@@ -60,26 +92,31 @@ function MessageText({
   );
 }
 
-export function SongChatPanel() {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const chat = useSonGuessrStore((state) => state.snapshot?.chat ?? []);
-  const players = useSonGuessrStore((state) => state.snapshot?.players);
-  const myId = useSonGuessrStore((state) => state.privateState?.playerId);
+export function ChatPanel({
+  messages,
+  players = [],
+  myPlayerId,
+  onSendMessage,
+  onSendSticker,
+  onError,
+  placeholder = "请输入文本",
+  maxLength = 200,
+  className,
+}: ChatPanelProps) {
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  // 提及候选：null 表示当前没在输入提及
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const messagesRef = useAutoScrollToBottom(chat.length);
+  const messagesRef = useAutoScrollToBottom(messages.length);
 
-  // 提及只对照当前房间名单判断，改名或退房不会留下失效标记。
+  // 提及只对照当前房间名单判断，改名或退房不会留下失效标记
   const mentionablePlayers = useMemo(
-    () => (players ?? []).filter((player) => player.id !== myId),
-    [players, myId],
+    () => players.filter((player) => player.id !== myPlayerId),
+    [players, myPlayerId],
   );
+
   const candidates = useMemo(
     () =>
       mention
@@ -93,7 +130,7 @@ export function SongChatPanel() {
     setMentionIndex(0);
   }, []);
 
-  /** 输入时同步提及查询：光标位置决定当前是否正在写一个提及。 */
+  /** 输入时同步提及查询：光标位置决定当前是否正在写一个提及 */
   const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const next = event.target.value;
     setText(next);
@@ -101,7 +138,7 @@ export function SongChatPanel() {
     setMentionIndex(0);
   }, []);
 
-  /** 选中候选：写回输入框并把光标留在名字之后。 */
+  /** 选中候选：写回输入框并把光标留在名字之后 */
   const pickMention = useCallback(
     (name: string) => {
       if (!mention) return;
@@ -109,7 +146,6 @@ export function SongChatPanel() {
       const applied = applyMention(text, mention.start, caret, name);
       setText(applied.value);
       closeMention();
-      // 写回后光标要落在插入内容之后，否则继续输入会插在中间。
       requestAnimationFrame(() => {
         inputRef.current?.focus();
         inputRef.current?.setSelectionRange(applied.caret, applied.caret);
@@ -124,27 +160,34 @@ export function SongChatPanel() {
     setText("");
     closeMention();
     try {
-      await sendCommand("song.chat.send", { text: trimmed });
+      await onSendMessage(trimmed);
     } catch (error) {
-      setNotice((error as { message: string }).message, "error");
+      onError?.(error);
     }
   };
 
   const handleSendSticker = async (path: string) => {
     try {
-      await sendCommand("song.chat.send", { text: `${STICKER_PREFIX}${path}` });
+      if (onSendSticker) {
+        await onSendSticker(path);
+      } else {
+        await onSendMessage(`${STICKER_PREFIX}${path}`);
+      }
     } catch (error) {
-      setNotice((error as { message: string }).message, "error");
+      onError?.(error);
     }
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+    <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
       <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
         <div ref={messagesRef} className="min-w-0 space-y-2">
           <AnimatePresence initial={false}>
-            {chat.map((message) => {
-              const isMe = message.playerId === myId;
+            {messages.map((message) => {
+              const isMe = message.playerId === myPlayerId;
+              const isGhost = message.channel === "ghost";
+
+              // 阶段提醒与系统提示：统一定义为通透无背景居中文本样式
               if (message.system) {
                 return (
                   <motion.div
@@ -163,32 +206,35 @@ export function SongChatPanel() {
               const isSticker = message.text.startsWith(STICKER_PREFIX);
               const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
               const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
-              // 被点到名的消息加一圈描边，便于在滚动中回头找到
               const mentionsMe =
-                !isSticker && Boolean(myId) && mentionsPlayer(message.text, myId!, players ?? []);
+                !isSticker && Boolean(myPlayerId) && mentionsPlayer(message.text, myPlayerId!, players);
 
               return (
                 <motion.div
                   key={message.id}
                   layout="position"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.94, transition: { duration: duration.instant } }}
-                  transition={spring.swift}
+                  variants={chatMessageLaunch}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <span className="font-sans text-[11px] font-normal text-muted-foreground/60 mb-0.5 px-1">
+                  <span className="font-sans text-[11px] font-normal text-muted-foreground/70 mb-0.5 px-1 select-none">
                     {message.playerName}
                   </span>
                   <div
                     data-testid="chat-message-bubble"
                     className={cn(
-                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere]",
-                      safeStickerPath ? "p-1.5" : "px-3 py-1.5",
+                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                      safeStickerPath ? "p-1.5" : "px-3.5 py-2",
                       isMe
-                        ? "rounded-br-sm bg-primary text-primary-foreground"
-                        : "rounded-bl-sm bg-muted text-foreground",
+                        ? isGhost
+                          ? "rounded-br-sm bg-stone-500/15 border border-dashed border-stone-400/50 dark:border-stone-500/50 text-foreground"
+                          : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs"
+                        : isGhost
+                          ? "rounded-bl-sm bg-muted/40 border border-dashed border-border/80 text-foreground/85"
+                          : "rounded-bl-sm bg-card border border-border/70 text-foreground shadow-2xs",
                       mentionsMe && "ring-1 ring-primary/45",
                     )}
                   >
@@ -200,7 +246,12 @@ export function SongChatPanel() {
                         className="h-20 w-20 object-contain"
                       />
                     ) : (
-                      <MessageText text={message.text} players={players ?? []} isMe={isMe} />
+                      <MessageText
+                        text={message.text}
+                        players={players}
+                        isMe={isMe}
+                        isGhost={isGhost}
+                      />
                     )}
                   </div>
                 </motion.div>
@@ -210,7 +261,8 @@ export function SongChatPanel() {
         </div>
       </ScrollArea>
 
-      <div className="relative p-3 border-t flex gap-2 shrink-0">
+      {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框 */}
+      <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background/50">
         <EmojiPicker
           open={pickerOpen}
           activeTab={activeTab}
@@ -271,7 +323,7 @@ export function SongChatPanel() {
           ref={inputRef}
           value={text}
           onChange={handleChange}
-          placeholder="请输入文本"
+          placeholder={placeholder}
           className="flex-1"
           aria-expanded={candidates.length > 0}
           onKeyDown={(event) => {
@@ -300,7 +352,7 @@ export function SongChatPanel() {
             if (event.key === "Enter") void handleSend();
             if (event.key === "Escape") setPickerOpen(false);
           }}
-          maxLength={200}
+          maxLength={maxLength}
         />
         <Button
           size="icon"

@@ -44,12 +44,12 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { PLAYER_COLUMN_WIDTH } from "@/components/whoisfaker/layout/PlayerList";
-import { SongChatPanel } from "@/components/songguessr/SongChatPanel";
-import { SongAccountSettings } from "@/components/songguessr/SongAccountSettings";
-import { SongPlayerList } from "@/components/songguessr/SongPlayerList";
-import { SongSearchDialog } from "@/components/songguessr/SongSearchDialog";
-import { BangumiSearchDialog } from "@/components/songguessr/BangumiSearchDialog";
+import { ChatPanel } from "@/components/common/ChatPanel";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
+import { PlayerList } from "@/components/songuessr/PlayerList";
+import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
+import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import {
@@ -234,6 +234,17 @@ export default function SonGuessrRoomPage() {
   const isPending = useCallback(
     (type: string) => Boolean(pendingCommands[type]),
     [pendingCommands],
+  );
+
+  const handleSendChatMessage = useCallback(
+    async (chatText: string) => {
+      try {
+        await sendCommand("song.chat.send", { text: chatText });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
   );
 
   const enterWithName = useCallback(
@@ -885,7 +896,7 @@ export default function SonGuessrRoomPage() {
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
           >
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl">
-              <SongPlayerList
+              <PlayerList
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
                 isHost={isHost}
@@ -925,7 +936,12 @@ export default function SonGuessrRoomPage() {
         </section>
 
         <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-panel lg:flex">
-          <SongChatPanel />
+          <ChatPanel
+            messages={snapshot.chat ?? []}
+            players={snapshot.players}
+            myPlayerId={privateState.playerId}
+            onSendMessage={handleSendChatMessage}
+          />
         </aside>
 
         <AnimatePresence>
@@ -936,7 +952,7 @@ export default function SonGuessrRoomPage() {
               exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
               className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
             >
-              <SongPlayerList
+              <PlayerList
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
                 isHost={isHost}
@@ -955,7 +971,12 @@ export default function SonGuessrRoomPage() {
               exit={{ x: "100%", transition: { duration: duration.quick, ease: ease.inOut } }}
               className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col overflow-hidden border-l bg-panel shadow-xl lg:hidden"
             >
-              <SongChatPanel />
+              <ChatPanel
+                messages={snapshot.chat ?? []}
+                players={snapshot.players}
+                myPlayerId={privateState.playerId}
+                onSendMessage={handleSendChatMessage}
+              />
             </motion.aside>
           ) : null}
         </AnimatePresence>
