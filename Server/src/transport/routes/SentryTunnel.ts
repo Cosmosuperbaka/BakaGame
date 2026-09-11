@@ -182,7 +182,7 @@ export const sentryTunnelRoutes = ({
             "Content-Type": "application/x-sentry-envelope",
           },
           body: rawEnvelope,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         });
 
         if (!response.ok) {
@@ -192,6 +192,36 @@ export const sentryTunnelRoutes = ({
 
         return { ok: true };
       } catch (err) {
+        const isTimeout =
+          (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) ||
+          (typeof err === "object" &&
+            err !== null &&
+            "name" in err &&
+            (err.name === "AbortError" || err.name === "TimeoutError"));
+
+        if (isTimeout) {
+          logger?.warn("Sentry tunnel upstream timeout", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          set.status = 504;
+          return { error: "Sentry upstream timeout" };
+        }
+
+        const isNetworkError =
+          err instanceof TypeError ||
+          (err instanceof Error &&
+            /fetch failed|network|dns|econnrefused|enotfound|eai_again|und_err/i.test(
+              `${err.name} ${err.message}`,
+            ));
+
+        if (isNetworkError) {
+          logger?.warn("Sentry tunnel upstream unavailable", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          set.status = 502;
+          return { error: "Sentry upstream unavailable" };
+        }
+
         logger?.error("Internal Sentry tunnel error", {
           error: err instanceof Error ? err.stack ?? err.message : String(err),
         });

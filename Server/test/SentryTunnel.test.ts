@@ -223,15 +223,16 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     expect(res.status).toBe(429);
   });
 
-  it("上游 fetch 异常时脱敏，返回 500 且不泄露堆栈与内部异常信息", async () => {
+  it("上游 fetch 遇到网络或 DNS 异常时降级为 warn 并返回 502 Bad Gateway，绝不触发 error 告警", async () => {
     const errorFetcher = (async () => {
       throw new Error("DNS resolution failure to internal-network-secret:8080");
     }) as unknown as typeof fetch;
 
     const loggedErrors: unknown[] = [];
+    const loggedWarns: unknown[] = [];
     const mockLogger = {
       error: (msg: string, ctx?: unknown) => loggedErrors.push({ msg, ctx }),
-      warn: () => {},
+      warn: (msg: string, ctx?: unknown) => loggedWarns.push({ msg, ctx }),
       info: () => {},
     };
 
@@ -249,11 +250,82 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
 
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.error).toBe("Sentry upstream unavailable");
+    expect(json.message).toBeUndefined();
+    expect(JSON.stringify(json)).not.toContain("internal-network-secret");
+    expect(loggedErrors.length).toBe(0);
+    expect(loggedWarns.length).toBe(1);
+  });
+
+  it("上游 fetch 遭遇超时时降级为 warn 并返回 504 Gateway Timeout，绝不触发 error 告警", async () => {
+    const timeoutFetcher = (async () => {
+      const err = new Error("The operation was aborted due to timeout");
+      err.name = "TimeoutError";
+      throw err;
+    }) as unknown as typeof fetch;
+
+    const loggedErrors: unknown[] = [];
+    const loggedWarns: unknown[] = [];
+    const mockLogger = {
+      error: (msg: string, ctx?: unknown) => loggedErrors.push({ msg, ctx }),
+      warn: (msg: string, ctx?: unknown) => loggedWarns.push({ msg, ctx }),
+      info: () => {},
+    };
+
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: timeoutFetcher,
+      logger: mockLogger,
+    });
+    const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
+
+    const res = await app.handle(
+      new Request("http://localhost/api/monitoring/sentry", {
+        method: "POST",
+        body: envelope,
+      }),
+    );
+
+    expect(res.status).toBe(504);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.error).toBe("Sentry upstream timeout");
+    expect(loggedErrors.length).toBe(0);
+    expect(loggedWarns.length).toBe(1);
+  });
+
+  it("未预期的内部异常返回 500 且使用 logger.error 记录并脱敏", async () => {
+    const internalErrorFetcher = (async () => {
+      const err = new RangeError("Internal fatal memory exhaustion");
+      throw err;
+    }) as unknown as typeof fetch;
+
+    const loggedErrors: unknown[] = [];
+    const mockLogger = {
+      error: (msg: string, ctx?: unknown) => loggedErrors.push({ msg, ctx }),
+      warn: () => {},
+      info: () => {},
+    };
+
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: internalErrorFetcher,
+      logger: mockLogger,
+    });
+    const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
+
+    const res = await app.handle(
+      new Request("http://localhost/api/monitoring/sentry", {
+        method: "POST",
+        body: envelope,
+      }),
+    );
+
     expect(res.status).toBe(500);
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.error).toBe("Internal Sentry tunnel error");
     expect(json.message).toBeUndefined();
-    expect(JSON.stringify(json)).not.toContain("internal-network-secret");
     expect(loggedErrors.length).toBe(1);
   });
 });
