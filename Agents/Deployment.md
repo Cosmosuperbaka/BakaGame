@@ -50,13 +50,11 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
    - 任何类型错误或单测失败立即阻断流水线，绝不向生产环境推送未验证的代码。
 2. **远程安全连接 (`deploy`)**：
    - 通过 `appleboy/ssh-action` 建立至生产服务器的 SSH 会话，严格启用 `script_stop: true`。
-3. **代码与依赖同步**：
+3. **代码对齐与容器重启**：
    - 切换至 `/BakaGame` 仓库目录。
    - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支。
-   - 自适应探测容器内部（注入完整 PATH 支持 `/root/.bun/bin`、`/usr/local/bin` 等非常规环境变量路径）或宿主机环境中的 Bun 运行时，执行 `bun install --frozen-lockfile`（失败时平滑降级为 `bun install`），将依赖同步至共享挂载目录 `/app/node_modules`。
-4. **容器热重启**：
-   - 执行 `sudo docker restart BakaGame` 热重启后端服务。
-5. **就绪探测与健康检查**：
+   - 执行 `sudo docker restart BakaGame` 热重启后端容器。容器启动入口自带依赖安装与环境初始化逻辑，每次启动时自动完成容器内部服务端依赖的同步与服务拉起。
+4. **就绪探测与健康检查**：
    - 轮询 `http://127.0.0.1:4850/health` 端点（最多重试 15 次，每次间隔 2 秒）。
    - 验证响应中包含 `{"status":"ok"}`。
    - 若 30 秒内未能就绪，自动打印 `sudo docker logs --tail 50 BakaGame` 并退出报错，便于在 Actions 界面快速定位崩溃日志。
