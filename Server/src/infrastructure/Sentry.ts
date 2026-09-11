@@ -123,6 +123,15 @@ export const recordServerMetric = (
   Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes });
 };
 
+export const gaugeServerMetric = (
+  name: string,
+  value: number,
+  attributes?: Record<string, string | number | boolean>,
+): void => {
+  if (!isInitialized || !Number.isFinite(value)) return;
+  Sentry.metrics.gauge(name, value, { attributes });
+};
+
 export const countServerMetric = (
   name: string,
   value = 1,

@@ -6,6 +6,7 @@ import {
   captureServerCheckIn,
   closeServerSentry,
   flushServerSentry,
+  gaugeServerMetric,
   initServerSentry,
 } from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
@@ -60,6 +61,21 @@ const intervalId = setInterval(() => {
 const sentryHeartbeatIntervalId = setInterval(captureServerCheckIn, 4 * 60_000);
 sentryHeartbeatIntervalId.unref();
 
+const sentryRuntimeMetricsIntervalId = setInterval(() => {
+  reportRuntimeMetrics();
+}, 60_000);
+sentryRuntimeMetricsIntervalId.unref();
+
+function reportRuntimeMetrics(): void {
+  const faker = roomService.getHealthSnapshot();
+  const songuessr = sonGuessrService.getHealthSnapshot();
+  gaugeServerMetric("bakagame.players.online", faker.onlinePlayerCount + songuessr.onlinePlayerCount);
+  gaugeServerMetric("bakagame.rooms.active", faker.roomCount + songuessr.roomCount);
+  gaugeServerMetric("bakagame.connections.active", faker.connectionCount + songuessr.connectionCount);
+}
+
+reportRuntimeMetrics();
+
 const server = app.listen({
   // 公开地址使用 SERVER_URL，实际监听地址优先回落到本机可绑定地址。
   hostname: env.serverListenHost,
@@ -86,6 +102,7 @@ const shutdown = async (signal?: string) => {
   // 1. 清理后台定时任务，不再触发新的闲置扫描
   clearInterval(intervalId);
   clearInterval(sentryHeartbeatIntervalId);
+  clearInterval(sentryRuntimeMetricsIntervalId);
 
   // 2. 向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机通知
   roomService.notifyShutdown();
