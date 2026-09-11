@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -53,7 +53,11 @@ describe("LandingPage", () => {
     const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
     expect(ccbEntry).toBeInTheDocument();
     expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
-    expect(screen.getByText("即将上线")).toBeInTheDocument();
+    expect(within(ccbEntry).getByText("即将上线")).toBeInTheDocument();
+
+    const songEntry = screen.getByTestId("game-entry-songuessr");
+    expect(songEntry).toBeInTheDocument();
+    expect(within(songEntry).getByText("即将上线")).toBeInTheDocument();
 
     // 可用游戏：Who is Faker 为正常入口 button；Songuessr 提供多人模式交互 button 与单人模式
     expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeInTheDocument();
