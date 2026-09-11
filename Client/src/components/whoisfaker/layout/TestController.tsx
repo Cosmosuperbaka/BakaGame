@@ -1,4 +1,4 @@
-﻿import { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronUp, FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -90,7 +90,7 @@ export function TestController() {
         <motion.div
           layout
           transition={spring.settle}
-          className="w-full max-w-full overflow-hidden rounded-xl border bg-background/95 shadow-xl backdrop-blur-md md:w-96"
+          className="w-full max-w-full overflow-hidden rounded-md border bg-background/95 shadow-xl backdrop-blur-md md:w-96"
         >
           <motion.button
             type="button"

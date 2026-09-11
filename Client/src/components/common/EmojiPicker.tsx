@@ -1,4 +1,4 @@
-﻿import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { popover } from "@/lib/Motion";
@@ -74,7 +74,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
           animate="animate"
           exit="exit"
           style={{ originY: 1 }}
-          className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur-md"
+          className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-md border bg-background/95 shadow-lg backdrop-blur-md"
         >
           {!pack ? (
             <div className="flex h-52 items-center justify-center px-4 text-center text-xs text-muted-foreground">
