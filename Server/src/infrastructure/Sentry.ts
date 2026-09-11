@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
+import changelog from "../../../Client/src/data/changelog.json";
 
 let isInitialized = false;
 
@@ -9,13 +10,29 @@ export const _resetServerSentryForTest = (): void => {
   isInitialized = false;
 };
 
+const resolveLatestProjectVersion = (): string | undefined => {
+  const versions = changelog.entries
+    .map((entry) => entry.version)
+    .filter((version): version is string => /^\d+\.\d+\.\d+$/.test(version));
+  if (versions.length === 0) return undefined;
+  return versions.sort((a, b) => {
+    const left = a.split(".").map(Number);
+    const right = b.split(".").map(Number);
+    for (let index = 0; index < 3; index += 1) {
+      if (left[index] !== right[index]) return right[index] - left[index];
+    }
+    return 0;
+  })[0];
+};
+
 export const resolveServerRelease = (): string | undefined => {
   try {
     const proc = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]);
     if (proc.exitCode === 0) {
       const hash = proc.stdout.toString().trim();
       if (hash) {
-        return `V1.3.2（${hash}）`;
+        const version = resolveLatestProjectVersion();
+        return version ? `V${version}（${hash}）` : undefined;
       }
     }
   } catch {

@@ -26,38 +26,20 @@ const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
 });
 
 describe("Sentry (服务端异常监控托管与优雅排空)", () => {
-  const originalEnvRelease = process.env.SENTRY_RELEASE;
-
   beforeEach(() => {
     _resetServerSentryForTest();
-    if (originalEnvRelease !== undefined) {
-      process.env.SENTRY_RELEASE = originalEnvRelease;
-    } else {
-      delete process.env.SENTRY_RELEASE;
-    }
   });
 
   afterEach(() => {
     _resetServerSentryForTest();
-    if (originalEnvRelease !== undefined) {
-      process.env.SENTRY_RELEASE = originalEnvRelease;
-    } else {
-      delete process.env.SENTRY_RELEASE;
-    }
   });
 
   describe("resolveServerRelease", () => {
-    it("优先读取 SENTRY_RELEASE 环境变量", () => {
+    it("按项目版本与 Git 短提交生成发布标识", () => {
       process.env.SENTRY_RELEASE = "v2.0.0-rc1";
-      expect(resolveServerRelease()).toBe("v2.0.0-rc1");
-    });
-
-    it("无环境变量时降级提取本地 git 短 commit hash", () => {
-      delete process.env.SENTRY_RELEASE;
       const release = resolveServerRelease();
-      expect(release).toBeDefined();
-      expect(typeof release).toBe("string");
-      expect(release!.length).toBeGreaterThanOrEqual(6);
+      expect(release).toMatch(/^V\d+\.\d+\.\d+（[0-9a-f]{7,}）$/);
+      expect(release).not.toBe("v2.0.0-rc1");
     });
   });
 
