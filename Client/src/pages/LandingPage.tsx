@@ -9,7 +9,7 @@ import {
   selectable,
   useOriginTracker,
 } from "@/lib/Motion";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 // 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
@@ -146,12 +146,11 @@ const EXTERNAL_LINKS: ExternalLink[] = [
 
 function ComingSoonBadge({ className = "" }: { className?: string }) {
   return (
-    <Badge
-      variant="outline"
-      className={`shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs font-normal leading-none text-muted-foreground border-border/80 ${className}`}
+    <span
+      className={`shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal leading-none text-muted-foreground select-none ${className}`}
     >
       即将上线
-    </Badge>
+    </span>
   );
 }
 
@@ -224,10 +223,9 @@ function GameRow({ game }: { game: GameEntry }) {
               onClick={() => handleEnter(game.path)}
               animate={isEntering ? { scale: 0.98 } : { scale: 1 }}
               {...selectable}
-              className="group flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+              className="group flex h-8 w-full cursor-pointer items-center justify-center rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
             >
               <span>开始游戏</span>
-              <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
             </motion.button>
           </div>
         </div>
@@ -294,10 +292,9 @@ function GameRow({ game }: { game: GameEntry }) {
                 onClick={() => handleEnter(mode.path)}
                 animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
                 {...selectable}
-                className="group flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+                className="group flex h-8 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-2.5 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
               >
                 <span className="truncate">{mode.title}</span>
-                <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
               </motion.button>
             );
           })}
@@ -492,9 +489,9 @@ export default function LandingPage() {
         </motion.h1>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-6xl items-center overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-8 [@media(max-height:680px)]:py-1">
+      <main className="mx-auto flex min-h-0 w-full max-w-xl items-center overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-6 [@media(max-height:680px)]:py-1">
         <motion.div
-          className="flex w-full flex-col gap-2.5 sm:grid sm:grid-cols-3 sm:items-stretch sm:gap-3.5"
+          className="flex w-full flex-col gap-2.5 sm:gap-3"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
