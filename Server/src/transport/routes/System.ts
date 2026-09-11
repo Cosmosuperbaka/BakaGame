@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 
-import type { RoomService } from "../../application/RoomService";
+import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 
@@ -76,7 +76,7 @@ export class TelemetryRateLimiter {
 }
 
 export interface SystemRoutesDependencies {
-  whoIsFakerService?: RoomService;
+  whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;

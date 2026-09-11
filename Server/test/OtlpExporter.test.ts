@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { OtlpExporter, toUnixNanoString, type OtlpFetcher } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createApp } from "../src/transport/App";
-import { RoomService } from "../src/application/RoomService";
+import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { AppEnv } from "../src/config/Env";
 
@@ -109,14 +109,14 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
     bangumiImageUrl: "",
   };
 
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: logger,
   });
 
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
   });
 
@@ -178,7 +178,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
   };
   const { app } = createApp({
     env,
-    whoIsFakerService: new RoomService({
+    whoIsFakerService: new WhoIsFakerService({
       eventLogger: new EventLogger(),
       wordBankRepository: new WordBankRepository(":memory:"),
     }),
@@ -290,14 +290,14 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
     bangumiImageUrl: "",
   };
 
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: logger,
   });
 
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
   });
 
@@ -471,14 +471,14 @@ test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async 
     bangumiImageUrl: "",
   };
 
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: mockLogger,
   });
 
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger: mockLogger,
   });
 

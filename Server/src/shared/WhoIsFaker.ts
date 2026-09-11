@@ -272,7 +272,7 @@ export interface GameRound {
   summary?: RoundSummary;
 }
 
-// 房间的运行时总状态，RoomService 的核心持有对象。
+// 房间的运行时总状态，WhoIsFakerService 的核心持有对象。
 export interface WhoIsFakerRoomRecord {
   id: string;
   settings: RoomSettings;

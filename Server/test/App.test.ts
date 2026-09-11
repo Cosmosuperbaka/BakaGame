@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { RoomService } from "../src/application/RoomService";
+import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
 import {
   describeError,
@@ -128,14 +128,14 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     eventLogger: new EventLogger(),
     wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
   const logger = new EventLogger();
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
   });
 
@@ -210,13 +210,13 @@ const startTestServer = () => {
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     eventLogger: new EventLogger(),
     wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger: new EventLogger(),
   });
   const started = app.listen({
@@ -232,7 +232,7 @@ const startTestServer = () => {
 
   return {
     port,
-    roomService,
+    whoIsFakerService,
     stop: async () => {
       await started.stop(true);
       rmSync(tempDir, { force: true, recursive: true });
@@ -397,7 +397,7 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
   let shuttingDown = false;
   let storageHealthy = true;
 
-  const roomService = new RoomService({
+  const whoIsFakerService = new WhoIsFakerService({
     wordBankRepository: {
       checkHealth: async () => storageHealthy,
       drainWrites: async () => {},
@@ -409,7 +409,7 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
 
   const { app } = createApp({
     env,
-    whoIsFakerService: roomService,
+    whoIsFakerService,
     logger,
     isShuttingDown: () => shuttingDown,
   });
@@ -438,14 +438,14 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
   expect(await shuttingDownRes.json()).toEqual({ status: "shutting_down", ready: false });
 });
 
-test("RoomService.notifyShutdown 会向所有在线连接广播停机通知", async () => {
-  const { port, stop, roomService } = startTestServer();
+test("WhoIsFakerService.notifyShutdown 会向所有在线连接广播停机通知", async () => {
+  const { port, stop, whoIsFakerService } = startTestServer();
 
   try {
     const socket = await openSocket(port);
     const collector = createSocketCollector(socket);
 
-    roomService.notifyShutdown();
+    whoIsFakerService.notifyShutdown();
 
     const shutdownEvent = (await collector(
       (payload) =>
