@@ -20,13 +20,13 @@
 
 | 文件类型 | 命名规则 | 示例 | 放置位置 |
 |---|---|---|---|
-| **TypeScript 核心模块** | `PascalCase.ts` | `RoomService.ts`, `SonGuessrService.ts`, `StateSync.ts`, `Rules.ts`, `Index.ts` | `Server/src/application/`, `Server/src/transport/`, `Client/src/lib/` |
+| **TypeScript 核心模块** | `PascalCase.ts` | `WhoIsFakerService.ts`, `SonGuessrService.ts`, `StateSync.ts`, `Rules.ts`, `Index.ts` | `Server/src/application/`, `Server/src/transport/`, `Client/src/lib/` |
 | **基础设施与仓储** | `PascalCase.ts` | `NeteaseMusicProvider.ts`, `WordBankRepository.ts`, `EventLogger.ts` | `Server/src/infrastructure/` |
 | **自定义 Hooks** | `PascalCase.ts` (`Use*.ts`) | `UseAutoSave.ts`, `UseAutoScrollToBottom.ts`, `UseOriginTracker.ts` | `Client/src/hooks/` |
 | **状态 Store** | `PascalCase.ts` (`Use*.ts`) | `UseWhoIsFakerStore.ts`, `UseSonGuessrStore.ts` | `Client/src/stores/` |
 | **React Context** | `PascalCase.tsx` | `WhoIsFakerContext.tsx`, `SonGuessrContext.tsx` | `Client/src/contexts/` |
 | **React 页面与组件** | `PascalCase.tsx` | `Main.tsx`, `WhoIsFakerRoomPage.tsx`, `SonGuessrRoomPage.tsx`, `PhaseHeader.tsx`, `EmojiPicker.tsx`, `Button.tsx` | `Client/src/pages/`, `Client/src/components/` |
-| **测试与集成文件** | `PascalCase.test.ts(x)` | `RoomService.test.ts`, `Rules.test.ts`, `UseWhoIsFakerStore.test.ts`, `UseAutoSave.test.tsx` | 与源文件同名放置在 `test/` 或源码同级 |
+| **测试与集成文件** | `PascalCase.test.ts(x)` | `WhoIsFakerService.test.ts`, `Rules.test.ts`, `UseWhoIsFakerStore.test.ts`, `UseAutoSave.test.tsx` | 与源文件同名放置在 `test/` 或源码同级 |
 
 ---
 
@@ -60,7 +60,7 @@ Server/src/
 ├── application/             # 领域编排服务与指令处理器
 │   ├── handlers/            # 命令处理器（CommandHandler.ts, GameCommandHandler.ts, PlayerCommandHandler.ts 等）
 │   ├── ConnectionRegistry.ts# 连接池注册表
-│   ├── RoomService.ts       # 谁是卧底核心业务服务
+│   ├── WhoIsFakerService.ts # 谁是卧底核心业务服务
 │   └── SonGuessrService.ts  # 猜歌游戏核心业务服务
 ├── config/                  # 后端配置与常量（Constants.ts, Env.ts）
 ├── domain/                  # 纯业务规则、错误与领域定义（Rules.ts, Errors.ts, Model.ts）

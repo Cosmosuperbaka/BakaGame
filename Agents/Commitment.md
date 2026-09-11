@@ -46,7 +46,7 @@ type(scope): 中文摘要
 | 字段 | 允许值 / 约束规则 | 严重违规反例（严禁出现） |
 |---|---|---|
 | `type` | 仅限 Angular 标准类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` | `update`、`modify`、`change` |
-| `scope` | **只能四选一（严格区分大小写）**：<br>• `Faker`（WhoIsFaker 相关逻辑）<br>• `Song`（SongGuessr 相关逻辑）<br>• `CCB`（AnimeCharacterGuessr 相关逻辑）<br>• `Core`（公共架构、Shared 协议、工具链、大厅、CI、文档、任务） | `server`、`client`、`backend`、`frontend`、`shared`、`tasks`、`faker`（小写亦违规） |
+| `scope` | **只能四选一（严格区分大小写）**：<br>• `Faker`（WhoIsFaker 相关逻辑）<br>• `Song`（SonGuessr 相关逻辑）<br>• `CCB`（AnimeCharacterGuessr 相关逻辑）<br>• `Core`（公共架构、Shared 协议、工具链、大厅、CI、文档、任务） | `server`、`client`、`backend`、`frontend`、`shared`、`tasks`、`faker`（小写亦违规） |
 | `中文摘要` | **纯中文，不超过 12 个汉字（含标点）**，简洁点明本提交的原子动作 | • 任何英文句子（如 `fail fast on corrupted file`）<br>• 超过 12 字的冗长描述（如 `修复谁是卧底发言阶段中的假玩家对象错误`） |
 
 ### 2. 正误对照清单 (Good Taste vs Bad Taste)

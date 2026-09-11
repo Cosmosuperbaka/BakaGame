@@ -21,8 +21,8 @@
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
 | 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts`、`BangumiProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化、Bangumi 图片重写与请求缓存 |
-| 后端服务回归 | `Server/test/RoomService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、人机 |
-| 协议与传输集成 | `Server/test/ProtocolOpenapi.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云与 Bangumi 接口 Mock 与解析 |
+| 后端服务回归 | `Server/test/WhoIsFakerService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、人机 |
+| 协议与传输集成 | `Server/test/WhoIsFakerProtocol.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云与 Bangumi 接口 Mock 与解析 |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -60,11 +60,11 @@ npm run verify
 
 ```bash
 cd Server
-bun test test/RoomService.test.ts
+bun test test/WhoIsFakerService.test.ts
 
 cd Client
 npx vitest run src/lib/WebsocketClient.test.ts
-npx playwright test e2e/app.spec.ts
+npx playwright test e2e/App.spec.ts
 ```
 
 ## 依赖与浏览器
@@ -78,7 +78,7 @@ npx playwright test e2e/app.spec.ts
 ## 编写约定
 
 - 修复缺陷时至少补一条能在修复前失败的回归测试。
-- 业务状态机优先从 `RoomService.execute` 真实入口测试，不直接调用私有实现。
+- 业务状态机优先从 `WhoIsFakerService.execute` 等真实入口测试，不直接调用私有实现。
 - 纯规则和连接注册表使用无网络的单元测试；HTTP/WS 交互放在 `App.test.ts` 或 Playwright。
 - 每条测试独立创建房间、连接与临时目录，禁止依赖用例顺序。
 - Vitest 测试只放在 `Client/src`；Playwright 测试只放在 `Client/e2e`。

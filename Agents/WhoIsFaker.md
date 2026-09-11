@@ -33,8 +33,8 @@ interface ClientEnvelope<TPayload = unknown> {
 
 ### 2.1 服务端分层 (`Server/src/`)
 ```text
-transport/       ← Elysia HTTP/WS 路由、封包解析 (Protocol.ts)、RFC 6902 差量同步 (StateSync.ts)
-application/     ← RoomService 房间服务、命令处理器 (handlers/)、ConnectionRegistry 连接注册表
+transport/       ← Elysia HTTP/WS 路由、封包解析 (WhoIsFakerProtocol.ts)、RFC 6902 差量同步 (StateSync.ts)
+application/     ← WhoIsFakerService 房间服务、命令处理器 (handlers/)、ConnectionRegistry 连接注册表
 domain/          ← Rules.ts (无副作用纯函数)、Model.ts (领域类型 re-export)、Errors.ts (统一错误定义)
 infrastructure/  ← WordBankRepository (持久化词库)、EventLogger (日志记录)
 config/          ← Env.ts, Constants.ts
