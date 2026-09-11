@@ -4,6 +4,18 @@
 
 本文件同时维护覆盖矩阵、生产资源冒烟、过时测试治理、CI 门禁，以及未来新增测试的质量要求。
 
+## 优化实施状态
+
+本轮测试套件优化已经落地以下门禁：
+
+- 测试夹具在清理临时目录前会排空词库异步写队列；结算流程和资源路径均有回归覆盖。
+- 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
+- 服务端与客户端覆盖率命令已进入 CI。服务端检查函数覆盖率至少 92.87%、行覆盖率至少 95.45%；客户端检查语句 54%、分支 43%、函数 45%、行 56%。CI 会保留两端 lcov/HTML 报告。
+- `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr 两个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
+- 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不再读取 Tailwind 类名；关键落地页和聊天流程会将页面异常、控制台错误及非预期 4xx 转为测试失败。
+
+以下事项属于后续容量或维护工作，目前没有伪装成已完成的门禁：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
+
 ## 测试分层
 
 | 层级 | 位置 | 运行器 | 主要职责 |
@@ -24,6 +36,7 @@
 cd Server
 bun test
 bun run test:coverage
+bun run test:production-smoke
 bun run verify
 bun test test/NetworkCapacity.test.ts
 bun test test/BangumiProvider.test.ts test/SonGuessrService.test.ts
@@ -79,6 +92,9 @@ npx playwright test e2e/app.spec.ts
 - **异步夹具必须排空**：测试删除临时目录或关闭服务前，必须等待所有持久化写队列和异步任务结束；未处理 Promise rejection、console error 和非预期 4xx 必须令测试失败。
 - **覆盖率必须进 CI**：`Server` 执行 `bun run test:coverage`，`Client` 执行 `npm run test:coverage`；覆盖率用于阻止回退，核心模块的主要分支不得以全局平均值掩盖。
 - **开发服务器不代表生产**：Playwright 的资源冒烟使用 `npm run build` 后的 `vite preview`；真实房间 E2E 可以使用开发服务器，但必须另有生产构建冒烟。
+- **覆盖率阈值必须可追溯**：修改阈值时必须同时说明基线、覆盖空白和回退风险；禁止为通过 CI 临时降低阈值。服务端阈值由 `Server/scripts/CheckCoverage.ts` 检查，客户端阈值由 `Client/vitest.config.ts` 检查。
+- **生产冒烟必须隔离上游**：冒烟脚本只能验证本地服务、协议握手和关键 ACK；网易云、Bangumi 等真实第三方调用必须使用 Mock 或单独的凭据隔离集成任务。
+- **E2E 质量监听必须可解释**：监听到的 `pageerror`、控制台 error 或 HTTP 4xx/5xx 必须能关联到当前用户流程；确属预期的状态码要在测试中显式白名单并写明原因。
 
 ## 新增测试质量规范
 
@@ -91,6 +107,8 @@ npx playwright test e2e/app.spec.ts
 - E2E 只覆盖跨页面、跨进程和真实用户风险；多浏览器上下文必须在 `finally` 中关闭，并确保测试输出没有未处理 rejection、console error 或非预期 4xx。
 - 新增生产资源必须加入构建后 preview 冒烟，验证 HTTP 200、MIME、非空内容和可解码性；仅测试插件函数不合格。
 - 覆盖率用于发现空白和防止回退；核心逻辑须覆盖主要分支，不得用低价值断言堆高全局百分比。真实第三方集成测试单独运行、凭据脱敏，不进入常规 CI。
+- 生产服务冒烟应保持单进程、可重复和无外部网络依赖；端口、临时目录、WebSocket 和子进程必须在 `finally` 中释放，超时后应主动终止子进程。
+- E2E 选择器优先使用 ARIA 角色、可见语义文本和稳定 `data-testid`。只有当元素本身就是业务契约时才增加 `data-testid`，不得把样式类名或 DOM 深度变成测试接口。
 
 ## CI 推荐顺序
 
