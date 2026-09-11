@@ -5,6 +5,8 @@ import type { AppEnv } from "../config/Env";
 
 let isInitialized = false;
 
+export const SERVER_HEARTBEAT_MONITOR_SLUG = "bakagame-server-heartbeat";
+
 export const isServerSentryEnabled = (): boolean => isInitialized;
 
 export const _resetServerSentryForTest = (): void => {
@@ -128,6 +130,15 @@ export const countServerMetric = (
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.count(name, value, { attributes });
+};
+
+/** 向 Sentry Cron Monitor 报告服务仍在运行。 */
+export const captureServerCheckIn = (): void => {
+  if (!isInitialized) return;
+  Sentry.captureCheckIn({
+    monitorSlug: SERVER_HEARTBEAT_MONITOR_SLUG,
+    status: "ok",
+  });
 };
 
 export const captureServerOperation = ({
