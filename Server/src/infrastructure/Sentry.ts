@@ -10,10 +10,6 @@ export const _resetServerSentryForTest = (): void => {
 };
 
 export const resolveServerRelease = (): string | undefined => {
-  const envRelease = process.env.SENTRY_RELEASE || Bun.env.SENTRY_RELEASE;
-  if (envRelease && envRelease.trim()) {
-    return envRelease.trim();
-  }
   try {
     const proc = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]);
     if (proc.exitCode === 0) {
