@@ -228,7 +228,10 @@ export default function SonGuessrPage() {
 
                           <div className="flex items-center gap-1.5 tabular-nums text-xs sm:text-sm text-muted-foreground">
                             <Users className="h-4 w-4 text-muted-foreground/70" />
-                            <span>{room.playerCount}玩家 {room.spectatorCount}观战</span>
+                            <span>
+                              {room.playerCount}玩家
+                              {room.spectatorCount > 0 ? ` ${room.spectatorCount}观战` : ""}
+                            </span>
                           </div>
                         </div>
                       </CardContent>
