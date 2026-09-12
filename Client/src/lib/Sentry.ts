@@ -71,9 +71,17 @@ export const initClientSentry = (
       "NetworkError when attempting to fetch resource.",
       "The play() request was interrupted by a new load request.",
       "The play() request was interrupted by a call to pause().",
+      // 各浏览器引擎对资源与模块加载失败的文案完全不同，必须逐一覆盖：
+      // Chromium 报 "Failed to fetch dynamically imported module" / "Loading chunk N failed"，
+      // WebKit 报 "Importing a module script failed"。这些都属于部署切换或弱网抖动，
+      // 已由 retryLazyImport 自动重载恢复，无需重复上报。
       /Failed to fetch dynamically imported module/i,
       /error loading dynamically imported module/i,
       /Loading chunk [\d]+ failed/i,
+      /Importing a module script failed/i,
+      // 浏览器翻译插件等第三方扩展会直接改写 DOM，破坏 React 的父子节点不变量。
+      // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。
+      /Failed to execute 'removeChild' on 'Node'/i,
     ],
   });
 

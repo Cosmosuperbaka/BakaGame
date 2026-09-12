@@ -46,6 +46,34 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     );
   });
 
+  it("异常过滤名单覆盖全部浏览器引擎的模块加载失败文案与扩展注入噪声", () => {
+    const mockInit = vi.fn();
+    const mockDriver: SentrySdkDriver = {
+      init: mockInit,
+      captureException: vi.fn(),
+      captureMessage: vi.fn(),
+      withScope: vi.fn(),
+    };
+
+    initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
+
+    const ignoreErrors = (mockInit.mock.calls[0]?.[0] as { ignoreErrors: Array<string | RegExp> })
+      .ignoreErrors;
+    const isFiltered = (candidate: string) =>
+      ignoreErrors.some((entry) =>
+        typeof entry === "string" ? candidate.includes(entry) : entry.test(candidate),
+      );
+
+    expect(isFiltered("TypeError: Failed to fetch dynamically imported module: /assets/main.js")).toBe(true);
+    expect(isFiltered("TypeError: Loading chunk 42 failed.")).toBe(true);
+    expect(isFiltered("TypeError: Importing a module script failed.")).toBe(true);
+    expect(
+      isFiltered(
+        "NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+      ),
+    ).toBe(true);
+  });
+
   it("captureClientException 与 captureClientMessage 在初始化后正常派发", () => {
     const mockCaptureException = vi.fn();
     const mockCaptureMessage = vi.fn();
