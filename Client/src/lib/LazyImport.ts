@@ -1,8 +1,8 @@
+import { reserveSessionRecovery } from "@/lib/SessionRecovery";
+
 export const retryLazyImport = <T,>(loader: () => Promise<T>, key: string): Promise<T> =>
   loader().catch((error) => {
-    const marker = `bakagame:chunk-retry:${key}`;
-    if (sessionStorage.getItem(marker) !== "1") {
-      sessionStorage.setItem(marker, "1");
+    if (reserveSessionRecovery(`bakagame:chunk-retry:${key}`)) {
       window.location.reload();
       return new Promise<T>(() => {});
     }
