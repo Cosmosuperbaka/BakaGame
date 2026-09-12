@@ -62,6 +62,60 @@ const isHostAllowed = (hostname: string, allowedHosts: Set<string>): boolean => 
   return SENTRY_INGEST_REGEX.test(lower);
 };
 
+// Bun、Node 与 undici 对上游连接失败使用完全不同的文案与 errno 编号。
+// 只识别 Node 的旧文案会把真实的网络抖动误判为内部故障，向下游返回 500
+// 并触发错误告警，因此这里必须收口全部运行时的失败签名。
+const UPSTREAM_NETWORK_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ETIMEDOUT",
+  "EPIPE",
+  "CONNECTIONREFUSED",
+  "CONNECTIONRESET",
+  "CONNECTIONCLOSED",
+  "FAILEDTOOPENSOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+const UPSTREAM_NETWORK_MESSAGE_PATTERN =
+  /fetch failed|network|dns|econnrefused|econnreset|etimedout|eai_again|enotfound|epipe|und_err|unable to connect|connection (?:refused|reset|closed)|failed to open socket|socket (?:hang up|closed|connection was closed)|the connection was closed/i;
+
+const readErrorField = (value: unknown, key: "name" | "message" | "code"): string | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
+};
+
+// 上游失败常被逐层包装（fetch → socket），必须下钻 cause 链才能识别真实病因。
+const walkErrorChain = (error: unknown): unknown[] => {
+  const chain: unknown[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null; depth += 1) {
+    chain.push(current);
+    current = typeof current === "object" ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return chain;
+};
+
+const isUpstreamTimeout = (error: unknown): boolean =>
+  walkErrorChain(error).some((item) => {
+    const name = readErrorField(item, "name");
+    return name === "AbortError" || name === "TimeoutError";
+  });
+
+const isUpstreamNetworkFailure = (error: unknown): boolean =>
+  walkErrorChain(error).some((item) => {
+    if (item instanceof TypeError) return true;
+    const code = readErrorField(item, "code");
+    if (code && UPSTREAM_NETWORK_ERROR_CODES.has(code.toUpperCase())) return true;
+    const name = readErrorField(item, "name") ?? "";
+    const message = readErrorField(item, "message") ?? "";
+    return UPSTREAM_NETWORK_MESSAGE_PATTERN.test(`${name} ${message}`);
+  });
+
 export const sentryTunnelRoutes = ({
   allowedProjectIds = [],
   allowedHosts = [],
@@ -192,14 +246,7 @@ export const sentryTunnelRoutes = ({
 
         return { ok: true };
       } catch (err) {
-        const isTimeout =
-          (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) ||
-          (typeof err === "object" &&
-            err !== null &&
-            "name" in err &&
-            (err.name === "AbortError" || err.name === "TimeoutError"));
-
-        if (isTimeout) {
+        if (isUpstreamTimeout(err)) {
           logger?.warn("Sentry tunnel upstream timeout", {
             error: err instanceof Error ? err.message : String(err),
           });
@@ -207,14 +254,7 @@ export const sentryTunnelRoutes = ({
           return { error: "Sentry upstream timeout" };
         }
 
-        const isNetworkError =
-          err instanceof TypeError ||
-          (err instanceof Error &&
-            /fetch failed|network|dns|econnrefused|enotfound|eai_again|und_err/i.test(
-              `${err.name} ${err.message}`,
-            ));
-
-        if (isNetworkError) {
+        if (isUpstreamNetworkFailure(err)) {
           logger?.warn("Sentry tunnel upstream unavailable", {
             error: err instanceof Error ? err.message : String(err),
           });

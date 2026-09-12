@@ -259,6 +259,75 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     expect(loggedWarns.length).toBe(1);
   });
 
+  it("上游 fetch 采用 Bun 连接失败文案时同样降级为 warn 并返回 502，杜绝误报内部故障", async () => {
+    const bunErrorFetcher = (async () => {
+      throw new Error("Unable to connect. Is the computer able to access the url?");
+    }) as unknown as typeof fetch;
+
+    const loggedErrors: unknown[] = [];
+    const loggedWarns: unknown[] = [];
+    const mockLogger = {
+      error: (msg: string, ctx?: unknown) => loggedErrors.push({ msg, ctx }),
+      warn: (msg: string, ctx?: unknown) => loggedWarns.push({ msg, ctx }),
+      info: () => {},
+    };
+
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: bunErrorFetcher,
+      logger: mockLogger,
+    });
+    const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
+
+    const res = await app.handle(
+      new Request("http://localhost/api/monitoring/sentry", {
+        method: "POST",
+        body: envelope,
+      }),
+    );
+
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.error).toBe("Sentry upstream unavailable");
+    expect(loggedErrors.length).toBe(0);
+    expect(loggedWarns.length).toBe(1);
+  });
+
+  it("上游失败被包装在 cause 链并携带 errno 编号时仍识别为网络异常", async () => {
+    const wrappedErrorFetcher = (async () => {
+      const socketError = Object.assign(new Error("ConnectionRefused"), { code: "ConnectionRefused" });
+      throw new Error("Failed to send envelope", { cause: socketError });
+    }) as unknown as typeof fetch;
+
+    const loggedErrors: unknown[] = [];
+    const loggedWarns: unknown[] = [];
+    const mockLogger = {
+      error: (msg: string, ctx?: unknown) => loggedErrors.push({ msg, ctx }),
+      warn: (msg: string, ctx?: unknown) => loggedWarns.push({ msg, ctx }),
+      info: () => {},
+    };
+
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: wrappedErrorFetcher,
+      logger: mockLogger,
+    });
+    const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
+
+    const res = await app.handle(
+      new Request("http://localhost/api/monitoring/sentry", {
+        method: "POST",
+        body: envelope,
+      }),
+    );
+
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.error).toBe("Sentry upstream unavailable");
+    expect(loggedErrors.length).toBe(0);
+    expect(loggedWarns.length).toBe(1);
+  });
+
   it("上游 fetch 遭遇超时时降级为 warn 并返回 504 Gateway Timeout，绝不触发 error 告警", async () => {
     const timeoutFetcher = (async () => {
       const err = new Error("The operation was aborted due to timeout");
