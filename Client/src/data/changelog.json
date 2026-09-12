@@ -5,8 +5,7 @@
       "date": "2026-09-13",
       "content": {
         "feat": [
-          "Songuessr听歌猜番接入番剧曲库",
-          "Songuessr支持网易云全局解灰"
+          "内置Bangumi搜索而不依赖外部API"
         ],
         "fix": [
           "修复无观战者仍显示观战文案",
