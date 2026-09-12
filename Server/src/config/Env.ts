@@ -19,6 +19,7 @@ export interface AppEnv {
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
   bangumiImageUrl: string;
+  enableGeneralUnblock?: boolean;
 }
 
 // ==================== 环境变量解析 ====================
@@ -139,5 +140,8 @@ export const readEnv = (): AppEnv => {
       .filter(Boolean),
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
+    enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
+      ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
+      : true,
   };
 };

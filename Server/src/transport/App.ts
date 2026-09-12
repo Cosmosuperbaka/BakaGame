@@ -242,7 +242,10 @@ export const createApp = ({
     sonGuessrService ??
     new SonGuessrService({
       eventLogger: logger,
-      musicProvider: new NeteaseMusicProvider({ logger }),
+      musicProvider: new NeteaseMusicProvider({
+        logger,
+        enableGeneralUnblock: env.enableGeneralUnblock,
+      }),
       bangumiProvider: new BangumiProvider({
         apiUrl: env.bangumiApiUrl,
         imageUrl: env.bangumiImageUrl,

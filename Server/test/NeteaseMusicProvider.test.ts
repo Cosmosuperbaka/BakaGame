@@ -952,4 +952,127 @@ describe("NeteaseMusicProvider", () => {
     await expect(provider.refreshSongAudio!("7")).resolves.toBe("https://music.example.com/2.mp3");
     expect(urlCalls).toBe(2);
   });
+
+  test("网易云歌曲无播放地址时自动触发全局解灰并返回 HTTPS 音频", async () => {
+    let unblockCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 88, name: "版权受限曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 88, url: null, code: 404 }] } }),
+        song_url_match: async ({ id }: { id: string | number }) => {
+          unblockCalls += 1;
+          return { body: { code: 200, data: `http://unblock.example.com/${id}.mp3` } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]测试歌词" } } }),
+      }),
+    });
+
+    const song = await provider.getSong("88");
+    expect(song.audioUrl).toBe("https://unblock.example.com/88.mp3");
+    expect(unblockCalls).toBe(1);
+  });
+
+  test("网易云仅返回试听片段时自动触发解灰并替换为完整音频", async () => {
+    let unblockCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 89, name: "VIP试听曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({
+          body: {
+            data: [{
+              id: 89,
+              url: "http://trial.example.com/89.mp3",
+              freeTrialInfo: { start: 0, end: 30 },
+            }],
+          },
+        }),
+        song_url_match: async ({ id }: { id: string | number }) => {
+          unblockCalls += 1;
+          return { body: { code: 200, data: `http://unblock.example.com/full-${id}.mp3` } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]试听替换歌词" } } }),
+      }),
+    });
+
+    const song = await provider.getSong("89");
+    expect(song.audioUrl).toBe("https://unblock.example.com/full-89.mp3");
+    expect(unblockCalls).toBe(1);
+  });
+
+  test("song_url_match 缺失时平滑回退至 song_url_v1 带 unblock 参数解灰", async () => {
+    let v1UnblockCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 90, name: "回退解灰曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 90, url: null }] } }),
+        song_url_v1: async (params: Record<string, unknown>) => {
+          if (params.unblock === "true") {
+            v1UnblockCalls += 1;
+            return {
+              body: {
+                data: [{ id: 90, url: "http://v1-unblock.example.com/90.mp3" }],
+              },
+            };
+          }
+          throw new Error("xeapi missing");
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]回退歌词" } } }),
+      }),
+    });
+
+    const song = await provider.getSong("90");
+    expect(song.audioUrl).toBe("https://v1-unblock.example.com/90.mp3");
+    expect(v1UnblockCalls).toBe(1);
+  });
+
+  test("关闭全局解灰时受限歌曲不发起解灰并抛出 SONG_UNAVAILABLE", async () => {
+    let unblockCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      enableGeneralUnblock: false,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 91, name: "禁用解灰曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 91, url: null }] } }),
+        song_url_match: async () => {
+          unblockCalls += 1;
+          return { body: { code: 200, data: "http://unblock/91.mp3" } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("91")).rejects.toMatchObject({
+      code: "SONG_UNAVAILABLE",
+      message: "该歌曲暂时没有可用播放地址",
+    });
+    expect(unblockCalls).toBe(0);
+  });
+
+  test("正常可用官方全曲不触发解灰", async () => {
+    let unblockCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      enableGeneralUnblock: true,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 92, name: "正常曲目", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({
+          body: {
+            data: [{ id: 92, url: "http://official.example.com/92.mp3", freeTrialInfo: null }],
+          },
+        }),
+        song_url_match: async () => {
+          unblockCalls += 1;
+          return { body: { code: 200, data: "http://unblock/92.mp3" } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]官方曲歌词" } } }),
+      }),
+    });
+
+    const song = await provider.getSong("92");
+    expect(song.audioUrl).toBe("https://official.example.com/92.mp3");
+    expect(unblockCalls).toBe(0);
+  });
 });

@@ -55,6 +55,8 @@ export interface NeteaseMusicProviderOptions {
   queueTimeoutMs?: number;
   cacheMaxEntries?: number;
   cacheMaxBytes?: number;
+  /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。 */
+  enableGeneralUnblock?: boolean;
 }
 
 export interface MusicLoginSession {
@@ -442,6 +444,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastRateLimitMessage = "操作频繁，请稍候再试";
 
   readonly deviceName: string;
+  private readonly enableGeneralUnblock: boolean;
   private readonly logger?: EventLogger;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
@@ -450,6 +453,14 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.deviceName = options.deviceName?.trim() || "BakaGame";
+    this.enableGeneralUnblock = options.enableGeneralUnblock ?? (
+      typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
+        ? process.env.ENABLE_GENERAL_UNBLOCK === "true"
+        : true
+    );
+    if (typeof process !== "undefined" && process.env) {
+      process.env.ENABLE_GENERAL_UNBLOCK = String(this.enableGeneralUnblock);
+    }
     this.logger = options.logger;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? { nextFloat: () => Math.random() };
@@ -876,6 +887,46 @@ export class NeteaseMusicProvider implements MusicProvider {
     return this.apiPromise;
   }
 
+  private async unblockSongAudio(songId: string, cookie?: string): Promise<string> {
+    // 1. 优先通过 API 模块提供的 song_url_match 接口解灰
+    const matchResponse = await this.callOptional(["song_url_match"], { id: songId }, cookie);
+    if (matchResponse) {
+      const body = responseBody(matchResponse);
+      const url = readString(body.data) ?? readString(body.proxyUrl);
+      const normalized = normalizeAudioUrl(url);
+      if (normalized) return normalized;
+    }
+
+    // 2. 尝试 song_url_v1 带 unblock 参数解灰
+    const v1Response = await this.callOptional(
+      ["song_url_v1"],
+      { id: songId, level: "standard", unblock: "true" },
+      cookie,
+    );
+    if (v1Response) {
+      const body = responseBody(v1Response);
+      const songData = asRecord(asArray(body.data)[0]);
+      const url = readString(songData.url) ?? readString(songData.proxyUrl);
+      const normalized = normalizeAudioUrl(url);
+      if (normalized) return normalized;
+    }
+
+    // 3. 在未显式注入外部 mock API 的生产环境下，尝试直接调用内置 matchID 工具
+    if (!this.options.loadApi) {
+      try {
+        const { matchID } = await import("@neteasecloudmusicapienhanced/unblockmusic-utils");
+        const result = await matchID(songId);
+        const data = asRecord(result?.data);
+        const normalized = normalizeAudioUrl(data.url);
+        if (normalized) return normalized;
+      } catch (error) {
+        this.logger?.warn("直接调用解灰工具未成功", describeError(error));
+      }
+    }
+
+    return "";
+  }
+
   private async loadAudioUrl(songId: string, cookie?: string, force = false): Promise<string> {
     const key = this.cacheKey("audio", cookie, songId);
     const value = await this.cached(
@@ -888,7 +939,19 @@ export class NeteaseMusicProvider implements MusicProvider {
           br: 320000,
         }, cookie);
         const body = responseBody(response);
-        return normalizeAudioUrl(asRecord(asArray(body.data)[0]).url) ?? "";
+        const songData = asRecord(asArray(body.data)[0]);
+        let audioUrl = normalizeAudioUrl(songData.url) ?? "";
+        const isRestricted = !audioUrl || songData.freeTrialInfo != null || songData.code === 404;
+
+        if (isRestricted && this.enableGeneralUnblock) {
+          const unblockedUrl = await this.unblockSongAudio(songId, cookie);
+          if (unblockedUrl) {
+            audioUrl = unblockedUrl;
+            this.logger?.info("网易云歌曲解灰成功", { songId, audioUrl });
+          }
+        }
+
+        return audioUrl;
       },
       { force, priority: 4 },
     );
