@@ -183,6 +183,8 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。
 - **同源隧道反代与防广告拦截 (Sentry Tunnel)**：前端 Sentry 上报统一通过服务端同源反代路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，彻底免疫浏览器广告拦截插件（AdBlocker）误杀，保障中国大陆玩家顺畅直连。
 - **标准环境变量支撑**：前端通过 `VITE_SENTRY_DSN` 注入客户端上报凭据；服务端通过 `SENTRY_DSN` 与 `SENTRY_ALLOWED_PROJECT_IDS` 注入服务端凭据与隧道校验白名单。现有标准 OpenTelemetry（`OTEL_EXPORTER_OTLP_*`）与 EventLogger 继续保障对局事件落盘审计与双轨观测。
+- **心跳上报间隔必须收敛于 Monitor 判定裕度内**：服务端 Cron Monitor（`bakagame-server-heartbeat`）排程为 `*/5 * * * *`、`checkin_margin` 为 2 分钟，即只在 `[T, T+2min]` 窗口内收到 check-in 才判定为按时；窗口之间（`T+2min` 至 `T+5min`）不存在任何容错区间。服务端心跳上报间隔（`SERVER_HEARTBEAT_INTERVAL_MS`）**必须不大于判定裕度**，且必须与 Monitor slug 同居同一真相源模块；严禁凭“留出网络与调度余量”的直觉把间隔拉长到接近排程周期，否则必然跨过窗口间隙被误报为 `missed check-in`。
+- **客户端异常过滤必须覆盖全部浏览器引擎文案**：客户端 `ignoreErrors` 严禁只覆盖 Chromium 文案。模块与分块加载失败必须同时覆盖 Chromium（`Failed to fetch dynamically imported module`、`Loading chunk N failed`）与 WebKit（`Importing a module script failed`）两套文案；浏览器翻译插件等第三方扩展直接改写 DOM 引发的 React 父子节点不变量异常（`Failed to execute 'removeChild' on 'Node'`）属于外部注入噪声。上述两类要么已由 `retryLazyImport` 自动重载恢复，要么重载即恢复，均不得重复上报污染真实缺陷信号。
 
 ### 10.6 绝对凭据隔离与防私有服务及密钥泄漏铁律 (Zero-Secrets & Credential/Mirror Isolation Invariant)
 - **严禁向 Git 仓库提交真实凭据与私有域名**：无论属于公钥、私钥、Token、项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），还是开发者个人或自建的私有服务端点（如自建 Bangumi 图床镜像、私有反向代理域名、内网穿透与自建 API 地址），一律绝对严禁写入被 Git 追踪的任何文件。
@@ -252,6 +254,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **严格权威主机白名单**：Sentry 同源转发隧道（`SentryTunnel.ts`）严禁使用 `host.includes("sentry")` 等模糊匹配。必须配置精确的官方权威摄取域名白名单（`*.ingest.sentry.io`、`*.ingest.us.sentry.io`、`*.ingest.de.sentry.io` 等）或显式配置的私有部署主机，彻底封堵 `sentry.evil.example` 等恶意 SSRF 攻击。
 - **严格协议、默认端口与路径校验**：隧道仅放行 `https:` 协议与 443 默认端口，杜绝探测内网非常规端口与明文未加密连接；上游目标路径必须强校验合法的 Project ID 正则格式（`/^\/([0-9a-zA-Z_-]+)$/`），杜绝任意路径代理穿透。
 - **载荷上限与错误脱敏**：隧道单次转发载荷严格限制为 256KB（超限快速返回 413），配置 5s fetch 超时中断与应用级滑动窗口限流；任何上游错误必须脱敏为通用安全响应（如 `502 Bad Gateway`），严禁向下游暴露内部网络拓扑与未处理异常堆栈。
+- **上游网络失败识别必须全运行时收口**：隧道判定上游失败时**严禁**只匹配 Node 的旧文案（`fetch failed`、`ECONNREFUSED`、`ENOTFOUND` 等）。必须同时覆盖 Bun（`Unable to connect. Is the computer able to access the url?`）与 undici（`UND_ERR_*`）的文案与 errno 编号（含 `ConnectionRefused`、`FailedToOpenSocket` 等首字母大写形态），并逐层下钻 `error.cause` 链，因为上游失败常被逐层包装。网络抖动与超时必须降级为 `logger.warn` 并返回 502 / 504；只有真正未预期的内部异常才允许 `logger.error` 与 500，否则一次上游抖动就会伪造出内部故障告警。
 
 ### 12.6 状态持久化与自动保存阶段守卫规范 (Auto-Save Lifecycle & Phase Guards)
 - **非对局配置保存遵循等待阶段守卫**：客户端配置自动保存 Hook（`useAutoSave`）在处理房间设置、题目选项等非对局状态时，必须遵循 `phase === "waiting"` 阶段守卫。
