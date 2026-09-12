@@ -45,11 +45,13 @@ def setup_song(db: sqlite3.Connection):
       CREATE TABLE subject_music_relations (
         subject_id INTEGER NOT NULL, music_id INTEGER NOT NULL,
         relation_type INTEGER NOT NULL, relation_order INTEGER NOT NULL,
+        title TEXT NOT NULL, artist TEXT, kind TEXT NOT NULL,
         PRIMARY KEY(subject_id, music_id)
       );
       CREATE INDEX subjects_type_date ON subjects(type, date);
       CREATE INDEX subjects_heat ON subjects(heat DESC);
       CREATE INDEX relations_subject_order ON subject_music_relations(subject_id, relation_order);
+      CREATE INDEX relations_kind ON subject_music_relations(subject_id, kind);
       CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram');
       CREATE VIRTUAL TABLE music_search USING fts5(name, name_cn, content='music_subjects', content_rowid='id', tokenize='trigram');
     """)
@@ -80,6 +82,54 @@ def setup_character(db: sqlite3.Connection):
     """)
 
 
+KIND_PATTERNS = [
+    ("opening", ("片头", "片頭", "opening", "op")),
+    ("ending", ("片尾", "片尾", "ending", "ed")),
+    ("insert", ("插入", "插曲", "insert", "in")),
+    ("ost", ("原声", "soundtrack", "ost")),
+    ("character", ("角色", "character")),
+    ("remix", ("remix", "重混")),
+    ("doujin", ("同人",)),
+    ("image", ("印象", "image")),
+    ("vocaloid", ("vocaloid",)),
+    ("drama", ("drama", "广播剧", "廣播劇")),
+    ("radio", ("radio", "广播", "廣播")),
+    ("arrange", ("arrange", "改编", "編曲")),
+    ("single", ("单曲", "單曲", "single")),
+    ("collection", ("精选", "精選", "collection", "best")),
+    ("reading", ("朗读", "朗讀")),
+    ("artistAlbum", ("艺人", "藝人", "album")),
+    ("theme", ("主题", "主題", "theme", "tm")),
+]
+
+def track_kind(text: str) -> str:
+    low = text.lower()
+    for kind, words in KIND_PATTERNS:
+        if any(w.lower() in low for w in words): return kind
+    return "theme"
+
+def parse_infobox_tracks(infobox: str):
+    import re
+    tracks=[]
+    for line in infobox.splitlines():
+        if "=" not in line: continue
+        key, value = [x.strip() for x in line.split("=",1)]
+        if not value or any(x in key for x in ("分镜","演出","制作","作画","作词","作曲","编曲","監督","导演","设定","设计")): continue
+        if not any(x in key.lower() for x in ("主题","片头","片尾","插入","opening","ending","insert","op","ed","in","ost","原声","character","角色","image","印象","remix","drama","radio","vocal","arrange","单曲","精选","朗读","艺人")): continue
+        kind=track_kind(key)
+        for part in re.split(r"[；;\n]+", value):
+            part=part.strip().strip("{}[]")
+            if not part: continue
+            chunks=re.split(r"\s+[—－-]\s+|\s*/\s*|／", part, maxsplit=1)
+            title=chunks[0].strip(" 『』「」")
+            artist=chunks[1].strip() if len(chunks)>1 else None
+            if len(title)>=2: tracks.append((title,artist,kind))
+    seen=set(); out=[]
+    for t in tracks:
+        k=(t[2],t[0].lower(),(t[1] or '').lower())
+        if k not in seen: seen.add(k); out.append(t)
+    return out
+
 def build(dump: Path, out: Path):
     out.mkdir(parents=True, exist_ok=True)
     subjects: dict[int, dict] = {}
@@ -103,8 +153,15 @@ def build(dump: Path, out: Path):
             elif item.get("type") == 3: song_sub.execute("INSERT INTO music_subjects VALUES (?,?,?,?,?)", (item["id"], item.get("name", ""), item.get("name_cn", ""), float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0)))
             if item.get("type") != 3: char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), tags, meta, float(item.get("score", 0) or 0)))
         for rel in lines(dump / "subject-relations.jsonlines"):
-            a, b = subjects.get(rel["subject_id"], {}).get("type"), subjects.get(rel["related_subject_id"], {}).get("type")
-            if a == 2 and b == 3: song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], rel.get("relation_type", 0), rel.get("order", 0)))
+            a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
+            if a_item.get("type") == 2 and b_item.get("type") == 3:
+                title = b_item.get("name_cn") or b_item.get("name") or ""
+                kind = track_kind(title)
+                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], rel.get("relation_type", 0), rel.get("order", 0), title, None, kind))
+        for item in subjects.values():
+            if item.get("type") != 2: continue
+            for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
+                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
         for item in lines(dump / "character.jsonlines"):
             infobox = item.get("infobox", "")
             name_cn = ""
