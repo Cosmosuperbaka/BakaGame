@@ -74,7 +74,8 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("日常听歌房")).toBeInTheDocument();
     expect(screen.getByText("1234")).toBeInTheDocument();
-    expect(screen.getByText("5玩家 0观战")).toBeInTheDocument();
+    expect(screen.getByText("5玩家")).toBeInTheDocument();
+    expect(screen.queryByText(/0观战/)).not.toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
     expect(screen.getByText("禁观战")).toBeInTheDocument();
 

@@ -74,7 +74,8 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("测试房间二")).toBeInTheDocument();
     expect(screen.getByText("9999")).toBeInTheDocument();
-    expect(screen.getByText("6玩家 0观战")).toBeInTheDocument();
+    expect(screen.getByText("6玩家")).toBeInTheDocument();
+    expect(screen.queryByText(/0观战/)).not.toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
     expect(screen.getByText("禁观战")).toBeInTheDocument();
 
