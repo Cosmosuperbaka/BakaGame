@@ -8,6 +8,7 @@ import {
   flushServerSentry,
   gaugeServerMetric,
   initServerSentry,
+  SERVER_HEARTBEAT_INTERVAL_MS,
 } from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
 import { createApp } from "./transport/App";
@@ -57,8 +58,8 @@ const intervalId = setInterval(() => {
   });
 }, 10_000);
 
-// Cron Monitor 每 5 分钟检查一次，4 分钟上报一次以留出网络与调度余量。
-const sentryHeartbeatIntervalId = setInterval(captureServerCheckIn, 4 * 60_000);
+// 心跳上报间隔必须落在 Cron Monitor 的判定裕度内，防止窗口间隙造成误报。
+const sentryHeartbeatIntervalId = setInterval(captureServerCheckIn, SERVER_HEARTBEAT_INTERVAL_MS);
 sentryHeartbeatIntervalId.unref();
 
 const sentryRuntimeMetricsIntervalId = setInterval(() => {
