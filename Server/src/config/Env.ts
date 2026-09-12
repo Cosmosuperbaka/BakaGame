@@ -19,6 +19,8 @@ export interface AppEnv {
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
   bangumiImageUrl: string;
+  bangumiSongDbPath?: string;
+  bangumiCharacterDbPath?: string;
   enableGeneralUnblock?: boolean;
 }
 
@@ -140,6 +142,8 @@ export const readEnv = (): AppEnv => {
       .filter(Boolean),
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
+    bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
+    bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
       : true,
