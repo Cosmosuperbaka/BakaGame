@@ -48,6 +48,9 @@ Server/build
 **/*.bun
 *.pem
 
+# Agent workspace and local memory
+.workbuddy/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
