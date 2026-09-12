@@ -45,7 +45,7 @@ import type {
   AnimeAutoFilters,
 } from "../shared/Index";
 
-import type { BangumiProvider } from "../infrastructure/BangumiProvider";
+import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 
@@ -148,7 +148,7 @@ interface SonGuessrRoomRecord {
 
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
-  bangumiProvider?: BangumiProvider;
+  bangumiProvider?: BangumiDataProvider;
   now?: () => number;
   random?: RandomSource;
   eventLogger?: EventLogger;
