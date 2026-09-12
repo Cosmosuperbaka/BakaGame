@@ -11,6 +11,8 @@ import {
   initServerSentry,
   isServerSentryEnabled,
   resolveServerRelease,
+  SERVER_HEARTBEAT_INTERVAL_MS,
+  SERVER_HEARTBEAT_MONITOR_SLUG,
 } from "../src/infrastructure/Sentry";
 
 const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
@@ -104,6 +106,15 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       status: "ok",
     });
     checkInSpy.mockRestore();
+  });
+
+  it("心跳上报间隔必须落在 Cron Monitor 的 2 分钟判定裕度内，杜绝窗口间隙误报", () => {
+    // 排程为 */5 分钟、checkin_margin 为 2 分钟：间隔一旦大于裕度，
+    // 必然跨过 [T, T+2min] 之外的间隙被判定为 missed check-in。
+    const CHECKIN_MARGIN_MS = 2 * 60_000;
+    expect(SERVER_HEARTBEAT_MONITOR_SLUG).toBe("bakagame-server-heartbeat");
+    expect(SERVER_HEARTBEAT_INTERVAL_MS).toBeGreaterThan(0);
+    expect(SERVER_HEARTBEAT_INTERVAL_MS).toBeLessThanOrEqual(CHECKIN_MARGIN_MS);
   });
 
   describe("已初始化状态的上下文注入与异常上报", () => {

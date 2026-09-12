@@ -7,6 +7,12 @@ let isInitialized = false;
 
 export const SERVER_HEARTBEAT_MONITOR_SLUG = "bakagame-server-heartbeat";
 
+// 该 Cron Monitor 的排程为每 5 分钟一次、判定裕度（checkin_margin）为 2 分钟，
+// 即只有在 [T, T+2min] 窗口内收到 check-in 才判定为按时。
+// 上报间隔必须不大于判定裕度，否则必然跨过窗口间隙被误报为 missed check-in：
+// 1 分钟间隔可为每个窗口预留 2 次重试余量，覆盖上游抖动与调度延迟。
+export const SERVER_HEARTBEAT_INTERVAL_MS = 60_000;
+
 export const isServerSentryEnabled = (): boolean => isInitialized;
 
 export const _resetServerSentryForTest = (): void => {
