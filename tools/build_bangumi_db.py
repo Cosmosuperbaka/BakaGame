@@ -156,8 +156,9 @@ def build(dump: Path, out: Path):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:
                 title = b_item.get("name_cn") or b_item.get("name") or ""
-                kind = track_kind(title)
-                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], rel.get("relation_type", 0), rel.get("order", 0), title, None, kind))
+                relation_type = int(rel.get("relation_type", 0) or 0)
+                kind = {3001: "theme", 3002: "opening", 3003: "ending", 3004: "insert", 3005: "character", 3006: "image"}.get(relation_type, track_kind(title))
+                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, None, kind))
         for item in subjects.values():
             if item.get("type") != 2: continue
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
