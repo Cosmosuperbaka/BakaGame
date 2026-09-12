@@ -88,6 +88,7 @@ fetch(url, { credentials: "include" });
 - 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
+- **全局音乐解灰 (General Unblock)**：默认开启（支持通过环境变量 `ENABLE_GENERAL_UNBLOCK=true|false` 或 provider 选项 `enableGeneralUnblock` 控制）。针对网易云官方未提供播放地址（`!url`）、返回试听片段（`freeTrialInfo != null`）或返回 404 等受限状态的歌曲，自动触发多级跨平台音源解灰（优先调用 API 模块的 `song_url_match`，回退至 `song_url_v1` 携带 `unblock: "true"`，未显式注入外部 mock API 时回退调用内置 `@neteasecloudmusicapienhanced/unblockmusic-utils` 的 `matchID`），取得的音频地址经 HTTPS 规范化后写入缓存，确保无 VIP 凭据或版权受限歌曲也能正常获取完整音频。
 副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
 
 ### 服务端缓存策略

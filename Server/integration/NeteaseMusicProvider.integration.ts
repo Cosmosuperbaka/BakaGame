@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { NeteaseMusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 
@@ -21,3 +21,12 @@ test("真实网易云接口可以返回 HTTPS 音频、时间轴歌词并支持�
     .toBe(false);
   expect(song.lyrics.every((line) => line.endTime > line.time)).toBe(true);
 });
+
+test("真实网易云接口对受限曲目可通过全局解灰获取 HTTPS 音频", async () => {
+  const provider = new NeteaseMusicProvider();
+  // 186016 为周杰伦《晴天》，在网易云官方接口无 VIP 凭据时返回 url: null，依赖全局解灰自动匹配跨平台音源
+  const song = await provider.getSong("186016");
+  expect(song.id).toBe("186016");
+  expect(song.title).toBe("晴天");
+  expect(song.audioUrl.startsWith("https://")).toBe(true);
+}, 20_000);
