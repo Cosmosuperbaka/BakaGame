@@ -5,7 +5,7 @@ import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
-import type { BangumiProvider } from "../src/infrastructure/BangumiProvider";
+import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   SERVER_SHUTDOWN_MESSAGE,
@@ -179,7 +179,7 @@ describe("SonGuessrService", () => {
     const bangumiProvider = {
       getSubject: async (subjectId: string) => subjectId === anime.id ? anime : wrongAnime,
       searchSubjects: async () => [anime],
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
     const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
     const host = connection(service, "anime-host");
     const guest = connection(service, "anime-guest");
@@ -254,7 +254,7 @@ describe("SonGuessrService", () => {
         return [noMusicAnime, anime];
       },
       getSubject: async (subjectId: string) => subjectId === noMusicAnime.id ? noMusicAnime : anime,
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
     const service = new SonGuessrService({
       musicProvider: provider,
       bangumiProvider,
@@ -300,7 +300,7 @@ describe("SonGuessrService", () => {
         return [anime];
       },
       getSubject: async () => anime,
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
     const service = new SonGuessrService({
       musicProvider: provider,
       bangumiProvider,
@@ -352,7 +352,7 @@ describe("SonGuessrService", () => {
         { title: "低热度歌", artist: "测试歌手", kind: "opening" },
         { title: "高热度歌", artist: "测试歌手", kind: "ending" },
       ] }),
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
     const musicProvider: MusicProvider = {
       ...provider,
       search: async (keyword) => keyword.includes("低热度歌") ? [low] : [high],
@@ -389,7 +389,7 @@ describe("SonGuessrService", () => {
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
       }),
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
 
     const musicProvider: MusicProvider = {
       ...provider,
@@ -426,7 +426,7 @@ describe("SonGuessrService", () => {
       getSubject: async (id: string) => id === "anime-1"
         ? { ...anime1, musicTracks: [{ title: "歌曲一", kind: "opening" }] }
         : { ...anime2, musicTracks: [{ title: "歌曲二", kind: "opening" }] },
-    } as unknown as BangumiProvider;
+    } as unknown as BangumiDataProvider;
 
     const musicProvider: MusicProvider = {
       ...provider,
