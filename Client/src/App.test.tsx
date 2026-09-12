@@ -101,7 +101,7 @@ describe("application routing regressions", () => {
   });
 
   it("handles dynamic chunk loading failure by triggering reload and suppressing error leak", async () => {
-    const { retryLazyImport } = await import("./App");
+    const { retryLazyImport } = await import("@/lib/LazyImport");
     const reloadMock = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
