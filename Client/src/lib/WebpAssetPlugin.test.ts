@@ -117,6 +117,10 @@ describe("webpAssetPlugin", () => {
   });
 });
 
+// 该用例驱动的是真实转码流水线：整目录重编码叠加 4 个表情包共 80 张贴图，
+// 单机实测已接近 vitest 默认的 5s 上限，必须显式放宽以吸收机器抖动与 CI 冷启动开销。
+const TRANSCODE_TIMEOUT_MS = 60_000;
+
 describe("preparePublicWebp", () => {
   it("generates valid publicDir and accurate assetMap from public assets and emojis", async () => {
     const { publicDir, assetMap } = await preparePublicWebp();
@@ -134,6 +138,6 @@ describe("preparePublicWebp", () => {
       expect(legacyUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png)$/);
       expect(webpUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.webp$/);
     }
-  });
+  }, TRANSCODE_TIMEOUT_MS);
 });
 
