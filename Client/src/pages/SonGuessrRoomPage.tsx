@@ -195,6 +195,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     : routeRoomId.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()
       ? ROOM_ID_TEST_MODE
       : routeRoomId.trim();
+  // 单人模式入口在首页，退出与失败都回首页；多人房间回大厅。
+  const exitPath = solo ? "/" : "/songuessr";
   const snapshot = useSonGuessrStore((state) => state.snapshot);
   const privateState = useSonGuessrStore((state) => state.privateState);
   const storedRoomId = useSonGuessrStore((state) => state.roomId);
@@ -322,7 +324,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       } catch (error) {
         if ((error as { code?: string }).code !== "ROOM_EXISTS") {
           setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-          navigate("/songuessr", { replace: true });
+          navigate("/", { replace: true });
           return;
         }
       }
@@ -333,7 +335,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         setJoining(false);
       } catch (error) {
         setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-        navigate("/songuessr", { replace: true });
+        navigate("/", { replace: true });
       }
     },
     [createSoloRoom, navigate, setNotice],
@@ -343,7 +345,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     if (!roomId || alreadyInRoom) return;
     if (!isValidRoomId(roomId)) {
       setNotice("房间号无效，请检查链接", "error");
-      navigate("/songuessr", { replace: true });
+      navigate(exitPath, { replace: true });
       return;
     }
 
@@ -355,7 +357,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       } catch {
         if (!cancelled) {
           setNotice("连接服务器超时，请刷新重试", "error");
-      navigate("/songuessr", { replace: true });
+          navigate(exitPath, { replace: true });
         }
         return;
       }
@@ -387,8 +389,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   useEffect(() => {
     if (!roomClosedAt || leavingRef.current) return;
     if (solo) clearSongSoloRoomId();
-    navigate("/songuessr", { replace: true });
-  }, [navigate, roomClosedAt, solo]);
+    navigate(exitPath, { replace: true });
+  }, [exitPath, navigate, roomClosedAt, solo]);
 
   const isPlayingPhase = snapshot?.phase === "playing";
   const isRoundResultPhase = snapshot?.phase === "roundResult";
@@ -872,7 +874,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     leavingRef.current = true;
     if (solo) clearSongSoloRoomId();
     await leaveRoom();
-    navigate("/songuessr", { replace: true });
+    navigate(exitPath, { replace: true });
   };
 
   return (
