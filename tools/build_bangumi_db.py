@@ -83,9 +83,9 @@ def setup_character(db: sqlite3.Connection):
 
 
 KIND_PATTERNS = [
-    ("opening", ("片头", "片頭", "opening", "op")),
-    ("ending", ("片尾", "片尾", "ending", "ed")),
-    ("insert", ("插入", "插曲", "insert", "in")),
+    ("opening", ("片头", "片頭", "opening")),
+    ("ending", ("片尾", "片尾", "ending")),
+    ("insert", ("插入", "插曲", "insert")),
     ("ost", ("原声", "soundtrack", "ost")),
     ("character", ("角色", "character")),
     ("remix", ("remix", "重混")),
@@ -103,7 +103,11 @@ KIND_PATTERNS = [
 ]
 
 def track_kind(text: str) -> str:
+    import re
     low = text.lower()
+    if re.search(r"\bop\d*\b", low): return "opening"
+    if re.search(r"\bed\d*\b", low): return "ending"
+    if re.search(r"\bin\d*\b", low): return "insert"
     for kind, words in KIND_PATTERNS:
         if any(w.lower() in low for w in words): return kind
     return "theme"
