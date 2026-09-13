@@ -27,7 +27,6 @@ const createMockSnapshot = (
   visibility: "public",
   allowSpectators: true,
   hasPassword: false,
-  maxPlayers: 16,
   testMode: false,
   musicAccountReady: true,
   hostPlayerId: "player-1",

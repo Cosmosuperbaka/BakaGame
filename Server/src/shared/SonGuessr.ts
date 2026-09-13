@@ -10,7 +10,6 @@ export const SONGUESSR_PHASES = [
 
 export type SonGuessrPhase = (typeof SONGUESSR_PHASES)[number];
 
-export const SONGUESSR_MAX_PLAYERS = 16;
 export const MAX_SONGUESSR_COOKIE_LENGTH = 16_384;
 
 export type SongQuestionType = "song" | "anime";
@@ -284,7 +283,6 @@ export interface SonGuessrRoomSummary {
   playerCount: number;
   spectatorCount: number;
   onlineCount: number;
-  maxPlayers: number;
   phase: SonGuessrPhase;
 }
 
@@ -294,7 +292,6 @@ export interface SonGuessrRoomSnapshot {
   visibility: RoomVisibility;
   allowSpectators: boolean;
   hasPassword: boolean;
-  maxPlayers: number;
   hostPlayerId: string;
   testMode: boolean;
   musicAccountReady: boolean;

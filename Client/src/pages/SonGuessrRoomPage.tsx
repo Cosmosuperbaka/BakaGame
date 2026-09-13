@@ -2314,7 +2314,7 @@ function SongTestController({
                       size="sm"
                       className="h-7 flex-1 gap-1 text-xs"
                       aria-label="添加一个测试人机"
-                      disabled={snapshot.players.length >= snapshot.maxPlayers || isPending?.("song.test.addBot")}
+                      disabled={isPending?.("song.test.addBot")}
                       loading={isPending?.("song.test.addBot")}
                       onClick={() => void run("song.test.addBot", { count: 1 })}
                     >

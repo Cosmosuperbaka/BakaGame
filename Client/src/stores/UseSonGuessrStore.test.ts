@@ -50,7 +50,6 @@ const snapshot: SonGuessrRoomSnapshot = {
   visibility: "public",
   allowSpectators: true,
   hasPassword: false,
-  maxPlayers: 16,
   testMode: false,
   musicAccountReady: false,
   hostPlayerId: "player-1",
