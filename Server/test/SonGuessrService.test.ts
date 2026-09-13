@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { createSongLyricClip, isSongTitleMatch, SonGuessrService } from "../src/application/SonGuessrService";
+import {
+  ANIME_SONG_LOOKUP_BUDGET,
+  AUTO_ANIME_CANDIDATE_LIMIT,
+  createSongLyricClip,
+  isSongTitleMatch,
+  SonGuessrService,
+} from "../src/application/SonGuessrService";
 import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
@@ -1505,6 +1511,15 @@ describe("SonGuessrService", () => {
     const nextRound = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
     expect(nextRound.phase).toBe("playing");
     expect(nextRound.roundNumber).toBe(2);
+
+    // 猜测次数按整局累计，不随回合重置。
+    await execute(service, solo, { id: "solo-audio-2", type: "song.game.audioReady", roomId: "7777", payload: { roundNumber: 2 } });
+    await execute(service, solo, { id: "solo-guess-2", type: "song.game.guess", roomId: "7777", payload: { songId: "answer" } });
+    const settled2 = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(settled2.roundSummary?.scores).toEqual([
+      { playerId, playerName: "独狼", score: 2, delta: 1, correctGuesses: 2, totalGuesses: 2 },
+    ]);
+    expect(settled2.players.find((candidate) => candidate.id === playerId)?.totalGuesses).toBe(2);
   });
 
   test("自动开局的重复请求会被加载锁拦截", async () => {
@@ -2690,6 +2705,109 @@ describe("SonGuessrService", () => {
     expect(lastEvent<{ message: string }>(client, "server.shutdown")?.message).toBe(
       SERVER_SHUTDOWN_MESSAGE,
     );
+  });
+});
+
+describe("SonGuessrService 番剧出题回源性能约束", () => {
+  // 单人房间默认自动出题，开局即走番剧自动题库路径，省去准备与指定出题人的前置步骤。
+  const animeSolo = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "anime-solo");
+    await createRoom(service, solo, { roomId: "8888", name: "猜番单人", userName: "独狼", solo: true });
+    await execute(service, solo, {
+      id: "anime-solo-settings",
+      type: "song.room.updateSettings",
+      roomId: "8888",
+      payload: { questionType: "anime" },
+    });
+    return { service, solo };
+  };
+
+  test("同一曲目的多个检索词并行回源，不逐个串行等待", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const noArtistAnime: BangumiSubjectDetails = {
+      ...anime,
+      musicTracks: [{ title: "答案歌", kind: "opening" }],
+    };
+    const slowProvider = {
+      ...provider,
+      search: async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        inFlight -= 1;
+        return [songs.answer];
+      },
+    } as unknown as MusicProvider;
+
+    const { service, solo } = await animeSolo(slowProvider, {
+      getSubject: async () => noArtistAnime,
+      searchSubjects: async () => [noArtistAnime],
+    } as unknown as BangumiDataProvider);
+
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} });
+
+    // 无 artist 的曲目会派生「曲名+原名」「曲名+中文名」「曲名」三个检索词。
+    expect(maxInFlight).toBe(3);
+    expect(lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").phase).toBe("playing");
+  });
+
+  test("检索词无命中时上游调用受预算约束，不会遍历完所有曲目", async () => {
+    let searches = 0;
+    const unmatchedAnime: BangumiSubjectDetails = {
+      ...anime,
+      musicTracks: Array.from({ length: 24 }, (_, index) => ({
+        title: `未收录曲目${index}`,
+        kind: "opening" as const,
+      })),
+    };
+    const missProvider = {
+      ...provider,
+      search: async () => {
+        searches += 1;
+        return [songs.wrong];
+      },
+      getSong: async () => {
+        throw new Error("标题未命中时不应回源歌曲详情");
+      },
+    } as unknown as MusicProvider;
+
+    const { service, solo } = await animeSolo(missProvider, {
+      getSubject: async () => unmatchedAnime,
+      searchSubjects: async () => [unmatchedAnime],
+    } as unknown as BangumiDataProvider);
+
+    await expect(execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} }))
+      .rejects.toMatchObject({ code: "BANGUMI_NO_MUSIC" });
+
+    expect(searches).toBe(ANIME_SONG_LOOKUP_BUDGET);
+    expect(searches).toBeLessThan(24 * 3);
+  });
+
+  test("自动番剧出题的候选重试受上界约束", async () => {
+    let subjects = 0;
+    const silentAnime: BangumiSubjectDetails = { ...anime, musicTracks: [] };
+
+    const { service, solo } = await animeSolo(provider, {
+      getSubject: async () => {
+        subjects += 1;
+        return silentAnime;
+      },
+      // 题库给出 50 个候选，但每个都没有可识别的主题曲。
+      searchSubjects: async () => Array.from({ length: 50 }, (_, index) => ({
+        id: `subject-${index}`,
+        name: `Anime ${index}`,
+        nameCn: `番剧${index}`,
+        imageUrl: "",
+      })),
+    } as unknown as BangumiDataProvider);
+
+    await expect(execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} }))
+      .rejects.toMatchObject({ code: "BANGUMI_NO_MUSIC" });
+
+    expect(subjects).toBe(AUTO_ANIME_CANDIDATE_LIMIT);
+    expect(subjects).toBeLessThan(50);
   });
 });
 
