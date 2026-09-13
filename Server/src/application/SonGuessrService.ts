@@ -228,6 +228,15 @@ const normalizedArtists = (value: string) =>
 const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
 const MAX_LYRIC_LINE_DURATION_MS = 12_000;
 const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
+/**
+ * 自动出题时最多尝试的番剧候选数。
+ * 每个候选都要完整跑一遍关联歌曲解析，不设上界时单次出题可能退化成几十次串行回源。
+ */
+export const AUTO_ANIME_CANDIDATE_LIMIT = 5;
+/** 单次番剧歌曲解析允许发起的上游调用总数（search 与 getSong 共用）。 */
+export const ANIME_SONG_LOOKUP_BUDGET = 24;
+/** 番剧歌曲解析中并行解析歌曲详情的窗口大小。 */
+const ANIME_SONG_LOOKUP_CONCURRENCY = 4;
 
 const direction = (guess?: number, answer?: number): SongGuessDirection => {
   if (guess === undefined || answer === undefined) return "unknown";
@@ -1282,8 +1291,12 @@ export class SonGuessrService {
     const minPopularity = filters.songMinPopularity ?? 0;
     const recentSongIds = new Set(room.recentSongIds ?? []);
     let fallbackRecent: { song: SongDetails; track: BangumiMusicTrack } | undefined;
+    // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
+    // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
+    let budget = ANIME_SONG_LOOKUP_BUDGET;
 
     for (const track of candidates) {
+      if (budget <= 0) break;
       const queries: string[] = [];
       if (track.artist) {
         queries.push(`${track.title} ${track.artist}`);
@@ -1292,36 +1305,52 @@ export class SonGuessrService {
         if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
         queries.push(track.title);
       }
+      // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
+      const searches = await Promise.all(queries.map(async (query) => {
+        if (budget <= 0) return [];
+        budget -= 1;
+        try {
+          return await provider.search(query, 8, room.musicSession?.cookie);
+        } catch {
+          return [];
+        }
+      }));
 
       const triedSongIds = new Set<string>();
-      for (const query of queries) {
-        let results: SongSearchResult[] = [];
-        try {
-          results = await provider.search(query, 8, room.musicSession?.cookie);
-        } catch {
-          continue;
-        }
-
+      const matched: SongSearchResult[] = [];
+      for (const results of searches) {
         for (const candidate of results) {
           if (triedSongIds.has(candidate.id)) continue;
           triedSongIds.add(candidate.id);
-
           if (!isSongTitleMatch(candidate.title, track.title)) continue;
+          matched.push(candidate);
+        }
+      }
 
+      for (let index = 0; index < matched.length; index += ANIME_SONG_LOOKUP_CONCURRENCY) {
+        if (budget <= 0) break;
+        const batch = matched.slice(index, index + ANIME_SONG_LOOKUP_CONCURRENCY);
+        const resolvedBatch = await Promise.all(batch.map(async (candidate) => {
+          if (budget <= 0) return undefined;
+          budget -= 1;
           try {
             const song = await provider.getSong(candidate.id, room.musicSession?.cookie);
-            if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
-            if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
-
-            const resolved = { song, track: { ...track, kind: this.refineTrackKind(track.kind, song) } };
-            if (recentSongIds.has(song.id)) {
-              if (!fallbackRecent) fallbackRecent = resolved;
-              continue;
-            }
-            return resolved;
+            if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) return undefined;
+            if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) return undefined;
+            return { song, track: { ...track, kind: this.refineTrackKind(track.kind, song) } } satisfies { song: SongDetails; track: BangumiMusicTrack };
           } catch {
             // 单首歌曲不可播放时继续尝试同曲目的其他版本。
+            return undefined;
           }
+        }));
+
+        for (const resolved of resolvedBatch) {
+          if (!resolved) continue;
+          if (recentSongIds.has(resolved.song.id)) {
+            if (!fallbackRecent) fallbackRecent = resolved;
+            continue;
+          }
+          return resolved;
         }
       }
     }
@@ -1434,7 +1463,9 @@ export class SonGuessrService {
       const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
       const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
       const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
-      while (pool.length > 0) {
+      let attempts = 0;
+      while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
+        attempts += 1;
         const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
         try {
           const anime = await provider.getSubject(selected.id);
@@ -1453,10 +1484,13 @@ export class SonGuessrService {
     }
     const recentSongIds = new Set(room.recentSongIds ?? []);
     const freshCandidates = candidates.filter((s) => !recentSongIds.has(s.id));
-    const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
+    // 会员限制在检索结果里已经带出，先过滤再回源，
+    // 否则非会员账号会在大歌单上逐个串行试错。
+    const playable = (freshCandidates.length > 0 ? freshCandidates : candidates)
+      .filter((song) => room.musicSession?.account.vipStatus !== "nonVip" || !song.requiresVip);
+    const pool = [...playable];
     while (pool.length > 0) {
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
-      if (room.musicSession?.account.vipStatus === "nonVip" && selected.requiresVip) continue;
       const song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
       if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
       this.installRound(room, song, "");
