@@ -991,6 +991,41 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R14 抽样沉淀：CV 标注、版权厂牌行与点分标签会被过滤", () => {
+    for (const line of [
+      // CV 配音标注：同人曲角色名单本身就是歌曲指纹。
+      "温迪（CV：喵酱）",
+      "雷电将军（CV：菊花花）",
+      // 版权厂牌裸行：厂牌名开头 + 公司后缀词双条件（词边界防 `emi` 吃 Eminem）。
+      "Warner/Chappell Music, Hong Kong Limite",
+      // 点分中文标签：`.` 不进通用 joiner，按「每段都是完整标签」判定。
+      "作曲.监制 : 陈辉阳",
+      "词.曲 : 陈辉阳",
+      // 词表与连接补漏：乐谱、乐手、合成器族、专辑标注、原曲标注。
+      "乐谱 : 彭华锐@牧雨音乐",
+      "上台乐手：画左：贝斯：努而德柯     画右：吉他：薛峰",
+      "电子合成器 / 仿音合成器 / 键琴 / 程序编排：C. Y. Kong",
+      "Album: 幽闭サテライト - 色は匂へど散りぬるを (例大祭SP)",
+      "RIT:tu vivi nell'aria",
+      "Instrumentation & Programming : Benny Blanco",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：厂牌词 + 无公司后缀的英文歌词、厂牌名被人名吞噬、
+    // 点分非标签段、角色缩写 + 实质歌词的对唱。
+    for (const line of [
+      "Universal love is all we need",
+      "Eminem is my favourite rapper",
+      "Rit. 渐慢",
+      "谁.在.听.这.首.歌",
+      "李:别离夜",
+      "S：莫斯科没有眼泪",
+      "Eyes-Hate-War",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
