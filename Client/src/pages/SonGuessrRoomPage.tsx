@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Label } from "@/components/ui/Label";
 import { Switch } from "@/components/ui/Switch";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Seo } from "@/components/common/Seo";
 import {
   Dialog,
   DialogContent,
@@ -753,9 +754,21 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     />
   );
 
+  // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
+  // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
+  const seoNode = (
+    <Seo
+      title="听歌猜歌对局中 | BakaGame"
+      description="BakaGame 听歌猜歌对局页面，内容由服务端实时状态驱动。"
+      path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
+      indexable={false}
+    />
+  );
+
   if (joining || needsName || needsPassword || !snapshot || !privateState || snapshot.roomId !== roomId) {
     return (
       <>
+        {seoNode}
         {audioNode}
         <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
         {!needsName && !needsPassword ? (
@@ -879,6 +892,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
 
   return (
     <>
+      {seoNode}
       {audioNode}
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">

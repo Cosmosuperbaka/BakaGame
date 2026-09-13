@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
 import {
   backdrop,
@@ -304,10 +305,22 @@ export default function WhoIsFakerRoomPage() {
     };
   }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
 
+  // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
+  // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
+  const seoNode = (
+    <Seo
+      title="谁是卧底对局中 | BakaGame"
+      description="BakaGame 谁是卧底对局页面，内容由服务端实时状态驱动。"
+      path={`/whoisfaker/room/${roomId ?? ""}`}
+      indexable={false}
+    />
+  );
+
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
+        {seoNode}
         {!needsName && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -372,6 +385,7 @@ export default function WhoIsFakerRoomPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      {seoNode}
       {/* ── 顶栏 ── */}
       <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-2">
