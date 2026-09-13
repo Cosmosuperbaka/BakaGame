@@ -40,7 +40,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
 
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
     const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
-    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的 Bangumi 条目");
+    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
     return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);
   }
 
