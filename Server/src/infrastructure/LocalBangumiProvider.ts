@@ -9,11 +9,13 @@ export interface BangumiDataProvider {
 }
 
 const parseList = (value: string) => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []; } catch { return []; } };
-const normalizeKind = (value: string): BangumiMusicTrack["kind"] => {
+const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack["kind"] => {
+  const relationKinds: Record<number, BangumiMusicTrack["kind"]> = { 3001: "theme", 3002: "opening", 3003: "ending", 3004: "insert", 3005: "character", 3006: "image" };
+  if (relationType && relationKinds[relationType]) return relationKinds[relationType];
   const text = value.toLowerCase();
   if (/片头|片頭|opening|\bop\b/.test(text)) return "opening";
-  if (/片尾|ending|\bed\b/.test(text)) return "ending";
-  if (/插入|插曲|insert|\bin\b/.test(text)) return "insert";
+  if (/片尾|ending|\bed\d*\b/.test(text)) return "ending";
+  if (/插入|插曲|insert|\bin\d*\b/.test(text)) return "insert";
   if (/原声|soundtrack|\bost\b/.test(text)) return "ost";
   if (/角色|character/.test(text)) return "character";
   if (/remix|重混/.test(text)) return "remix";
@@ -60,7 +62,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
     const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? ORDER BY r.relation_order, r.music_id").all(id) as any[];
     const seen = new Set<string>();
-    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim()).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
+    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim()).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
     return { ...toResult(row, this.imageBase), summary: row.summary || undefined, locked: false, musicTracks };
   }
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
