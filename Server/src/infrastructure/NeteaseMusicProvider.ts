@@ -285,12 +285,15 @@ const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
   "作词(?:人)?", "填词", "词曲", "词", "作曲(?:人)?", "谱曲", "曲",
   "编曲(?:人|师)?", "制作人", "制作", "监制", "统筹", "发行", "出品", "策划", "企划",
-  "混音(?:师)?", "母带(?:工程师)?", "录音(?:师)?", "和声(?:编写)?", "念白",
+  "混音(?:师)?", "母带(?:工程师)?", "录音(?:师|棚|室)?", "和声(?:编写)?", "念白",
   "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
+  "版权管理方", "版权", "版权方", "录音作品", "录音制品", "版权代理", "授权",
   // 演唱与同人/翻唱圈署名
   "演唱", "主唱", "歌手", "翻唱", "翻策", "原唱", "原曲", "本家",
   "美工", "题字", "后期", "海报", "封面", "曲绘", "插画", "绘图",
   "视频", "压制", "字幕", "轴", "翻译", "校对", "文案", "调教", "调校", "pv",
+  "后援", "协力", "协助", "鸣谢", "致谢", "特别感谢", "出品方", "制作方", "发行方",
+  "男", "女", "合", "合唱", "对唱", "独唱", "童声", "念白",
   // 英文署名
   "op", "sp", "publisher", "cast", "staff",
   "lyric(?:s|ist)?", "composer", "arranger", "producer",
@@ -386,10 +389,14 @@ const isCreditActionPhrase = (value: string): boolean => {
 /**
  * 无分隔符的英文署名：`Recorded at ...`、`Engineered by ...`、`Mastered by ...`。
  * 这类行没有冒号，必须按「行首命中已知英文标签」判定。
+ *
+ * 注意 `Special Thanks` / `Thanks To` 这类**纯致谢行也可能完全没有分隔符**，
+ * 不能只依赖带冒号的形态（旧测试只覆盖了 `Special Thanks：某某`，裸写形态长期漏网）。
  */
 const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
   `^(?:${[
     "production\\s+coordination",
+    "special\\s+thanks?(?:\\s+to)?", "thanks?(?:\\s+to)?",
     "recorded\\s+at", "engineered\\s+by", "mixed\\s+by", "mastered\\s+by",
     "lyrics?\\s+by", "music\\s+by", "written\\s+by", "produced\\s+by",
     "composed\\s+by", "arranged\\s+by", "performed\\s+by",
@@ -540,9 +547,12 @@ export const isCreditLyricLine = (text: string) =>
  */
 export const isUnusableLyricLine = (text: string): boolean =>
   isCreditLyricLine(text) ||
+  isCopyrightNoticeLine(text) ||
+  isDuetRoleLine(text) ||
   isInstrumentalLyricLine(text) ||
   isSymbolOnlyLyricLine(text) ||
   isNumericOnlyLyricLine(text) ||
+  isBopomofoOnlyLyricLine(text) ||
   isTooShortLyricLine(text);
 
 const INSTRUMENTAL_MARKERS = new Set([
@@ -565,8 +575,11 @@ export const isInstrumentalLyricLine = (text: string) => {
   const normalized = normalizeComparableText(text);
   if (INSTRUMENTAL_MARKERS.has(normalized)) return true;
   // 网易云会把间奏写成 Music1、[Music] 或 Music - Instrumental 等占位文本。
-  return /^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized) ||
-    /^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(normalized);
+  if (/^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized)) return true;
+  if (/^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(normalized)) return true;
+  // `纯音乐，请欣赏`、`纯音乐 请欣赏`、`本曲为纯音乐，请欣赏` 这类带后缀的占位说明。
+  // `normalizeComparableText` 会保留逗号，因此整串不等于 `纯音乐`，需要单独按前缀判定。
+  return /^(?:本曲为|本首歌为|此曲为)?(?:纯音乐|純音樂|纯音乐请欣赏)/.test(normalized);
 };
 
 /** 纯符号行（`~~~~`、`...`、`— — —`、`· · ·`）没有任何可猜信息。 */
@@ -620,6 +633,50 @@ export const isCreditTailLine = (text: string): boolean => {
 
 /** 相邻署名行的合并窗口：制作名单通常连续排布，间隔往往在 3 秒内。 */
 const CREDIT_BLOCK_GAP_MS = 3_000;
+
+/**
+ * 版权与法律声明的固定短语。
+ *
+ * 这类行既不像「标签：取值」（`词版权管理方：` 的头部是扩展短语），也不含任何人名，
+ * 但它同样把版方/录音制品信息暴露给出题者，必须剔除。用**包含**判定而非前缀判定，
+ * 因为实际形态多样：`词版权管理方：X`、`录音作品及MV版权：X`、`（未经许可,不得翻唱或使用）`。
+ */
+const COPYRIGHT_NOTICE_SOURCE = [
+  "版权管理方", "版权代理", "版权方", "录音作品", "录音制品", "录音制作者",
+  "未经许可", "未经授权", "不得翻唱", "不得使用", "不得转载", "禁止翻唱",
+  "版权所有", "all rights reserved", "copyright", "℗", "©",
+  "词版权", "曲版权", "词曲版权", "op：", "sp：",
+].join("|");
+
+const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
+
+/** 版权/法律声明行：整行命中固定短语即判定无效。 */
+export const isCopyrightNoticeLine = (text: string): boolean => {
+  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  if (!normalized) return false;
+  return COPYRIGHT_NOTICE_PATTERN.test(normalized);
+};
+
+/**
+ * 对唱角色标注行（`男：`、`女：`、`合：`、`合唱：`）。
+ *
+ * 这类行给出的是演唱分工而非歌词内容，且右侧通常为空，
+ * `splitCreditHead` 会因「取值缺失」直接返回 undefined 而漏网。
+ */
+const DUET_ROLE_PATTERN = /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[:：]\s*$/u;
+
+export const isDuetRoleLine = (text: string): boolean => DUET_ROLE_PATTERN.test(text.trim());
+
+/**
+ * 注音符号行（`ㄅㄆㄇㄈㄉㄊㄋㄌ`）。
+ *
+ * 周杰伦《反方向的钟》开头有一段注音符号口白，网易云把它当歌词上传。
+ * 它既非符号、也非数字、也不短，但没有任何可猜的中文/日文/拉丁语义。
+ */
+export const isBopomofoOnlyLyricLine = (text: string): boolean => {
+  const stripped = text.normalize("NFKC").replace(/[\s\u3000\p{P}\p{S}]/gu, "");
+  return stripped.length > 0 && /^[\u3105-\u312f\u31a0-\u31bf]+$/u.test(stripped);
+};
 
 export const parseLrc = (raw: string): SongLyricLine[] => {
   const lines: Array<Omit<SongLyricLine, "endTime">> = [];

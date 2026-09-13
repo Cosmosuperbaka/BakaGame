@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
+  isBopomofoOnlyLyricLine,
   isCreditLyricLine,
+  isDuetRoleLine,
   isInstrumentalLyricLine,
   isNumericOnlyLyricLine,
   isSymbolOnlyLyricLine,
   isTooShortLyricLine,
+  isUnusableLyricLine,
   parseLrc,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
@@ -150,6 +153,77 @@ describe("NeteaseMusicProvider", () => {
     for (const line of creditLines) {
       expect(isCreditLyricLine(line)).toBe(true);
     }
+  });
+
+  test("裸写英文致谢行没有分隔符也不能漏网", () => {
+    // 旧用例只覆盖了带冒号的 `Special Thanks：某某`，
+    // 裸写形态（无分隔符）因此长期漏网，必须单独锁定。
+    expect(isCreditLyricLine("Special Thanks")).toBe(true);
+    expect(isCreditLyricLine("special thanks")).toBe(true);
+    expect(isCreditLyricLine("Special Thanks To")).toBe(true);
+    expect(isCreditLyricLine("Thanks To")).toBe(true);
+    expect(isCreditLyricLine("Thanks")).toBe(true);
+  });
+
+  test("真实歌曲里的版权声明、对唱角色与注音行会被过滤", () => {
+    // 以下均取自真实网易云歌词（匿名 cookie + 解灰实测），
+    // 它们既不是「标签：取值」也不是人名串，属于纯词表/结构判定抓不到的类型。
+    const noticeLines = [
+      "词版权管理方：北京梦织音传媒有限公司",
+      "曲版权管理方：索尼音乐版权代理（北京）有限公司",
+      "录音作品及MV版权：EAS MUSIC LTD",
+      "录音棚：C.L.K",
+      "后援：风云娱乐集团",
+      "（未经许可,不得翻唱或使用）",
+      "未经授权不得翻唱",
+      "版权所有",
+      "All Rights Reserved",
+    ];
+    for (const line of noticeLines) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+
+    // 对唱角色标注：给出的是演唱分工而非歌词，右侧通常为空。
+    for (const line of ["男：", "女：", "合：", "合唱：", "对唱："]) {
+      expect(isDuetRoleLine(line)).toBe(true);
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+
+    // 注音符号行（《反方向的钟》开头口白）。
+    expect(isBopomofoOnlyLyricLine("ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏ")).toBe(true);
+    expect(isUnusableLyricLine("ㄅㄆㄇㄈㄉㄊㄋㄌ")).toBe(true);
+
+    // 带后缀的纯音乐占位说明。
+    expect(isInstrumentalLyricLine("纯音乐，请欣赏")).toBe(true);
+    expect(isInstrumentalLyricLine("本曲为纯音乐，请欣赏")).toBe(true);
+    expect(isInstrumentalLyricLine("纯音乐 请欣赏")).toBe(true);
+  });
+
+  test("版权声明与角色标注的判定不会误杀正常歌词", () => {
+    // 这些行含有与声明/角色相关的字词，但本身是正常歌词，必须保留。
+    const realLyrics = [
+      "关于你们之间的故事",
+      "我不再想听你的毒誓",
+      "男女之间",
+      "后天",
+      "后期制作人",
+      "人都走了",
+      "全是狠活",
+      "音阙诗听",
+      "男儿当自强",
+      "女娲补天",
+      "合唱情歌的夜晚",
+      "版权归我所有这句话只是歌词",
+    ];
+    for (const line of realLyrics) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+
+    // 注音判定不能把日文假名或韩文一并误伤（它们只在特定场景才是噪声，
+    // 这里只要求注音规则本身不越界）。
+    expect(isBopomofoOnlyLyricLine("あいうえお")).toBe(false);
+    expect(isBopomofoOnlyLyricLine("正常的中文歌词")).toBe(false);
+    expect(isBopomofoOnlyLyricLine("ㄅㄆㄇ mixed 歌词")).toBe(false);
   });
 
   test("纯符号、纯数字与过短行会被过滤", () => {
