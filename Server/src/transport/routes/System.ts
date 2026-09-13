@@ -75,11 +75,21 @@ export class TelemetryRateLimiter {
   }
 }
 
+export const isPrivateLanHost = (rawHost: string): boolean => {
+  const host = rawHost.replace(/^\[|\]$/g, "").replace(/:\d+$/, "").trim();
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  return false;
+};
+
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
+  onTriggerShutdown?: () => Promise<void> | void;
   rateLimiter?: TelemetryRateLimiter;
   sampleRate?: number;
 }
@@ -89,6 +99,7 @@ export const systemRoutes = ({
   sonGuessrService,
   logger,
   isShuttingDown,
+  onTriggerShutdown,
   rateLimiter,
   sampleRate = 1.0,
 }: SystemRoutesDependencies) => {
@@ -286,6 +297,58 @@ export const systemRoutes = ({
           connectionCount: t.Number({ description: "当前连接总数" }),
           onlinePlayerCount: t.Number({ description: "在线玩家总数" }),
         }),
+      },
+    )
+    .post(
+      "/api/system/notify-shutdown",
+      async ({ headers, set }) => {
+        const xForwardedFor =
+          typeof headers["x-forwarded-for"] === "string" ? headers["x-forwarded-for"] : undefined;
+        const xRealIp =
+          typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"].trim() : undefined;
+
+        if (xForwardedFor || xRealIp) {
+          const forwardedIps = [
+            ...(xForwardedFor ? xForwardedFor.split(",").map((s) => s.trim()) : []),
+            ...(xRealIp ? [xRealIp] : []),
+          ].filter(Boolean);
+
+          const hasExternalIp = forwardedIps.some((ip) => !isPrivateLanHost(ip));
+          if (hasExternalIp) {
+            set.status = 403;
+            return { error: "Forbidden: 运维接口仅限本机内部调用" };
+          }
+        }
+
+        fakerService?.notifyShutdown();
+        songService?.notifyShutdown();
+
+        if (onTriggerShutdown) {
+          await onTriggerShutdown();
+        }
+
+        logger?.warn("收到停机维护广播请求，已向所有房间广播通知并标记服务停机");
+
+        return {
+          ok: true,
+          message: "停机通知已向所有房间广播",
+        };
+      },
+      {
+        detail: {
+          tags: ["System"],
+          summary: "广播停机维护通知",
+          description: "向所有在线对局房间广播停机通知并摘除就绪状态，仅限本地回环或内网运维调用。",
+        },
+        response: {
+          200: t.Object({
+            ok: t.Boolean(),
+            message: t.String(),
+          }),
+          403: t.Object({
+            error: t.String(),
+          }),
+        },
       },
     );
 };

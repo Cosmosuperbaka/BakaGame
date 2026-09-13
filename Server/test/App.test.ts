@@ -199,7 +199,10 @@ const openSocket = async (port: number) => {
   return socket;
 };
 
-const startTestServer = () => {
+const startTestServer = (options?: {
+  onTriggerShutdown?: () => Promise<void> | void;
+  isShuttingDown?: () => boolean;
+}) => {
   const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-app-"));
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
@@ -210,6 +213,7 @@ const startTestServer = () => {
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
+  let shuttingDown = false;
   const whoIsFakerService = new WhoIsFakerService({
     eventLogger: new EventLogger(),
     wordBankRepository: new WordBankRepository(env.wordBankPath),
@@ -218,6 +222,13 @@ const startTestServer = () => {
     env,
     whoIsFakerService,
     logger: new EventLogger(),
+    isShuttingDown: options?.isShuttingDown ?? (() => shuttingDown),
+    onTriggerShutdown: async () => {
+      shuttingDown = true;
+      if (options?.onTriggerShutdown) {
+        await options.onTriggerShutdown();
+      }
+    },
   });
   const started = app.listen({
     hostname: env.serverListenHost,
@@ -232,6 +243,7 @@ const startTestServer = () => {
 
   return {
     port,
+    app,
     whoIsFakerService,
     stop: async () => {
       await started.stop(true);
@@ -459,6 +471,84 @@ test("WhoIsFakerService.notifyShutdown 会向所有在线连接广播停机通�
 
     socket.close();
 
+  } finally {
+    await stop();
+  }
+});
+
+test("POST /api/system/notify-shutdown 拦截携带公网代理转发头的外部请求 (403 Forbidden)", async () => {
+  const { port, stop } = startTestServer();
+
+  try {
+    const resWithXForwardedFor = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.1, 10.0.0.1" },
+    });
+    expect(resWithXForwardedFor.status).toBe(403);
+    const json1 = (await resWithXForwardedFor.json()) as { error?: string };
+    expect(json1.error).toContain("Forbidden");
+
+    const resWithXRealIp = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
+      method: "POST",
+      headers: { "x-real-ip": "203.0.113.50" },
+    });
+    expect(resWithXRealIp.status).toBe(403);
+    const json2 = (await resWithXRealIp.json()) as { error?: string };
+    expect(json2.error).toContain("Forbidden");
+  } finally {
+    await stop();
+  }
+});
+
+test("POST /api/system/notify-shutdown 本地调用成功，触发广播、探针状态切换与回调执行", async () => {
+  let shutdownTriggered = false;
+  const { port, stop } = startTestServer({
+    onTriggerShutdown: async () => {
+      shutdownTriggered = true;
+    },
+  });
+
+  try {
+    const socket = await openSocket(port);
+    const collector = createSocketCollector(socket);
+
+    // 初始 readyz 状态为健康 200
+    const initialReady = await fetch(`http://127.0.0.1:${port}/readyz`);
+    expect(initialReady.status).toBe(200);
+
+    // 本地调用停机通知接口
+    const shutdownRes = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
+      method: "POST",
+    });
+    expect(shutdownRes.status).toBe(200);
+    const shutdownBody = await shutdownRes.json();
+    expect(shutdownBody).toEqual({
+      ok: true,
+      message: "停机通知已向所有房间广播",
+    });
+
+    // 验证停机回调已触发执行
+    expect(shutdownTriggered).toBe(true);
+
+    // 验证 WebSocket 收到停机广播
+    const shutdownEvent = (await collector(
+      (payload) =>
+        (payload as { type?: string }).type === "event" &&
+        (payload as { event?: string }).event === "server.shutdown",
+    )) as { type: string; event: string; payload: { message: string } };
+    expect(shutdownEvent.type).toBe("event");
+    expect(shutdownEvent.event).toBe("server.shutdown");
+    expect(shutdownEvent.payload.message).toBe(SERVER_SHUTDOWN_MESSAGE);
+
+    // 验证 readyz 探针立即转为 503
+    const readyAfterShutdown = await fetch(`http://127.0.0.1:${port}/readyz`);
+    expect(readyAfterShutdown.status).toBe(503);
+    expect(await readyAfterShutdown.json()).toEqual({
+      status: "shutting_down",
+      ready: false,
+    });
+
+    socket.close();
   } finally {
     await stop();
   }
