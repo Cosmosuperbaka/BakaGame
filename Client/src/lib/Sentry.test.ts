@@ -67,11 +67,69 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     expect(isFiltered("TypeError: Failed to fetch dynamically imported module: /assets/main.js")).toBe(true);
     expect(isFiltered("TypeError: Loading chunk 42 failed.")).toBe(true);
     expect(isFiltered("TypeError: Importing a module script failed.")).toBe(true);
+    expect(isFiltered("Load failed (game.baka.website)")).toBe(true);
+    expect(isFiltered("TypeError: NetworkError when attempting to fetch resource.")).toBe(true);
     expect(
       isFiltered(
         "NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
       ),
     ).toBe(true);
+  });
+
+  it("模块脚本解析失败在事件组装阶段被丢弃，业务异常不受影响", () => {
+    const mockInit = vi.fn();
+    const mockDriver: SentrySdkDriver = {
+      init: mockInit,
+      captureException: vi.fn(),
+      captureMessage: vi.fn(),
+      withScope: vi.fn(),
+    };
+
+    initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
+
+    const beforeSend = (
+      mockInit.mock.calls[0]?.[0] as { beforeSend: (event: unknown) => unknown }
+    ).beforeSend;
+
+    const parseFailure = {
+      exception: {
+        values: [
+          {
+            type: "SyntaxError",
+            value: "Unexpected token '{'",
+            stacktrace: { frames: [{ function: "promiseReactionJob" }, { function: "parseModule" }] },
+          },
+        ],
+      },
+    };
+    expect(beforeSend(parseFailure)).toBeNull();
+
+    const logicFailure = {
+      exception: {
+        values: [
+          {
+            type: "TypeError",
+            value: "Cannot read properties of undefined (reading 'id')",
+            stacktrace: { frames: [{ function: "GameRow" }] },
+          },
+        ],
+      },
+    };
+    expect(beforeSend(logicFailure)).toBe(logicFailure);
+
+    // 同为 SyntaxError 但没有 parseModule 帧，说明不是模块脚本解析失败，必须保留
+    const jsonFailure = {
+      exception: {
+        values: [
+          {
+            type: "SyntaxError",
+            value: "Unexpected token '{'",
+            stacktrace: { frames: [{ function: "parseChangelog" }] },
+          },
+        ],
+      },
+    };
+    expect(beforeSend(jsonFailure)).toBe(jsonFailure);
   });
 
   it("captureClientException 与 captureClientMessage 在初始化后正常派发", () => {
