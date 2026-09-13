@@ -2810,3 +2810,114 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
     expect(subjects).toBeLessThan(50);
   });
 });
+
+describe("SonGuessrService 猜番原版优先", () => {
+  /** 单人房间自动出题，直接用番剧题库路径验证选歌结果。 */
+  const animeSoloRound = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "anime-original-solo");
+    await createRoom(service, solo, { roomId: "8888", name: "猜番单人", userName: "独狼", solo: true });
+    await execute(service, solo, {
+      id: "anime-original-settings",
+      type: "song.room.updateSettings",
+      roomId: "8888",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} });
+    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+  };
+
+  test("原版与翻唱同时存在时优先选中原版", async () => {
+    const original = {
+      ...songs.answer,
+      id: "original",
+      title: "secret base ~君がくれたもの~",
+      artist: "ZONE",
+      album: "secret base ~君がくれたもの~",
+    };
+    const cover = {
+      ...songs.answer,
+      id: "cover",
+      title: "secret base ~君がくれたもの~ (secret base ~你所赠予之物~)",
+      artist: "先生と牛 / 银子 / 悼子Qrel",
+      album: "secret base ~君がくれたもの~ 翻唱合集",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "secret base ~君がくれたもの~", artist: "ZONE", kind: "insert" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    // 翻唱版排在搜索结果首位，模拟网易云把翻唱混排在原版之前。
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [cover, original],
+      getSong: async (id) => id === "cover" ? cover : original,
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+
+  test("仅能召回翻唱版时仍可出题，不因缺少原版而失败", async () => {
+    const cover = {
+      ...songs.answer,
+      id: "cover-only",
+      title: "答案歌 (翻唱)",
+      artist: "翻唱歌手",
+      album: "翻唱专辑",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "原唱歌手", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [cover],
+      getSong: async () => cover,
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(cover.audioUrl);
+  });
+
+  test("歌手名不一致时通过番剧名宽检索召回原版", async () => {
+    const original = {
+      ...songs.answer,
+      id: "original-broad",
+      title: "答案歌",
+      artist: "ZONE",
+      album: "答案歌",
+    };
+    const cover = {
+      ...songs.answer,
+      id: "cover-broad",
+      title: "答案歌 (Cover)",
+      artist: "某翻唱者",
+      album: "翻唱合集",
+    };
+    // 只按「曲名+番剧名」能召回原版，按「曲名+Bangumi 歌手名」只能召回翻唱。
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async (keyword) => keyword.includes("Answer Anime") ? [original] : [cover],
+      getSong: async (id) => id === "original-broad" ? original : cover,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "不存在的歌手名", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+});
+
+
+

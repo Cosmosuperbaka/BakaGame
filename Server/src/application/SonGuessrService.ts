@@ -225,6 +225,43 @@ const normalizedArtists = (value: string) =>
       .filter(Boolean),
   );
 
+/** 明确指向翻唱、改编或非原唱的标记（标题、专辑与标签通用）。 */
+const COVER_MARKER_PATTERN =
+  /翻唱|翻錄|翻录|カバー|커버|\bcover(?:ed|s|ing)?\b|重唱|再唱|自翻|试唱|試唱|模仿|リミックス|カヴァー/iu;
+/** 非原唱演绎版本标记：伴奏、纯音乐、现场、不同歌手演唱等。 */
+const NON_ORIGINAL_VERSION_PATTERN =
+  /伴奏|純伴奏|纯伴奏|纯音乐|純音樂|off\s*vocal|インスト|karaoke|カラオケ|伴唱|和声伴奏|live|现场|現場|演唱会|演唱會|acoustic|不插电|不插電|demo|试听|試聽/iu;
+
+const songTitleSimilarity = (candidateTitle: string, expectedTitle: string): number => {
+  const normCandidate = normalizeSongTitle(candidateTitle);
+  const normExpected = normalizeSongTitle(expectedTitle);
+  if (!normCandidate || !normExpected) return 0;
+  if (normCandidate === normExpected) return 2;
+  return normCandidate.includes(normExpected) || normExpected.includes(normCandidate) ? 1 : 0;
+};
+
+/**
+ * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
+ * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、伴奏等版本混排时
+ * 优先选中原版，避免「原版存在却抽到翻唱」。
+ */
+export const scoreAnimeSongCandidate = (
+  candidate: SongSearchResult,
+  track: BangumiMusicTrack,
+): number => {
+  let score = songTitleSimilarity(candidate.title, track.title);
+  const candidateArtists = normalizedArtists(candidate.artist);
+  const trackArtists = track.artist ? normalizedArtists(track.artist) : new Set<string>();
+  if (trackArtists.size > 0) {
+    const overlap = [...trackArtists].some((artist) => candidateArtists.has(artist));
+    score += overlap ? 4 : -3;
+  }
+  const descriptiveText = `${candidate.title} ${candidate.album ?? ""}`;
+  if (COVER_MARKER_PATTERN.test(descriptiveText)) score -= 5;
+  if (NON_ORIGINAL_VERSION_PATTERN.test(descriptiveText)) score -= 4;
+  return score;
+};
+
 const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
 const MAX_LYRIC_LINE_DURATION_MS = 12_000;
 const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
@@ -1305,6 +1342,16 @@ export class SonGuessrService {
         if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
         queries.push(track.title);
       }
+      // 仅凭歌手名检索时，Bangumi 与网易云的歌手写法差异会让原版漏召回，
+      // 只剩翻唱版可匹配。追加番剧名与曲名宽检索，保证原版进入候选池，
+      // 再由 scoreAnimeSongCandidate 的原版优先排序决定最终结果。
+      const broadQueries = [
+        anime.name ? `${track.title} ${anime.name}` : "",
+        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+        track.title,
+      ].filter((query) => query && !queries.includes(query));
+      queries.push(...broadQueries);
+
       // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
       const searches = await Promise.all(queries.map(async (query) => {
         if (budget <= 0) return [];
@@ -1327,9 +1374,16 @@ export class SonGuessrService {
         }
       }
 
-      for (let index = 0; index < matched.length; index += ANIME_SONG_LOOKUP_CONCURRENCY) {
+      // 网易云会把翻唱、伴奏等版本混排在原版之前；先按「原版优先」评分降序排列，
+      // 再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
+      const ranked = matched
+        .map((candidate, index) => ({ candidate, index, score: scoreAnimeSongCandidate(candidate, track) }))
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+        .map((entry) => entry.candidate);
+
+      for (let index = 0; index < ranked.length; index += ANIME_SONG_LOOKUP_CONCURRENCY) {
         if (budget <= 0) break;
-        const batch = matched.slice(index, index + ANIME_SONG_LOOKUP_CONCURRENCY);
+        const batch = ranked.slice(index, index + ANIME_SONG_LOOKUP_CONCURRENCY);
         const resolvedBatch = await Promise.all(batch.map(async (candidate) => {
           if (budget <= 0) return undefined;
           budget -= 1;
