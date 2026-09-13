@@ -104,6 +104,16 @@ function renderRoomPage(roomId = "TEST_ROOM") {
   );
 }
 
+function renderSoloPage() {
+  return render(
+    <MemoryRouter initialEntries={["/songuessr/solo"]}>
+      <Routes>
+        <Route path="/songuessr/solo" element={<SonGuessrRoomPage solo />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe("SonGuessrRoomPage 页面级集成测试", () => {
   beforeEach(() => {
     window.HTMLMediaElement.prototype.load = vi.fn();
@@ -121,6 +131,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
   afterEach(() => {
     useSonGuessrStore.setState(initialStoreState, true);
+    window.sessionStorage.removeItem("songuessr_solo_room");
     vi.restoreAllMocks();
   });
 
@@ -143,6 +154,32 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 玩家列表
     expect(screen.getByText("房主小明")).toBeInTheDocument();
     expect(screen.getByText("玩家小红")).toBeInTheDocument();
+  });
+
+  it("单人模式隐藏玩家栏与聊天栏，只保留自动出题与开始入口", () => {
+    // 预置单人房间号，让页面直接命中已入房状态，避免触发建房流程。
+    window.sessionStorage.setItem("songuessr_solo_room", "4321");
+    useSonGuessrStore.setState({
+      roomId: "4321",
+      snapshot: createMockSnapshot({
+        roomId: "4321",
+        solo: true,
+        players: [createMockSnapshot().players[0]],
+      }),
+      privateState: createMockPrivateState(),
+    });
+    renderSoloPage();
+
+    expect(screen.getByRole("heading", { name: "准备开始" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始游戏" })).toBeInTheDocument();
+
+    // 房间设置、出题方式、玩家栏与聊天入口在单人模式下全部移除
+    expect(screen.queryByText("房间设置")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "手动出题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "自动出题" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("玩家列表")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("聊天")).not.toBeInTheDocument();
+    expect(screen.queryByText("房主小明")).not.toBeInTheDocument();
   });
 
   it("真实状态驱动阶段流转：选歌 -> 猜歌 -> 答案揭晓", () => {
