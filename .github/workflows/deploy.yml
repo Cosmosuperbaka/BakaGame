@@ -74,16 +74,33 @@ jobs:
             download_db() {
               db="$1"
               rm -f "$db"
-              for url in \
-                "https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db" \
-                "https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"; do
-                if curl --fail --location --retry 8 --retry-delay 5 --connect-timeout 30 \
-                  --max-time 240 --speed-time 30 --speed-limit 1024 --continue-at - "$url" -o "$db"; then
-                  return 0
-                fi
-                rm -f "$db"
+              pointer=$(git show "HEAD:$db")
+              size=$(printf '%s\n' "$pointer" | awk '/^size / {print $2}')
+              [ -n "$size" ] || { echo "无法读取 LFS 文件大小: $db"; return 1; }
+              base="/tmp/bangumi-lfs-$$"
+              mkdir -p "$base"
+              chunk_count=8
+              chunk_size=$(( (size + chunk_count - 1) / chunk_count ))
+              for i in $(seq 0 $((chunk_count - 1))); do
+                start=$((i * chunk_size)); end=$((start + chunk_size - 1));
+                [ "$end" -ge "$size" ] && end=$((size - 1))
+                (
+                  for host in gh-proxy.com media.githubusercontent.com; do
+                    if [ "$host" = "gh-proxy.com" ]; then
+                      url="https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
+                    else
+                      url="https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
+                    fi
+                    if curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 \
+                      --max-time 300 --range "$start-$end" \
+                      "$url" -o "$base/$i"; then exit 0; fi
+                  done
+                  exit 1
+                ) &
               done
-              return 1
+              wait
+              cat $(for i in $(seq 0 $((chunk_count - 1))); do printf '%s/%s ' "$base" "$i"; done) > "$db"
+              rm -rf "$base"
             }
             valid_db() { [ -s "$1" ] && [ "$(head -c 15 "$1")" = "SQLite format 3" ]; }
             pids=()
