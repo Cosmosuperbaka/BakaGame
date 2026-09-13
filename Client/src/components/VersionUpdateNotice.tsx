@@ -7,6 +7,14 @@ import { duration, ease, spring } from "@/lib/Motion";
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 
+/**
+ * 开发环境不做版本检测。
+ *
+ * 本地 dev server 的构建号随改动实时变化，页面资源也不存在「旧版本残留」，
+ * 此时的提醒只会打断调试，因此一律禁用检测与展示。
+ */
+const isDevEnvironment = () => import.meta.env.DEV;
+
 const readBuildFromHtml = (html: string) => {
   const document = new DOMParser().parseFromString(html, "text/html");
   return document.querySelector<HTMLMetaElement>('meta[name="bakagame-build"]')?.content;
@@ -26,7 +34,7 @@ export function VersionUpdateNotice({
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
-    if (!active || commitHistory.currentCommit === "dev") return;
+    if (!active || isDevEnvironment() || commitHistory.currentCommit === "dev") return;
 
     let disposed = false;
     let controller: AbortController | undefined;
