@@ -45,6 +45,23 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify]
     steps:
+      - name: Checkout repository with Bangumi databases
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Upload Bangumi databases
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
+          source: "Server/data/bangumi-song.sqlite,Server/data/bangumi-character.sqlite"
+          target: "/BakaGame/Server/data"
+          strip_components: 2
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -69,46 +86,9 @@ jobs:
             echo "==> 拉取远端最新代码..."
             git fetch origin main
             git reset --hard origin/main
-            # SQLite 数据库由 Git LFS 管理。生产机不执行 git lfs pull，
-            # 直接通过镜像 Media 下载实际对象，避免 LFS endpoint 长时间阻塞 SSH。
-            download_db() {
-              db="$1"
-              rm -f "$db"
-              pointer=$(git show "HEAD:$db")
-              size=$(printf '%s\n' "$pointer" | awk '/^size / {print $2}')
-              [ -n "$size" ] || { echo "无法读取 LFS 文件大小: $db"; return 1; }
-              base="/tmp/bangumi-lfs-$$"
-              mkdir -p "$base"
-              chunk_count=8
-              chunk_size=$(( (size + chunk_count - 1) / chunk_count ))
-              for i in $(seq 0 $((chunk_count - 1))); do
-                start=$((i * chunk_size)); end=$((start + chunk_size - 1));
-                [ "$end" -ge "$size" ] && end=$((size - 1))
-                (
-                  for host in gh-proxy.com media.githubusercontent.com; do
-                    if [ "$host" = "gh-proxy.com" ]; then
-                      url="https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
-                    else
-                      url="https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
-                    fi
-                    if curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 \
-                      --max-time 300 --range "$start-$end" \
-                      "$url" -o "$base/$i"; then exit 0; fi
-                  done
-                  exit 1
-                ) &
-              done
-              wait
-              cat $(for i in $(seq 0 $((chunk_count - 1))); do printf '%s/%s ' "$base" "$i"; done) > "$db"
-              rm -rf "$base"
-            }
             valid_db() { [ -s "$1" ] && [ "$(head -c 15 "$1")" = "SQLite format 3" ]; }
-            pids=()
-            if ! valid_db Server/data/bangumi-song.sqlite; then download_db Server/data/bangumi-song.sqlite & pids+=("$!"); fi
-            if ! valid_db Server/data/bangumi-character.sqlite; then download_db Server/data/bangumi-character.sqlite & pids+=("$!"); fi
-            if [ "${#pids[@]}" -gt 0 ]; then wait "${pids[@]}"; fi
             for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
-              if [ ! -s "$db" ] || [ "$(head -c 15 "$db")" != "SQLite format 3" ]; then
+              if ! valid_db "$db"; then
                 echo "❌ Bangumi 数据文件无效: $db"
                 exit 1
               fi
