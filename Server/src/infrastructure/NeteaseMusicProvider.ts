@@ -1458,7 +1458,7 @@ export class NeteaseMusicProvider implements MusicProvider {
 
         return audioUrl;
       },
-      { force, priority: 4 },
+      { force, priority: 4, cacheNegative: false },
     );
     if (!value) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     return value;
@@ -1572,7 +1572,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     key: string,
     ttlMs: number,
     loader: () => Promise<T>,
-    options: { force?: boolean; priority?: number; background?: boolean } = {},
+    options: { force?: boolean; priority?: number; background?: boolean; cacheNegative?: boolean } = {},
   ): Promise<T> {
     const now = this.now();
     if (!options.background) this.lastUserRequestAt = now;
@@ -1591,19 +1591,26 @@ export class NeteaseMusicProvider implements MusicProvider {
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) return cloneCacheValue(await existing);
 
+    const allowNegative = options.cacheNegative !== false;
     this.refreshers.set(key, { ttlMs, loader });
     const request = loader().then((value) => {
-      const fetchedAt = this.now();
-      const serializedSize = value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
-      this.cache.set(key, {
-        value,
-        softExpireAt: fetchedAt + ttlMs * 0.8,
-        hardExpireAt: fetchedAt + hardTtl,
-        lastAccessAt: fetchedAt,
-        hits: 1,
-        priority: options.priority ?? 1,
-        size: serializedSize,
-      });
+      // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
+      // 玩家重试也只会拿到同一个空值。`cacheNegative` 缺省为 true 以保持既有缓存语义，
+      // 播放地址这类「重试可能成功」的取值显式传 false，只跳过空结果、正常地址照旧缓存。
+      const storeResult = allowNegative || Boolean(value);
+      if (storeResult) {
+        const fetchedAt = this.now();
+        const serializedSize = value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
+        this.cache.set(key, {
+          value,
+          softExpireAt: fetchedAt + ttlMs * 0.8,
+          hardExpireAt: fetchedAt + hardTtl,
+          lastAccessAt: fetchedAt,
+          hits: 1,
+          priority: options.priority ?? 1,
+          size: serializedSize,
+        });
+      }
       return value;
     }).finally(() => {
       if (this.inFlight.get(key) === request) this.inFlight.delete(key);
