@@ -24,6 +24,7 @@ const createMockSnapshot = (
 ): SonGuessrRoomSnapshot => ({
   roomId: "TEST_ROOM",
   name: "猜歌测试房",
+  solo: false,
   visibility: "public",
   allowSpectators: true,
   hasPassword: false,

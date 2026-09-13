@@ -3,6 +3,7 @@ import { TEST_ROOM_ID } from "@/config/Constants";
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
+const SOLO_ROOM_KEY = "songuessr_solo_room";
 
 function normalizeSessionRoomId(roomId: string): string {
   const normalized = roomId.trim();
@@ -96,6 +97,31 @@ export function saveSonGuessrSessionToken(roomId: string, token: string): void {
 export function clearSonGuessrSessionToken(roomId: string): void {
   try {
     getSessionStorage()?.removeItem(getSongSessionKey(roomId));
+  } catch {
+    // 忽略浏览器禁用存储的情况。
+  }
+}
+
+/** 单人模式房间号：刷新页面后仍可重连同一局，退出单人模式时清除。 */
+export function getSongSoloRoomId(): string | null {
+  try {
+    return getSessionStorage()?.getItem(SOLO_ROOM_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSongSoloRoomId(roomId: string): void {
+  try {
+    getSessionStorage()?.setItem(SOLO_ROOM_KEY, roomId);
+  } catch {
+    // 忽略浏览器禁用存储的情况。
+  }
+}
+
+export function clearSongSoloRoomId(): void {
+  try {
+    getSessionStorage()?.removeItem(SOLO_ROOM_KEY);
   } catch {
     // 忽略浏览器禁用存储的情况。
   }
