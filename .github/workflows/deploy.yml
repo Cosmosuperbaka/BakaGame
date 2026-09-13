@@ -61,6 +61,14 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
+            # drone-ssh 把整段脚本经 stdin 喂给远端 shell。为彻底排除
+            # "脚本内命令读走/吃掉剩余脚本"这一类问题，把真正的部署逻辑
+            # 落成服务器上的临时文件再用 bash 执行 —— 内层脚本从文件读，
+            # 与 stdin 完全无关，trap / set -e / read 的行为都可控。
+            DEPLOY_SH=$(mktemp /tmp/bakagame-deploy.XXXXXX.sh)
+            trap 'rm -f "$DEPLOY_SH"' EXIT
+            cat > "$DEPLOY_SH" <<'BAKA_DEPLOY_EOF'
+            set -euo pipefail
 
             REPO="Cosmosuperbaka/BakaGame"
             REF="main"
@@ -123,21 +131,20 @@ jobs:
             }
             trap on_exit EXIT
 
-            # 先把执行环境说清楚：远端 shell 到底是什么直接决定陷阱/shell 特性是否可用。
+            # 先把执行环境说清楚，再开行级追踪：出问题必须能定位到具体一行。
             say "执行环境：shell=$0 bash=${BASH_VERSION:-无} 内核=$(uname -s)"
-
-            # 任何非预期失败都必须带着行号喊出来，绝不允许静默退出。
-            # ERR 是 bash 专有信号，dash 下 `trap ... ERR` 会直接让脚本带 -e 退出，故按 shell 分支处理。
             if [ -n "${BASH_VERSION:-}" ]; then
               set -E
               trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
             fi
+            PS4='+ 第${LINENO}行: '
+            set -x
 
             cd /BakaGame
             say "开始部署 BakaGame 后端"
 
             # ---------- 0. 环境自检 ----------
-            for t in git curl awk sort tr wc head basename sha256sum date grep cp mv rm; do
+            for t in git curl awk sort tr wc head basename sha256sum date grep cp mv rm mktemp; do
               if ! command -v "$t" >/dev/null 2>&1; then
                 echo "❌ 生产机缺少必需命令：$t"
                 exit 1
@@ -207,6 +214,7 @@ jobs:
               PENDING="$PENDING $f"
             done
 
+            set +x
             if [ -n "$PENDING" ]; then
               say "需下载 LFS 数据：$PENDING"
 
@@ -365,3 +373,5 @@ jobs:
             echo "========================================="
             echo "🎉 BakaGame 后端部署成功：$COMMIT（总耗时 $(elapsed)s）"
             echo "========================================="
+            BAKA_DEPLOY_EOF
+            bash "$DEPLOY_SH"
