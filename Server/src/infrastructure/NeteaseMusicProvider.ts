@@ -283,7 +283,7 @@ const normalizeComparableText = (value: string) =>
  */
 const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
-  "作词(?:人|者)?", "填词", "词曲", "词", "作曲(?:人|者)?", "谱曲", "曲",
+  "作词(?:人|者)?", "填词", "词曲", "词", "作曲(?:人|者)?", "谱曲", "曲", "制谱",
   "编曲(?:人|师|者)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
   "(?:词曲|作词|作曲)(?:提供|来源)",
   // 繁体写法（港台上传谱高频）：`編曲 Arrange : X`。
@@ -293,12 +293,18 @@ const CREDIT_LABEL_SOURCE = [
   // 单独登记而不放宽 `isCreditLabelOnly` 的「覆盖整个头部」约束，避免 `音乐响起：` 这类歌词被误杀。
   "音乐制作", "音乐监制", "音乐指导", "音乐统筹", "音乐总监", "音乐设计", "音乐混音",
   "音乐出品", "音乐制作人", "音乐总监制",
+  // R12 实测：`音乐营销：网易飓风`（`音乐` 单词不进词表，沿用 `音乐X` 整词枚举防误杀）。
+  "音乐营销",
   "专辑制作", "专辑封面(?:设计)?", "封面设计", "视觉设计",
+  // R12 实测：`专辑：最好的时代`（专辑名是强泄露源）。
+  "专辑",
   "合作音乐人", "特邀", "参演", "配音",
   "配唱(?:编写)?", "制作协力", "低音吉他", "第一小提琴", "第二小提琴", "中提琴", "大提琴",
+  // R12 实测：`古琴 Guqin：方静宇`（民族乐器对照署名）、`戏腔 Opera tune：海伦`（演唱分工）。
+  "古琴", "戏腔",
   // 出版/公司/企划类：`制作公司 : X`、`厂牌 : X`、`企划宣传：X`、`商务统筹 : X`、
   // `特别鸣谢 : X`、`合作单位：X`。这类行给出的是机构而非歌词，必须剔除。
-  "制作公司", "出品公司", "发行公司", "音乐公司", "文化传媒", "传媒",
+  "制作公司", "出品公司", "发行公司", "音乐公司", "签约公司", "文化传媒", "传媒",
   "厂牌", "唱片", "唱片公司", "工作室", "录音室(?!$)",
   "企划宣传", "宣传", "推广", "营销", "商务", "商务统筹", "统筹企划",
   "鸣谢", "特别鸣谢", "特别感谢", "致谢", "感谢", "协助单位", "合作单位",
@@ -484,6 +490,8 @@ const CREDIT_LABEL_SOURCE = [
   // （`and` 由连接组接住）、`Writers: X`。
   "digital\\s+edited\\s+by", "project\\s+lead", "marketing\\s+coordination",
   "marketing", "agencies", "writers?",
+  // R12 实测：`戏腔 Opera tune：海伦` —— `tune` 小写开头，TitleCase 对照分支接不住，词表直补。
+  "opera\\s+tune",
 ].join("|");
 
 /**
@@ -693,6 +701,8 @@ const SPACE_SPLIT_HEAD_DENY = new Set([
   "导演",
   // `背景` 同理：`背景 夜色沉沉` 是歌词，`背景：绘师串` 是冒号署名。
   "背景",
+  // `专辑` 同理：`专辑 里的歌` 是歌词，`专辑：最好的时代` 是元信息署名。
+  "专辑",
 ]);
 
 /** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。
@@ -785,6 +795,16 @@ const isCreditLabelOnly = (value: string): boolean => {
   const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z][A-Za-z\s]*)$/u.exec(value);
   if (composite) {
     if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
+    // 中文标签 + 英文对照翻译（TitleCase）：`制谱 Music Copyist`、`企划 Creative Planning`、
+    // `古琴 Guqin`。对照词永远追不完词表（copyist/planning/guqin…），而 TitleCase 是
+    // 双语署名的强特征：句中歌词的英文短语几乎必含小写虚词，逐词首字母大写的
+    // 短语只会出现在对照署名里。每词 ≥2 字母排除 `设计 A Story` 这类歌词，词数 ≤4。
+    if (
+      isCreditLabelOnly(composite[1]) &&
+      /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(composite[2].trim())
+    ) {
+      return true;
+    }
   }
   // 无空格粘连形态：`曲Composer`、`词Lyricist`（英文字母紧贴中文）。
   const glued = /^([\u4e00-\u9fff\u3040-\u30ff]+)([A-Za-z][A-Za-z\s]*)$/u.exec(value);
@@ -842,7 +862,7 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `回忆的录音` 这类歌词化表达不含设施词、不会命中。
   if (
     /^[\u4e00-\u9fff]{2,24}$/u.test(value) &&
-    /录音系统|录音棚|录音室|混音室|混音师|录音师|母带处理|母带工程|工作室/u.test(value)
+    /录音系统|录音棚|录音室|混音室|混音棚|混音师|录音师|母带处理|母带工程|工作室|导演团队/u.test(value)
   ) {
     return true;
   }
@@ -988,6 +1008,9 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
   // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
   if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
+  // 唱片版权行：`P - Line: 2016 ...`、`C-Line: 2016 ...`（Phonogram/Copyright 标准写法）。
+  // ` - ` 会把 head 切成孤立的 `P`，整行掉出词表路径，按单字母前缀整行判定。
+  if (/^[pc]\s*[-—–]?\s*line\b/i.test(undecorated)) return true;
   // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
   // 按「书名号包裹 + staff/制作名单收尾」结构判定。注意 LEADING_DECORATION
   // 已把行首 `《` 剥掉（undecorated 形如 `Plot: 0》动画 staff`），
