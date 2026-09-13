@@ -344,6 +344,15 @@ const CREDIT_LABEL_SOURCE = [
   // R5 实测补漏：`录音制作`、`营销推广`、`混音录音室`、`计算机音乐编成`、`谱务 Scoring`。
   "录音制作", "营销推广", "混音录音室", "(?:计算机)?音乐编成", "谱务",
   "母带后期处理(?:录音室|制作人)?", "声音工程师",
+  // R7 实测补漏（官方发行页脚与同人圈混排标签）：
+  // `总监制 : X`、`歌曲企划：X`、`承制：X`、`混音工程：X`、`电影原声发行：X`、
+  // `音乐监督 X`、`项目/艺人统筹：X`、`宣发支持/宣发执行：X`、`导演：X`、`调色：X`、
+  // `服装：X`、`独家短视频平台：X`、`特别说明：X`、`原作：《…》X`、`爱尔兰哨笛 : X`、
+  // `弦乐录制：X`、`改编词曲/改编编曲 : X`、`绘 ：X`、`注：X`、`联合出品`（裸行）。
+  "总监制", "歌曲企划", "承制", "混音工程", "电影原声发行", "音乐监督",
+  "项目", "宣发(?:支持|执行)?", "导演", "调色", "服装", "(?:独家)?短视频平台",
+  "特别说明", "原作", "爱尔兰哨笛", "哨笛", "弦乐录制", "改编词曲", "改编编曲",
+  "绘", "注", "词作", "语调教", "社团", "物料", "黑胶设计", "联合出品",
   // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
   "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
@@ -428,6 +437,11 @@ const CREDIT_LABEL_SOURCE = [
   "performed\\s+by", "vocals?\\s+recorded\\s+at",
   // `X by` 形式的英文署名：`作词 Lyricist by`、`作曲 Composer by`。
   "lyricist\\s+by", "composer\\s+by", "arranger\\s+by", "producer\\s+by",
+  // R7 实测补漏：`Mixer : X`、`Studio Personnel : X`、`Synthesizer Operator : X`、
+  // `Verse 2: G-Eazy`（数字由槽位规则吃掉）、`二胡Erhu：X`、`策划Planner/ X`、
+  // `混音Mix down/ X`、`PV Promotion Video/ X`、`出品社团Products/ X`。
+  "mixers?", "personnel", "operators?", "planner", "verse",
+  "erhu", "mix\\s*down", "promotions?", "products?",
 ].join("|");
 
 /**
@@ -626,6 +640,8 @@ const WRAPPED_CREDIT_LABEL_PATTERN = /^[【\[（(「『《<]\s*([^】\]）)」�
 const SPACE_SPLIT_HEAD_DENY = new Set([
   "感谢", "特别感谢", "鸣谢", "致谢", "谢谢", "感激",
   "策划", "设计", "宣传", "推广", "邀请", "呈现",
+  // `导演` 被歌词借用作隐喻（`导演 我的人生这一场戏`），空格形态不可信。
+  "导演",
 ]);
 
 /** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。 */
@@ -686,6 +702,15 @@ const splitCreditHead = (text: string): string | undefined => {
   return undefined;
 };
 
+/**
+ * 裸机构名单行（无冒号、整行独占）：`太合音乐集团`、`朴林西思文化传媒`、
+ * `北京国际音乐产业大会`、`主题歌音乐专辑工作团队`。以**强机构后缀**收尾的
+ * 短行是制作名单页脚。刻意不收录 `唱片`/`娱乐`/`音乐` 等弱词 ——
+ * `发霉的旧唱片` 这类歌词结尾必须保留；主体至少 3 字也排除 `某某公司` 式巧合。
+ */
+const BARE_ORG_SUFFIX_PATTERN =
+  /^[\u4e00-\u9fffA-Za-z0-9·]{3,20}(?:集团|文化传媒|传媒|有限公司|公司|产业大会|工作团队)$/u;
+
 /** 判断标签头部是否「完全由署名标签构成」。 */
 const isCreditLabelOnly = (value: string): boolean => {
   if (!value) return false;
@@ -738,6 +763,14 @@ const isCreditLabelOnly = (value: string): boolean => {
     /^[\u4e00-\u9fff]{2,24}$/u.test(value) &&
     /录音系统|录音棚|录音室|混音室|混音师|录音师|母带处理|母带工程|工作室/u.test(value)
   ) {
+    return true;
+  }
+
+  // 裸机构名单行：`太合音乐集团`、`朴林西思文化传媒`、`北京国际音乐产业大会`、
+  // `主题歌音乐专辑工作团队`。以**强机构后缀**收尾的短行是制作名单页脚。
+  // 刻意不收录 `唱片`/`娱乐`/`音乐` 等弱词 —— `发霉的旧唱片` 这类歌词结尾
+  // 必须保留；主体至少 3 字也排除 `某某公司` 式的两字巧合。
+  if (BARE_ORG_SUFFIX_PATTERN.test(value)) {
     return true;
   }
 
@@ -831,6 +864,23 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
   // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
   if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
+
+  // 裸标签行：credit 块的段落标题独占一行（`出品`、`联合出品`），无冒号也无取值，
+  // `splitCreditHead` 因找不到分隔符而整条失效。这里**只接受单个已登记标签**
+  // 或强机构后缀行（`BARE_ORG_SUFFIX_PATTERN`），**不走** `isCreditLabelOnly`
+  // 的粘连/逐段拆分 —— `后期制作人`（后期|制作人）这类两标签粘连是真实歌词，
+  // 必须保留（正式测试回归抓到过）。同时沿用 SPACE_SPLIT_HEAD_DENY：
+  // `感谢`、`导演` 这类高频歌词词裸写整行时按歌词保留；单字行交给过短/角色判定。
+  if (
+    /[\u4e00-\u9fff\u3040-\u30ff]/u.test(undecorated) &&
+    [...undecorated].length >= 2 &&
+    !SPACE_SPLIT_HEAD_DENY.has(undecorated) &&
+    (CREDIT_LABEL_PATTERN.exec(undecorated)?.[0].replace(/[\s\u3000]+/g, "") ===
+      undecorated.replace(/[\s\u3000]+/g, "") ||
+      BARE_ORG_SUFFIX_PATTERN.test(undecorated))
+  ) {
+    return true;
+  }
 
   const parts = splitCreditHead(text);
   if (!parts) return false;
@@ -1096,6 +1146,9 @@ const COPYRIGHT_NOTICE_SOURCE = [
   "music publishing", "publishing\\s*\\(",
   // 授权/改编声明：`——正版授权，改编自《Counting stars》——`。
   "正版授权", "改编自", "翻唱自", "原曲出自",
+  // 出处声明：`本歌曲来自〖云上工作室〗`。不要求平台名命中 ——
+  // 「本歌曲来自 X」是发行侧固定句式，真实歌词不会这么说。
+  "本(?:歌曲|作品|音乐)来自",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
