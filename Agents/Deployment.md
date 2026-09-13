@@ -46,6 +46,10 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
   不要再尝试 zone 级配置。
 - `Client/middleware.js` 已在 ccb 站点（anime-character-guessr 前端）生产验证：
   GET/POST 全通、`eo-cache-status` 等 CDN 头保留、SPA fallback 无干扰。
+- **WebSocket 升级可穿透边缘 rewrite**：对 `wss://game.baka.website/api/whoisfaker/ws`
+  手工构造 Upgrade 请求（Origin 为前端域名）实测返回 `101 Switching Protocols`，
+  `Sec-WebSocket-Accept` 为 RFC 6455 标准应答，握手由后端真实完成。同源化后浏览器
+  发送的 Origin 不变（仍是页面 origin），服务端 `CLIENT_URL` 校验无需改动。
 - BakaGame 前端的 Makers 项目是 **GitHub 集成型**（Provider 'Github'），CLI 不能
   直传部署，只能推送远端 main 触发自动构建。沙箱内可用 `gh api` contents API 追加
   文件触发部署，但 REST 提交丢失 SSH 签名——签名仓库的常规变更仍应本机 push，
