@@ -54,15 +54,15 @@ jobs:
           lfs: true
       - name: Split database
         run: |
-          mkdir -p /tmp/bangumi-parts
+          mkdir -p deploy-parts
           size=$(stat -c%s "Server/data/${{ matrix.db }}.sqlite")
           part_size=$(( (size + 7) / 8 ))
           start=$(( ${{ matrix.part }} * part_size ))
-          if [ "$start" -ge "$size" ]; then : > "/tmp/bangumi-parts/${{ matrix.db }}.${{ matrix.part }}"; exit 0; fi
+          if [ "$start" -ge "$size" ]; then : > "deploy-parts/${{ matrix.db }}.${{ matrix.part }}"; exit 0; fi
           length=$part_size
           remaining=$((size - start))
           [ "$length" -gt "$remaining" ] && length=$remaining
-          dd if="Server/data/${{ matrix.db }}.sqlite" of="/tmp/bangumi-parts/${{ matrix.db }}.${{ matrix.part }}" bs=1 skip="$start" count="$length" status=none
+          dd if="Server/data/${{ matrix.db }}.sqlite" of="deploy-parts/${{ matrix.db }}.${{ matrix.part }}" bs=1 skip="$start" count="$length" status=none
       - name: Upload database part
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -71,8 +71,9 @@ jobs:
           username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
           key: ${{ secrets.DEPLOY_KEY }}
           passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
-          source: "/tmp/bangumi-parts/${{ matrix.db }}.${{ matrix.part }}"
+          source: "deploy-parts/${{ matrix.db }}.${{ matrix.part }}"
           target: "/tmp/bangumi-parts"
+          strip_components: 1
 
   deploy:
     name: Deploy to Server
