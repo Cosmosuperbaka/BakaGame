@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'Server/**'
+      # 部署脚本自身变更也要触发，否则改完流水线得手工 dispatch 才能生效。
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 concurrency:
@@ -121,15 +123,21 @@ jobs:
             }
             trap on_exit EXIT
 
+            # 先把执行环境说清楚：远端 shell 到底是什么直接决定陷阱/shell 特性是否可用。
+            say "执行环境：shell=$0 bash=${BASH_VERSION:-无} 内核=$(uname -s)"
+
             # 任何非预期失败都必须带着行号喊出来，绝不允许静默退出。
-            set -E 2>/dev/null || true
-            trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
+            # ERR 是 bash 专有信号，dash 下 `trap ... ERR` 会直接让脚本带 -e 退出，故按 shell 分支处理。
+            if [ -n "${BASH_VERSION:-}" ]; then
+              set -E
+              trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
+            fi
 
             cd /BakaGame
             say "开始部署 BakaGame 后端"
 
             # ---------- 0. 环境自检 ----------
-            for t in git curl awk sort tr wc head basename sha256sum date grep; do
+            for t in git curl awk sort tr wc head basename sha256sum date grep cp mv rm; do
               if ! command -v "$t" >/dev/null 2>&1; then
                 echo "❌ 生产机缺少必需命令：$t"
                 exit 1
@@ -163,32 +171,20 @@ jobs:
             COMMIT=$(git rev-parse --short HEAD)
             say "已对齐至 $COMMIT"
 
-            # reset 后工作区里是 LFS 指针文本，先把目标 OID/大小留档，
-            # 供后续比对与校验复用（下面会用实体文件覆写工作区）。
-            TARGETS="$STASH/targets"
-            : > "$TARGETS"
+            # reset 后工作区里是 LFS 指针文本。先把指针文件各留一份副本（133 字节），
+            # 后面要用实体文件覆写工作区，届时就没法再读指针了；读取统一走 lfs_field。
             for f in $DB_FILES; do
-              want=$(lfs_field "$f" oid || true)
-              size=$(lfs_field "$f" size || true)
-              printf '%s %s %s\n' "$f" "$want" "$size" >> "$TARGETS"
+              cp -f "$f" "$STASH/$(basename "$f").pointer"
+              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
+              size=$(lfs_field "$STASH/$(basename "$f").pointer" size || true)
               say "目标数据库：$f oid=${want:-（非 LFS）} size=${size:-?}"
             done
-
-            target_field() {
-              while read -r p w s; do
-                if [ "$p" = "$1" ]; then
-                  if [ "$2" = "oid" ]; then printf '%s' "$w"; else printf '%s' "$s"; fi
-                  return 0
-                fi
-              done < "$TARGETS"
-              return 1
-            }
 
             # ---------- 2. 数据库：OID 未变化则零网络复用，变化才下载 ----------
             PENDING=""
             for f in $DB_FILES; do
-              want=$(target_field "$f" oid || true)
               cached="$STASH/$(basename "$f")"
+              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
               if [ -z "$want" ]; then
                 say "未见 LFS 指针，按普通文件处理：$f（前 16 字节：$(head -c 16 "$f" 2>/dev/null)）"
                 # 只有在 git 确实写入了真实内容时才丢弃暂存副本，避免把唯一的好文件删掉。
@@ -246,8 +242,8 @@ jobs:
 
               fetch_file() {
                 f="$1"
-                want=$(target_field "$f" oid || true)
-                size=$(target_field "$f" size || true)
+                want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
+                size=$(lfs_field "$STASH/$(basename "$f").pointer" size || true)
                 if [ -z "$want" ] || [ -z "$size" ]; then
                   echo "❌ 无法读取 LFS 目标信息：$f"
                   return 1
@@ -324,7 +320,7 @@ jobs:
 
             # ---------- 3. 落盘校验 ----------
             for f in $DB_FILES; do
-              want=$(target_field "$f" oid || true)
+              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
               if [ -n "$want" ]; then
                 hash=$(sha256sum "$f"); hash=${hash%% *}
                 if [ "$hash" != "$want" ]; then
