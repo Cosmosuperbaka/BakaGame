@@ -29,6 +29,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     }
     self.postMessage({ id: request.id, ok: true, value });
   } catch (error) {
+    console.error("Bangumi worker query failed", error);
     self.postMessage({ id: request.id, ok: false, error: error instanceof AppError
       ? { code: error.code, message: error.message }
       : { code: "BANGUMI_DATA_UNAVAILABLE", message: "本地 Bangumi 数据读取失败" } });
