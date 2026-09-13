@@ -361,11 +361,17 @@ jobs:
               say "校验通过：$f"
             done
 
-            # ---------- 4. 重启后端容器（入口自带依赖同步与环境初始化） ----------
+            # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
+            say "向在线玩家广播停机维护通知并摘除就绪流量"
+            curl -sS -X POST http://127.0.0.1:4850/api/system/notify-shutdown 2>/dev/null || true
+            say "等待客户端接收通知与平滑退回大厅 (3s)"
+            sleep 3
+
+            # ---------- 5. 重启后端容器（入口自带依赖同步与环境初始化） ----------
             say "重启 BakaGame 容器"
             sudo docker restart BakaGame
 
-            # ---------- 5. 健康检查 ----------
+            # ---------- 6. 健康检查 ----------
             say "等待服务就绪"
             HEALTH_URL="http://127.0.0.1:4850/health"
             MAX_RETRIES=15
