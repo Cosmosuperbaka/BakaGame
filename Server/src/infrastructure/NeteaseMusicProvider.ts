@@ -342,8 +342,9 @@ const CREDIT_LABEL_SOURCE = [
   "民乐", "艺人", "母版", "团队", "作品管理", "经纪", "制作人经纪",
   "和声录唱", "歌词制作", "录音时间", "中国笛", "热瓦普", "(?:新疆)?手鼓",
   // R5 实测补漏：`录音制作`、`营销推广`、`混音录音室`、`计算机音乐编成`、`谱务 Scoring`。
+  // R9：`录音棚`/`录音室` 单独成头（`鼓录音棚` 粘连拆分需要它们是标签）。
   "录音制作", "营销推广", "混音录音室", "(?:计算机)?音乐编成", "谱务",
-  "母带后期处理(?:录音室|制作人)?", "声音工程师",
+  "母带后期处理(?:录音室|制作人)?", "声音工程师", "录音棚", "录音室",
   // R7 实测补漏（官方发行页脚与同人圈混排标签）：
   // `总监制 : X`、`歌曲企划：X`、`承制：X`、`混音工程：X`、`电影原声发行：X`、
   // `音乐监督 X`、`项目/艺人统筹：X`、`宣发支持/宣发执行：X`、`导演：X`、`调色：X`、
@@ -356,6 +357,10 @@ const CREDIT_LABEL_SOURCE = [
   // R8 实测补漏：`三弦 : X`、`中文填词：X`、`贴混：X`、`监督：X`、
   // `绘画：X`、`录音版权：X`。
   "三弦", "(?:中文|粤语|国语)填词", "贴混", "监督", "绘画", "录音版权",
+  // R9 实测补漏：`分轨混音/母带：X`、`录混 : X`、`调/影：X`（同人圈单字缩写，
+  // 调教/影像制作）、`吉他、贝司、和声：X`（贝斯变体）、`二创效果Edit：X`、
+  // `乐队总监 : X`、`前作：《…》`（前作歌名是答案泄露源，同 `原作`）。
+  "分轨混音", "录混", "调", "影", "贝司", "二创效果", "乐队", "总监", "前作",
   // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
   "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
@@ -419,7 +424,8 @@ const CREDIT_LABEL_SOURCE = [
   // `Soloist – X`、`1st/2nd Violins : X`。
   "soloists?", "solos?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
   // R5 补漏：`助理 Assistant`、`谱务 Scoring`、`Programmer`、`Studio`、`Sound Engineer`。
-  "assistant", "scoring", "programmers?", "studio", "sound",
+  // R9：`Studios : Dragon Studio/...` 头部是复数，`studio` 收 `s?`。
+  "assistant", "scoring", "programmers?", "studios?", "sound",
   "artists?", "piccolo", "compositions?", "renditions?", "instrumental", "production",
   "recording\\s+time",
   // 民族乐器拼音/外文名（复合标签英文半）：`古筝 Guzheng`、`琵琶 Pipa`、`笛子 Dizi`。
@@ -430,8 +436,8 @@ const CREDIT_LABEL_SOURCE = [
   // `X Engineer` / `X Studio` / `X Artist` 这类「角色限定 + 通用名词」的英文署名。
   // 网易云上 `混音师 Mixing Engineer`、`人声录音棚 Vocal Recording Studio` 属常见形态，
   // 只登记名词本体即可被复合标签路径覆盖。
-  "mixing\\s+engineer", "mastering\\s+engineer", "recording\\s+engineer",
-  "instrumental\\s+recording\\s+engineer", "vocal\\s+artist", "vocal\\s+recording\\s+studio",
+  "mixing\\s+engineer", "mastering\\s+engineer", "recording\\s+engineers?",
+  "instrumental\\s+recording\\s+engineers?", "vocal\\s+artist", "vocal\\s+recording\\s+studio",
   "recording\\s+studio", "programmed", "keyboards?(?:\\s*&\\s*programming)?",
   "thanks?(?:\\s+to)?", "special\\s+thanks",
   "production\\s+coordination", "recorded\\s+at", "engineered\\s+by",
@@ -451,6 +457,11 @@ const CREDIT_LABEL_SOURCE = [
   // `Arranged : X`（无 by 的裸动作形态）。
   "prodused", "audio\\s+editing", "production\\s+co-ordination",
   "sub\\s+publishing", "arranged",
+  // R9 实测补漏：`Background Vocals: 光良`（和声英文全称）、`Accordion: 李正帆`、
+  // `Vocoder : X`、`中提琴 VIOLA : X`、`CO-PRODUCTION：X`、`ISRC NO : 编码`
+  // （国际录音制品编码，真实歌词不含）。
+  "background\\s+vocals?", "background\\s+vocal\\s+arrangements?",
+  "accordion", "vocoder", "viola", "co-?production", "isrc(?:\\s+no)?",
 ].join("|");
 
 /**
@@ -518,11 +529,13 @@ const CREDIT_LABEL_PATTERN = new RegExp(
 /** 紧随中文标签的英文单后缀（`词Lyricist`、`曲Composer`）。 */
 const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
 
-/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`、`词和曲`。
- * `及`、`和` 也算连接符：它们只在头部拆分用，且拆出的**每段都必须是标签**，
- * 歌词头（`早餐及午餐：`、`我和你`）拆出的非标签段会自然否决。
- * `和` 的行首特例见 isCreditLabelOnly 的拆分保护。 */
-const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及和]/;
+/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`。
+ * `及` 也算连接符：它只在头部拆分用，且拆出的**每段都必须是标签**，
+ * 歌词头（`早餐及午餐：`）拆出的非标签段会自然否决。
+ * **`和` 不能进通用 joiner**：它同时是 `和声`/`和音`/`和编` 等标签的首字，
+ * 单字符切分会把 `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网 ——
+ * `和` 的拆分见 isCreditLabelOnly 末尾的独立分支。 */
+const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及]/;
 
 /** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
 const CREDIT_ACTION_WORDS = [
@@ -726,6 +739,12 @@ const splitCreditHead = (text: string): string | undefined => {
 const BARE_ORG_SUFFIX_PATTERN =
   /^[\u4e00-\u9fffA-Za-z0-9·]{3,20}(?:集团|文化传媒|传媒|有限公司|公司|产业大会|工作团队)$/u;
 
+/** 中文录音/混音机构粘连英文机构名：`升赫录音棚Soundhub Studio`。
+ * 中文段以强设施词收尾 + 英文段是「首字母大写词 + Studio(s) 收尾」的机构形态；
+ * 英文侧必须带 Studio(s) 后缀，`Love音乐` 这类非机构粘连不会命中。 */
+const ZH_STUDIO_EN_ORG_PATTERN =
+  /^[\u4e00-\u9fff]{2,20}(?:录音棚|录音室|工作室)[\s\u3000]*[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+Studios?$/u;
+
 /** 判断标签头部是否「完全由署名标签构成」。 */
 const isCreditLabelOnly = (value: string): boolean => {
   if (!value) return false;
@@ -744,6 +763,12 @@ const isCreditLabelOnly = (value: string): boolean => {
   const glued = /^([\u4e00-\u9fff\u3040-\u30ff]+)([A-Za-z][A-Za-z\s]*)$/u.exec(value);
   if (glued) {
     if (isCreditLabelOnly(glued[1]) && isCreditLabelOnly(glued[2].trim())) return true;
+    // 英文侧是普通英文单词后缀：`二创效果Edit`。与 joiner 段级的
+    // 「已知标签 + 英文单后缀」同语义；中文侧必须是完整标签，
+    // `Love音乐` 这类非标签中文侧不会命中。
+    if (isCreditLabelOnly(glued[1]) && CREDIT_LABEL_SUFFIX_PATTERN.test(glued[2].trim())) {
+      return true;
+    }
   }
   // 反向粘连：英文标签在前 + 中文标签紧贴，如 `Vocal录音室`、`Vocal制作助理`。
   // 正向（中文在前）由上面的 glued 覆盖；两侧都必须各自是完整标签，
@@ -787,6 +812,10 @@ const isCreditLabelOnly = (value: string): boolean => {
   ) {
     return true;
   }
+  // 中文设施词机构名 + 英文机构名粘连：`升赫录音棚Soundhub Studio`（见常量注释）。
+  if (ZH_STUDIO_EN_ORG_PATTERN.test(value)) {
+    return true;
+  }
 
   // 裸机构名单行：`太合音乐集团`、`朴林西思文化传媒`、`北京国际音乐产业大会`、
   // `主题歌音乐专辑工作团队`。以**强机构后缀**收尾的短行是制作名单页脚。
@@ -809,6 +838,11 @@ const isCreditLabelOnly = (value: string): boolean => {
   // 制作名单常用括号标注地区/棚号等限定信息，剥离后若剩余部分是纯标签即命中。
   const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
   if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
+  // 中部括号限定词：`人声&吉他&鼓（打击乐）录音棚`。限定语夹在标签组合中间，
+  // 剥离后各段仍是标签（`鼓录音棚` 走粘连拆分）即命中；歌词 `爱（真的）你`
+  // 剥出 `爱你` 非标签，不受影响。
+  const withoutMiddleQualifier = value.replace(/[（(][^（()）]{1,20}[)）]/u, "").trim();
+  if (withoutMiddleQualifier && withoutMiddleQualifier !== value && isCreditLabelOnly(withoutMiddleQualifier)) return true;
 
   // 纯中文标签粘连：`小提琴演奏`、`制作统筹`、`音乐出品发行公司`。
   // 这类头由**两个已知标签直接拼接**而成（中间无连接符），逐段拆分接不住。
@@ -846,14 +880,19 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
 
+  // `和` 连接：`词和曲：X`、`填词和编曲：X`。独立于通用 joiner ——
+  // `和` 同时是 `和声`/`和音`/`和编` 等标签的首字，单字符切分会把
+  // `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网。按 `和` 切开的
+  // 每段都必须递归命中完整标签，`我和你`、`早餐和午餐` 自然否决。
+  if (value.includes("和")) {
+    const andSegments = value.split("和").filter(Boolean);
+    if (andSegments.length > 1 && andSegments.every((segment) => isCreditLabelOnly(segment))) {
+      return true;
+    }
+  }
+
   // 逐段拆分连接符，任一段是「已知标签 或 接在已知标签后的英文单后缀」即可。
-  // `和` 同时是 `和音`/`和编`/`和声` 等标签的首字：行首的 `和` 不是连接符，
-  // 拆分前先用占位符保护（否则 `和音编写及演唱` 会被切成 `音编写` 而整条掉出词表）。
-  const joinerProtected = value.replace(/^和/u, "\u0000");
-  const segments = joinerProtected
-    .split(CREDIT_LABEL_JOINER_PATTERN)
-    .filter(Boolean)
-    .map((segment) => segment.replace(/\u0000/g, "和"));
+  const segments = value.split(CREDIT_LABEL_JOINER_PATTERN).filter(Boolean);
   if (segments.length === 0) return false;
   let previousWasLabel = false;
   for (const segment of segments) {
@@ -863,6 +902,13 @@ const isCreditLabelOnly = (value: string): boolean => {
       continue;
     }
     if (previousWasLabel && CREDIT_LABEL_SUFFIX_PATTERN.test(compactSegment)) continue;
+    // 段级递归：`鼓录音棚`（鼓|录音棚粘连）这类复合段不命中词表，
+    // 但整体是合法标签组合。只在**真拆分产物**（多段）上递归 ——
+    // 单段即 value 本身，递归会无限自调用爆栈。
+    if (segments.length > 1 && isCreditLabelOnly(segment)) {
+      previousWasLabel = true;
+      continue;
+    }
     return false;
   }
   return true;
@@ -911,7 +957,8 @@ export const isCreditKeywordLine = (text: string): boolean => {
     !SPACE_SPLIT_HEAD_DENY.has(undecorated) &&
     (CREDIT_LABEL_PATTERN.exec(undecorated)?.[0].replace(/[\s\u3000]+/g, "") ===
       undecorated.replace(/[\s\u3000]+/g, "") ||
-      BARE_ORG_SUFFIX_PATTERN.test(undecorated))
+      BARE_ORG_SUFFIX_PATTERN.test(undecorated) ||
+      ZH_STUDIO_EN_ORG_PATTERN.test(undecorated))
   ) {
     return true;
   }
@@ -1238,12 +1285,20 @@ export const isTechnicalInfoLine = (text: string): boolean => {
  *    排除夹在句子里的 `Send it to me @ midnight` 这类歌词。
  */
 const AFFILIATION_SEGMENT_PATTERN =
-  /^(?:[\u4e00-\u9fff]{1,12}[A-Za-z]*|[A-Za-z][A-Za-z0-9]*|[A-Za-z0-9]*[A-Za-z])@(?:[\u4e00-\u9fffA-Za-z0-9]+)$/u;
+  /^(?:[\u4e00-\u9fff]{1,12}[A-Za-z0-9]*|[A-Za-z][A-Za-z0-9]*[\u4e00-\u9fff]{1,12}|[A-Za-z][A-Za-z0-9]*|[A-Za-z0-9]*[A-Za-z])@(?:[\u4e00-\u9fffA-Za-z0-9]+)$/u;
 
 export const isAffiliationCreditLine = (text: string): boolean => {
   const normalized = text.normalize("NFKC").trim();
   if (!normalized || !normalized.includes("@")) return false;
-  const segments = normalized.split(/[\s\u3000/／,，、|｜]+/u).filter(Boolean);
+  // 团队名常含空格（`Kevin刘瀚文@Soundhub Studios`）：先把它后面的
+  // 机构词并回 @ 片段（去掉空格粘连成 `@SoundhubStudios`），否则空格拆分
+  // 会把 `Studios` 甩成无 @ 的独立片段而整行判定失败。
+  // 只并回明确的机构后缀词，`Sing @ the top of my lungs` 不受影响。
+  const merged = normalized.replace(
+    /(@[\u4e00-\u9fffA-Za-z0-9]+)[\s\u3000]+((?:Studios?|Records?|Music|Entertainment|Company|Corporation|Corp\.?|Ltd\.?|Limited|Group|Band|Production|Productions|Studio)\b)/gu,
+    "$1$2",
+  );
+  const segments = merged.split(/[\s\u3000/／,，、|｜]+/u).filter(Boolean);
   if (segments.length === 0) return false;
   return segments.every((segment) => {
     const match = AFFILIATION_SEGMENT_PATTERN.exec(segment);
