@@ -44,4 +44,39 @@ describe("LocalBangumiProvider", () => {
     provider.close();
     for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
   });
+
+  test("剔除版权署名与负 music_id 占位行，只保留真实曲目", async () => {
+    // 复刻生产数据集：负 music_id 是版权署名合成占位行（实测 7762 条），
+    // 被标成 opening 而排在真实曲目之前，会被拿去网易云搜歌并误配无关歌曲。
+    const songPath = join(tmpdir(), `bangumi-credits-${crypto.randomUUID()}.sqlite`);
+    const characterPath = join(tmpdir(), `bangumi-credits-char-${crypto.randomUUID()}.sqlite`);
+    const songDb = new Database(songPath);
+    songDb.run("CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)");
+    songDb.run("CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)");
+    songDb.run("INSERT INTO subjects VALUES (428735,2,'BanG Dream! It''s MyGO!!!!!','','','','2023-06-29',0,'[]','[]',0,0,0,'')");
+    // 负 id 版权伪条目（必须剔除）
+    songDb.run("INSERT INTO subject_music_relations VALUES (428735,-4287350001,0,0,'©BanG Dream! Project',NULL,'opening')");
+    // 正 id 但标题为版权署名的（文本规则兜底，必须剔除）
+    songDb.run("INSERT INTO subject_music_relations VALUES (428735,999999,0,1,'©SUNRISE',NULL,'opening')");
+    // 真实曲目（必须保留，且不能被误杀）
+    songDb.run("INSERT INTO subject_music_relations VALUES (428735,437672,3003,0,'壱雫空',NULL,'ending')");
+    songDb.run("INSERT INTO subject_music_relations VALUES (428735,449998,3005,0,'迷跡波',NULL,'character')");
+    songDb.run("INSERT INTO subject_music_relations VALUES (428735,500001,3005,0,'unconditional L♡VE',NULL,'character')");
+    songDb.close();
+    new Database(characterPath).close();
+
+    const provider = new LocalBangumiProvider(songPath, characterPath);
+    const detail = await provider.getSubject("428735");
+    const titles = detail.musicTracks.map((track) => track.title);
+
+    expect(titles).toContain("壱雫空");
+    expect(titles).toContain("迷跡波");
+    // 带美术字符的正常曲名不得被误杀
+    expect(titles).toContain("unconditional L♡VE");
+    // 版权伪条目一概不得进入曲目池
+    expect(titles.some((title) => title.includes("©"))).toBe(false);
+
+    provider.close();
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+  });
 });
