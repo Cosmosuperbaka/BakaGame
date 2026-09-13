@@ -124,6 +124,16 @@ export const readEnv = (): AppEnv => {
     resourceAttrs["deployment.environment"] ??
     "production";
 
+  const sentryDsn = Bun.env.SENTRY_DSN;
+  let sentryAllowedProjectIds = (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  if (sentryAllowedProjectIds.length === 0 && sentryDsn) {
+    try {
+      const projectId = new URL(sentryDsn).pathname.match(/^\/([0-9a-zA-Z_-]+)$/)?.[1];
+      if (projectId) sentryAllowedProjectIds = [projectId];
+    } catch { /* 非法 DSN 由 Sentry 初始化阶段处理 */ }
+  }
+
   return {
     clientUrl: Bun.env.CLIENT_URL ?? "http://localhost:5173",
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
@@ -135,11 +145,8 @@ export const readEnv = (): AppEnv => {
     otelServiceName,
     otelServiceNamespace,
     otelDeploymentEnvironment,
-    sentryDsn: Bun.env.SENTRY_DSN,
-    sentryAllowedProjectIds: (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    sentryDsn,
+    sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
     bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
