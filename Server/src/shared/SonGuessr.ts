@@ -106,6 +106,26 @@ export const BANGUMI_TRACK_KIND_LABELS: Record<BangumiMusicTrackKind, string> = 
   artistAlbum: "艺人专辑",
 };
 
+/**
+ * 从歌曲元数据（曲名 / 专辑 / 标签）中提取无歧义的主题曲类型标注。
+ *
+ * Bangumi 的关联条目分类经常比网易云歌曲自身标注更粗：官方 MV、单曲碟会被归到
+ * 「其他 → 主题曲」，片尾曲的专辑条目也可能挂在「插入歌」下。因此当歌曲元数据里
+ * 明确写着「片尾曲 / ED」时，必须以歌曲标注为准确认类型，否则会出现
+ * 「片尾曲的歌配着插曲徽章」这类错配。
+ *
+ * 只认可带「曲 / 歌 / テーマ」后缀或完整英文单词的写法，避免把普通歌名里
+ * 偶然出现的 `in`、`ed` 片段误判成插入歌或片尾曲。
+ *
+ * 服务端曲目校准与客户端徽章展示共用本函数，保证两端判定一致。
+ */
+export const detectExplicitTrackKind = (text: string): BangumiMusicTrackKind | undefined => {
+  if (/片尾曲|片尾歌|片尾主題歌|片尾主题歌|エンディングテーマ|エンディング|\bending\b/i.test(text)) return "ending";
+  if (/片头曲|片頭曲|片头歌|片头主題歌|片头主题歌|オープニングテーマ|オープニング|\bopening\b/i.test(text)) return "opening";
+  if (/插入歌|插曲|挿入歌|剧中歌|劇中歌|\binsert\s*song\b/i.test(text)) return "insert";
+  return undefined;
+};
+
 export interface BangumiMusicTrack {
   title: string;
   artist?: string;

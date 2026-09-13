@@ -7,6 +7,7 @@ import {
   isSongTitleMatch,
   SonGuessrService,
 } from "../src/application/SonGuessrService";
+import { detectExplicitTrackKind } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
@@ -2916,6 +2917,137 @@ describe("SonGuessrService 猜番原版优先", () => {
 
     const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
     expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+});
+
+describe("SonGuessrService 猜番曲目类型校准", () => {
+  /**
+   * 手动出题后推进到回合结算，返回包含关联歌曲详情的结算摘要。
+   * 曲目类型只在结算摘要里公开（出题阶段的快照只带音频地址）。
+   */
+  const animeRoundSummary = async (
+    musicProvider: MusicProvider,
+    bangumiProvider: BangumiDataProvider,
+    guessedSubjectId: string,
+  ) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider });
+    const host = connection(service, `anime-kind-host-${Math.random().toString(36).slice(2, 8)}`);
+    const guest = connection(service, `anime-kind-guest-${Math.random().toString(36).slice(2, 8)}`);
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "类型玩家");
+    await execute(service, host, {
+      id: "anime-kind-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, guest, {
+      id: "anime-kind-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, { id: "anime-kind-start", type: "song.game.start", roomId: "1234", payload: {} });
+    await execute(service, host, {
+      id: "anime-kind-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "anime-kind-submit",
+      type: "song.game.submitAnime",
+      roomId: "1234",
+      payload: { subjectId: anime.id },
+    });
+    await execute(service, guest, {
+      id: "anime-kind-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    await execute(service, guest, {
+      id: "anime-kind-guess",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: guessedSubjectId },
+    });
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    if (snapshot.phase !== "roundResult" || !snapshot.roundSummary) {
+      throw new AppError("BANGUMI_NO_MUSIC", `回合未结算：${snapshot.phase}`);
+    }
+    return snapshot.roundSummary;
+  };
+
+  /** 直接校验歌曲元数据到曲目类型的映射，避免依赖出题随机性。 */
+  test("歌曲元数据明确标注片尾曲时覆盖 Bangumi 的插曲分类", () => {
+    const song = {
+      ...songs.answer,
+      title: "喜劇《SPY×FAMILY》TV动画片尾曲)",
+      album: "《间谍过家家》片尾曲ED",
+    };
+    expect(detectExplicitTrackKind(`${song.title} ${song.album}`)).toBe("ending");
+  });
+
+  test("片头曲与插入歌的中日文标注均可识别", () => {
+    expect(detectExplicitTrackKind("ミックスナッツ (TVアニメ『SPY×FAMILY』オープニングテーマ)")).toBe("opening");
+    expect(detectExplicitTrackKind("片头曲「ミックスナッツ」")).toBe("opening");
+    expect(detectExplicitTrackKind("第5话插入歌「TBD」")).toBe("insert");
+    expect(detectExplicitTrackKind("劇中歌「TBD」")).toBe("insert");
+  });
+
+  test("普通歌名不会因出现 in 或 ed 片段被误判成插入歌或片尾曲", () => {
+    expect(detectExplicitTrackKind("Dreaming")).toBeUndefined();
+    expect(detectExplicitTrackKind("Inside Out")).toBeUndefined();
+    expect(detectExplicitTrackKind("Redo")).toBeUndefined();
+    expect(detectExplicitTrackKind("This Game")).toBeUndefined();
+  });
+
+  test("附带显式片尾曲标注的歌曲覆盖 Bangumi 的插曲类型", async () => {
+    // 模拟 Bangumi 把片尾曲的专辑条目挂在「插入歌」下：不校准就会出现
+    // 「片尾曲的歌配着插曲徽章」。
+    const edSong = {
+      ...songs.answer,
+      id: "ed-song",
+      title: "答案歌《答案番剧》TV动画片尾曲)",
+      album: "《答案番剧》片尾曲ED",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [edSong],
+      getSong: async () => edSong,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "insert" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
+    expect(summary.song.title).toBe(edSong.title);
+    expect(summary.animeTrack?.kind).toBe("ending");
+  });
+
+  test("歌曲元数据无显式主题曲标注时保留 Bangumi 的原分类", async () => {
+    const plainSong = { ...songs.answer, id: "plain-song", title: "答案歌", album: "答案专辑" };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [plainSong],
+      getSong: async () => plainSong,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "insert" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
+    expect(summary.animeTrack?.kind).toBe("insert");
   });
 });
 

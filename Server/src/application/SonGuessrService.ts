@@ -17,6 +17,7 @@ import type {
 } from "../infrastructure/NeteaseMusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
+  detectExplicitTrackKind,
   MAX_SONGUESSR_COOKIE_LENGTH,
   SERVER_SHUTDOWN_MESSAGE,
 } from "../shared/Index";
@@ -1417,8 +1418,14 @@ export class SonGuessrService {
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
-    if (kind !== "theme") return kind;
     const text = `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`;
+    // 歌曲元数据里指向具体主题曲类型的信号（片头 / 片尾 / 插入歌），优先级高于
+    // Bangumi 关联条目的粗分类。Bangumi 常把官方 MV、单曲碟等归到「其他 → 主题曲」，
+    // 也常把片尾曲的专辑条目挂在「插入歌」下；此时以歌曲自身标注为准，
+    // 否则会出现「片尾曲的歌配着插曲徽章」这类错配。
+    const explicitKind = detectExplicitTrackKind(text);
+    if (explicitKind) return explicitKind;
+    if (kind !== "theme") return kind;
     if (/原声|soundtrack|\bost\b/i.test(text)) return "ost";
     if (/角色[歌曲]|character(?:\s*song)?/i.test(text)) return "character";
     if (/\bremix\b|重混/i.test(text)) return "remix";
@@ -1433,9 +1440,6 @@ export class SonGuessrService {
     if (/精选|精選|\bbest\b|collection/i.test(text)) return "collection";
     if (/朗读|朗讀/i.test(text)) return "reading";
     if (/艺人|藝人|album/i.test(text)) return "artistAlbum";
-    if (/片头|片頭|opening|\bop\d*\b/i.test(text)) return "opening";
-    if (/片尾|ending|\bed\d*\b/i.test(text)) return "ending";
-    if (/插[入]?曲|insert|\bin\d*\b/i.test(text)) return "insert";
     return kind;
   }
 

@@ -82,7 +82,7 @@ import {
 import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { BANGUMI_TRACK_KIND_LABELS, isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
+import { BANGUMI_TRACK_KIND_LABELS, detectExplicitTrackKind, isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
 import type {
   SongArtistFilter,
   SongArtistSearchResult,
@@ -114,9 +114,12 @@ function formatTrackKind(
   track?: BangumiMusicTrack,
   song?: SonGuessrRoundSummary["song"],
 ): string {
-  let effectiveKind: BangumiMusicTrackKind | undefined = track?.kind ?? kind;
+  const candidateText = `${track?.title ?? ""} ${song?.title ?? ""} ${song?.album ?? ""} ${song?.encyclopedia?.tags?.join(" ") ?? ""}`;
+  // 歌曲元数据里明确写着片头曲 / 片尾曲 / 插入歌时以此为准。Bangumi 的关联条目
+  // 分类常比歌曲自身标注更粗（把片尾曲挂在「插入歌」下），只信 Bangumi 会出现
+  // 「片尾曲的歌配着插曲徽章」。判定函数与服务端校准共用，保证两端一致。
+  let effectiveKind: BangumiMusicTrackKind | undefined = detectExplicitTrackKind(candidateText) ?? track?.kind ?? kind;
   if (!effectiveKind || effectiveKind === "theme") {
-    const candidateText = `${track?.title ?? ""} ${song?.title ?? ""} ${song?.album ?? ""} ${song?.encyclopedia?.tags?.join(" ") ?? ""}`;
     if (/原声|soundtrack|\bost\b/i.test(candidateText)) effectiveKind = "ost";
     else if (/角色[歌曲]|character(?:\s*song)?/i.test(candidateText)) effectiveKind = "character";
     else if (/\bremix\b|重混/i.test(candidateText)) effectiveKind = "remix";
@@ -131,9 +134,6 @@ function formatTrackKind(
     else if (/精选|精選|\bbest\b|collection/i.test(candidateText)) effectiveKind = "collection";
     else if (/朗读|朗讀/i.test(candidateText)) effectiveKind = "reading";
     else if (/艺人|藝人|album/i.test(candidateText)) effectiveKind = "artistAlbum";
-    else if (/片头|片頭|opening|\bop\d*\b/i.test(candidateText)) effectiveKind = "opening";
-    else if (/片尾|ending|\bed\d*\b/i.test(candidateText)) effectiveKind = "ending";
-    else if (/插[入]?曲|insert|\bin\d*\b/i.test(candidateText)) effectiveKind = "insert";
     else effectiveKind = "theme";
   }
   return BANGUMI_TRACK_KIND_LABELS[effectiveKind] ?? "主题曲";
