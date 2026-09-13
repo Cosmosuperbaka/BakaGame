@@ -38,6 +38,17 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 3. **原版优先排序**：通过门禁的候选歌先经 `scoreAnimeSongCandidate` 打分降序排列再依次验证可播放性。评分以曲名相似度为基础，歌手与 Bangumi 记录有交集时加权，命中翻唱、伴奏、纯音乐、现场等非原唱标记时降权。网易云会把翻唱、伴奏版本混排在原版之前，此排序确保原版存在时不被翻唱版抢占；仅能召回翻唱版时仍正常出题，不因缺少原版而失败。
 4. **近期题目防重缓冲**：房间维护最近 10 轮的近期番剧 ID（`recentSubjectIds`）与近期歌曲 ID（`recentSongIds`）滑动窗口。自动出题和曲目解析优先避让近期出题历史，杜绝连续多轮抽中同一部番或同一首歌。
 
+**曲目池必须先剔除版权署名伪条目（必须遵守）**：Bangumi 关联条目里混有大量**并非歌曲**的署名占位行——版权方、制作委员会、动画师/作家署名，如 `©BanG Dream! Project`、`©SUNRISE`、`©Visual Art's`、`（C）2006 SUNRISE inc.`、`Ⓒ 創通・タツノコプロ`、`時をかける少女」製作委員会2006`。它们在本地数据集 `subject_music_relations` 中 `music_id` 为**负数**（实测全库 7762 条），却被归到 `opening` 类目，因 `KIND_PRIORITY.opening = 1` 而排在所有真实曲目之前。
+
+若不剔除，`resolveAnimeSong` 会拿「版权署名」去网易云搜歌，再经宽松的子串门禁把完全无关的歌曲当成 OP。**真实事故**：`©BanG Dream! Project` 因规范化后包含 `bangdream`，让 `isSongTitleMatch("Bang Dream!", "©BanG Dream! Project")` 判为同一首，于是把 2019 年专辑《Music For All》里的《Bang Dream!》当作 2023 年《BanG Dream! It's MyGO!!!!!》的 OP。
+
+两道防线缺一不可：
+
+1. **结构判定（本地数据集首选）**：`LocalBangumiProvider` 查询 `subject_music_relations` 时必须带 `music_id > 0`。负数 id 是合成占位行的可靠标志——实测 30792 条正 id 曲目中，零条为版权署名样式。
+2. **文本判定（覆盖联网 API 与门禁）**：共享导出函数 `isBangumiCreditsEntry`（`Server/src/shared/SonGuessr.ts`）识别版权/商标/录音权标记（`© ® ℗` 与 `(C)/(R)/(P)` 全角变体）以及不带歌曲语义词的「製作委員会」署名。`LocalBangumiProvider`、`BangumiProvider` 与曲名门禁 `isSongTitleMatch` 共用同一真相源。
+
+**判定规则只准收紧到无歧义标记（铁律）**：切勿把 `♡ / ❤ / ※ / ☆ / Project$ / オール / 单曲 / 精选` 一类规则纳入判定——它们是正常曲名的常用元素。实测教训：加入这些规则会误杀 **126 首正版歌曲**（`unconditional L♡VE`、`♡km/h`、`Love❤Island`、`μ's オリジナルソングCD⑤ にこぷり♡女子道`、`のだめカンタービレ フィナーレ オールシーズンズベスト`、`オールOK!!` 等）。收紧后对 30792 条正 id 曲目**误杀为 0**，同时仍能拦截 6287 条伪条目。任何新增规则都必须用真实数据集全量回归，断言「正 id 误杀 = 0」，并补一条反向用例（见 `Server/test/AnimeCopyrightRegression.test.ts` 与 `Server/test/LocalBangumiProvider.test.ts`）。
+
 选择第一首满足匹配度门禁且可播放的歌曲作为音频（按上述原版优先顺序取首个），并基于网易云歌曲、专辑与标签元数据对曲目类型进行智能精准校准；没有曲目信息、没有可播放歌曲或会员权限不足时拒绝提交，并保持当前出题阶段不变。
 
 **曲目类型校准以歌曲自身标注为准（必须遵守）**：Bangumi 关联条目的分类常比歌曲自身标注更粗——官方 MV、单曲碟会被归到「其他 → 主题曲」，片尾曲的专辑条目也可能挂在「插入歌」下。因此当歌曲元数据（曲名 / 专辑 / 标签）里明确写着片头曲 / 片尾曲 / 插入歌时，**必须以歌曲标注为准确认类型**，优先级高于 Bangumi 的粗分类，否则会出现「片尾曲的歌配着插曲徽章」这类错配。判定统一走共享导出函数 `detectExplicitTrackKind`（`Server/src/shared/SonGuessr.ts`）——服务端 `refineTrackKind` 与客户端结算徽章 `formatTrackKind` 共用同一真相源，严禁各写一套正则。该函数只认可带「曲 / 歌 / テーマ」后缀或完整英文单词（`opening` / `ending` / `insert song`）的写法，避免把普通歌名里偶然出现的 `in`、`ed` 片段误判成插入歌或片尾曲；歌曲无显式标注时保留 Bangumi 原分类。
