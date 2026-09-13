@@ -53,6 +53,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
           key: ${{ secrets.DEPLOY_KEY }}
           passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
+          command_timeout: 60m
           script_stop: true
           script: |
             set -euo pipefail
