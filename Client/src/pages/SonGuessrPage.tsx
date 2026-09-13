@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Eye, EyeOff, Lock, Plus, UserRound, Users } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Lock, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -121,15 +121,6 @@ export default function SonGuessrPage() {
               className="h-8 w-28 sm:w-36 text-xs sm:text-sm bg-card/60 border-border/70 shadow-2xs"
               maxLength={20}
             />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate("/songuessr/solo")}
-              className="h-8 gap-1.5 shadow-2xs text-xs sm:text-sm shrink-0"
-            >
-              <UserRound className="h-3.5 w-3.5" />
-              单人模式
-            </Button>
             <Button
               size="sm"
               onClick={(event) => {
