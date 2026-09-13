@@ -19,6 +19,56 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
 不得把 Bun 服务端口直接暴露到公网。
 
+## 前后端同源化 (Same-Origin API Gateway)
+
+前端（Makers 托管）与后端（自有服务器）分属不同域名时，所有请求都是跨域请求。
+`Client/middleware.js` 在 EdgeOne Makers 边缘把同源 `/api/*` 反代到后端公开域名，
+使浏览器侧全部变为同源请求：不再有 CORS 预检、不再依赖服务端 Origin 白名单放行
+浏览器跨域、WebSocket 升级也不再暴露给第三方域名的伪造 Origin 探测。
+
+### 请求链路与 CDN 关系
+
+`浏览器 → game.baka.website（Makers 边缘，rewrite）→ gameserver.baka.website（EdgeOne
+站点加速层）→ 自有服务器`。rewrite 的目标是后端的**公开域名**而非源站 IP，后端域名
+自身仍套在站点加速层后面，加速能力完整保留——只是发起方从浏览器变成边缘节点。
+
+### 实测结论（2026-09 验证，勿凭直觉推翻）
+
+- Makers middleware 的 `rewrite()` **支持跨域绝对地址**，底层由边缘运行时注入的
+  `fetch` 执行；官方文档示例只演示站内路径，跨域能力是实测得出的。
+- 本地 `edgeone makers dev` **无法验证跨域 rewrite**：本地运行时没有注入该 `fetch`
+  （报 `Cannot read properties of undefined (reading 'fetch')`，恒 502）。跨域反代
+  只能部署到真实边缘后探测。
+- middleware `matcher: ["/api/:path*"]` 优先于 SPA fallback，`/apiish` 等相似前缀
+  不受影响。
+- **站点加速（zone 级）的边缘函数拦不到 Makers 托管域名**（控制台探针实测）：
+  反代只能做在 Makers 项目内部（middleware.js 或 edge-functions 文件），
+  不要再尝试 zone 级配置。
+- `Client/middleware.js` 已在 ccb 站点（anime-character-guessr 前端）生产验证：
+  GET/POST 全通、`eo-cache-status` 等 CDN 头保留、SPA fallback 无干扰。
+- BakaGame 前端的 Makers 项目是 **GitHub 集成型**（Provider 'Github'），CLI 不能
+  直传部署，只能推送远端 main 触发自动构建。沙箱内可用 `gh api` contents API 追加
+  文件触发部署，但 REST 提交丢失 SSH 签名——签名仓库的常规变更仍应本机 push，
+  REST 提交仅用于紧急解锁；本地同内容签名提交在 `git pull --rebase` 时按补丁
+  自动去重。
+
+### 客户端基址约定
+
+`Client/src/lib/ServerEndpoint.ts` 是接口基址的唯一真相源：生产构建
+`VITE_SERVER_URL` 留空（或显式 `/`、`same-origin`）时走同源相对路径，由边缘中间件
+反代；本地开发经 `.env` 指向 `http://localhost:4850`。WebSocket 相对地址由
+`WebsocketClient` 按 `location` 显式补全协议与主机。
+
+### 边缘探针与验证方法
+
+- 验证反代是否生效：`GET https://game.baka.website/api/game/status`，响应带
+  `x-trace-id` 头且响应体为 Elysia JSON（即使 404）即代表穿透到了后端；
+  Makers 自身的 404 不带该头。
+- 健康探针：gameserver 的 `/health` 在根路径（不在 `/api/*` 下，不会被反代），
+  跨域验证一律走 `/api/*` 下真实存在的端点。
+- 探测禁止使用带副作用的接口（曾对 ccb 的 `POST /api/character-tags` 发出真实
+  写入），验证只用 GET 探针。
+
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
