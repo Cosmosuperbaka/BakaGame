@@ -109,6 +109,7 @@ export const SonGuessrMessageSchemas = {
         password: t.Optional(t.String({ maxLength: 64 })),
         allowSpectators: t.Boolean(),
         userName: t.String({ minLength: 1, maxLength: 32 }),
+        solo: t.Optional(t.Boolean()),
       },
       { additionalProperties: false },
     ),

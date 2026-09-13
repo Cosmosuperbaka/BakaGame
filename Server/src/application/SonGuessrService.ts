@@ -117,6 +117,7 @@ interface SonGuessrRoundRecord {
 interface SonGuessrRoomRecord {
   id: string;
   name: string;
+  solo: boolean;
   visibility: RoomVisibility;
   password?: string;
   allowSpectators: boolean;
@@ -526,7 +527,7 @@ export class SonGuessrService {
 
   getRoomSummaries(): SonGuessrRoomSummary[] {
     return [...this.rooms.values()]
-      .filter((room) => !this.isTestRoom(room))
+      .filter((room) => !this.isTestRoom(room) && !room.solo)
       .map((room) => this.buildRoomSummary(room))
       .sort((left, right) => left.roomId.localeCompare(right.roomId));
   }
@@ -541,14 +542,19 @@ export class SonGuessrService {
 
     const player = this.createPlayer(payload.userName, true);
     const now = this.now();
+    const solo = payload.solo === true;
     const room: SonGuessrRoomRecord = {
       id: roomId,
       name: normalizeWord(payload.name),
+      solo,
       visibility: payload.visibility,
       password: payload.visibility === "private" ? this.requirePassword(payload.password) : undefined,
-      allowSpectators: payload.allowSpectators,
+      allowSpectators: solo ? false : payload.allowSpectators,
       hostPlayerId: player.id,
-      settings: cloneSettings(DEFAULT_SETTINGS),
+      settings: cloneSettings({
+        ...DEFAULT_SETTINGS,
+        questionMode: solo ? "automatic" : DEFAULT_SETTINGS.questionMode,
+      }),
       phase: "waiting",
       roundNumber: 0,
       players: { [player.id]: player },
@@ -582,6 +588,7 @@ export class SonGuessrService {
   ) {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
+    if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
     this.ensurePassword(room, payload.password);
     const name = this.requireName(payload.userName);
     if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
@@ -776,10 +783,11 @@ export class SonGuessrService {
     }
 
     if (payload.questionType !== undefined) room.settings.questionType = payload.questionType;
-    if (payload.questionMode !== undefined) {
+    // 单人房间固定由系统出题，不提供手动出题与轮流出题。
+    if (!room.solo && payload.questionMode !== undefined) {
       room.settings.questionMode = payload.questionMode;
     }
-    if (payload.autoRotateSubmitter !== undefined) {
+    if (!room.solo && payload.autoRotateSubmitter !== undefined) {
       room.settings.autoRotateSubmitter = payload.autoRotateSubmitter;
     }
     if (payload.autoFilters !== undefined) {
@@ -1116,7 +1124,7 @@ export class SonGuessrService {
   private async startGame(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    const automatic = room.settings.questionMode === "automatic";
+    const automatic = room.solo || room.settings.questionMode === "automatic";
     if (
       room.phase !== "waiting" ||
       (automatic && room.automaticRoundLoading) ||
@@ -1150,10 +1158,13 @@ export class SonGuessrService {
         throw new AppError("MUSIC_API_FAILED", "网易云登录状态校验失败，请稍后重试");
       }
 
-      const activePlayers = this.activePlayers(room);
-      if (activePlayers.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
-      if (activePlayers.some((candidate) => !candidate.isReady)) {
-        throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
+      // 单人房间由系统直接出题，没有出题人与准备环节。
+      if (!room.solo) {
+        const activePlayers = this.activePlayers(room);
+        if (activePlayers.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
+        if (activePlayers.some((candidate) => !candidate.isReady)) {
+          throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
+        }
       }
 
       room.pendingSubmitterPlayerId = undefined;
@@ -1353,7 +1364,7 @@ export class SonGuessrService {
     animeTrack?: BangumiMusicTrack,
   ): number {
     this.applyQueuedMemberships(room);
-    if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+    if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
       throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
     }
     const lyricClip = createSongLyricClip(
@@ -1777,12 +1788,12 @@ export class SonGuessrService {
     if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "当前不在回合结算阶段");
     const previousRound = room.currentRound;
     const previousSummary = room.roundSummary;
-    if (room.settings.questionMode === "automatic") {
+    if (room.solo || room.settings.questionMode === "automatic") {
       if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
       room.automaticRoundLoading = true;
       try {
         this.applyQueuedMemberships(room);
-        if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+        if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
           room.currentRound = undefined;
           room.roundSummary = undefined;
           room.pendingSubmitterPlayerId = undefined;
@@ -1812,7 +1823,7 @@ export class SonGuessrService {
         room.currentRound = undefined;
         room.roundSummary = undefined;
         this.applyQueuedMemberships(room);
-        if (this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
+        if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
           room.pendingSubmitterPlayerId = undefined;
           room.phase = "waiting";
           this.resetReadyState(room);
@@ -2014,6 +2025,7 @@ export class SonGuessrService {
     return {
       roomId: room.id,
       name: room.name,
+      solo: room.solo,
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
       hasPassword: Boolean(room.password),
