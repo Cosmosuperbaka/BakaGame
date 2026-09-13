@@ -5,6 +5,7 @@ import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
+  TEST_BOT_BATCH_LIMIT,
 } from "../config/Constants";
 import { AppError } from "../domain/Errors";
 import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
@@ -18,7 +19,6 @@ import {
   ALL_BANGUMI_TRACK_KINDS,
   MAX_SONGUESSR_COOKIE_LENGTH,
   SERVER_SHUTDOWN_MESSAGE,
-  SONGUESSR_MAX_PLAYERS,
 } from "../shared/Index";
 import type {
   ChatMessage,
@@ -583,9 +583,6 @@ export class SonGuessrService {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     this.ensurePassword(room, payload.password);
-    if (this.onlineCount(room) >= SONGUESSR_MAX_PLAYERS) {
-      throw new AppError("ROOM_FULL", `房间最多容纳 ${SONGUESSR_MAX_PLAYERS} 人`);
-    }
     const name = this.requireName(payload.userName);
     if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
       throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
@@ -1085,10 +1082,9 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
-    const count = clampInt(countValue ?? 1, 1, SONGUESSR_MAX_PLAYERS);
-    const available = Math.max(0, SONGUESSR_MAX_PLAYERS - this.onlineCount(room));
+    const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
     const added: string[] = [];
-    for (let index = 0; index < Math.min(count, available); index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const botIndex = Object.values(room.players).filter((candidate) => candidate.isBot).length;
       const suffix = BOT_NAME_SUFFIXES[botIndex] ?? String(botIndex + 1);
       const bot = this.createPlayer(`测试人机 ${suffix}`, false, true);
@@ -1105,7 +1101,7 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
-    const count = clampInt(countValue ?? 1, 1, SONGUESSR_MAX_PLAYERS);
+    const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
     const bots = Object.values(room.players)
       .filter((candidate) => candidate.isBot)
       .sort((left, right) => right.joinedAt - left.joinedAt)
@@ -2009,7 +2005,6 @@ export class SonGuessrService {
       playerCount: activeCount,
       spectatorCount,
       onlineCount: activeCount + spectatorCount,
-      maxPlayers: SONGUESSR_MAX_PLAYERS,
       phase: room.phase,
     };
   }
@@ -2022,7 +2017,6 @@ export class SonGuessrService {
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
       hasPassword: Boolean(room.password),
-      maxPlayers: SONGUESSR_MAX_PLAYERS,
       hostPlayerId: room.hostPlayerId,
       testMode: this.isTestRoom(room),
       musicAccountReady: Boolean(room.musicSession),

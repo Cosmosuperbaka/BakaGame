@@ -27,6 +27,9 @@ export const TEST_MODE_DEFAULT_WORD: [string, string] = ["苹果", "香蕉"];
 /** 测试房间玩家数上限（含机器人），防止误触把房间撑爆 */
 export const TEST_MODE_MAX_PLAYERS = 12;
 
+/** 单条测试人机增减指令的数量上限：房间不限制总人数，但仍需约束单次批量规模 */
+export const TEST_BOT_BATCH_LIMIT = 64;
+
 /** 机器人名字后缀，按顺序取用，取完后退化为数字编号 */
 export const BOT_NAME_SUFFIXES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
 

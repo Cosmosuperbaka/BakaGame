@@ -508,23 +508,18 @@ describe("SonGuessrService", () => {
     expect(shortSong).toEqual({ startTime: 0, endTime: 12_000, lines: [] });
   });
 
-  test("房间最多容纳十六个在线席位", async () => {
+  test("房间在线人数不设上限", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host);
 
-    for (let index = 1; index < 16; index += 1) {
+    for (let index = 1; index <= 30; index += 1) {
       const player = connection(service, `player-${index}`);
       await joinRoom(service, player, `玩家${index}`);
     }
 
-    const overflow = connection(service, "player-overflow");
-    await expect(execute(service, overflow, {
-      id: "join-overflow",
-      type: "song.room.join",
-      roomId: "1234",
-      payload: { userName: "第十七人" },
-    })).rejects.toMatchObject({ code: "ROOM_FULL" });
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.players).toHaveLength(31);
   });
 
   test("房主可以踢人且被踢连接立即收到事件", async () => {
