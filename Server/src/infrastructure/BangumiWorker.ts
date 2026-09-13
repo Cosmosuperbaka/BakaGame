@@ -17,7 +17,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
       provider = new LocalBangumiProvider(request.songPath, request.characterPath);
       value = true;
     } else if (!provider) {
-      throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地番剧数据尚未就绪");
+      throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 数据尚未就绪");
     } else if (request.method === "searchSubjects") {
       value = await provider.searchSubjects(request.keyword, request.limit, request.filters);
     } else if (request.method === "getSubject") {
@@ -31,6 +31,6 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   } catch (error) {
     self.postMessage({ id: request.id, ok: false, error: error instanceof AppError
       ? { code: error.code, message: error.message }
-      : { code: "BANGUMI_DATA_UNAVAILABLE", message: "本地番剧数据读取失败" } });
+      : { code: "BANGUMI_DATA_UNAVAILABLE", message: "本地 Bangumi 数据读取失败" } });
   }
 };

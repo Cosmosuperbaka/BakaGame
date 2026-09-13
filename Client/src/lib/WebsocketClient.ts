@@ -7,6 +7,7 @@ import {
 } from "@/config/Constants";
 import {
   captureClientLog,
+  captureClientException,
   countClientMetric,
   recordClientMetric,
   withClientSpan,
@@ -191,6 +192,10 @@ export class WebSocketClient {
             command: type,
             error: error instanceof Error ? error.message : String(error),
           });
+          captureClientException(
+            error instanceof Error ? error : new Error(typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message) : String(error)),
+            { path: this.path, command: type },
+          );
           throw error;
         }
       },

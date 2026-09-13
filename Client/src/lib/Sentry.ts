@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/react";
-import { DEFAULT_SERVER_URL } from "@/config/Constants";
 import commitHistory from "virtual:commit-history";
 import changelog from "@/data/changelog.json";
 import { resolveLatestVersion } from "@/lib/Changelog";
@@ -43,8 +42,8 @@ export const initClientSentry = (
 
   activeDriver = driver;
 
-  const rawUrl = options?.serverUrl ?? (import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL);
-  const serverUrl = rawUrl.replace(/\/+$/, "");
+  const configuredUrl = options?.serverUrl ?? import.meta.env.VITE_SERVER_URL;
+  const serverUrl = configuredUrl?.replace(/\/+$/, "");
   const tunnel = serverUrl ? `${serverUrl}/api/monitoring/sentry` : "/api/monitoring/sentry";
 
   activeDriver.init({
