@@ -70,8 +70,9 @@ jobs:
             # 下载绝对截止时间（相对脚本开始的秒数）。到点即干净失败，
             # 为后面的容器重启 + 健康检查留足余量，确保不会撞上 3 分钟硬超时。
             DL_DEADLINE=105
-            # 可前缀拼接的 GitHub 代理节点（取自 https://github.akams.cn/ 节点列表，
-            # 均已按 "https://<节点>/https://github.com/<repo>/raw/<ref>/<path>" 形态验证可回源）。
+            # 可前缀拼接的 GitHub 代理节点（取自 https://github.akams.cn/ 节点列表）。
+            # 必须用 raw 形态：https://<节点>/https://github.com/<repo>/raw/<ref>/<path>
+            # 只有这个形态代理才会在服务端跟随 GitHub 到 media 的 302，返回 LFS 实体字节。
             MIRRORS="ghproxy.net ghfast.top ghfile.geekertao.top github.tbap.top git.yylx.win gh.dpik.top github-proxy.memory-echoes.cn gh.acmsz.top fastgit.cc gh.noki.icu github.ikgy.top github.mxw.qzz.io direct"
 
             T0=$(date +%s)
@@ -87,6 +88,16 @@ jobs:
               else
                 printf 'https://%s/https://github.com/%s/raw/%s/%s' "$1" "$REPO" "$REF" "$2"
               fi
+            }
+
+            # 从 LFS 指针文件里取字段。纯 shell 实现：不依赖 git / awk / sed，
+            # 因此不会因为外部命令缺失或管道异常把整个部署带崩。
+            # $1 = 指针文件路径，$2 = 字段名（oid / size）
+            lfs_field() {
+              while read -r k v; do
+                if [ "$k" = "$2" ]; then printf '%s' "${v#sha256:}"; return 0; fi
+              done < "$1"
+              return 1
             }
 
             restore_cache() {
@@ -110,8 +121,20 @@ jobs:
             }
             trap on_exit EXIT
 
+            # 任何非预期失败都必须带着行号喊出来，绝不允许静默退出。
+            set -E 2>/dev/null || true
+            trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
+
             cd /BakaGame
             say "开始部署 BakaGame 后端"
+
+            # ---------- 0. 环境自检 ----------
+            for t in git curl awk sort tr wc head basename sha256sum date grep; do
+              if ! command -v "$t" >/dev/null 2>&1; then
+                echo "❌ 生产机缺少必需命令：$t"
+                exit 1
+              fi
+            done
 
             # ---------- 1. 代码同步（LFS 实体文件由本脚本接管） ----------
             # 工作流已串行化（concurrency），上一次中断遗留的锁文件必然是陈旧的。
@@ -121,10 +144,12 @@ jobs:
             fi
 
             # 关键：禁止 git 在 checkout 阶段触碰 LFS。仓库里存的是指针文本，
-            # 实体文件由下面自行提供，避免 reset 时去 github-cloud.githubusercontent.com 拉 200MB。
+            # 实体文件由本脚本自行提供，避免 git 去 github-cloud.githubusercontent.com 拉 200MB。
             export GIT_LFS_SKIP_SMUDGE=1
             git config --local filter.lfs.required false
 
+            # 把已就位的实体文件挪出工作区（mv 是原子改名），
+            # 这样 reset 之后工作区里躺着的是指针文本，实体由下面按需放回。
             mkdir -p "$STASH"
             for f in $DB_FILES; do
               if [ -f "$f" ]; then
@@ -138,23 +163,52 @@ jobs:
             COMMIT=$(git rev-parse --short HEAD)
             say "已对齐至 $COMMIT"
 
+            # reset 后工作区里是 LFS 指针文本，先把目标 OID/大小留档，
+            # 供后续比对与校验复用（下面会用实体文件覆写工作区）。
+            TARGETS="$STASH/targets"
+            : > "$TARGETS"
+            for f in $DB_FILES; do
+              want=$(lfs_field "$f" oid || true)
+              size=$(lfs_field "$f" size || true)
+              printf '%s %s %s\n' "$f" "$want" "$size" >> "$TARGETS"
+              say "目标数据库：$f oid=${want:-（非 LFS）} size=${size:-?}"
+            done
+
+            target_field() {
+              while read -r p w s; do
+                if [ "$p" = "$1" ]; then
+                  if [ "$2" = "oid" ]; then printf '%s' "$w"; else printf '%s' "$s"; fi
+                  return 0
+                fi
+              done < "$TARGETS"
+              return 1
+            }
+
             # ---------- 2. 数据库：OID 未变化则零网络复用，变化才下载 ----------
             PENDING=""
             for f in $DB_FILES; do
-              want=$(git show "HEAD:$f" | awk '/^oid sha256:/{print $2; exit}')
+              want=$(target_field "$f" oid || true)
               cached="$STASH/$(basename "$f")"
               if [ -z "$want" ]; then
-                say "非 LFS 文件，跳过：$f"
-                rm -f "$cached"
+                say "未见 LFS 指针，按普通文件处理：$f（前 16 字节：$(head -c 16 "$f" 2>/dev/null)）"
+                # 只有在 git 确实写入了真实内容时才丢弃暂存副本，避免把唯一的好文件删掉。
+                if [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
+                  rm -f "$cached"
+                fi
                 continue
               fi
-              if [ -f "$cached" ] && [ "$(head -c 15 "$cached")" = "SQLite format 3" ] \
-                 && [ "$(sha256sum "$cached" | awk '{print $1}')" = "$want" ]; then
-                mv -f "$cached" "$f"
-                say "复用本地数据库（LFS OID 未变化）：$f"
+              if [ -f "$cached" ] && [ "$(head -c 15 "$cached")" = "SQLite format 3" ]; then
+                hash=$(sha256sum "$cached"); hash=${hash%% *}
+                if [ "$hash" = "$want" ]; then
+                  mv -f "$cached" "$f"
+                  say "复用本地数据库（LFS OID 未变化）：$f"
+                  continue
+                fi
+                say "本地数据库已过期：$f（本地 $(printf '%.12s' "$hash") → 目标 $(printf '%.12s' "$want")）"
               else
-                PENDING="$PENDING $f"
+                say "本地没有可复用的数据库：$f"
               fi
+              PENDING="$PENDING $f"
             done
 
             if [ -n "$PENDING" ]; then
@@ -192,9 +246,12 @@ jobs:
 
               fetch_file() {
                 f="$1"
-                want=$(git show "HEAD:$f" | awk '/^oid sha256:/{print $2; exit}')
-                size=$(git show "HEAD:$f" | awk '/^size /{print $2; exit}')
-                [ -n "$want" ] && [ -n "$size" ] || return 1
+                want=$(target_field "$f" oid || true)
+                size=$(target_field "$f" size || true)
+                if [ -z "$want" ] || [ -z "$size" ]; then
+                  echo "❌ 无法读取 LFS 目标信息：$f"
+                  return 1
+                fi
                 # 注意：两个文件是并行下载的，临时路径必须按文件名取唯一值。
                 # bash 的 $$ 在子 shell 中仍是父进程 PID，不能用来做区分。
                 tag=$(basename "$f")
@@ -267,9 +324,10 @@ jobs:
 
             # ---------- 3. 落盘校验 ----------
             for f in $DB_FILES; do
-              want=$(git show "HEAD:$f" | awk '/^oid sha256:/{print $2; exit}')
+              want=$(target_field "$f" oid || true)
               if [ -n "$want" ]; then
-                if [ "$(sha256sum "$f" 2>/dev/null | awk '{print $1}')" != "$want" ]; then
+                hash=$(sha256sum "$f"); hash=${hash%% *}
+                if [ "$hash" != "$want" ]; then
                   echo "❌ 数据库校验失败：$f"
                   exit 1
                 fi
