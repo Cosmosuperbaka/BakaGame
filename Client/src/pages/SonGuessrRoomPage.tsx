@@ -1398,6 +1398,7 @@ function GameStage({
           <SoloRoundOutcome
             correct={summary.correctPlayerIds.includes(privateState.playerId)}
             me={me}
+            rounds={snapshot.roundNumber}
           />
         ) : (
           <ScoreTable scores={summary.scores} />
@@ -2603,16 +2604,18 @@ function AttemptList({
 function SoloRoundOutcome({
   correct,
   me,
+  rounds,
 }: {
   correct: boolean;
   me?: SonGuessrPlayerView;
+  rounds: number;
 }) {
   return (
     <section className="rounded-md bg-muted p-4 text-center">
       <p className="text-base font-semibold">{correct ? "本轮答对" : "本轮未答对"}</p>
       <div className="mt-2 flex items-center justify-center gap-4 text-sm text-muted-foreground">
         <span>累计得分 {me?.score ?? 0}</span>
-        <span>命中 {me?.correctGuesses ?? 0}/{me?.totalGuesses ?? 0}</span>
+        <span data-testid="solo-correct-rounds">答对 {me?.correctGuesses ?? 0}/{rounds} 轮</span>
       </div>
     </section>
   );
