@@ -1,53 +1,63 @@
 name: Deploy Backend
 
+# 部署不再自带全量测试：服务端类型检查 + 全量测试只在 CI 跑一次，这里消费 CI 的结论。
+# 触发条件：CI 全绿，且其中「Server CI」确实执行过（而非被路径过滤跳过）。
+# 手动 dispatch 视为人工决策，直接部署当前 main（该提交必然已通过 CI 门禁）。
+# 部署脚本自身变更也要生效：ci.yml 的 server 过滤包含本文件，改动后会走一次
+# CI → workflow_run → 部署 的链路自动落地。
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'Server/**'
-      # 部署脚本自身变更也要触发，否则改完流水线得手工 dispatch 才能生效。
-      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  actions: read
+
 jobs:
-  verify:
-    name: Pre-deployment Verification
+  # 部署门禁：CI 失败（含 E2E 失败）不部署；本次推送未改服务端（Server CI 被跳过）不部署。
+  gate:
+    name: Deployment Gate
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_run' }}
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install server dependencies
-        working-directory: Server
-        run: bun install --frozen-lockfile
-
-      - name: Type check server
-        working-directory: Server
-        run: bun run check
-
-      - name: Run server tests with coverage
-        working-directory: Server
-        run: bun run test:coverage
-
-      - name: Smoke test production server
-        working-directory: Server
-        run: bun run test:production-smoke
+      - name: Decide whether to deploy
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          conclusion="${{ github.event.workflow_run.conclusion }}"
+          if [ "$conclusion" != "success" ]; then
+            echo "CI 结论为 $conclusion，不部署"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          server_ci=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "Server CI")][0].conclusion // "missing"')
+          echo "Server CI 结论：$server_ci"
+          if [ "$server_ci" = "success" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "本次推送未改动服务端（Server CI 为 $server_ci），无需部署"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     name: Deploy to Server
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [gate]
     # 生产部署硬超时：3 分钟。
     timeout-minutes: 3
+    # 手动 dispatch 时 gate 被跳过，视为放行；gate 判定 false 时跳过部署。
+    if: ${{ !cancelled() && needs.gate.result != 'failure' && (github.event_name == 'workflow_dispatch' || needs.gate.outputs.deploy == 'true') }}
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
