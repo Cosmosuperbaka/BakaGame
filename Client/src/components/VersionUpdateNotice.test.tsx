@@ -19,11 +19,25 @@ describe("VersionUpdateNotice", () => {
 
   beforeEach(() => {
     mockCommitHistory.currentCommit = "commit-v1";
+    // 默认按生产构建环境跑，开发环境单独用用例覆盖。
+    vi.stubEnv("DEV", false);
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  it("does not check or display when running in dev environment", async () => {
+    vi.stubEnv("DEV", true);
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={true} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("does not check or display when current commit is dev", async () => {
