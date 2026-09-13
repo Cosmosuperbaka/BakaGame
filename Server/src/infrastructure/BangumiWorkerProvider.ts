@@ -11,7 +11,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
   private readonly ready: Promise<unknown>;
   private closed = false;
 
-  constructor(songPath: string, characterPath: string) {
+  constructor(songPath: string, characterPath: string, imageBase?: string) {
     this.worker = new Worker(new URL("./BangumiWorker.ts", import.meta.url).href);
     this.worker.onmessage = (event: MessageEvent<{ id: number; ok: boolean; value?: unknown; error?: { code: string; message: string } }>) => {
       const response = event.data;
@@ -23,7 +23,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
       else pending.reject(new AppError(response.error!.code, response.error!.message));
     };
     this.worker.onerror = () => this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询线程异常"));
-    this.ready = this.request({ method: "init", songPath, characterPath });
+    this.ready = this.request({ method: "init", songPath, characterPath, imageBase });
     // 初始化失败通过业务请求返回，不产生无人接收的 Promise 拒绝。
     void this.ready.catch(() => {});
   }
