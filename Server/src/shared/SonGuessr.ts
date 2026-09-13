@@ -289,6 +289,8 @@ export interface SonGuessrRoomSummary {
 export interface SonGuessrRoomSnapshot {
   roomId: string;
   name: string;
+  /** 单人房间：无玩家栏、无聊天、由系统自动出题，不允许其他玩家加入。 */
+  solo: boolean;
   visibility: RoomVisibility;
   allowSpectators: boolean;
   hasPassword: boolean;
@@ -340,6 +342,7 @@ export type SonGuessrClientMessage =
         password?: string;
         allowSpectators: boolean;
         userName: string;
+        solo?: boolean;
       }
     >
   | ClientEnvelope<"song.room.join", { userName: string; password?: string }>
