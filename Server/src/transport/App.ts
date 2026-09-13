@@ -15,7 +15,7 @@ import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "./SonGuessrProtocol";
 import { createStateSyncSender } from "./StateSync";
-import { systemRoutes } from "./routes/System";
+import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 
 export interface AppDependencies {
@@ -24,6 +24,7 @@ export interface AppDependencies {
   logger: EventLogger;
   sonGuessrService?: SonGuessrService;
   isShuttingDown?: () => boolean;
+  onTriggerShutdown?: () => Promise<void> | void;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -185,14 +186,6 @@ const executeWithDeduplication = async ({
   }
 };
 
-const isPrivateLanHost = (hostname: string): boolean => {
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
-  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
-  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
-  return false;
-};
-
 const isAllowedOrigin = (
   origin: string | null | undefined,
   clientUrl?: string,
@@ -232,6 +225,7 @@ export const createApp = ({
   logger,
   sonGuessrService,
   isShuttingDown,
+  onTriggerShutdown,
 }: AppDependencies) => {
   const decoder = new TextDecoder();
   const fakerService = whoIsFakerService;
@@ -364,6 +358,7 @@ export const createApp = ({
         sonGuessrService: songService,
         logger,
         isShuttingDown,
+        onTriggerShutdown,
       }),
     )
     .use(

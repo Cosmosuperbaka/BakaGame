@@ -45,6 +45,12 @@ const { app, sonGuessrService } = createApp({
   whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,
+  onTriggerShutdown: async () => {
+    isShuttingDown = true;
+    void whoIsFakerService.drainPendingWrites().catch((error: unknown) => {
+      logger.error("停机前词库刷盘异常", describeError(error));
+    });
+  },
 });
 
 // 定时执行房间闲置清理与掉线超时检查。
