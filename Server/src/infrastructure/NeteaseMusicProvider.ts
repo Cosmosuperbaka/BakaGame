@@ -283,8 +283,9 @@ const normalizeComparableText = (value: string) =>
  */
 const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
-  "作词(?:人)?", "填词", "词曲", "词", "作曲(?:人)?", "谱曲", "曲",
-  "编曲(?:人|师)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
+  "作词(?:人|者)?", "填词", "词曲", "词", "作曲(?:人|者)?", "谱曲", "曲",
+  "编曲(?:人|师|者)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
+  "(?:词曲|作词|作曲)(?:提供|来源)",
   // 繁体写法（港台上传谱高频）：`編曲 Arrange : X`。
   "作詞(?:人)?", "編曲(?:人|师)?", "製作(?:人)?", "監製(?:人)?", "後期", "翻譯", "字幕組",
   "出品人", "发行人", "监制人", "策划人", "企划人", "指挥", "演奏指挥",
@@ -321,8 +322,11 @@ const CREDIT_LABEL_SOURCE = [
   // `主唱录音：`、`弦乐录音：`、`混音母带：`、`母带制作：`、`母带后期处理录音室：`、
   // `和声编写&和声演唱：`、`MIDI工程：`。`&`/`/` 连接的两段会由 `isCreditLabelOnly`
   // 的逐段拆分处理，但每段本身必须在词表内。
-  "主唱录音", "弦乐录音", "乐器录音", "人声录音", "混音母带", "母带制作",
-  "母带后期处理(?:录音室)?", "和声演唱", "midi工程", "编曲工程", "人声编辑",
+  "主唱录音", "弦乐录音", "管乐录音", "乐器录音", "人声录音", "混音母带", "母带制作",
+  // 注意：`母带后期处理` 的展开条目只在 R5 补漏组保留一条（含 录音室|制作人 两种后缀），
+  // 这里**不要**再登记字面并列的旧形态 —— 两条字面长度并列时源码顺序靠前者
+  // 会抢先匹配并在可选组前截断（`母带后期处理制作人` 只吃到 `母带后期处理`）。
+  "和声演唱", "midi工程", "编曲工程", "人声编辑",
   // `乐器录音师`、`人声录音棚`、`混音工程师` 这类「动作 + 师/棚/室/工程师」的完整词形。
   "乐器录音师", "人声录音棚", "混音工程师", "录音工程师", "母带工程师",
   // 实测补漏：`人声录音师`、`人声录音棚A`、`吉他录音`、`母带工作室`、`配唱制作人`、`弦乐指挥`。
@@ -331,20 +335,27 @@ const CREDIT_LABEL_SOURCE = [
   "弦乐指挥", "弦乐翻译", "弦乐编写", "弦乐统筹", "管弦乐", "弦乐团",
   // 助理/副手与总监类：`混音助理 : X`、`制作助理 : X`、`艺人合作总监 : X`。
   "制作助理", "混音助理", "录音助理", "配唱助理", "音乐助理", "附加制作",
-  "音频编辑", "音频助理", "母带助理",
+  "音频编辑", "音频剪辑", "音频助理", "母带助理", "音乐编辑", "助理",
   "艺人(?:合作)?总监", "项目总监", "内容总监", "节目总监",
   // 缩写与单字形态：`和编：清潇Lanoiah`（和声编写缩写）、`器乐 : X`。
-  "和编", "合编", "器乐",
+  "和编", "合编", "器乐", "管乐", "实录", "弦乐实录", "表演(?:者)?",
+  // R5 实测补漏：`录音制作`、`营销推广`、`混音录音室`、`计算机音乐编成`、`谱务 Scoring`。
+  "录音制作", "营销推广", "混音录音室", "(?:计算机)?音乐编成", "谱务",
+  "母带后期处理(?:录音室|制作人)?", "声音工程师",
+  // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
+  "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
   "调声", "调音", "采样", "混响", "音效", "后期混音", "缩混", "母带制作人",
   // 标题/元信息类（同时是答案泄露源）：`歌曲原名：夜来香`。
   "歌曲原名", "原曲名", "歌曲名", "歌名", "原唱名", "本名",
   // 外语标题头：`Bài Hát: See Tình`（越南语「歌名」）。
   "bài\\s+hát", "canción", "曲名", "楽曲名", "タイトル",
+  "video",
   "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
   // 中文乐器/声部名：网易云里既有 `钢琴 : X` 也有 `架子鼓 Drums：X`。
   "钢琴", "架子鼓", "爵士鼓", "电子琴", "合成器", "打击乐", "萨克斯", "长笛", "口琴",
   "键盘", "键盘手", "手鼓", "铃鼓", "三角铁", "钟琴", "竖琴", "管风琴", "电钢",
+  "短笛", "英国管", "曼陀林", "尤克里里", "西塔尔琴", "班苏里笛", "萨兹琴",
   "木吉他", "电吉他", "原声吉他", "古典吉他", "吉他", "贝斯", "鼓",
   "古筝", "琵琶", "二胡", "笛子", "箫", "唢呐", "马头琴", "手风琴", "小提琴", "大提琴", "中提琴",
   "尺八", "三味线", "太鼓", "箏", "琵琶", "笙", "阮", "柳琴", "扬琴", "冬不拉", "班卓琴",
@@ -392,7 +403,11 @@ const CREDIT_LABEL_SOURCE = [
   // `演唱 Voice`、`尺八 Shakuhachi`、`编曲 Arrange`、`版权 Publishing`。
   "tuning", "chorus", "synth", "voice", "shakuhachi", "arrange", "publishing",
   // `Soloist – X`、`1st/2nd Violins : X`。
-  "soloists?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
+  "soloists?", "solos?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
+  // R5 补漏：`助理 Assistant`、`谱务 Scoring`、`Programmer`、`Studio`、`Sound Engineer`。
+  "assistant", "scoring", "programmers?", "studio", "sound",
+  // 民族乐器拼音/外文名（复合标签英文半）：`古筝 Guzheng`、`琵琶 Pipa`、`笛子 Dizi`。
+  "guzheng", "pipa", "dizi", "sitar", "saz", "bansuri", "koto", "shamisen", "taiko",
   "acoustic\\s+guitar", "classical\\s+guitar", "electric\\s+guitar",
   "guitars?", "bass", "drums?", "piano", "keyboards?", "violin", "cello",
   "percussion", "strings?", "midi", "pd", "recording", "rec", "program(?:ming)?",
@@ -476,8 +491,10 @@ const CREDIT_LABEL_PATTERN = new RegExp(
 /** 紧随中文标签的英文单后缀（`词Lyricist`、`曲Composer`）。 */
 const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
 
-/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`。 */
-const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆]/;
+/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`。
+ * `及` 也算连接符：它只在头部拆分用，且拆出的**每段都必须是标签**，
+ * 歌词头（`早餐及午餐：`）拆出的非标签段会自然否决。 */
+const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及]/;
 
 /** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
 const CREDIT_ACTION_WORDS = [
@@ -809,6 +826,12 @@ export const isCreditKeywordLine = (text: string): boolean => {
   if (DUET_ROLE_LABEL_PATTERN.test(normalizedHead) && isSubstantiveLyricTail(tail)) {
     return false;
   }
+  // 英文段落词（`solo：我一个人跳舞`、`rap：看我的flow`）与乐器独奏署名同名，
+  // 但它们常被用作歌词排版标记。区分标准与角色词一致：
+  // 头部**恰好是这个词**（不是 `Guitar Solo` 这类复合署名）且右侧是实质歌词 → 放行。
+  if (/^(?:solo|rap)$/i.test(normalizedHead) && isSubstantiveLyricTail(tail)) {
+    return false;
+  }
   return true;
 };
 
@@ -971,9 +994,11 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
 
   // 去掉尾部的冒号后再比对词表，兼容 `(Припев:)`、`(Repeat:)` 形态。
   const withoutTrailingColon = inner.replace(/[:：]\s*$/u, "").trim();
-  // 再剥掉尾部装饰符号，兼容 `(Music♂)` 这类带符号的间奏占位。
-  const withoutTrailingSymbols = withoutTrailingColon.replace(/[\p{S}\p{P}]+$/u, "").trim();
-  if (STAGE_DIRECTION_PATTERN.test(withoutTrailingSymbols)) return true;
+  // 剥掉**两端**装饰符号，兼容 `(Music♂)`、`(*music*)` 这类带符号的间奏占位。
+  const withoutSymbols = withoutTrailingColon
+    .replace(/^[\p{S}\p{P}]+|[\p{S}\p{P}]+$/gu, "")
+    .trim();
+  if (STAGE_DIRECTION_PATTERN.test(withoutSymbols)) return true;
 
   // 括号内的制作方标注：`（烛光制作）`、`(某某出品)`。
   if (BRACKET_PRODUCTION_SUFFIX_PATTERN.test(inner)) return true;
@@ -1119,7 +1144,7 @@ export const isAffiliationCreditLine = (text: string): boolean => {
  * 且行末常带书名号/引号包裹的企划名，词表永远追不全。按**平台名 + 出品/来自**结构判定。
  */
 const PLATFORM_CREDIT_PATTERN =
-  /(?:网易云音乐|网易音乐人|网易云|云音乐|qq音乐|酷狗音乐|咪咕音乐|bilibili)/u;
+  /(?:网易(?:音乐人|云音乐|云|音乐)?|qq音乐|酷狗音乐|咪咕音乐|bilibili)/u;
 
 export const isPlatformCreditLine = (text: string): boolean => {
   const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
