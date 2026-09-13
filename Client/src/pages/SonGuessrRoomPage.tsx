@@ -1527,7 +1527,7 @@ function SongSoloWaitingPanel({
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
-      <PhaseHeader icon={Headphones} title="单人模式" />
+      <PhaseHeader icon={Headphones} title="准备开始" />
       <SongAccountSettings snapshot={snapshot} />
       <SettingsAccordion
         icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
