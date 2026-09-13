@@ -246,7 +246,7 @@ export const createApp = ({
         logger,
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
-      bangumiProvider: new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!),
+      bangumiProvider: new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl),
     });
 
   const app = new Elysia({

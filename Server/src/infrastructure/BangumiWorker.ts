@@ -3,7 +3,7 @@ import { AppError } from "../domain/Errors";
 import type { AnimeAutoFilters } from "../shared/Index";
 
 type Request =
-  | { id: number; method: "init"; songPath: string; characterPath: string }
+  | { id: number; method: "init"; songPath: string; characterPath: string; imageBase?: string }
   | { id: number; method: "searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { id: number; method: "getSubject"; subjectId: string }
   | { id: number; method: "close" };
@@ -14,7 +14,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   try {
     let value: unknown;
     if (request.method === "init") {
-      provider = new LocalBangumiProvider(request.songPath, request.characterPath);
+      provider = new LocalBangumiProvider(request.songPath, request.characterPath, request.imageBase);
       value = true;
     } else if (!provider) {
       throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 数据尚未就绪");
