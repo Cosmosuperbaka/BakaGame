@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { AppError } from "../domain/Errors";
+import { isBangumiCreditsEntry } from "../shared/Index";
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
 
 export interface BangumiDataProvider {
@@ -92,9 +93,14 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
     const row: any = this.song.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id);
     if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
-    const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? ORDER BY r.relation_order, r.music_id").all(id) as any[];
+    // 只取真实音乐实体（music_id > 0）。负数 music_id 是 Bangumi 关联条目里的
+    // 合成占位行——版权署名、制作委员会、动画师/作家署名等，共 7762 条，
+    // 全被标成 opening 而排在真实曲目之前，实测会把《Music For All》这类
+    // 完全无关的歌曲当成番剧 OP。文本规则 isBangumiCreditsEntry 作为第二道防线，
+    // 同时覆盖联网 API 路径。
+    const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id").all(id) as any[];
     const seen = new Set<string>();
-    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim()).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
+    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
     const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveImage(id);
     return { ...toResult({ ...row, image: imageUrl }, ""), summary: row.summary || undefined, locked: false, musicTracks };
   }

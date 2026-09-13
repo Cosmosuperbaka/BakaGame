@@ -1,6 +1,7 @@
 import { AppError } from "../domain/Errors";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
+import { isBangumiCreditsEntry } from "../shared/Index";
 import type {
   AnimeAutoFilters,
   BangumiMusicTrack,
@@ -130,6 +131,8 @@ const extractRelatedMusicTracks = (
     const relation = readString(record.relation) ?? "";
     const rawName = readString(record.name) ?? "";
     if (!rawName) continue;
+    // 版权署名 / 制作委员会伪条目不是歌曲，混进曲目池会被当成 OP 拿去联网搜歌。
+    if (isBangumiCreditsEntry(rawName)) continue;
 
     let kind = normalizeKind(relation);
     if (kind === "theme" && relation === "其他") {
@@ -288,6 +291,7 @@ const extractTracks = (
   }
   const seen = new Set<string>();
   const uniqueTracks = tracks.filter((track) => {
+    if (isBangumiCreditsEntry(track.title)) return false;
     const key = `${track.kind}:${track.title.trim().toLowerCase()}:${track.artist?.trim().toLowerCase() ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
