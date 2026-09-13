@@ -917,6 +917,43 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R12 抽样沉淀：对照翻译、版权行与元信息标签会被过滤", () => {
+    for (const line of [
+      // 中文标签 + TitleCase 英文对照（对照词追不完词表，TitleCase 是双语署名强特征）。
+      "制谱 Music Copyist：吴泽熙 Jersey Wu (HOYO-MiX)",
+      "封面设计 Cover Design：珞轩",
+      "企划 Creative Planning：颜陌",
+      "古琴 Guqin：方静宇 Jingyu Fang",
+      // `tune` 小写开头 TitleCase 接不住，靠词表直补。
+      "戏腔 Opera tune：海伦",
+      // `音乐X` 整词枚举与公司类词表。
+      "音乐营销：网易飓风",
+      "签约公司 : 不要音乐",
+      // 唱片版权行：` - ` 会把 head 切成孤立的 P/C，按「单字母 + line + 冒号」前缀判定。
+      "P - Line: 2016 北京享耳音乐文化有限公司Sure Recordings Culture Co., Ltd",
+      "C - Line: 2016 北京享耳音乐文化有限公司Sure Recordings Culture Co., Ltd",
+      // 设施词与团队后缀。
+      "舞台秀导演团队：ShowPro",
+      "混音棚：shicong fatnunu",
+      // 专辑名是强泄露源（冒号形态）。
+      "专辑：最好的时代",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：TitleCase 每词 ≥2 字母排除单冠词、小写虚词对照不是署名、
+    // `line` 后必须紧跟冒号、专辑与 DENY 词的空格形态是歌词、拟声连唱是歌词。
+    for (const line of [
+      "设计 A Story",
+      "感谢 Happy Birthday to you",
+      "C line up against the wall",
+      "专辑 里的歌",
+      "Cry-cry-cry since the day we parted",
+      "大合唱：啦啦啦啦...",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
