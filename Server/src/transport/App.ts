@@ -240,7 +240,7 @@ export const createApp = ({
         logger,
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
-      bangumiProvider: new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl),
+      bangumiProvider: new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl, env.bangumiApiUrl),
     });
 
   const app = new Elysia({
