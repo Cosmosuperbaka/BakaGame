@@ -182,6 +182,51 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.queryByText("房主小明")).not.toBeInTheDocument();
   });
 
+  it("单人模式结算按答对轮数与已进行轮数统计", () => {
+    window.sessionStorage.setItem("songuessr_solo_room", "4321");
+    useSonGuessrStore.setState({
+      roomId: "4321",
+      snapshot: createMockSnapshot({
+        roomId: "4321",
+        solo: true,
+        phase: "roundResult",
+        roundNumber: 2,
+        players: [{ ...createMockSnapshot().players[0], correctGuesses: 1, totalGuesses: 3 }],
+        roundSummary: {
+          roundNumber: 2,
+          submitterPlayerId: "",
+          correctPlayerIds: ["player-1"],
+          attempts: [],
+          song: {
+            id: "song-101",
+            title: "夜空中最亮的星",
+            artist: "逃跑计划",
+            album: "世界",
+            audioUrl: "https://audio.example.com/star.mp3",
+            durationMs: 250_000,
+            requiresVip: false,
+            encyclopedia: { tags: ["流行", "摇滚"] },
+          },
+          scores: [
+            {
+              playerId: "player-1",
+              playerName: "房主小明",
+              score: 11,
+              delta: 1,
+              correctGuesses: 1,
+              totalGuesses: 3,
+            },
+          ],
+        },
+      }),
+      privateState: createMockPrivateState(),
+    });
+    renderSoloPage();
+
+    // 分母是已进行轮数而不是猜测次数：两轮里答对一轮即 1/2。
+    expect(screen.getByTestId("solo-correct-rounds").textContent).toBe("答对 1/2 轮");
+  });
+
   it("真实状态驱动阶段流转：选歌 -> 猜歌 -> 答案揭晓", () => {
     renderRoomPage();
 
