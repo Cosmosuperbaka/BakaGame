@@ -326,9 +326,15 @@ const CREDIT_LABEL_SOURCE = [
   // `乐器录音师`、`人声录音棚`、`混音工程师` 这类「动作 + 师/棚/室/工程师」的完整词形。
   "乐器录音师", "人声录音棚", "混音工程师", "录音工程师", "母带工程师",
   // 实测补漏：`人声录音师`、`人声录音棚A`、`吉他录音`、`母带工作室`、`配唱制作人`、`弦乐指挥`。
-  "人声录音师", "人声录音", "吉他录音", "贝斯录音", "鼓录音", "钢琴录音", "弦乐录音师",
+  "人声录音师", "人声录音", "人声录音工程师", "吉他录音", "贝斯录音", "鼓录音", "钢琴录音", "弦乐录音师",
   "母带工作室", "混音工作室", "录音工作室", "配唱制作人", "配唱编写", "合声编写",
   "弦乐指挥", "弦乐翻译", "弦乐编写", "弦乐统筹", "管弦乐", "弦乐团",
+  // 助理/副手与总监类：`混音助理 : X`、`制作助理 : X`、`艺人合作总监 : X`。
+  "制作助理", "混音助理", "录音助理", "配唱助理", "音乐助理", "附加制作",
+  "音频编辑", "音频助理", "母带助理",
+  "艺人(?:合作)?总监", "项目总监", "内容总监", "节目总监",
+  // 缩写与单字形态：`和编：清潇Lanoiah`（和声编写缩写）、`器乐 : X`。
+  "和编", "合编", "器乐",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
   "调声", "调音", "采样", "混响", "音效", "后期混音", "缩混", "母带制作人",
   // 标题/元信息类（同时是答案泄露源）：`歌曲原名：夜来香`。
@@ -385,6 +391,8 @@ const CREDIT_LABEL_SOURCE = [
   // 实测补漏的复合后缀：`调声 Tuning`、`和声 Chorus`、`合成器 Synth`、
   // `演唱 Voice`、`尺八 Shakuhachi`、`编曲 Arrange`、`版权 Publishing`。
   "tuning", "chorus", "synth", "voice", "shakuhachi", "arrange", "publishing",
+  // `Soloist – X`、`1st/2nd Violins : X`。
+  "soloists?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
   "acoustic\\s+guitar", "classical\\s+guitar", "electric\\s+guitar",
   "guitars?", "bass", "drums?", "piano", "keyboards?", "violin", "cello",
   "percussion", "strings?", "midi", "pd", "recording", "rec", "program(?:ming)?",
@@ -543,13 +551,45 @@ const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
   `^(?:${[
     "production\\s+coordination",
     "special\\s+thanks?(?:\\s+to)?", "thanks?(?:\\s+to)?",
-    "recorded\\s+at", "engineered\\s+by", "mixed\\s+by", "mastered\\s+by",
+    "recorded\\s+at", "recorded\\s+by", "engineered\\s+by", "mixed\\s+by", "mastered\\s+by",
+    "mixing\\s+at", "mastering\\s+at", "recording\\s+at",
     "lyrics?\\s+by", "music\\s+by", "written\\s+by", "produced\\s+by",
     "composed\\s+by", "arranged\\s+by", "performed\\s+by",
     "vocals?\\s+recorded\\s+at",
   ].join("|")})(?:\\s|$)`,
   "i",
 );
+
+/**
+ * `<乐器/声部> 录音地点` 形态的英文署名行：
+ * `Drums Recorded at Aroom Studio`、`Strings Recorded at 广州中国唱片社录音室`、
+ * `Vocals & Piano Recorded at Avon Studios,`、`Music & Vocals Recorded at Avon Acoustic Ltd`、
+ * `Strings Recording Co-ordination by Stanley Leung`。
+ *
+ * 这些行以**乐器词开头**，`STARTS_WITH_CREDIT_ENGLISH_PATTERN` 的 `Recorded at`
+ * 是行首锚定、接不住；且头部 `Strings Recorded` 整体不是任何单个标签，词表也接不住。
+ * 判定：行首是一串已知英文乐器/声部词（`&` 连接），随后紧跟
+ * `Recorded/Mixed/Mastered (at|by)` 或 `Recording`（录音事务说明）。
+ * 乐器词必须逐词命中英文标签，`Drums are beating at dawn` 这类歌词
+ * （第二词是 be 动词）不会命中。
+ */
+const isInstrumentRecordingHead = (value: string): boolean => {
+  const normalized = value.trim().replace(/[\s\u3000]+/g, " ");
+  const match =
+    /^([A-Za-z]+(?:\s*&\s*[A-Za-z]+)*)\s+(?:(?:recorded|mixed|mastered)\s+(?:at|by)\b|recording\b)/i.exec(
+      normalized,
+    );
+  if (!match) return false;
+  const words = match[1].split(/\s*&\s*/i).filter(Boolean);
+  return (
+    words.length > 0 &&
+    words.every(
+      (word) =>
+        CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "").toLowerCase() ===
+        word.toLowerCase(),
+    )
+  );
+};
 
 /** 行首装饰：书名号、括号、项目符号与空白。署名行常带这些前缀，必须先剥离。 */
 const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/]+|^[【\[（(「『《<]+/;
@@ -694,6 +734,15 @@ const isCreditLabelOnly = (value: string): boolean => {
   const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
   if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
 
+  // 尾缀署名介词：`Chorus by : 陈奕迅`。剥离 ` by` 后按纯标签判定；
+  // 递归兜底保证 `Kiss by` 这类剥出的词不是标签时不会误判。
+  const withoutBy = value.replace(/\s+by$/i, "").trim();
+  if (withoutBy && withoutBy !== value && isCreditLabelOnly(withoutBy)) return true;
+
+  // 序数前缀：`1st Violins : X`、`2nd Violins : X`（弦乐声部分排）。
+  const withoutOrdinal = value.replace(/^(?:\d{1,2}(?:st|nd|rd|th))\s+/i, "").trim();
+  if (withoutOrdinal && withoutOrdinal !== value && isCreditLabelOnly(withoutOrdinal)) return true;
+
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
 
@@ -738,6 +787,8 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // `Strings Arranged & Conducted by 某某` 这类没有冒号的英文署名，先整行判定。
   if (isCreditActionPhrase(undecorated)) return true;
   if (STARTS_WITH_CREDIT_ENGLISH_PATTERN.test(undecorated)) return true;
+  // `Drums Recorded at Aroom Studio` 这类以乐器词开头的录音信息行。
+  if (isInstrumentRecordingHead(undecorated)) return true;
   // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
   // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
   if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
@@ -876,6 +927,8 @@ export const isPlaceholderMaskLyricLine = (text: string): boolean => {
 const STAGE_DIRECTION_SOURCE = [
   "repeat", "silence", "silent", "instrumental", "interlude", "intro", "outro",
   "fade", "fadeout", "fade in", "fade out", "spoken", "whisper", "echo",
+  // `(Music)`、`(Music♂)` 这类括号内间奏占位。
+  "music",
   "以下反复", "以下重复", "间奏", "前奏", "尾奏", "反复", "重复", "此处",
   "略", "待补", "待定", "无歌词", "看不懂", "听不清", "念白",
   // 多语言段落标记：`(Припев:)`（俄语副歌）、`(Coro:)`（西/意）、`(Refrain)`（法语）、
@@ -884,6 +937,10 @@ const STAGE_DIRECTION_SOURCE = [
   "coro", "estribillo", "refrain", "pont", "サビ", "aメロ", "bメロ", "間奏",
   "간주", "후렴", "절",
 ].join("|");
+
+/** 括号内的制作方标注：`（烛光制作）`、`(某某出品)`、`（原创团队献上）`。 */
+const BRACKET_PRODUCTION_SUFFIX_PATTERN =
+  /^[\u4e00-\u9fffA-Za-z0-9·]{1,12}(?:制作|出品|原创|献上|呈献|作品)$/u;
 
 const STAGE_DIRECTION_PATTERN = new RegExp(`^(?:${STAGE_DIRECTION_SOURCE})$`, "i");
 
@@ -914,7 +971,12 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
 
   // 去掉尾部的冒号后再比对词表，兼容 `(Припев:)`、`(Repeat:)` 形态。
   const withoutTrailingColon = inner.replace(/[:：]\s*$/u, "").trim();
-  if (STAGE_DIRECTION_PATTERN.test(withoutTrailingColon)) return true;
+  // 再剥掉尾部装饰符号，兼容 `(Music♂)` 这类带符号的间奏占位。
+  const withoutTrailingSymbols = withoutTrailingColon.replace(/[\p{S}\p{P}]+$/u, "").trim();
+  if (STAGE_DIRECTION_PATTERN.test(withoutTrailingSymbols)) return true;
+
+  // 括号内的制作方标注：`（烛光制作）`、`(某某出品)`。
+  if (BRACKET_PRODUCTION_SUFFIX_PATTERN.test(inner)) return true;
 
   // 「单词 + 冒号结尾」的段落标记形态（`Verse 1:`、`Припев:`），冒号后无内容。
   if (/^[^\s:：,，、;；]{1,20}(?:\s\d{1,2})?\s*[:：]\s*$/u.test(inner)) return true;
@@ -977,6 +1039,9 @@ const COPYRIGHT_NOTICE_SOURCE = [
   // 商用授权/搬运声明：`已获商用授权`、`未经著作权人许可禁止搬运`、`禁止翻录`、`禁止Remix`。
   "商用授权", "著作权人", "禁止搬运", "禁止翻录", "禁止转载", "翻录", "remix",
   "仅供个人学习", "不得用于商业",
+  // 出版方行：`/ EMI Music Publishing (S.E. Asia) Ltd, Taiwan Branch` —— 唱片内页
+  // 连排出版信息被拆成的碎片行，`publishing` 一词在真实歌词里不会出现。
+  "music publishing", "publishing\\s*\\(",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
