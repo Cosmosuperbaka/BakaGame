@@ -361,6 +361,9 @@ const CREDIT_LABEL_SOURCE = [
   // 调教/影像制作）、`吉他、贝司、和声：X`（贝斯变体）、`二创效果Edit：X`、
   // `乐队总监 : X`、`前作：《…》`（前作歌名是答案泄露源，同 `原作`）。
   "分轨混音", "录混", "调", "影", "贝司", "二创效果", "乐队", "总监", "前作",
+  // R10 实测补漏：`（以下段落作曲作词：街道办／KT）`、`监唱 : X`、
+  // `管弦乐配器 Orchestrator:X`、`电贝司 Electric Bass:X`。
+  "以下段落", "监唱", "管弦乐", "配器", "电贝司",
   // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
   "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
@@ -392,7 +395,7 @@ const CREDIT_LABEL_SOURCE = [
   "op", "sp", "publisher", "cast", "staff",
   "lyric(?:s|ist)?", "composer", "arranger", "producer",
   "vocal(?:s|ist)?", "vocaloid", "illustration", "artwork", "movie",
-  "mixing", "mastering", "programming", "recording", "engineer(?:ing)?",
+  "mixing", "mastering", "programming", "recording", "engineers?(?:ing)?",
   // 英文编排/配器类（实测高频，旧表完全缺失）：
   // `Orchestral Arrangements : X`、`Orchestration : X`、`Synthesizer Programming : X`、
   // `Vocal Arrangements : X`、`Rhythm Arrangements : X`、`Synthesizers : X`。
@@ -462,6 +465,14 @@ const CREDIT_LABEL_SOURCE = [
   // （国际录音制品编码，真实歌词不含）。
   "background\\s+vocals?", "background\\s+vocal\\s+arrangements?",
   "accordion", "vocoder", "viola", "co-?production", "isrc(?:\\s+no)?",
+  // R10 实测补漏：`Lead Vocals : X`、`Linn Drum : X`（鼓机品牌）、`Talkbox : X`、
+  // `Mix Engineering : X`（裸 `mix` 不能加 —— `Mix it up` 是歌词）、
+  // `Tenor/Baritone Saxophone : X`、`Additional Engineering : X`、
+  // `Released on : 日期`、`Sound Produce：X`、`Chamberlin Oboe：X`、
+  // `B-Box: X`、`Orchestrator: X`。`engineer(?:ing)?` 复数化收 `Engineers :`。
+  "lead\\s+vocals?", "linn\\s+drum", "talk\\s*box", "mix\\s+engineering",
+  "tenor", "baritone", "additional\\s+engineering", "released?\\s+on",
+  "produce", "oboe", "chamberlin", "b-?box", "orchestrators?",
 ].join("|");
 
 /**
@@ -877,6 +888,16 @@ const isCreditLabelOnly = (value: string): boolean => {
     .trim();
   if (withoutOrdinal && withoutOrdinal !== value && isCreditLabelOnly(withoutOrdinal)) return true;
 
+  // 序数尾缀：`Violin 1st : X`、`Violin 2nd：X`（分谱编号后置写法）。
+  const withoutOrdinalSuffix = value.replace(/\s+\d{1,2}(?:st|nd|rd|th)$/i, "").trim();
+  if (
+    withoutOrdinalSuffix &&
+    withoutOrdinalSuffix !== value &&
+    isCreditLabelOnly(withoutOrdinalSuffix)
+  ) {
+    return true;
+  }
+
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
 
@@ -1234,6 +1255,8 @@ const COPYRIGHT_NOTICE_SOURCE = [
   // `Used by permission of ...`（内页授权套话）、`X reserved.`（省略
   // all rights 的页脚碎片；`Spot is forever reserved` 这类无句点歌词不受影响）。
   "已买版权", "版权公司", "used\\s+by\\s+permission", "reserved\\.",
+  // R10 实测补漏：`(Admin. by Warner/Chappell Music Korea)`（版权管理代理套话）。
+  "admin\\.?\\s+by",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
