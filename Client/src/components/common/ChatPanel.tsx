@@ -226,7 +226,7 @@ export function ChatPanel({
                   <div
                     data-testid="chat-message-bubble"
                     className={cn(
-                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-md text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
                       safeStickerPath ? "p-1.5" : "px-3.5 py-2",
                       isMe
                         ? isGhost
