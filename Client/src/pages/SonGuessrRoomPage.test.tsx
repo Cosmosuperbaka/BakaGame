@@ -574,7 +574,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
       questionSettingsButton.click();
     });
 
-    expect(screen.getByText("Bangumi 筛选")).toBeInTheDocument();
+    expect(screen.getByText("番剧筛选")).toBeInTheDocument();
     expect(screen.getByText("年份范围")).toBeInTheDocument();
     expect(screen.getByText("热度范围")).toBeInTheDocument();
     expect(screen.getByText("网易云歌曲热度")).toBeInTheDocument();
