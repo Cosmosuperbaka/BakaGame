@@ -1,4 +1,4 @@
-import type { ServerMessage } from "@/types";
+import type { ErrorPacket, ServerMessage } from "@/types";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -16,9 +16,21 @@ import {
 type MessageHandler = (message: ServerMessage) => void;
 type StatusHandler = (connected: boolean) => void;
 
+/**
+ * 协议层 error 包承载的业务错误体（密码错误、房间不存在、阶段不合法等）。
+ * 它是服务端对客户端请求的正常业务拒绝，由调用方捕获后提示玩家，属于数据而非异常。
+ */
+export type ProtocolError = ErrorPacket["error"];
+
+export const isProtocolError = (value: unknown): value is ProtocolError =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { code?: unknown }).code === "string" &&
+  typeof (value as { message?: unknown }).message === "string";
+
 interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
-  reject: (error: { code: string; message: string; details?: unknown }) => void;
+  reject: (error: ProtocolError) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -192,10 +204,14 @@ export class WebSocketClient {
             command: type,
             error: error instanceof Error ? error.message : String(error),
           });
-          captureClientException(
-            error instanceof Error ? error : new Error(typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message) : String(error)),
-            { path: this.path, command: type },
-          );
+          // 业务拒绝（密码错误、房间不存在、阶段不合法等）与断连、超时同属可预期的协议
+          // 应答，只计指标与日志，严禁上报成异常事件：否则一次输错房间密码就会污染缺陷信号。
+          if (!isProtocolError(error)) {
+            captureClientException(
+              error instanceof Error ? error : new Error(String(error)),
+              { path: this.path, command: type },
+            );
+          }
           throw error;
         }
       },
