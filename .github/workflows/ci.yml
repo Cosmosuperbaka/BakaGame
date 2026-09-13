@@ -11,9 +11,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 路径探测：改了哪部分才跑对应 job，纯文档改动全部跳过。
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      client: ${{ steps.filter.outputs.client }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            server:
+              - 'Server/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy.yml'
+            client:
+              - 'Client/**'
+              - '!Client/e2e/**'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'Client/**'
+              - 'Server/**'
+              - '.github/workflows/ci.yml'
+
   server:
     name: Server CI
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.server == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,6 +82,8 @@ jobs:
   client:
     name: Client CI
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.client == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,7 +126,9 @@ jobs:
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
-    needs: [server, client]
+    needs: [changes, server, client]
+    # 任一依赖真正失败则不跑；server/client 因路径过滤被跳过不算失败，照常执行。
+    if: ${{ !cancelled() && needs.changes.outputs.e2e == 'true' && needs.server.result != 'failure' && needs.client.result != 'failure' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
