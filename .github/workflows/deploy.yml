@@ -68,6 +68,14 @@ jobs:
 
             # 2. 拉取远端最新代码并硬对齐 main 分支
             echo "==> 拉取远端最新代码..."
+            # 上一次被 SSH 超时中断时可能遗留 index.lock；确认没有其他 Git 进程后清理。
+            if [ -f .git/index.lock ]; then
+              if pgrep -af "git.*(/BakaGame|origin/main)" >/dev/null 2>&1; then
+                echo "❌ 检测到其他 Git 进程仍在运行"
+                exit 1
+              fi
+              rm -f .git/index.lock
+            fi
             git fetch origin main
             git reset --hard origin/main
             command -v git-lfs >/dev/null 2>&1 || { echo "❌ 生产机未安装 git-lfs"; exit 1; }
