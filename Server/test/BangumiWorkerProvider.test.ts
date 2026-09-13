@@ -19,7 +19,7 @@ describe("BangumiWorkerProvider", () => {
     const provider = new BangumiWorkerProvider(songPath, characterPath);
     const rows = await provider.searchSubjects("测试中", 3);
     expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0].imageUrl).toContain("/pic/cover/l/");
+    expect(rows[0].imageUrl).toBeUndefined();
     await provider.close();
     for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
   });

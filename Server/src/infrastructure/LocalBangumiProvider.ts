@@ -31,17 +31,49 @@ const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack[
   if (/艺人|album/.test(text)) return "artistAlbum";
   return "theme";
 };
-const toResult = (row: any, imageBase = ""): BangumiSubjectSearchResult => ({ id: String(row.id), name: row.name, nameCn: row.name_cn || row.name, imageUrl: row.image || (imageBase ? `${imageBase}/pic/cover/l/${row.id}.jpg` : undefined), year: row.date ? Number(String(row.date).slice(0, 4)) : undefined, rating: row.score || undefined, ratingCount: row.rating_count || undefined, tags: parseList(row.tags), metaTags: parseList(row.meta_tags) });
+const rewriteImage = (value: unknown, imageBase: string) => {
+  if (typeof value !== "string" || !value) return undefined;
+  try {
+    const source = new URL(value);
+    if (!imageBase || source.hostname !== "lain.bgm.tv") return value;
+    return `${imageBase}${source.pathname}${source.search}${source.hash}`;
+  } catch {
+    return undefined;
+  }
+};
+const toResult = (row: any, imageBase = ""): BangumiSubjectSearchResult => ({ id: String(row.id), name: row.name, nameCn: row.name_cn || row.name, imageUrl: rewriteImage(row.image, imageBase) ?? undefined, year: row.date ? Number(String(row.date).slice(0, 4)) : undefined, rating: row.score || undefined, ratingCount: row.rating_count || undefined, tags: parseList(row.tags), metaTags: parseList(row.meta_tags) });
 
 export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly song: Database;
   private readonly character: Database;
-  constructor(songPath: string, characterPath: string, imageBase = "https://lain.bgm.tv") {
+  constructor(songPath: string, characterPath: string, imageBase = "https://lain.bgm.tv", apiBase = "", fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = fetch) {
     this.imageBase = imageBase.replace(/\/+$/, "");
+    this.apiBase = apiBase.replace(/\/+$/, "");
+    this.fetcher = fetcher;
     this.song = new Database(songPath, { readonly: true });
     this.character = new Database(characterPath, { readonly: true });
   }
   private readonly imageBase: string;
+  private readonly apiBase: string;
+  private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  private readonly imageCache = new Map<number, string | undefined>();
+
+  private async resolveImage(id: number): Promise<string | undefined> {
+    if (!this.apiBase) return undefined;
+    if (this.imageCache.has(id)) return this.imageCache.get(id);
+    try {
+      const response = await this.fetcher(`${this.apiBase}/v0/subjects/${id}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json() as { images?: Record<string, unknown> };
+      const images = body.images ?? {};
+      const image = rewriteImage(images.medium ?? images.large ?? images.common ?? images.grid, this.imageBase);
+      this.imageCache.set(id, image);
+      return image;
+    } catch {
+      this.imageCache.set(id, undefined);
+      return undefined;
+    }
+  }
   async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}) {
     const q = keyword.trim();
     const clauses = ["type = 2"];
@@ -63,7 +95,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? ORDER BY r.relation_order, r.music_id").all(id) as any[];
     const seen = new Set<string>();
     const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim()).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
-    return { ...toResult(row, this.imageBase), summary: row.summary || undefined, locked: false, musicTracks };
+    const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveImage(id);
+    return { ...toResult({ ...row, image: imageUrl }, ""), summary: row.summary || undefined, locked: false, musicTracks };
   }
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
   close() { this.song.close(); this.character.close(); }
