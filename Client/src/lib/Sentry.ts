@@ -31,6 +31,20 @@ export interface SentryOptions {
   profilesSampleRate?: number;
 }
 
+/**
+ * 模块脚本解析失败只可能来自资源投递异常：浏览器拉到的响应体并非合法 JS
+ * （边缘节点返回的畸形或占位响应），而不是构建产物本身 —— 产物一旦有语法错误，
+ * 构建期就会直接失败。该情形无法用 ignoreErrors 剔除（该配置只匹配异常文案，
+ * 而 "Unexpected token '{'" 与 JSON 解析错误文案同形），因此按栈帧精确判定：
+ * 只有浏览器内建 parseModule 帧才说明是模块脚本解析失败。
+ */
+const isModuleScriptParseFailure = (event: Sentry.Event): boolean =>
+  (event.exception?.values ?? []).some(
+    (value) =>
+      value.type === "SyntaxError" &&
+      (value.stacktrace?.frames ?? []).some((frame) => frame.function === "parseModule"),
+  );
+
 export const initClientSentry = (
   options?: SentryOptions,
   driver: SentrySdkDriver = defaultDriver,
@@ -70,10 +84,12 @@ export const initClientSentry = (
       "NetworkError when attempting to fetch resource.",
       "The play() request was interrupted by a new load request.",
       "The play() request was interrupted by a call to pause().",
-      // 各浏览器引擎对资源与模块加载失败的文案完全不同，必须逐一覆盖：
+      // 各浏览器引擎对网络与模块加载失败的文案完全不同，必须逐一覆盖：
+      // Firefox 报 "NetworkError when attempting to fetch resource."，Safari 报 "Load failed"，
       // Chromium 报 "Failed to fetch dynamically imported module" / "Loading chunk N failed"，
       // WebKit 报 "Importing a module script failed"。这些都属于部署切换或弱网抖动，
       // 已由 retryLazyImport 自动重载恢复，无需重复上报。
+      /^Load failed\b/i,
       /Failed to fetch dynamically imported module/i,
       /error loading dynamically imported module/i,
       /Loading chunk [\d]+ failed/i,
@@ -82,6 +98,7 @@ export const initClientSentry = (
       // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。
       /Failed to execute 'removeChild' on 'Node'/i,
     ],
+    beforeSend: (event) => (isModuleScriptParseFailure(event) ? null : event),
   });
 
   isInitialized = true;
