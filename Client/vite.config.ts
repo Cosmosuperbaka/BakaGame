@@ -277,6 +277,18 @@ export default defineConfig(async () => {
 
   return {
     publicDir,
+    // E2E 跑在 vite preview（生产构建）上：客户端生产包走同源相对路径，
+    // preview 站内没有后端，把 /api（含 WebSocket 升级）转发给本地 Bun 服务。
+    // 本地若存在 .env（VITE_SERVER_URL 指向 4850）则客户端直连，代理不参与。
+    preview: {
+      proxy: {
+        '/api': {
+          target: 'http://localhost:4850',
+          changeOrigin: true,
+          ws: true,
+        },
+      },
+    },
     plugins: [
       react(),
       tailwindcss(),
