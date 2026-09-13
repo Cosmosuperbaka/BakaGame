@@ -69,9 +69,19 @@ jobs:
             echo "==> 拉取远端最新代码..."
             git fetch origin main
             git reset --hard origin/main
-            # SQLite 数据库由 Git LFS 管理；reset 只更新指针，必须显式下载实际对象。
-            git lfs install --local
-            git lfs pull origin main
+            # SQLite 数据库由 Git LFS 管理；生产机可能没有安装 git-lfs。
+            # 优先使用本机 LFS，缺少客户端时直接从 GitHub Media 下载实际对象。
+            if command -v git-lfs >/dev/null 2>&1; then
+              git lfs install --local
+              git lfs pull origin main
+            else
+              echo "==> 未检测到 git-lfs，改用 GitHub Media 下载数据库"
+              for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
+                curl --fail --location --retry 3 \
+                  "https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db" \
+                  -o "$db"
+              done
+            fi
             for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
               if [ ! -s "$db" ] || [ "$(head -c 15 "$db")" != "SQLite format 3" ]; then
                 echo "❌ Bangumi 数据文件无效: $db"
