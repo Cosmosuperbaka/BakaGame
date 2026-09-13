@@ -375,6 +375,348 @@ describe("NeteaseMusicProvider", () => {
     ]);
   });
 
+  test("历轮抽样沉淀的署名与噪声家族会被过滤", () => {
+    // 以下用例来自对 4298 首收藏歌单的逐轮随机抽样分诊（R2-R6），
+    // 每一条都是真实歌词页里出现过、曾长期漏网的无效行，锁定防止回退。
+    const dropLines = [
+      // 复合录音/混音标签与人名归属
+      "人声录音师：钱雷/杨惠琳@Studio 21A",
+      "人声录音棚A：RMB Studio爆棚@奔跑怪物",
+      "人声录音棚B：Studio 21A Beijing",
+      "吉他录音：时俊峰@福达录音棚",
+      "录音师 韦生@鲸升音乐",
+      "录音棚 鲸升音乐",
+      "母带工作室 : Sterling Sound",
+      "配唱制作人 : 林俊杰/Dr. Moon",
+      "制作人 徐鲤",
+      "调声 Tuning : OQQ",
+      "编曲 Arrange : 鬼否GriffO",
+      "編曲 Arrange : 鬼否GriffO",
+      "合成器 Synth : 丸易玄(鬼否GriffO)",
+      "和声 Chorus : 丸易玄(鬼否GriffO)",
+      "演唱 Voice：车子玉 Ziyu Che (HOYO-MiX)",
+      "尺八 Shakuhachi：丁晓逵 Xiaokui Ding",
+      "采样：QUIX - Deep Home",
+      "Vocal edite：汝文博@SBMS Beijing",
+      "版权 Publishing : 上海哔哩哔哩科技有限公司/Vsinger",
+      // 英文 `<Role> At/By – <Value>`（en dash 分隔，Discogs 风格）
+      "Mixed At – Enterprise Studios",
+      "Mastered At – Precision Mastering",
+      "Distributed By – EMI (Taiwan) Ltd.",
+      "Backing Vocals – Julia Tillman-Waters, Maxine Waters, Oren Waters",
+      "Presenter – 刘虞瑞",
+      "Executive-Producer – 陈苔威",
+      "A&R – 何启弘",
+      // 答案泄露（歌名/原名/外语标题头）
+      "歌曲原名：夜来香",
+      "Bài Hát: See Tình",
+      // 弦乐类长标签
+      "弦乐指挥 : Adam Klemens",
+      "弦乐翻译 : Stanja Vomackova",
+      "弦乐线上录音系统及弦乐档案编辑 : Leonard Fong",
+      // 颜文字噪声
+      "～∧o∧o@∧o@∧o～∧o∧o-∧o～∧o∧o@∧o@∧o～∧o∧o-∧o",
+      // R4 家族：助理/序数声部/乐器录音信息/括号制作标注
+      "音频编辑：h3R3@1337Studio",
+      "附加制作 : Charles Moniz",
+      "制作助理 : 哈斯瑚必来",
+      "混音助理 : Martin A. Nieves",
+      "Chorus by : 陈奕迅",
+      "(Music♂)",
+      "（烛光制作）",
+      "Drums Recorded at Aroom Studio",
+      "Strings Recorded at 广州中国唱片社录音室",
+      "Vocals & Piano Recorded at Avon Studios,",
+      "Music & Vocals Recorded at Avon Acoustic Ltd",
+      "Mixing at Avon Acoustic Ltd.",
+      "Strings Recording Co-ordination by Stanley Leung",
+      "艺人合作总监 : 宫尹琳Rainie/许雯婉",
+      "2nd Violins : 谢林、郭慧、罗菁、张建辉",
+      "器乐 : Brian Lee/Louis Bell",
+      "Soloist – Michael Thompson",
+      "和编：清潇Lanoiah",
+      "人声录音工程师 : Louis Bell",
+      "/ EMI Music Publishing (S.E. Asia) Ltd, Taiwan Branch",
+      // R5 家族：独奏/民族乐器拼音/复合后缀
+      "音乐编辑 : 汝文博/Sanbist Lin克昶 @ELEVENZ",
+      "Guitar Solo : 愤怒的糖",
+      "Trombone Solo : 中川 英二郎",
+      "管乐录音 : 任允翔@天舞IDG Music Studio",
+      "录音制作 : 上海朗夏沐泽音乐工作室",
+      "营销推广：噼里啪啦Studio",
+      "Video:Zris",
+      "混音录音室 Mixing Studio：nOiz",
+      "计算机音乐编成 : 魏百谦",
+      "助理 Assistant : markmilian/Ream雨舒",
+      "长笛、短笛 : 刘伊秾",
+      "古筝 Guzheng: 陆莎莎 Shasha Lu、赵墨佳 Mojia Zhao",
+      "表演者：星尘/乐正绫/言和/洛天依/牧心/Solaria/沨漪",
+      "录音棚 Studio : キング関口台スタジオ King Sekiguchidai Studio",
+      "谱务 Scoring : markmilian",
+      "本歌曲来自网易喜雨工作室×飓风工作室",
+      "Programmer：魏百谦",
+      "词曲提供：词曲家",
+      "母带后期处理制作人 Mastering Producer：陈建骐 George Chen",
+      "母带后期处理录音室 Mastering Studio：馒头音乐工作室 MT Mastering Studio",
+      "和音编写及演唱： 小手鹅_，马也_ Crabbit",
+      "人声&音频剪辑： LBI利比",
+      "通称：愛情対象年齢",
+      "声音工程师 Sound Engineer:房大磊 Dalei Fang",
+      "混音助理 Mixing Assistant:Tom Bailey",
+      "笛子 Dizi:屠化冰 Huabing Tu",
+      "琵琶 Pipa:施文卿 Wenqing Shi",
+      "班苏里笛 Bansuri：Eliza Marshall",
+      "西塔尔琴 Sitar：Arjun Verma",
+      "萨兹琴 Saz：Dursuncan Cakin",
+      "弦乐实录：starliner strings",
+      "作曲者 : suhmeduh",
+      "作词者 : suhmeduh",
+      "编曲者 : suhmeduh",
+      "(*music*)",
+      // R6 家族：统筹/经纪/OP 版权行/原曲信息
+      "和声录唱：刘潇阳/刘兆伦/俞佳乐/丁嘉昱/王斐/刘震鹤@灼梦Studio",
+      "艺人统筹 : 李如嫣/马颖@FLOWSIXTEEN",
+      "宣传企划 : 刘亚楠@FLOWSIXTEEN",
+      "民乐编写 : 胡皓@光合声动",
+      "企划营销 : 微梦传媒",
+      "歌词制作 : Li-smalldream",
+      "制作人经纪：Shinjiro Nitta (bluesofa)",
+      "母版制作：Sterling Sound 的 Randy Merrill",
+      "制作统筹Production Coordination：张鹤",
+      "音乐出品发行公司：听见时代传媒",
+      "音乐制作团队：灼梦Studio",
+      "梁翘柏OP : OP of Kubert Leung Musichic LTD.",
+      "AlbertOP : OP of Lin Xi Denseline Co. Limited (Warner/Chappell Music H.K. Limited)",
+      "——正版授权，改编自《Counting stars》——",
+      "（飞机场的10:30 - 陶喆）",
+      "小提琴演奏：RO Maestro/ German D.",
+      "大提琴演奏：Daniel G. (Venezuela)",
+      "中国笛：Chris Bleth",
+      "热瓦普：努日亚·阿不力米提",
+      "新疆手鼓：依克拉姆·外力",
+      "乐器录音棚 Instrumental Recording Studio：升赫录音棚Soundhub Studio",
+      "艺人及作品管理：Dan Gerber",
+      "作曲Composition : 三宝",
+      "演奏Rendition：国际首席爱乐乐团",
+      "录音时间Recording Time：2012.11",
+      "演唱 Artist：中島美嘉 Mika Nakashima",
+      "短笛 Piccolo：程晓华 Xiaohua Cheng",
+    ];
+    for (const line of dropLines) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+  });
+
+  test("署名过滤的保留边界：角色唱段、人声切片、外语歌词与念白", () => {
+    // 与上一条测试同源（R2-R7 抽样分诊），这些行必须保留。
+    const keepLines = [
+      // 人名/角色标记 + 歌词正文
+      "洛：记起一段你总哼的调调",
+      "女:依稀往梦似曾见",
+      "合:相伴到天边",
+      "男:射雕引弓塞外奔驰",
+      "合：乒乒乓乒乓乒乒乒乓乓",
+      "刘国正：我啪的一板正手直线打你个措手不及",
+      "BY2：像夏天的可乐",
+      "汪：已经约定过",
+      "女：Hi yeah! oh oh oh...",
+      "男：真的好想精于某事情 好想好好的打拼",
+      "王太利：那是我日夜思念深深爱着的人啊",
+      "肖央：当初的愿望实现了吗",
+      "合：如果有明天祝福你亲爱的",
+      "韩红：风 让云长出花 漫天的花",
+      "林俊杰：漫步在人海的人 你过得好吗",
+      "合：前面听说风很大",
+      "远：谁晒自拍 按个赞",
+      "伍：你开的车 比我多",
+      "爸爸(说唱)：猎豹猎豹跑得快",
+      "妈妈(说唱)：向日葵花向阳开",
+      "全家(说唱)：图图的肚子咕咕咕咕叫不停",
+      // 拟声/人声切片
+      "Doo-doo-doo, doo-doo-doo",
+      "Not gonna c-c-cry cry cry cry cry",
+      "You should bet-bet-bet-bet on me",
+      "on the stere-ere-ere-ere-o",
+      "We are we are ahh-ahh-ahh",
+      "How good it wa-a-as",
+      "Why-ohhh , why-ohh-ohh-ohh",
+      "Ooo-ahoo, ah-yah-ahha",
+      "Badda-bang-bang-bang, alright then",
+      "Rockabye-rocka-rocka-rocka-bye",
+      "Kick it-kick-kick it",
+      "GIO-GIO-GIO-GIO-GIO",
+      "Corpo",
+      "Corporation",
+      "Corpo (x2)",
+      "Corpo↓",
+      "igh----------...",
+      // 外语歌词
+      "Lumea toata ii incantata",
+      "Eu c-o sticla, el c-o sticla",
+      "Breaking all the records that thought never could be broken",
+      "We definite B-E-P we rappin' it",
+      "Waiting on down for the B-boys",
+      "And B-girls waiting doin' their thing",
+      "Hetero sexual the kids flow is incredible",
+      "百年后谁抬眸：“她曾活过”",
+      "I will love you--",
+      "Do my make-up",
+      "Watch out - let me pour you a drink,",
+      "le monde serait-il plus beau ?",
+      "Leeres Wort: des Armen Rechte,",
+      "Ger mun-mot-mun-metoden nu",
+      "さぁ始めようか non-stop music",
+      "ah non-stop music",
+      "War Lie-兵士-War-World Eyes-Hate-(过过过过 过过过过 过错软弱从来不属于我)",
+      "You were beside me—now you're not there",
+      "The equal-opportunity killer,Alastor!",
+      "nobody wanted to f-ck with the white boy",
+      // 含 music/producer/conductor 等署名词的正常歌词（防新登记词误杀）
+      "Music, makes me, high",
+      "只有音乐最安全",
+      "We havent had that spirit here since 1969",
+      "Fighting every instinct while you hold your pride",
+      "节奏和音乐入侵了血脉",
+      "三天三夜的三更半夜飘浮只靠音乐",
+      "文化是武器",
+      "Shout-out to your mom and dad for makin' you",
+      "The music dance and sing",
+      "华丽的红房间 发霉的旧唱片",
+      "Since 2009, I had this b***h jumpin'",
+      "Sweet Chin Music, and I won't pass the aux, ayy",
+      "Fast-forward, 2024, you got the same agenda",
+      "留住这音乐",
+      "啦啦啦，为你写下无人铭记的音乐",
+      "It's been the same since seventeen",
+      "this will hurt a skele-ton",
+      "Just move your hand - write the way into his heart!",
+      "Music is my only friend",
+      "The producer of my pain",
+      "Vocal cords are shaking now",
+      "I am the conductor of my soul",
+      "Open the orchestra pit",
+      "Piano in the dark",
+      "Drums are beating in my chest",
+      "Guitar on my back",
+      "harmony of the night",
+      "Rhythm of the falling rain",
+      "Strings of my heart",
+      "Band of brothers",
+      "The director of my fate",
+      "Publisher of lies",
+      "Coordinate with me tonight",
+      // en dash 连接的歌词（防 en-dash 署名规则越界）
+      "Pennies and dimes – for a kiss",
+      "Ripped jeans – skin was showing",
+      "Hot night – Wind was blowing",
+      "Your records my empty house",
+      "Mali-Mali-Mali-Malibu (Malibu, Mali)",
+      // 括号和声与对白
+      "兰那罗们 —— 再见动物园合唱团（指挥：孙玥）",
+      "雪莉：有人在吗？",
+      "神乐：他们有事出去了，你有什么困扰呢？万事屋神乐为您服务阿鲁！",
+      "Y2K: \"Nah, da da dadadada nananana\"",
+      "Bbno$: Joins; \"da da dadadada\"",
+      // 念白/天气预报采样（有内容的表演成分）
+      "Saturday:Partly cloudy.",
+      "Tonight:Mostly cloudy with isolated showers until midnight,then mostly clear after midnight.",
+      // 空格分隔拒绝名单：高频歌词开头的标签词裸写时按歌词保留
+      "导演 一场好戏",
+      "感谢 这一路的陪伴",
+      // R7 空格分隔署名（非 DENY 词）与对应歌词
+      "音乐响起：我们的故事",
+    ];
+    for (const line of keepLines) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+    // LRC 多时间戳整行是抽样脚本伪影：生产端 parseLrc 先剥掉全部时间戳，
+    // 剩下的 `不管笑与悲` 是真实歌词；裸行判定不得误伤。
+    expect(isUnusableLyricLine("[02:30.94][01:16.40]不管笑与悲")).toBe(false);
+  });
+
+  test("@ 归属署名会被过滤且不误伤歌词", () => {
+    // 「人名@团队」归属写法：@ 两侧紧贴且右侧是团队名形态才判定。
+    for (const line of [
+      "曾嵘@牛班NEWBAND /叶俊@牛班NEWBAND",
+      "朗梓朔@维伴音乐",
+      "黄可爱@维伴音乐",
+      "王皓@WONDERWALL",
+      "洪信杰@牛班NEWBAND",
+      "张人杰Andy@牛班NEWBAND",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 歌词里的 @：有空格、无团队名、或夹在句中；无 @ 的名字行保持原样。
+    for (const line of [
+      "Sing @ the top of my lungs",
+      "Send it to me @ midnight",
+      "me@you",
+      "I'll be there @ 3am",
+      "@ the end of the day",
+      "你@我 我@你",
+      "love@first sight",
+      "洛天依Official",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
+  test("官方发行页脚与同人圈混排署名会被过滤", () => {
+    // R7 家族：官方发行页脚、裸机构行、双语混排标签。
+    for (const line of [
+      "Mixer : Rob Kinelski",
+      "Studio Personnel : John Greenham / Rob Kinelski",
+      "Synthesizer Operator : Genya Kuwajima",
+      "Verse 2: G-Eazy",
+      "Verse 3: DDG",
+      "总监制 : Kevin Shin辛志宇@索尼音乐",
+      "歌曲企划：Bella@TiMi Audio",
+      "承制：北京龙生堂文化传媒有限公司",
+      "混音工程：杨大纬(杨大纬录音工作室)",
+      "电影原声发行：太合麦田（天津）音乐有限公司",
+      "音乐监督 CARDINAL星海",
+      "项目/艺人统筹：李艺佳 李靖",
+      "项目/艺人协力：张靓琳 肖晰美（实习） 陈尧天（实习）",
+      "宣发支持：凯西/开心",
+      "宣发执行：Iris Zhang/佳佳/赵小咪",
+      "导演：孙峥 窦琨淇 张天明 张彬",
+      "调色：罗梦舟",
+      "服装：“龙的传人”国潮品牌",
+      "独家短视频平台：抖音",
+      "特别说明：啦啦啦来自朵莉亚",
+      "原作：《雨宿り》西崎みどり",
+      "爱尔兰哨笛 : Brian Finnegan",
+      "弦乐录制：星舟爱乐团",
+      "改编编曲：周家騵",
+      "改编词曲 : G.E.M.邓紫棋",
+      "注：本歌曲使用初音未来声库制作",
+      // 裸机构行与裸标签行（credit 块段落标题独占一行）
+      "出品",
+      "联合出品",
+      "太合音乐集团",
+      "朴林西思文化传媒",
+      "北京国际音乐产业大会",
+      "主题歌音乐专辑工作团队",
+      "本歌曲来自〖云上工作室〗",
+      // 同人圈混排标签（中文标签 + 英文后缀 + 斜杠取值）
+      "二胡Erhu：马稼骏Jiajun Ma",
+      "策划Planner/青天纤云 纳兰清婧",
+      "词作Lyric/青天纤云 纳兰清婧",
+      "语调教Rap Tuning/六花花",
+      "混音Mix down/莫逆iMoNe",
+      "PV Promotion Video/墨雨清泉",
+      "出品社团Products/中华青云动漫音乐社TsingCloudsCHINA",
+      "宣传物料及黑胶设计：周禹颉",
+      "绘 ：无机盐_okian",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 裸行边界：两标签粘连与歌词保留（后期|制作人 是真实歌词，不得整行剔除）。
+    for (const line of ["后期制作人", "曲终人散：我一个人走"]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
