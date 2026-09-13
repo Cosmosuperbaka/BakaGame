@@ -954,6 +954,43 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R13 抽样沉淀：原缀署名、翻唱标注与粘连标签会被过滤", () => {
+    for (const line of [
+      // `原` 前缀剥离：`原` 单字不是标签，剥后剩余是完整标签组合即判。
+      "原制作人 : Griffin Oskar/Trevor Dahl",
+      "原混音/母带工程师：Yu H.",
+      // 翻唱圈标注：OT（原曲名）/OA（原唱）/Original 直接泄露答案。
+      "OT : 海阔天空 (Beyond)",
+      "OA : 黄家驹",
+      "Original:フラワリングナイト",
+      // 词表补漏：录制、简体翻译、X译、单字歌、谷圈策划、三段粘连。
+      "录制：Lightroom Studio",
+      "英译：梦圆",
+      "歌：洛天依 feat.岸晓",
+      "单品策划:银狼的殷琅",
+      "曲绘人设加工：绫也茵",
+      "混音助理工程师：Daniela Rivera",
+      "电贝斯：Ray Vaughn Covington",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：`原` 剥出非标签的歌词、DENY 词的空格形态、粘连右侧非标签的
+    // 普通词组、群星对唱与 `- ` 呼喊句都是歌词。
+    for (const line of [
+      "原来如此没有人懂",
+      "翻译 爱的语言",
+      "录制 这一刻的美好",
+      "歌词本里夹着车票",
+      "贝斯声声入耳",
+      "人设崩塌之后",
+      "合唱：为了你我再苦也不躲",
+      "Leyla - I am in love with you Leyla",
+      "A（向晚）：有你的陪伴 从不觉孤单",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
