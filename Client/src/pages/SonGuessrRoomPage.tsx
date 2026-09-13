@@ -758,7 +758,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
   const seoNode = (
     <Seo
-      title="听歌猜歌对局中 | BakaGame"
       description="BakaGame 听歌猜歌对局页面，内容由服务端实时状态驱动。"
       path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
       indexable={false}

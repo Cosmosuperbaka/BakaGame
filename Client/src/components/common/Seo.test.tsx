@@ -18,24 +18,26 @@ function renderSeo(props: React.ComponentProps<typeof Seo>) {
 }
 
 describe("Seo", () => {
-  it("写入标题、描述与自指向 canonical", async () => {
+  it("不接管标题，只写入描述与自指向 canonical", async () => {
+    // 模拟 index.html 兜底标题：所有页面统一纯站名，Seo 不得追加或改写。
+    document.title = "BakaGame";
     renderSeo({
-      title: "测试标题",
       description: "测试描述",
       path: "/whoisfaker",
     });
 
     await waitFor(() => {
-      expect(document.title).toBe("测试标题");
+      const description = document.head.querySelector('meta[name="description"]');
+      expect(description?.getAttribute("content")).toBe("测试描述");
     });
-    const description = document.head.querySelector('meta[name="description"]');
-    expect(description?.getAttribute("content")).toBe("测试描述");
     const canonical = document.head.querySelector('link[rel="canonical"]');
     expect(canonical?.getAttribute("href")).toBe("https://game.baka.website/whoisfaker");
+    // 反向断言：标签页标题必须保持纯站名（产品决策，禁止加后缀）。
+    expect(document.title).toBe("BakaGame");
   });
 
   it("默认允许索引", async () => {
-    renderSeo({ title: "可索引页", description: "描述", path: "/" });
+    renderSeo({ description: "描述", path: "/" });
 
     await waitFor(() => {
       const robots = document.head.querySelector('meta[name="robots"]');
@@ -45,7 +47,6 @@ describe("Seo", () => {
 
   it("indexable 为 false 时标记 noindex", async () => {
     renderSeo({
-      title: "对局页",
       description: "描述",
       path: "/whoisfaker/room/abc",
       indexable: false,
@@ -57,11 +58,11 @@ describe("Seo", () => {
     });
   });
 
-  it("写入 og 系列标签", async () => {
-    renderSeo({ title: "分享标题", description: "分享描述", path: "/songuessr" });
+  it("写入 og 系列标签，og:title 固定为站名", async () => {
+    renderSeo({ description: "分享描述", path: "/songuessr" });
 
     await waitFor(() => {
-      expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")).toBe("分享标题");
+      expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")).toBe("BakaGame");
       expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute("content")).toBe(
         "https://game.baka.website/songuessr",
       );
@@ -71,7 +72,6 @@ describe("Seo", () => {
 
   it("结构化数据序列化为合法 JSON 并落在 head 内", async () => {
     renderSeo({
-      title: "结构化页",
       description: "描述",
       path: "/",
       structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "BakaGame" },
@@ -93,7 +93,6 @@ describe("Seo", () => {
 
   it("页面切换时结构化数据被替换而不是叠加", async () => {
     const first = renderSeo({
-      title: "第一页",
       description: "描述",
       path: "/",
       structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "第一个" },
@@ -105,7 +104,6 @@ describe("Seo", () => {
 
     first.result.unmount();
     renderSeo({
-      title: "第二页",
       description: "描述",
       path: "/songuessr",
       structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "第二个" },

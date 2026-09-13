@@ -90,7 +90,6 @@ export default function WhoIsFakerPage() {
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
       <Seo
-        title="谁是卧底在线玩 - Who is Faker | BakaGame"
         description="BakaGame 在线版谁是卧底，免下载直接开玩。支持 4 至 16 人实时联机，含发言投票、平票加赛、补充发言、夜间行动与白板猜词等完整流程，8 人以上出现白板，支持观战与断线重连。"
         path="/whoisfaker"
         structuredData={{
