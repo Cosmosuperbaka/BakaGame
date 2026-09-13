@@ -52,13 +52,18 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
    - 运行严格 TypeScript 类型检查 (`bun run check`) 与全量测试套件 (`bun test`)。
    - 任何类型错误或单测失败立即阻断流水线，绝不向生产环境推送未验证的代码。
 2. **远程安全连接 (`deploy`)**：
-   - 通过 `appleboy/ssh-action` 建立至生产服务器的 SSH 会话，严格启用 `script_stop: true`。
+   - 通过 `appleboy/ssh-action` 建立至生产服务器的 SSH 会话，严格保持 `script_stop: false`（由脚本自身的 `set -euo pipefail` 保证失败即停，防止注入检查截断多行逻辑）。
    - `command_timeout: 3m`，且 `deploy` 作业设 `timeout-minutes: 3` 作为硬兜底：生产部署不允许长时间挂起。
-3. **代码对齐与容器重启**：
+3. **代码对齐与数据库校验**：
    - 切换至 `/BakaGame` 仓库目录。
-   - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支。
+   - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支，并按 OID 校验或增量下载 LFS SQLite 数据库。
+4. **停机预告与客户端排空 (`Pre-restart Drain`)**：
+   - 调用 `POST http://127.0.0.1:4850/api/system/notify-shutdown` 运维端点（该接口严格校验 `X-Forwarded-For` 与 `X-Real-IP`，拦截任何公网代理请求，仅允许本地回环与私网调用）。
+   - 服务端向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机公告（`SERVER_SHUTDOWN_MESSAGE`），并立即使 `/readyz` 探针返回 503 摘除流量。
+   - 部署脚本预留 3 秒排空缓冲（`sleep 3`），确保客户端长连接在容器网络被 Docker 拆除前安全接收协议、清除会话凭据并平滑退回大厅。
+5. **容器热重启**：
    - 执行 `sudo docker restart BakaGame` 热重启后端容器。容器启动入口自带依赖安装与环境初始化逻辑，每次启动时自动完成容器内部服务端依赖的同步与服务拉起。
-4. **就绪探测与健康检查**：
+6. **就绪探测与健康检查**：
    - 轮询 `http://127.0.0.1:4850/health` 端点（最多重试 15 次，每次间隔 2 秒）。
    - 验证响应中包含 `{"status":"ok"}`。
    - 若 30 秒内未能就绪，自动打印 `sudo docker logs --tail 50 BakaGame` 并退出报错，便于在 Actions 界面快速定位崩溃日志。
@@ -74,10 +79,11 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
 | 节点测速 | ≤ 7s |
 | 数据下载（仅数据变更时才发生） | ≤ 105s（脚本内 `DL_DEADLINE` 绝对截止） |
+| 停机通知与客户端排空 | ≤ 3s |
 | 容器重启 | ≤ 5s |
 | 健康检查 | ≤ 30s |
 
-合计上限约 172s，仍留 8s 余量给 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
+合计上限约 175s，仍留 5s 余量给 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
 这是目标值而非上限：数据下载路径必须设计成"无事发生"。
 
 ### Git LFS 大文件获取约束（中国大陆服务器）
