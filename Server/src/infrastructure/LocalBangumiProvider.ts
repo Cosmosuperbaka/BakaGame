@@ -53,14 +53,14 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     return rows.map(toResult);
   }
   async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
-    const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "Bangumi 条目不存在");
     const row: any = this.song.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id);
-    if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "Bangumi 条目不存在");
     const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? ORDER BY r.relation_order, r.music_id").all(id) as any[];
     const seen = new Set<string>();
     const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim()).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
     return { ...toResult(row), summary: row.summary || undefined, locked: false, musicTracks };
   }
-  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
+  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的 Bangumi 条目"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
   close() { this.song.close(); this.character.close(); }
 }

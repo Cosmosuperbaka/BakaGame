@@ -22,7 +22,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
       if (response.ok) pending.resolve(response.value);
       else pending.reject(new AppError(response.error!.code, response.error!.message));
     };
-    this.worker.onerror = () => this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地番剧查询线程异常"));
+    this.worker.onerror = () => this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询线程异常"));
     this.ready = this.request({ method: "init", songPath, characterPath });
     // 初始化失败通过业务请求返回，不产生无人接收的 Promise 拒绝。
     void this.ready.catch(() => {});
@@ -40,20 +40,20 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
 
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
     const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
-    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
+    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的 Bangumi 条目");
     return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);
   }
 
   async close() {
     if (this.closed) return;
     this.closed = true;
-    this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地番剧查询已关闭"));
+    this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询已关闭"));
     this.worker.terminate();
   }
 
   private request(payload: object): Promise<unknown> {
-    if (this.closed) return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地番剧查询已关闭"));
-    if (this.pending.size >= 64) return Promise.reject(new AppError("BANGUMI_RATE_LIMITED", "番剧查询排队过多，请稍后重试"));
+    if (this.closed) return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询已关闭"));
+    if (this.pending.size >= 64) return Promise.reject(new AppError("BANGUMI_RATE_LIMITED", "Bangumi 查询排队过多，请稍后重试"));
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

@@ -1046,7 +1046,7 @@ function SongGameArea(props: SongGameAreaProps) {
             </motion.div>
           </AnimatePresence>
           {props.searchMode && props.snapshot.settings.questionType === "anime" ? (
-            <BangumiSearchDialog open onOpenChange={(open) => { if (!open) props.closeSearch(); }} title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"} description="番剧信息只会在回合结束后公开。" actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"} onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)} />
+          <BangumiSearchDialog open onOpenChange={(open) => { if (!open) props.closeSearch(); }} title={props.searchMode === "submit" ? "选择本回合 Bangumi 条目" : "提交你的 Bangumi 猜测"} description="Bangumi 条目信息只会在回合结束后公开。" actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"} onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)} />
           ) : props.searchMode ? (
             <SongSearchDialog
               open
@@ -1131,15 +1131,15 @@ function GameStage({
         {privateState.canSubmitSong ? (
           <>
             <p className="text-sm text-muted-foreground">
-              {snapshot.settings.questionType === "anime" ? "搜索一部有主题曲的番剧。" : "搜索一首可播放的网易云音乐歌曲。"}
+              {snapshot.settings.questionType === "anime" ? "搜索一部有主题曲的 Bangumi 作品。" : "搜索一首可播放的网易云音乐歌曲。"}
             </p>
             <Button size="lg" className="min-w-[120px] gap-2" onClick={() => openSearch("submit")}>
-              {snapshot.settings.questionType === "anime" ? <Film className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
+            {snapshot.settings.questionType === "anime" ? <Film className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}选择{snapshot.settings.questionType === "anime" ? "Bangumi" : "歌曲"}
             </Button>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {submitter?.name ?? "出题人"} 正在选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
+            {submitter?.name ?? "出题人"} 正在选择{snapshot.settings.questionType === "anime" ? "Bangumi" : "歌曲"}
           </p>
         )}
       </div>
@@ -1232,7 +1232,7 @@ function GameStage({
             <div className="flex flex-col gap-2 sm:flex-row">
               {privateState.canGuess ? (
                 <Button className="flex-1 gap-2" onClick={() => openSearch("guess")}>
-                  <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "番剧猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
+                  <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "Bangumi 猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
                 </Button>
               ) : null}
               {privateState.canGiveUp ? (
@@ -1872,7 +1872,7 @@ function SongQuestionSettings({
 
       {questionMode === "automatic" && questionType === "anime" ? (
         <div className="space-y-3 rounded-md bg-muted/40 p-3">
-          <Label className="text-xs">番剧筛选</Label>
+          <Label className="text-xs">Bangumi 筛选</Label>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-20 text-sm text-muted-foreground">年份范围</span>
@@ -2179,7 +2179,7 @@ function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot 
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
       <span className="font-medium text-primary">自动出题筛选</span>
-      <Badge variant="outline">番剧作品</Badge>
+      <Badge variant="outline">Bangumi 作品</Badge>
       {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}
       <Badge variant="outline">{filters.ranking === "year" ? "年榜" : "总榜"}前{filters.subjectLimit ?? 50}部</Badge>
       {kindLabel ? <Badge variant="outline">歌曲 {kindLabel}</Badge> : null}
