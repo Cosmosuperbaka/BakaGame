@@ -150,3 +150,10 @@ BANGUMI_IMAGE_URL=
 ```bash
 VITE_SERVER_URL=http://localhost:4850
 ```
+
+`VITE_SERVER_URL` 是接口基址的唯一入口，取值语义见 `Client/src/lib/ServerEndpoint.ts`：
+
+- `http://localhost:4850` —— 本地开发（Vite 5173 与 Bun 4850 分属不同源）。
+- 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径，`/api/*` 由
+  `Client/middleware.js` 在 EdgeOne 边缘反代到后端公开域名，详见
+  `Agents/Deployment.md`「前后端同源化」。
