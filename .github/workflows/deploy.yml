@@ -73,10 +73,17 @@ jobs:
             # 限制并发并启用断点续传，避免两个大文件同时下载导致连接超时。
             download_db() {
               db="$1"
-              url="https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
               rm -f "$db"
-              curl --fail --location --retry 8 --retry-delay 5 --connect-timeout 30 \
-                --max-time 1800 --speed-time 60 --speed-limit 1024 --continue-at - "$url" -o "$db"
+              for url in \
+                "https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db" \
+                "https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"; do
+                if curl --fail --location --retry 8 --retry-delay 5 --connect-timeout 30 \
+                  --max-time 1800 --speed-time 60 --speed-limit 1024 --continue-at - "$url" -o "$db"; then
+                  return 0
+                fi
+                rm -f "$db"
+              done
+              return 1
             }
             valid_db() { [ -s "$1" ] && [ "$(head -c 15 "$1")" = "SQLite format 3" ]; }
             if ! valid_db Server/data/bangumi-song.sqlite || ! valid_db Server/data/bangumi-character.sqlite; then
