@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
+  isCreditLyricLine,
   isInstrumentalLyricLine,
+  isNumericOnlyLyricLine,
+  isSymbolOnlyLyricLine,
+  isTooShortLyricLine,
   parseLrc,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
@@ -110,6 +114,91 @@ describe("NeteaseMusicProvider", () => {
       album: "依然范特西",
     })).toEqual([
       { time: 8_000, endTime: 13_000, text: "炊烟袅袅升起" },
+    ]);
+  });
+
+  test("同人圈与翻唱圈署名行会被过滤，包括包裹式与多标签形态", () => {
+    const creditLines = [
+      "翻策：邹铁牛",
+      "美工：问绮灯",
+      "题字：白冰堂",
+      "后期：是铁牛",
+      "翻唱：悼子\\ワカイ调和剂\\夙夜\\浅安",
+      "翻唱：悼子＼ワカイ调和剂＼夙夜＼浅安",
+      "翻唱：悼子 ワカイ调和剂 夙夜 浅安",
+      "【翻唱】某某",
+      "（后期）某某",
+      "　作词：某某",
+      "- 作曲：某某",
+      "· 混音：某某",
+      "策划/统筹：某某",
+      "作词、作曲：某某",
+      "监制&混音：某某",
+      "曲Composer：某某",
+      "词Lyricist：某某",
+      "曲绘：某某",
+      "调教：某某",
+      "PV：某某",
+      "海报：某某",
+      "Special Thanks：某某",
+      "Cast：某某 某某",
+      "Mixing: John",
+      "Mastering: Jane",
+      "Illustration: Bob",
+      "Movie: Tom Sam",
+    ];
+    for (const line of creditLines) {
+      expect(isCreditLyricLine(line)).toBe(true);
+    }
+  });
+
+  test("纯符号、纯数字与过短行会被过滤", () => {
+    expect(isSymbolOnlyLyricLine("~~~~")).toBe(true);
+    expect(isSymbolOnlyLyricLine("...")).toBe(true);
+    expect(isSymbolOnlyLyricLine("— — —")).toBe(true);
+    expect(isNumericOnlyLyricLine("00:12")).toBe(true);
+    expect(isNumericOnlyLyricLine("120 bpm")).toBe(true);
+    // 单个拉丁字母/数字不成词，属于无效行
+    expect(isTooShortLyricLine("a")).toBe(true);
+    // 单个汉字或假名在真实歌词里合法存在，不能被误杀
+    expect(isTooShortLyricLine("あ")).toBe(false);
+    expect(isTooShortLyricLine("好")).toBe(false);
+    // 正常歌词不能被误判
+    expect(isSymbolOnlyLyricLine("we still hear music tonight")).toBe(false);
+    expect(isNumericOnlyLyricLine("爱你一万年")).toBe(false);
+    expect(isTooShortLyricLine("唱歌")).toBe(false);
+  });
+
+  test("带冒号的正常歌词不会被当作署名行误杀", () => {
+    for (const line of [
+      "爱：不可说",
+      "夜：很长",
+      "我说：走吧",
+      "solo：我一个人跳舞",
+      "独白：他说他走了",
+      "记得：那年夏天",
+      "我们都在唱歌",
+      "君の名前を呼んでいる",
+    ]) {
+      expect(isCreditLyricLine(line)).toBe(false);
+    }
+  });
+
+  test("连排制作名单整块剔除，重复行只保留首次出现", () => {
+    const lyrics = parseLrc([
+      "[00:01.00]翻策：邹铁牛",
+      "[00:02.00]美工：问绮灯",
+      "[00:03.00]题字：白冰堂",
+      "[00:04.00]后期：是铁牛",
+      "[00:05.00]翻唱：悼子\\ワカイ调和剂\\夙夜\\浅安",
+      "[00:08.00]第一句真实歌词",
+      "[00:10.00]第二句真实歌词",
+      "[00:12.00]第一句真实歌词",
+    ].join("\n"));
+
+    expect(sanitizeLyrics(lyrics, { title: "某歌", artist: "某人" })).toEqual([
+      { time: 8_000, endTime: 10_000, text: "第一句真实歌词" },
+      { time: 10_000, endTime: 15_000, text: "第二句真实歌词" },
     ]);
   });
 

@@ -268,10 +268,282 @@ const normalizeComparableText = (value: string) =>
     .toLowerCase()
     .replace(/[\s\-_—–/:：·.'"“”‘’()（）\[\]【】]/g, "");
 
-const CREDIT_LINE_PATTERN = /^(?:作词(?:人)?|填词|词曲|词|作曲(?:人)?|谱曲|曲|编曲(?:人|师)?|制作人|制作|监制|混音(?:师)?|母带(?:工程师)?|录音(?:师)?|和声|吉他|贝斯|鼓|弦乐(?:编写)?|统筹|发行|出品|演唱|主唱|歌手|op|sp|publisher|lyric(?:s|ist)?|composer|arranger|producer|vocal(?:s|ist)?|lyrics?\s+by|music\s+by|written\s+by|produced\s+by|production\s+coordination|keyboards?(?:\s*&\s*programming)?|programming|drums?|bass|guitars?|percussion|strings?\s+arranged(?:\s*&\s*conducted)?\s+by|vocals?\s+recorded\s+at|recorded\s+at|engineered\s+by|mixed\s+by|mastered\s+by)\s*(?::|：|-|—|\/|\s)/i;
+/**
+ * 署名行会暴露创作人员，属于必须剔除的无效歌词。
+ *
+ * 旧的实现是一张穷举词表并要求行首紧跟分隔符，实战中大量漏网：
+ * `翻策 / 美工 / 题字 / 后期 / 翻唱` 这类同人圈标签不在表内，
+ * `【翻唱】X`、全角空格缩进的 `　作词：X`、多标签的 `策划/统筹：X` 又因为
+ * 前缀与分隔符形态不合规而整条失效。因此改为分层判定：
+ *
+ * 1. 先剥离行首装饰（书名号、括号、项目符号）与合并多标签，得到规范化的标签头部；
+ * 2. 词表命中即判定为署名（快速路径，覆盖绝大多数已知标签）；
+ * 3. 词表未命中的，走结构判定 `isCreditStructuredLine`，用「短标签 + 分隔符 + 空格分隔的人名串」
+ *    这一稳定结构兜底，避免词表永远追不上新造的同人圈标签。
+ */
+const CREDIT_LABEL_SOURCE = [
+  // 词曲编录混等通用音乐署名
+  "作词(?:人)?", "填词", "词曲", "词", "作曲(?:人)?", "谱曲", "曲",
+  "编曲(?:人|师)?", "制作人", "制作", "监制", "统筹", "发行", "出品", "策划", "企划",
+  "混音(?:师)?", "母带(?:工程师)?", "录音(?:师)?", "和声(?:编写)?", "念白",
+  "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
+  // 演唱与同人/翻唱圈署名
+  "演唱", "主唱", "歌手", "翻唱", "翻策", "原唱", "原曲", "本家",
+  "美工", "题字", "后期", "海报", "封面", "曲绘", "插画", "绘图",
+  "视频", "压制", "字幕", "轴", "翻译", "校对", "文案", "调教", "调校", "pv",
+  // 英文署名
+  "op", "sp", "publisher", "cast", "staff",
+  "lyric(?:s|ist)?", "composer", "arranger", "producer",
+  "vocal(?:s|ist)?", "vocaloid", "illustration", "artwork", "movie",
+  "mixing", "mastering", "programming", "recording", "engineer(?:ing)?",
+  "keyboards?(?:\\s*&\\s*programming)?", "programmed", "drums?", "bass", "guitars?",
+  "percussion", "strings?", "piano", "violin", "cello",
+  "thanks?(?:\\s+to)?", "special\\s+thanks",
+  "production\\s+coordination", "recorded\\s+at", "engineered\\s+by",
+  "mixed\\s+by", "mastered\\s+by", "lyrics?\\s+by", "music\\s+by",
+  "written\\s+by", "produced\\s+by", "composed\\s+by", "arranged\\s+by",
+  "performed\\s+by", "vocals?\\s+recorded\\s+at",
+].join("|");
+
+/**
+ * 正则的可选分支按「先长后短」排序，避免短标签抢先匹配。
+ * 例：`sp` 会以忽略大小写的方式吃掉 `Special Thanks` 的开头，`曲` 会吃掉 `曲绘`。
+ */
+const sortLongestFirst = (source: string): string => {
+  const splitAlternatives = (value: string): string[] => {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (let index = 0; index < value.length; index += 1) {
+      const char = value[index];
+      if (char === "\\") {
+        current += char + (value[index + 1] ?? "");
+        index += 1;
+        continue;
+      }
+      if (char === "(") depth += 1;
+      if (char === ")") depth -= 1;
+      if (char === "|" && depth === 0) {
+        parts.push(current);
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    parts.push(current);
+    return parts;
+  };
+  return splitAlternatives(source).sort((a, b) => b.length - a.length).join("|");
+};
+
+const CREDIT_LABEL_ALTERNATIVES = sortLongestFirst(CREDIT_LABEL_SOURCE);
+
+/** 单个署名标签，允许两类常见复合形态：
+ * - 中英混排后缀：`词Lyricist`、`曲Composer`、`翻唱Cover`
+ * - 多标签连接：`策划/统筹`、`作词、作曲`、`监制&混音`、`Mixed & Mastered`
+ */
+const CREDIT_LABEL_PATTERN = new RegExp(
+  `^(?:${CREDIT_LABEL_ALTERNATIVES})(?:\\s*(?:&|＆|and|with)\\s*(?:${CREDIT_LABEL_ALTERNATIVES}))*`,
+  "i",
+);
+
+/** 紧随中文标签的英文单后缀（`词Lyricist`、`曲Composer`）。 */
+const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
+
+/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`。 */
+const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆]/;
+
+/** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
+const CREDIT_ACTION_WORDS = [
+  "arranged", "conducted", "mixed", "mastered", "recorded",
+  "produced", "written", "composed", "performed", "programmed",
+];
+// 注意必须用括号包住整组可选分支，否则 `^a|b|...|z$` 只会锚定首尾两项。
+const CREDIT_ACTION_PATTERN = new RegExp(`^(?:${CREDIT_ACTION_WORDS.join("|")})$`, "i");
+
+/**
+ * 判断头部是否形如 `(乐器)? 动作词 ((&|and) 动作词)* by`，
+ * 例如 `Strings Arranged & Conducted by`、`Mixed & Mastered by`。
+ * `by` 之后可以还有取值（`Strings Arranged & Conducted by 某某`）。
+ */
+const isCreditActionPhrase = (value: string): boolean => {
+  const normalized = value.trim().replace(/[\s\u3000]+/g, " ");
+  // `by` 后面允许紧跟取值，取第一个 `by` 之前的部分作为标签区。
+  const byMatch = /^(.*?)\s+by(?:\s|$)/i.exec(normalized);
+  if (!byMatch) return false;
+  const beforeBy = byMatch[1].trim();
+  if (!beforeBy) return false;
+  // 允许最前面有一个乐器/声部限定词，随后必须全部是动作词。
+  const tokens = beforeBy.split(/\s+/);
+  const actionTokens = tokens.filter((token) => !/^[&＆]$/i.test(token) && !/^and$/i.test(token));
+  if (actionTokens.length === 0) return false;
+  // 首词可以是乐器/声部，其余必须是动作词。
+  const actions = CREDIT_ACTION_PATTERN.test(actionTokens[0]) ? actionTokens : actionTokens.slice(1);
+  if (actions.length === 0) return false;
+  return actions.every((token) => CREDIT_ACTION_PATTERN.test(token));
+};
+
+/**
+ * 无分隔符的英文署名：`Recorded at ...`、`Engineered by ...`、`Mastered by ...`。
+ * 这类行没有冒号，必须按「行首命中已知英文标签」判定。
+ */
+const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
+  `^(?:${[
+    "production\\s+coordination",
+    "recorded\\s+at", "engineered\\s+by", "mixed\\s+by", "mastered\\s+by",
+    "lyrics?\\s+by", "music\\s+by", "written\\s+by", "produced\\s+by",
+    "composed\\s+by", "arranged\\s+by", "performed\\s+by",
+    "vocals?\\s+recorded\\s+at",
+  ].join("|")})(?:\\s|$)`,
+  "i",
+);
+
+/** 行首装饰：书名号、括号、项目符号与空白。署名行常带这些前缀，必须先剥离。 */
+const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/]+|^[【\[（(「『《<]+/;
+
+/** 包裹式标签：`【翻唱】某某`、`（后期）某某`、`[Mixing] John`。 */
+const WRAPPED_CREDIT_LABEL_PATTERN = /^[【\[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
+
+/** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。 */
+const CREDIT_SEPARATOR_PATTERN = /(?::|：|-|—|–|\||｜|\/|／)/;
+
+/** 会出现在真实歌词里的高频虚词/实义词，用于否决结构判定，避免误杀正常歌词。 */
+const LYRIC_STOP_WORDS = [
+  "的", "了", "吗", "吧", "呢", "啊", "呀", "哦", "嘛", "么", "着", "过", "得",
+  "我", "你", "他", "她", "它", "们", "谁", "这", "那", "什么", "怎么", "为",
+  "是", "不", "没", "有", "在", "就", "都", "很", "会", "说", "想", "要", "能",
+  "起", "来", "去", "给", "被", "让", "把", "和", "但", "也", "还", "又", "只",
+  "如", "若", "却", "而", "与", "或", "每", "各", "些", "个", "里", "外",
+  "心", "爱", "梦", "风", "雨", "夜", "天", "光", "声", "家", "人", "情",
+  "the", "and", "you", "me", "we", "is", "are", "to", "of", "in", "on", "for",
+];
+
+/** 判断取值片段是否含歌词高频虚词；命中则说明它更像正常歌词而非人名。 */
+const hasLyricStopWord = (value: string): boolean =>
+  LYRIC_STOP_WORDS.some((word) => value.includes(word));
+
+/**
+ * 剥离行首装饰或包裹式括号后返回 `标签\u0000取值`；无法拆分时返回 undefined。
+ * 顺序很重要：包裹式标签必须先于装饰剥离判断，否则 `【翻唱】X` 会被剥成 `翻唱】X`。
+ */
+const splitCreditHead = (text: string): string | undefined => {
+  const trimmed = text.trim();
+
+  // 包裹式：`【翻唱】某某` 没有分隔符，靠括号定位标签边界。
+  const wrapped = WRAPPED_CREDIT_LABEL_PATTERN.exec(trimmed);
+  if (wrapped) return `${wrapped[1].trim()}\u0000${wrapped[2].trim()}`;
+
+  const undecorated = trimmed.replace(LEADING_DECORATION_PATTERN, "").trim();
+  const separatorMatch = CREDIT_SEPARATOR_PATTERN.exec(undecorated);
+  if (!separatorMatch) return undefined;
+  const head = undecorated.slice(0, separatorMatch.index).trim();
+  const tail = undecorated.slice(separatorMatch.index + separatorMatch[0].length).trim();
+  if (!head || !tail) return undefined;
+  return `${head}\u0000${tail}`;
+};
+
+/** 判断标签头部是否「完全由署名标签构成」。 */
+const isCreditLabelOnly = (value: string): boolean => {
+  if (!value) return false;
+
+  // 中英混排：中文标签直接拼接英文标签，如 `曲Composer`、`词Lyricist`、`翻唱Cover`。
+  // 首字符必须是中日文字符，否则 `Special Thanks` 会被误拆成 `S` + `pecial Thanks`。
+  const composite = /^([\u4e00-\u9fff\u3040-\u30ff])[A-Za-z][A-Za-z\s]*$/u.exec(value);
+  if (composite) {
+    const englishPart = value.slice(1).trim();
+    if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(englishPart)) return true;
+  }
+
+  // 多词英文标签：`Special Thanks`、`Mixed By`、`Production Coordination`。
+  // 匹配前压掉空格，兼容 `specialthanks` 这类上游已去掉空格的形式。
+  const compact = value.replace(/[\s\u3000]+/g, "");
+  const wholeLabel = CREDIT_LABEL_PATTERN.exec(value)?.[0].replace(/[\s\u3000]+/g, "");
+  if (wholeLabel === compact) return true;
+
+  // `Arranged & Conducted by` 这类并列动作短语。
+  if (isCreditActionPhrase(value)) return true;
+
+  // 逐段拆分连接符，任一段是「已知标签 或 接在已知标签后的英文单后缀」即可。
+  const segments = value.split(CREDIT_LABEL_JOINER_PATTERN).filter(Boolean);
+  if (segments.length === 0) return false;
+  let previousWasLabel = false;
+  for (const segment of segments) {
+    const compactSegment = segment.replace(/[\s\u3000]+/g, "");
+    if (CREDIT_LABEL_PATTERN.exec(segment)?.[0].replace(/[\s\u3000]+/g, "") === compactSegment) {
+      previousWasLabel = true;
+      continue;
+    }
+    if (previousWasLabel && CREDIT_LABEL_SUFFIX_PATTERN.test(compactSegment)) continue;
+    return false;
+  }
+  return true;
+};
+
+/** 词表命中的署名行（含行首装饰剥离、包裹式标签与多标签合并）。 */
+export const isCreditKeywordLine = (text: string): boolean => {
+  const undecorated = text.trim().replace(LEADING_DECORATION_PATTERN, "").trim();
+
+  // `Strings Arranged & Conducted by 某某` 这类没有冒号的英文署名，先整行判定。
+  if (isCreditActionPhrase(undecorated)) return true;
+  if (STARTS_WITH_CREDIT_ENGLISH_PATTERN.test(undecorated)) return true;
+
+  const parts = splitCreditHead(text);
+  if (!parts) return false;
+  const [head] = parts.split("\u0000");
+  // 只压缩空白，不能整体删除：`Special Thanks` 这类多词英文标签依赖词间空格。
+  const normalizedHead = head.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  if (!normalizedHead) return false;
+  // 标签必须覆盖整个头部，避免「曲终人散：」这类以署名词开头的正常歌词被误判。
+  return isCreditLabelOnly(normalizedHead);
+};
+
+/**
+ * 结构判定：`短标签 + 分隔符 + 空格分隔的人名串`。
+ *
+ * 真实歌词极少出现「无谓语标签 + 冒号 + 纯空格分隔的短片段」这种形态，而制作名单
+ * 几乎全是这个结构（`翻唱：悼子\ワカイ调和剂\夙夜\浅安` 在网易云里就是空格分隔）。
+ * 为防止误杀，同时要求：标签不含标点与数字、行内不含歌词高频虚词、右侧每个片段都不含虚词。
+ */
+export const isCreditStructuredLine = (text: string): boolean => {
+  const parts = splitCreditHead(text);
+  if (!parts) return false;
+  const [head, tail] = parts.split("\u0000");
+
+  const normalizedHead = head.normalize("NFKC").trim();
+  const compactHead = normalizedHead.replace(/[\s\u3000]/g, "");
+  if (/[，。！？；、,.!?;:："'“”]/u.test(compactHead)) return false;
+  if (/\d/.test(compactHead)) return false;
+  if (!/^[\u4e00-\u9fffA-Za-z\u3040-\u30ff]{1,6}$/u.test(compactHead)) return false;
+
+  const normalizedTail = tail.normalize("NFKC").trim();
+  if (!normalizedTail) return false;
+  if (/[，。！？；,.!?;]/u.test(normalizedTail)) return false;
+
+  const segments = normalizedTail.split(/[\s\u3000\\／/|｜、,，&＆]+/u).filter(Boolean);
+  // 单段时要求排除虚词（`混音：张三` 这类单人名仍会被词表路径捕获），
+  // 多段时只否定含虚词的片段，避免「悼子\夙夜」这种真名被虚词表误伤。
+  if (segments.length === 1 && hasLyricStopWord(segments[0])) return false;
+  if (segments.some((segment) => segment.length > 8 || hasLyricStopWord(segment))) return false;
+
+  return true;
+};
 
 /** 过滤会直接暴露创作人员的 LRC 署名行。 */
-export const isCreditLyricLine = (text: string) => CREDIT_LINE_PATTERN.test(text.trim());
+export const isCreditLyricLine = (text: string) =>
+  isCreditKeywordLine(text) || isCreditStructuredLine(text);
+
+/**
+ * 单行是否属于「不可用于出题」的无效歌词。
+ *
+ * 与 `sanitizeLyrics` 使用同一套单行判定，供出题侧在选取歌词窗口时二次校验，
+ * 避免 24 小时歌词缓存里的历史脏数据被截取。
+ */
+export const isUnusableLyricLine = (text: string): boolean =>
+  isCreditLyricLine(text) ||
+  isInstrumentalLyricLine(text) ||
+  isSymbolOnlyLyricLine(text) ||
+  isNumericOnlyLyricLine(text) ||
+  isTooShortLyricLine(text);
 
 const INSTRUMENTAL_MARKERS = new Set([
   "music",
@@ -296,6 +568,58 @@ export const isInstrumentalLyricLine = (text: string) => {
   return /^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized) ||
     /^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(normalized);
 };
+
+/** 纯符号行（`~~~~`、`...`、`— — —`、`· · ·`）没有任何可猜信息。 */
+export const isSymbolOnlyLyricLine = (text: string) =>
+  /^[\s\u3000~～·•*＊=＝+＋#＃\-—–─_＿.,，。!！?？…、;；:：'"“”‘’()（）\[\]【】<>《》/／\\|｜]+$/u.test(text);
+
+/** 只由数字与单位/括号构成的行（如 `00:12`、`120 bpm`）不承载歌词内容。 */
+export const isNumericOnlyLyricLine = (text: string) => {
+  const stripped = text
+    .normalize("NFKC")
+    .replace(/[\s\u3000()（）\[\]【】,.，、:：]/gu, "")
+    .replace(/(?:s|sec|min|kbps|hz|bpm|khz|fps)/giu, "");
+  return stripped.length > 0 && /^\d+$/u.test(stripped);
+};
+
+/**
+ * 有效字符过短的行。
+ *
+ * 注意：单个汉字/假名在真实歌词里确实存在（`啊`、`喂`、`一`、`二`），
+ * 因此这条规则只用于「非中日文字符且有效字符不足 2 个」的情形，
+ * 避免把合法的单字歌词一并剔除。判定垃圾行主要依赖署名与符号/数字规则。
+ */
+export const isTooShortLyricLine = (text: string) => {
+  const meaningful = text
+    .normalize("NFKC")
+    .replace(/[\s\u3000\p{P}\p{S}]/gu, "");
+  if (meaningful.length >= 2) return false;
+  // 单个中日文字符不视为垃圾行。
+  return !/^[\u4e00-\u9fff\u3040-\u30ff]$/u.test(meaningful);
+};
+
+/**
+ * 整行是署名式的取值片段（人名串），用于把连排制作名单整块剔除。
+ *
+ * 为免误杀真实歌词（如 `第一句歌词`），这里只接受**明确的多段人名串**：
+ * 必须由 `\`、`/`、空格、顿号等分隔出至少 2 段短片段，
+ * 或整行是「名字 + 名字」这种无谓语并列。单段连续文本一律视为歌词。
+ */
+export const isCreditTailLine = (text: string): boolean => {
+  if (isCreditLyricLine(text)) return true;
+  const trimmed = text.trim().replace(LEADING_DECORATION_PATTERN, "").trim();
+  if (!trimmed || /[:：]/u.test(trimmed)) return false;
+  // 含句末语气/标点的明显是歌词
+  if (/[，。！？；,.!?;、]/u.test(trimmed)) return false;
+  const segments = trimmed.split(/[\s\u3000\\／/|｜&＆]+/u).filter(Boolean);
+  // 必须是多个短片段；单段连续文本（哪怕很短）视作歌词，避免误杀 `第一句歌词`。
+  if (segments.length < 2) return false;
+  if (segments.some((segment) => segment.length > 8 || hasLyricStopWord(segment))) return false;
+  return trimmed.length <= 40;
+};
+
+/** 相邻署名行的合并窗口：制作名单通常连续排布，间隔往往在 3 秒内。 */
+const CREDIT_BLOCK_GAP_MS = 3_000;
 
 export const parseLrc = (raw: string): SongLyricLine[] => {
   const lines: Array<Omit<SongLyricLine, "endTime">> = [];
@@ -327,6 +651,9 @@ export const parseLrc = (raw: string): SongLyricLine[] => {
 /**
  * 去掉作词、作曲、编曲等署名，以及会直接暴露答案的歌名行。
  * 过滤后重新计算每句结束时间，避免被删除的元数据行造成音频切片错位。
+ *
+ * 过滤分四步：单行无效判定（署名 / 间奏 / 符号 / 数字 / 过短）→
+ * 连排署名块整体剔除 → 答案泄露剔除 → 重复行去重。
  */
 export const sanitizeLyrics = (
   lyrics: SongLyricLine[],
@@ -349,9 +676,23 @@ export const sanitizeLyrics = (
     `${wholeArtist}${title}`,
   ].filter(Boolean));
 
-  const filtered = lyrics.filter((line) => {
-    if (isCreditLyricLine(line.text)) return false;
-    if (isInstrumentalLyricLine(line.text)) return false;
+  // 第一步：单行无效判定，得到「署名行位置」用于后续连排合并。
+  const invalid = lyrics.map((line) => isUnusableLyricLine(line.text));
+  const creditLine = lyrics.map((line) => isCreditLyricLine(line.text));
+
+  // 第二步：制作名单常连续排布（截图里连排 5 行），相邻署名行整块剔除，
+  // 避免「翻唱」后面的纯人名续行因为不含标签而被漏掉。
+  for (let index = 1; index < lyrics.length; index += 1) {
+    if (!creditLine[index] && !creditLine[index - 1]) continue;
+    if (lyrics[index].time - lyrics[index - 1].time > CREDIT_BLOCK_GAP_MS) continue;
+    if (!isCreditTailLine(lyrics[index].text)) continue;
+    invalid[index] = true;
+  }
+
+  const seen = new Set<string>();
+  const filtered = lyrics.filter((line, index) => {
+    if (invalid[index]) return false;
+
     const normalizedLine = normalizeComparableText(line.text);
     if (forbidden.has(normalizedLine)) return false;
     if (title.length >= 2 && normalizedLine.includes(title)) return false;
@@ -359,6 +700,11 @@ export const sanitizeLyrics = (
       if (normalizedLine.includes(token)) return false;
     }
     if (album.length >= 2 && normalizedLine.includes(album)) return false;
+
+    // 第三步：重复行去重。副歌反复出现会让同一句占满整个候选窗口，
+    // 只保留首次出现，避免出题截到一片重复文本。
+    if (seen.has(normalizedLine)) return false;
+    seen.add(normalizedLine);
     return true;
   });
 
