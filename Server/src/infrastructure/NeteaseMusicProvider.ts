@@ -353,6 +353,9 @@ const CREDIT_LABEL_SOURCE = [
   "项目", "宣发(?:支持|执行)?", "导演", "调色", "服装", "(?:独家)?短视频平台",
   "特别说明", "原作", "爱尔兰哨笛", "哨笛", "弦乐录制", "改编词曲", "改编编曲",
   "绘", "注", "词作", "语调教", "社团", "物料", "黑胶设计", "联合出品",
+  // R8 实测补漏：`三弦 : X`、`中文填词：X`、`贴混：X`、`监督：X`、
+  // `绘画：X`、`录音版权：X`。
+  "三弦", "(?:中文|粤语|国语)填词", "贴混", "监督", "绘画", "录音版权",
   // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
   "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
@@ -442,6 +445,12 @@ const CREDIT_LABEL_SOURCE = [
   // `混音Mix down/ X`、`PV Promotion Video/ X`、`出品社团Products/ X`。
   "mixers?", "personnel", "operators?", "planner", "verse",
   "erhu", "mix\\s*down", "promotions?", "products?",
+  // R8 实测补漏：`Prodused : X`（瑞典语拼法）、`Audio Editing : X`、
+  // `Production Co-ordination : X`（连字符英式拼法，与已登记的
+  // `production coordination` 是同义变体）、`Sub Publishing : X`、
+  // `Arranged : X`（无 by 的裸动作形态）。
+  "prodused", "audio\\s+editing", "production\\s+co-ordination",
+  "sub\\s+publishing", "arranged",
 ].join("|");
 
 /**
@@ -509,10 +518,11 @@ const CREDIT_LABEL_PATTERN = new RegExp(
 /** 紧随中文标签的英文单后缀（`词Lyricist`、`曲Composer`）。 */
 const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
 
-/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`。
- * `及` 也算连接符：它只在头部拆分用，且拆出的**每段都必须是标签**，
- * 歌词头（`早餐及午餐：`）拆出的非标签段会自然否决。 */
-const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及]/;
+/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`、`词和曲`。
+ * `及`、`和` 也算连接符：它们只在头部拆分用，且拆出的**每段都必须是标签**，
+ * 歌词头（`早餐及午餐：`、`我和你`）拆出的非标签段会自然否决。
+ * `和` 的行首特例见 isCreditLabelOnly 的拆分保护。 */
+const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及和]/;
 
 /** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
 const CREDIT_ACTION_WORDS = [
@@ -603,7 +613,8 @@ const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
  *
  * 这些行以**乐器词开头**，`STARTS_WITH_CREDIT_ENGLISH_PATTERN` 的 `Recorded at`
  * 是行首锚定、接不住；且头部 `Strings Recorded` 整体不是任何单个标签，词表也接不住。
- * 判定：行首是一串已知英文乐器/声部词（`&` 连接），随后紧跟
+ * 判定：行首是一串已知英文乐器/声部词（`&` **或空格**连接，覆盖
+ * `Solo Cello` 这类多词乐器），随后紧跟
  * `Recorded/Mixed/Mastered (at|by)` 或 `Recording`（录音事务说明）。
  * 乐器词必须逐词命中英文标签，`Drums are beating at dawn` 这类歌词
  * （第二词是 be 动词）不会命中。
@@ -611,11 +622,11 @@ const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
 const isInstrumentRecordingHead = (value: string): boolean => {
   const normalized = value.trim().replace(/[\s\u3000]+/g, " ");
   const match =
-    /^([A-Za-z]+(?:\s*&\s*[A-Za-z]+)*)\s+(?:(?:recorded|mixed|mastered)\s+(?:at|by)\b|recording\b)/i.exec(
+    /^([A-Za-z]+(?:[\s&＆]+[A-Za-z]+)*)\s+(?:(?:recorded|mixed|mastered)\s+(?:at|by)\b|recording\b)/i.exec(
       normalized,
     );
   if (!match) return false;
-  const words = match[1].split(/\s*&\s*/i).filter(Boolean);
+  const words = match[1].split(/[\s&＆]+/i).filter(Boolean);
   return (
     words.length > 0 &&
     words.every(
@@ -644,8 +655,12 @@ const SPACE_SPLIT_HEAD_DENY = new Set([
   "导演",
 ]);
 
-/** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。 */
-const CREDIT_SEPARATOR_PATTERN = /(?::|：|-|—|–|\||｜|\/|／)/;
+/** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。
+ * 半角连字符 `-` 只在**非字母数字夹心**时才当分隔符：`Mixed - Mastered by X`
+ * 是并列署名，而 `Production Co-ordination`、`G-Eazy`、`L-O-V-E`（拼写歌词）
+ * 里的连字符是词内成分 —— 裸 `-` 会把标签在词中切碎（`Production Co|ordination`）
+ * 导致整条署名漏网。全角 `—`/`–` 不受约束（中文标签不会夹用）。 */
+const CREDIT_SEPARATOR_PATTERN = /(?::|：|—|–|\||｜|\/|／|(?<![A-Za-z0-9])-(?![A-Za-z0-9]))/;
 
 /** 会出现在真实歌词里的高频虚词/实义词，用于否决结构判定，避免误杀正常歌词。 */
 const LYRIC_STOP_WORDS = [
@@ -730,6 +745,13 @@ const isCreditLabelOnly = (value: string): boolean => {
   if (glued) {
     if (isCreditLabelOnly(glued[1]) && isCreditLabelOnly(glued[2].trim())) return true;
   }
+  // 反向粘连：英文标签在前 + 中文标签紧贴，如 `Vocal录音室`、`Vocal制作助理`。
+  // 正向（中文在前）由上面的 glued 覆盖；两侧都必须各自是完整标签，
+  // `Love音乐` 这类（Love 非标签）不会命中。
+  const reversed = /^([A-Za-z][A-Za-z\s]*?)([\u4e00-\u9fff\u3040-\u30ff]+)$/u.exec(value);
+  if (reversed) {
+    if (isCreditLabelOnly(reversed[1].trim()) && isCreditLabelOnly(reversed[2])) return true;
+  }
 
   // 多词英文标签：`Special Thanks`、`Mixed By`、`Production Coordination`。
   // 匹配前压掉空格，兼容 `specialthanks` 这类上游已去掉空格的形式。
@@ -811,15 +833,27 @@ const isCreditLabelOnly = (value: string): boolean => {
   const withoutBy = value.replace(/\s+by$/i, "").trim();
   if (withoutBy && withoutBy !== value && isCreditLabelOnly(withoutBy)) return true;
 
-  // 序数前缀：`1st Violins : X`、`2nd Violins : X`（弦乐声部分排）。
-  const withoutOrdinal = value.replace(/^(?:\d{1,2}(?:st|nd|rd|th))\s+/i, "").trim();
+  // 序数前缀：`1st Violins : X`、`2nd Violins : X`（弦乐声部分排），
+  // 以及拼写数词形态 `First Violin : X`、`Second Violins : X`。
+  const withoutOrdinal = value
+    .replace(
+      /^(?:(?:\d{1,2}(?:st|nd|rd|th))|(?:first|second|third|fourth|fifth))\s+/i,
+      "",
+    )
+    .trim();
   if (withoutOrdinal && withoutOrdinal !== value && isCreditLabelOnly(withoutOrdinal)) return true;
 
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
 
   // 逐段拆分连接符，任一段是「已知标签 或 接在已知标签后的英文单后缀」即可。
-  const segments = value.split(CREDIT_LABEL_JOINER_PATTERN).filter(Boolean);
+  // `和` 同时是 `和音`/`和编`/`和声` 等标签的首字：行首的 `和` 不是连接符，
+  // 拆分前先用占位符保护（否则 `和音编写及演唱` 会被切成 `音编写` 而整条掉出词表）。
+  const joinerProtected = value.replace(/^和/u, "\u0000");
+  const segments = joinerProtected
+    .split(CREDIT_LABEL_JOINER_PATTERN)
+    .filter(Boolean)
+    .map((segment) => segment.replace(/\u0000/g, "和"));
   if (segments.length === 0) return false;
   let previousWasLabel = false;
   for (const segment of segments) {
@@ -1149,6 +1183,10 @@ const COPYRIGHT_NOTICE_SOURCE = [
   // 出处声明：`本歌曲来自〖云上工作室〗`。不要求平台名命中 ——
   // 「本歌曲来自 X」是发行侧固定句式，真实歌词不会这么说。
   "本(?:歌曲|作品|音乐)来自",
+  // R8 实测补漏：`已买版权 禁止二改二传`、`版权公司：X`、
+  // `Used by permission of ...`（内页授权套话）、`X reserved.`（省略
+  // all rights 的页脚碎片；`Spot is forever reserved` 这类无句点歌词不受影响）。
+  "已买版权", "版权公司", "used\\s+by\\s+permission", "reserved\\.",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
@@ -1226,11 +1264,20 @@ export const isAffiliationCreditLine = (text: string): boolean => {
  * 且行末常带书名号/引号包裹的企划名，词表永远追不全。按**平台名 + 出品/来自**结构判定。
  */
 const PLATFORM_CREDIT_PATTERN =
-  /(?:网易(?:音乐人|云音乐|云|音乐)?|qq音乐|酷狗音乐|咪咕音乐|bilibili)/u;
+  /(?:网易(?:音乐人|云音乐|云|音乐)?|qq音乐|酷狗音乐|咪咕音乐|bilibili)/iu;
 
 export const isPlatformCreditLine = (text: string): boolean => {
   const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
   if (!normalized) return false;
+  // 整行被括号包裹且内层含平台名：`【bilibili音乐·2022虚拟歌手贺岁纪】`。
+  // 这类企划行没有出品/来自等关键词也必须判定 —— 平台名本身已是泄露源。
+  // 必须要求平台名命中，否则 `【副歌】` 这类段落标注会被整行误杀。
+  if (
+    PLATFORM_CREDIT_PATTERN.test(normalized) &&
+    /^[【\[（(][^【\[（()）】\]]{1,40}[】\])）]$/u.test(normalized)
+  ) {
+    return true;
+  }
   if (!PLATFORM_CREDIT_PATTERN.test(normalized)) return false;
   return /出品|来自|企划|独家|首发|联合|制作/.test(normalized);
 };
@@ -1248,10 +1295,11 @@ export const isPlatformCreditLine = (text: string): boolean => {
  * 全是分工标注，**没有任何一行真实歌词是「短标签 + 冒号 + 空」**。
  *
  * 标签允许含空格以覆盖英文演唱者（`Ariana Grande：`、`2 Chainz：`），
- * 但要求不含句末标点、不含引号、长度 ≤20，避免把 `Say: "..."` 这类带取值的行误判
+ * 也允许 `、/／` 连接多人分工（`封茗囧菌、双笙：`），但要求不含句末标点、
+ * 不含引号、每段长度 ≤20，避免把 `Say: "..."` 这类带取值的行误判
  * （右侧非空天然不命中）。
  */
-const EMPTY_VALUE_LABEL_PATTERN = /^[^\s:：'"，。！？、；]{1,20}(?:\s[^\s:：'"，。！？、；]{1,20}){0,3}\s*[:：]\s*$/u;
+const EMPTY_VALUE_LABEL_PATTERN = /^[^\s:：'"，。！？、；]{1,20}(?:[\s、／/][^\s:：'"，。！？、；]{1,20}){0,3}\s*[:：]\s*$/u;
 
 /**
  * 包裹式角色标注：`【合】`、`（男）`、`[女]`，内层只有一个角色词且**没有取值**。
