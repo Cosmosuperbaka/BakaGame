@@ -227,14 +227,14 @@ export function ChatPanel({
                     data-testid="chat-message-bubble"
                     className={cn(
                       "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
-                      safeStickerPath ? "p-1.5" : "px-3.5 py-2",
+                      safeStickerPath ? "p-1.5" : "px-3 py-1.5",
                       isMe
                         ? isGhost
                           ? "rounded-br-sm bg-stone-500/15 border border-dashed border-stone-400/50 dark:border-stone-500/50 text-foreground"
                           : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs"
                         : isGhost
                           ? "rounded-bl-sm bg-muted/40 border border-dashed border-border/80 text-foreground/85"
-                          : "rounded-bl-sm bg-card border border-border/70 text-foreground shadow-2xs",
+                          : "rounded-bl-sm bg-muted text-foreground",
                       mentionsMe && "ring-1 ring-primary/45",
                     )}
                   >
