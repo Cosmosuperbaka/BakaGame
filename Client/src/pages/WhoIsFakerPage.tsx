@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/Dialog";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
+import { Seo } from "@/components/common/Seo";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { randomRoomId } from "@/lib/Random";
 import { cn } from "@/lib/Utils";
@@ -88,6 +89,22 @@ export default function WhoIsFakerPage() {
       transition={spring.swift}
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
+      <Seo
+        title="谁是卧底在线玩 - Who is Faker | BakaGame"
+        description="BakaGame 在线版谁是卧底，免下载直接开玩。支持 4 至 16 人实时联机，含发言投票、平票加赛、补充发言、夜间行动与白板猜词等完整流程，8 人以上出现白板，支持观战与断线重连。"
+        path="/whoisfaker"
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "Who is Faker 在线谁是卧底",
+          applicationCategory: "GameApplication",
+          operatingSystem: "Web",
+          url: "https://game.baka.website/whoisfaker",
+          inLanguage: "zh-CN",
+          description: "免下载的在线版谁是卧底，支持 4 至 16 人实时联机。",
+          offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
+        }}
+      />
       <header className="border-b border-border/40 pb-4 pt-6 md:pt-8 px-6">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <Button
