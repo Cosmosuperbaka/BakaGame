@@ -22,6 +22,7 @@ describe("LocalBangumiProvider", () => {
     const rows = await provider.searchSubjects("测试中", 5);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0].id).toMatch(/^\d+$/);
+    expect(rows[0].imageUrl).toContain("/pic/cover/l/");
     const detail = await provider.getSubject(rows[0].id);
     expect(detail.musicTracks).toBeArray();
     provider.close();
