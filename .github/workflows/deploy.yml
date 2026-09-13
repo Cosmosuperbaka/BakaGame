@@ -136,14 +136,11 @@ jobs:
             }
             trap on_exit EXIT
 
-            # 先把执行环境说清楚，再开行级追踪：出问题必须能定位到具体一行。
-            say "执行环境：shell=$0 bash=${BASH_VERSION:-无} 内核=$(uname -s)"
+            # 任何非预期失败都带行号报出来：一次部署只有 3 分钟，没有第二次机会慢慢猜。
             if [ -n "${BASH_VERSION:-}" ]; then
               set -E
               trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
             fi
-            PS4='+ 第${LINENO}行: '
-            set -x
 
             cd /BakaGame
             say "开始部署 BakaGame 后端"
@@ -230,7 +227,6 @@ jobs:
               PENDING="$PENDING $f"
             done
 
-            set +x
             if [ -n "$PENDING" ]; then
               say "需下载 LFS 数据：$PENDING"
 
