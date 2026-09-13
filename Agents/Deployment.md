@@ -104,6 +104,20 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
   核心机制——数据一周才更新一次，九成以上的部署不该产生任何大文件流量。
 - **校验以 sha256 对齐 LFS OID 为唯一标准**。文件大小、SQLite 魔数、`sha256sum ==
   oid` 三者都通过才算成功，缺一不可。
+- **LFS 指针一律用纯 shell 解析，禁止 `git show` + `awk`**。曾经的写法
+  `want=$(git show "HEAD:$f" | awk '/^oid sha256:/{print $2; exit}')` 有两个致命问题：
+  `awk` 的 `$2` 会带出 `sha256:` 前缀（而 `sha256sum` 输出的是裸十六进制，比对永远不命中，
+  缓存复用形同虚设）；且该管道是 `set -e` 下唯一不受 `if` 保护的语句，一旦 `git show`
+  在生产机上失败就直接静默退出 —— 表现为「日志停在最后一行 `say` 之后，连 EXIT 陷阱
+  都没触发」。正确做法：`git reset --hard` 后工作区里就是指针文本，用
+  `while read -r k v` 直接读文件即可，零外部命令、零管道、不可能因工具缺失或
+  SIGPIPE 崩掉。
+- **任何失败必须带行号喊出来**。脚本必须 `set -E` 加
+  `trap 'echo "❌ 第 ${LINENO} 行失败：$BASH_COMMAND"' ERR`，并且每个阶段都要打印
+  检查点（目标 OID/大小、复用还是下载、各节点测速结果）。静默失败会让排查成本翻十倍
+  —— 一次部署只有 3 分钟，没有第二次机会慢慢猜。
+- **开工先做环境自检**：`git/curl/awk/sort/tr/wc/head/basename/sha256sum/date/grep`
+  逐个 `command -v`，缺哪个就报名字退出。生产机环境不受本仓库控制，不要假设它齐全。
 - **失败必须回滚且不重启容器**。脚本用 `trap ... EXIT` 在非零退出时把旧库文件放回
   原位，避免把指针文本留在工作区、让下一次容器重启直接读到坏数据；同时失败路径
   不执行 `docker restart`，线上服务保持原状。
