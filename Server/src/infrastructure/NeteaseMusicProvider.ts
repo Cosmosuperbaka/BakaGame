@@ -317,7 +317,7 @@ const CREDIT_LABEL_SOURCE = [
   // 不要改写成逐个字面量，否则 `录音棚：C.L.K` 这类取值含点的行会掉出词表路径
   // （结构判定因取值含 `.` 而否决）。
   "混音(?:师)?", "录音(?:师|棚|室)?", "混音室", "母带(?:处理|工程师)?",
-  "和声(?:编写)?", "和音(?:编写|配唱)?", "合音(?:编写)?", "伴唱",
+  "和声(?:编写)?", "和音(?:编写|配唱)?", "合音(?:编写)?", "伴唱", "编写",
   // 「动词/乐器 + 录音/混音/母带/制作」的复合署名，实测高频：
   // `主唱录音：`、`弦乐录音：`、`混音母带：`、`母带制作：`、`母带后期处理录音室：`、
   // `和声编写&和声演唱：`、`MIDI工程：`。`&`/`/` 连接的两段会由 `isCreditLabelOnly`
@@ -339,6 +339,8 @@ const CREDIT_LABEL_SOURCE = [
   "艺人(?:合作)?总监", "项目总监", "内容总监", "节目总监",
   // 缩写与单字形态：`和编：清潇Lanoiah`（和声编写缩写）、`器乐 : X`。
   "和编", "合编", "器乐", "管乐", "实录", "弦乐实录", "表演(?:者)?",
+  "民乐", "艺人", "母版", "团队", "作品管理", "经纪", "制作人经纪",
+  "和声录唱", "歌词制作", "录音时间", "中国笛", "热瓦普", "(?:新疆)?手鼓",
   // R5 实测补漏：`录音制作`、`营销推广`、`混音录音室`、`计算机音乐编成`、`谱务 Scoring`。
   "录音制作", "营销推广", "混音录音室", "(?:计算机)?音乐编成", "谱务",
   "母带后期处理(?:录音室|制作人)?", "声音工程师",
@@ -406,6 +408,8 @@ const CREDIT_LABEL_SOURCE = [
   "soloists?", "solos?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
   // R5 补漏：`助理 Assistant`、`谱务 Scoring`、`Programmer`、`Studio`、`Sound Engineer`。
   "assistant", "scoring", "programmers?", "studio", "sound",
+  "artists?", "piccolo", "compositions?", "renditions?", "instrumental", "production",
+  "recording\\s+time",
   // 民族乐器拼音/外文名（复合标签英文半）：`古筝 Guzheng`、`琵琶 Pipa`、`笛子 Dizi`。
   "guzheng", "pipa", "dizi", "sitar", "saz", "bansuri", "koto", "shamisen", "taiko",
   "acoustic\\s+guitar", "classical\\s+guitar", "electric\\s+guitar",
@@ -751,6 +755,24 @@ const isCreditLabelOnly = (value: string): boolean => {
   const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
   if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
 
+  // 纯中文标签粘连：`小提琴演奏`、`制作统筹`、`音乐出品发行公司`。
+  // 这类头由**两个已知标签直接拼接**而成（中间无连接符），逐段拆分接不住。
+  // 枚举全部切分点，任一侧组合都命中词表才算；两侧都必须是完整登记标签，
+  // 因此 `曲终人散`（曲|终人散，右侧非标签）、`说唱脸谱`（说唱|脸谱）等歌词头不受影响。
+  if (/^[\u4e00-\u9fff]{2,12}$/u.test(value)) {
+    for (let cut = 1; cut < value.length; cut += 1) {
+      if (isCreditLabelOnly(value.slice(0, cut)) && isCreditLabelOnly(value.slice(cut))) {
+        return true;
+      }
+    }
+  }
+
+  // 人名 + OP/SP 粘连：`梁翘柏OP : OP of Kubert Leung Musichic LTD.`、
+  // `AlbertOP : OP of Lin Xi ...`。这是版权代理行的固定写法
+  // （「词曲版权人 + OP/SP 缩写」），人名不可能进词表，
+  // 只能按「中文人名或首字母大写英文名 + OP/SP 结尾」这一版权特有结构判定。
+  if (/^(?:[\u4e00-\u9fff]{2,6}|[A-Z][a-z]{1,11})(?:OP|SP)$/u.test(value)) return true;
+
   // 尾缀署名介词：`Chorus by : 陈奕迅`。剥离 ` by` 后按纯标签判定；
   // 递归兜底保证 `Kiss by` 这类剥出的词不是标签时不会误判。
   const withoutBy = value.replace(/\s+by$/i, "").trim();
@@ -1003,6 +1025,11 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
   // 括号内的制作方标注：`（烛光制作）`、`(某某出品)`。
   if (BRACKET_PRODUCTION_SUFFIX_PATTERN.test(inner)) return true;
 
+  // 括号内的原曲信息：`（飞机场的10:30 - 陶喆）`。
+  // 形态特征高度特异：内层含「分:秒」式时间戳，随后是破折号 + 短人名尾，
+  // 真实歌词的括号和声/衬词不会长这样。
+  if (/^[^：:]{1,30}\d{1,2}:\d{2}\s*[-–—]\s*[^-–—]{1,20}$/u.test(inner)) return true;
+
   // 「单词 + 冒号结尾」的段落标记形态（`Verse 1:`、`Припев:`），冒号后无内容。
   if (/^[^\s:：,，、;；]{1,20}(?:\s\d{1,2})?\s*[:：]\s*$/u.test(inner)) return true;
 
@@ -1067,6 +1094,8 @@ const COPYRIGHT_NOTICE_SOURCE = [
   // 出版方行：`/ EMI Music Publishing (S.E. Asia) Ltd, Taiwan Branch` —— 唱片内页
   // 连排出版信息被拆成的碎片行，`publishing` 一词在真实歌词里不会出现。
   "music publishing", "publishing\\s*\\(",
+  // 授权/改编声明：`——正版授权，改编自《Counting stars》——`。
+  "正版授权", "改编自", "翻唱自", "原曲出自",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
