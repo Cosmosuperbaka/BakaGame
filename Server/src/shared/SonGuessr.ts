@@ -126,6 +126,40 @@ export const detectExplicitTrackKind = (text: string): BangumiMusicTrackKind | u
   return undefined;
 };
 
+/**
+ * 判断 Bangumi 关联条目是否为「版权署名 / 制作委员会」伪条目。
+ *
+ * Bangumi 的关联条目里混入了大量并非歌曲的署名条目，例如
+ * `©BanG Dream! Project`、`©SUNRISE`、`©Visual Art's`、`©2007 竜騎士07`、
+ * `（C）2009 NEOPLE`、`Ⓒ 創通・タツノコプロ`、`時をかける少女」製作委員会2006`。
+ * 它们本地的 `music_id` 为负数（实测全库 7762 条），却被归到 `opening` 类目，
+ * 按 `KIND_PRIORITY` 排在所有真实曲目之前。
+ *
+ * 若不剔除，解析关联歌曲时会拿「版权署名」去网易云搜歌，再经宽松的子串
+ * 匹配把完全无关的歌曲当成 OP——例如把 2019 年专辑《Music For All》里的
+ * 《Bang Dream!》当作 2023 年《BanG Dream! It's MyGO!!!!!》的 OP。
+ *
+ * 判定必须**只认无歧义的版权标记**，否则会误杀带美术字符的正常曲名。
+ * 实测教训：把 `♡ / ❤ / ※ / Project$ / オール` 列入规则会误杀 126 首正版歌曲
+ * （`unconditional L♡VE`、`♡km/h`、`Love❤Island`、`μ's オリジナルソングCD`、
+ * `のだめカンタービレ オールシーズンズベスト` 等），故一概不予采用。
+ *
+ * 服务端两个 Bangumi Provider 与本模块的曲名门禁共用本函数，保证判定一致。
+ */
+export const isBangumiCreditsEntry = (title: string): boolean => {
+  const value = title.trim();
+  if (!value) return true;
+  // 版权 / 商标 / 录音权标记：© ® ℗ 与 (C)/(R)/(P) 全角变体，任意位置出现即视为署名条目。
+  // 注意：❤ ♡ ※ ☆ 等美术字符是正常曲名常用元素，绝不能纳入判定。
+  if (/[©®℗Ⓒⓒ]|\(\s*[cC]\s*\)|（\s*[cCｃＣ]\s*）|\(\s*[rR]\s*\)|（\s*[rRＲ]\s*）|\(\s*[pP]\s*\)|（\s*[pPＰ]\s*）/.test(value)) return true;
+  // 制作 / 製作委員会署名（且不含任何歌曲语义关键词）。如「時をかける少女」製作委員会2006。
+  if (/(?:製作|制作)委員会|製作委員会/.test(value) &&
+      !/曲|歌|テーマ|theme|opening|ending|insert/i.test(value)) {
+    return true;
+  }
+  return false;
+};
+
 export interface BangumiMusicTrack {
   title: string;
   artist?: string;

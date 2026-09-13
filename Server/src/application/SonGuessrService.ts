@@ -18,6 +18,7 @@ import type {
 import {
   ALL_BANGUMI_TRACK_KINDS,
   detectExplicitTrackKind,
+  isBangumiCreditsEntry,
   MAX_SONGUESSR_COOKIE_LENGTH,
   SERVER_SHUTDOWN_MESSAGE,
 } from "../shared/Index";
@@ -177,7 +178,6 @@ const normalizeSongText = (value: string) =>
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
-
 const VERSION_MARKER_PATTERN = /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
 const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
 const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
@@ -207,6 +207,10 @@ const normalizeSongTitle = (value: string) =>
   normalizeSongText(stripSongVersionInfo(value));
 
 export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string): boolean => {
+  // 版权署名 / 制作委员会条目不是歌曲。若放任其参与子串匹配，
+  // `©BanG Dream! Project` 会因包含 `banGdream` 而与《Bang Dream!》误判为同一首，
+  // 从而把完全无关的歌曲当成番剧主题曲（实测事故）。
+  if (isBangumiCreditsEntry(candidateTitle) || isBangumiCreditsEntry(expectedTitle)) return false;
   const normCandidate = normalizeSongTitle(candidateTitle);
   const normExpected = normalizeSongTitle(expectedTitle);
   if (!normCandidate || !normExpected) return false;
