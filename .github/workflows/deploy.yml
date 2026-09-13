@@ -69,19 +69,29 @@ jobs:
             echo "==> 拉取远端最新代码..."
             git fetch origin main
             git reset --hard origin/main
-            # SQLite 数据库由 Git LFS 管理；生产机可能没有安装 git-lfs。
-            # 优先使用本机 LFS，缺少客户端时直接从 GitHub Media 下载实际对象。
-            if command -v git-lfs >/dev/null 2>&1; then
-              git lfs install --local
-              git lfs pull origin main
-            else
-              echo "==> 未检测到 git-lfs，改用 GitHub Media 下载数据库"
-              for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
-                curl --fail --location --retry 3 \
-                  "https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db" \
-                  -o "$db"
-              done
+            # SQLite 数据库由 Git LFS 管理。中国大陆主机通过 gh-proxy 访问 LFS，
+            # 限制并发并启用断点续传，避免两个大文件同时下载导致连接超时。
+            download_db() {
+              db="$1"
+              url="https://gh-proxy.com/https://media.githubusercontent.com/media/Cosmosuperbaka/BakaGame/main/$db"
+              rm -f "$db"
+              curl --fail --location --retry 8 --retry-delay 5 --connect-timeout 30 \
+                --max-time 1800 --speed-time 60 --speed-limit 1024 --continue-at - "$url" -o "$db"
+            }
+            valid_db() { [ -s "$1" ] && [ "$(head -c 15 "$1")" = "SQLite format 3" ]; }
+            if ! valid_db Server/data/bangumi-song.sqlite || ! valid_db Server/data/bangumi-character.sqlite; then
+              if command -v git-lfs >/dev/null 2>&1; then
+                git lfs install --local
+                git config lfs.url "https://gh-proxy.com/https://github.com/Cosmosuperbaka/BakaGame.git/info/lfs"
+                git config lfs.concurrenttransfers 1
+                git config lfs.basictransfersonly true
+                git config lfs.dialtimeout 30
+                git config lfs.activitytimeout 1800
+                git lfs pull origin main || true
+              fi
             fi
+            valid_db Server/data/bangumi-song.sqlite || download_db Server/data/bangumi-song.sqlite
+            valid_db Server/data/bangumi-character.sqlite || download_db Server/data/bangumi-character.sqlite
             for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
               if [ ! -s "$db" ] || [ "$(head -c 15 "$db")" != "SQLite format 3" ]; then
                 echo "❌ Bangumi 数据文件无效: $db"
