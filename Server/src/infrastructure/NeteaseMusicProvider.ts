@@ -284,18 +284,67 @@ const normalizeComparableText = (value: string) =>
 const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
   "作词(?:人)?", "填词", "词曲", "词", "作曲(?:人)?", "谱曲", "曲",
-  "编曲(?:人|师)?", "制作人", "制作", "监制", "统筹", "发行", "出品", "策划", "企划",
+  "编曲(?:人|师)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
+  // 繁体写法（港台上传谱高频）：`編曲 Arrange : X`。
+  "作詞(?:人)?", "編曲(?:人|师)?", "製作(?:人)?", "監製(?:人)?", "後期", "翻譯", "字幕組",
+  "出品人", "发行人", "监制人", "策划人", "企划人", "指挥", "演奏指挥",
   // 复合标签：网易云常见 `音乐制作：X`、`音乐监制：X`、`专辑封面设计：X` 这类带限定前缀的写法。
   // 单独登记而不放宽 `isCreditLabelOnly` 的「覆盖整个头部」约束，避免 `音乐响起：` 这类歌词被误杀。
-  "音乐制作", "音乐监制", "音乐指导", "音乐统筹", "音乐总监",
+  "音乐制作", "音乐监制", "音乐指导", "音乐统筹", "音乐总监", "音乐设计", "音乐混音",
+  "音乐出品", "音乐制作人", "音乐总监制",
   "专辑制作", "专辑封面(?:设计)?", "封面设计", "视觉设计",
   "合作音乐人", "特邀", "参演", "配音",
   "配唱(?:编写)?", "制作协力", "低音吉他", "第一小提琴", "第二小提琴", "中提琴", "大提琴",
+  // 出版/公司/企划类：`制作公司 : X`、`厂牌 : X`、`企划宣传：X`、`商务统筹 : X`、
+  // `特别鸣谢 : X`、`合作单位：X`。这类行给出的是机构而非歌词，必须剔除。
+  "制作公司", "出品公司", "发行公司", "音乐公司", "文化传媒", "传媒",
+  "厂牌", "唱片", "唱片公司", "工作室", "录音室(?!$)",
+  "企划宣传", "宣传", "推广", "营销", "商务", "商务统筹", "统筹企划",
+  "鸣谢", "特别鸣谢", "特别感谢", "致谢", "感谢", "协助单位", "合作单位",
+  // 虚拟歌手/音源类：`虚拟人声：X`、`和声配唱 : X`、`主人声 : X`、`合声编写 : X`。
+  "虚拟人声", "虚拟歌手", "声库", "音源", "主人声", "副人声", "和声配唱", "和声演唱",
+  "合声", "合声编写", "合声配唱", "配唱",
+  // 演奏/编制类：`弦乐演奏：X`、`弦乐乐团：X`、`乐队 Orchestra：X`、`乐队队长：X`。
+  "弦乐演奏", "弦乐乐团", "管弦乐团", "乐队", "乐团", "队长", "乐队队长", "首席",
+  "演奏", "独奏", "合奏", "伴奏", "编程", "音频工程师", "音响",
+  "录音软件操作", "软件操作", "前台及舞台音响", "舞台音响",
+  // 英文音译/缩写署名：`Program : X`、`PGM：X`。
+  "program", "pgm", "md", "arrangement",
+  // 美术/画师类：`画师：X`、`绘图：X`、`曲绘：X`、`插画：X`。
+  "画师", "绘图", "曲绘", "插画", "美工", "题字", "排版", "设计",
   // `录音(?:师|棚|室)?` 必须保留可选后缀形态：它同时覆盖 `录音师`/`录音棚`/`录音室`，
   // 不要改写成逐个字面量，否则 `录音棚：C.L.K` 这类取值含点的行会掉出词表路径
   // （结构判定因取值含 `.` 而否决）。
-  "混音(?:师)?", "录音(?:师|棚|室)?", "混音室", "母带(?:处理|工程师)?", "和声(?:编写)?",
+  "混音(?:师)?", "录音(?:师|棚|室)?", "混音室", "母带(?:处理|工程师)?",
+  "和声(?:编写)?", "和音(?:编写|配唱)?", "合音(?:编写)?", "伴唱",
+  // 「动词/乐器 + 录音/混音/母带/制作」的复合署名，实测高频：
+  // `主唱录音：`、`弦乐录音：`、`混音母带：`、`母带制作：`、`母带后期处理录音室：`、
+  // `和声编写&和声演唱：`、`MIDI工程：`。`&`/`/` 连接的两段会由 `isCreditLabelOnly`
+  // 的逐段拆分处理，但每段本身必须在词表内。
+  "主唱录音", "弦乐录音", "乐器录音", "人声录音", "混音母带", "母带制作",
+  "母带后期处理(?:录音室)?", "和声演唱", "midi工程", "编曲工程", "人声编辑",
+  // `乐器录音师`、`人声录音棚`、`混音工程师` 这类「动作 + 师/棚/室/工程师」的完整词形。
+  "乐器录音师", "人声录音棚", "混音工程师", "录音工程师", "母带工程师",
+  // 实测补漏：`人声录音师`、`人声录音棚A`、`吉他录音`、`母带工作室`、`配唱制作人`、`弦乐指挥`。
+  "人声录音师", "人声录音", "吉他录音", "贝斯录音", "鼓录音", "钢琴录音", "弦乐录音师",
+  "母带工作室", "混音工作室", "录音工作室", "配唱制作人", "配唱编写", "合声编写",
+  "弦乐指挥", "弦乐翻译", "弦乐编写", "弦乐统筹", "管弦乐", "弦乐团",
+  // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
+  "调声", "调音", "采样", "混响", "音效", "后期混音", "缩混", "母带制作人",
+  // 标题/元信息类（同时是答案泄露源）：`歌曲原名：夜来香`。
+  "歌曲原名", "原曲名", "歌曲名", "歌名", "原唱名", "本名",
+  // 外语标题头：`Bài Hát: See Tình`（越南语「歌名」）。
+  "bài\\s+hát", "canción", "曲名", "楽曲名", "タイトル",
   "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
+  // 中文乐器/声部名：网易云里既有 `钢琴 : X` 也有 `架子鼓 Drums：X`。
+  "钢琴", "架子鼓", "爵士鼓", "电子琴", "合成器", "打击乐", "萨克斯", "长笛", "口琴",
+  "键盘", "键盘手", "手鼓", "铃鼓", "三角铁", "钟琴", "竖琴", "管风琴", "电钢",
+  "木吉他", "电吉他", "原声吉他", "古典吉他", "吉他", "贝斯", "鼓",
+  "古筝", "琵琶", "二胡", "笛子", "箫", "唢呐", "马头琴", "手风琴", "小提琴", "大提琴", "中提琴",
+  "尺八", "三味线", "太鼓", "箏", "琵琶", "笙", "阮", "柳琴", "扬琴", "冬不拉", "班卓琴",
+  "长号", "小号", "圆号", "大号", "双簧管", "单簧管", "巴松", "竖笛", "口哨",
+  // 中文声部/编制名
+  "人声", "声乐", "说唱", "rap", "戏腔", "京剧", "念白", "朗诵", "口白",
   "版权管理方", "版权", "版权方", "录音作品", "录音制品", "版权代理", "授权",
   // 演唱与同人/翻唱圈署名
   "演唱", "主唱", "歌手", "翻唱", "翻策", "原唱", "原曲", "本家",
@@ -308,18 +357,60 @@ const CREDIT_LABEL_SOURCE = [
   "lyric(?:s|ist)?", "composer", "arranger", "producer",
   "vocal(?:s|ist)?", "vocaloid", "illustration", "artwork", "movie",
   "mixing", "mastering", "programming", "recording", "engineer(?:ing)?",
-  "keyboards?(?:\\s*&\\s*programming)?", "programmed", "drums?", "bass", "guitars?",
-  "percussion", "strings?", "piano", "violin", "cello",
+  // 英文编排/配器类（实测高频，旧表完全缺失）：
+  // `Orchestral Arrangements : X`、`Orchestration : X`、`Synthesizer Programming : X`、
+  // `Vocal Arrangements : X`、`Rhythm Arrangements : X`、`Synthesizers : X`。
+  "arrangements?", "orchestration", "orchestral", "orchestra",
+  "synthesizers?", "synthesizer\\s+programming", "programmed\\s+by",
+  "harmony", "harmonies", "choir", "strings?", "horns?", "woodwinds?",
+  "brass", "flute", "sax(?:ophone)?", "trumpet", "trombone",
+  "band", "quartet", "ensemble", "conductor",
+  // 英文职位类：`Editing Engineer`、`Assistant Engineer`、`recording PD`、`Musical Supervisor`。
+  "assistant\\s+engineer", "editing\\s+engineer", "recording\\s+pd",
+  "musical\\s+supervisor", "supervisor", "coordinator",
+  "management", "manager", "director", "directed\\s+by",
+  // 多词英文编排/制作署名（旧表遗漏，实测高频）：
+  // `Orchestral Arrangements`、`Vocal Arrangements`、`Rhythm Arrangements`、
+  // `String Arranger & Conductor`、`Synthesizer Programming`。
+  "orchestral\\s+arrangements?", "vocal\\s+arrangements?", "rhythm\\s+arrangements?",
+  "string\\s+arranger(?:\\s*&\\s*conductor)?", "synthesizer\\s+programming",
+  "vocal\\s+arrangement", "arrangements?",
+  "producers?", "publishers?", "composers?", "lyricists?", "arrangers?",
+  // 纯英文复合标签的限定词：`Music Producer`、`Musical Supervisor`、`Vocal Arrangements`、
+  // `Rhythm Arrangements`。这些词单独出现不足以判定（`music` 可能是歌词），
+  // 但 `isCreditLabelOnly` 的英文「逐词复合」分支要求**每个词都是标签且至少两词**，
+  // 因此把限定词登记进来是安全的。
+  "music", "musical", "vocal", "rhythm", "orchestral", "string", "brass",
+  "woodwind", "percussion", "electronic", "synthesizer", "acoustic", "electric",
+  // 实测补漏的复合后缀：`调声 Tuning`、`和声 Chorus`、`合成器 Synth`、
+  // `演唱 Voice`、`尺八 Shakuhachi`、`编曲 Arrange`、`版权 Publishing`。
+  "tuning", "chorus", "synth", "voice", "shakuhachi", "arrange", "publishing",
+  "acoustic\\s+guitar", "classical\\s+guitar", "electric\\s+guitar",
+  "guitars?", "bass", "drums?", "piano", "keyboards?", "violin", "cello",
+  "percussion", "strings?", "midi", "pd", "recording", "rec", "program(?:ming)?",
+  // `X Engineer` / `X Studio` / `X Artist` 这类「角色限定 + 通用名词」的英文署名。
+  // 网易云上 `混音师 Mixing Engineer`、`人声录音棚 Vocal Recording Studio` 属常见形态，
+  // 只登记名词本体即可被复合标签路径覆盖。
+  "mixing\\s+engineer", "mastering\\s+engineer", "recording\\s+engineer",
+  "instrumental\\s+recording\\s+engineer", "vocal\\s+artist", "vocal\\s+recording\\s+studio",
+  "recording\\s+studio", "programmed", "keyboards?(?:\\s*&\\s*programming)?",
   "thanks?(?:\\s+to)?", "special\\s+thanks",
   "production\\s+coordination", "recorded\\s+at", "engineered\\s+by",
   "mixed\\s+by", "mastered\\s+by", "lyrics?\\s+by", "music\\s+by",
   "written\\s+by", "produced\\s+by", "composed\\s+by", "arranged\\s+by",
   "performed\\s+by", "vocals?\\s+recorded\\s+at",
+  // `X by` 形式的英文署名：`作词 Lyricist by`、`作曲 Composer by`。
+  "lyricist\\s+by", "composer\\s+by", "arranger\\s+by", "producer\\s+by",
 ].join("|");
 
 /**
  * 正则的可选分支按「先长后短」排序，避免短标签抢先匹配。
  * 例：`sp` 会以忽略大小写的方式吃掉 `Special Thanks` 的开头，`曲` 会吃掉 `曲绘`。
+ *
+ * **必须按字面匹配长度排序，而不是源码字符串长度**：`混音(?:师)?` 源码长度 10，
+ * 但实际只匹配 2~3 个字符；若按源码长度排序，它会排到 `混音母带`（字面 4 字）之前，
+ * 在 `^` 锚定下先吃掉 `混音` 两个字符就停下，导致 `混音母带：X` 整条掉出词表。
+ * 因此这里剥离正则元字符后按**字面长度**排序（组内取最小字面长度，保守靠后）。
  */
 const sortLongestFirst = (source: string): string => {
   const splitAlternatives = (value: string): string[] => {
@@ -345,7 +436,22 @@ const sortLongestFirst = (source: string): string => {
     parts.push(current);
     return parts;
   };
-  return splitAlternatives(source).sort((a, b) => b.length - a.length).join("|");
+
+  /**
+   * 估算分支的**最小字面匹配长度**：把正则语法剥掉后剩下的可见字符数。
+   * 例：`混音(?:师)?` → `混音` = 2；`混音母带` → 4。据此让字面更长的分支优先。
+   *
+   * 关键：**可选组（`(?:...)?`）内的字面一律不计**，否则 `混音(?:师)?` 会被算成 4，
+   * 与纯字面 `混音母带` 打平，稳定排序又会让它凭源码顺序抢先匹配。
+   */
+  const literalLength = (alternative: string): number => {
+    const required = alternative.replace(/\(\?:[^()]*\)\?/g, "");
+    return required.replace(/\\(.)/g, "$1").replace(/[()|^$.*+?[\]{}]/g, "").length;
+  };
+
+  return splitAlternatives(source)
+    .sort((a, b) => literalLength(b) - literalLength(a))
+    .join("|");
 };
 
 const CREDIT_LABEL_ALTERNATIVES = sortLongestFirst(CREDIT_LABEL_SOURCE);
@@ -372,6 +478,37 @@ const CREDIT_ACTION_WORDS = [
 ];
 // 注意必须用括号包住整组可选分支，否则 `^a|b|...|z$` 只会锚定首尾两项。
 const CREDIT_ACTION_PATTERN = new RegExp(`^(?:${CREDIT_ACTION_WORDS.join("|")})$`, "i");
+
+/**
+ * 英文制作署名短标签（Discogs 风格实体唱片信息）：
+ * `Mixed At – Enterprise Studios`、`Mastered At – Precision Mastering`、
+ * `Distributed By – EMI (Taiwan) Ltd.`、`Backing Vocals – ...`、`A&R – ...`、
+ * `Executive-Producer – ...`、`Presenter – ...`、`Vocal edite：...`。
+ *
+ * 这类行**分隔符是 en dash 而非冒号**，且整体（`Mixed At`）不是单个已知标签，
+ * 因此词表与结构判定双双漏网。判定必须用**显式枚举**而不能放宽成
+ * 「`<任意词> At/By`」—— 否则 `Killed By – the storm` 这类歌词会被整行误杀。
+ * 匹配时用前缀形式（`EN_CREDIT_PREFIX_PATTERN`）直接测试整行，
+ * 绕开 `Executive-Producer` 被内部连字符抢先切开的问题。
+ */
+const EN_CREDIT_SHORT_LABELS = [
+  "a&r", "a & r", "executive-producer", "executive producer", "presenter",
+  "presented by", "backing vocals", "backing vocal", "vocal edite", "vocal edit",
+  "art direction", "artwork by", "design by", "photography", "photography by",
+  "liner notes", "booklet", "management by", "booking",
+  "licensed by", "license", "market", "marketing",
+  "distributed by", "manufactured by", "pressed by", "published by",
+  "recorded at", "mixed at", "mastered at", "remixed at",
+];
+
+/** `EN_CREDIT_SHORT_LABELS` 的行首前缀形态，长分支优先避免被短分支截断。 */
+const EN_CREDIT_PREFIX_PATTERN = new RegExp(
+  `^(?:${[...EN_CREDIT_SHORT_LABELS]
+    .sort((left, right) => right.length - left.length)
+    .join("|")})(?:\\s|$)`,
+  "i",
+);
+
 
 /**
  * 判断头部是否形如 `(乐器)? 动作词 ((&|and) 动作词)* by`，
@@ -420,6 +557,16 @@ const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/
 /** 包裹式标签：`【翻唱】某某`、`（后期）某某`、`[Mixing] John`。 */
 const WRAPPED_CREDIT_LABEL_PATTERN = /^[【\[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
 
+/**
+ * 空格分隔下**不可信**的头部：这些词虽是署名标签，但同样是高频歌词开头。
+ * 空格分隔只在头部是纯制作行话时才信任，`感谢 陪伴`、`设计 一场相遇` 这类
+ * 「标签词 + 歌词」的组合必须保留（冒号形态不受影响，`感谢：X` 仍会剔除）。
+ */
+const SPACE_SPLIT_HEAD_DENY = new Set([
+  "感谢", "特别感谢", "鸣谢", "致谢", "谢谢", "感激",
+  "策划", "设计", "宣传", "推广", "邀请", "呈现",
+]);
+
 /** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。 */
 const CREDIT_SEPARATOR_PATTERN = /(?::|：|-|—|–|\||｜|\/|／)/;
 
@@ -451,23 +598,51 @@ const splitCreditHead = (text: string): string | undefined => {
 
   const undecorated = trimmed.replace(LEADING_DECORATION_PATTERN, "").trim();
   const separatorMatch = CREDIT_SEPARATOR_PATTERN.exec(undecorated);
-  if (!separatorMatch) return undefined;
-  const head = undecorated.slice(0, separatorMatch.index).trim();
-  const tail = undecorated.slice(separatorMatch.index + separatorMatch[0].length).trim();
-  if (!head || !tail) return undefined;
-  return `${head}\u0000${tail}`;
+  if (separatorMatch) {
+    const head = undecorated.slice(0, separatorMatch.index).trim();
+    const tail = undecorated.slice(separatorMatch.index + separatorMatch[0].length).trim();
+    if (head && tail) return `${head}\u0000${tail}`;
+  }
+
+  // 空格分隔的署名行：`制作人 徐鲤`、`录音师 韦生@鲸升音乐`、`录音棚 鲸升音乐`。
+  // 空格是极弱的分隔符，**绝不能**无条件当分隔符用：
+  // 1. 只信任**中文头部** —— `Piano in the dark`、`Drums are beating` 这类
+  //    「英文乐器词 + 空格 + 歌词」是真实歌词的常见开头，英文头一律不拆
+  //    （英文署名有 `Mixed by X` 的专用路径覆盖，不需要空格兜底）；
+  // 2. 头部至少 2 个字符 —— 单字标签（`曲 终人散`、`词 爱恨`）是歌词写法，不拆；
+  // 3. 头部不在 SPACE_SPLIT_HEAD_DENY：`感谢`/`设计` 这类**同时是高频歌词开头**
+  //    的词，`感谢 陪伴` 是歌词而非署名（冒号形态不受影响，`感谢：X` 仍会剔除）。
+  const spaceMatch = /^(\S+)[\s\u3000]+(\S.*)$/u.exec(undecorated);
+  if (
+    spaceMatch &&
+    /[\u4e00-\u9fff\u3040-\u30ff]/u.test(spaceMatch[1]) &&
+    [...spaceMatch[1]].length >= 2 &&
+    !SPACE_SPLIT_HEAD_DENY.has(spaceMatch[1]) &&
+    isCreditLabelOnly(spaceMatch[1])
+  ) {
+    return `${spaceMatch[1]}\u0000${spaceMatch[2].trim()}`;
+  }
+  return undefined;
 };
 
 /** 判断标签头部是否「完全由署名标签构成」。 */
 const isCreditLabelOnly = (value: string): boolean => {
   if (!value) return false;
 
-  // 中英混排：中文标签直接拼接英文标签，如 `曲Composer`、`词Lyricist`、`翻唱Cover`。
+  // 中英混排：中文标签拼接英文标签，如 `曲Composer`、`词Lyricist`、`翻唱Cover`；
+  // 网易云大量使用**带空格**的写法：`制作人 Producer`、`混音师 Mixing Engineer`、
+  // `母带制作 Mastering Engineer`、`木吉他 Acoustic Guitar`。
+  // 因此中文段要**整体捕获**（不止首字），中英之间允许空白；否则 `制作人 Producer`
+  // 会被切成 `制` + `作人 Producer`，中文段过短而整条掉出词表。
   // 首字符必须是中日文字符，否则 `Special Thanks` 会被误拆成 `S` + `pecial Thanks`。
-  const composite = /^([\u4e00-\u9fff\u3040-\u30ff])[A-Za-z][A-Za-z\s]*$/u.exec(value);
+  const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z][A-Za-z\s]*)$/u.exec(value);
   if (composite) {
-    const englishPart = value.slice(1).trim();
-    if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(englishPart)) return true;
+    if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
+  }
+  // 无空格粘连形态：`曲Composer`、`词Lyricist`（英文字母紧贴中文）。
+  const glued = /^([\u4e00-\u9fff\u3040-\u30ff]+)([A-Za-z][A-Za-z\s]*)$/u.exec(value);
+  if (glued) {
+    if (isCreditLabelOnly(glued[1]) && isCreditLabelOnly(glued[2].trim())) return true;
   }
 
   // 多词英文标签：`Special Thanks`、`Mixed By`、`Production Coordination`。
@@ -475,6 +650,49 @@ const isCreditLabelOnly = (value: string): boolean => {
   const compact = value.replace(/[\s\u3000]+/g, "");
   const wholeLabel = CREDIT_LABEL_PATTERN.exec(value)?.[0].replace(/[\s\u3000]+/g, "");
   if (wholeLabel === compact) return true;
+
+  // 英文「限定词 + 角色」：`Music Producer`、`Musical Supervisor`、`Vocal Arrangements`。
+  // 逐词判定 —— 每个词都必须是已知英文标签，才能合成一个复合标签。
+  // 旧实现只覆盖中文打头的复合形态（`制作人 Producer`），纯英文复合全部漏网。
+  if (/^[A-Za-z][A-Za-z\s]*$/u.test(value)) {
+    const words = value.trim().split(/[\s\u3000]+/u).filter(Boolean);
+    if (words.length >= 2 && words.every((word) => CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "") === word)) {
+      return true;
+    }
+  }
+
+  // 英文制作署名短标签：`A&R`、`Executive-Producer`、`Mixed At`（整体命中集合）。
+  const normalizedForSet = value
+    .normalize("NFKC")
+    .trim()
+    .replace(/[\s\u3000]+/g, " ")
+    .toLowerCase();
+  if (EN_CREDIT_SHORT_LABELS.includes(normalizedForSet)) return true;
+
+  // 长复合技术标签：`弦乐线上录音系统及弦乐档案编辑 : Leonard Fong`。
+  // 结构判定限头 6 字、词表追不全这类展开写法；用「纯中文 + 强技术词」判定：
+  // 只有含**录音/混音/母带的具体设施词**（系统/棚/室/工作室）才算，
+  // `回忆的录音` 这类歌词化表达不含设施词、不会命中。
+  if (
+    /^[\u4e00-\u9fff]{2,24}$/u.test(value) &&
+    /录音系统|录音棚|录音室|混音室|混音师|录音师|母带处理|母带工程|工作室/u.test(value)
+  ) {
+    return true;
+  }
+
+  // 编号/字母槽位：`键盘2`、`吉他1`、`人声录音棚A`、`人声录音棚B`。
+  // 大编制制作名单会把同类乐器/录音棚按编号排布，词表里的 `键盘` 覆盖不到 `键盘2`。
+  // 只允许在**已登记标签**后追加 1~2 位数字或单个大写字母，
+  // 小写字母不放宽（`词a` 这类更像打字残渣以外的正常内容）。
+  const slot = /^(.+?)(?:\d{1,2}|[A-Z])$/u.exec(compact);
+  if (slot && CREDIT_LABEL_PATTERN.exec(slot[1])?.[0].replace(/[\s\u3000]+/g, "") === slot[1]) {
+    return true;
+  }
+
+  // 括号限定词：`Assistant Engineer (香港)`、`主唱录音（北京）`、`混音师(Studio A)`。
+  // 制作名单常用括号标注地区/棚号等限定信息，剥离后若剩余部分是纯标签即命中。
+  const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
+  if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
 
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
@@ -520,6 +738,9 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // `Strings Arranged & Conducted by 某某` 这类没有冒号的英文署名，先整行判定。
   if (isCreditActionPhrase(undecorated)) return true;
   if (STARTS_WITH_CREDIT_ENGLISH_PATTERN.test(undecorated)) return true;
+  // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
+  // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
+  if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
 
   const parts = splitCreditHead(text);
   if (!parts) return false;
@@ -584,6 +805,9 @@ export const isCreditLyricLine = (text: string) =>
 export const isUnusableLyricLine = (text: string): boolean =>
   isCreditLyricLine(text) ||
   isCopyrightNoticeLine(text) ||
+  isTechnicalInfoLine(text) ||
+  isAffiliationCreditLine(text) ||
+  isPlatformCreditLine(text) ||
   isDuetRoleLine(text) ||
   isInstrumentalLyricLine(text) ||
   isSymbolOnlyLyricLine(text) ||
@@ -637,11 +861,13 @@ export const isNumericOnlyLyricLine = (text: string) => {
  * 占位遮罩行：整行由**同一个 ASCII 字母重复 ≥3 次**构成（`XXXXXXXXX`、`xxx`、`OOOOOO`）。
  *
  * 网易云上大量用户上传谱会把未填写的段落写成这种遮罩，它没有任何可猜信息。
- * 判定要求「整行（去掉空白与连接符后）只由同一字母组成且长度 ≥3」，
- * 这样 `X你太美`、`xxxxx我爱你`、`XXXXXXXXXXXXXXXXXX你好` 这类含实际文字的行不会被误杀。
+ * 判定要求「整行（去掉空白与**全部标点/符号**后）只由同一字母组成且长度 ≥3」，
+ * 这样 `X你太美`、`xxxxx我爱你`、`XXXXXXXXXXXXXXXXXX你好` 这类含实际文字的行不会被误杀；
+ * 同时能覆盖 `～∧o∧o@∧o@∧o～...` 这类**符号夹单字母**的颜文字噪声行
+ * （剥掉 `～∧@-` 后只剩重复的 `o`）。`U.S.A.`、`O.O` 剥后不足 3 位或非单字母，保留。
  */
 export const isPlaceholderMaskLyricLine = (text: string): boolean => {
-  const stripped = text.normalize("NFKC").replace(/[\s\u3000\-—–_.,，、]/gu, "");
+  const stripped = text.normalize("NFKC").replace(/[\s\u3000\p{P}\p{S}]/gu, "");
   if (stripped.length < 3) return false;
   return /^([A-Za-z])\1+$/u.test(stripped);
 };
@@ -652,6 +878,11 @@ const STAGE_DIRECTION_SOURCE = [
   "fade", "fadeout", "fade in", "fade out", "spoken", "whisper", "echo",
   "以下反复", "以下重复", "间奏", "前奏", "尾奏", "反复", "重复", "此处",
   "略", "待补", "待定", "无歌词", "看不懂", "听不清", "念白",
+  // 多语言段落标记：`(Припев:)`（俄语副歌）、`(Coro:)`（西/意）、`(Refrain)`（法语）、
+  // `(サビ)`（日语副歌）、`(간주)`（韩语间奏）。这些在网易云外语曲目里很常见。
+  "припев", "куплет", "chorus", "verse", "bridge", "pre-chorus", "hook",
+  "coro", "estribillo", "refrain", "pont", "サビ", "aメロ", "bメロ", "間奏",
+  "간주", "후렴", "절",
 ].join("|");
 
 const STAGE_DIRECTION_PATTERN = new RegExp(`^(?:${STAGE_DIRECTION_SOURCE})$`, "i");
@@ -660,13 +891,15 @@ const STAGE_DIRECTION_PATTERN = new RegExp(`^(?:${STAGE_DIRECTION_SOURCE})$`, "i
  * 整行被一对括号完整包裹的舞台指示行。
  *
  * 网易云上大量上传谱把说明性文字整行写在括号里，例如
- * `(何が綴られていたのか、私たちの文明では到底理解できない)`、`（以下反复）`、`(Repeat)`。
- * 这些句子不含任何可猜的歌词内容，且**会暴露段落结构**，必须剔除。
+ * `(何が綴られていたのか、私たちの文明では到底理解できない)`、`（以下反复）`、`(Repeat)`、
+ * `(Припев:)`。这些句子不含任何可猜的歌词内容，且**会暴露段落结构**，必须剔除。
  *
  * 但括号在真实歌词里同样常见（和声、重复句、英文衬词），所以判定必须保守：
- * 只有满足以下任一条才剔除，且内层不能含中日文字符串之外的自然语气：
- * 1. 内层命中舞台指示词表；
- * 2. 内层含 `、`/`,`/`，` 这类**并列或断句**标点（真实歌词的括号内容极少是长句）。
+ * 只有满足以下任一条才剔除：
+ * 1. 内层命中舞台指示词表（含多语言段落标记）；
+ * 2. 内层形如「标签 + 冒号」（`Припев:`、`Verse 1:`、`Chorus：`），冒号后为空 ——
+ *    这是段落标记的通用形态，任何真实歌词括号内容都不会以「单个词 + 冒号结尾」出现；
+ * 3. 内层含 `、`/`,`/`，` 这类**并列或断句**标点（真实歌词的括号内容极少是长句）。
  *
  * `（啦啦啦）`、`(你是我的眼)`、`(Oh yeah baby)`、`（爱してる）` 都因不满足以上条件而保留。
  */
@@ -679,7 +912,12 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
   // 内层若本身是纯符号/纯遮罩，交给各自的判定，避免重复归类。
   if (/^[\p{P}\p{S}\s\u3000]+$/u.test(inner)) return false;
 
-  if (STAGE_DIRECTION_PATTERN.test(inner)) return true;
+  // 去掉尾部的冒号后再比对词表，兼容 `(Припев:)`、`(Repeat:)` 形态。
+  const withoutTrailingColon = inner.replace(/[:：]\s*$/u, "").trim();
+  if (STAGE_DIRECTION_PATTERN.test(withoutTrailingColon)) return true;
+
+  // 「单词 + 冒号结尾」的段落标记形态（`Verse 1:`、`Припев:`），冒号后无内容。
+  if (/^[^\s:：,，、;；]{1,20}(?:\s\d{1,2})?\s*[:：]\s*$/u.test(inner)) return true;
 
   // 并列/断句标点：真实歌词的括号内容极少出现需要断句的长句。
   return /[、,，;；]/u.test(inner);
@@ -736,6 +974,9 @@ const COPYRIGHT_NOTICE_SOURCE = [
   "未经许可", "未经授权", "不得翻唱", "不得使用", "不得转载", "禁止翻唱",
   "版权所有", "all rights reserved", "copyright", "℗", "©",
   "词版权", "曲版权", "词曲版权", "op：", "sp：",
+  // 商用授权/搬运声明：`已获商用授权`、`未经著作权人许可禁止搬运`、`禁止翻录`、`禁止Remix`。
+  "商用授权", "著作权人", "禁止搬运", "禁止翻录", "禁止转载", "翻录", "remix",
+  "仅供个人学习", "不得用于商业",
 ].join("|");
 
 const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
@@ -748,12 +989,97 @@ export const isCopyrightNoticeLine = (text: string): boolean => {
 };
 
 /**
- * 对唱角色标注行（`男：`、`女：`、`合：`、`合唱：`）。
+ * 技术参数与联系信息行：`ISRC：TWA451498702`、`UPC：...`、
+ * `合作：st399@vip.163.com`、`联系：xxx@qq.com`、`https://...`。
  *
- * 这类行给出的是演唱分工而非歌词内容，且右侧通常为空，
- * `splitCreditHead` 会因「取值缺失」直接返回 undefined 而漏网。
+ * 这类行不含任何歌词语义，却会被出题者看到唱片编号与联系方式。
+ * 判定分两支：**编号类标签**（ISRC/UPC/ISWC/EAN/barcode）与
+ * **邮箱/网址**（含 `@` 且形如邮箱，或含协议/域名）。
+ * 注意 `@` 判定要足够具体，避免误伤歌词里的 `@`（如 `Sing @ the top`）。
  */
-const DUET_ROLE_PATTERN = /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[:：]\s*$/u;
+const TECHNICAL_ID_PATTERN = /^(?:isrc|upc|ean|iswc|isbn|barcode|条形码)\s*[:：]?\s*[A-Z0-9-]{6,}$/i;
+const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const URL_PATTERN = /https?:\/\/|www\.[A-Za-z0-9-]+\.[A-Za-z]{2,}/i;
+
+export const isTechnicalInfoLine = (text: string): boolean => {
+  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  if (!normalized) return false;
+  if (TECHNICAL_ID_PATTERN.test(normalized)) return true;
+  if (EMAIL_PATTERN.test(normalized)) return true;
+  if (URL_PATTERN.test(normalized)) return true;
+  // `ISRC :` / `UPC：` 这类只有标签、取值另起/缺失的残留行。
+  return /^(?:isrc|upc|ean|iswc|isbn|barcode)\s*[:：]\s*$/i.test(normalized);
+};
+
+/**
+ * 团体/工作室归属署名：`朗梓朔@维伴音乐`、`王皓@WONDERWALL`、`洪信杰@牛班NEWBAND`。
+ *
+ * 网易云近年大量出现「人名 @ 团队名」的归属写法，用于标注乐手所属厂牌或乐队。
+ * 它既不含冒号（`splitCreditHead` 拆不出标签），也不是邮箱（`@` 后无 TLD），
+ * 因此会从词表、结构、技术信息三条路径全部漏出。
+ *
+ * 判定必须严格，避免误伤歌词里的 `@`：
+ * 1. `@` 两侧**紧贴**（不允许空白），排除 `Sing @ the top`、`I'll be there @ 3am`；
+ * 2. `@` 右侧是**团队名形态**：含至少一个 ASCII 大写字母且长度 ≥3
+ *    （`WONDERFALL`、`NEWBAND`、`牛班NEWBAND`、`BrandNew`），或全中文（`维伴音乐`、`爱之音`）。
+ *    这自然排除 `me@you`、`love@first`、`你@我`（右侧无大写或过短）；
+ *    `@` 左侧允许人名形态（中文名、英文名、`张人杰Andy` 这类中英混排）；
+ * 3. 整行**只由归属片段构成**（允许 `/`、空白、顿号分隔多个片段），
+ *    排除夹在句子里的 `Send it to me @ midnight` 这类歌词。
+ */
+const AFFILIATION_SEGMENT_PATTERN =
+  /^(?:[\u4e00-\u9fff]{1,12}[A-Za-z]*|[A-Za-z][A-Za-z0-9]*|[A-Za-z0-9]*[A-Za-z])@(?:[\u4e00-\u9fffA-Za-z0-9]+)$/u;
+
+export const isAffiliationCreditLine = (text: string): boolean => {
+  const normalized = text.normalize("NFKC").trim();
+  if (!normalized || !normalized.includes("@")) return false;
+  const segments = normalized.split(/[\s\u3000/／,，、|｜]+/u).filter(Boolean);
+  if (segments.length === 0) return false;
+  return segments.every((segment) => {
+    const match = AFFILIATION_SEGMENT_PATTERN.exec(segment);
+    if (!match) return false;
+    // `@` 右侧的团队名必须是「团队形态」：≥3 个 ASCII 字母且含大写，
+    // 或 ≥2 个汉字。仅此一条即可排除 `me@you`、`love@first`、`你@我`。
+    const team = match[0].slice(match[0].lastIndexOf("@") + 1);
+    const ascii = team.replace(/[^A-Za-z]/g, "");
+    if (/^[\u4e00-\u9fff]+$/u.test(team)) return team.length >= 2;
+    return ascii.length >= 3 && /[A-Z]/.test(ascii);
+  });
+};
+
+/**
+ * 平台/企划出品声明：`网易云音乐特别企划“回声不息”出品`、`本歌曲来自〖网易音乐人〗`。
+ *
+ * 这类行既非署名也非版权，但会把「这是网易云自制的企划曲」这一背景信息泄露给猜题者，
+ * 且行末常带书名号/引号包裹的企划名，词表永远追不全。按**平台名 + 出品/来自**结构判定。
+ */
+const PLATFORM_CREDIT_PATTERN =
+  /(?:网易云音乐|网易音乐人|网易云|云音乐|qq音乐|酷狗音乐|咪咕音乐|bilibili)/u;
+
+export const isPlatformCreditLine = (text: string): boolean => {
+  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  if (!normalized) return false;
+  if (!PLATFORM_CREDIT_PATTERN.test(normalized)) return false;
+  return /出品|来自|企划|独家|首发|联合|制作/.test(normalized);
+};
+
+/**
+ * 对唱角色标注行（`男：`、`女：`、`合：`、`合唱：`，以及任意演唱人名的 `徐良L:`、`Ty：`、
+ * 声乐角色的 `戏腔：`、`京剧：`）。
+ *
+ * 这类行给出的是**演唱分工而非歌词内容**，且右侧为空，
+ * `splitCreditHead` 会因「取值缺失」直接返回 undefined 而漏网。
+ *
+ * 判定放宽为「**短标签 + 冒号结尾且右侧为空**」，而不是固定词表 —— 因为
+ * `戏腔`/`京剧`/`徐良L`/`Ty` 这类分工名永远枚举不完，而「空取值」这一结构特征本身
+ * 就足以判定它不含可猜内容。安全性依据：实测 150 首真实歌曲里该形态只有 4 种，
+ * 全是分工标注，**没有任何一行真实歌词是「短标签 + 冒号 + 空」**。
+ *
+ * 标签允许含空格以覆盖英文演唱者（`Ariana Grande：`、`2 Chainz：`），
+ * 但要求不含句末标点、不含引号、长度 ≤20，避免把 `Say: "..."` 这类带取值的行误判
+ * （右侧非空天然不命中）。
+ */
+const EMPTY_VALUE_LABEL_PATTERN = /^[^\s:：'"，。！？、；]{1,20}(?:\s[^\s:：'"，。！？、；]{1,20}){0,3}\s*[:：]\s*$/u;
 
 /**
  * 包裹式角色标注：`【合】`、`（男）`、`[女]`，内层只有一个角色词且**没有取值**。
@@ -766,7 +1092,7 @@ const WRAPPED_DUET_ROLE_PATTERN =
 
 export const isDuetRoleLine = (text: string): boolean => {
   const trimmed = text.trim();
-  return DUET_ROLE_PATTERN.test(trimmed) || WRAPPED_DUET_ROLE_PATTERN.test(trimmed);
+  return EMPTY_VALUE_LABEL_PATTERN.test(trimmed) || WRAPPED_DUET_ROLE_PATTERN.test(trimmed);
 };
 
 /**
