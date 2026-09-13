@@ -885,6 +885,38 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R11 抽样沉淀：双语对照标签、书名号名单与企划声明会被过滤", () => {
+    for (const line of [
+      // 无分隔符英文署名：词表条目接不到，必须走整行前缀判定。
+      "Digital Edited by 정은경 @ Ingridstudio",
+      // 纯英文逐词判定需剔除 and/with 连接词，剩余词全部命中词表才判。
+      "营销推广机构 Marketing and promotion agencies : 百纳娱乐/网益文化",
+      // 行首书名号被装饰剥离后，左书名号可选才能接住「标题》名单」形态。
+      "《Plot: 0》动画 staff",
+      // 平台名 + 英文关键词大小写：from 需要 i 标志。
+      "From 爱你的网易云音乐",
+      // `洛天依` 含高频字 `天` 被结构判定虚词否决，只能靠词表路径接住。
+      "唱：乐正绫 洛天依",
+      "Project Lead : 张可欣",
+      "Writers: 李元浩 / 赵信惠",
+      "总企划：邵一雪",
+      "声音剪辑：刘三白",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：`》` 后不是名单词的书名号行是歌词、
+    // 剔除 and 后剩余词非标签的英文行是歌词、
+    // from 不与平台名共现时不触发。
+    for (const line of [
+      "《风之谷》里的少女",
+      "you and me together",
+      "From dusk till dawn we run",
+      "翻过山丘的名单上没有我",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
