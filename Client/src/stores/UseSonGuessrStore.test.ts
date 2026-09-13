@@ -47,6 +47,7 @@ const initialState = useSonGuessrStore.getState();
 const snapshot: SonGuessrRoomSnapshot = {
   roomId: "1234",
   name: "音乐房间",
+  solo: false,
   visibility: "public",
   allowSpectators: true,
   hasPassword: false,

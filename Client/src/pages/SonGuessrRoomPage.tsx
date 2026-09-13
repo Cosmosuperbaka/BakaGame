@@ -50,7 +50,14 @@ import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings"
 import { PlayerList } from "@/components/songuessr/PlayerList";
 import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
 import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
-import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import {
+  clearSongSoloRoomId,
+  getSavedUsername,
+  getSongSoloRoomId,
+  saveSongSoloRoomId,
+  saveUsername,
+} from "@/lib/Storage";
+import { randomRoomId } from "@/lib/Random";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import {
   clearStoredSongMusicSession,
@@ -177,12 +184,17 @@ function SongSettlementDetails({
   );
 }
 
-export default function SonGuessrRoomPage() {
+export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
   const navigate = useNavigate();
   const { roomId: routeRoomId = "" } = useParams();
-  const roomId = routeRoomId.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()
-    ? ROOM_ID_TEST_MODE
-    : routeRoomId.trim();
+  const [soloRoomId, setSoloRoomId] = useState(() =>
+    solo ? getSongSoloRoomId() || randomRoomId() : "",
+  );
+  const roomId = solo
+    ? soloRoomId
+    : routeRoomId.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()
+      ? ROOM_ID_TEST_MODE
+      : routeRoomId.trim();
   const snapshot = useSonGuessrStore((state) => state.snapshot);
   const privateState = useSonGuessrStore((state) => state.privateState);
   const storedRoomId = useSonGuessrStore((state) => state.roomId);
@@ -285,6 +297,48 @@ export default function SonGuessrRoomPage() {
     [createRoom, joinRoom, navigate, roomId, setNotice],
   );
 
+  // 单人房间由本机独占：优先重连上局，房间已消失或房间号撞车时换号重建。
+  const createSoloRoom = useCallback(
+    async (targetRoomId: string) => {
+      await createRoom({
+        roomId: targetRoomId,
+        name: "单人模式",
+        visibility: "public",
+        allowSpectators: false,
+        userName: getSavedUsername() || "单人玩家",
+        solo: true,
+      });
+      saveSongSoloRoomId(targetRoomId);
+    },
+    [createRoom],
+  );
+
+  const enterSoloRoom = useCallback(
+    async (targetRoomId: string) => {
+      try {
+        await createSoloRoom(targetRoomId);
+        setJoining(false);
+        return;
+      } catch (error) {
+        if ((error as { code?: string }).code !== "ROOM_EXISTS") {
+          setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
+          navigate("/songuessr", { replace: true });
+          return;
+        }
+      }
+      const nextRoomId = randomRoomId();
+      setSoloRoomId(nextRoomId);
+      try {
+        await createSoloRoom(nextRoomId);
+        setJoining(false);
+      } catch (error) {
+        setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
+        navigate("/songuessr", { replace: true });
+      }
+    },
+    [createSoloRoom, navigate, setNotice],
+  );
+
   useEffect(() => {
     if (!roomId || alreadyInRoom) return;
     if (!isValidRoomId(roomId)) {
@@ -311,6 +365,10 @@ export default function SonGuessrRoomPage() {
         return;
       }
       if (cancelled || useSonGuessrStore.getState().roomClosedAt) return;
+      if (solo) {
+        await enterSoloRoom(roomId);
+        return;
+      }
       const savedName = getSavedUsername();
       if (!savedName) {
         setJoining(false);
@@ -327,8 +385,10 @@ export default function SonGuessrRoomPage() {
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (roomClosedAt && !leavingRef.current) navigate("/songuessr", { replace: true });
-  }, [navigate, roomClosedAt]);
+    if (!roomClosedAt || leavingRef.current) return;
+    if (solo) clearSongSoloRoomId();
+    navigate("/songuessr", { replace: true });
+  }, [navigate, roomClosedAt, solo]);
 
   const isPlayingPhase = snapshot?.phase === "playing";
   const isRoundResultPhase = snapshot?.phase === "roundResult";
@@ -810,6 +870,7 @@ export default function SonGuessrRoomPage() {
 
   const leave = async () => {
     leavingRef.current = true;
+    if (solo) clearSongSoloRoomId();
     await leaveRoom();
     navigate("/songuessr", { replace: true });
   };
@@ -829,8 +890,12 @@ export default function SonGuessrRoomPage() {
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <span className="hidden truncate text-base font-semibold md:block">{snapshot.name}</span>
-          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
+          <span className="hidden truncate text-base font-semibold md:block">
+            {solo ? "单人模式" : snapshot.name}
+          </span>
+          {solo ? null : (
+            <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
+          )}
         </div>
 
         <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
@@ -856,6 +921,7 @@ export default function SonGuessrRoomPage() {
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           ) : null}
           <VolumeControl volume={volume} onVolumeChange={setVolume} />
+          {!solo ? (
           <div className="flex gap-1 md:hidden">
             <Button
               variant="ghost"
@@ -878,11 +944,14 @@ export default function SonGuessrRoomPage() {
               <MessageSquare className="h-5 w-5" />
             </Button>
           </div>
+          ) : null}
         </div>
       </header>
 
       <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
         <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
+          {!solo ? (
+            <>
           <div
             className="hidden shrink-0 md:block"
             style={{ width: PLAYER_COLUMN_WIDTH }}
@@ -905,6 +974,8 @@ export default function SonGuessrRoomPage() {
               />
             </div>
           </motion.aside>
+            </>
+          ) : null}
 
           <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
             <SongGameArea
@@ -935,6 +1006,7 @@ export default function SonGuessrRoomPage() {
           </main>
         </section>
 
+        {!solo ? (
         <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
           <ChatPanel
             messages={snapshot.chat ?? []}
@@ -943,6 +1015,7 @@ export default function SonGuessrRoomPage() {
             onSendMessage={handleSendChatMessage}
           />
         </aside>
+        ) : null}
 
         <AnimatePresence>
           {mobilePanel === "players" ? (
@@ -1254,7 +1327,9 @@ function GameStage({
               ) : null}
             </div>
           ) : hasGivenUp ? (
-            <p className="text-center text-sm text-muted-foreground">你已放弃本回合，等待其他玩家</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {snapshot.solo ? "你已放弃本回合" : "你已放弃本回合，等待其他玩家"}
+            </p>
           ) : !privateState.isSubmitter ? (
             <p className="text-center text-sm text-muted-foreground">本轮操作已完成</p>
           ) : null}
@@ -1317,7 +1392,14 @@ function GameStage({
             <SongSettlementDetails song={summary.song} />
           </section>
         )}
-        <ScoreTable scores={summary.scores} />
+        {snapshot.solo ? (
+          <SoloRoundOutcome
+            correct={summary.correctPlayerIds.includes(privateState.playerId)}
+            me={me}
+          />
+        ) : (
+          <ScoreTable scores={summary.scores} />
+        )}
         {isHost ? (
           <div className="flex justify-end gap-2">
             <Button
@@ -1326,7 +1408,7 @@ function GameStage({
               loading={isFinishing}
               onClick={() => void run("song.game.finish")}
             >
-              {isFinishing ? "正在返回..." : "返回等待阶段"}
+              {isFinishing ? "正在返回..." : snapshot.solo ? "结束本局" : "返回等待阶段"}
             </Button>
             <Button
               disabled={
@@ -1362,6 +1444,10 @@ function SongWaitingPhase({
   run: SongGameAreaProps["run"];
   isPending?: (type: string) => boolean;
 }) {
+  if (snapshot.solo) {
+    return <SongSoloWaitingPanel snapshot={snapshot} run={run} isPending={isPending} />;
+  }
+
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const nonHostActive = activePlayers.filter((player) => !player.isHost);
   const readyCount = nonHostActive.filter((player) => player.isReady).length;
@@ -1422,6 +1508,56 @@ function SongWaitingPhase({
           )}
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+function SongSoloWaitingPanel({
+  snapshot,
+  run,
+  isPending,
+}: {
+  snapshot: SonGuessrRoomSnapshot;
+  run: SongGameAreaProps["run"];
+  isPending?: (type: string) => boolean;
+}) {
+  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
+  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
+  const isStarting = Boolean(isPending?.("song.game.start"));
+
+  return (
+    <div className="mx-auto w-full max-w-md space-y-5">
+      <PhaseHeader icon={Headphones} title="单人模式" />
+      <SongAccountSettings snapshot={snapshot} />
+      <SettingsAccordion
+        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
+        title="题目设置"
+        open={questionSettingsOpen}
+        onOpenChange={setQuestionSettingsOpen}
+      >
+        <SongQuestionSettings snapshot={snapshot} solo />
+      </SettingsAccordion>
+      <SettingsAccordion
+        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        title="猜测设置"
+        open={gameSettingsOpen}
+        onOpenChange={setGameSettingsOpen}
+      >
+        <SongGameSettings snapshot={snapshot} solo />
+      </SettingsAccordion>
+      <Button
+        size="lg"
+        disabled={!snapshot.musicAccountReady || isStarting}
+        loading={isStarting}
+        onClick={() => void run("song.game.start")}
+        className="w-full text-base"
+      >
+        {isStarting
+          ? "正在开始游戏..."
+          : snapshot.musicAccountReady
+            ? "开始游戏"
+            : "请先扫码登录网易云账号"}
+      </Button>
     </div>
   );
 }
@@ -1618,8 +1754,10 @@ function SettingsAccordion({
 
 function SongQuestionSettings({
   snapshot,
+  solo = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  solo?: boolean;
 }) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
@@ -1704,6 +1842,7 @@ function SongQuestionSettings({
         </Button>
       </div>
 
+      {!solo ? (
       <div className="grid grid-cols-2 gap-2">
         <Button
           type="button"
@@ -1722,6 +1861,7 @@ function SongQuestionSettings({
           自动出题
         </Button>
       </div>
+      ) : null}
 
       {questionMode === "manual" ? (
         <div className="flex items-center justify-between rounded-md bg-muted/40 p-3">
@@ -1902,8 +2042,10 @@ function SongQuestionSettings({
 
 function SongGameSettings({
   snapshot,
+  solo = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  solo?: boolean;
 }) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
@@ -1977,6 +2119,7 @@ function SongGameSettings({
           />
         ) : null}
       </div>
+      {!solo ? (
       <div className="flex items-center justify-between">
         <div>
           <Label className="text-xs">血战模式</Label>
@@ -1984,6 +2127,7 @@ function SongGameSettings({
         </div>
         <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
       </div>
+      ) : null}
     </div>
   );
 }
@@ -2449,6 +2593,24 @@ function AttemptList({
             ) : null}
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function SoloRoundOutcome({
+  correct,
+  me,
+}: {
+  correct: boolean;
+  me?: SonGuessrPlayerView;
+}) {
+  return (
+    <section className="rounded-md bg-muted p-4 text-center">
+      <p className="text-base font-semibold">{correct ? "本轮答对" : "本轮未答对"}</p>
+      <div className="mt-2 flex items-center justify-center gap-4 text-sm text-muted-foreground">
+        <span>累计得分 {me?.score ?? 0}</span>
+        <span>命中 {me?.correctGuesses ?? 0}/{me?.totalGuesses ?? 0}</span>
       </div>
     </section>
   );

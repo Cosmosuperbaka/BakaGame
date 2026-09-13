@@ -37,6 +37,7 @@ export interface SonGuessrStore {
     password?: string;
     allowSpectators: boolean;
     userName: string;
+    solo?: boolean;
   }) => Promise<void>;
   joinRoom: (roomId: string, userName: string, password?: string) => Promise<void>;
   reconnectRoom: (roomId: string) => Promise<boolean>;

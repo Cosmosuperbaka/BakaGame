@@ -32,6 +32,7 @@ function App() {
               </Route>
               <Route path="/songuessr" element={<SonGuessrLayout />}>
                 <Route index element={<SonGuessrPage />} />
+                <Route path="solo" element={<SonGuessrRoomPage solo />} />
                 <Route path="room/:roomId" element={<SonGuessrRoomPage />} />
                 <Route path="*" element={<Navigate to="/songuessr" replace />} />
               </Route>
