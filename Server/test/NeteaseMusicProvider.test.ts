@@ -1215,6 +1215,33 @@ describe("NeteaseMusicProvider", () => {
     expect(urlCalls).toBe(2);
   });
 
+  test("播放地址取空时不缓存负结果，后台恢复后必须能重试成功", async () => {
+    let urlCalls = 0;
+    // 首次回源上游抖动返回空地址，第二次恢复返回真实地址。
+    // 空地址若被写进缓存，后续整个 TTL 内所有重试都会拿到空值 —— 玩家表现为
+    // 「这首歌永远加载不出来」，且与出题随机性无关的偶发抖动会被放大成长期故障。
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 15, name: "抖动曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => {
+          urlCalls += 1;
+          return urlCalls === 1
+            ? { body: { data: [{ id: 15, url: null }] } }
+            : { body: { data: [{ id: 15, url: "http://music.example.com/15.mp3" }] } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]抖动歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("15")).rejects.toMatchObject({ code: "SONG_UNAVAILABLE" });
+    // 第二次必须真正回源而不是复用被缓存的空值。
+    await expect(provider.getSong("15")).resolves.toMatchObject({
+      audioUrl: "https://music.example.com/15.mp3",
+    });
+    expect(urlCalls).toBe(2);
+  });
+
   test("网易云歌曲无播放地址时自动触发全局解灰并返回 HTTPS 音频", async () => {
     let unblockCalls = 0;
     const provider = new NeteaseMusicProvider({
