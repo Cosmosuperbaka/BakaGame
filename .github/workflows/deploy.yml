@@ -58,7 +58,11 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
           command_timeout: 3m
-          script_stop: true
+          # 绝不能开 script_stop：drone-ssh 会对脚本逐行改写、在每条命令后注入
+          # DRONE_SSH_PREV_COMMAND_EXIT_CODE 检查，任何合法为假的 if/&&（状态码 1）
+          # 都会被当成失败直接 exit 1，多行命令也会被截断。
+          # 失败即停由脚本自己的 `set -euo pipefail` 负责。
+          script_stop: false
           script: |
             set -euo pipefail
             # drone-ssh 把整段脚本经 stdin 喂给远端 shell。为彻底排除
@@ -79,7 +83,7 @@ jobs:
             SPLIT=8
             # 下载绝对截止时间（相对脚本开始的秒数）。到点即干净失败，
             # 为后面的容器重启 + 健康检查留足余量，确保不会撞上 3 分钟硬超时。
-            DL_DEADLINE=105
+            DL_DEADLINE=115
             # 可前缀拼接的 GitHub 代理节点（取自 https://github.akams.cn/ 节点列表）。
             # 必须用 raw 形态：https://<节点>/https://github.com/<repo>/raw/<ref>/<path>
             # 只有这个形态代理才会在服务端跟随 GitHub 到 media 的 302，返回 LFS 实体字节。
@@ -127,7 +131,8 @@ jobs:
                 echo "==> 部署失败（退出码 $rc），回滚本地数据库文件，线上服务保持原状"
                 restore_cache
               fi
-              rm -rf "$STASH"/.probe "$STASH"/.parts.* "$STASH"/.merged.* 2>/dev/null || true
+              # 注意：.parts.* 必须保留 —— 被强杀/超时的运行要靠它断点续传。
+              rm -rf "$STASH"/.probe "$STASH"/.merged.* 2>/dev/null || true
             }
             trap on_exit EXIT
 
@@ -163,12 +168,23 @@ jobs:
             export GIT_LFS_SKIP_SMUDGE=1
             git config --local filter.lfs.required false
 
-            # 把已就位的实体文件挪出工作区（mv 是原子改名），
-            # 这样 reset 之后工作区里躺着的是指针文本，实体由下面按需放回。
+            # 把已就位的实体文件挪出工作区（mv 是原子改名）。
+            # 血的教训：工作区里可能躺着指针文本（上一次失败留下的），绝不能用
+            # mv -f 盲目覆盖暂存区 —— 那会把唯一的真实数据库覆盖成 133 字节指针。
+            # 只有"工作区是有效 SQLite 且暂存区没有有效副本"时才搬过去。
             mkdir -p "$STASH"
             for f in $DB_FILES; do
-              if [ -f "$f" ]; then
-                mv -f "$f" "$STASH/$(basename "$f")"
+              c="$STASH/$(basename "$f")"
+              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
+                if [ ! -f "$c" ] || [ "$(head -c 15 "$c" 2>/dev/null)" != "SQLite format 3" ]; then
+                  mv -f "$f" "$c"
+                  say "暂存实体文件：$f"
+                else
+                  rm -f "$f"
+                fi
+              elif [ -f "$f" ]; then
+                say "工作区是 LFS 指针文本，丢弃：$f"
+                rm -f "$f"
               fi
             done
 
@@ -225,11 +241,12 @@ jobs:
               idx=0
               for m in $MIRRORS; do
                 idx=$((idx + 1))
+                # 错峰发起：镜像多为 Cloudflare 前置，同一 IP 的并发突发会被 403
+                sleep 0.25
                 (
                   s=$(curl -sS -L --fail --connect-timeout 5 -o "$PROBE_DIR/body.$idx" \
                         --max-time 6 -r 0-131071 -w '%{speed_download}' \
-                        "$(proxy_url "$m" "$PROBE_FILE")" 2>/dev/null || true)
-                  # 只认真正吐回 SQLite 实体字节的节点：403/404 错误页体积小、速度虚高，
+                        "$(proxy_url "$m" "$PROBE_FILE")" 2>/dev/null || true)                  # 只认真正吐回 SQLite 实体字节的节点：403/404 错误页体积小、速度虚高，
                   # 直接按 0 处理，免得把一个坏节点选成"最快"。
                   if [ "$(head -c 15 "$PROBE_DIR/body.$idx" 2>/dev/null)" = "SQLite format 3" ]; then
                     printf '%s %s\n' "${s:-0}" "$m" > "$PROBE_DIR/$idx"
@@ -258,10 +275,11 @@ jobs:
                 fi
                 # 注意：两个文件是并行下载的，临时路径必须按文件名取唯一值。
                 # bash 的 $$ 在子 shell 中仍是父进程 PID，不能用来做区分。
+                # 分片目录额外带上目标 OID 前缀：断点续传只对同一个对象有意义。
                 tag=$(basename "$f")
-                parts="$STASH/.parts.$tag"
+                parts="$STASH/.parts.$tag.${want:0:12}"
                 merged="$STASH/.merged.$tag"
-                rm -rf "$parts" "$merged"; mkdir -p "$parts"
+                rm -f "$merged"; mkdir -p "$parts"
                 chunk=$(( (size + SPLIT - 1) / SPLIT ))
                 i=0
                 while [ "$i" -lt "$SPLIT" ]; do
@@ -269,13 +287,18 @@ jobs:
                   if [ "$end" -ge "$size" ]; then end=$(( size - 1 )); fi
                   want_len=$(( end - start + 1 ))
                   (
+                    # 断点续传：上次运行已拿满长度的分片直接复用（整体 sha256 会兜底校验）
+                    if [ -f "$parts/$i" ] && [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
+                      exit 0
+                    fi
                     for m in $ORDER; do
                       cap=$(( DL_END - $(date +%s) ))
                       if [ "$cap" -lt 8 ]; then break; fi
                       if [ "$cap" -gt 60 ]; then cap=60; fi
-                      # --speed-limit/--speed-time：节点空有连接但不出流量时快速放弃，
-                      # 让分片立刻换下一个节点，而不是把预算耗在死掉的镜像上。
+                      # --speed-limit/--speed-time：节点空有连接但不出流量时快速放弃；
+                      # --retry 应对镜像偶发 5xx/429/超时。
                       if curl -sS -L --fail --connect-timeout 6 --max-time "$cap" \
+                           --retry 2 --retry-delay 1 \
                            --speed-limit 32768 --speed-time 20 \
                            -r "$start-$end" -o "$parts/$i" "$(proxy_url "$m" "$f")"; then
                         # 逐分片长度自校验：防住忽略 Range 直接回整文件的代理。
