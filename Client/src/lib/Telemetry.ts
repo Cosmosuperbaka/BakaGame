@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_URL } from "@/config/Constants";
+import { resolveServerUrl } from "@/lib/ServerEndpoint";
 import { captureClientMessage, isClientSentryEnabled } from "./Sentry";
 
 export interface TelemetryPayload {
@@ -18,10 +18,8 @@ export const reportTelemetry = async (
   options?: TelemetryOptions,
 ): Promise<void> => {
   try {
-    const rawUrl = options?.serverUrl ?? (import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL);
-    const serverUrl = rawUrl.replace(/\/+$/, "");
     const fetcher = options?.fetcher ?? fetch;
-    const response = await fetcher(`${serverUrl}/api/monitoring/telemetry`, {
+    const response = await fetcher(resolveServerUrl("/api/monitoring/telemetry", options?.serverUrl), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
