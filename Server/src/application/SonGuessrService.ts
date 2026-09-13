@@ -1237,7 +1237,7 @@ export class SonGuessrService {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
-      throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交 Bangumi 条目");
+      throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交番剧");
     }
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
@@ -1265,7 +1265,7 @@ export class SonGuessrService {
   private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
     const provider = this.options.musicProvider;
     if (anime.musicTracks.length === 0) {
-      throw new AppError("BANGUMI_NO_MUSIC", "该 Bangumi 条目没有可识别的主题曲信息");
+      throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
     }
     const filters = room.settings.questionMode === "automatic"
       ? room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!
@@ -1323,7 +1323,7 @@ export class SonGuessrService {
       return fallbackRecent;
     }
 
-    throw new AppError("BANGUMI_NO_MUSIC", "该 Bangumi 条目没有可播放的关联歌曲");
+    throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
@@ -1438,7 +1438,7 @@ export class SonGuessrService {
           if (error instanceof AppError && error.code === "BANGUMI_RATE_LIMITED") throw error;
         }
       }
-      throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的 Bangumi 条目");
+      throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
     }
     const candidates = await this.resolveAutomaticCandidates(room);
     if (candidates.length === 0) {
