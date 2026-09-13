@@ -8,6 +8,8 @@ import { isAppError } from "../domain/Errors";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { BangumiWorkerProvider } from "../infrastructure/BangumiWorkerProvider";
+import { BangumiProvider } from "../infrastructure/BangumiProvider";
+import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
@@ -240,7 +242,10 @@ export const createApp = ({
         logger,
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
-      bangumiProvider: new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl, env.bangumiApiUrl),
+      bangumiProvider: new FallbackBangumiProvider(
+        new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl, env.bangumiApiUrl),
+        new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
+      ),
     });
 
   const app = new Elysia({
