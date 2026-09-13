@@ -922,28 +922,28 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           ) : null}
           <VolumeControl volume={volume} onVolumeChange={setVolume} />
           {!solo ? (
-          <div className="flex gap-1 md:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              aria-label="玩家列表"
-              aria-expanded={mobilePanel === "players"}
-              onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              aria-label="聊天"
-              aria-expanded={mobilePanel === "chat"}
-              onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
-            >
-              <MessageSquare className="h-5 w-5" />
-            </Button>
-          </div>
+            <div className="flex gap-1 md:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="玩家列表"
+                aria-expanded={mobilePanel === "players"}
+                onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="聊天"
+                aria-expanded={mobilePanel === "chat"}
+                onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
+              >
+                <MessageSquare className="h-5 w-5" />
+              </Button>
+            </div>
           ) : null}
         </div>
       </header>
@@ -952,28 +952,28 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
           {!solo ? (
             <>
-          <div
-            className="hidden shrink-0 md:block"
-            style={{ width: PLAYER_COLUMN_WIDTH }}
-            aria-hidden="true"
-          />
-
-          <motion.aside
-            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
-            initial={false}
-            animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
-            transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
-          >
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-              <PlayerList
-                players={snapshot.players}
-                myPlayerId={privateState.playerId}
-                isHost={isHost}
-                phase={snapshot.phase}
-                allowSpectators={snapshot.allowSpectators}
+              <div
+                className="hidden shrink-0 md:block"
+                style={{ width: PLAYER_COLUMN_WIDTH }}
+                aria-hidden="true"
               />
-            </div>
-          </motion.aside>
+
+              <motion.aside
+                className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
+                initial={false}
+                animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
+                transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
+              >
+                <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
+                  <PlayerList
+                    players={snapshot.players}
+                    myPlayerId={privateState.playerId}
+                    isHost={isHost}
+                    phase={snapshot.phase}
+                    allowSpectators={snapshot.allowSpectators}
+                  />
+                </div>
+              </motion.aside>
             </>
           ) : null}
 
@@ -1007,14 +1007,14 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         </section>
 
         {!solo ? (
-        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
-          <ChatPanel
-            messages={snapshot.chat ?? []}
-            players={snapshot.players}
-            myPlayerId={privateState.playerId}
-            onSendMessage={handleSendChatMessage}
-          />
-        </aside>
+          <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
+            <ChatPanel
+              messages={snapshot.chat ?? []}
+              players={snapshot.players}
+              myPlayerId={privateState.playerId}
+              onSendMessage={handleSendChatMessage}
+            />
+          </aside>
         ) : null}
 
         <AnimatePresence>
@@ -1843,24 +1843,24 @@ function SongQuestionSettings({
       </div>
 
       {!solo ? (
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          variant={questionMode === "manual" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionMode("manual")}
-        >
-          手动出题
-        </Button>
-        <Button
-          type="button"
-          variant={questionMode === "automatic" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionMode("automatic")}
-        >
-          自动出题
-        </Button>
-      </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant={questionMode === "manual" ? "default" : "outline"}
+            className="h-10"
+            onClick={() => setQuestionMode("manual")}
+          >
+            手动出题
+          </Button>
+          <Button
+            type="button"
+            variant={questionMode === "automatic" ? "default" : "outline"}
+            className="h-10"
+            onClick={() => setQuestionMode("automatic")}
+          >
+            自动出题
+          </Button>
+        </div>
       ) : null}
 
       {questionMode === "manual" ? (
@@ -2120,13 +2120,13 @@ function SongGameSettings({
         ) : null}
       </div>
       {!solo ? (
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-xs">血战模式</Label>
-          <p className="mt-1 text-[11px] text-muted-foreground">首位答对获得正式玩家数分，之后每位答对者依次少 1 分。</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs">血战模式</Label>
+            <p className="mt-1 text-[11px] text-muted-foreground">首位答对获得正式玩家数分，之后每位答对者依次少 1 分。</p>
+          </div>
+          <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
         </div>
-        <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
-      </div>
       ) : null}
     </div>
   );
