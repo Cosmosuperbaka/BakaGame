@@ -1447,6 +1447,66 @@ describe("SonGuessrService", () => {
     expect(sourceId).toBe("3778678");
   });
 
+  test("单人房间自动出题、拒绝他人加入、不进大厅列表且可连续开局", async () => {
+    const soloProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "3778678", name: "默认题库", songCount: 1 },
+        songs: [songs.answer],
+      }),
+    };
+    const service = new SonGuessrService({ musicProvider: soloProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "solo-player");
+    const stranger = connection(service, "solo-stranger");
+    await createRoom(service, solo, {
+      roomId: "7777",
+      name: "单人模式",
+      allowSpectators: false,
+      userName: "独狼",
+      solo: true,
+    });
+    const playerId = lastEvent<SonGuessrPrivateState>(solo, "song.game.privateState").playerId;
+    const waiting = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(waiting.solo).toBe(true);
+    expect(waiting.settings.questionMode).toBe("automatic");
+    expect(service.getRoomSummaries()).toEqual([]);
+
+    await execute(service, solo, {
+      id: "solo-manual",
+      type: "song.room.updateSettings",
+      roomId: "7777",
+      payload: { questionMode: "manual" },
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").settings.questionMode).toBe("automatic");
+
+    await expect(execute(service, stranger, {
+      id: "solo-join",
+      type: "song.room.join",
+      roomId: "7777",
+      payload: { userName: "路人" },
+    })).rejects.toMatchObject({ code: "SOLO_ROOM_FORBIDDEN" });
+
+    // 单人房间无需准备与指定出题人，开局后直接进入作答。
+    await execute(service, solo, { id: "solo-start", type: "song.game.start", roomId: "7777", payload: {} });
+    const playing = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(playing.phase).toBe("playing");
+    expect(playing.currentRound?.submitterPlayerId).toBe("");
+
+    await execute(service, solo, { id: "solo-audio", type: "song.game.audioReady", roomId: "7777", payload: { roundNumber: 1 } });
+    await execute(service, solo, { id: "solo-guess", type: "song.game.guess", roomId: "7777", payload: { songId: "answer" } });
+    const settled = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(settled.phase).toBe("roundResult");
+    expect(settled.roundSummary?.correctPlayerIds).toEqual([playerId]);
+    expect(settled.roundSummary?.scores).toEqual([
+      { playerId, playerName: "独狼", score: 1, delta: 1, correctGuesses: 1, totalGuesses: 1 },
+    ]);
+
+    await execute(service, solo, { id: "solo-next", type: "song.game.nextRound", roomId: "7777", payload: {} });
+    const nextRound = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(nextRound.phase).toBe("playing");
+    expect(nextRound.roundNumber).toBe(2);
+  });
+
   test("自动开局的重复请求会被加载锁拦截", async () => {
     let delayStatus = false;
     let releaseStatus!: () => void;
