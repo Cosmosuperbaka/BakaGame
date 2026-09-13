@@ -40,7 +40,10 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 
 ## 持续部署流水线 (Continuous Deployment)
 
-后端采用 GitHub Actions 自动化部署流水线（`.github/workflows/deploy.yml`），在代码推送至 `main` 分支且包含 `Server/**` 目录变更时，或通过 `workflow_dispatch` 手动触发时自动更新服务器。仅客户端或非服务端文件（如 `Client/`、`Agents/`、文档等）变更时不会触发后端部署。
+后端采用 GitHub Actions 自动化部署流水线（`.github/workflows/deploy.yml`），在代码推送至 `main` 分支且包含 `Server/**` 或 `.github/workflows/deploy.yml` 变更时，或通过 `workflow_dispatch` 手动触发时自动更新服务器。仅客户端或非服务端文件（如 `Client/`、`Agents/`、文档等）变更时不会触发后端部署。
+
+**部署脚本自身必须列入触发路径**：只写 `Server/**` 会导致改完流水线还得手工 dispatch 才生效，
+改动的正确性无法在真实部署里被验证，故障会被推迟到下一次有人改服务端代码时才暴露。
 
 ### 流水线架构与流程
 
