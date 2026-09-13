@@ -284,6 +284,8 @@ const normalizeComparableText = (value: string) =>
 const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
   "作词(?:人|者)?", "填词", "词曲", "词", "作曲(?:人|者)?", "谱曲", "曲", "制谱",
+  // R14 实测：`乐谱 : 彭华锐@牧雨音乐`、`上台乐手：画左：贝斯：...`。
+  "乐谱", "(?:上台)?乐手",
   "编曲(?:人|师|者)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
   "(?:词曲|作词|作曲)(?:提供|来源)",
   // 繁体写法（港台上传谱高频）：`編曲 Arrange : X`。
@@ -310,6 +312,8 @@ const CREDIT_LABEL_SOURCE = [
   // R13 实测：`电贝斯：Ray Vaughn Covington` —— R10 只登记了 `电贝司`（同音异字），
   // `电` 前缀需可选（`^` 锚定下裸 `贝斯` 接不住 `电贝斯`）。
   "电?贝斯",
+  // R14 实测：`电子合成器 / 仿音合成器 / 键琴 / 程序编排：C. Y. Kong`。
+  "(?:电子|仿音)合成器", "键琴", "程序编排",
   // 出版/公司/企划类：`制作公司 : X`、`厂牌 : X`、`企划宣传：X`、`商务统筹 : X`、
   // `特别鸣谢 : X`、`合作单位：X`。这类行给出的是机构而非歌词，必须剔除。
   "制作公司", "出品公司", "发行公司", "音乐公司", "签约公司", "文化传媒", "传媒",
@@ -504,6 +508,10 @@ const CREDIT_LABEL_SOURCE = [
   // `OA : 黄家驹`（Original Artist 原唱）、`Original:フラワリングナイト`。
   // 直接泄露原曲信息，缩写形态只有 2 字母，裸行路径不会误触（要求含中日文字）。
   "ot", "oa", "original",
+  // R14 实测：`RIT:tu vivi nell'aria`（原曲标注，OT 家族）、
+  // `Album: 幽闭サテライト - ...`（专辑名标注）、
+  // `Instrumentation & Programming : Benny Blanco`。
+  "rit", "album", "instrumentation", "programming",
 ].join("|");
 
 /**
@@ -964,6 +972,16 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `Arranged & Conducted by` 这类并列动作短语。
   if (isCreditActionPhrase(value)) return true;
 
+  // 中文标签以 `.` 分隔的形态：`作曲.监制 : X`、`词.曲 : X`、`编.混.母 : X`。
+  // `.` 不进通用 joiner（英文缩写 `C. Y. Kong` 依赖它），单独按「每段都是
+  // 完整标签」判定 —— `谁.在.唱` 这类歌词拆出的段不是标签，自然否决。
+  if (/^[\u4e00-\u9fff]{1,8}(?:\.[\u4e00-\u9fff]{1,8})+$/u.test(value)) {
+    const dotSegments = value.split(".");
+    if (dotSegments.length > 1 && dotSegments.every((segment) => isCreditLabelOnly(segment))) {
+      return true;
+    }
+  }
+
   // `和` 连接：`词和曲：X`、`填词和编曲：X`。独立于通用 joiner ——
   // `和` 同时是 `和声`/`和音`/`和编` 等标签的首字，单字符切分会把
   // `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网。按 `和` 切开的
@@ -1032,6 +1050,21 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // ` - ` 会把 head 切成孤立的 `P`，整行掉出词表路径，按单字母前缀整行判定。
   // `line` 后必须紧跟冒号：`C line up ...` 这类潜在歌词不受影响。
   if (/^[pc]\s*[-—–]?\s*line\s*[:：]/i.test(undecorated)) return true;
+  // 主要版权厂牌裸行：`Warner/Chappell Music, Hong Kong Limite`。纯英文裸行走不进
+  // 裸行路径（要求含中日文字），按「厂牌名开头 + 行内含公司后缀词」双条件判定；
+  // `\b` 词边界防止 `emi` 吃掉 `Eminem` 一类人名，公司后缀词排除
+  // `Universal love is all we need` 这类纯英文歌词。
+  if (
+    /^(?:warner(?:\s*\/\s*chappell)?|chappell|universal|sony|emi|bmg|kobalt|peermusic)\b/i.test(undecorated) &&
+    /\b(?:music|records?|publishing|entertainment|limited|ltd|group|studios?)\b/i.test(undecorated)
+  ) {
+    return true;
+  }
+  // CV 配音标注：`温迪（CV：喵酱）`、`雷电将军（CV：菊花花）`。同人曲的角色名单
+  // 本身就是歌曲指纹，且整行不含任何歌词正文，按结构整行判定。
+  if (/^[^（()）]{1,20}（\s*CV\s*[：:][^（()）]{1,20}）\s*$/u.test(undecorated)) {
+    return true;
+  }
   // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
   // 按「书名号包裹 + staff/制作名单收尾」结构判定。注意 LEADING_DECORATION
   // 已把行首 `《` 剥掉（undecorated 形如 `Plot: 0》动画 staff`），
