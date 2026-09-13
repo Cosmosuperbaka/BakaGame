@@ -3,10 +3,13 @@ import { describe, expect, test } from "bun:test";
 import {
   NeteaseMusicProvider,
   isBopomofoOnlyLyricLine,
+  isBracketedStageDirectionLine,
+  isCreditKeywordLine,
   isCreditLyricLine,
   isDuetRoleLine,
   isInstrumentalLyricLine,
   isNumericOnlyLyricLine,
+  isPlaceholderMaskLyricLine,
   isSymbolOnlyLyricLine,
   isTooShortLyricLine,
   isUnusableLyricLine,
@@ -224,6 +227,102 @@ describe("NeteaseMusicProvider", () => {
     expect(isBopomofoOnlyLyricLine("あいうえお")).toBe(false);
     expect(isBopomofoOnlyLyricLine("正常的中文歌词")).toBe(false);
     expect(isBopomofoOnlyLyricLine("ㄅㄆㄇ mixed 歌词")).toBe(false);
+  });
+
+  test("角色标注与「角色标记 + 歌词」必须区分开", () => {
+    // 实测《千里邀月》踩到的最严重误杀：`【合】有英雄漂泊异乡 故土遥远`
+    // 是「合唱角色标记 + 真实歌词」，早期实现把 `合` 当署名标签命中，
+    // 导致整段副歌被剔除。必须要求「取值侧无实质内容」才是角色标注。
+    for (const line of ["合：", "男：", "女：", "合唱：", "对唱：", "【合】", "（合）", "[女]"]) {
+      expect(isDuetRoleLine(line)).toBe(true);
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 角色标记 + 歌词正文：必须保留。
+    for (const line of [
+      "【合】有英雄漂泊异乡 故土遥远",
+      "【合】不免嫉妒人间 阴晴圆缺",
+      "【男】让我用心把你留下来",
+      "【女】你是我天边最美的云彩",
+      "【茶】长生殿外自在躲清闲",
+    ]) {
+      expect(isDuetRoleLine(line)).toBe(false);
+      expect(isCreditKeywordLine(line)).toBe(false);
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
+  test("带限定前缀的复合署名标签与英文取值会被过滤", () => {
+    // 实测发现：`音乐制作：BachBeats` 这类「复合中文标签 + 超过 8 字符的英文取值」
+    // 既掉出词表路径（标签不在表内），又被结构判定的 `segment.length > 8` 否决，
+    // 属于双重漏网。登记复合标签后必须能拦住。
+    for (const line of [
+      "音乐制作：BachBeats",
+      "音乐监制：某某某",
+      "音乐指导：bilbili音乐@大家的音乐姬",
+      "专辑制作：某某",
+      "专辑封面设计：某某",
+      "封面设计：某某",
+      "视觉设计：某某",
+      "制作协力：某某",
+      "录音棚：C.L.K",
+      "混音室：某某",
+      "母带处理：某某",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 反向断言：以复合标签词开头但整体是正常歌词的行不能被误杀。
+    for (const line of ["音乐响起：我们的故事", "制作人说的话我都记得"]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
+  test("占位遮罩行会被过滤，含实词的行不受影响", () => {
+    // 网易云上传谱常把未填写段落写成同一字母的重复。
+    for (const line of ["XXXXXXXXX", "XXXXX", "xxx", "OOOOOO", "xxxx", "XXXX-XXXX"]) {
+      expect(isPlaceholderMaskLyricLine(line)).toBe(true);
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 必须保留：含实际文字、或重复不足 3 次、或混入其他字符。
+    for (const line of [
+      "XXXXXXXXXXXXXXXXXX你好",
+      "X你太美",
+      "xxxxx我爱你",
+      "xx",
+      "OK",
+      "We will rock you",
+    ]) {
+      expect(isPlaceholderMaskLyricLine(line)).toBe(false);
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
+  test("整行括号包裹的舞台指示会被过滤，和声式括号歌词保留", () => {
+    for (const line of [
+      "(何が綴られていたのか、私たちの文明では到底理解できない)",
+      "（何が綴られていたのか、私たちの文明では到底理解できない）",
+      "（以下反复）",
+      "(Repeat)",
+      "(silence)",
+      "(Instrumental)",
+      "(间奏)",
+      "(One, two, three, go)",
+    ]) {
+      expect(isBracketedStageDirectionLine(line)).toBe(true);
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 反向断言：括号在真实歌词里是常态，短和声/衬词括号不能被误杀。
+    for (const line of [
+      "（啦啦啦）",
+      "（我们一起唱歌）",
+      "(Oh yeah baby)",
+      "（爱してる）",
+      "(你是我的眼)",
+      "（谁）",
+      "（你我之间）",
+    ]) {
+      expect(isBracketedStageDirectionLine(line)).toBe(false);
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
   });
 
   test("纯符号、纯数字与过短行会被过滤", () => {
