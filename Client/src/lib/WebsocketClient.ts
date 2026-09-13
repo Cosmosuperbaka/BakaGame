@@ -2,9 +2,9 @@ import type { ErrorPacket, ServerMessage } from "@/types";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
-  DEFAULT_SERVER_URL,
   MAX_RECONNECT_DELAY_MS,
 } from "@/config/Constants";
+import { resolveServerBase } from "@/lib/ServerEndpoint";
 import {
   captureClientLog,
   captureClientException,
@@ -70,9 +70,11 @@ export class WebSocketClient {
     }
 
     try {
-      const rawUrl = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
-      const cleanBase = rawUrl.replace(/\/+$/, "");
-      this.socket = new WebSocket(cleanBase.replace(/^http/, "ws") + this.path);
+      // 生产走同源相对路径（由边缘中间件反代），本地开发由 VITE_SERVER_URL 指定端口。
+      // WebSocket 相对地址无法直接构造，必须显式补全协议与主机。
+      const base = resolveServerBase();
+      const absoluteBase = base || `${location.protocol}//${location.host}`;
+      this.socket = new WebSocket(absoluteBase.replace(/^http/, "ws") + this.path);
     } catch {
       this.scheduleReconnect();
       return;

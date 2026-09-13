@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/react";
 import commitHistory from "virtual:commit-history";
 import changelog from "@/data/changelog.json";
 import { resolveLatestVersion } from "@/lib/Changelog";
+import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 export interface SentrySdkDriver {
   init: (options: Sentry.BrowserOptions) => void;
@@ -56,9 +57,8 @@ export const initClientSentry = (
 
   activeDriver = driver;
 
-  const configuredUrl = options?.serverUrl ?? import.meta.env.VITE_SERVER_URL;
-  const serverUrl = configuredUrl?.replace(/\/+$/, "");
-  const tunnel = serverUrl ? `${serverUrl}/api/monitoring/sentry` : "/api/monitoring/sentry";
+  // Sentry 隧道同样走同源相对路径：既避免跨域，也不再需要被 AdBlock 拦的第三方域名。
+  const tunnel = resolveServerUrl("/api/monitoring/sentry", options?.serverUrl);
 
   activeDriver.init({
     dsn,
