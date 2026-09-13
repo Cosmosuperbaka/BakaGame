@@ -364,6 +364,12 @@ const CREDIT_LABEL_SOURCE = [
   // R10 实测补漏：`（以下段落作曲作词：街道办／KT）`、`监唱 : X`、
   // `管弦乐配器 Orchestrator:X`、`电贝司 Electric Bass:X`。
   "以下段落", "监唱", "管弦乐", "配器", "电贝司",
+  // R11 实测补漏：`音乐项目总监 : X`、`总企划 : X`、`v本家：av号`、
+  // `歌词/翻译传导：X`（搬运标注）、`声音剪辑 ：X`、`营销统筹/营销推广机构：X`、
+  // 单字缩写 `编/混/母：X`、`唱：人名串`、`背景：绘师串`（同人曲分工标注；
+  // `背景` 同时进 SPACE_SPLIT_HEAD_DENY，空格形态按歌词保留）。
+  "音乐项目总监", "总企划", "v本家", "歌词传导", "翻译传导", "声音剪辑",
+  "营销", "机构", "编", "混", "母", "唱", "背景",
   // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
   "通称", "別名", "别名", "別称", "又称", "又名",
   // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
@@ -473,6 +479,11 @@ const CREDIT_LABEL_SOURCE = [
   "lead\\s+vocals?", "linn\\s+drum", "talk\\s*box", "mix\\s+engineering",
   "tenor", "baritone", "additional\\s+engineering", "released?\\s+on",
   "produce", "oboe", "chamberlin", "b-?box", "orchestrators?",
+  // R11 实测补漏：`Digital Edited by X`、`统筹Project Lead : X`、
+  // `Marketing coordination : X`、`Marketing and promotion agencies : X`
+  // （`and` 由连接组接住）、`Writers: X`。
+  "digital\\s+edited\\s+by", "project\\s+lead", "marketing\\s+coordination",
+  "marketing", "agencies", "writers?",
 ].join("|");
 
 /**
@@ -625,6 +636,9 @@ const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
     "lyrics?\\s+by", "music\\s+by", "written\\s+by", "produced\\s+by",
     "composed\\s+by", "arranged\\s+by", "performed\\s+by",
     "vocals?\\s+recorded\\s+at",
+    // R11 实测：`Digital Edited by 정은경 @ Ingridstudio` 无冒号无分隔，
+    // 词表条目只在头部路径生效，必须走整行前缀判定。
+    "digital\\s+edited\\s+by",
   ].join("|")})(?:\\s|$)`,
   "i",
 );
@@ -677,6 +691,8 @@ const SPACE_SPLIT_HEAD_DENY = new Set([
   "策划", "设计", "宣传", "推广", "邀请", "呈现",
   // `导演` 被歌词借用作隐喻（`导演 我的人生这一场戏`），空格形态不可信。
   "导演",
+  // `背景` 同理：`背景 夜色沉沉` 是歌词，`背景：绘师串` 是冒号署名。
+  "背景",
 ]);
 
 /** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。
@@ -798,8 +814,15 @@ const isCreditLabelOnly = (value: string): boolean => {
   // 英文「限定词 + 角色」：`Music Producer`、`Musical Supervisor`、`Vocal Arrangements`。
   // 逐词判定 —— 每个词都必须是已知英文标签，才能合成一个复合标签。
   // 旧实现只覆盖中文打头的复合形态（`制作人 Producer`），纯英文复合全部漏网。
+  // `and`/`with` 是并列连接词而非标签：`Marketing and promotion agencies`
+  // 的语义是「A and B + 中心词」，连接词剔除后剩余词全部命中词表才判。
+  // 歌词（`you and me`、`and I love you`）剔完连接词后剩余词不是标签，自然否决。
   if (/^[A-Za-z][A-Za-z\s]*$/u.test(value)) {
-    const words = value.trim().split(/[\s\u3000]+/u).filter(Boolean);
+    const words = value
+      .trim()
+      .split(/[\s\u3000]+/u)
+      .filter(Boolean)
+      .filter((word) => !/^(?:and|with|&)$/i.test(word));
     if (words.length >= 2 && words.every((word) => CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "") === word)) {
       return true;
     }
@@ -965,6 +988,13 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
   // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
   if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
+  // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
+  // 按「书名号包裹 + staff/制作名单收尾」结构判定。注意 LEADING_DECORATION
+  // 已把行首 `《` 剥掉（undecorated 形如 `Plot: 0》动画 staff`），
+  // 左书名号必须可选，且标题段限 40 字内防止吞进长歌词。
+  if (/^[《【]?[^《【》】]{1,40}[》】]\s*(?:动画|番剧|制作)?\s*(?:staff|制作名单|名单)\s*$/iu.test(undecorated)) {
+    return true;
+  }
 
   // 裸标签行：credit 块的段落标题独占一行（`出品`、`联合出品`），无冒号也无取值，
   // `splitCreditHead` 因找不到分隔符而整条失效。这里**只接受单个已登记标签**
@@ -1357,7 +1387,8 @@ export const isPlatformCreditLine = (text: string): boolean => {
     return true;
   }
   if (!PLATFORM_CREDIT_PATTERN.test(normalized)) return false;
-  return /出品|来自|企划|独家|首发|联合|制作/.test(normalized);
+  // `from` 是发行侧英文关键词：`From 爱你的网易云音乐`。大小写都要接住，必须带 i。
+  return /出品|来自|企划|独家|首发|联合|制作|from/i.test(normalized);
 };
 
 /**
