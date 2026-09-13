@@ -89,7 +89,6 @@ export default function SonGuessrPage() {
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
       <Seo
-        title="听歌猜歌在线玩 - Songuessr | BakaGame"
         description="Songuessr 是免下载的网页版听歌猜歌游戏，播放歌曲片段竞猜歌名或番剧，支持单人练习与多人联机对战，曲库接自网易云音乐与 Bangumi 番剧库。"
         path="/songuessr"
         structuredData={{

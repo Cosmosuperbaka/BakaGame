@@ -474,7 +474,6 @@ export default function LandingPage() {
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-background">
       <Seo
-        title="BakaGame - 在线玩谁是卧底与听歌猜歌"
         description="BakaGame 是免下载的网页版多人派对游戏站，提供在线版谁是卧底与听歌猜歌两款游戏，支持 4 至 16 人实时联机、单人练习与断线重连，打开浏览器即可开玩。"
         path="/"
         structuredData={{

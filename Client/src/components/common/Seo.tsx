@@ -9,8 +9,6 @@ const SITE_NAME = "BakaGame";
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
 
 interface SeoProps {
-  /** 页面标题，写入 <title> 与 og:title。 */
-  title: string;
   /** 页面描述，写入 meta description 与 og:description。 */
   description: string;
   /** 站内路径（以 / 开头）；用于生成 canonical 与 og:url。 */
@@ -25,14 +23,18 @@ interface SeoProps {
  * 声明式页面元信息。
  *
  * 之所以引入 react-helmet-async 而不是把 meta 写死在 index.html：
- * 本站是 SPA，三个页面（首页 / 两个游戏大厅）需要各自独立的 title 与 description，
- * 写死在入口 HTML 里只能覆盖首页一种情况，其余页面在搜索结果中会共用首页标题，
- * 造成标题重复与描述缺失。
+ * 本站是 SPA，三个页面（首页 / 两个游戏大厅）需要各自独立的 description 与 canonical，
+ * 写死在入口 HTML 里只能覆盖首页一种情况，其余页面在搜索结果中会共用首页描述，
+ * 造成描述缺失与 canonical 指向错误。
+ *
+ * 浏览器标签页标题刻意不在此管理：产品决策（2026-09-14）要求所有页面统一显示
+ * 纯站名「BakaGame」，不带任何后缀，由 index.html 的兜底 <title> 提供。
+ * 本组件因此不渲染 <title>，og:title 也固定为站名。
  *
  * 这些标签同样服务于预渲染：预渲染阶段 React 会真实执行本组件，
  * Helmet 收集到的标签会被序列化进静态 HTML，爬虫无需执行 JS 即可读到。
  */
-export function Seo({ title, description, path, indexable = true, structuredData }: SeoProps) {
+export function Seo({ description, path, indexable = true, structuredData }: SeoProps) {
   const canonical = `${SITE_ORIGIN}${path}`;
   const structuredDataJson = structuredData ? JSON.stringify(structuredData) : null;
 
@@ -53,14 +55,13 @@ export function Seo({ title, description, path, indexable = true, structuredData
 
   return (
     <Helmet prioritizeSeoTags>
-      <title>{title}</title>
       <meta name="description" content={description} />
       <link rel="canonical" href={canonical} />
       <meta name="robots" content={indexable ? "index,follow" : "noindex,follow"} />
 
       <meta property="og:type" content="website" />
       <meta property="og:site_name" content={SITE_NAME} />
-      <meta property="og:title" content={title} />
+      <meta property="og:title" content={SITE_NAME} />
       <meta property="og:description" content={description} />
       <meta property="og:url" content={canonical} />
     </Helmet>
