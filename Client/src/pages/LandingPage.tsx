@@ -85,7 +85,8 @@ const GAMES: GameEntry[] = [
       {
         id: "singleplayer",
         title: "单人模式",
-        available: false,
+        path: "/songuessr/solo",
+        available: true,
       },
       {
         id: "multiplayer",
