@@ -285,7 +285,16 @@ const CREDIT_LABEL_SOURCE = [
   // 词曲编录混等通用音乐署名
   "作词(?:人)?", "填词", "词曲", "词", "作曲(?:人)?", "谱曲", "曲",
   "编曲(?:人|师)?", "制作人", "制作", "监制", "统筹", "发行", "出品", "策划", "企划",
-  "混音(?:师)?", "母带(?:工程师)?", "录音(?:师|棚|室)?", "和声(?:编写)?", "念白",
+  // 复合标签：网易云常见 `音乐制作：X`、`音乐监制：X`、`专辑封面设计：X` 这类带限定前缀的写法。
+  // 单独登记而不放宽 `isCreditLabelOnly` 的「覆盖整个头部」约束，避免 `音乐响起：` 这类歌词被误杀。
+  "音乐制作", "音乐监制", "音乐指导", "音乐统筹", "音乐总监",
+  "专辑制作", "专辑封面(?:设计)?", "封面设计", "视觉设计",
+  "合作音乐人", "特邀", "参演", "配音",
+  "配唱(?:编写)?", "制作协力", "低音吉他", "第一小提琴", "第二小提琴", "中提琴", "大提琴",
+  // `录音(?:师|棚|室)?` 必须保留可选后缀形态：它同时覆盖 `录音师`/`录音棚`/`录音室`，
+  // 不要改写成逐个字面量，否则 `录音棚：C.L.K` 这类取值含点的行会掉出词表路径
+  // （结构判定因取值含 `.` 而否决）。
+  "混音(?:师)?", "录音(?:师|棚|室)?", "混音室", "母带(?:处理|工程师)?", "和声(?:编写)?",
   "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
   "版权管理方", "版权", "版权方", "录音作品", "录音制品", "版权代理", "授权",
   // 演唱与同人/翻唱圈署名
@@ -486,6 +495,24 @@ const isCreditLabelOnly = (value: string): boolean => {
   return true;
 };
 
+/** 头部恰好是纯角色词（`合`、`男`、`合唱`），用于区分「角色标注」与「角色标记 + 歌词」。 */
+const DUET_ROLE_LABEL_PATTERN =
+  /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)$/u;
+
+/**
+ * 取值侧是否含有「实质歌词内容」。
+ *
+ * 判定标准刻意宽松：只要有效字符达到 4 个以上，就认为右侧是歌词正文而非人名。
+ * 制作名单的取值是人名（通常 2~4 字，且多以分隔符并列），不会是一整句歌词；
+ * 而 `【合】有英雄漂泊异乡 故土遥远` 的右侧是一整句，必须归为歌词。
+ */
+const isSubstantiveLyricTail = (tail: string): boolean => {
+  const compact = tail
+    .normalize("NFKC")
+    .replace(/[\s\u3000\p{P}\p{S}]/gu, "");
+  return compact.length >= 4;
+};
+
 /** 词表命中的署名行（含行首装饰剥离、包裹式标签与多标签合并）。 */
 export const isCreditKeywordLine = (text: string): boolean => {
   const undecorated = text.trim().replace(LEADING_DECORATION_PATTERN, "").trim();
@@ -496,12 +523,21 @@ export const isCreditKeywordLine = (text: string): boolean => {
 
   const parts = splitCreditHead(text);
   if (!parts) return false;
-  const [head] = parts.split("\u0000");
+  const [head, tail] = parts.split("\u0000");
   // 只压缩空白，不能整体删除：`Special Thanks` 这类多词英文标签依赖词间空格。
   const normalizedHead = head.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
   if (!normalizedHead) return false;
   // 标签必须覆盖整个头部，避免「曲终人散：」这类以署名词开头的正常歌词被误判。
-  return isCreditLabelOnly(normalizedHead);
+  if (!isCreditLabelOnly(normalizedHead)) return false;
+
+  // 角色词（男/女/合/合唱…）单独成标签时，只可能是「空取值」的分工标注。
+  // `【合】有英雄漂泊异乡`、`【男】让我用心把你留下来` 这类是**真实歌词**
+  // （角色标记 + 歌词正文），若按标签命中整行剔除会大面积误杀合唱段落。
+  // 因此当头部是纯角色词、且取值侧存在实质歌词内容时，拒绝判定为署名行。
+  if (DUET_ROLE_LABEL_PATTERN.test(normalizedHead) && isSubstantiveLyricTail(tail)) {
+    return false;
+  }
+  return true;
 };
 
 /**
@@ -553,6 +589,8 @@ export const isUnusableLyricLine = (text: string): boolean =>
   isSymbolOnlyLyricLine(text) ||
   isNumericOnlyLyricLine(text) ||
   isBopomofoOnlyLyricLine(text) ||
+  isPlaceholderMaskLyricLine(text) ||
+  isBracketedStageDirectionLine(text) ||
   isTooShortLyricLine(text);
 
 const INSTRUMENTAL_MARKERS = new Set([
@@ -593,6 +631,58 @@ export const isNumericOnlyLyricLine = (text: string) => {
     .replace(/[\s\u3000()（）\[\]【】,.，、:：]/gu, "")
     .replace(/(?:s|sec|min|kbps|hz|bpm|khz|fps)/giu, "");
   return stripped.length > 0 && /^\d+$/u.test(stripped);
+};
+
+/**
+ * 占位遮罩行：整行由**同一个 ASCII 字母重复 ≥3 次**构成（`XXXXXXXXX`、`xxx`、`OOOOOO`）。
+ *
+ * 网易云上大量用户上传谱会把未填写的段落写成这种遮罩，它没有任何可猜信息。
+ * 判定要求「整行（去掉空白与连接符后）只由同一字母组成且长度 ≥3」，
+ * 这样 `X你太美`、`xxxxx我爱你`、`XXXXXXXXXXXXXXXXXX你好` 这类含实际文字的行不会被误杀。
+ */
+export const isPlaceholderMaskLyricLine = (text: string): boolean => {
+  const stripped = text.normalize("NFKC").replace(/[\s\u3000\-—–_.,，、]/gu, "");
+  if (stripped.length < 3) return false;
+  return /^([A-Za-z])\1+$/u.test(stripped);
+};
+
+/** 舞台指示/编辑注记的固定词汇：`(Repeat)`、`（以下反复）`、`(silence)`、`(间奏)`。 */
+const STAGE_DIRECTION_SOURCE = [
+  "repeat", "silence", "silent", "instrumental", "interlude", "intro", "outro",
+  "fade", "fadeout", "fade in", "fade out", "spoken", "whisper", "echo",
+  "以下反复", "以下重复", "间奏", "前奏", "尾奏", "反复", "重复", "此处",
+  "略", "待补", "待定", "无歌词", "看不懂", "听不清", "念白",
+].join("|");
+
+const STAGE_DIRECTION_PATTERN = new RegExp(`^(?:${STAGE_DIRECTION_SOURCE})$`, "i");
+
+/**
+ * 整行被一对括号完整包裹的舞台指示行。
+ *
+ * 网易云上大量上传谱把说明性文字整行写在括号里，例如
+ * `(何が綴られていたのか、私たちの文明では到底理解できない)`、`（以下反复）`、`(Repeat)`。
+ * 这些句子不含任何可猜的歌词内容，且**会暴露段落结构**，必须剔除。
+ *
+ * 但括号在真实歌词里同样常见（和声、重复句、英文衬词），所以判定必须保守：
+ * 只有满足以下任一条才剔除，且内层不能含中日文字符串之外的自然语气：
+ * 1. 内层命中舞台指示词表；
+ * 2. 内层含 `、`/`,`/`，` 这类**并列或断句**标点（真实歌词的括号内容极少是长句）。
+ *
+ * `（啦啦啦）`、`(你是我的眼)`、`(Oh yeah baby)`、`（爱してる）` 都因不满足以上条件而保留。
+ */
+export const isBracketedStageDirectionLine = (text: string): boolean => {
+  const wrapped = /^[（(\[【「『《<]\s*([\s\S]*?)\s*[）)\]】」』》>]$/u.exec(text.trim());
+  if (!wrapped) return false;
+  const inner = wrapped[1].trim();
+  if (!inner) return false;
+
+  // 内层若本身是纯符号/纯遮罩，交给各自的判定，避免重复归类。
+  if (/^[\p{P}\p{S}\s\u3000]+$/u.test(inner)) return false;
+
+  if (STAGE_DIRECTION_PATTERN.test(inner)) return true;
+
+  // 并列/断句标点：真实歌词的括号内容极少出现需要断句的长句。
+  return /[、,，;；]/u.test(inner);
 };
 
 /**
@@ -665,7 +755,19 @@ export const isCopyrightNoticeLine = (text: string): boolean => {
  */
 const DUET_ROLE_PATTERN = /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[:：]\s*$/u;
 
-export const isDuetRoleLine = (text: string): boolean => DUET_ROLE_PATTERN.test(text.trim());
+/**
+ * 包裹式角色标注：`【合】`、`（男）`、`[女]`，内层只有一个角色词且**没有取值**。
+ *
+ * 注意必须要求「括号内仅含角色词」，否则 `【合】有英雄漂泊异乡` 这类
+ * 「角色标记 + 真实歌词」的合唱段落会被整行误杀（实测《千里邀月》踩到）。
+ */
+const WRAPPED_DUET_ROLE_PATTERN =
+  /^[【\[（(「『《<]\s*(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[】\]）)」』》>]\s*$/u;
+
+export const isDuetRoleLine = (text: string): boolean => {
+  const trimmed = text.trim();
+  return DUET_ROLE_PATTERN.test(trimmed) || WRAPPED_DUET_ROLE_PATTERN.test(trimmed);
+};
 
 /**
  * 注音符号行（`ㄅㄆㄇㄈㄉㄊㄋㄌ`）。
