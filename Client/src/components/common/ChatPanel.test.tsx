@@ -76,9 +76,10 @@ describe("ChatPanel (Common)", () => {
     expect(bubbles[0]).toHaveTextContent("这是我的消息");
     expect(bubbles[0].className).toContain("bg-primary");
 
-    // 他人消息：靠左侧布局与 card 背景
+    // 他人消息：靠左侧布局与 muted 弱底色（明度低于面板，不刺眼）
     expect(bubbles[1]).toHaveTextContent("这是对方的消息");
-    expect(bubbles[1].className).toContain("bg-card");
+    expect(bubbles[1].className).toContain("bg-muted");
+    expect(bubbles[1].className).not.toContain("bg-card");
   });
 
   it("支持 Ghost 幽灵通道的虚线与弱化样式", () => {
