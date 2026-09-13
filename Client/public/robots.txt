@@ -1,0 +1,14 @@
+# BakaGame 站点抓取规则
+
+User-agent: *
+Allow: /
+
+# 房间页内容由服务端运行时状态决定，爬虫抓取到的只有空壳，
+# 既无索引价值又浪费抓取配额，明确屏蔽。
+Disallow: /whoisfaker/room/
+Disallow: /songuessr/room/
+
+# 观战席与单人练习页同理
+Disallow: /songuessr/solo
+
+Sitemap: https://game.baka.website/sitemap.xml
