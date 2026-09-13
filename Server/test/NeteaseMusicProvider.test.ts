@@ -842,6 +842,49 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R10 抽样沉淀：序数尾缀、乐器品牌与版权代理会被过滤", () => {
+    for (const line of [
+      "Lead Vocals : Bruno Mars",
+      "Linn Drum : Mark Ronson",
+      "Talkbox : Jeff Bhasker",
+      "Mix Engineering : John Hanes",
+      "Tenor Saxophone : Neal Sugarman / Dwayne Dagger",
+      "Baritone Saxophone : Ian Hendrickson-Smith",
+      "Engineers : Mark Ronson / Boo Mitchell / Charles Moniz",
+      "Additional Engineering : Ken Lewis / Devin Nakao",
+      "Released on : 2006-01-01",
+      "Sound Produce：百田留衣",
+      "Chamberlin Oboe：陈绮贞",
+      "B-Box:陆颢哲",
+      "管弦乐配器 Orchestrator:何迦德 Jiade He",
+      "电贝司 Electric Bass:张栗 Li Zhang",
+      "（以下段落作曲作词：街道办／KT）",
+      "监唱 : Victor刘伟德",
+      "(Admin. by Warner/Chappell Music Korea)/",
+      // 序数尾缀（分谱编号后置写法，与前缀形态相反）
+      "Violin 1st：郑泽勋",
+      "Violin 2nd：陈晏榕",
+      // 结构判定已知边界：「短标签+冒号+无虚词短尾」按署名处理（R5 起既有行为）
+      "风铃：响叮当",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：裸 `mix`/`produce` 不进词表（`Mix it up` 是歌词）、
+    // 结构判定放行含实词正文或高频词的行、历轮锚点回归。
+    for (const line of [
+      "Mix it up tonight",
+      "Produce the beats",
+      "风铃响了 叮当叮当",
+      "也许可能蒸发",
+      "我记得我去年夏天的时候出了一张唱片",
+      "男：One two three here we go",
+      "合：忘记了姓名的请跟我来",
+      "Laisse-moi être libre (let me be free)",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
