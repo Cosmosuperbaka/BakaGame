@@ -40,45 +40,10 @@ jobs:
         working-directory: Server
         run: bun run test:production-smoke
 
-  upload-bangumi:
-    name: Upload Bangumi databases
-    needs: [verify]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        db: [bangumi-song, bangumi-character]
-        part: [0, 1, 2, 3, 4, 5, 6, 7]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - name: Split database
-        run: |
-          mkdir -p deploy-parts
-          size=$(stat -c%s "Server/data/${{ matrix.db }}.sqlite")
-          part_size=$(( (size + 7) / 8 ))
-          start=$(( ${{ matrix.part }} * part_size ))
-          if [ "$start" -ge "$size" ]; then : > "deploy-parts/${{ matrix.db }}.${{ matrix.part }}"; exit 0; fi
-          length=$part_size
-          remaining=$((size - start))
-          [ "$length" -gt "$remaining" ] && length=$remaining
-          dd if="Server/data/${{ matrix.db }}.sqlite" of="deploy-parts/${{ matrix.db }}.${{ matrix.part }}" bs=1 skip="$start" count="$length" status=none
-      - name: Upload database part
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
-          source: "deploy-parts/${{ matrix.db }}.${{ matrix.part }}"
-          target: "/tmp/bangumi-parts"
-          strip_components: 1
-
   deploy:
     name: Deploy to Server
     runs-on: ubuntu-latest
-    needs: [verify, upload-bangumi]
+    needs: [verify]
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -104,10 +69,26 @@ jobs:
             echo "==> 拉取远端最新代码..."
             git fetch origin main
             git reset --hard origin/main
-            mkdir -p /tmp/bangumi-parts
-            for db in bangumi-song bangumi-character; do
-              cat $(for i in $(seq 0 7); do printf '/tmp/bangumi-parts/%s.%s ' "$db" "$i"; done) > "Server/data/$db.sqlite"
+            command -v git-lfs >/dev/null 2>&1 || { echo "❌ 生产机未安装 git-lfs"; exit 1; }
+            git lfs install --local
+            export GIT_LFS_CONCURRENT_TRANSFERS=8
+            export GIT_LFS_TRANSFERS=basic
+            export GIT_LFS_SKIP_SMUDGE=0
+            git config lfs.concurrenttransfers 8
+            git config lfs.dialtimeout 20
+            git config lfs.activitytimeout 600
+            git config lfs.tlstimeout 20
+            lfs_ok=false
+            for lfs_url in \
+              "https://gh-proxy.com/https://github.com/Cosmosuperbaka/BakaGame.git/info/lfs" \
+              "https://github.akams.cn/https://github.com/Cosmosuperbaka/BakaGame.git/info/lfs" \
+              "https://ghfast.top/https://github.com/Cosmosuperbaka/BakaGame.git/info/lfs" \
+              "https://github.com/Cosmosuperbaka/BakaGame.git/info/lfs"; do
+              echo "==> 尝试 LFS 镜像: $lfs_url"
+              git config remote.origin.lfsurl "$lfs_url"
+              if git lfs pull origin main; then lfs_ok=true; break; fi
             done
+            [ "$lfs_ok" = true ] || { echo "❌ 所有 LFS 镜像均下载失败"; exit 1; }
             valid_db() { [ -s "$1" ] && [ "$(head -c 15 "$1")" = "SQLite format 3" ]; }
             for db in Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite; do
               if ! valid_db "$db"; then
