@@ -789,6 +789,59 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R9 抽样沉淀：和连接、机构粘连与归属署名会被过滤", () => {
+    // R9 家族一：`和` 连接的多标签头（`和` 不进通用 joiner，否则 `和声` 被切碎）。
+    for (const line of [
+      "词和曲：陈信延",
+      "填词和编曲：梁翘柏",
+      "吉他、贝司、和声：李荣浩",
+      // R9 家族二：新增英文/中文标签
+      "Background Vocals: 光良/周博华",
+      "和声编写 BACKGROUND VOCAL ARRANGEMENT : 林俊杰",
+      "Accordion: 李正帆",
+      "Vocoder : Chris \"Tek\" O'Ryan/Monsieur Georges/Pianoman",
+      "中提琴 VIOLA : 甘威鹏 Weapon Kan",
+      "CO-PRODUCTION：Big Fred/Sander Meland",
+      "Recording Engineers: Peter Chong (Mal) / Rahmad",
+      "Studios : Dragon Studio/Nippon Phonogram(Rhythm section)/EMI HK (Strings section)",
+      "ISRC NO : HK-X58-04-30004",
+      "分轨混音/母带：周天澈@Studio21A",
+      "录混 : 马涛（上海谭旋音乐工作室）",
+      "调/影：纳兰寻风",
+      "二创效果Edit：Ryuzaki-L",
+      "乐队总监 : Lawrence Ku顾忠山 ＠11zband",
+      "前作：《那些我无法原谅的事》",
+      // R9 家族三：结构判定
+      "Kevin刘瀚文@Soundhub Studios",
+      "人声&吉他&鼓（打击乐）录音棚：55Tec studio",
+      "升赫录音棚Soundhub Studio",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：群星对唱（人名冒号 + 歌词）、`和` 两侧非标签、
+    // 英文开头非标签粘连、@ 歌词。
+    for (const line of [
+      "蔡 琴：轻轻敲醒沉睡的心灵",
+      "齐秦 苏芮 余天：唱出你的热情 伸出你双手",
+      "阿绫：月儿在手中开呀怀儿笑",
+      "我和你",
+      "早餐和午餐：我吃了面包",
+      "词和曲",
+      "Love音乐",
+      "Hello你好",
+      "在录音棚唱歌的夜晚",
+      "Kevin刘瀚文 Sing a song",
+      "Sing @ the top of my lungs",
+      "me@you",
+      "第一次发唱片",
+      "想听你听过的音乐",
+      "Ooh-la-la-la-la-la-la-la",
+      "Doo-doo-doo, doo-doo-doo",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
