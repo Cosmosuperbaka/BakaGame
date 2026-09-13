@@ -717,6 +717,78 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R8 抽样沉淀：连字符分隔、多词乐器头与新增署名标签会被过滤", () => {
+    // R8 家族一：连字符曾被当作分隔符，把 `Co-ordination` 在词中切碎导致漏网。
+    for (const line of [
+      "Production Co-ordination : Tania Doko",
+      "Prodused : Nisj",
+      "Audio Editing : Ivan Handell",
+      "Sub Publishing : Warner Chappell Music",
+      "Arranged : Henrik Nordenback",
+      "Used by permission of Sony Music Publishing",
+      "Nightlife reserved.",
+      "已买版权 禁止二改二传",
+      "版权公司：北京摩登天空文化发展有限公司",
+      // 新中文标签：三弦/填词变体/贴混/监督/绘画/录音版权
+      "三弦 : 张鑫",
+      "中文填词：沈病娇",
+      "粤语填词：梁晓璞",
+      "国语填词：小克",
+      "贴混：阿凯",
+      "监督：李三木",
+      "绘画：山新",
+      "录音版权：腾讯音乐娱乐集团",
+      // 连接符 `和`（带取值形态）
+      "词和曲：陈信延",
+      "填词和编曲：梁翘柏",
+      // 多人名空取值分工行（、/／ 连接）
+      "封茗囧菌、双笙：",
+      "封茗囧菌／双笙：",
+      "洛天依、言和、乐正绫：",
+      // 拼写数词序数（带取值）
+      "First Violin：张毅",
+      "Second Violins : 刘云志",
+      // 反向粘连：英文标签在前 + 中文标签
+      "Vocal录音室：北京 bulletproof studio",
+      "Vocal制作助理：蔡周灿",
+      // 整行括号包裹的平台企划名
+      "【bilibili音乐·2022虚拟歌手贺岁纪】",
+      "【QQ音乐·独家企划】",
+      "（网易云音乐独家出品）",
+      // 多词乐器录音头（Solo Cello 这类空格分隔乐器）
+      "Solo Cello Recorded at Avon Studios,",
+      "Solo Violin Recorded by Zhang Yi",
+      // 连字符作为分隔符的并列署名（空格夹心仍切分）
+      "Mixed - Mastered by 张三",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：字母夹心连字符不是分隔符（L-O-V-E 是拼写歌词），
+    // 裸行走「单标签整体命中」路径不接粘连/序数（后期制作人教训），
+    // `和` 两侧非标签、无平台名括号段落、乐器词+非署名动词都保留。
+    for (const line of [
+      "L-O-V-E",
+      "G-Eazy",
+      "Break-up song",
+      "词和曲",
+      "First Violin",
+      "Vocal录音室",
+      "我和你",
+      "早餐和午餐：我吃了面包",
+      "First love",
+      "Second chance",
+      "Love音乐",
+      "Hello你好",
+      "【副歌】",
+      "【回忆】",
+      "Spot is forever reserved",
+      "Drums are beating at dawn",
+      "Guitar solo in the night",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
