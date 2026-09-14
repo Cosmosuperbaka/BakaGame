@@ -3,6 +3,18 @@ import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { describeError, type EventLogger } from "./EventLogger";
+import {
+  CREDIT_ACTION_PATTERN,
+  CREDIT_LABEL_JOINER_PATTERN,
+  CREDIT_LABEL_PATTERN,
+  CREDIT_LABEL_SUFFIX_PATTERN,
+  CREDIT_SEPARATOR_PATTERN,
+  EN_CREDIT_PREFIX_PATTERN,
+  EN_CREDIT_SHORT_LABELS,
+  LYRIC_STOP_WORDS,
+  SPACE_SPLIT_HEAD_DENY,
+  STARTS_WITH_CREDIT_ENGLISH_PATTERN,
+} from "./NeteaseMusicLyricVocabulary";
 import type {
   SongDetails,
   SongArtistSearchResult,
@@ -101,7 +113,6 @@ const randomChineseIp = (random?: { nextFloat?: () => number }) => {
     Math.floor(rand() * 256),
   ].join(".");
 };
-
 
 const SEARCH_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
@@ -280,391 +291,9 @@ const normalizeComparableText = (value: string) =>
  * 2. 词表命中即判定为署名（快速路径，覆盖绝大多数已知标签）；
  * 3. 词表未命中的，走结构判定 `isCreditStructuredLine`，用「短标签 + 分隔符 + 空格分隔的人名串」
  *    这一稳定结构兜底，避免词表永远追不上新造的同人圈标签。
- */
-const CREDIT_LABEL_SOURCE = [
-  // 词曲编录混等通用音乐署名
-  "作词(?:人|者)?", "填词", "词曲", "词", "作曲(?:人|者)?", "谱曲", "曲", "制谱",
-  // R14 实测：`乐谱 : 彭华锐@牧雨音乐`、`上台乐手：画左：贝斯：...`。
-  "乐谱", "(?:上台)?乐手",
-  "编曲(?:人|师|者)?", "制作人", "制作", "监制(?:人)?", "统筹", "发行", "出品", "策划", "企划",
-  "(?:词曲|作词|作曲)(?:提供|来源)",
-  // 繁体写法（港台上传谱高频）：`編曲 Arrange : X`。
-  "作詞(?:人)?", "編曲(?:人|师)?", "製作(?:人)?", "監製(?:人)?", "後期", "翻譯", "字幕組",
-  "出品人", "发行人", "监制人", "策划人", "企划人", "指挥", "演奏指挥",
-  // R13 实测：`录制：Lightroom Studio`、`歌：洛天依 feat.岸晓`（单字 `歌` 的空格形态
-  // 由空格拆分的 ≥2 字头部规则天然保护）、`助理/工程师` 支撑 `混音助理工程师` 三段粘连。
-  "录制", "歌", "助理", "工程师",
-  // R13 实测：`英译：梦圆`、`单品策划:银狼的殷琅`、`曲绘人设加工：绫也茵`（人设+加工）。
-  "翻译", "(?:英|日|韩)译", "单品策划", "人设", "加工",
-  // 复合标签：网易云常见 `音乐制作：X`、`音乐监制：X`、`专辑封面设计：X` 这类带限定前缀的写法。
-  // 单独登记而不放宽 `isCreditLabelOnly` 的「覆盖整个头部」约束，避免 `音乐响起：` 这类歌词被误杀。
-  "音乐制作", "音乐监制", "音乐指导", "音乐统筹", "音乐总监", "音乐设计", "音乐混音",
-  "音乐出品", "音乐制作人", "音乐总监制",
-  // R12 实测：`音乐营销：网易飓风`（`音乐` 单词不进词表，沿用 `音乐X` 整词枚举防误杀）。
-  "音乐营销",
-  // R15 实测：`音乐发行 : 智慧大狗×天才联盟`。
-  "音乐发行",
-  "专辑制作", "专辑封面(?:设计)?", "封面设计", "视觉设计",
-  // R12 实测：`专辑：最好的时代`（专辑名是强泄露源）。
-  "专辑",
-  "合作音乐人", "特邀", "参演", "配音",
-  "配唱(?:编写)?", "制作协力", "低音吉他", "第一小提琴", "第二小提琴", "中提琴", "大提琴",
-  // R12 实测：`古琴 Guqin：方静宇`（民族乐器对照署名）、`戏腔 Opera tune：海伦`（演唱分工）。
-  "古琴", "戏腔",
-  // R13 实测：`电贝斯：Ray Vaughn Covington` —— R10 只登记了 `电贝司`（同音异字），
-  // `电` 前缀需可选（`^` 锚定下裸 `贝斯` 接不住 `电贝斯`）。
-  "电?贝斯",
-  // R14 实测：`电子合成器 / 仿音合成器 / 键琴 / 程序编排：C. Y. Kong`。
-  "(?:电子|仿音)合成器", "键琴", "程序编排",
-  // 出版/公司/企划类：`制作公司 : X`、`厂牌 : X`、`企划宣传：X`、`商务统筹 : X`、
-  // `特别鸣谢 : X`、`合作单位：X`。这类行给出的是机构而非歌词，必须剔除。
-  "制作公司", "出品公司", "发行公司", "音乐公司", "签约公司", "文化传媒", "传媒",
-  "厂牌", "唱片", "唱片公司", "工作室", "录音室(?!$)",
-  "企划宣传", "宣传", "推广", "营销", "商务", "商务统筹", "统筹企划",
-  // R15 实测：`联合推广：天浩悦动推广组`、`特别支持：中村光雄`、`温馨提示：请戴上耳机...`。
-  "联合出品", "联合推广", "特别支持", "温馨提示",
-  "鸣谢", "特别鸣谢", "特别感谢", "致谢", "感谢", "协助单位", "合作单位",
-  // 虚拟歌手/音源类：`虚拟人声：X`、`和声配唱 : X`、`主人声 : X`、`合声编写 : X`。
-  "虚拟人声", "虚拟歌手", "声库", "音源", "主人声", "副人声", "和声配唱", "和声演唱",
-  "合声", "合声编写", "合声配唱", "配唱",
-  // R15 实测：`苗族伴唱/苗语伴唱/侗语伴唱：...`（民族语言伴唱署名）。
-  "(?:苗|侗|彝|藏|蒙|维|朝|壮|瑶|白|傣)(?:族|语)?伴唱",
-  // 演奏/编制类：`弦乐演奏：X`、`弦乐乐团：X`、`乐队 Orchestra：X`、`乐队队长：X`。
-  "弦乐演奏", "弦乐乐团", "管弦乐团", "乐队", "乐团", "队长", "乐队队长", "首席",
-  "演奏", "独奏", "合奏", "伴奏", "编程", "音频工程师", "音响",
-  // R15 实测：`铜管/弦乐：国际首席爱乐乐团`、`铜管/弦乐录音棚：...`、`合成贝斯 : X`、
-  // `低音提琴 Double Bass:...`、`音频编辑Audio Edited by : X`、`录音工程& MIDI制作：X`。
-  "铜管", "弦乐", "合成", "低音提琴", "音频编辑", "录音工程",
-  "录音软件操作", "软件操作", "前台及舞台音响", "舞台音响",
-  // 英文音译/缩写署名：`Program : X`、`PGM：X`。
-  "program", "pgm", "md", "arrangement",
-  // 美术/画师类：`画师：X`、`绘图：X`、`曲绘：X`、`插画：X`。
-  "画师", "绘图", "曲绘", "插画", "美工", "题字", "排版", "设计",
-  // `录音(?:师|棚|室)?` 必须保留可选后缀形态：它同时覆盖 `录音师`/`录音棚`/`录音室`，
-  // 不要改写成逐个字面量，否则 `录音棚：C.L.K` 这类取值含点的行会掉出词表路径
-  // （结构判定因取值含 `.` 而否决）。
-  "混音(?:师)?", "录音(?:师|棚|室)?", "混音室", "母带(?:处理|工程师)?",
-  "和声(?:编写)?", "和音(?:编写|配唱)?", "合音(?:编写)?", "伴唱", "编写",
-  // 「动词/乐器 + 录音/混音/母带/制作」的复合署名，实测高频：
-  // `主唱录音：`、`弦乐录音：`、`混音母带：`、`母带制作：`、`母带后期处理录音室：`、
-  // `和声编写&和声演唱：`、`MIDI工程：`。`&`/`/` 连接的两段会由 `isCreditLabelOnly`
-  // 的逐段拆分处理，但每段本身必须在词表内。
-  "主唱录音", "弦乐录音", "管乐录音", "乐器录音", "人声录音", "混音母带", "母带制作",
-  // R15 实测：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】` 多段方括号署名的段头。
-  "古筝", "二胡", "笛箫", "协力",
-  // 注意：`母带后期处理` 的展开条目只在 R5 补漏组保留一条（含 录音室|制作人 两种后缀），
-  // 这里**不要**再登记字面并列的旧形态 —— 两条字面长度并列时源码顺序靠前者
-  // 会抢先匹配并在可选组前截断（`母带后期处理制作人` 只吃到 `母带后期处理`）。
-  "和声演唱", "midi工程", "编曲工程", "人声编辑",
-  // `乐器录音师`、`人声录音棚`、`混音工程师` 这类「动作 + 师/棚/室/工程师」的完整词形。
-  "乐器录音师", "人声录音棚", "混音工程师", "录音工程师", "母带工程师",
-  // 实测补漏：`人声录音师`、`人声录音棚A`、`吉他录音`、`母带工作室`、`配唱制作人`、`弦乐指挥`。
-  "人声录音师", "人声录音", "人声录音工程师", "吉他录音", "贝斯录音", "鼓录音", "钢琴录音", "弦乐录音师",
-  "母带工作室", "混音工作室", "录音工作室", "配唱制作人", "配唱编写", "合声编写",
-  "弦乐指挥", "弦乐翻译", "弦乐编写", "弦乐统筹", "管弦乐", "弦乐团",
-  // 助理/副手与总监类：`混音助理 : X`、`制作助理 : X`、`艺人合作总监 : X`。
-  "制作助理", "混音助理", "录音助理", "配唱助理", "音乐助理", "附加制作",
-  "音频编辑", "音频剪辑", "音频助理", "母带助理", "音乐编辑", "助理",
-  "艺人(?:合作)?总监", "项目总监", "内容总监", "节目总监",
-  // 缩写与单字形态：`和编：清潇Lanoiah`（和声编写缩写）、`器乐 : X`。
-  "和编", "合编", "器乐", "管乐", "实录", "弦乐实录", "表演(?:者)?",
-  "民乐", "艺人", "母版", "团队", "作品管理", "经纪", "制作人经纪",
-  "和声录唱", "歌词制作", "录音时间", "中国笛", "热瓦普", "(?:新疆)?手鼓",
-  // R5 实测补漏：`录音制作`、`营销推广`、`混音录音室`、`计算机音乐编成`、`谱务 Scoring`。
-  // R9：`录音棚`/`录音室` 单独成头（`鼓录音棚` 粘连拆分需要它们是标签）。
-  "录音制作", "营销推广", "混音录音室", "(?:计算机)?音乐编成", "谱务",
-  "母带后期处理(?:录音室|制作人)?", "声音工程师", "录音棚", "录音室",
-  // R7 实测补漏（官方发行页脚与同人圈混排标签）：
-  // `总监制 : X`、`歌曲企划：X`、`承制：X`、`混音工程：X`、`电影原声发行：X`、
-  // `音乐监督 X`、`项目/艺人统筹：X`、`宣发支持/宣发执行：X`、`导演：X`、`调色：X`、
-  // `服装：X`、`独家短视频平台：X`、`特别说明：X`、`原作：《…》X`、`爱尔兰哨笛 : X`、
-  // `弦乐录制：X`、`改编词曲/改编编曲 : X`、`绘 ：X`、`注：X`、`联合出品`（裸行）。
-  "总监制", "歌曲企划", "承制", "混音工程", "电影原声发行", "音乐监督",
-  "项目", "宣发(?:支持|执行)?", "导演", "调色", "服装", "(?:独家)?短视频平台",
-  "特别说明", "原作", "爱尔兰哨笛", "哨笛", "弦乐录制", "改编词曲", "改编编曲",
-  "绘", "注", "词作", "语调教", "社团", "物料", "黑胶设计", "联合出品",
-  // R8 实测补漏：`三弦 : X`、`中文填词：X`、`贴混：X`、`监督：X`、
-  // `绘画：X`、`录音版权：X`。
-  "三弦", "(?:中文|粤语|国语)填词", "贴混", "监督", "绘画", "录音版权",
-  // R9 实测补漏：`分轨混音/母带：X`、`录混 : X`、`调/影：X`（同人圈单字缩写，
-  // 调教/影像制作）、`吉他、贝司、和声：X`（贝斯变体）、`二创效果Edit：X`、
-  // `乐队总监 : X`、`前作：《…》`（前作歌名是答案泄露源，同 `原作`）。
-  "分轨混音", "录混", "调", "影", "贝司", "二创效果", "乐队", "总监", "前作",
-  // R10 实测补漏：`（以下段落作曲作词：街道办／KT）`、`监唱 : X`、
-  // `管弦乐配器 Orchestrator:X`、`电贝司 Electric Bass:X`。
-  "以下段落", "监唱", "管弦乐", "配器", "电贝司",
-  // R11 实测补漏：`音乐项目总监 : X`、`总企划 : X`、`v本家：av号`、
-  // `歌词/翻译传导：X`（搬运标注）、`声音剪辑 ：X`、`营销统筹/营销推广机构：X`、
-  // 单字缩写 `编/混/母：X`、`唱：人名串`、`背景：绘师串`（同人曲分工标注；
-  // `背景` 同时进 SPACE_SPLIT_HEAD_DENY，空格形态按歌词保留）。
-  "音乐项目总监", "总企划", "v本家", "歌词传导", "翻译传导", "声音剪辑",
-  "营销", "机构", "编", "混", "母", "唱", "背景",
-  // 别称/通称（答案泄露源）：`通称：愛情対象年齢`。
-  "通称", "別名", "别名", "別称", "又称", "又名",
-  // 日系/同人常见署名：`调声 Tuning`、`采样`、`尺八 Shakuhachi`、`调教`、`混响`。
-  "调声", "调音", "采样", "混响", "音效", "后期混音", "缩混", "母带制作人",
-  // 标题/元信息类（同时是答案泄露源）：`歌曲原名：夜来香`。
-  "歌曲原名", "原曲名", "歌曲名", "歌名", "原唱名", "本名",
-  // 外语标题头：`Bài Hát: See Tình`（越南语「歌名」）。
-  "bài\\s+hát", "canción", "曲名", "楽曲名", "タイトル",
-  "video",
-  "吉他", "贝斯", "鼓", "弦乐(?:编写)?", "乐器",
-  // 中文乐器/声部名：网易云里既有 `钢琴 : X` 也有 `架子鼓 Drums：X`。
-  "钢琴", "架子鼓", "爵士鼓", "电子琴", "合成器", "打击乐", "萨克斯", "长笛", "口琴",
-  "键盘", "键盘手", "手鼓", "铃鼓", "三角铁", "钟琴", "竖琴", "管风琴", "电钢",
-  "短笛", "英国管", "曼陀林", "尤克里里", "西塔尔琴", "班苏里笛", "萨兹琴",
-  "木吉他", "电吉他", "原声吉他", "古典吉他", "吉他", "贝斯", "鼓",
-  "古筝", "琵琶", "二胡", "笛子", "箫", "唢呐", "马头琴", "手风琴", "小提琴", "大提琴", "中提琴",
-  "尺八", "三味线", "太鼓", "箏", "琵琶", "笙", "阮", "柳琴", "扬琴", "冬不拉", "班卓琴",
-  "长号", "小号", "圆号", "大号", "双簧管", "单簧管", "巴松", "竖笛", "口哨",
-  // 中文声部/编制名
-  "人声", "声乐", "说唱", "rap", "戏腔", "京剧", "念白", "朗诵", "口白",
-  "版权管理方", "版权", "版权方", "录音作品", "录音制品", "版权代理", "授权",
-  // 演唱与同人/翻唱圈署名
-  "演唱", "主唱", "歌手", "翻唱", "翻策", "原唱", "原曲", "本家",
-  "美工", "题字", "后期", "海报", "封面", "曲绘", "插画", "绘图",
-  "视频", "压制", "字幕", "轴", "翻译", "校对", "文案", "调教", "调校", "pv",
-  "后援", "协力", "协助", "鸣谢", "致谢", "特别感谢", "出品方", "制作方", "发行方",
-  "男", "女", "合", "合唱", "对唱", "独唱", "童声", "念白",
-  // 英文署名
-  "op", "sp", "publisher", "cast", "staff",
-  "lyric(?:s|ist)?", "composer", "arranger", "producer",
-  "vocal(?:s|ist)?", "vocaloid", "illustration", "artwork", "movie",
-  "mixing", "mastering", "programming", "recording", "engineers?(?:ing)?",
-  // 英文编排/配器类（实测高频，旧表完全缺失）：
-  // `Orchestral Arrangements : X`、`Orchestration : X`、`Synthesizer Programming : X`、
-  // `Vocal Arrangements : X`、`Rhythm Arrangements : X`、`Synthesizers : X`。
-  "arrangements?", "orchestration", "orchestral", "orchestra",
-  "synthesizers?", "synthesizer\\s+programming", "programmed\\s+by",
-  "harmony", "harmonies", "choir", "strings?", "horns?", "woodwinds?",
-  "brass", "flute", "sax(?:ophone)?", "trumpet", "trombone",
-  "band", "quartet", "ensemble", "conductor",
-  // 英文职位类：`Editing Engineer`、`Assistant Engineer`、`recording PD`、`Musical Supervisor`。
-  "assistant\\s+engineer", "editing\\s+engineer", "recording\\s+pd",
-  "musical\\s+supervisor", "supervisor", "coordinator",
-  "management", "manager", "director", "directed\\s+by",
-  // 多词英文编排/制作署名（旧表遗漏，实测高频）：
-  // `Orchestral Arrangements`、`Vocal Arrangements`、`Rhythm Arrangements`、
-  // `String Arranger & Conductor`、`Synthesizer Programming`。
-  "orchestral\\s+arrangements?", "vocal\\s+arrangements?", "rhythm\\s+arrangements?",
-  "string\\s+arranger(?:\\s*&\\s*conductor)?", "synthesizer\\s+programming",
-  "vocal\\s+arrangement", "arrangements?",
-  "producers?", "publishers?", "composers?", "lyricists?", "arrangers?",
-  // 纯英文复合标签的限定词：`Music Producer`、`Musical Supervisor`、`Vocal Arrangements`、
-  // `Rhythm Arrangements`。这些词单独出现不足以判定（`music` 可能是歌词），
-  // 但 `isCreditLabelOnly` 的英文「逐词复合」分支要求**每个词都是标签且至少两词**，
-  // 因此把限定词登记进来是安全的。
-  "music", "musical", "vocal", "rhythm", "orchestral", "string", "brass",
-  "woodwind", "percussion", "electronic", "synthesizer", "acoustic", "electric",
-  // 实测补漏的复合后缀：`调声 Tuning`、`和声 Chorus`、`合成器 Synth`、
-  // `演唱 Voice`、`尺八 Shakuhachi`、`编曲 Arrange`、`版权 Publishing`。
-  "tuning", "chorus", "synth", "voice", "shakuhachi", "arrange", "publishing",
-  // `Soloist – X`、`1st/2nd Violins : X`。
-  "soloists?", "solos?", "violins?", "violoncello", "contrabass", "organ", "harpsichord",
-  // R5 补漏：`助理 Assistant`、`谱务 Scoring`、`Programmer`、`Studio`、`Sound Engineer`。
-  // R9：`Studios : Dragon Studio/...` 头部是复数，`studio` 收 `s?`。
-  "assistant", "scoring", "programmers?", "studios?", "sound",
-  "artists?", "piccolo", "compositions?", "renditions?", "instrumental", "production",
-  "recording\\s+time",
-  // 民族乐器拼音/外文名（复合标签英文半）：`古筝 Guzheng`、`琵琶 Pipa`、`笛子 Dizi`。
-  "guzheng", "pipa", "dizi", "sitar", "saz", "bansuri", "koto", "shamisen", "taiko",
-  "acoustic\\s+guitar", "classical\\s+guitar", "electric\\s+guitar",
-  "guitars?", "bass", "drums?", "piano", "keyboards?", "violin", "cello",
-  "percussion", "strings?", "midi", "pd", "recording", "rec", "program(?:ming)?",
-  // `X Engineer` / `X Studio` / `X Artist` 这类「角色限定 + 通用名词」的英文署名。
-  // 网易云上 `混音师 Mixing Engineer`、`人声录音棚 Vocal Recording Studio` 属常见形态，
-  // 只登记名词本体即可被复合标签路径覆盖。
-  "mixing\\s+engineer", "mastering\\s+engineer", "recording\\s+engineers?",
-  "instrumental\\s+recording\\s+engineers?", "vocal\\s+artist", "vocal\\s+recording\\s+studio",
-  "recording\\s+studio", "programmed", "keyboards?(?:\\s*&\\s*programming)?",
-  "thanks?(?:\\s+to)?", "special\\s+thanks",
-  "production\\s+coordination", "recorded\\s+at", "engineered\\s+by",
-  "mixed\\s+by", "mastered\\s+by", "lyrics?\\s+by", "music\\s+by",
-  "written\\s+by", "produced\\s+by", "composed\\s+by", "arranged\\s+by",
-  "performed\\s+by", "vocals?\\s+recorded\\s+at",
-  // `X by` 形式的英文署名：`作词 Lyricist by`、`作曲 Composer by`。
-  "lyricist\\s+by", "composer\\s+by", "arranger\\s+by", "producer\\s+by",
-  // R7 实测补漏：`Mixer : X`、`Studio Personnel : X`、`Synthesizer Operator : X`、
-  // `Verse 2: G-Eazy`（数字由槽位规则吃掉）、`二胡Erhu：X`、`策划Planner/ X`、
-  // `混音Mix down/ X`、`PV Promotion Video/ X`、`出品社团Products/ X`。
-  "mixers?", "personnel", "operators?", "planner", "verse",
-  "erhu", "mix\\s*down", "promotions?", "products?",
-  // R8 实测补漏：`Prodused : X`（瑞典语拼法）、`Audio Editing : X`、
-  // `Production Co-ordination : X`（连字符英式拼法，与已登记的
-  // `production coordination` 是同义变体）、`Sub Publishing : X`、
-  // `Arranged : X`（无 by 的裸动作形态）。
-  "prodused", "audio\\s+editing", "production\\s+co-ordination",
-  "sub\\s+publishing", "arranged",
-  // R9 实测补漏：`Background Vocals: 光良`（和声英文全称）、`Accordion: 李正帆`、
-  // `Vocoder : X`、`中提琴 VIOLA : X`、`CO-PRODUCTION：X`、`ISRC NO : 编码`
-  // （国际录音制品编码，真实歌词不含）。
-  "background\\s+vocals?", "background\\s+vocal\\s+arrangements?",
-  "accordion", "vocoder", "viola", "co-?production", "isrc(?:\\s+no)?",
-  // R10 实测补漏：`Lead Vocals : X`、`Linn Drum : X`（鼓机品牌）、`Talkbox : X`、
-  // `Mix Engineering : X`（裸 `mix` 不能加 —— `Mix it up` 是歌词）、
-  // `Tenor/Baritone Saxophone : X`、`Additional Engineering : X`、
-  // `Released on : 日期`、`Sound Produce：X`、`Chamberlin Oboe：X`、
-  // `B-Box: X`、`Orchestrator: X`。`engineer(?:ing)?` 复数化收 `Engineers :`。
-  "lead\\s+vocals?", "linn\\s+drum", "talk\\s*box", "mix\\s+engineering",
-  "tenor", "baritone", "additional\\s+engineering", "released?\\s+on",
-  "produce", "oboe", "chamberlin", "b-?box", "orchestrators?",
-  // R11 实测补漏：`Digital Edited by X`、`统筹Project Lead : X`、
-  // `Marketing coordination : X`、`Marketing and promotion agencies : X`
-  // （`and` 由连接组接住）、`Writers: X`。
-  "digital\\s+edited\\s+by", "project\\s+lead", "marketing\\s+coordination",
-  "marketing", "agencies", "writers?",
-  // R12 实测：`戏腔 Opera tune：海伦` —— `tune` 小写开头，TitleCase 对照分支接不住，词表直补。
-  "opera\\s+tune",
-  // R13 实测翻唱圈标注：`OT : 海阔天空 (Beyond)`（Original Track 原曲名）、
-  // `OA : 黄家驹`（Original Artist 原唱）、`Original:フラワリングナイト`。
-  // 直接泄露原曲信息，缩写形态只有 2 字母，裸行路径不会误触（要求含中日文字）。
-  "ot", "oa", "original",
-  // R14 实测：`RIT:tu vivi nell'aria`（原曲标注，OT 家族）、
-  // `Album: 幽闭サテライト - ...`（专辑名标注）、
-  // `Instrumentation & Programming : Benny Blanco`。
-  "rit", "album", "instrumentation", "programming",
-  // R15 实测：`Atmos 混音：X`（杜比全景声）、`录音工程& MIDI制作：X`、
-  // `Vocalproduction：X`、`第一小提琴 1st Violin:朱玥 Yue Zhu`（双语对照含序数）。
-  "atmos", "midi", "vocal\\s?production", "1st\\s+violin", "2nd\\s+violin",
-  // R16 实测补漏（英文乐器/设备/角色词）：`Lyricon : X`（数字管乐器）、
-  // `Rhodes Piano : X`（电钢琴品牌）、`String Conducting : X`、`Digital Editing : X`、
-  // `Bass Tracking录音：X`、`Lead & Backing Vocals : X`、`Audio Mixing & Engineer : X`、
-  // `制作production house：X`、`出品Production company：X`、`E-mu Emulator : X`、
-  // `Yamaha CS-80 Synthesizer : X`（型号 token 由逐词判定的豁免机制接住）、
-  // `All Programming/All chorus/All guitar：X`（`all` 作限定词，逐词全命中才判）。
-  "lyricon", "rhodes", "conducting", "digital", "tracking", "backing", "editing",
-  "lead", "audio", "house", "company", "e-mu", "emulator", "yamaha", "additional",
-  "all",
-  // R16 实测补漏（真实 LRC 高频错拼）：`Arragement : X`、`backing vocal arrangemet：X`、
-  // `Hormony : X`、`鼓手 Dummer：X`（Dummer 由 TitleCase 对照分支接住，中文侧 `鼓手` 必须进词表）。
-  "arragement", "arrangemet", "hormony",
-  // R16 实测补漏（中文署名词）：`视觉：天使盐`、`故事/设计：顾如愿`、
-  // `歌词&翻译贡献者：X`（`歌词`/`翻译`/`贡献者` 三段 joiner 切分递归命中）、
-  // `音乐：天使盐`（裸 head；空格形态由 SPACE_SPLIT_HEAD_DENY 保护）、
-  // `鼓手 Dummer：X`（英文侧走 TitleCase 对照，中文侧必须进词表）、
-  // `民谣吉他 Acoustic Guitar：X`（吉他族限定语）、`特别合作 : 天涵有限公司`。
-  "视觉", "故事", "贡献者", "歌词", "音乐", "鼓手", "民谣吉他", "特别合作",
-  // R17 实测补漏：`宣推团队 : 快手音乐「π」计划`（`宣推`+`团队` 粘连段切分）、
-  // `Present By(出品)：X`（与既有 `presented by` 相差的 ed 由可选组收拢，
-  // 括号限定词 `(出品)` 由 isCreditLabelOnly 的括号剥离先处理）。
-  "宣推", "present\\s+by",
-].join("|");
-
-/**
- * 正则的可选分支按「先长后短」排序，避免短标签抢先匹配。
- * 例：`sp` 会以忽略大小写的方式吃掉 `Special Thanks` 的开头，`曲` 会吃掉 `曲绘`。
  *
- * **必须按字面匹配长度排序，而不是源码字符串长度**：`混音(?:师)?` 源码长度 10，
- * 但实际只匹配 2~3 个字符；若按源码长度排序，它会排到 `混音母带`（字面 4 字）之前，
- * 在 `^` 锚定下先吃掉 `混音` 两个字符就停下，导致 `混音母带：X` 整条掉出词表。
- * 因此这里剥离正则元字符后按**字面长度**排序（组内取最小字面长度，保守靠后）。
+ * 词表数据与派生正则见 `./NeteaseMusicLyricVocabulary.ts`（R5–R17 实测沉淀，按语义分组）。
  */
-const sortLongestFirst = (source: string): string => {
-  const splitAlternatives = (value: string): string[] => {
-    const parts: string[] = [];
-    let depth = 0;
-    let current = "";
-    for (let index = 0; index < value.length; index += 1) {
-      const char = value[index];
-      if (char === "\\") {
-        current += char + (value[index + 1] ?? "");
-        index += 1;
-        continue;
-      }
-      if (char === "(") depth += 1;
-      if (char === ")") depth -= 1;
-      if (char === "|" && depth === 0) {
-        parts.push(current);
-        current = "";
-        continue;
-      }
-      current += char;
-    }
-    parts.push(current);
-    return parts;
-  };
-
-  /**
-   * 估算分支的**最小字面匹配长度**：把正则语法剥掉后剩下的可见字符数。
-   * 例：`混音(?:师)?` → `混音` = 2；`混音母带` → 4。据此让字面更长的分支优先。
-   *
-   * 关键：**可选组（`(?:...)?`）内的字面一律不计**，否则 `混音(?:师)?` 会被算成 4，
-   * 与纯字面 `混音母带` 打平，稳定排序又会让它凭源码顺序抢先匹配。
-   */
-  const literalLength = (alternative: string): number => {
-    const required = alternative.replace(/\(\?:[^()]*\)\?/g, "");
-    return required.replace(/\\(.)/g, "$1").replace(/[()|^$.*+?[\]{}]/g, "").length;
-  };
-
-  return splitAlternatives(source)
-    .sort((a, b) => literalLength(b) - literalLength(a))
-    .join("|");
-};
-
-const CREDIT_LABEL_ALTERNATIVES = sortLongestFirst(CREDIT_LABEL_SOURCE);
-
-/** 单个署名标签，允许两类常见复合形态：
- * - 中英混排后缀：`词Lyricist`、`曲Composer`、`翻唱Cover`
- * - 多标签连接：`策划/统筹`、`作词、作曲`、`监制&混音`、`Mixed & Mastered`
- */
-const CREDIT_LABEL_PATTERN = new RegExp(
-  `^(?:${CREDIT_LABEL_ALTERNATIVES})(?:\\s*(?:&|＆|and|with)\\s*(?:${CREDIT_LABEL_ALTERNATIVES}))*`,
-  "i",
-);
-
-/** 紧随中文标签的英文单后缀（`词Lyricist`、`曲Composer`）。 */
-const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
-
-/** 多标签连接符：`策划/统筹`、`作词、作曲`、`监制&混音`、`和音编写及演唱`。
- * `及` 也算连接符：它只在头部拆分用，且拆出的**每段都必须是标签**，
- * 歌词头（`早餐及午餐：`）拆出的非标签段会自然否决。
- * **`和` 不能进通用 joiner**：它同时是 `和声`/`和音`/`和编` 等标签的首字，
- * 单字符切分会把 `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网 ——
- * `和` 的拆分见 isCreditLabelOnly 末尾的独立分支。 */
-const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及+＋]/;
-
-/** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
-const CREDIT_ACTION_WORDS = [
-  "arranged", "conducted", "mixed", "mastered", "recorded",
-  "produced", "written", "composed", "performed", "programmed",
-  // R15 实测：`音频编辑Audio Edited by : X`。
-  "edited",
-  // R16 实测：`Co-produced by：Big Fred/Magnify`（联合制作）。
-  "co-?produced",
-];
-// 注意必须用括号包住整组可选分支，否则 `^a|b|...|z$` 只会锚定首尾两项。
-const CREDIT_ACTION_PATTERN = new RegExp(`^(?:${CREDIT_ACTION_WORDS.join("|")})$`, "i");
-
-/**
- * 英文制作署名短标签（Discogs 风格实体唱片信息）：
- * `Mixed At – Enterprise Studios`、`Mastered At – Precision Mastering`、
- * `Distributed By – EMI (Taiwan) Ltd.`、`Backing Vocals – ...`、`A&R – ...`、
- * `Executive-Producer – ...`、`Presenter – ...`、`Vocal edite：...`。
- *
- * 这类行**分隔符是 en dash 而非冒号**，且整体（`Mixed At`）不是单个已知标签，
- * 因此词表与结构判定双双漏网。判定必须用**显式枚举**而不能放宽成
- * 「`<任意词> At/By`」—— 否则 `Killed By – the storm` 这类歌词会被整行误杀。
- * 匹配时用前缀形式（`EN_CREDIT_PREFIX_PATTERN`）直接测试整行，
- * 绕开 `Executive-Producer` 被内部连字符抢先切开的问题。
- */
-const EN_CREDIT_SHORT_LABELS = [
-  "a&r", "a & r", "executive-producer", "executive producer", "presenter",
-  "presented by", "backing vocals", "backing vocal", "vocal edite", "vocal edit",
-  "art direction", "artwork by", "design by", "photography", "photography by",
-  "liner notes", "booklet", "management by", "booking",
-  "licensed by", "license", "market", "marketing",
-  "distributed by", "manufactured by", "pressed by", "published by",
-  "recorded at", "mixed at", "mastered at", "remixed at",
-];
-
-/** `EN_CREDIT_SHORT_LABELS` 的行首前缀形态，长分支优先避免被短分支截断。 */
-const EN_CREDIT_PREFIX_PATTERN = new RegExp(
-  `^(?:${[...EN_CREDIT_SHORT_LABELS]
-    .sort((left, right) => right.length - left.length)
-    .join("|")})(?:\\s|$)`,
-  "i",
-);
-
 
 /**
  * 判断头部是否形如 `(乐器)? 动作词 ((&|and) 动作词)* by`，
@@ -687,29 +316,6 @@ const isCreditActionPhrase = (value: string): boolean => {
   if (actions.length === 0) return false;
   return actions.every((token) => CREDIT_ACTION_PATTERN.test(token));
 };
-
-/**
- * 无分隔符的英文署名：`Recorded at ...`、`Engineered by ...`、`Mastered by ...`。
- * 这类行没有冒号，必须按「行首命中已知英文标签」判定。
- *
- * 注意 `Special Thanks` / `Thanks To` 这类**纯致谢行也可能完全没有分隔符**，
- * 不能只依赖带冒号的形态（旧测试只覆盖了 `Special Thanks：某某`，裸写形态长期漏网）。
- */
-const STARTS_WITH_CREDIT_ENGLISH_PATTERN = new RegExp(
-  `^(?:${[
-    "production\\s+coordination",
-    "special\\s+thanks?(?:\\s+to)?", "thanks?(?:\\s+to)?",
-    "recorded\\s+at", "recorded\\s+by", "engineered\\s+by", "mixed\\s+by", "mastered\\s+by",
-    "mixing\\s+at", "mastering\\s+at", "recording\\s+at",
-    "lyrics?\\s+by", "music\\s+by", "written\\s+by", "produced\\s+by",
-    "composed\\s+by", "arranged\\s+by", "performed\\s+by",
-    "vocals?\\s+recorded\\s+at",
-    // R11 实测：`Digital Edited by 정은경 @ Ingridstudio` 无冒号无分隔，
-    // 词表条目只在头部路径生效，必须走整行前缀判定。
-    "digital\\s+edited\\s+by",
-  ].join("|")})(?:\\s|$)`,
-  "i",
-);
 
 /**
  * `<乐器/声部> 录音地点` 形态的英文署名行：
@@ -748,46 +354,6 @@ const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/
 
 /** 包裹式标签：`【翻唱】某某`、`（后期）某某`、`[Mixing] John`。 */
 const WRAPPED_CREDIT_LABEL_PATTERN = /^[【\[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
-
-/**
- * 空格分隔下**不可信**的头部：这些词虽是署名标签，但同样是高频歌词开头。
- * 空格分隔只在头部是纯制作行话时才信任，`感谢 陪伴`、`设计 一场相遇` 这类
- * 「标签词 + 歌词」的组合必须保留（冒号形态不受影响，`感谢：X` 仍会剔除）。
- */
-const SPACE_SPLIT_HEAD_DENY = new Set([
-  "感谢", "特别感谢", "鸣谢", "致谢", "谢谢", "感激",
-  "策划", "设计", "宣传", "推广", "邀请", "呈现",
-  // `导演` 被歌词借用作隐喻（`导演 我的人生这一场戏`），空格形态不可信。
-  "导演",
-  // `背景` 同理：`背景 夜色沉沉` 是歌词，`背景：绘师串` 是冒号署名。
-  "背景",
-  // `专辑` 同理：`专辑 里的歌` 是歌词，`专辑：最好的时代` 是元信息署名。
-  "专辑",
-  // R13：`翻译 爱的语言`、`录制 这一刻` 是歌词写法，冒号形态（`翻译：梦圆`）仍是署名。
-  "翻译", "录制",
-  // R16：`音乐/歌词/故事/视觉/鼓手` 加入词表后，空格形态同样必须按歌词保留 ——
-  // `音乐 我的生命`、`故事 我的人生` 是歌词排比写法；冒号形态（`音乐：天使盐`）
-  // 仍是署名，不受 DENY 影响。
-  "音乐", "歌词", "故事", "视觉", "鼓手",
-]);
-
-/** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。
- * 半角连字符 `-` 只在**非字母数字夹心**时才当分隔符：`Mixed - Mastered by X`
- * 是并列署名，而 `Production Co-ordination`、`G-Eazy`、`L-O-V-E`（拼写歌词）
- * 里的连字符是词内成分 —— 裸 `-` 会把标签在词中切碎（`Production Co|ordination`）
- * 导致整条署名漏网。全角 `—`/`–` 不受约束（中文标签不会夹用）。 */
-const CREDIT_SEPARATOR_PATTERN = /(?::|：|—|–|\||｜|\/|／|(?<![A-Za-z0-9])-(?![A-Za-z0-9]))/;
-
-/** 会出现在真实歌词里的高频虚词/实义词，用于否决结构判定，避免误杀正常歌词。 */
-const LYRIC_STOP_WORDS = [
-  "的", "了", "吗", "吧", "呢", "啊", "呀", "哦", "嘛", "么", "着", "过", "得",
-  "我", "你", "他", "她", "它", "们", "谁", "这", "那", "什么", "怎么", "为",
-  "是", "不", "没", "有", "在", "就", "都", "很", "会", "说", "想", "要", "能",
-  "起", "来", "去", "给", "被", "让", "把", "和", "但", "也", "还", "又", "只",
-  "如", "若", "却", "而", "与", "或", "每", "各", "些", "个", "里", "外",
-  "心", "爱", "梦", "风", "雨", "夜", "天", "光", "声", "家", "人", "情",
-  "the", "and", "you", "me", "we", "is", "are", "to", "of", "in", "on", "for",
-];
 
 /** 判断取值片段是否含歌词高频虚词；命中则说明它更像正常歌词而非人名。 */
 const hasLyricStopWord = (value: string): boolean =>
