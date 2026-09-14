@@ -302,6 +302,8 @@ const CREDIT_LABEL_SOURCE = [
   "音乐出品", "音乐制作人", "音乐总监制",
   // R12 实测：`音乐营销：网易飓风`（`音乐` 单词不进词表，沿用 `音乐X` 整词枚举防误杀）。
   "音乐营销",
+  // R15 实测：`音乐发行 : 智慧大狗×天才联盟`。
+  "音乐发行",
   "专辑制作", "专辑封面(?:设计)?", "封面设计", "视觉设计",
   // R12 实测：`专辑：最好的时代`（专辑名是强泄露源）。
   "专辑",
@@ -319,13 +321,20 @@ const CREDIT_LABEL_SOURCE = [
   "制作公司", "出品公司", "发行公司", "音乐公司", "签约公司", "文化传媒", "传媒",
   "厂牌", "唱片", "唱片公司", "工作室", "录音室(?!$)",
   "企划宣传", "宣传", "推广", "营销", "商务", "商务统筹", "统筹企划",
+  // R15 实测：`联合推广：天浩悦动推广组`、`特别支持：中村光雄`、`温馨提示：请戴上耳机...`。
+  "联合出品", "联合推广", "特别支持", "温馨提示",
   "鸣谢", "特别鸣谢", "特别感谢", "致谢", "感谢", "协助单位", "合作单位",
   // 虚拟歌手/音源类：`虚拟人声：X`、`和声配唱 : X`、`主人声 : X`、`合声编写 : X`。
   "虚拟人声", "虚拟歌手", "声库", "音源", "主人声", "副人声", "和声配唱", "和声演唱",
   "合声", "合声编写", "合声配唱", "配唱",
+  // R15 实测：`苗族伴唱/苗语伴唱/侗语伴唱：...`（民族语言伴唱署名）。
+  "(?:苗|侗|彝|藏|蒙|维|朝|壮|瑶|白|傣)(?:族|语)?伴唱",
   // 演奏/编制类：`弦乐演奏：X`、`弦乐乐团：X`、`乐队 Orchestra：X`、`乐队队长：X`。
   "弦乐演奏", "弦乐乐团", "管弦乐团", "乐队", "乐团", "队长", "乐队队长", "首席",
   "演奏", "独奏", "合奏", "伴奏", "编程", "音频工程师", "音响",
+  // R15 实测：`铜管/弦乐：国际首席爱乐乐团`、`铜管/弦乐录音棚：...`、`合成贝斯 : X`、
+  // `低音提琴 Double Bass:...`、`音频编辑Audio Edited by : X`、`录音工程& MIDI制作：X`。
+  "铜管", "弦乐", "合成", "低音提琴", "音频编辑", "录音工程",
   "录音软件操作", "软件操作", "前台及舞台音响", "舞台音响",
   // 英文音译/缩写署名：`Program : X`、`PGM：X`。
   "program", "pgm", "md", "arrangement",
@@ -341,6 +350,8 @@ const CREDIT_LABEL_SOURCE = [
   // `和声编写&和声演唱：`、`MIDI工程：`。`&`/`/` 连接的两段会由 `isCreditLabelOnly`
   // 的逐段拆分处理，但每段本身必须在词表内。
   "主唱录音", "弦乐录音", "管乐录音", "乐器录音", "人声录音", "混音母带", "母带制作",
+  // R15 实测：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】` 多段方括号署名的段头。
+  "古筝", "二胡", "笛箫", "协力",
   // 注意：`母带后期处理` 的展开条目只在 R5 补漏组保留一条（含 录音室|制作人 两种后缀），
   // 这里**不要**再登记字面并列的旧形态 —— 两条字面长度并列时源码顺序靠前者
   // 会抢先匹配并在可选组前截断（`母带后期处理制作人` 只吃到 `母带后期处理`）。
@@ -512,6 +523,9 @@ const CREDIT_LABEL_SOURCE = [
   // `Album: 幽闭サテライト - ...`（专辑名标注）、
   // `Instrumentation & Programming : Benny Blanco`。
   "rit", "album", "instrumentation", "programming",
+  // R15 实测：`Atmos 混音：X`（杜比全景声）、`录音工程& MIDI制作：X`、
+  // `Vocalproduction：X`、`第一小提琴 1st Violin:朱玥 Yue Zhu`（双语对照含序数）。
+  "atmos", "midi", "vocal\\s?production", "1st\\s+violin", "2nd\\s+violin",
 ].join("|");
 
 /**
@@ -591,6 +605,8 @@ const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及]/;
 const CREDIT_ACTION_WORDS = [
   "arranged", "conducted", "mixed", "mastered", "recorded",
   "produced", "written", "composed", "performed", "programmed",
+  // R15 实测：`音频编辑Audio Edited by : X`。
+  "edited",
 ];
 // 注意必须用括号包住整组可选分支，否则 `^a|b|...|z$` 只会锚定首尾两项。
 const CREDIT_ACTION_PATTERN = new RegExp(`^(?:${CREDIT_ACTION_WORDS.join("|")})$`, "i");
@@ -814,7 +830,8 @@ const isCreditLabelOnly = (value: string): boolean => {
   // 因此中文段要**整体捕获**（不止首字），中英之间允许空白；否则 `制作人 Producer`
   // 会被切成 `制` + `作人 Producer`，中文段过短而整条掉出词表。
   // 首字符必须是中日文字符，否则 `Special Thanks` 会被误拆成 `S` + `pecial Thanks`。
-  const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z][A-Za-z\s]*)$/u.exec(value);
+  // 英文段允许数字开头（`第一小提琴 1st Violin : X` 的双语序数形态）。
+  const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z0-9][A-Za-z0-9\s]*)$/u.exec(value);
   if (composite) {
     if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
     // 中文标签 + 英文对照翻译（TitleCase）：`制谱 Music Copyist`、`企划 Creative Planning`、
@@ -836,6 +853,18 @@ const isCreditLabelOnly = (value: string): boolean => {
     // 「已知标签 + 英文单后缀」同语义；中文侧必须是完整标签，
     // `Love音乐` 这类非标签中文侧不会命中。
     if (isCreditLabelOnly(glued[1]) && CREDIT_LABEL_SUFFIX_PATTERN.test(glued[2].trim())) {
+      return true;
+    }
+    // 英文侧是 TitleCase 对照翻译：`统筹制作人Coordinating Producer : X`。
+    // 与 composite（带空格）的 TitleCase 分支同语义，覆盖无空格粘连形态。
+    if (
+      isCreditLabelOnly(glued[1]) &&
+      /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(glued[2].trim())
+    ) {
+      return true;
+    }
+    // 英文侧是动作短语：`音频编辑Audio Edited by : X`。
+    if (isCreditLabelOnly(glued[1]) && isCreditActionPhrase(glued[2].trim())) {
       return true;
     }
   }
@@ -1063,6 +1092,28 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // CV 配音标注：`温迪（CV：喵酱）`、`雷电将军（CV：菊花花）`。同人曲的角色名单
   // 本身就是歌曲指纹，且整行不含任何歌词正文，按结构整行判定。
   if (/^[^（()）]{1,20}（\s*CV\s*[：:][^（()）]{1,20}）\s*$/u.test(undecorated)) {
+    return true;
+  }
+  // 多段方括号署名：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】`。
+  // 必须对**原始文本**判定 —— 行首 `【` 会被装饰剥离破坏结构。
+  // 每段的 head（首个分隔符之前）必须命中词表 —— `【副歌】【间奏】` 这类
+  // 段落标记的 head 不是标签，自然保留。
+  if (/^(?:【[^【】]{1,24}】\s*){2,}$/u.test(text.trim())) {
+    const bracketSegs = text.trim().match(/【([^【】]{1,24})】/gu) ?? [];
+    const allLabeled =
+      bracketSegs.length >= 2 &&
+      bracketSegs.every((seg) => {
+        const inner = seg.slice(1, -1);
+        // `︰`(U+FE13)/`﹕`(U+FE55) 是网易云实测出现的变体冒号。
+        const parts = inner.split(/[：:︰﹕／/]/);
+        return parts.length >= 2 && isCreditLabelOnly(parts[0].trim());
+      });
+    if (allLabeled) return true;
+  }
+  // 采样/配乐说明：`（间奏旋律采用阿鲲老师《流浪地球2》配乐：《开启新征程》...）`。
+  // 泄露采样出处，整行括号包裹且内含「采用…配乐」结构。注意行首 `（` 可能已被
+  // 装饰剥离，左括号可选。
+  if (/^[（(]?[^（()）]*采用[^（()）]*配乐[^（()）]*[）)]$/u.test(undecorated)) {
     return true;
   }
   // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
