@@ -1073,6 +1073,78 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R16 抽样沉淀：乐器设备署名与水印工具行会被过滤", () => {
+    for (const line of [
+      // 英文乐器/设备署名：Lyricon 数字管乐器、Rhodes 电钢琴、弦乐指挥、
+      // 数字编辑、E-mu 采样器、Yamaha 型号合成器（型号 token 由逐词豁免接住）。
+      "Lyricon : Tom Scott",
+      "Rhodes Piano : Greg Phillinganes",
+      "String Conducting : Jeremy Lubbock",
+      "Digital Editing : Amic Tang",
+      "E-mu Emulator : Michael Boddicker",
+      "Yamaha CS-80 Synthesizer : Michael Jackson",
+      // 城市限定语 + 动作词：`上海录音/北京录音 : X` 只出现在制作名单。
+      "上海录音 : ChiliChill@Staff Only Studio",
+      "北京录音 : Kevin刘瀚文@Studio21A",
+      // 真实 LRC 高频错拼：Arragement、arrangemet、Hormony（编曲/和声拼错）。
+      "Arragement : 朴树",
+      "和声编写backing vocal arrangemet：胡皓@光合声动",
+      "Hormony : 叶蓓 / 窦颖 / 俞杨洋 / 德恒,等",
+      // 制作侧中英粘连：tracking 录音、vocal editing、production house/company。
+      "Bass Tracking录音：黄世杰 Jay @ 五月天录音室 Mayday",
+      "All Vocals Tracking录音：钟成虎 Tiger @ Room 19 录音室 & 杨大纬录音室",
+      "音频编辑vocal editing：樊俊@光合声动",
+      "制作production house：鹏杰建衡传媒",
+      "出品Production company：米漫传媒",
+      // 英文署名组合：主唱与伴唱、混音工程师、联合制作、All 限定词系列。
+      "Lead & Backing Vocals : Michael Jackson",
+      "Audio Mixing & Engineer : Bruce Swedien",
+      "Co-produced by：Big Fred/Magnify",
+      "All Programming by：新沙洞老虎",
+      "Additional programming by：Magnify",
+      "吉他 All guitar：钟成虎 Tiger",
+      "和声＋和声编写 All chorus：陈绮贞 Cheer",
+      "民谣吉他 Acoustic Guitar：陈磊 Lei Chen",
+      // LRC 站点水印与制作工具残留：Maximal R&B 水印、LRC 编辑器签名、重复标记。
+      "Maximal R&B - The Freshest & Hottest R&B/ Hip-Hop Music!",
+      "Maker Tool: LRC Editor for mac",
+      "REPEAT----->",
+      // 游戏运营团队出品声明：`CS:` 会被分隔符抢先切碎，按整行特征判定。
+      "CS: GO国服运营团队出品",
+      // 中文署名词补漏：视觉、故事、贡献者、音乐（裸 head）、特别合作。
+      "视觉：天使盐",
+      "音乐：天使盐",
+      "故事/设计：顾如愿",
+      "歌词&翻译贡献者：哔哩哔哩 Emma德语教室",
+      "特别合作 : 天涵有限公司",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：新词表的歌词形态（all/lead/house/digital 的短语、
+    // 限定语+动作词的整行歌词、DENY 保护的空格形态、型号豁免不吞数字歌词、
+    // 半角加号歌词、艺人-歌名标注行维持保留）。
+    for (const line of [
+      "All we need is love",
+      "All of me",
+      "Lead me on",
+      "House of cards",
+      "Digital Love",
+      "音乐 我的生命",
+      "故事 我的人生",
+      "歌词 家的流浪",
+      "Top-10 hits",
+      "repeat after me",
+      "美丽的录音",
+      "鼓手 敲打着节拍",
+      "爱＋你",
+      "DMX - X Gon' Give It to Ya",
+      "I gotta go to Ancestry.com",
+      "Woah-oh, woah-oh",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
