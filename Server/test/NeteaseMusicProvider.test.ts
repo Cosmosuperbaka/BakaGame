@@ -1145,6 +1145,28 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R17 抽样沉淀：出品前缀与宣推团队会被过滤", () => {
+    for (const line of [
+      // `Present By(出品)：X` —— 与既有 presented by 相差的 ed 由可选组收拢，
+      // 括号限定词 `(出品)` 由括号剥离先处理。
+      "Present By(出品)：Planet Culture 张杰行星文化音乐厂牌",
+      // `宣推团队 : X` —— `宣推`+`团队` 粘连段切分递归命中。
+      "宣推团队 : 快手音乐「π」计划",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：新词表的歌词形态（present 短语、宣传接歌词）与对唱角色标注。
+    for (const line of [
+      "present in my heart",
+      "宣传 我们的比赛",
+      "男：难解百般愁 相知爱意浓",
+      "素人合：一首唱不完的歌",
+      "王艺陶：爱着你（李秉成：爱着你）",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
