@@ -526,6 +526,24 @@ const CREDIT_LABEL_SOURCE = [
   // R15 实测：`Atmos 混音：X`（杜比全景声）、`录音工程& MIDI制作：X`、
   // `Vocalproduction：X`、`第一小提琴 1st Violin:朱玥 Yue Zhu`（双语对照含序数）。
   "atmos", "midi", "vocal\\s?production", "1st\\s+violin", "2nd\\s+violin",
+  // R16 实测补漏（英文乐器/设备/角色词）：`Lyricon : X`（数字管乐器）、
+  // `Rhodes Piano : X`（电钢琴品牌）、`String Conducting : X`、`Digital Editing : X`、
+  // `Bass Tracking录音：X`、`Lead & Backing Vocals : X`、`Audio Mixing & Engineer : X`、
+  // `制作production house：X`、`出品Production company：X`、`E-mu Emulator : X`、
+  // `Yamaha CS-80 Synthesizer : X`（型号 token 由逐词判定的豁免机制接住）、
+  // `All Programming/All chorus/All guitar：X`（`all` 作限定词，逐词全命中才判）。
+  "lyricon", "rhodes", "conducting", "digital", "tracking", "backing", "editing",
+  "lead", "audio", "house", "company", "e-mu", "emulator", "yamaha", "additional",
+  "all",
+  // R16 实测补漏（真实 LRC 高频错拼）：`Arragement : X`、`backing vocal arrangemet：X`、
+  // `Hormony : X`、`鼓手 Dummer：X`（Dummer 由 TitleCase 对照分支接住，中文侧 `鼓手` 必须进词表）。
+  "arragement", "arrangemet", "hormony",
+  // R16 实测补漏（中文署名词）：`视觉：天使盐`、`故事/设计：顾如愿`、
+  // `歌词&翻译贡献者：X`（`歌词`/`翻译`/`贡献者` 三段 joiner 切分递归命中）、
+  // `音乐：天使盐`（裸 head；空格形态由 SPACE_SPLIT_HEAD_DENY 保护）、
+  // `鼓手 Dummer：X`（英文侧走 TitleCase 对照，中文侧必须进词表）、
+  // `民谣吉他 Acoustic Guitar：X`（吉他族限定语）、`特别合作 : 天涵有限公司`。
+  "视觉", "故事", "贡献者", "歌词", "音乐", "鼓手", "民谣吉他", "特别合作",
 ].join("|");
 
 /**
@@ -599,7 +617,7 @@ const CREDIT_LABEL_SUFFIX_PATTERN = /^(?:[a-z]{2,20})$/i;
  * **`和` 不能进通用 joiner**：它同时是 `和声`/`和音`/`和编` 等标签的首字，
  * 单字符切分会把 `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网 ——
  * `和` 的拆分见 isCreditLabelOnly 末尾的独立分支。 */
-const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及]/;
+const CREDIT_LABEL_JOINER_PATTERN = /[/／、,，&＆及+＋]/;
 
 /** 可与并列词组合成复合署名的动作词：`Arranged & Conducted by`、`Mixed & Mastered by`。 */
 const CREDIT_ACTION_WORDS = [
@@ -607,6 +625,8 @@ const CREDIT_ACTION_WORDS = [
   "produced", "written", "composed", "performed", "programmed",
   // R15 实测：`音频编辑Audio Edited by : X`。
   "edited",
+  // R16 实测：`Co-produced by：Big Fred/Magnify`（联合制作）。
+  "co-?produced",
 ];
 // 注意必须用括号包住整组可选分支，否则 `^a|b|...|z$` 只会锚定首尾两项。
 const CREDIT_ACTION_PATTERN = new RegExp(`^(?:${CREDIT_ACTION_WORDS.join("|")})$`, "i");
@@ -741,6 +761,10 @@ const SPACE_SPLIT_HEAD_DENY = new Set([
   "专辑",
   // R13：`翻译 爱的语言`、`录制 这一刻` 是歌词写法，冒号形态（`翻译：梦圆`）仍是署名。
   "翻译", "录制",
+  // R16：`音乐/歌词/故事/视觉/鼓手` 加入词表后，空格形态同样必须按歌词保留 ——
+  // `音乐 我的生命`、`故事 我的人生` 是歌词排比写法；冒号形态（`音乐：天使盐`）
+  // 仍是署名，不受 DENY 影响。
+  "音乐", "歌词", "故事", "视觉", "鼓手",
 ]);
 
 /** 署名标签与取值之间的分隔符（在标签之后首次出现的位置切分）。
@@ -888,13 +912,25 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `and`/`with` 是并列连接词而非标签：`Marketing and promotion agencies`
   // 的语义是「A and B + 中心词」，连接词剔除后剩余词全部命中词表才判。
   // 歌词（`you and me`、`and I love you`）剔完连接词后剩余词不是标签，自然否决。
-  if (/^[A-Za-z][A-Za-z\s]*$/u.test(value)) {
+  if (/^[A-Za-z][A-Za-z0-9\s-]*$/u.test(value)) {
     const words = value
       .trim()
       .split(/[\s\u3000]+/u)
       .filter(Boolean)
       .filter((word) => !/^(?:and|with|&)$/i.test(word));
-    if (words.length >= 2 && words.every((word) => CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "") === word)) {
+    // R16 型号豁免：设备署名常带型号（`Yamaha CS-80 Synthesizer : X`），
+    // 型号 token 永远不进词表。至多允许 1 个「字母-数字」形态的型号，
+    // 其余词必须全部命中词表；歌词头（`Top-10 hits：X`）其余词非标签，自然否决。
+    let modelSeen = false;
+    const allLabeled = words.every((word) => {
+      if (CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "") === word) return true;
+      if (!modelSeen && /^[A-Za-z]{1,6}-\d{1,4}[a-zA-Z]?$/u.test(word)) {
+        modelSeen = true;
+        return true;
+      }
+      return false;
+    });
+    if (words.length >= 2 && allLabeled) {
       return true;
     }
   }
@@ -987,6 +1023,14 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `原` 开头的歌词（`原来如此`）剥出 `来如此` 非标签，递归自然否决。
   const withoutOrigin = value.replace(/^原(?=[\u4e00-\u9fff]{2,})/u, "").trim();
   if (withoutOrigin && withoutOrigin !== value && isCreditLabelOnly(withoutOrigin)) return true;
+
+  // 限定语 + 制作动作词的复合 head：`上海录音 : X`、`北京录音 : X`。
+  // 「上海」这类地名限定永远不进词表（枚举不完），但「`录音` 收尾的 2~4 字限定
+  // + 冒号取值」形态只出现在制作名单 —— 歌词整行（`留下爱的录音`）无分隔符，
+  // 走不进 head 路径，不受影响。
+  if (/^[\u4e00-\u9fff]{2,4}(?:录音|混音|录制|母带|剪辑)$/u.test(value)) {
+    return true;
+  }
 
   // 序数尾缀：`Violin 1st : X`、`Violin 2nd：X`（分谱编号后置写法）。
   const withoutOrdinalSuffix = value.replace(/\s+\d{1,2}(?:st|nd|rd|th)$/i, "").trim();
@@ -1114,6 +1158,21 @@ export const isCreditKeywordLine = (text: string): boolean => {
   // 泄露采样出处，整行括号包裹且内含「采用…配乐」结构。注意行首 `（` 可能已被
   // 装饰剥离，左括号可选。
   if (/^[（(]?[^（()）]*采用[^（()）]*配乐[^（()）]*[）)]$/u.test(undecorated)) {
+    return true;
+  }
+  // LRC 站点水印与制作工具残留：`Maximal R&B - The Freshest & Hottest R&B/ Hip-Hop
+  // Music!`（歌词站点水印）、`Maker Tool: LRC Editor for mac`（LRC 编辑器签名）。
+  // 这类行既非歌词也非署名，结构特征专属来源，按整行锚定判定。
+  if (/^maximal\s+r&b\b/i.test(undecorated) || /\b(?:lrc\s+editor|maker\s+tool)\b/i.test(undecorated)) {
+    return true;
+  }
+  // LRC 重复标记：`REPEAT----->`、`REPEAT:`。歌词不会以裸 `repeat` + 标点/横线收尾。
+  if (/^repeat[\s\-—–=_>.:：·]*$/i.test(undecorated)) {
+    return true;
+  }
+  // 游戏运营团队出品声明：`CS: GO国服运营团队出品`（游戏同人曲企划页脚）。
+  // `CS:` 会被分隔符抢先切成非标签 head，词表路径接不住，按整行特征判定。
+  if (/运营团队出品/u.test(undecorated)) {
     return true;
   }
   // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
