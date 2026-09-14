@@ -1026,6 +1026,53 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
+  test("R15 抽样沉淀：序数弦乐、民族伴唱与方括号署名会被过滤", () => {
+    for (const line of [
+      // 词表补漏：音乐发行、音频编辑、联合推广、特别支持等制作侧标注。
+      "音乐发行 : 智慧大狗×天才联盟",
+      "音频编辑Audio Edited by：刘明生/马艺珊",
+      "联合推广：天浩悦动推广组",
+      "特别支持：中村光雄(Mitsuo Nakamura)",
+      // 全景声与语音制作：Atmos 混音、glued 的 Vocalproduction 与录音工程 MIDI。
+      "Atmos 混音：刘三斤 苍白 31Studio",
+      "Vocalproduction：陈令韬/仔总裁/Tim姜皓天",
+      "录音工程& MIDI制作：韦力文",
+      "录音工程 : 玉乃井光紀 (Mitsunori Tamanoi) - studioFine",
+      // 粘连 TitleCase 对照：中文标签 + 首字母大写英文段（含 Coordinating Producer）。
+      "统筹制作人Coordinating Producer：黄子健",
+      "合成贝斯 : Aaron Dessner",
+      // 民族伴唱：苗语、侗语等少数民族语伴唱标注。
+      "苗族伴唱：张海中/李光美 /阿一豁",
+      "苗语伴唱： 亲爱的，心上人啊",
+      "侗语伴唱： 亲爱的，心上人啊",
+      // 弦乐器族：铜管/弦乐、录音棚与中英文并列的序数小提琴、低音提琴。
+      "铜管/弦乐：国际首席爱乐乐团",
+      "铜管/弦乐录音棚：中国剧院录音棚",
+      "第一小提琴 1st Violin:朱玥 Yue Zhu",
+      "第二小提琴 2nd Violin:罗畅 Chang Luo",
+      "低音提琴 Double Bass:杨冰洋 Bingyang Yang",
+      // 多段方括号署名：对原始行判定（行首装饰剥离前），含变体冒号 ︰。
+      "【古筝：陶特】【古琴/二胡/大提琴：柠檬CC露】【笛箫：O天气晴朗O】【协力︰司鼓君】",
+      // 采样配乐说明与聆听提示：整行括号包裹的采用声明、温馨提示。
+      "（间奏旋律采用阿鲲老师《流浪地球2》配乐：《开启新征程》与《太空电梯》）",
+      "温馨提示：请戴上耳机/耳塞，音量调节适中或偏小，享受最佳聆听体验。",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(true);
+    }
+    // 保留边界：无公司后缀的英文短语、段落标记接实质歌词、
+    // 歌手名接正常歌词、对唱切片、含「音乐」「唱片」的实质歌词。
+    for (const line of [
+      "We the Best Music",
+      "【副歌】让我唱你的歌",
+      "华晨宇：我 看着爱笑",
+      "我用尽一生一世来将你供养（周深：将你供养）",
+      "我要的音乐放肆听",
+      "谁刚刚出了新的唱片",
+    ]) {
+      expect(isUnusableLyricLine(line)).toBe(false);
+    }
+  });
+
   test("猜测歌曲只读取元数据，无歌词歌曲也可以用于猜测", async () => {
     const calls: string[] = [];
     const provider = new NeteaseMusicProvider({
