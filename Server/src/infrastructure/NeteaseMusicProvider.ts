@@ -544,6 +544,10 @@ const CREDIT_LABEL_SOURCE = [
   // `鼓手 Dummer：X`（英文侧走 TitleCase 对照，中文侧必须进词表）、
   // `民谣吉他 Acoustic Guitar：X`（吉他族限定语）、`特别合作 : 天涵有限公司`。
   "视觉", "故事", "贡献者", "歌词", "音乐", "鼓手", "民谣吉他", "特别合作",
+  // R17 实测补漏：`宣推团队 : 快手音乐「π」计划`（`宣推`+`团队` 粘连段切分）、
+  // `Present By(出品)：X`（与既有 `presented by` 相差的 ed 由可选组收拢，
+  // 括号限定词 `(出品)` 由 isCreditLabelOnly 的括号剥离先处理）。
+  "宣推", "present\\s+by",
 ].join("|");
 
 /**
