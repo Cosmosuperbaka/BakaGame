@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  ANIME_SONG_LOOKUP_BUDGET,
+  ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
   createSongLyricClip,
   isSongTitleMatch,
@@ -2782,7 +2782,7 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
     await expect(execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} }))
       .rejects.toMatchObject({ code: "BANGUMI_NO_MUSIC" });
 
-    expect(searches).toBe(ANIME_SONG_LOOKUP_BUDGET);
+    expect(searches).toBe(ANIME_SONG_SEARCH_BUDGET);
     expect(searches).toBeLessThan(24 * 3);
   });
 
@@ -2809,6 +2809,66 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
 
     expect(subjects).toBe(AUTO_ANIME_CANDIDATE_LIMIT);
     expect(subjects).toBeLessThan(50);
+  });
+
+  test("非会员房间的会员专享候选在回源前就被剔除", async () => {
+    const free = { ...makeSong("free-song", "答案歌", 2020), requiresVip: false };
+    const vipOnly = { ...makeSong("vip-song", "答案歌", 2020), requiresVip: true };
+    const fetched: string[] = [];
+    const musicProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({ cookie, account: { nickname: "非会员账号", vipStatus: "nonVip" } }),
+      search: async () => [vipOnly, free],
+      getSong: async (id) => {
+        fetched.push(id);
+        return id === "vip-song" ? vipOnly : free;
+      },
+    };
+
+    const { service, solo } = await animeSolo(musicProvider, {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider);
+
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} });
+
+    // 会员专享歌曲在非会员房间必然装不上回合，必须靠检索结果里的 fee 标记先剔除，
+    // 而不是拉完详情再丢弃。
+    expect(fetched).toEqual(["free-song"]);
+    expect(lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").currentRound?.audioUrl)
+      .toBe(free.audioUrl);
+  });
+
+  test("首个可播放候选命中后不再为被丢弃的同名候选回源详情", async () => {
+    const candidates = ["候选一", "候选二", "候选三", "候选四"]
+      .map((id) => makeSong(id, "答案歌", 2020));
+    const fetched: string[] = [];
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => candidates,
+      getSong: async (id) => {
+        fetched.push(id);
+        return candidates.find((candidate) => candidate.id === id)!;
+      },
+    };
+
+    const { service, solo } = await animeSolo(musicProvider, {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider);
+
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} });
+
+    // 每次详情回源要拉歌词、音频与百科，并行验证等于把被丢弃候选的成本也付一遍。
+    expect(fetched).toEqual(["候选一"]);
+    expect(lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").currentRound?.audioUrl)
+      .toBe(candidates[0].audioUrl);
   });
 });
 
@@ -2917,6 +2977,110 @@ describe("SonGuessrService 猜番原版优先", () => {
 
     const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
     expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+
+  test("原声带条目按专辑名召回官方原版，而非同名器乐改编", async () => {
+    // Bangumi 会把整张原声带挂成一条关联曲目（曲目名 = 专辑名，如《君の名は。》）。
+    // 官方原版的曲名与曲目名完全不同，只有专辑名能命中；同名器乐改编反过来只能靠
+    // 曲名命中，实测会顶掉官方原版（帝玖管弦乐团《交响组曲「君の名は。」》）。
+    const arrangement = {
+      ...songs.answer,
+      id: "arrangement",
+      title: "答案歌 交响组曲",
+      artist: "某管弦乐团",
+      album: "管弦乐企划",
+    };
+    const official = {
+      ...songs.answer,
+      id: "official-album",
+      title: "完全不同的曲名",
+      artist: "原唱乐队",
+      album: "答案歌",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [arrangement, official],
+      getSong: async (id) => id === "official-album" ? official : arrangement,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", kind: "ost" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(official.audioUrl);
+  });
+});
+
+describe("SonGuessrService 猜番出题等概率", () => {
+  /**
+   * 单人番剧自动出题。检索 mock 返回「与曲目同名」的歌曲，因此音频地址可反查
+   * 实际选中的曲目，唯一变量就是曲目遍历顺序。
+   */
+  const startAnimeRound = async (
+    musicProvider: MusicProvider,
+    bangumiProvider: BangumiDataProvider,
+    random: { nextInt: (maxExclusive: number) => number },
+  ) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random });
+    const solo = connection(service, `anime-fair-${Math.random().toString(36).slice(2, 8)}`);
+    await createRoom(service, solo, { roomId: "8888", name: "猜番单人", userName: "独狼", solo: true });
+    await execute(service, solo, {
+      id: "anime-fair-settings",
+      type: "song.room.updateSettings",
+      roomId: "8888",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, solo, { id: "anime-fair-start", type: "song.game.start", roomId: "8888", payload: {} });
+    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+  };
+
+  test("关联曲目顺序不再决定选曲：所有通过筛选的曲目等概率", async () => {
+    // 数据集里曲目按「片头曲优先」固定排序，改动前永远只会出第一条。
+    const titles = ["第一首曲目", "第二首曲目", "第三首曲目"];
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async (keyword) => {
+        const title = keyword.split(" ")[0];
+        return [makeSong(title, title, 2020)];
+      },
+      getSong: async (id) => makeSong(id, id, 2020),
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: titles.map((title) => ({ title, kind: "opening" as const })),
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    // 线性同余伪随机源：取值始终落在 [0, maxExclusive) 内，既驱动洗牌也不越界。
+    const seededRandom = (seed: number) => {
+      let state = seed;
+      return {
+        nextInt: (maxExclusive: number) => {
+          state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+          return state % Math.max(1, maxExclusive);
+        },
+      };
+    };
+
+    const chosen = new Set<string>();
+    for (let seed = 1; seed <= 8; seed += 1) {
+      const snapshot = await startAnimeRound(musicProvider, bangumiProvider, seededRandom(seed));
+      const audioUrl = snapshot.currentRound?.audioUrl;
+      expect(audioUrl).toBeDefined();
+      chosen.add(audioUrl!);
+    }
+
+    // 不同随机源必须落到不同曲目上——否则说明「顺序取首位」的旧行为还在。
+    expect(chosen.size).toBeGreaterThan(1);
+    for (const audioUrl of chosen) {
+      expect(titles.some((title) => audioUrl === `https://audio/${title}.mp3`)).toBe(true);
+    }
   });
 });
 
