@@ -73,27 +73,37 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 - 探测禁止使用带副作用的接口（曾对 ccb 的 `POST /api/character-tags` 发出真实
   写入），验证只用 GET 探针。
 
-## 前端预渲染 (Prerender)
+## 前端静态外壳 (Static Shell)
 
 前端是纯前端 SPA，构建产物的 `<div id="root">` 默认是空的：执行 JS 的爬虫能自行渲染，
-不执行 JS 的爬虫（百度为主）只能读到空壳，收录无从谈起。构建后的预渲染在真实浏览器里把
-三个静态路由画完再写回 dist，静态 HTML 因此同时具备正文与 head 元信息
-（description / canonical / og / JSON-LD）。
+不执行 JS 的爬虫（百度为主）只能读到空壳，收录无从谈起。构建末尾由 `vite.config.ts` 的
+`static-shell` 插件把 `Client/src/data/PageMeta.ts` 里的正文与 head 元信息写进各路由的 HTML，
+爬虫无需执行 JS 即可读到内容。
 
-- 命令：`npm run prerender`（消费已有 `dist/`）；一步到位用 `npm run build:seo`。
+- **零浏览器依赖**：插件是纯 Node 字符串注入。**不要改回无头浏览器预渲染**——平台构建容器
+  不提供 Chromium（实测 `Executable doesn't exist ... chromium_headless_shell`），
+  让构建去下载 150MB 浏览器既慢又脆；本站可收录页面的正文本来就是数据，由数据生成 HTML 更可靠。
+- **文案单一真相源**：`PageMeta.ts` 同时被页面组件的 `Seo`（运行时写 head）与插件（构建期写 HTML）
+  消费，改了描述两处一起变。页面侧调用因此简化为 `<Seo path="/" />`；未登记的路径（房间页、
+  单人页）必须显式传 `description`，否则组件当场抛错。
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
-- 不预渲染：房间页与单人页——内容由服务端实时状态驱动，没有可静态化的正文，且已标 `noindex`。
-- **生产构建命令必须包含预渲染**：本项目前端是 GitHub 集成型的 Makers 项目，构建发生在
-  平台侧，需在控制台把构建命令设为 `npm run build:seo`。
-- **构建环境必须能提供浏览器**：脚本用 Playwright 驱动（Windows 本机走系统 Edge，
-  Linux 走 `npx playwright install --with-deps chromium`）。环境不具备时脚本直接失败，
-  不做静默降级——SEO 降级必须是显式决定。
-- 自校验：脚本内置断言（`#root` 非空、正文关键词、head 元信息、入口脚本仍在），
-  不满足即构建失败；CI 的 e2e job 已串入该步骤。
-- 上线验收：用 `curl`（不带 JS）访问三个路由，正文应含对应关键词且 canonical 指向自身。
-  若平台把 `/whoisfaker`、`/songuessr` 回退成了首页外壳，静态文件就没被解析，
+- **静态标签必须在客户端启动时摘掉**：注入的 head 标签带 `data-static-seo="1"`，
+  `Client/src/lib/StaticSeo.ts` 的 `stripStaticSeo()` 在入口模块（`Main.tsx`）里把它们整体移除，
+  再由 react-helmet-async 按当前路由写入真值。**不要改成「让 Helmet 接管静态标签」**——
+  react-helmet-async v3 在 React 19 下不走 DOM 复用路径（复用旧标签的逻辑只在旧路径生效），
+  它会直接渲染新标签，静态标签留在原地就变成重复 canonical——搜索引擎判定整组失效，比缺失更糟。
+  JSON-LD 例外：用固定 id `bakagame-structured-data`，`Seo` 的 useEffect 按同一 id 覆盖内容，不重复。
+- 不注入的页面：房间页与单人页——内容由服务端实时状态驱动，没有可静态化的正文，且已标 `noindex`。
+- 自校验：插件在注入点缺失或产物缺少标记时直接让构建失败；`scripts/asset-smoke.mjs` 逐路由断言
+  外壳存在（无浏览器，跑在 CI 的 client job）；「有没有产生重复标签」由 E2E 用真实浏览器断言
+  （strict 定位器遇到重复标签会直接报错）。
+- 生产构建命令：平台的 Makers 项目是 GitHub 集成型，构建在平台侧发生，`npm run build` 即可
+  （静态外壳已在 build 内完成）。仓库保留了 `build:seo` 作为指向 build 的兼容别名，等控制台
+  改回 `npm run build` 后可以删掉。
+- 上线验收：用 `curl`（不带 JS）访问三个路由，正文应含对应文案且 canonical 指向自身。
+  若平台把 `/whoisfaker`、`/songuessr` 回退成了首页外壳，说明静态文件未被解析，
   需在 `Client/middleware.js` 里补路径 rewrite——这是本方案唯一依赖平台行为的一环。
 
 ## 应用职责
