@@ -47,6 +47,8 @@ export interface SonGuessrStore {
   sendCommand: <T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload?: Record<string, unknown>,
+    /** `timeout: 0` 表示不设请求超时，用于自动出题这类耗时由上游决定的长任务。 */
+    options?: { timeout?: number },
   ) => Promise<T>;
 }
 
@@ -279,11 +281,12 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     return result.results ?? [];
   },
 
-  sendCommand: async (type, payload = {}) => {
+  sendCommand: async (type, payload = {}, options) => {
     const { roomId, sessionToken } = get();
     return sonGuessrWs.send(type, payload, {
       roomId: roomId ?? undefined,
       sessionToken: sessionToken ?? undefined,
+      timeout: options?.timeout,
     });
   },
 };

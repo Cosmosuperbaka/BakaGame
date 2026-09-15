@@ -31,7 +31,7 @@ export const isProtocolError = (value: unknown): value is ProtocolError =>
 interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
   reject: (error: ProtocolError) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 export function generateUuid(): string {
@@ -96,7 +96,7 @@ export class WebSocketClient {
         if (message.type === "ack" || message.type === "error") {
           const pending = this.pendingRequests.get(message.id);
           if (pending) {
-            clearTimeout(pending.timer);
+            if (pending.timer !== undefined) clearTimeout(pending.timer);
             this.pendingRequests.delete(message.id);
             if (message.type === "ack") {
               pending.resolve((message.payload ?? {}) as Record<string, unknown>);
@@ -116,7 +116,7 @@ export class WebSocketClient {
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       for (const [id, pending] of this.pendingRequests) {
-        clearTimeout(pending.timer);
+        if (pending.timer !== undefined) clearTimeout(pending.timer);
         pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
         this.pendingRequests.delete(id);
       }
@@ -146,14 +146,21 @@ export class WebSocketClient {
     });
   }
 
+  /**
+   * `options.timeout` 传入 0 或负数表示**不设请求超时**：自动出题这类需要连续回源
+   * 多个外部接口的命令，耗时完全由上游决定。客户端超时只会制造「后端还在选曲、
+   * 前端已提示失败」的假失败，等待期间由调用方自行轮询房间状态即可。
+   */
   async send<T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload: Record<string, unknown> = {},
     options?: { roomId?: string; sessionToken?: string; timeout?: number },
   ): Promise<T> {
+    const timeoutMs = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       if (this.socket?.readyState === WebSocket.CONNECTING) {
-        await this.waitForConnection(options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+        // 建连等待与请求超时语义不同：无超时请求只能在已建连的连接上等待。
+        await this.waitForConnection(timeoutMs > 0 ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS);
       } else {
         throw { code: "NOT_CONNECTED", message: "WebSocket 未连接" };
       }
@@ -172,10 +179,12 @@ export class WebSocketClient {
 
             const traceId = generateUuid();
             const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
-            const timer = setTimeout(() => {
-              this.pendingRequests.delete(id);
-              reject({ code: "TIMEOUT", message: "请求超时" });
-            }, options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+            const timer = timeoutMs > 0
+              ? setTimeout(() => {
+                this.pendingRequests.delete(id);
+                reject({ code: "TIMEOUT", message: "请求超时" });
+              }, timeoutMs)
+              : undefined;
 
             this.pendingRequests.set(id, {
               resolve: resolve as (payload: Record<string, unknown>) => void,
