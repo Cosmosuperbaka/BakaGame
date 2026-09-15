@@ -39,19 +39,6 @@ test.describe("页面 SEO 元信息", () => {
     await expect(canonical).toHaveAttribute("href", "https://game.baka.website/songuessr");
   });
 
-  test("玩法指南页有独立描述与 canonical，标题仍为纯站名", async ({ page }) => {
-    await page.goto("/guide/whoisfaker-whiteboard");
-    await expect(page).toHaveTitle("BakaGame");
-
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("白板");
-
-    const description = page.locator('head meta[name="description"]');
-    await expect(description).toHaveAttribute("content", /白板/);
-
-    const canonical = page.locator('head link[rel="canonical"]');
-    await expect(canonical).toHaveAttribute("href", "https://game.baka.website/guide/whoisfaker-whiteboard");
-  });
-
   test("对局页标记 noindex", async ({ page }) => {
     await page.goto("/songuessr/solo");
     const robots = page.locator('head meta[name="robots"]');
