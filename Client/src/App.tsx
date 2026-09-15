@@ -12,6 +12,7 @@ const WhoIsFakerPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFak
 const WhoIsFakerRoomPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFakerRoomPage"), "faker-room"));
 const SonGuessrPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrPage"), "song"));
 const SonGuessrRoomPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrRoomPage"), "song-room"));
+const GuidePage = lazy(() => retryLazyImport(() => import("@/pages/GuidePage"), "guide"));
 
 const WhoIsFakerLayout = lazy(() => retryLazyImport(() => import("@/layouts/WhoIsFakerLayout"), "faker-layout"));
 const SonGuessrLayout = lazy(() => retryLazyImport(() => import("@/layouts/SonGuessrLayout"), "song-layout"));
@@ -24,6 +25,8 @@ function App() {
           <Suspense fallback={<PageLoadingFallback />}>
             <Routes>
               <Route path="/" element={<LandingPage />} />
+              {/* 玩法指南（长尾内容页）：slug 由 Guides.ts 单一维护，未收录的 slug 在页面内回主页 */}
+              <Route path="/guide/:slug" element={<GuidePage />} />
               <Route path="/whoisfaker" element={<WhoIsFakerLayout />}>
                 <Route index element={<WhoIsFakerPage />} />
                 <Route path="room/:roomId" element={<WhoIsFakerRoomPage />} />
