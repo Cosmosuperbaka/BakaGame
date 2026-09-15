@@ -229,10 +229,14 @@ export default function SonGuessrPage() {
                           </div>
 
                           <div className="flex items-center gap-1.5 tabular-nums text-xs sm:text-sm text-muted-foreground">
-                            <Users className="h-4 w-4 text-muted-foreground/70" />
-                            <span>
-                              {room.playerCount}玩家
-                              {room.spectatorCount > 0 ? ` ${room.spectatorCount}观战` : ""}
+                            <Users className="h-4 w-4 text-muted-foreground/70 shrink-0" />
+                            <span className="flex items-center gap-2">
+                              <span>
+                                <span className="inline-block w-[2ch] text-right tabular-nums">{room.playerCount}</span>玩家
+                              </span>
+                              <span>
+                                <span className="inline-block w-[2ch] text-right tabular-nums">{room.spectatorCount}</span>旁观
+                              </span>
                             </span>
                           </div>
                         </div>
