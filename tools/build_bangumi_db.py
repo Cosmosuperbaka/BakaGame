@@ -161,7 +161,10 @@ def build(dump: Path, out: Path):
             if a_item.get("type") == 2 and b_item.get("type") == 3:
                 title = b_item.get("name_cn") or b_item.get("name") or ""
                 relation_type = int(rel.get("relation_type", 0) or 0)
-                kind = {3001: "theme", 3002: "opening", 3003: "ending", 3004: "insert", 3005: "character", 3006: "image"}.get(relation_type, track_kind(title))
+                # 关联类型码语义（用真实数据集全量核对）：3003 片头曲、3004 片尾曲、
+                # 3005 插入歌、3002 角色歌、3006 印象曲、3001 主题歌/原声带。
+                # 旧映射把 3002~3005 整体错位一格，导致片头曲被标成 ED、角色歌被标成 OP。
+                kind = {3001: "theme", 3002: "character", 3003: "opening", 3004: "ending", 3005: "insert", 3006: "image"}.get(relation_type, track_kind(title))
                 song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, None, kind))
         for item in subjects.values():
             if item.get("type") != 2: continue
