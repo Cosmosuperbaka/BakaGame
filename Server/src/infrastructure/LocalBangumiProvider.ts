@@ -10,9 +10,30 @@ export interface BangumiDataProvider {
 }
 
 const parseList = (value: string) => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []; } catch { return []; } };
+/**
+ * Bangumi 关联类型码到曲目类型的映射。
+ *
+ * 用真实数据集全量核对过，码值语义与旧映射（3002=opening / 3003=ending /
+ * 3004=insert / 3005=character）恰好错位一格，旧映射会把**片头曲标成 ED、
+ * 角色歌标成 OP**，并按曲目类型筛选出完全错误的曲目：
+ * - 鬼滅の刃：紅蓮華（OP）3003、from the edge（ED）3004
+ * - けいおん!：Cagayake!GIRLS（OP）3003、Don't say "lazy"（ED）3004、
+ *   ふわふわ時間（插入歌）3005、イメージソング系列（角色歌）3002
+ * - SPY×FAMILY：ミックスナッツ（OP）3003、喜劇（ED）3004
+ * - 呪術廻戦：廻廻奇譚（OP）3003、LOST IN PARADISE（ED）3004
+ * 3001 是主题歌 / 原声带（OST 专辑），3006 是印象曲，3007 / 3099 是其他。
+ */
+const RELATION_KINDS: Record<number, BangumiMusicTrack["kind"]> = {
+  3001: "theme",
+  3002: "character",
+  3003: "opening",
+  3004: "ending",
+  3005: "insert",
+  3006: "image",
+};
 const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack["kind"] => {
-  const relationKinds: Record<number, BangumiMusicTrack["kind"]> = { 3001: "theme", 3002: "opening", 3003: "ending", 3004: "insert", 3005: "character", 3006: "image" };
-  if (relationType && relationKinds[relationType]) return relationKinds[relationType];
+  const mapped = relationType ? RELATION_KINDS[relationType] : undefined;
+  if (mapped) return mapped;
   const text = value.toLowerCase();
   if (/片头|片頭|opening|\bop\b/.test(text)) return "opening";
   if (/片尾|ending|\bed\d*\b/.test(text)) return "ending";
