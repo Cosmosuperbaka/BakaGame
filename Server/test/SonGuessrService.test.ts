@@ -515,6 +515,44 @@ describe("SonGuessrService", () => {
     expect(shortSong).toEqual({ startTime: 0, endTime: 12_000, lines: [] });
   });
 
+  test("间奏造成的长行只会收缩歌词窗口，不会让整首歌丢失歌词", () => {
+    // JANE DOE（米津玄師 / 宇多田ヒカル）实测：第 6 句之后有 15 秒间奏，
+    // 该行跨度 14.81s 超过窗口上限。设定 7 行以上时**任何**窗口都会包含它，
+    // 旧实现直接退回 lines=[]，把一首有 12 句歌词的歌显示成「纯音乐或无歌词」。
+    const lines = [
+      { time: 15_620, endTime: 23_010, text: "句一" },
+      { time: 23_010, endTime: 30_870, text: "句二" },
+      { time: 30_870, endTime: 38_240, text: "句三" },
+      { time: 38_240, endTime: 45_650, text: "句四" },
+      { time: 45_650, endTime: 53_040, text: "句五" },
+      { time: 53_040, endTime: 67_850, text: "句六" },
+      { time: 67_850, endTime: 75_230, text: "句七" },
+      { time: 75_230, endTime: 82_640, text: "句八" },
+      { time: 82_640, endTime: 90_020, text: "句九" },
+      { time: 90_020, endTime: 93_710, text: "句十" },
+      { time: 93_710, endTime: 97_420, text: "句十一" },
+      { time: 97_420, endTime: 102_420, text: "句十二" },
+    ];
+
+    // 设定 7~10 行时收缩到 6 行，取间奏之后的紧凑段。
+    for (const configured of [7, 8, 9, 10]) {
+      const clip = createSongLyricClip(lines, configured, { nextInt: () => 0 }, 236_007);
+      expect(clip.lines).toHaveLength(6);
+      expect(clip.lines[0].text).toBe("句七");
+      expect(clip.startTime).toBe(67_850);
+      expect(clip.endTime).toBe(102_170);
+    }
+
+    // 设定行数本身可行时不受影响，仍按设定取满。
+    const exact = createSongLyricClip(lines, 5, { nextInt: () => 0 }, 236_007);
+    expect(exact.lines).toHaveLength(5);
+    expect(exact.lines[0].text).toBe("句一");
+
+    // 收缩下限为 2 行：只有单句歌词时仍判定为不可出题（保持既有语义）。
+    const single = createSongLyricClip(lines.slice(0, 1), 5, { nextInt: () => 7_000 }, 180_000);
+    expect(single).toEqual({ startTime: 7_000, endTime: 37_000, lines: [] });
+  });
+
   test("房间在线人数不设上限", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");
