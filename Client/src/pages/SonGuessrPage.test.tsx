@@ -66,16 +66,31 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("绫地喰喰的房间")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
-    expect(screen.getByText("2玩家 3观战")).toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
     expect(screen.getByText("可观战")).toBeInTheDocument();
 
     expect(screen.getByText("日常听歌房")).toBeInTheDocument();
     expect(screen.getByText("1234")).toBeInTheDocument();
-    expect(screen.getByText("5玩家")).toBeInTheDocument();
-    expect(screen.queryByText(/0观战/)).not.toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
     expect(screen.getByText("禁观战")).toBeInTheDocument();
+
+    const roomOne = screen.getByText("绫地喰喰的房间").closest('[role="button"]');
+    expect(roomOne).toHaveTextContent("2玩家");
+    expect(roomOne).toHaveTextContent("3旁观");
+
+    const roomTwo = screen.getByText("日常听歌房").closest('[role="button"]');
+    expect(roomTwo).toHaveTextContent("5玩家");
+    expect(roomTwo).toHaveTextContent("0旁观");
+
+    const digitElements = screen.getAllByText(/^[0-9]+$/);
+    for (const digit of digitElements) {
+      if (digit.textContent === "8629" || digit.textContent === "1234" || digit.textContent === "2") {
+        continue;
+      }
+      expect(digit).toHaveClass("w-[2ch]");
+      expect(digit).toHaveClass("text-right");
+      expect(digit).toHaveClass("tabular-nums");
+    }
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("绫地喰喰的房间");

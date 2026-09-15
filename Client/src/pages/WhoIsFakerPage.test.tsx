@@ -68,16 +68,31 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByText("测试房间一")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
-    expect(screen.getByText("4玩家 1观战")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
     expect(screen.getByText("可观战")).toBeInTheDocument();
 
     expect(screen.getByText("测试房间二")).toBeInTheDocument();
     expect(screen.getByText("9999")).toBeInTheDocument();
-    expect(screen.getByText("6玩家")).toBeInTheDocument();
-    expect(screen.queryByText(/0观战/)).not.toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
     expect(screen.getByText("禁观战")).toBeInTheDocument();
+
+    const roomOne = screen.getByText("测试房间一").closest('[role="button"]');
+    expect(roomOne).toHaveTextContent("4玩家");
+    expect(roomOne).toHaveTextContent("1旁观");
+
+    const roomTwo = screen.getByText("测试房间二").closest('[role="button"]');
+    expect(roomTwo).toHaveTextContent("6玩家");
+    expect(roomTwo).toHaveTextContent("0旁观");
+
+    const digitElements = screen.getAllByText(/^[0-9]+$/);
+    for (const digit of digitElements) {
+      if (digit.textContent === "8629" || digit.textContent === "9999" || digit.textContent === "2") {
+        continue;
+      }
+      expect(digit).toHaveClass("w-[2ch]");
+      expect(digit).toHaveClass("text-right");
+      expect(digit).toHaveClass("tabular-nums");
+    }
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("测试房间一");
