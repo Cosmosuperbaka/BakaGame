@@ -328,6 +328,13 @@ export const scoreAnimeSongCandidate = (
 
 const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
 const MAX_LYRIC_LINE_DURATION_MS = 12_000;
+/**
+ * 歌词窗口收缩下限。
+ *
+ * 单行歌词不足以出题（相邻两句的上下文才算一个可猜片段），因此设定行数
+ * 高于 2 时，窗口不允许收缩到 2 行以下；设定 1 行时按用户意愿保留 1 行窗口。
+ */
+const MIN_LYRIC_WINDOW_LINES = 2;
 const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
 /**
  * 自动出题时最多尝试的番剧候选数。
@@ -367,14 +374,23 @@ export const createSongLyricClip = (
   durationMs?: number,
 ): SongLyricClip => {
   const safeCount = clampInt(lineCount, 1, 10);
-  const windows = lyrics.length >= safeCount
-    ? Array.from({ length: lyrics.length - safeCount + 1 }, (_, startIndex) =>
-      lyrics.slice(startIndex, startIndex + safeCount))
-        .filter((lines) => lines.every((line) =>
-          line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS))
-    : [];
+  const isCompactLine = (line: SongDetails["lyrics"][number]) =>
+    line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS;
 
-  if (windows.length > 0) {
+  // 从设定行数开始逐行收缩寻找窗口。
+  //
+  // 单窗口的时长上限会整片否决含间奏的窗口，而**只要窗口长度足够大到必然覆盖
+  // 那个长行**，就再也拼不出窗口。`JANE DOE`（米津玄師 / 宇多田ヒカル）在
+  // `[00:53.04]` 之后有 15 秒间奏，该行跨度 14.81s：设定行数 ≥ 7 时任何窗口
+  // 都会包含它，旧实现直接退回 `lines: []`，让一首 12 句歌词的歌在界面上被
+  // 显示成「当前歌曲为纯音乐或无歌词」。宁可少给几行，也不能丢掉整首歌的歌词。
+  for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
+    if (lyrics.length < count) continue;
+    const windows = Array.from({ length: lyrics.length - count + 1 }, (_, startIndex) =>
+      lyrics.slice(startIndex, startIndex + count))
+      .filter((lines) => lines.every(isCompactLine));
+    if (windows.length === 0) continue;
+
     const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
     const candidates = padded.length > 0 ? padded : windows;
     const lines = candidates[random.nextInt(candidates.length)];
