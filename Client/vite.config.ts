@@ -5,6 +5,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 import fs from 'fs'
 import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
+import { PAGE_META, SITE_NAME, SITE_ORIGIN } from './src/data/PageMeta'
 
 // ==================== Vite 插件：构建时注入提交历史 ====================
 // 以虚拟模块提供数据，随 JS 产物一同带 hash：
@@ -271,6 +272,107 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
   }
 }
 
+// ==================== Vite 插件：静态外壳注入（可收录路由） ====================
+// 本站是纯前端 SPA，构建产物的 <div id="root"> 是空的：执行 JS 的爬虫能自己渲染，
+// 不执行 JS 的爬虫（百度为主）只能读到空壳。此插件在构建末尾把 PageMeta 里的正文与
+// head 元信息写进各路由的 HTML，爬虫无需执行 JS 即可读到内容。
+//
+// 为什么是「构建期字符串注入」而不是无头浏览器预渲染：平台构建容器不提供 Chromium
+// （实测报错 Executable doesn't exist ... chromium_headless_shell），而带着一个 150MB
+// 的浏览器依赖去构建既慢又脆。本站可收录页面的正文本来就是数据（PageMeta），
+// 直接由数据生成 HTML 更简单也更可靠。
+//
+// 注入的 head 标签全部带 data-static-seo="1"：这些标签只服务不执行 JS 的爬虫，
+// 应用启动时会由 stripStaticSeo() 整体移除，再交给 react-helmet-async 写入当前路由的真值。
+// 为什么不是「让 Helmet 接管」：react-helmet-async v3 在 React 19 下不走 DOM 复用路径
+// （client.ts 里按 isEqualNode 复用旧标签的逻辑只在旧路径生效），它会直接渲染新标签，
+// 静态标签留在原地就会变成重复 canonical —— 搜索引擎遇到重复 canonical 会判定整组失效。
+// JSON-LD 例外：它用固定 id，Seo 的 useEffect 按同一 id 覆盖内容，不产生重复。
+const STATIC_SEO_ATTRIBUTE = 'data-static-seo'
+const STRUCTURED_DATA_ID = 'bakagame-structured-data'
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+}
+
+function staticShellPlugin() {
+  return {
+    name: 'static-shell',
+    apply: 'build' as const,
+    async closeBundle() {
+      const distDir = path.resolve(__dirname, 'dist')
+      const indexPath = path.join(distDir, 'index.html')
+      const original = fs.readFileSync(indexPath, 'utf8')
+
+      // 注入点缺失时宁可让构建失败，也不要静默产出一个空壳站点。
+      if (!original.includes('<div id="root"></div>')) {
+        throw new Error('静态外壳：dist/index.html 里找不到空的 #root 容器')
+      }
+      if (!original.includes('</head>')) {
+        throw new Error('静态外壳：dist/index.html 里找不到 </head>')
+      }
+
+      const pages = PAGE_META.map((meta) => {
+        const canonical = `${SITE_ORIGIN}${meta.path}`
+        const description = escapeHtml(meta.description)
+        const head = [
+          `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<link rel="canonical" href="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
+        ].join('\n    ')
+
+        const body = [
+          `<h1>${escapeHtml(meta.shell.h1)}</h1>`,
+          ...meta.shell.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
+          `<ul>${meta.shell.links
+            .map((link) => `<li><a href="${link.href}">${escapeHtml(link.label)}</a></li>`)
+            .join('')}</ul>`,
+        ].join('')
+
+        const html = original
+          .replace('</head>', `  ${head}\n  </head>`)
+          .replace('<div id="root"></div>', `<div id="root"><main>${body}</main></div>`)
+
+        const segment = meta.path.replace(/^\//, '').replace(/\/$/, '')
+        return {
+          path: meta.path,
+          html,
+          // 双形态落盘：目录索引型主机与 clean URL 型主机各覆盖一种，别名 canonical 指向正式路径。
+          outputs: segment === '' ? ['index.html'] : [`${segment}/index.html`, `${segment}.html`],
+        }
+      })
+
+      // 先全部生成再落盘：index.html 同时是模板来源，边读边写会污染后续路由。
+      for (const page of pages) {
+        for (const output of page.outputs) {
+          const target = path.join(distDir, output)
+          fs.mkdirSync(path.dirname(target), { recursive: true })
+          fs.writeFileSync(target, page.html)
+        }
+        const primary = path.join(distDir, page.outputs[0])
+        const written = fs.readFileSync(primary, 'utf8')
+        for (const marker of ['<div id="root"><main>', `${STATIC_SEO_ATTRIBUTE}="1"`, STRUCTURED_DATA_ID]) {
+          if (!written.includes(marker)) {
+            throw new Error(`静态外壳：${page.outputs[0]} 缺少 ${marker}`)
+          }
+        }
+      }
+
+      console.log(`静态外壳注入完成：${pages.map((page) => page.path).join('、')}`)
+    },
+  }
+}
+
 export default defineConfig(async () => {
   const { publicDir, assetMap } = await preparePublicWebp()
   const emojiDir = path.resolve(__dirname, './public/emojis')
@@ -295,6 +397,7 @@ export default defineConfig(async () => {
       commitHistoryPlugin(),
       stickerManifestPlugin(emojiDir),
       webpAssetPlugin(assetMap),
+      staticShellPlugin(),
     ],
     resolve: {
       alias: [

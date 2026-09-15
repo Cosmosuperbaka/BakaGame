@@ -7,9 +7,12 @@ import App from "./App";
 import { initClientSentry } from "./lib/Sentry";
 import { setupGlobalImageProtection } from "./lib/ImageProtection";
 import { recoverFromDomInvariant } from "./lib/DomRecovery";
+import { stripStaticSeo } from "./lib/StaticSeo";
 
 initClientSentry();
 setupGlobalImageProtection();
+// 先摘掉构建期注入的静态 SEO 标签，避免与 Helmet 写入的标签重复（详见 StaticSeo.ts）。
+stripStaticSeo();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

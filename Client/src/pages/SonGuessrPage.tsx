@@ -88,21 +88,7 @@ export default function SonGuessrPage() {
       transition={spring.swift}
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
-      <Seo
-        description="Songuessr 是免下载的网页版听歌猜歌游戏，播放歌曲片段竞猜歌名或番剧，支持单人练习与多人联机对战，曲库接自网易云音乐与 Bangumi 番剧库。"
-        path="/songuessr"
-        structuredData={{
-          "@context": "https://schema.org",
-          "@type": "SoftwareApplication",
-          name: "Songuessr 听歌猜歌",
-          applicationCategory: "GameApplication",
-          operatingSystem: "Web",
-          url: "https://game.baka.website/songuessr",
-          inLanguage: "zh-CN",
-          description: "免下载的网页版听歌猜歌游戏，支持单人练习与多人联机。",
-          offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
-        }}
-      />
+      <Seo path="/songuessr" />
       <header className="border-b border-border/40 pb-4 pt-6 md:pt-8 px-6">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <Button

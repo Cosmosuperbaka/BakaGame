@@ -473,19 +473,7 @@ export default function LandingPage() {
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-background">
-      <Seo
-        description="BakaGame 是免下载的网页版多人派对游戏站，提供在线版谁是卧底与听歌猜歌两款游戏，支持 4 至 16 人实时联机、单人练习与断线重连，打开浏览器即可开玩。"
-        path="/"
-        structuredData={{
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          name: "BakaGame",
-          alternateName: "二刺猿笑传之猜猜呗",
-          url: "https://game.baka.website/",
-          inLanguage: "zh-CN",
-          description: "免下载的网页版多人派对游戏站，提供在线版谁是卧底与听歌猜歌。",
-        }}
-      />
+      <Seo path="/" />
       <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
           variants={listItem}
