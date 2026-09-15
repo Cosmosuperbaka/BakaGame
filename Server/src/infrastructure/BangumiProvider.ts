@@ -50,27 +50,6 @@ const parseYear = (value: unknown) => {
 const STAFF_KEY_PATTERN =
   /分[镜鏡]|演出|作画|動画|动画|制作|製作|设定|設定|设计|設計|监[督修]|企画|企划|录音|録音|混音|音效|音响|音響|选曲|選曲|协助|協力|协力|角色[设設]|主要角色|CAST|STAFF|作[词詞]|作曲|编曲|編曲|制作人|制片人/i;
 
-const KIND_PRIORITY: Record<BangumiMusicTrackKind, number> = {
-  opening: 1,
-  ending: 2,
-  insert: 3,
-  theme: 4,
-  character: 5,
-  ost: 6,
-  single: 7,
-  collection: 8,
-  remix: 9,
-  image: 10,
-  doujin: 11,
-  vocal: 12,
-  vocaloid: 13,
-  arrange: 14,
-  artistAlbum: 15,
-  drama: 16,
-  radio: 17,
-  reading: 18,
-};
-
 const VERSION_MARKER_PATTERN =
   /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
 const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
@@ -298,7 +277,10 @@ const extractTracks = (
     return true;
   });
 
-  return uniqueTracks.sort((a, b) => (KIND_PRIORITY[a.kind] ?? 99) - (KIND_PRIORITY[b.kind] ?? 99));
+  // 曲目顺序不再承载任何优先级：早期这里按 KIND_PRIORITY 把 opening 排到最前，
+  // 与「按顺序取首个可播放曲目」叠加后，让线上近乎每轮都出片头曲。
+  // 出题随机性统一由服务层洗牌决定（见 SonGuessrService.resolveAnimeSong）。
+  return uniqueTracks;
 };
 
 export const rewriteBangumiImageUrl = (value: unknown, imageUrl = "") => {
