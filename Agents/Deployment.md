@@ -73,6 +73,29 @@ WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
 - 探测禁止使用带副作用的接口（曾对 ccb 的 `POST /api/character-tags` 发出真实
   写入），验证只用 GET 探针。
 
+## 前端预渲染 (Prerender)
+
+前端是纯前端 SPA，构建产物的 `<div id="root">` 默认是空的：执行 JS 的爬虫能自行渲染，
+不执行 JS 的爬虫（百度为主）只能读到空壳，收录无从谈起。构建后的预渲染在真实浏览器里把
+三个静态路由画完再写回 dist，静态 HTML 因此同时具备正文与 head 元信息
+（description / canonical / og / JSON-LD）。
+
+- 命令：`npm run prerender`（消费已有 `dist/`）；一步到位用 `npm run build:seo`。
+- 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
+  `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
+  别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
+- 不预渲染：房间页与单人页——内容由服务端实时状态驱动，没有可静态化的正文，且已标 `noindex`。
+- **生产构建命令必须包含预渲染**：本项目前端是 GitHub 集成型的 Makers 项目，构建发生在
+  平台侧，需在控制台把构建命令设为 `npm run build:seo`。
+- **构建环境必须能提供浏览器**：脚本用 Playwright 驱动（Windows 本机走系统 Edge，
+  Linux 走 `npx playwright install --with-deps chromium`）。环境不具备时脚本直接失败，
+  不做静默降级——SEO 降级必须是显式决定。
+- 自校验：脚本内置断言（`#root` 非空、正文关键词、head 元信息、入口脚本仍在），
+  不满足即构建失败；CI 的 e2e job 已串入该步骤。
+- 上线验收：用 `curl`（不带 JS）访问三个路由，正文应含对应关键词且 canonical 指向自身。
+  若平台把 `/whoisfaker`、`/songuessr` 回退成了首页外壳，静态文件就没被解析，
+  需在 `Client/middleware.js` 里补路径 rewrite——这是本方案唯一依赖平台行为的一环。
+
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代

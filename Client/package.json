@@ -13,6 +13,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
     "test:asset-smoke": "npm run build && node scripts/asset-smoke.mjs",
+    "prerender": "node scripts/prerender.mjs",
+    "build:seo": "npm run build && npm run prerender",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:e2e",
     "preview": "vite preview"
   },
