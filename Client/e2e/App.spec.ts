@@ -340,7 +340,11 @@ test("empty description history keeps the player pane width after a direct votin
 });
 
 test("a decisive vote shows the eliminated player before game over", async ({ browser, page }) => {
-  test.setTimeout(75_000);
+  // 本用例是本套件里最重的一条：5 个浏览器上下文跑完整的建房 → 分配身份 → 描述 → 投票 → 结算。
+  // 本地实测量级约 72 秒，原先的 75 秒预算没有余量，CI 机器更慢时必然越界
+  // （CI 报错即「Test timeout of 75000ms exceeded」，而非断言不符）。
+  // 给到 3 倍余量，宁可单条慢一点，也不要让它在流水线上反复超时重试。
+  test.setTimeout(180_000);
   const unique = Date.now().toString(36);
   const hostName = `结算主持${unique}`;
   const playerNames = Array.from({ length: 4 }, (_, index) => `结算玩家${index + 1}-${unique}`);
