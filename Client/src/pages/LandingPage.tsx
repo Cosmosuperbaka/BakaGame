@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   listItem,
@@ -18,6 +18,7 @@ import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
+import { GUIDES, guideNavLabel } from "@/data/Guides";
 import {
   Dialog,
   DialogContent,
@@ -518,6 +519,20 @@ export default function LandingPage() {
       </main>
 
       <footer className="flex flex-col items-center gap-2 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-2 [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:flex-wrap [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-x-4 [@media(max-height:680px)]:gap-y-1 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
+        {/* 玩法指南：站内长尾内容页入口，页脚内链是这些页面被爬到的常规路径 */}
+        <nav aria-label="玩法指南" className="flex flex-wrap items-center justify-center gap-1 text-xs">
+          <span className="mr-0.5 text-muted-foreground/60 select-none">玩法指南</span>
+          {GUIDES.map((guide) => (
+            <Link
+              key={guide.slug}
+              to={`/guide/${guide.slug}`}
+              className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {guideNavLabel(guide)}
+            </Link>
+          ))}
+        </nav>
+
         {/* 友情链接 */}
         <motion.div
           className="flex flex-wrap items-center justify-center gap-1 text-xs"

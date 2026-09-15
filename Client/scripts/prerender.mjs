@@ -5,7 +5,7 @@ import process from "node:process";
 
 import { chromium } from "@playwright/test";
 
-// 阶段二：预渲染，把静态路由变成真内容。
+// 阶段二：预渲染，把可收录路由变成真内容。
 //
 // 为什么必须做：本站是纯前端 SPA，构建产物里的 <div id="root"> 是空的。
 // 执行 JS 的爬虫（Google）还能自己渲染，不执行 JS 的爬虫（百度为主）只能读到
@@ -16,15 +16,13 @@ import { chromium } from "@playwright/test";
 // Vite 8 不匹配，还要各自捆绑一套浏览器依赖；Playwright 是本仓库既有开发依赖
 // （E2E 在用），直接复用，不新增任何依赖。
 //
-// 不预渲染的页面：房间页（/whoisfaker/room/*、/songuessr/room/*、/songuessr/solo）
-// 内容由服务端实时状态驱动，没有可静态化的正文，且已标 noindex。
+// 路由来源是 dist/sitemap.xml，不在这里另写一份清单：sitemap 是「可被收录的地址」的
+// 唯一真相源，新增内容页只要进了 sitemap，预渲染与断言自动跟着走，不会漏。
+// 房间页与单人页（内容由服务端实时状态驱动、且已标 noindex）不在 sitemap 里，
+// 因此天然不预渲染。
 //
-// 产物落点：
-//   /            → dist/index.html
-//   /whoisfaker  → dist/whoisfaker/index.html（目录索引型主机）+ dist/whoisfaker.html（clean URL 型主机）
-//   /songuessr   → dist/songuessr/index.html + dist/songuessr.html
-// 两种落点是为了不赌主机的静态解析规则：目录索引与 clean URL 各覆盖一种。
-// 别名（.html）与正式路径内容相同、canonical 指向正式路径，重复内容由 canonical 收敛。
+// 落盘双形态：<route>/index.html（目录索引型主机）与 <route>.html（clean URL 型主机），
+// 不赌主机的静态解析规则；别名与正式路径 canonical 一致，重复内容由 canonical 收敛。
 // 客户端启动方式不变（createRoot 挂载后接管），快照只是首屏与爬虫看到的版本。
 
 const clientDir = process.cwd();
@@ -35,28 +33,31 @@ const port = 4174;
 const baseUrl = `http://127.0.0.1:${port}`;
 const origin = "https://game.baka.website";
 
-// keywords 为「正文里必须出现」的字符串（在 <head> 之外的部分匹配）：
-// 缺任意一个都说明页面没画完或内容退化，宁可构建失败，也不要把空壳发上线。
-const ROUTES = [
-  {
-    path: "/",
-    outputs: ["index.html"],
-    keywords: ["Who is Faker", "Songuessr", "友情链接"],
-    canonical: `${origin}/`,
-  },
-  {
-    path: "/whoisfaker",
-    outputs: ["whoisfaker/index.html", "whoisfaker.html"],
-    keywords: ["Who is", "房间列表", "返回主页"],
-    canonical: `${origin}/whoisfaker`,
-  },
-  {
-    path: "/songuessr",
-    outputs: ["songuessr/index.html", "songuessr.html"],
-    keywords: ["Songuessr", "房间列表", "返回主页"],
-    canonical: `${origin}/songuessr`,
-  },
-];
+/** 单页正文（</head> 之后的部分）的最小长度：低于此值基本可断定只抓到了空壳。 */
+const MIN_BODY_LENGTH = 2000;
+
+/**
+ * 从构建产物里的 sitemap 读出需要预渲染的路由，并推导落盘路径。
+ */
+async function readSitemapRoutes() {
+  const xml = await readFile(path.join(distDir, "sitemap.xml"), "utf8").catch(() => {
+    throw new Error("找不到 dist/sitemap.xml：它是预渲染路由的唯一真相来源，需先完成一次构建");
+  });
+
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1].trim());
+  if (locs.length === 0) throw new Error("dist/sitemap.xml 里没有任何 <loc> 条目");
+
+  return locs.map((loc) => {
+    if (!loc.startsWith(origin)) throw new Error(`sitemap 里的 ${loc} 不属于站点根地址 ${origin}`);
+    const routePath = loc.slice(origin.length) || "/";
+    const segment = routePath.replace(/^\//, "").replace(/\/$/, "");
+    return {
+      path: routePath,
+      canonical: loc,
+      outputs: segment === "" ? ["index.html"] : [`${segment}/index.html`, `${segment}.html`],
+    };
+  });
+}
 
 async function startPreview() {
   const preview = spawn(
@@ -90,8 +91,9 @@ async function startPreview() {
 }
 
 /**
- * 校验单页快照。这里断言的都是「爬虫视角」能拿到的东西：
- * 正文有真实文字、head 有元信息、脚本标签还在（保证真人访问时 SPA 照常启动）。
+ * 校验单页快照。断言的都是「爬虫视角」能拿到的东西：
+ * 正文有真实文字与 h1、head 有元信息、入口脚本还在（真人访问时 SPA 照常启动）。
+ * canonical 必须等于本路由地址——这一条同时能抓出「主机回退成了别的页面」这类串页事故。
  */
 function assertSnapshot(route, html, bytes) {
   const headEnd = html.indexOf("</head>");
@@ -102,10 +104,8 @@ function assertSnapshot(route, html, bytes) {
   const problems = [];
   if (!body.includes('<div id="root">')) problems.push("缺少 #root 容器");
   if (body.includes("页面加载中")) problems.push("仍是懒加载占位，未等到页面画完");
-  for (const keyword of route.keywords) {
-    if (!body.includes(keyword)) problems.push(`正文缺少关键词「${keyword}」`);
-  }
-  if (body.length < 3000) problems.push(`正文过短（${body.length} 字符），疑似只抓到空壳`);
+  if (!/<h1[\s>]/.test(body)) problems.push("正文缺少 h1 标题");
+  if (body.length < MIN_BODY_LENGTH) problems.push(`正文过短（${body.length} 字符），疑似只抓到空壳`);
 
   const title = head.match(/<title>([^<]*)<\/title>/);
   if (title?.[1] !== "BakaGame") problems.push(`<title> 为「${title?.[1] ?? "缺失"}」，应为纯站名 BakaGame`);
@@ -129,6 +129,7 @@ async function main() {
     throw new Error("找不到 dist/index.html，请先执行 npm run build");
   });
   const doctype = originalHtml.match(/<!doctype[^>]*>/i)?.[0] ?? "<!DOCTYPE html>";
+  const routes = await readSitemapRoutes();
 
   const preview = await startPreview();
   let browser;
@@ -146,7 +147,7 @@ async function main() {
     });
 
     const snapshots = [];
-    for (const route of ROUTES) {
+    for (const route of routes) {
       const page = await context.newPage();
       const errors = [];
       page.on("pageerror", (error) => errors.push(String(error)));
@@ -166,7 +167,7 @@ async function main() {
       snapshots.push({ route, html });
     }
 
-    // 全部抓完再落盘：抓 /whoisfaker 时会经 preview 的 SPA 回退读 dist/index.html，
+    // 全部抓完再落盘：抓后面的路由时会经 preview 的 SPA 回退读 dist/index.html，
     // 提前覆盖它会污染后续路由的快照来源。
     for (const { route, html } of snapshots) {
       for (const output of route.outputs) {
@@ -184,7 +185,7 @@ async function main() {
     for (const item of summary) {
       console.log(`  ${item.route} → ${(item.bytes / 1024).toFixed(1)} KB（正文 ${item.characters} 字符）`);
     }
-    console.log(`预渲染通过：${summary.length} 个路由已写入 dist（首页、两个游戏大厅）`);
+    console.log(`预渲染通过：${summary.length} 个路由已写入 dist（来源：dist/sitemap.xml）`);
   } finally {
     await browser?.close();
     preview.kill();
