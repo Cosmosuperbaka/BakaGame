@@ -12,6 +12,7 @@ vi.mock("@/lib/Sentry", () => ({
 }));
 
 import { generateUuid, isProtocolError, WebSocketClient } from "./WebsocketClient";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/config/Constants";
 
 interface MockSocketInstance {
   url: string;
@@ -167,5 +168,31 @@ describe("WebSocketClient", () => {
     expect(mocks.captureClientException).toHaveBeenCalledTimes(1);
 
     vi.unstubAllGlobals();
+  });
+
+  it("timeout 为 0 时不设请求超时，越过默认超时后迟到的 ACK 依然能完成请求", async () => {
+    vi.useFakeTimers();
+    try {
+      const MockWebSocket = createMockSocketClass();
+      vi.stubGlobal("WebSocket", MockWebSocket);
+
+      const client = new WebSocketClient("/api/songuessr/ws");
+      client.connect();
+      const socket = MockWebSocket.instances.at(-1)!;
+
+      const pending = client.send("song.game.start", {}, { timeout: 0 });
+      const requestId = (JSON.parse(socket.sent[0]) as { id: string }).id;
+
+      // 自动出题耗时由上游决定：越过默认请求超时也不得被判为失败。
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS + 5_000);
+
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestId, payload: { started: true } }),
+      });
+      await expect(pending).resolves.toMatchObject({ started: true });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });

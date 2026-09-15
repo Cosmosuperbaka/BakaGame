@@ -761,8 +761,8 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 点击开始游戏
     fireEvent.click(startButton);
 
-    // 校验请求已发出，按钮进入 loading 禁用态并渲染 spinner 与动态文案
-    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.start", {});
+    // 校验请求已发出（出题耗时由上游决定，不带请求超时），按钮进入 loading 禁用态并渲染 spinner 与动态文案
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.start", {}, { timeout: 0 });
     expect(startButton).toBeDisabled();
     expect(startButton).toHaveAttribute("aria-busy", "true");
     expect(within(startButton).getByTestId("button-spinner")).toBeInTheDocument();
@@ -778,6 +778,53 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
 
     expect(screen.queryByTestId("button-spinner")).not.toBeInTheDocument();
+  });
+
+  it("出题等待期间每 3 秒同步一次房间状态，任务完成后停止轮询", async () => {
+    let resolveCommand: (val?: unknown) => void = () => {};
+    const pendingPromise = new Promise((resolve) => {
+      resolveCommand = resolve;
+    });
+    const sendCommandSpy = vi.fn().mockImplementation((type: string) =>
+      type === "song.room.requestSync" ? Promise.resolve({}) : pendingPromise,
+    );
+
+    useSonGuessrStore.setState({
+      sendCommand: sendCommandSpy,
+    });
+
+    vi.useFakeTimers();
+    try {
+      renderRoomPage();
+      fireEvent.click(screen.getByRole("button", { name: "开始游戏" }));
+
+      const syncCallCount = () =>
+        sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.requestSync").length;
+
+      // 出题命令本身不带超时，等待期间靠轮询把界面与后端真实进度对齐。
+      expect(syncCallCount()).toBe(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(syncCallCount()).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+      expect(syncCallCount()).toBe(3);
+
+      // 命令完成后停止轮询，不再空转请求
+      await act(async () => {
+        resolveCommand({});
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9_000);
+      });
+      expect(syncCallCount()).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("结算阶段点击“再来一轮”后按钮进入 loading 禁用状态且“返回等待阶段”同步禁用，防止并发冲突", async () => {
@@ -825,7 +872,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 点击再来一轮
     fireEvent.click(nextRoundButton);
 
-    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.nextRound", {});
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.nextRound", {}, { timeout: 0 });
     expect(nextRoundButton).toBeDisabled();
     expect(nextRoundButton).toHaveAttribute("aria-busy", "true");
     expect(within(nextRoundButton).getByTestId("button-spinner")).toBeInTheDocument();

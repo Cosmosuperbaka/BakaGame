@@ -103,6 +103,17 @@ import type {
 
 const SONG_VOLUME_KEY = "songuessr_volume";
 
+/**
+ * 出题类命令需要服务端连续回源网易云与 Bangumi，冷缓存下可能耗时几十秒。
+ * 它们不能用默认请求超时（超时只会制造「后端还在选曲、前端已提示失败」的假失败），
+ * 改为不设超时，并在等待期间每 3 秒轻量同步一次房间状态。
+ */
+const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
+const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
+
+const isLongRunningCommand = (type: string): boolean =>
+  (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
+
 const directionSymbol: Record<SongGuessDirection, string> = {
   higher: "↑",
   lower: "↓",
@@ -250,6 +261,17 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     (type: string) => Boolean(pendingCommands[type]),
     [pendingCommands],
   );
+
+  // 长任务等待期间定时同步房间状态：出题完成后服务端会推进阶段，
+  // 轮询保证加载中的界面与后端真实进度对齐，而不是死等一个 ACK。
+  const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => Boolean(pendingCommands[type]));
+  useEffect(() => {
+    if (!longRunningPending) return;
+    const timer = setInterval(() => {
+      void sendCommandRef.current("song.room.requestSync").catch(() => {});
+    }, LONG_RUNNING_POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [longRunningPending]);
 
   const handleSendChatMessage = useCallback(
     async (chatText: string) => {
@@ -860,7 +882,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     inFlightCommandsRef.current.add(type);
     setPendingCommands((prev) => ({ ...prev, [type]: true }));
     try {
-      await sendCommand(type, payload);
+      await sendCommand(type, payload, isLongRunningCommand(type) ? { timeout: 0 } : undefined);
       if (success) setNotice(success, "success");
     } catch (error) {
       const appError = error as { code?: string; message?: string };
