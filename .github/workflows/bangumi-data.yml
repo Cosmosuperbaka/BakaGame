@@ -1,8 +1,15 @@
 name: Update Bangumi Data
 
 on:
+  # 北京时间每周一 05:00（UTC 周日 21:00）。刻意排在 CCB-TagsCI 的
+  # weekly-tags-maintenance（北京时间周一 04:00）之后一小时，
+  # 保证拿到的是当晚刚合并完用户反馈的 id_tags.js。
   schedule:
-    - cron: "30 3 * * 1"
+    - cron: "0 21 * * 0"
+  # CCB-TagsCI 推完新标签后会主动派发这个事件，省掉最多一小时的等待。
+  # 定时任务仍然保留：派发失败（例如 token 权限不足）时它是最低保障。
+  repository_dispatch:
+    types: [bangumi-tags-updated]
   workflow_dispatch:
 
 jobs:
@@ -12,7 +19,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      # 合成 fixture 自测，不依赖 dump；放在下载之前以便快速失败。
+      # 合成 fixture 自测，不依赖 dump 与网络；放在下载之前以便快速失败。
       - name: Test database builder
         run: python3 tools/test_build_bangumi_db.py
       - name: Download latest dump
@@ -25,8 +32,19 @@ jobs:
           curl --fail --location --retry 3 "$url" -o /tmp/bangumi/dump.zip
           mkdir -p /tmp/bangumi/dump
           unzip -q /tmp/bangumi/dump.zip -d /tmp/bangumi/dump
+      # 角色标签由 CCB-TagsCI 每周一 04:00（北京时间）产出并提交，仓库里不存快照。
+      # 这里用 curl 而不是让构建脚本自己下载：与上面的 dump 下载保持同一套重试语义，
+      # 并且下载到的字节数会留在 CI 日志里，便于追溯当晚用的是哪一版。
+      - name: Download character tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js" \
+            -o /tmp/bangumi/id_tags.js
+          wc -c /tmp/bangumi/id_tags.js
       - name: Build SQLite databases
-        run: python3 tools/build_bangumi_db.py /tmp/bangumi/dump Server/data
+        run: python3 tools/build_bangumi_db.py /tmp/bangumi/dump Server/data --tags /tmp/bangumi/id_tags.js
       - name: Commit generated data
         shell: bash
         run: |
