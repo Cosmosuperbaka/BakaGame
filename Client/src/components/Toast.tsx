@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { duration, ease, spring } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { useCCBStore } from "@/stores/UseCCBStore";
 import { cn } from "@/lib/Utils";
 
 export function ToastContainer() {
@@ -12,6 +13,13 @@ export function ToastContainer() {
 
 export function SonGuessrToastContainer() {
   const notice = useSonGuessrStore((state) => state.notice);
+  const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
+
+  return <ToastViewport toasts={toasts} />;
+}
+
+export function CCBToastContainer() {
+  const notice = useCCBStore((state) => state.notice);
   const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
 
   return <ToastViewport toasts={toasts} />;

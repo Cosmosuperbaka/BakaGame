@@ -113,6 +113,34 @@ export const PAGE_META: PageMeta[] = [
       offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
     },
   },
+  {
+    path: "/ccb",
+    description:
+      "CCB（二刺猿笑传之猜猜呗）是免下载的网页版猜动漫角色游戏，同一房间内所有玩家同时猜同一个角色，逐字段反馈把答案一步步收敛，角色与作品数据来自 Bangumi 本地库。",
+    shell: {
+      h1: "CCB：在线猜动漫角色",
+      paragraphs: [
+        "同一房间内所有人猜同一个动漫角色。每次提交都会给出逐字段反馈——性别、热度区间、作品评分、登场年、共同出演作品与共同标签，把范围一步步收敛到唯一答案。",
+        "房间支持公开与私密、准备开局、旁观、聊天与房主管理；角色与作品数据来自本地 Bangumi 数据集，无需等待第三方接口。",
+      ],
+      links: [
+        { href: "/", label: "返回主页" },
+        { href: "/whoisfaker", label: "谁是卧底" },
+        { href: "/songuessr", label: "Songuessr 听歌猜歌" },
+      ],
+    },
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "CCB 猜动漫角色",
+      applicationCategory: "GameApplication",
+      operatingSystem: "Web",
+      url: `${SITE_ORIGIN}/ccb`,
+      inLanguage: "zh-CN",
+      description: "免下载的网页版猜动漫角色游戏，支持多人同房竞猜。",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
+    },
+  },
 ];
 
 /**

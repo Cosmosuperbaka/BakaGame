@@ -47,28 +47,26 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
-  it("renders animecharguessr with coming-soon badge and disabled state", () => {
+  it("renders animecharguessr with its multiplayer entry open", () => {
     renderLandingPage();
 
     const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
-    expect(ccbEntry).toBeInTheDocument();
-    expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
-    expect(within(ccbEntry).getByText("即将上线")).toBeInTheDocument();
-
     const songEntry = screen.getByTestId("game-entry-songuessr");
-    expect(songEntry).toBeInTheDocument();
+    expect(ccbEntry).toBeInTheDocument();
+    // 多人模式已开放，不再是整体禁用卡片，可作为交互 button 进入
+    expect(within(ccbEntry).getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
+    // 尚未实现的子模式仍逐个标注即将上线（排位赛与锦标赛）
+    expect(within(ccbEntry).getAllByText("即将上线")).toHaveLength(2);
+    expect(within(ccbEntry).getByText("排位赛")).toBeInTheDocument();
+    expect(within(ccbEntry).getByText("锦标赛")).toBeInTheDocument();
+
     // Songuessr 两个子模式都已开放，不应再出现即将上线角标
     expect(within(songEntry).queryByText("即将上线")).not.toBeInTheDocument();
 
     // 可用游戏：Who is Faker 为正常入口 button；Songuessr 单人模式与多人模式均为交互 button
     expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
-
-    // CCB 增强版整体标记即将上线，子按钮均不可作为交互 button
-    expect(screen.queryByRole("button", { name: /二刺猿笑传之猜猜呗/ })).not.toBeInTheDocument();
-    expect(screen.getByText("排位赛")).toBeInTheDocument();
-    expect(screen.getByText("锦标赛")).toBeInTheDocument();
+    expect(within(songEntry).getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
+    expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
   it("renders categorized changelog in modal and omits absent categories", async () => {

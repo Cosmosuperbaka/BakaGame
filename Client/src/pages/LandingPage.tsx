@@ -99,15 +99,17 @@ const GAMES: GameEntry[] = [
   },
   {
     id: "animecharguessr",
+    path: "/ccb",
     icon: "/assets/CCB.jpg",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
-    available: false,
+    available: true,
     subModes: [
       {
         id: "multiplayer",
         title: "多人模式",
-        available: false,
+        path: "/ccb",
+        available: true,
       },
       {
         id: "ranked",
