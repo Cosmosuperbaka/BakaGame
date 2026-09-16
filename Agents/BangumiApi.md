@@ -1,8 +1,10 @@
-# Songuessr Bangumi 接入规范
+# Bangumi 接入与数据集规范
 
 听歌猜番使用 Bangumi 条目作为答案，服务端负责所有 Bangumi 网络请求。客户端只通过
 `/api/songuessr/ws` 对应的 WebSocket 命令搜索条目和提交 subject ID，不直接访问 Bangumi
 接口，也不接触原始图片域名。
+
+CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色数据见文末「本地数据集构建」。
 
 ## 配置
 
@@ -86,6 +88,87 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 自动出题支持年份范围、总榜/年榜排名范围与网易云歌曲热度筛选（出题设置移除独立的歌曲类型过滤，默认全量支持所有 18 种曲目）。总榜直接使用 Bangumi 热度排序，年榜会在设置的年份范围内先随机选择一个年份，再按该年份的热度排序取候选作品。候选条目按顺序尝试并避让近期番剧，歌曲热度不达标时优先继续尝试同一作品的其它曲目，只有该作品所有曲目都不可用时才切换作品；全部失败时返回 `BANGUMI_NO_MUSIC`。
 
 每轮结算摘要呈现与“听歌识曲”对齐的完整歌曲详情卡片（包含封面图、曲名、具体曲目类型徽章如 OP/ED/插曲/OST/Remix/角色曲、歌手与专辑、发行年份、语言、标签、别名与百科简介，彻底消除“其它”模糊分类），并公开番剧最多 5 条作品标签，不公开元标签。
+
+## 本地数据集构建
+
+`Server/data/` 下两个只读 SQLite 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
+每周一 03:30 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**它们是运行时唯一的数据源，
+服务端不做在线爬取**。
+
+| 文件 | 内容 | 使用方 |
+|---|---|---|
+| `bangumi-song.sqlite` | `subjects`（动画）/ `music_subjects` / `subject_music_relations` | Songuessr |
+| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_vas` | CCB |
+
+### 角色中文名与性别只能从 infobox 解析（铁律）
+
+归档 dump 的 `character.jsonlines` 字段是
+`id / role / name / infobox / summary / comments / collects` —— **没有 `name_cn`，也没有 `gender`**，
+两者只能从 `infobox` 里取。而 infobox 是 **wiki 模板原文**，**键前带一个 `|` 前缀**：
+
+```
+{{Infobox Crt\r\n|简体中文名= 鲁路修·兰佩路基\r\n|别名={\r\n[L.L.]\r\n[英文名|Lelouch Lamperouge]\r\n}\r\n|性别= 男\r\n…
+```
+
+因此解析必须先去 `|` 前缀再匹配。**历史事故**：旧脚本用 `raw.split("=",1)` 后与 `"简体中文名"` /
+`"性别"` 做**全等比较**，`key` 实际是 `|简体中文名` → 永不命中，导致 `name_cn` 与 `gender`
+**全库 22 万行均为空**长期无人发现（旁证：同一脚本的音乐路径用的是 `in` **子串匹配**，
+所以 `|片头曲` 仍能被命中——「音乐能用、角色不能用」就是这么来的）。
+
+配套约定：
+
+- 抽取逻辑集中在 `parse_infobox()` / `parse_character_infobox()` / `normalize_gender()`，
+  支持多值块（`别名={` 逐行 `[值]` / `[类型|值]`，取竖线后的值、丢弃空条目）、`[[内链]]` 清洗。
+- 性别归一到 `male` / `female` / `?`（非男非女一律 `?`），与 CCB 反馈判定同一口径。
+- **必须保留构建期填充率守卫**：`report_character_stats()` 打印全表填充率，且 `name_cn` /
+  `gender` / `character_tags` 任一为 **0 直接让构建失败**。这个 bug 能潜伏这么久，正是因为
+  旧构建「成功、且没有任何报警」。
+- **必须保留自测**：`tools/test_build_bangumi_db.py`（真实 dump 原文做 fixture + 反例），
+  在下载 dump **之前**执行以便快速失败。
+- `build()` 的产物发布顺序不能改：连接必须在 `Path.replace()` **之前**关闭（Windows 不允许
+  重命名仍被打开的文件），且临时目录清理必须 `ignore_errors=True`，否则清理失败抛出的
+  `PermissionError` 会把填充率守卫的真实报错整个吞掉。
+
+### 角色标签 `character_tags`
+
+上游 CCB 的 `client/src/data/id_tags.js`（**32705 角色 / 421 标签**）是**唯一**可得的标签快照：
+原版服务端的 `POST /api/character-tags` 与 `/api/game-character-tags` 都是只写 MongoDB 的
+收集口，没有任何读回端点。
+
+- 中间产物 `tools/data/character-tags.json`（标签字典 + 索引数组，876 KiB，**普通 git 文件、不进 LFS**），
+  由 `tools/import_character_tags.py` 生成。放 `tools/data/` 是因为它是**构建输入**，
+  服务端运行时不需要；且 `Server/data/` 只放 LFS 产物（`.gitattributes` 只标 `*.sqlite`）。
+- 更新标签：`python3 tools/import_character_tags.py <id_tags.js> tools/data/character-tags.json`。
+  取上游仓库的 `client/src/data/id_tags.js`（421 标签）而不是 `CCBFilter/dump` 里的旧快照（372 标签）。
+- 标签是**平铺集合**（发色与性格混在一起），CCB 的「角色标签」交集用的就是它；
+  上游的分类（发色/发型/瞳色/性格/身份）只服务编辑与筛选 UI，不参与判定。
+
+### 声优 `character_vas`
+
+`subject-characters.jsonlines` **只有 `type`/`order`，没有人物关系**，但归档 dump 另有
+`person-characters.jsonlines`（272,836 行）：`{person_id, subject_id, character_id, type, summary}`。
+
+- **必须按作品类型过滤**：只保留 `subjects.type IN (2,4)`（动画 / 游戏），与原版
+  `persons.filter(p => p.subject_type === 2 || p.subject_type === 4)` 等价。
+- **不得按 `type` 过滤**：实测分布 `{0:252043, 1:177, 2:7427, 3:9484, 4:2080, 5:524, 6:1101}`，
+  抽样非零类型分别是 水樹奈々(4) / 押井守(2) / 福山潤(3) / 大塚明夫(1) —— 全部都是配音关系。
+- **判定用 `name`（原名），不要用 infobox 中文名**：原版取的是 API 的 `person.name`，
+  且同时进 `metaTags` 与 `animeVAs`。人物 infobox 里虽有 `|简体中文名=`（水樹奈々 → 水树奈奈），
+  但用它会对不上原版反馈。库里 `name` 与 `name_cn` 各存一列，`name_cn` 仅供 UI 展示。
+
+### 角色库检索的已知限制
+
+`character_search` 是 **FTS5 trigram**，**查询串短于 3 个字符时必然返回 0 条**
+（实测 `牧濑*` 无命中，`牧濑红莉栖*` 命中）。角色名检索必须对 <3 字符的查询回退到
+`name / name_cn / aliases` 的 `LIKE` 兜底，否则「牧濑」「LL」这类常见简称搜不到。
+注意 `LIKE` 是不区分大小写的子串匹配，会命中 JSON 别名串里的英文片段，需要配合排序/截断。
+
+### 体积
+
+修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 228 MiB），
+主要来自 `summary` 列、`aliases` 让 trigram 索引显著增长，以及两张新表。
+文本本身很小（summary 23.6 MiB / aliases 3.0 MiB / 标签与声优合计约 1.1 MiB）。
+**不要给 `character_vas` 加 `(character_id, person_id)` 索引**——主键已是这两列，重复索引白占体积。
 
 ## 隐私与协议
 
