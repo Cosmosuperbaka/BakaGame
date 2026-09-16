@@ -115,12 +115,34 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 基础分 2；大赢家 +12；好快的猜 +2 / +1；作品分 +1；出题人分按其他玩家表现结算。
 `CCBRules.ts` 必须是**纯函数**，先写表驱动测试再接服务端。
 
-## 7. 阶段落点
+## 7. 客户端落地
+
+与另两个游戏同构，逐层对齐（严禁跨游戏目录导入，通用件只在 `components/common/`）：
+
+| 层 | 文件 |
+|---|---|
+| WS 客户端 | `Client/src/lib/CCBWs.ts`（`createWebSocketClient("/api/ccb/ws")`） |
+| 会话持久化 | `Client/src/lib/Storage.ts` 的 `ccb_session_<roomId>` 一族（sessionStorage） |
+| 状态 | `Client/src/stores/UseCCBStore.ts`（`connected/rooms/roomId/sessionToken/snapshot/privateState/roomClosedAt/notice`，`initCCBWs` 内部挂事件与状态监听） |
+| Provider | `Client/src/contexts/CCBContext.tsx`（只负责 `initCCBWs` 的挂载与卸载，不提供 context value） |
+| 布局 | `Client/src/layouts/CCBLayout.tsx`（Provider + Suspense + Outlet + `CCBToastContainer`） |
+| 路由 | `/ccb`（大厅）、`/ccb/room/:roomId`（房间）、`/ccb/*` 兜底回大厅 |
+| 页面 | `Client/src/pages/CCBPage.tsx`（大厅）、`Client/src/pages/CCBRoomPage.tsx`（三段式房间 + 三栏 + 移动端抽屉） |
+| 游戏组件 | `Client/src/components/ccb/PlayerList.tsx` |
+
+SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` 的 `PAGE_META`（否则 `Seo` 抛错）、
+`pages/LandingPage.tsx` 的卡片 `available/path`、`public/sitemap.xml`。
+
+**房间页 UI 在 P0 只暴露真实可用的能力**：房间名/可见性/密码/旁观开关（`updateSettings`）、准备、
+测试房人机、聊天、旁观切换、踢人与转移房主。「开始游戏」按钮以 `disabled` 呈现并注明对局功能开发中——
+不在 UI 上宣称尚不可用的能力，与 `CCBPrivateState` 能力位一律 `false` 是同一条原则。
+
+## 8. 阶段落点
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P0 | 数据地基、契约、协议与传输、房间骨架、房间生命周期测试 | ✅ 已完成 |
-| P1 | `domain/CCBRules.ts`、服务端出题与猜测、权威计时、前端对局界面 | 待办 |
+| P0 | 数据地基、契约、协议与传输、房间服务、房间生命周期测试、前端大厅与三栏房间骨架 | ✅ 已完成 |
+| P1 | `domain/CCBRules.ts`、服务端出题与猜测、权威计时、前端搜索栏与猜测表 | 待办 |
 | P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
