@@ -9,7 +9,12 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import urllib.request
 from pathlib import Path
+
+# CCB 角色标签的权威来源：CCB-TagsCI 每周一 04:00（北京时间）把合并了用户反馈的
+# id_tags.js 推到这个路径。**不要**在仓库里存快照——它每周都会变，存下来必然过期。
+DEFAULT_TAGS_URL = "https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js"
 
 # 角色 infobox 里「中文名」与「性别」的候选键。归档 dump 的 infobox 是 wiki 模板原文，
 # 键形如 ``|简体中文名= 鲁路修·兰佩路基``；角色表本身**没有** name_cn / gender 列，
@@ -261,13 +266,40 @@ def parse_character_infobox(infobox: str) -> tuple[str, str, list[str]]:
     return name_cn, gender, aliases
 
 
-def load_character_tags(path: Path) -> dict[int, list[str]]:
-    """读取 ``tools/data/character-tags.json``（标签字典 + 索引数组的紧凑格式）。"""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    dictionary: list[str] = data["tags"]
+# 上游 id_tags.js 里数字键是**裸写法**（`1:["紫瞳",...]`），不是合法 JSON。
+# 每行一个条目，所以只在行首匹配键，不会误伤标签文本里的数字冒号。
+_BARE_NUMERIC_KEY = re.compile(r"^(\s*)(\d+)(\s*):", re.MULTILINE)
+
+
+def load_character_tags(source: str) -> dict[int, list[str]]:
+    """读取上游 id_tags.js，返回 ``{角色 id: [标签, ...]}``。
+
+    ``source`` 可以是 URL（构建期的正常形态）或本地文件路径（离线开发/自测）。
+    """
+    if source.startswith(("http://", "https://")):
+        with urllib.request.urlopen(source, timeout=120) as response:
+            text = response.read().decode("utf-8")
+    else:
+        text = Path(source).read_text(encoding="utf-8")
+
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        raise SystemExit(f"id_tags 内容异常，找不到对象字面量：{source}")
+    text = _BARE_NUMERIC_KEY.sub(r'\1"\2"\3:', text[start : end + 1])
+    # JS 允许结尾多余逗号，JSON 不允许。
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"id_tags 解析失败（{source}）：{error}") from error
+
     result: dict[int, list[str]] = {}
-    for key, indexes in data["characters"].items():
-        result[int(key)] = [dictionary[i] for i in indexes if 0 <= i < len(dictionary)]
+    for key, values in raw.items():
+        if not isinstance(values, list):
+            continue
+        tags = [tag for tag in values if isinstance(tag, str) and tag]
+        if tags:
+            result[int(key)] = tags
     return result
 
 
@@ -308,18 +340,18 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
         if stats[column] == 0:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
-        raise SystemExit("character_tags 为空：tools/data/character-tags.json 未被正确读取。")
+        raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
     return stats
 
 
-def build(dump: Path, out: Path, tags_path: Path):
+def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
     out.mkdir(parents=True, exist_ok=True)
     subjects: dict[int, dict] = {}
     for item in lines(dump / "subject.jsonlines"):
         subjects[item["id"]] = item
 
-    character_tags = load_character_tags(tags_path)
-    print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_path}")
+    character_tags = load_character_tags(tags_source)
+    print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_source}")
 
     # 产物先写进同盘临时目录，再原子替换到目标路径，中途失败不留半成品。
     # 两个坑都要防：① 连接必须在 replace 之前关闭（Windows 不允许重命名仍被打开的
@@ -405,11 +437,8 @@ if __name__ == "__main__":
     parser.add_argument("out", type=Path)
     parser.add_argument(
         "--tags",
-        type=Path,
-        default=Path(__file__).resolve().parent / "data" / "character-tags.json",
-        help="CCB 角色标签快照（由 tools/import_character_tags.py 生成）",
+        default=DEFAULT_TAGS_URL,
+        help="上游 id_tags.js 的 URL 或本地路径（默认取 CCB-TagsCI 每周产出的文件）",
     )
     args = parser.parse_args()
-    if not args.tags.exists():
-        raise SystemExit(f"缺少角色标签文件 {args.tags}，先跑 tools/import_character_tags.py 生成。")
     build(args.dump, args.out, args.tags)

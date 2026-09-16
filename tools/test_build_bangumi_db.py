@@ -121,26 +121,33 @@ def test_parse_character_infobox() -> None:
 
 
 def test_load_character_tags() -> None:
-    print("load_character_tags")
+    print("load_character_tags（上游 id_tags.js 的裸数字键）")
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "character-tags.json"
+        path = Path(tmp) / "id_tags.js"
         path.write_text(
-            json.dumps(
-                {
-                    "source": "x",
-                    "tagCount": 3,
-                    "entryCount": 2,
-                    "tags": ["紫瞳", "黑发", "腹黑"],
-                    "characters": {"1": [0, 1, 2], "3": [1]},
-                },
-                ensure_ascii=False,
-            ),
+            "export const idToTags = {\n"
+            '1:["紫瞳","黑发","腹黑"],\n'
+            '3:["黑发"],\n'
+            '7:[],\n'
+            "}\n",
             encoding="utf-8",
         )
-        tags = subject.load_character_tags(path)
-    check("标签条数", len(tags), 2)
+        tags = subject.load_character_tags(str(path))
+    # 空标签数组不产生条目，否则会往 character_tags 写空行
+    check("只保留非空条目", len(tags), 2)
     check("标签内容", tags[1], ["紫瞳", "黑发", "腹黑"])
     check("单标签", tags[3], ["黑发"])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        broken = Path(tmp) / "id_tags.js"
+        broken.write_text("这不是对象字面量", encoding="utf-8")
+        try:
+            subject.load_character_tags(str(broken))
+        except SystemExit:
+            check_true("内容异常时构建失败", True)
+        else:
+            FAILURES.append("id_tags 内容异常竟然没报错")
+            print("  ✗ id_tags 内容异常竟然没报错")
 
 
 def write_jsonlines(path: Path, records: list[dict]) -> None:
@@ -196,16 +203,10 @@ def test_build_end_to_end() -> None:
         out = root / "out"
         dump.mkdir()
         make_dump(dump)
-        tags = root / "character-tags.json"
-        tags.write_text(
-            json.dumps(
-                {"tags": ["紫瞳", "腹黑"], "characters": {"1": [0, 1]}},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+        tags = root / "id_tags.js"
+        tags.write_text('export const idToTags = {\n1:["紫瞳","腹黑"],\n}\n', encoding="utf-8")
 
-        subject.build(dump, out, tags)
+        subject.build(dump, out, str(tags))
 
         import sqlite3
 
@@ -253,10 +254,10 @@ def test_build_guard() -> None:
             dump / "character.jsonlines",
             [{"id": 1, "role": 1, "name": "无名", "infobox": "{{Infobox Crt\r\n|生日= 1月1日\r\n}}", "summary": "", "comments": 0, "collects": 0}],
         )
-        tags = root / "character-tags.json"
-        tags.write_text(json.dumps({"tags": ["紫瞳"], "characters": {"1": [0]}}, ensure_ascii=False), encoding="utf-8")
+        tags = root / "id_tags.js"
+        tags.write_text('export const idToTags = {\n1:["紫瞳"],\n}\n', encoding="utf-8")
         try:
-            subject.build(dump, out, tags)
+            subject.build(dump, out, str(tags))
         except SystemExit as error:
             check_true("name_cn 为 0 时构建失败", "name_cn" in str(error))
         else:
