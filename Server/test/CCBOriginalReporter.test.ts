@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { CcbOriginalReporter } from "../src/infrastructure/CcbOriginalReporter";
+import { CCBOriginalReporter } from "../src/infrastructure/CCBOriginalReporter";
 
-describe("CcbOriginalReporter", () => {
+describe("CCBOriginalReporter", () => {
   test("按原版契约上报出题数与猜测数", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
       return new Response(JSON.stringify({ message: "ok" }), { status: 200 });
     };
-    const reporter = new CcbOriginalReporter({ serverUrl: "https://ccb.example.com/", fetcher });
+    const reporter = new CCBOriginalReporter({ serverUrl: "https://ccb.example.com/", fetcher });
 
     await reporter.report("answer", { id: 12393, name: "牧濑红莉栖" });
     await reporter.report("guess", { id: 1, name: "鲁路修·兰佩路基" });
@@ -23,10 +23,10 @@ describe("CcbOriginalReporter", () => {
     let calls = 0;
     const fetcher = async () => { calls++; return new Response("{}", { status: 200 }); };
 
-    const disabled = new CcbOriginalReporter({ serverUrl: "", fetcher });
+    const disabled = new CCBOriginalReporter({ serverUrl: "", fetcher });
     await disabled.report("answer", { id: 12393, name: "牧濑红莉栖" });
 
-    const reporter = new CcbOriginalReporter({ serverUrl: "https://ccb.example.com", fetcher });
+    const reporter = new CCBOriginalReporter({ serverUrl: "https://ccb.example.com", fetcher });
     await reporter.report("answer", { id: 0, name: "牧濑红莉栖" });
     await reporter.report("answer", { id: 1.5, name: "牧濑红莉栖" });
     await reporter.report("answer", { id: 12393, name: "" });
@@ -36,7 +36,7 @@ describe("CcbOriginalReporter", () => {
 
   test("原版服务器不可达只记日志，绝不抛出", async () => {
     const logged: Array<{ message: string; context?: Record<string, unknown> }> = [];
-    const reporter = new CcbOriginalReporter({
+    const reporter = new CCBOriginalReporter({
       serverUrl: "https://ccb.example.com",
       logger: { error: (message, context) => logged.push({ message, context }) },
       fetcher: async () => { throw new Error("connect timeout"); },
@@ -49,7 +49,7 @@ describe("CcbOriginalReporter", () => {
     expect(logged[0].context).toMatchObject({ kind: "guess", characterId: 12393 });
 
     // 非 2xx 同样只记日志
-    const failing = new CcbOriginalReporter({
+    const failing = new CCBOriginalReporter({
       serverUrl: "https://ccb.example.com",
       logger: { error: (message, context) => logged.push({ message, context }) },
       fetcher: async () => new Response("boom", { status: 500 }),
