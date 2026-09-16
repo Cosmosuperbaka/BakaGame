@@ -13,6 +13,10 @@
   - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。严格以 `Agents/Spec.md` 为统一真相源，坚决杜绝保留 `SongGuessr...` 等过渡期别名与兼容导出。
   - **常量命名 (Constants)**：`SonGuessr` 为专有名词，常量一律使用 **`SONGUESSR_XXX`** 前缀（例如 `SONGUESSR_PHASES`, `SONGUESSR_MUSIC_SESSION_CHANGED`），严禁拆分为 `SON_GUESSR_`。
   - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `songuessr`（如 `/songuessr`, `/api/songuessr/ws`, `songuessr_session_`, `songuessr_netease_session_v1`）。
+- **猜动漫角色增强版**: 全栈统一命名为 **`CCB`**（三个字母全大写，副标题「二刺猿笑传之猜猜呗」只作为页面对外展示文案，不进标识符）。
+  - **TypeScript 类型/接口/类/变量**: 一律使用 **`CCB`** 缩写（`CCBService`、`CCBRoomSnapshot`、`CCBPrivateState`、`CCBPlayerRecord`、`parseCCBMessage`、`UseCCBStore`）。**严禁**写成 `CCBService`、`CCBRoom` 之类的「CCB」拼法；`ccbService` 这类以小写开头的局部变量与实例名按常规驼峰处理。
+  - **常量命名 (Constants)**：一律使用 **`CCB_XXX`** 前缀（如 `CCB_PHASES`, `CCB_STATE_EVENTS`, `CCB_PLAYER_MESSAGE_LIMIT`）。
+  - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `ccb`（如 `/ccb`、`/api/ccb/ws`、`ccb_session_`），ID 前缀同例（`ccb_player_`、`ccb_chat_`）。
 
 ### 1.2 文件与目录命名法则（全量大驼峰 PascalCase）
 

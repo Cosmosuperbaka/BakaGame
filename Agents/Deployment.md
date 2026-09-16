@@ -1,7 +1,7 @@
 # 生产部署边界
 
-WhoIsFaker 与 Songuessr 的实时业务分别通过 `/api/whoisfaker/ws` 和
-`/api/songuessr/ws` 提供。应用服务负责 WebSocket
+WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`、
+`/api/songuessr/ws` 和 `/api/ccb/ws` 提供。应用服务负责 WebSocket
 协议解析、业务权限和房间状态，不在进程内按来源 IP 实现限流或连接配额。
 
 ## 反向代理职责

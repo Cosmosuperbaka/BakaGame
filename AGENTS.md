@@ -13,10 +13,11 @@ Before changing anything in this repository, locate and read the relevant author
 4. **[`Agents/WhoIsFaker.md`](Agents/WhoIsFaker.md)** — **WhoIsFaker Domain Architecture**: Typed envelope protocol, dual snapshot model, disconnect handling, complete 9-phase state machine, supplement speeches, blank player guessing & adjudication, and test mode (`Oblivionis`).
 5. **[`Agents/NeteaseMusicApi.md`](Agents/NeteaseMusicApi.md)** — **Songuessr & Music Provider**: Netease cloud music API proxy, rate limits, caching, and credential isolation.
 6. **[`Agents/BangumiApi.md`](Agents/BangumiApi.md)** — **Bangumi 接入与数据集规范**: Bangumi API 镜像、图片重写、缓存、限流、番剧/曲目筛选，以及 `tools/build_bangumi_db.py` 构建的本地只读数据集（含 CCB 的角色标签与声优表）。
-7. **[`Agents/Design.md`](Agents/Design.md)** — **Frontend Visual & Layout Specs**: Vintage-paper theme, Tailwind v4 semantic variables, three-section topbar, desktop/mobile history overlay matrix, and component usage.
-8. **[`Agents/Animation.md`](Agents/Animation.md)** — **Motion & Interaction**: Framer-motion tokens (`@/lib/Motion`), spring physics, origin-anchored transitions, and spatial causality rules.
-9. **[`Agents/Deployment.md`](Agents/Deployment.md)** — **Production & Edge Gateway**: Reverse proxy boundaries, TLS termination, WebSocket quotas, and port isolation.
-10. **[`Agents/Testing.md`](Agents/Testing.md)** — **Testing & Verification Matrix**: `bun:test` backend suites, Vitest frontend suites, Playwright E2E workflows, and CI verification pipelines.
+7. **[`Agents/CCB.md`](Agents/CCB.md)** — **CCB 猜动漫角色领域规范**: 服务端权威边界、`/api/ccb/ws` 协议与状态事件登记、房间生命周期数值、反馈判定与高亮箭头真相源，以及原版缺陷修复登记表。
+8. **[`Agents/Design.md`](Agents/Design.md)** — **Frontend Visual & Layout Specs**: Vintage-paper theme, Tailwind v4 semantic variables, three-section topbar, desktop/mobile history overlay matrix, and component usage.
+9. **[`Agents/Animation.md`](Agents/Animation.md)** — **Motion & Interaction**: Framer-motion tokens (`@/lib/Motion`), spring physics, origin-anchored transitions, and spatial causality rules.
+10. **[`Agents/Deployment.md`](Agents/Deployment.md)** — **Production & Edge Gateway**: Reverse proxy boundaries, TLS termination, WebSocket quotas, and port isolation.
+11. **[`Agents/Testing.md`](Agents/Testing.md)** — **Testing & Verification Matrix**: `bun:test` backend suites, Vitest frontend suites, Playwright E2E workflows, and CI verification pipelines.
 
 ## Critical Workspace Rules
 
