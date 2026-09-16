@@ -13,11 +13,47 @@ CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色�
 ```bash
 BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_URL=
+# 选填：Bangumi API 回填缓存落点，默认 Server/storage/bangumi-enrichment.sqlite
+BANGUMI_ENRICHMENT_PATH=
 ```
 
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像。`BANGUMI_IMAGE_URL` 为空时保留
 原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv` 的图片链接。重写结果
 使用镜像源和原链接的 pathname、query、hash，其他主机名和无效 URL 原样返回。
+
+## Bangumi API 回填缓存
+
+只读数据集里 `subjects.image` / 角色的图片列**始终为空**（构建脚本不写图片），所以图片只能回源。
+回填缓存就是「用 API 数据更新数据库」的落地形态——只读库是 LFS 产物、每周被 CI 重建，
+**不能被运行时写入**，补充数据因此单独存一张可写表：
+
+```
+Server/storage/bangumi-enrichment.sqlite      （可写，不进 Git；`.gitignore` 已忽略该文件名）
+  enrichment(entity TEXT, id INTEGER, payload TEXT, fetched_at INTEGER, PRIMARY KEY(entity, id))
+    entity ∈ { 'subject', 'character' }      ← 猜歌与猜番共用同一张表
+    payload = { image?: string }
+```
+
+**四条必须遵守的规则：**
+
+1. **只存上游原始 URL，不在缓存里存镜像地址**。镜像地址在读取时用 `BANGUMI_IMAGE_URL` 重写，
+   所以换镜像源不需要清缓存、也不需要重新回源。反过来把重写后的 URL 写进缓存，
+   等于把镜像地址钉死在数据里。
+2. **失败绝不固化**。上游超时/报错/非 2xx/无图，既不写回填缓存，也不进内存正缓存，
+   只记 **5 分钟内存负缓存**（`NEGATIVE_CACHE_TTL_MS`）挡住重复打爆上游，进程重启即失效。
+   **历史事故**：旧 `resolveImage()` 在 `catch` 里把 `undefined` 写进内存正缓存
+   （`cacheNegative`），一次瞬时超时就让该条目在进程剩余生命周期里**永远没有图片**；
+   联网 Provider 的 `cached()` 同样会把失败与空结果缓存满 TTL，所以
+   `resolveCharacterImage` 刻意**不复用它**、只缓存成功结果。
+3. **配置错误响亮失败，运行期异常降级放行**。构造时 `enrichmentPath` 打不开/建不了目录
+   直接抛错（静默降级会让缓存「悄悄不生效」）；但使用期的读写异常只 `console.warn` 并跳过本次，
+   缓存是优化而非真相源，不能因为一个损坏的缓存文件让整个出题链路挂掉。
+4. **跨 Worker 只传可克隆参数**。Provider 跑在 Worker 里，`BangumiProviderInit`
+   刻意排除了 `fetcher`（函数无法结构化克隆），缓存路径必须随 `init` 一起传入。
+
+角色立绘走 `GET /v0/characters/{id}`，图片字段结构与条目一致
+（`images.medium / large / common / grid` 依次回退），由 `resolveCharacterImage(characterId)` 暴露，
+**猜番（CCB）与猜歌共用同一条回源与缓存路径**。非法 id（非正整数）直接返回 `undefined`，不回源。
 
 ## 请求边界
 
