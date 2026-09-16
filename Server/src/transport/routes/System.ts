@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 
 import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
+import type { CCBService } from "../../application/CCBService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 
 export class SlidingWindowRateLimiter {
@@ -87,6 +88,7 @@ export const isPrivateLanHost = (rawHost: string): boolean => {
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
+  ccbService?: CCBService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
@@ -97,6 +99,7 @@ export interface SystemRoutesDependencies {
 export const systemRoutes = ({
   whoIsFakerService,
   sonGuessrService,
+  ccbService,
   logger,
   isShuttingDown,
   onTriggerShutdown,
@@ -105,6 +108,7 @@ export const systemRoutes = ({
 }: SystemRoutesDependencies) => {
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
+  const ccb = ccbService;
   const limiter = rateLimiter ?? new TelemetryRateLimiter();
 
   return new Elysia({ name: "system" })
@@ -277,12 +281,19 @@ export const systemRoutes = ({
           connectionCount: 0,
           onlinePlayerCount: 0,
         };
+        const ccbHealth = ccb?.getHealthSnapshot() ?? {
+          roomCount: 0,
+          connectionCount: 0,
+          onlinePlayerCount: 0,
+        };
 
         return {
           status: "ok" as const,
-          roomCount: fakerHealth.roomCount + sonHealth.roomCount,
-          connectionCount: fakerHealth.connectionCount + sonHealth.connectionCount,
-          onlinePlayerCount: fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount,
+          roomCount: fakerHealth.roomCount + sonHealth.roomCount + ccbHealth.roomCount,
+          connectionCount:
+            fakerHealth.connectionCount + sonHealth.connectionCount + ccbHealth.connectionCount,
+          onlinePlayerCount:
+            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ccbHealth.onlinePlayerCount,
         };
       },
       {
@@ -322,6 +333,7 @@ export const systemRoutes = ({
 
         fakerService?.notifyShutdown();
         songService?.notifyShutdown();
+        ccb?.notifyShutdown();
 
         if (onTriggerShutdown) {
           await onTriggerShutdown();
