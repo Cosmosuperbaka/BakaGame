@@ -12,9 +12,12 @@ const WhoIsFakerPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFak
 const WhoIsFakerRoomPage = lazy(() => retryLazyImport(() => import("@/pages/WhoIsFakerRoomPage"), "faker-room"));
 const SonGuessrPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrPage"), "song"));
 const SonGuessrRoomPage = lazy(() => retryLazyImport(() => import("@/pages/SonGuessrRoomPage"), "song-room"));
+const CCBPage = lazy(() => retryLazyImport(() => import("@/pages/CCBPage"), "ccb"));
+const CCBRoomPage = lazy(() => retryLazyImport(() => import("@/pages/CCBRoomPage"), "ccb-room"));
 
 const WhoIsFakerLayout = lazy(() => retryLazyImport(() => import("@/layouts/WhoIsFakerLayout"), "faker-layout"));
 const SonGuessrLayout = lazy(() => retryLazyImport(() => import("@/layouts/SonGuessrLayout"), "song-layout"));
+const CCBLayout = lazy(() => retryLazyImport(() => import("@/layouts/CCBLayout"), "ccb-layout"));
 
 function App() {
   return (
@@ -35,6 +38,11 @@ function App() {
                 <Route path="solo" element={<SonGuessrRoomPage solo />} />
                 <Route path="room/:roomId" element={<SonGuessrRoomPage />} />
                 <Route path="*" element={<Navigate to="/songuessr" replace />} />
+              </Route>
+              <Route path="/ccb" element={<CCBLayout />}>
+                <Route index element={<CCBPage />} />
+                <Route path="room/:roomId" element={<CCBRoomPage />} />
+                <Route path="*" element={<Navigate to="/ccb" replace />} />
               </Route>
               {/* 其余无法识别的路径一律回落地页 */}
               <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,6 +3,7 @@ import { TEST_ROOM_ID } from "@/config/Constants";
 const USERNAME_KEY = "wif_username";
 const SESSION_PREFIX = "wif_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
+const CCB_SESSION_PREFIX = "ccb_session_";
 const SOLO_ROOM_KEY = "songuessr_solo_room";
 
 function normalizeSessionRoomId(roomId: string): string {
@@ -18,6 +19,10 @@ function getSessionKey(roomId: string): string {
 
 function getSongSessionKey(roomId: string): string {
   return SONG_SESSION_PREFIX + normalizeSessionRoomId(roomId);
+}
+
+function getCCBSessionKey(roomId: string): string {
+  return CCB_SESSION_PREFIX + normalizeSessionRoomId(roomId);
 }
 
 function getSessionStorage(): Storage | null {
@@ -97,6 +102,30 @@ export function saveSonGuessrSessionToken(roomId: string, token: string): void {
 export function clearSonGuessrSessionToken(roomId: string): void {
   try {
     getSessionStorage()?.removeItem(getSongSessionKey(roomId));
+  } catch {
+    // 忽略浏览器禁用存储的情况。
+  }
+}
+
+export function getCCBSessionToken(roomId: string): string | null {
+  try {
+    return getSessionStorage()?.getItem(getCCBSessionKey(roomId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCCBSessionToken(roomId: string, token: string): void {
+  try {
+    getSessionStorage()?.setItem(getCCBSessionKey(roomId), token);
+  } catch {
+    // 忽略浏览器禁用存储的情况。
+  }
+}
+
+export function clearCCBSessionToken(roomId: string): void {
+  try {
+    getSessionStorage()?.removeItem(getCCBSessionKey(roomId));
   } catch {
     // 忽略浏览器禁用存储的情况。
   }
