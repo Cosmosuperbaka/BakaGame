@@ -13,26 +13,26 @@
  *
  * 统计是**旁路**：任何失败只记日志、绝不抛出，也不参与房间状态与结算。
  */
-export type CcbStatsKind = "answer" | "guess";
+export type CCBStatsKind = "answer" | "guess";
 
-const ENDPOINT: Record<CcbStatsKind, string> = {
+const ENDPOINT: Record<CCBStatsKind, string> = {
   answer: "/api/answer-character-count",
   guess: "/api/guess-character-count",
 };
 
-export interface CcbOriginalReporterOptions {
+export interface CCBOriginalReporterOptions {
   /** 原版 CCB 服务器地址（由环境变量注入）。为空即整体停用。 */
   serverUrl: string;
   logger?: { error: (message: string, context?: Record<string, unknown>) => void };
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
-export class CcbOriginalReporter {
+export class CCBOriginalReporter {
   private readonly serverUrl: string;
-  private readonly logger?: CcbOriginalReporterOptions["logger"];
+  private readonly logger?: CCBOriginalReporterOptions["logger"];
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-  constructor(options: CcbOriginalReporterOptions) {
+  constructor(options: CCBOriginalReporterOptions) {
     this.serverUrl = options.serverUrl.replace(/\/+$/, "");
     this.logger = options.logger;
     this.fetcher = options.fetcher ?? fetch;
@@ -42,7 +42,7 @@ export class CcbOriginalReporter {
    * 上报一次角色使用。未配置服务器地址、或 character 非法时静默跳过——
    * 调用方可以直接 `void reporter.report(...)`，不需要额外判空。
    */
-  async report(kind: CcbStatsKind, character: { id: number; name: string }): Promise<void> {
+  async report(kind: CCBStatsKind, character: { id: number; name: string }): Promise<void> {
     if (!this.serverUrl) return;
     if (!Number.isInteger(character.id) || character.id <= 0 || !character.name) return;
     try {
