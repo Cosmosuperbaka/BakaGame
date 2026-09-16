@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import { isBangumiCreditsEntry } from "../shared/Index";
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
@@ -7,6 +9,8 @@ export interface BangumiDataProvider {
   searchSubjects(keyword: string, limit?: number, filters?: AnimeAutoFilters): Promise<BangumiSubjectSearchResult[]>;
   getSubject(subjectId: string): Promise<BangumiSubjectDetails>;
   chooseRandomSubject(filters?: AnimeAutoFilters, random?: () => number): Promise<BangumiSubjectDetails>;
+  /** 角色立绘：本地数据集不含图片，只能回源取，结果写进回填缓存。 */
+  resolveCharacterImage(characterId: number): Promise<string | undefined>;
 }
 
 const parseList = (value: string) => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []; } catch { return []; } };
@@ -53,49 +57,158 @@ const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack[
   if (/艺人|album/.test(text)) return "artistAlbum";
   return "theme";
 };
-const rewriteImage = (value: unknown, imageBase: string) => {
+const toAbsoluteUrl = (value: unknown): string | undefined => {
   if (typeof value !== "string" || !value) return undefined;
   try {
-    const source = new URL(value);
-    if (!imageBase || source.hostname !== "lain.bgm.tv") return value;
-    return `${imageBase}${source.pathname}${source.search}${source.hash}`;
+    new URL(value);
+    return value;
   } catch {
     return undefined;
   }
 };
+const rewriteImage = (value: unknown, imageBase: string) => {
+  const source = toAbsoluteUrl(value);
+  if (!source) return undefined;
+  const parsed = new URL(source);
+  if (!imageBase || parsed.hostname !== "lain.bgm.tv") return source;
+  return `${imageBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
+};
 const toResult = (row: any, imageBase = ""): BangumiSubjectSearchResult => ({ id: String(row.id), name: row.name, nameCn: row.name_cn || row.name, imageUrl: rewriteImage(row.image, imageBase) ?? undefined, year: row.date ? Number(String(row.date).slice(0, 4)) : undefined, rating: row.score || undefined, ratingCount: row.rating_count || undefined, tags: parseList(row.tags), metaTags: parseList(row.meta_tags) });
+
+/** 回填缓存的实体类型：番剧与角色共用同一张表。 */
+export type EnrichmentEntity = "subject" | "character";
+
+/** 回填缓存保存的补充字段。只存**上游原始 URL**，镜像地址在读取时重写。 */
+export interface BangumiEnrichment {
+  image?: string;
+}
+
+export interface LocalBangumiProviderOptions {
+  songPath: string;
+  characterPath: string;
+  /**
+   * Bangumi API 回填缓存（可写 SQLite）。缺省时不落盘，只走内存缓存。
+   * 只读数据集是 LFS 产物、每周被 CI 重建，不能被运行时写入，所以补充数据单独存这里。
+   */
+  enrichmentPath?: string;
+  imageBase?: string;
+  apiBase?: string;
+  fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}
+
+/** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
+export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher">;
+
+/** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
+const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
 
 export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly song: Database;
   private readonly character: Database;
-  constructor(songPath: string, characterPath: string, imageBase = "https://lain.bgm.tv", apiBase = "", fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = fetch) {
-    this.imageBase = imageBase.replace(/\/+$/, "");
-    this.apiBase = apiBase.replace(/\/+$/, "");
-    this.fetcher = fetcher;
-    this.song = new Database(songPath, { readonly: true });
-    this.character = new Database(characterPath, { readonly: true });
-  }
+  private readonly enrichment?: Database;
   private readonly imageBase: string;
   private readonly apiBase: string;
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  private readonly imageCache = new Map<number, string | undefined>();
+  private readonly imageCache = new Map<string, string>();
+  private readonly imageMissUntil = new Map<string, number>();
 
-  private async resolveImage(id: number): Promise<string | undefined> {
-    if (!this.apiBase) return undefined;
-    if (this.imageCache.has(id)) return this.imageCache.get(id);
+  constructor(options: LocalBangumiProviderOptions) {
+    this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
+    this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
+    this.fetcher = options.fetcher ?? fetch;
+    this.song = new Database(options.songPath, { readonly: true });
+    this.character = new Database(options.characterPath, { readonly: true });
+    if (options.enrichmentPath) {
+      // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
+      // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。
+      mkdirSync(dirname(options.enrichmentPath), { recursive: true });
+      const enrichment = new Database(options.enrichmentPath, { create: true });
+      enrichment.run(`
+        CREATE TABLE IF NOT EXISTS enrichment (
+          entity TEXT NOT NULL, id INTEGER NOT NULL,
+          payload TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+          PRIMARY KEY(entity, id)
+        )
+      `);
+      this.enrichment = enrichment;
+    }
+  }
+
+  /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
+  private readEnrichment(entity: EnrichmentEntity, id: number): BangumiEnrichment | undefined {
+    if (!this.enrichment) return undefined;
     try {
-      const response = await this.fetcher(`${this.apiBase}/v0/subjects/${id}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { images?: Record<string, unknown> };
-      const images = body.images ?? {};
-      const image = rewriteImage(images.medium ?? images.large ?? images.common ?? images.grid, this.imageBase);
-      this.imageCache.set(id, image);
-      return image;
-    } catch {
-      this.imageCache.set(id, undefined);
+      // bun:sqlite 的 Statement 泛型在多参数下会被推断成数组形态，这里显式声明参数元组。
+      const row = this.enrichment.query<{ payload: string }, [string, number]>("SELECT payload FROM enrichment WHERE entity = ? AND id = ?").get(entity, id);
+      if (!row) return undefined;
+      return JSON.parse(row.payload) as BangumiEnrichment;
+    } catch (error) {
+      console.warn("Bangumi 回填缓存读取失败，本次跳过", error);
       return undefined;
     }
   }
+
+  private writeEnrichment(entity: EnrichmentEntity, id: number, payload: BangumiEnrichment): void {
+    if (!this.enrichment) return;
+    try {
+      this.enrichment.query<null, [string, number, string, number]>(
+        "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at",
+      ).run(entity, id, JSON.stringify(payload), Date.now());
+    } catch (error) {
+      console.warn("Bangumi 回填缓存写入失败，本次跳过", error);
+    }
+  }
+
+  /**
+   * 取实体图片（番剧或角色）。顺序：内存正缓存 → 回填缓存 → 上游 API。
+   *
+   * **失败绝不固化**：上游超时/报错既不写回填缓存，也不留内存正缓存，只记 5 分钟负缓存
+   * 以免重复打爆上游。历史实现把失败也塞进内存正缓存，一次瞬时超时就会让该条目
+   * 在进程剩余生命周期里再也没有图片。
+   */
+  private async resolveEntityImage(entity: EnrichmentEntity, id: number): Promise<string | undefined> {
+    const key = `${entity}:${id}`;
+    if (this.imageCache.has(key)) return this.imageCache.get(key);
+    const missUntil = this.imageMissUntil.get(key);
+    if (missUntil !== undefined && missUntil > Date.now()) return undefined;
+
+    const persisted = this.readEnrichment(entity, id);
+    if (persisted?.image) {
+      const image = rewriteImage(persisted.image, this.imageBase);
+      if (image) {
+        this.imageCache.set(key, image);
+        return image;
+      }
+    }
+
+    if (!this.apiBase) return undefined;
+    try {
+      const path = entity === "subject" ? "subjects" : "characters";
+      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json() as { images?: Record<string, unknown> };
+      const images = body.images ?? {};
+      const raw = toAbsoluteUrl(images.medium ?? images.large ?? images.common ?? images.grid);
+      // 上游确实没图：只做短期负缓存，不写回填缓存（不把「暂时没有」当永久结论）。
+      const image = raw ? rewriteImage(raw, this.imageBase) : undefined;
+      if (!raw || !image) {
+        this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
+        return undefined;
+      }
+      this.writeEnrichment(entity, id, { image: raw });
+      this.imageCache.set(key, image);
+      return image;
+    } catch {
+      this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
+      return undefined;
+    }
+  }
+
+  async resolveCharacterImage(characterId: number): Promise<string | undefined> {
+    if (!Number.isInteger(characterId) || characterId <= 0) return undefined;
+    return this.resolveEntityImage("character", characterId);
+  }
+
   async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}) {
     const q = keyword.trim();
     const clauses = ["type = 2"];
@@ -122,9 +235,9 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     const relations = this.song.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id").all(id) as any[];
     const seen = new Set<string>();
     const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
-    const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveImage(id);
+    const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveEntityImage("subject", id);
     return { ...toResult({ ...row, image: imageUrl }, ""), summary: row.summary || undefined, locked: false, musicTracks };
   }
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
-  close() { this.song.close(); this.character.close(); }
+  close() { this.song.close(); this.character.close(); this.enrichment?.close(); }
 }

@@ -21,6 +21,8 @@ export interface AppEnv {
   bangumiImageUrl: string;
   bangumiSongDbPath?: string;
   bangumiCharacterDbPath?: string;
+  /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
+  bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
 }
 
@@ -94,6 +96,14 @@ const resolveDefaultWordBankPath = (): string => {
   return resolve(import.meta.dir, "../../storage/word-bank.json");
 };
 
+const resolveDefaultBangumiEnrichmentPath = (): string => {
+  if (Bun.env.BANGUMI_ENRICHMENT_PATH) {
+    return resolve(process.cwd(), Bun.env.BANGUMI_ENRICHMENT_PATH);
+  }
+  // 与词库同放 Server/storage：可写、不进 Git、不参与部署产物。
+  return resolve(import.meta.dir, "../../storage/bangumi-enrichment.sqlite");
+};
+
 export const readEnv = (): AppEnv => {
   const rawPort = Bun.env.SERVER_PORT ?? "4850";
   const serverPort = Number(rawPort);
@@ -151,6 +161,7 @@ export const readEnv = (): AppEnv => {
     bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
     bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
     bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
+    bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
       : true,

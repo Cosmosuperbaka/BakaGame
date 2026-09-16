@@ -1,9 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { LocalBangumiProvider } from "../src/infrastructure/LocalBangumiProvider";
 import { Database } from "bun:sqlite";
-import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** 造一对最小的只读数据集文件：provider 只要求文件可打开。 */
+const createDatasetFiles = () => {
+  const songPath = join(tmpdir(), `bangumi-test-${crypto.randomUUID()}.sqlite`);
+  const characterPath = join(tmpdir(), `bangumi-character-test-${crypto.randomUUID()}.sqlite`);
+  new Database(songPath).close();
+  new Database(characterPath).close();
+  return { songPath, characterPath };
+};
+
+const removeFiles = async (...paths: string[]) => {
+  for (const path of paths) try { await Bun.file(path).delete(); } catch {}
+};
 
 describe("LocalBangumiProvider", () => {
   test("searches and loads local records", async () => {
@@ -18,7 +30,7 @@ describe("LocalBangumiProvider", () => {
     songDb.run("INSERT INTO subject_music_relations VALUES (1,2,0,0,'主题曲','歌手','opening')");
     songDb.close();
     new Database(characterPath).close();
-    const provider = new LocalBangumiProvider(songPath, characterPath);
+    const provider = new LocalBangumiProvider({ songPath, characterPath });
     const rows = await provider.searchSubjects("测试中", 5);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0].id).toMatch(/^\d+$/);
@@ -38,7 +50,7 @@ describe("LocalBangumiProvider", () => {
     songDb.run("INSERT INTO subjects VALUES (8,2,'Test','测试','','','2020-01-01',0,'[]','[]',0,0,0,'')");
     songDb.close(); new Database(characterPath).close();
     const fetcher = async () => new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/8_test.jpg" } }), { status: 200 });
-    const provider = new LocalBangumiProvider(songPath, characterPath, "https://img.example", "https://api.example", fetcher);
+    const provider = new LocalBangumiProvider({ songPath, characterPath, imageBase: "https://img.example", apiBase: "https://api.example", fetcher });
     const detail = await provider.getSubject("8");
     expect(detail.imageUrl).toBe("https://img.example/pic/cover/l/aa/bb/8_test.jpg");
     provider.close();
@@ -65,7 +77,7 @@ describe("LocalBangumiProvider", () => {
     songDb.close();
     new Database(characterPath).close();
 
-    const provider = new LocalBangumiProvider(songPath, characterPath);
+    const provider = new LocalBangumiProvider({ songPath, characterPath });
     const detail = await provider.getSubject("428735");
     const titles = detail.musicTracks.map((track) => track.title);
 
@@ -100,7 +112,7 @@ describe("LocalBangumiProvider", () => {
     songDb.close();
     new Database(characterPath).close();
 
-    const provider = new LocalBangumiProvider(songPath, characterPath);
+    const provider = new LocalBangumiProvider({ songPath, characterPath });
     const detail = await provider.getSubject("245665");
     const kinds = Object.fromEntries(detail.musicTracks.map((track) => [track.title, track.kind]));
 
@@ -114,5 +126,113 @@ describe("LocalBangumiProvider", () => {
     expect(kinds["鬼滅の刃 Remix Collection"]).toBe("remix");
     provider.close();
     for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+  });
+});
+
+describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
+  test("角色立绘走 /v0/characters/{id} 并经镜像重写", async () => {
+    const { songPath, characterPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    const requested: string[] = [];
+    const fetcher = async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+    };
+    const provider = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });
+    expect(await provider.resolveCharacterImage(12393)).toBe("https://mirror.example/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(requested).toEqual(["https://api.example/v0/characters/12393"]);
+    // 非法 id 不得回源
+    expect(await provider.resolveCharacterImage(0)).toBeUndefined();
+    expect(await provider.resolveCharacterImage(-1)).toBeUndefined();
+    expect(await provider.resolveCharacterImage(1.5)).toBeUndefined();
+    expect(requested.length).toBe(1);
+    provider.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("回填缓存落盘：重启后不再回源", async () => {
+    const { songPath, characterPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    let calls = 0;
+    const fetcher = async () => {
+      calls++;
+      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+    };
+    const first = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher });
+    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(calls).toBe(1);
+    // 进程内第二次走内存缓存，同样不回源
+    await first.resolveCharacterImage(12393);
+    expect(calls).toBe(1);
+    first.close();
+
+    const second = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher });
+    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(calls).toBe(1);
+    second.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("缓存的是上游原始 URL：换镜像地址后无需重新回源", async () => {
+    const { songPath, characterPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    const first = new LocalBangumiProvider({
+      songPath, characterPath, enrichmentPath, apiBase: "https://api.example",
+      fetcher: async () => new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 }),
+    });
+    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    first.close();
+
+    let calls = 0;
+    const second = new LocalBangumiProvider({
+      songPath, characterPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example",
+      fetcher: async () => { calls++; throw new Error("换了镜像不该再回源"); },
+    });
+    expect(await second.resolveCharacterImage(12393)).toBe("https://mirror.example/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(calls).toBe(0);
+    second.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("回源失败只做短期负缓存，绝不写进回填缓存", async () => {
+    const { songPath, characterPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    let calls = 0;
+    const flaky = async () => {
+      calls++;
+      if (calls === 1) throw new Error("上游瞬时故障");
+      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+    };
+    const first = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher: flaky });
+    expect(await first.resolveCharacterImage(12393)).toBeUndefined();
+    // 进程内紧接着重试命中负缓存，不再打上游
+    expect(await first.resolveCharacterImage(12393)).toBeUndefined();
+    expect(calls).toBe(1);
+    first.close();
+
+    // 关键断言：失败没有落盘。新进程必须重新回源并能拿到图片——
+    // 历史实现把失败永久缓存，一次瞬时超时会让该条目再也拿不到图片。
+    const second = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher: flaky });
+    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(calls).toBe(2);
+    second.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("上游返回非 2xx 或缺图时不写缓存，恢复后可正常取到", async () => {
+    const { songPath, characterPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    const provider = new LocalBangumiProvider({
+      songPath, characterPath, enrichmentPath, apiBase: "https://api.example",
+      fetcher: async () => new Response("boom", { status: 500 }),
+    });
+    expect(await provider.resolveCharacterImage(12393)).toBeUndefined();
+    provider.close();
+
+    const cache = new Database(enrichmentPath, { readonly: true });
+    const rows = cache.query("SELECT count(*) AS n FROM enrichment").get() as { n: number };
+    expect(rows.n).toBe(0);
+    cache.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
   });
 });

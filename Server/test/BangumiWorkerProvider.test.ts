@@ -16,7 +16,7 @@ describe("BangumiWorkerProvider", () => {
     db.run("INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',0,0,0,'')");
     db.run("INSERT INTO subject_search(rowid,name,name_cn) VALUES (1,'Test','测试中心')");
     db.close(); new Database(characterPath).close();
-    const provider = new BangumiWorkerProvider(songPath, characterPath);
+    const provider = new BangumiWorkerProvider({ songPath, characterPath });
     const rows = await provider.searchSubjects("测试中", 3);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0].imageUrl).toBeUndefined();

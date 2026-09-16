@@ -63,4 +63,5 @@ Server/build
 *.sw?
 
 word-bank.json
+bangumi-enrichment.sqlite
 /tasks

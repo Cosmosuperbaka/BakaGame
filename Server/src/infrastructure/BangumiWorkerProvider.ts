@@ -1,6 +1,6 @@
 import { AppError } from "../domain/Errors";
 import type { AnimeAutoFilters, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
-import type { BangumiDataProvider } from "./LocalBangumiProvider";
+import type { BangumiDataProvider, BangumiProviderInit } from "./LocalBangumiProvider";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout> };
 
@@ -11,7 +11,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
   private readonly ready: Promise<unknown>;
   private closed = false;
 
-  constructor(songPath: string, characterPath: string, imageBase?: string, apiBase?: string) {
+  constructor(options: BangumiProviderInit) {
     this.worker = new Worker(new URL("./BangumiWorker.ts", import.meta.url).href);
     this.worker.onmessage = (event: MessageEvent<{ id: number; ok: boolean; value?: unknown; error?: { code: string; message: string } }>) => {
       const response = event.data;
@@ -23,7 +23,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
       else pending.reject(new AppError(response.error!.code, response.error!.message));
     };
     this.worker.onerror = () => this.failAll(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询线程异常"));
-    this.ready = this.request({ method: "init", songPath, characterPath, imageBase, apiBase });
+    this.ready = this.request({ method: "init", options });
     // 初始化失败通过业务请求返回，不产生无人接收的 Promise 拒绝。
     void this.ready.catch(() => {});
   }
@@ -36,6 +36,11 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
   async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
     await this.ready;
     return this.request({ method: "getSubject", subjectId }) as Promise<BangumiSubjectDetails>;
+  }
+
+  async resolveCharacterImage(characterId: number): Promise<string | undefined> {
+    await this.ready;
+    return this.request({ method: "resolveCharacterImage", characterId }) as Promise<string | undefined>;
   }
 
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
