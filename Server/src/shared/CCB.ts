@@ -103,7 +103,6 @@ export interface CCBPlayerView {
   name: string;
   score: number;
   membership: PlayerMembership;
-  nextRoundMembership?: "active" | "spectator";
   online: boolean;
   isReady: boolean;
   isBot: boolean;
@@ -207,7 +206,6 @@ export interface CCBPlayerRecord {
   name: string;
   sessionToken: string;
   membership: PlayerMembership;
-  nextRoundMembership?: "active" | "spectator";
   online: boolean;
   isReady: boolean;
   isBot: boolean;
