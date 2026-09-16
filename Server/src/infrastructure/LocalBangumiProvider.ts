@@ -57,21 +57,15 @@ const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack[
   if (/艺人|album/.test(text)) return "artistAlbum";
   return "theme";
 };
-const toAbsoluteUrl = (value: unknown): string | undefined => {
+const rewriteImage = (value: unknown, imageBase: string) => {
   if (typeof value !== "string" || !value) return undefined;
   try {
-    new URL(value);
-    return value;
+    const parsed = new URL(value);
+    if (!imageBase || parsed.hostname !== "lain.bgm.tv") return value;
+    return `${imageBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return undefined;
   }
-};
-const rewriteImage = (value: unknown, imageBase: string) => {
-  const source = toAbsoluteUrl(value);
-  if (!source) return undefined;
-  const parsed = new URL(source);
-  if (!imageBase || parsed.hostname !== "lain.bgm.tv") return source;
-  return `${imageBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
 };
 const toResult = (row: any, imageBase = ""): BangumiSubjectSearchResult => ({ id: String(row.id), name: row.name, nameCn: row.name_cn || row.name, imageUrl: rewriteImage(row.image, imageBase) ?? undefined, year: row.date ? Number(String(row.date).slice(0, 4)) : undefined, rating: row.score || undefined, ratingCount: row.rating_count || undefined, tags: parseList(row.tags), metaTags: parseList(row.meta_tags) });
 
@@ -188,14 +182,16 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json() as { images?: Record<string, unknown> };
       const images = body.images ?? {};
-      const raw = toAbsoluteUrl(images.medium ?? images.large ?? images.common ?? images.grid);
-      // 上游确实没图：只做短期负缓存，不写回填缓存（不把「暂时没有」当永久结论）。
-      const image = raw ? rewriteImage(raw, this.imageBase) : undefined;
-      if (!raw || !image) {
+      const candidate = images.medium ?? images.large ?? images.common ?? images.grid;
+      const image = rewriteImage(candidate, this.imageBase);
+      // 拿不到合法图片地址（上游确实没图，或返回的不是 URL）：只做短期负缓存，
+      // **不写回填缓存**，避免把「暂时没有」当成永久结论。
+      if (typeof candidate !== "string" || !image) {
         this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
         return undefined;
       }
-      this.writeEnrichment(entity, id, { image: raw });
+      // 存上游原始 URL：镜像地址在读取时重写，所以换镜像源既不用清缓存也不用重新回源。
+      this.writeEnrichment(entity, id, { image: candidate });
       this.imageCache.set(key, image);
       return image;
     } catch {
