@@ -17,9 +17,14 @@ BANGUMI_IMAGE_URL=
 BANGUMI_ENRICHMENT_PATH=
 ```
 
-`BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像。`BANGUMI_IMAGE_URL` 为空时保留
-原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv` 的图片链接。重写结果
-使用镜像源和原链接的 pathname、query、hash，其他主机名和无效 URL 原样返回。
+`BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像（**具体地址属于部署配置，不进仓库**）。
+`BANGUMI_IMAGE_URL` 为空时保留原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv`
+的图片链接。重写结果使用镜像源和原链接的 pathname、query、hash，其他主机名和无效 URL 原样返回。
+
+镜像端点的两个实测要点（与具体域名无关）：`GET /v0/characters/{id}` 返回完整角色 JSON，
+其中 `images.medium` 仍指向 `lain.bgm.tv`（必须靠 `BANGUMI_IMAGE_URL` 重写）；
+**它的 `infobox` 是 `[{ key, value }]` 数组**，与归档 dump 的 wikitext 字符串形态不同，
+**两套解析器不可混用**。
 
 ## Bangumi API 回填缓存
 
@@ -165,17 +170,31 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
   重命名仍被打开的文件），且临时目录清理必须 `ignore_errors=True`，否则清理失败抛出的
   `PermissionError` 会把填充率守卫的真实报错整个吞掉。
 
-### 角色标签 `character_tags`
+### 角色标签 `character_tags`（每周自动更新，仓库里不存快照）
 
-上游 CCB 的 `client/src/data/id_tags.js`（**32705 角色 / 421 标签**）是**唯一**可得的标签快照：
-原版服务端的 `POST /api/character-tags` 与 `/api/game-character-tags` 都是只写 MongoDB 的
-收集口，没有任何读回端点。
+上游原版的 `client/src/data/id_tags.js`（**32705 角色 / 421 标签**）是**唯一**可得的标签来源：
+原版服务端的 `POST /api/character-tags` 与 `/api/game-character-tags` 都只写 MongoDB，
+没有任何读回端点。原版**每周会更新**这个文件，所以**不要把快照提交进本仓库**——存下来必然过期。
 
-- 中间产物 `tools/data/character-tags.json`（标签字典 + 索引数组，876 KiB，**普通 git 文件、不进 LFS**），
-  由 `tools/import_character_tags.py` 生成。放 `tools/data/` 是因为它是**构建输入**，
-  服务端运行时不需要；且 `Server/data/` 只放 LFS 产物（`.gitattributes` 只标 `*.sqlite`）。
-- 更新标签：`python3 tools/import_character_tags.py <id_tags.js> tools/data/character-tags.json`。
-  取上游仓库的 `client/src/data/id_tags.js`（421 标签）而不是 `CCBFilter/dump` 里的旧快照（372 标签）。
+链路（两端 Actions 都改过，见下）：
+
+```
+CCB-TagsCI  weekly-tags-maintenance        北京时间 周一 04:00
+   ├─ 同步 guesser fork → 合并用户反馈标签 → 写 outputs/id_tags.js（提交）
+   └─ 派发 repository_dispatch: bangumi-tags-updated → BakaGame
+BakaGame    bangumi-data.yml               北京时间 周一 05:00（兜底）+ 收到派发立即跑
+   ├─ curl 下载 CCB-TagsCI 的 outputs/id_tags.js 到 /tmp/bangumi/id_tags.js
+   └─ python3 tools/build_bangumi_db.py <dump> Server/data --tags /tmp/bangumi/id_tags.js
+```
+
+- **权威地址**：`https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js`
+  （注意 CCB-TagsCI 的默认分支是 **`master`**，不是 `main`；guesser fork 才是 `main`）。
+- **构建脚本也支持直接给 URL**（`--tags` 默认就是这个地址），本地开发不必先手动下载。
+- BakaGame 侧用 `curl --fail --location --retry 3` 下载、下载字节数打进 CI 日志，便于追溯当晚用的是哪一版。
+- **定时任务排在 05:00 而不是 04:00**：必须等 CCB-TagsCI 把当晚的标签推完再重建。派发事件是加速路径，
+  定时任务是兜底——派发失败（例如 `CI_TOKEN` 对 BakaGame 缺 `repo` 权限）时仍能在一小时内自我修复。
+- 脚本只认结尾 `}` 前的对象字面量，**数字键是裸写法**（`1:["紫瞳",…]`）不是合法 JSON，
+  必须按行首补引号再解析；每行一个条目，所以行首匹配不会误伤标签文本里的数字冒号。
 - 标签是**平铺集合**（发色与性格混在一起），CCB 的「角色标签」交集用的就是它；
   上游的分类（发色/发型/瞳色/性格/身份）只服务编辑与筛选 UI，不参与判定。
 
