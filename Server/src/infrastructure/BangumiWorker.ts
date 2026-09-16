@@ -1,11 +1,13 @@
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { AppError } from "../domain/Errors";
 import type { AnimeAutoFilters } from "../shared/Index";
+import type { BangumiProviderInit } from "./LocalBangumiProvider";
 
 type Request =
-  | { id: number; method: "init"; songPath: string; characterPath: string; imageBase?: string; apiBase?: string }
+  | { id: number; method: "init"; options: BangumiProviderInit }
   | { id: number; method: "searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { id: number; method: "getSubject"; subjectId: string }
+  | { id: number; method: "resolveCharacterImage"; characterId: number }
   | { id: number; method: "close" };
 
 let provider: LocalBangumiProvider | undefined;
@@ -14,7 +16,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   try {
     let value: unknown;
     if (request.method === "init") {
-      provider = new LocalBangumiProvider(request.songPath, request.characterPath, request.imageBase, request.apiBase);
+      provider = new LocalBangumiProvider(request.options);
       value = true;
     } else if (!provider) {
       throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 数据尚未就绪");
@@ -22,6 +24,8 @@ self.onmessage = async (event: MessageEvent<Request>) => {
       value = await provider.searchSubjects(request.keyword, request.limit, request.filters);
     } else if (request.method === "getSubject") {
       value = await provider.getSubject(request.subjectId);
+    } else if (request.method === "resolveCharacterImage") {
+      value = await provider.resolveCharacterImage(request.characterId);
     } else {
       provider.close();
       provider = undefined;

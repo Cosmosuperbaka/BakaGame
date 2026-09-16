@@ -12,11 +12,13 @@ describe("FallbackBangumiProvider", () => {
       searchSubjects: async () => { localCalls++; throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地不可用"); },
       getSubject: async () => { throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地不可用"); },
       chooseRandomSubject: async () => { throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地不可用"); },
+      resolveCharacterImage: async () => undefined,
     };
     const remote: BangumiDataProvider = {
       searchSubjects: async () => { remoteCalls++; return result; },
       getSubject: async () => ({ ...result[0], locked: false, musicTracks: [] }),
       chooseRandomSubject: async () => ({ ...result[0], locked: false, musicTracks: [] }),
+      resolveCharacterImage: async () => undefined,
     };
     const provider = new FallbackBangumiProvider(local, remote);
     expect(await provider.searchSubjects("测试")).toEqual(result);

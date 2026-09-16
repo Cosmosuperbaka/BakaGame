@@ -243,7 +243,13 @@ export const createApp = ({
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
       bangumiProvider: new FallbackBangumiProvider(
-        new BangumiWorkerProvider(env.bangumiSongDbPath!, env.bangumiCharacterDbPath!, env.bangumiImageUrl, env.bangumiApiUrl),
+        new BangumiWorkerProvider({
+          songPath: env.bangumiSongDbPath!,
+          characterPath: env.bangumiCharacterDbPath!,
+          enrichmentPath: env.bangumiEnrichmentPath,
+          imageBase: env.bangumiImageUrl,
+          apiBase: env.bangumiApiUrl,
+        }),
         new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
       ),
     });

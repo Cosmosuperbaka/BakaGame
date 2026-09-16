@@ -72,6 +72,26 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
+  it("默认 Bangumi 回填缓存与词库同放 storage，且支持 BANGUMI_ENRICHMENT_PATH 覆盖", () => {
+    const originalPath = Bun.env.BANGUMI_ENRICHMENT_PATH;
+    try {
+      delete Bun.env.BANGUMI_ENRICHMENT_PATH;
+      const env = readEnv();
+      expect(env.bangumiEnrichmentPath).toContain("storage");
+      expect(env.bangumiEnrichmentPath).toContain("bangumi-enrichment.sqlite");
+
+      Bun.env.BANGUMI_ENRICHMENT_PATH = "custom/path/enrichment.sqlite";
+      const customEnv = readEnv();
+      expect(customEnv.bangumiEnrichmentPath).toBe(resolve(process.cwd(), "custom/path/enrichment.sqlite"));
+    } finally {
+      if (originalPath !== undefined) {
+        Bun.env.BANGUMI_ENRICHMENT_PATH = originalPath;
+      } else {
+        delete Bun.env.BANGUMI_ENRICHMENT_PATH;
+      }
+    }
+  });
+
   it("读取 Bangumi API 与图床镜像地址并移除尾斜杠", () => {
     const originalApiUrl = Bun.env.BANGUMI_API_URL;
     const originalImageUrl = Bun.env.BANGUMI_IMAGE_URL;

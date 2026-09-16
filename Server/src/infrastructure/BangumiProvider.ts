@@ -330,6 +330,8 @@ export class BangumiProvider {
   private cooldownUntil = 0;
   private readonly cache: LRUCache<string, { value: unknown; expiresAt: number }>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  /** 角色立绘成功缓存。见 `resolveCharacterImage`：失败结果不得进入任何缓存。 */
+  private readonly characterImageCache = new Map<number, string>();
 
   constructor(options: BangumiProviderOptions) {
     this.fetcher = options.fetcher ?? fetch;
@@ -396,6 +398,25 @@ export class BangumiProvider {
     if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
     const selected = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
     return this.getSubject(selected.id);
+  }
+
+  /**
+   * 角色立绘。只缓存**成功**结果，刻意不复用 `cached()`：它会把失败与空结果一并缓存 24 小时，
+   * 一次瞬时故障就让该角色长期没有立绘（本地 provider 的历史实现踩过同一个坑）。
+   */
+  async resolveCharacterImage(characterId: number): Promise<string | undefined> {
+    if (!Number.isInteger(characterId) || characterId <= 0) return undefined;
+    const cachedImage = this.characterImageCache.get(characterId);
+    if (cachedImage) return cachedImage;
+    try {
+      const body = asRecord(await this.requestJson(`/v0/characters/${characterId}`));
+      const images = asRecord(body.images);
+      const image = rewriteBangumiImageUrl(images.medium ?? images.large ?? images.common ?? images.grid, this.imageUrl);
+      if (image) this.characterImageCache.set(characterId, image);
+      return image;
+    } catch {
+      return undefined;
+    }
   }
 
   private async cached<T>(key: string, ttl: number, loader: () => Promise<T>): Promise<T> {
