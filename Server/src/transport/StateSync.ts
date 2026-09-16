@@ -14,6 +14,8 @@ const STATE_EVENTS = new Set([
   "game.privateState",
   "song.room.snapshot",
   "song.game.privateState",
+  "ccb.room.snapshot",
+  "ccb.game.privateState",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

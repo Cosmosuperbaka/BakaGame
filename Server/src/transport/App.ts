@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
+import { CCBService } from "../application/CCBService";
 import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
@@ -16,6 +17,7 @@ import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "./SonGuessrProtocol";
+import { parseCCBMessage } from "./CCBProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
@@ -25,6 +27,7 @@ export interface AppDependencies {
   whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
   sonGuessrService?: SonGuessrService;
+  ccbService?: CCBService;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
 }
@@ -226,6 +229,7 @@ export const createApp = ({
   whoIsFakerService,
   logger,
   sonGuessrService,
+  ccbService,
   isShuttingDown,
   onTriggerShutdown,
 }: AppDependencies) => {
@@ -253,6 +257,8 @@ export const createApp = ({
         new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
       ),
     });
+
+  const ccbSvc = ccbService ?? new CCBService({ eventLogger: logger });
 
   const app = new Elysia({
     websocket: {
@@ -367,6 +373,7 @@ export const createApp = ({
       systemRoutes({
         whoIsFakerService: fakerService,
         sonGuessrService: songService,
+        ccbService: ccbSvc,
         logger,
         isShuttingDown,
         onTriggerShutdown,
@@ -605,11 +612,120 @@ export const createApp = ({
         const connectionId = (ws.data as { connectionId?: string }).connectionId;
         if (connectionId) await songService.unregisterConnection(connectionId);
       },
+    })
+    // CCB 与另两个游戏共用封包、错误与会话约定，状态机彼此隔离。
+    .ws("/api/ccb/ws", {
+      upgrade({ headers, request }) {
+        const origin =
+          request?.headers?.get("origin") ??
+          (headers as Record<string, string> | undefined)?.["origin"];
+        if (!isAllowedOrigin(origin, env.clientUrl)) {
+          return { status: 403 };
+        }
+      },
+      open(ws) {
+        const connectionId = crypto.randomUUID();
+        (ws.data as { connectionId?: string }).connectionId = connectionId;
+        const stateSync = createStateSyncSender((payload) => {
+          sendPacket(ws, payload);
+        });
+        ccbSvc.registerConnection({
+          id: connectionId,
+          lobbySubscribed: false,
+          send: stateSync.send,
+          resetStateSync: stateSync.reset,
+          sendStateSyncCalibration: stateSync.calibrate,
+          sendPacket: (payload: unknown) => sendPacket(ws, payload),
+          close: (code?: number, reason?: string) => ws.close(code, reason),
+        });
+      },
+      async message(ws, incoming) {
+        const connectionId = (ws.data as { connectionId?: string }).connectionId;
+        if (!connectionId) return;
+
+        const raw =
+          typeof incoming === "string"
+            ? incoming
+            : incoming instanceof ArrayBuffer
+              ? decoder.decode(new Uint8Array(incoming))
+              : ArrayBuffer.isView(incoming)
+                ? decoder.decode(
+                    new Uint8Array(
+                      incoming.buffer,
+                      incoming.byteOffset,
+                      incoming.byteLength,
+                    ),
+                  )
+                : incoming;
+
+        const startedAt = performance.now();
+        let parsedId = "unknown";
+        let parsedType = "raw";
+        let traceId: string | undefined;
+        try {
+          const parsed = parseCCBMessage(raw);
+          parsedId = parsed.id;
+          parsedType = parsed.type;
+          traceId = parsed.traceId;
+
+          await executeWithDeduplication({
+            ws,
+            connectionId,
+            parsed,
+            startTime: startedAt,
+            logger,
+            execute: () => ccbSvc.execute(connectionId, parsed),
+            serviceName: "CCB",
+          });
+        } catch (error) {
+          if (isAppError(error)) {
+            logger.logOperation({
+              status: 400,
+              durationMs: performance.now() - startedAt,
+              identifier: connectionId,
+              action: `WS ${parsedType}`,
+              level: "WARN",
+              traceId,
+            });
+            sendPacket(
+              ws,
+              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
+            );
+            return;
+          }
+
+          logger.error(`CCB WS 内部异常 [${parsedType}]`, {
+            ...describeError(error),
+            error: error instanceof Error ? error : new Error(String(error)),
+            connectionId,
+            traceId,
+            parsedId,
+          });
+
+          logger.logOperation({
+            status: 500,
+            durationMs: performance.now() - startedAt,
+            identifier: connectionId,
+            action: `WS ${parsedType}`,
+            level: "ERROR",
+            traceId,
+          });
+          sendPacket(
+            ws,
+            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+          );
+        }
+      },
+      async close(ws) {
+        const connectionId = (ws.data as { connectionId?: string }).connectionId;
+        if (connectionId) await ccbSvc.unregisterConnection(connectionId);
+      },
     });
 
   return {
     app,
     whoIsFakerService: fakerService,
     sonGuessrService: songService,
+    ccbService: ccbSvc,
   };
 };
