@@ -54,6 +54,21 @@ test("编码器每分钟用全量状态校准补丁链", () => {
   }))[0]).toMatchObject({ payload: { mode: "full", revision: 2 } });
 });
 
+test("CCB 状态事件已登记进增量编码白名单", () => {
+  const encoder = new StateSyncEncoder();
+  const filler = "x".repeat(1_000);
+  const first = encoder.encode(createEvent("ccb.room.snapshot", { value: 1, filler }));
+  const changed = encoder.encode(createEvent("ccb.room.snapshot", { value: 2, filler }));
+  const privateState = encoder.encode(createEvent("ccb.game.privateState", { canGuess: false }));
+
+  // 未登记的事件会原样透传（payload 上没有 mode），因此这里断言的一定是编码结果。
+  expect(first[0]).toMatchObject({ payload: { mode: "full", revision: 1 } });
+  expect(changed[0]).toMatchObject({
+    payload: { mode: "patch", baseRevision: 1, revision: 2 },
+  });
+  expect(privateState[0]).toMatchObject({ payload: { mode: "full", revision: 1 } });
+});
+
 test("校准调用会在无业务变化时按周期重发全量状态", () => {
   let now = 0;
   const encoder = new StateSyncEncoder({ now: () => now });
