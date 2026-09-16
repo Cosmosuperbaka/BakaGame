@@ -12,6 +12,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # 合成 fixture 自测，不依赖 dump；放在下载之前以便快速失败。
+      - name: Test database builder
+        run: python3 tools/test_build_bangumi_db.py
       - name: Download latest dump
         shell: bash
         run: |

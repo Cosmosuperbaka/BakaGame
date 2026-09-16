@@ -5,10 +5,25 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
+import re
+import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
+
+# 角色 infobox 里「中文名」与「性别」的候选键。归档 dump 的 infobox 是 wiki 模板原文，
+# 键形如 ``|简体中文名= 鲁路修·兰佩路基``；角色表本身**没有** name_cn / gender 列，
+# 只能从 infobox 里取。
+INFOBOX_NAME_KEYS = ("中文名", "简体中文名", "繁體中文名", "繁体中文名", "姓名", "名称", "名字", "本名")
+INFOBOX_GENDER_KEYS = ("性别", "性別", "gender")
+INFOBOX_ALIAS_KEYS = ("别名", "別名")
+# Bangumi 的性别只有 male / female 两种取值，其余一律归一到 '?'，
+# 与 CCB 的反馈判定（非 male/female 即 '?'）保持同一口径。
+GENDER_MAP = {
+    "男": "male", "男性": "male", "male": "male", "m": "male", "1": "male",
+    "女": "female", "女性": "female", "female": "female", "f": "female", "2": "female",
+}
+UNKNOWN_GENDER = "?"
 
 
 def lines(path: Path):
@@ -62,9 +77,9 @@ def setup_character(db: sqlite3.Connection):
       PRAGMA journal_mode=DELETE;
       PRAGMA synchronous=OFF;
       CREATE TABLE characters (
-        id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_cn TEXT NOT NULL,
-        gender TEXT NOT NULL, aliases TEXT NOT NULL, comments INTEGER NOT NULL,
-        collects INTEGER NOT NULL
+        id INTEGER PRIMARY KEY, role INTEGER NOT NULL, name TEXT NOT NULL,
+        name_cn TEXT NOT NULL, gender TEXT NOT NULL, aliases TEXT NOT NULL,
+        summary TEXT NOT NULL, comments INTEGER NOT NULL, collects INTEGER NOT NULL
       );
       CREATE TABLE subjects (
         id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
@@ -76,8 +91,24 @@ def setup_character(db: sqlite3.Connection):
         relation_type INTEGER NOT NULL, relation_order INTEGER NOT NULL,
         PRIMARY KEY(character_id, subject_id)
       );
+      -- CCB 角色标签，来自上游 id_tags 快照（32705 角色 / 421 标签）。
+      CREATE TABLE character_tags (
+        character_id INTEGER NOT NULL, tag TEXT NOT NULL,
+        PRIMARY KEY(character_id, tag)
+      );
+      -- CCB 声优：只保留作品类型为动画(2)/游戏(4)的配音关系，与原版
+      -- `persons.filter(p => p.subject_type === 2 || p.subject_type === 4)` 对齐。
+      CREATE TABLE character_vas (
+        character_id INTEGER NOT NULL, person_id INTEGER NOT NULL,
+        name TEXT NOT NULL, name_cn TEXT NOT NULL,
+        PRIMARY KEY(character_id, person_id)
+      );
       CREATE INDEX csr_character ON character_subject_relations(character_id, relation_order);
       CREATE INDEX csubjects_type_date ON subjects(type, date);
+      CREATE INDEX characters_collects ON characters(collects DESC);
+      CREATE INDEX character_tags_tag ON character_tags(tag, character_id);
+      -- 注意：不要给 character_vas 再加 (character_id, person_id) 索引，
+      -- 主键已经就是这两列，重复索引只会白占体积。
       CREATE VIRTUAL TABLE character_search USING fts5(name, name_cn, aliases, content='characters', content_rowid='id', tokenize='trigram');
     """)
 
@@ -103,7 +134,6 @@ KIND_PATTERNS = [
 ]
 
 def track_kind(text: str) -> str:
-    import re
     low = text.lower()
     if re.search(r"\bop\d*\b", low): return "opening"
     if re.search(r"\bed\d*\b", low): return "ending"
@@ -113,7 +143,6 @@ def track_kind(text: str) -> str:
     return "theme"
 
 def parse_infobox_tracks(infobox: str):
-    import re
     tracks=[]
     for line in infobox.splitlines():
         if "=" not in line: continue
@@ -134,17 +163,174 @@ def parse_infobox_tracks(infobox: str):
         if k not in seen: seen.add(k); out.append(t)
     return out
 
-def build(dump: Path, out: Path):
+
+def clean_infobox_value(value: str) -> str:
+    """去掉 wiki 内链/模板标记。"""
+    for token in ("[[", "]]", "{{", "}}"):
+        value = value.replace(token, "")
+    return value.strip()
+
+
+def parse_infobox(infobox: str) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """把归档 dump 的 wiki infobox 原文解析成 (单值键表, 多值块表)。
+
+    dump 里的 infobox 形如::
+
+        {{Infobox Crt\\r\\n
+        |简体中文名= 鲁路修·兰佩路基\\r\\n
+        |别名={\\r\\n
+        [L.L.]\\r\\n
+        [英文名|Lelouch Lamperouge]\\r\\n
+        }\\r\\n
+        |性别= 男\\r\\n
+
+    **键前带一个 ``|`` 前缀**，所以必须先去前缀再匹配，否则与 ``"中文名"``
+    之类的全等比较永远不成立 —— 这正是历史上 name_cn / gender 全库为空的根因。
+    多值块的值以 ``{`` 起头，条目逐行写成 ``[值]`` 或 ``[类型|值]``。
+    """
+    singles: dict[str, str] = {}
+    blocks: dict[str, list[str]] = {}
+    if not infobox:
+        return singles, blocks
+
+    pending_block: str | None = None
+    for raw in infobox.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("{{"):
+            continue
+        if pending_block is not None:
+            if line.startswith("["):
+                entry = line.strip("[]").strip()
+                # ``[英文名|Lelouch Lamperouge]`` 取竖线后的实际值
+                if "|" in entry:
+                    entry = entry.split("|", 1)[1]
+                entry = clean_infobox_value(entry)
+                if entry:
+                    blocks.setdefault(pending_block, []).append(entry)
+                continue
+            pending_block = None
+            if line == "}":
+                continue
+        if not line.startswith("|") or "=" not in line:
+            continue
+        key, value = line[1:].split("=", 1)
+        key, value = key.strip(), value.strip()
+        if not key:
+            continue
+        if value.startswith("{"):
+            pending_block = key
+            continue
+        if value and key not in singles:
+            singles[key] = value
+    return singles, blocks
+
+
+def normalize_gender(value: str) -> str:
+    if not value:
+        return UNKNOWN_GENDER
+    text = clean_infobox_value(value).strip().lower()
+    if not text:
+        return UNKNOWN_GENDER
+    if text in GENDER_MAP:
+        return GENDER_MAP[text]
+    if "男" in text:
+        return "male"
+    if "女" in text:
+        return "female"
+    return UNKNOWN_GENDER
+
+
+def first_matching(singles: dict[str, str], keys) -> str:
+    for key in keys:
+        value = singles.get(key)
+        if value:
+            return clean_infobox_value(value)
+    return ""
+
+
+def parse_character_infobox(infobox: str) -> tuple[str, str, list[str]]:
+    """返回 (中文名, 归一性别, 别名列表)。"""
+    singles, blocks = parse_infobox(infobox)
+    name_cn = first_matching(singles, INFOBOX_NAME_KEYS)
+    gender = normalize_gender(first_matching(singles, INFOBOX_GENDER_KEYS))
+    aliases: list[str] = []
+    for key in INFOBOX_ALIAS_KEYS:
+        for alias in blocks.get(key, []):
+            if alias and alias not in aliases:
+                aliases.append(alias)
+    return name_cn, gender, aliases
+
+
+def load_character_tags(path: Path) -> dict[int, list[str]]:
+    """读取 ``tools/data/character-tags.json``（标签字典 + 索引数组的紧凑格式）。"""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    dictionary: list[str] = data["tags"]
+    result: dict[int, list[str]] = {}
+    for key, indexes in data["characters"].items():
+        result[int(key)] = [dictionary[i] for i in indexes if 0 <= i < len(dictionary)]
+    return result
+
+
+CHARACTER_FLOOR_MESSAGE = (
+    "角色字段填充率异常：{column} 全库为 0。归档 dump 的 name_cn / gender 只能从 "
+    "infobox 解析，键前带 '|' 前缀，解析失败即全空 —— 历史上正是这个原因导致 "
+    "name_cn 与 gender 长期为空。请先核对 infobox 格式再重跑。"
+)
+
+
+def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
+    def scalar(query: str) -> int:
+        return int(db.execute(query).fetchone()[0])
+
+    stats = {
+        "characters": scalar("SELECT count(*) FROM characters"),
+        "name_cn": scalar("SELECT count(*) FROM characters WHERE name_cn <> ''"),
+        "gender_known": scalar("SELECT count(*) FROM characters WHERE gender IN ('male','female')"),
+        "summary": scalar("SELECT count(*) FROM characters WHERE summary <> ''"),
+        "aliases": scalar("SELECT count(*) FROM characters WHERE aliases NOT IN ('', '[]')"),
+        "tags": scalar("SELECT count(*) FROM character_tags"),
+        "tagged_characters": scalar("SELECT count(DISTINCT character_id) FROM character_tags"),
+        "vas": scalar("SELECT count(*) FROM character_vas"),
+        "va_characters": scalar("SELECT count(DISTINCT character_id) FROM character_vas"),
+        "animated_characters": scalar(
+            "SELECT count(DISTINCT r.character_id) FROM character_subject_relations r "
+            "JOIN subjects s ON s.id = r.subject_id WHERE s.type = 2"
+        ),
+    }
+    total = stats["characters"]
+    print("[character db] 填充率报告")
+    for key, value in stats.items():
+        ratio = (value / total * 100) if total else 0
+        print(f"  {key:<22}{value:>9}  ({ratio:5.1f}%)")
+    if total == 0:
+        raise SystemExit("角色表为空：dump 目录可能不对。")
+    for column in ("name_cn", "gender_known"):
+        if stats[column] == 0:
+            raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
+    if stats["tags"] == 0:
+        raise SystemExit("character_tags 为空：tools/data/character-tags.json 未被正确读取。")
+    return stats
+
+
+def build(dump: Path, out: Path, tags_path: Path):
     out.mkdir(parents=True, exist_ok=True)
     subjects: dict[int, dict] = {}
     for item in lines(dump / "subject.jsonlines"):
         subjects[item["id"]] = item
 
-    with tempfile.TemporaryDirectory(dir=out) as temp:
-        song_path = Path(temp) / "bangumi-song.sqlite"
-        char_path = Path(temp) / "bangumi-character.sqlite"
-        song = sqlite3.connect(song_path)
-        char = sqlite3.connect(char_path)
+    character_tags = load_character_tags(tags_path)
+    print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_path}")
+
+    # 产物先写进同盘临时目录，再原子替换到目标路径，中途失败不留半成品。
+    # 两个坑都要防：① 连接必须在 replace 之前关闭（Windows 不允许重命名仍被打开的
+    # 文件）；② 清理临时目录必须 ignore_errors，否则删不掉时抛出的 PermissionError
+    # 会把真正的失败原因（下面的填充率守卫）整个吞掉。
+    temp = tempfile.mkdtemp(dir=out)
+    song_path = Path(temp) / "bangumi-song.sqlite"
+    char_path = Path(temp) / "bangumi-character.sqlite"
+    song = sqlite3.connect(song_path)
+    char = sqlite3.connect(char_path)
+    try:
         setup_song(song); setup_character(char)
         song_sub = song.cursor(); char_sub = char.cursor()
         for item in subjects.values():
@@ -171,30 +357,59 @@ def build(dump: Path, out: Path):
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
                 song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
         for item in lines(dump / "character.jsonlines"):
-            infobox = item.get("infobox", "")
-            name_cn = ""
-            gender = ""
-            for raw in infobox.splitlines():
-                if "=" not in raw: continue
-                key, value = raw.split("=", 1)
-                key, value = key.strip(), value.strip()
-                if key in ("简体中文名", "繁体中文名", "中文名") and not name_cn: name_cn = value
-                if key in ("性别", "性別", "gender") and not gender: gender = value
-            aliases = []
-            if "别名=" in infobox or "別名=" in infobox: aliases.append(name_cn)
-            char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?)", (item["id"], item.get("name", ""), name_cn, gender, json.dumps(aliases, ensure_ascii=False), item.get("comments", 0), item.get("collects", 0)))
+            name_cn, gender, aliases = parse_character_infobox(item.get("infobox", ""))
+            char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
+                item["id"], int(item.get("role", 0) or 0), item.get("name", ""), name_cn, gender,
+                json.dumps(aliases, ensure_ascii=False), item.get("summary", ""),
+                item.get("comments", 0), item.get("collects", 0),
+            ))
         for rel in lines(dump / "subject-characters.jsonlines"):
             char_sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
+
+        # ---- CCB 角色标签（上游 id_tags 快照） ----
+        for character_id, tags in character_tags.items():
+            char_sub.executemany("INSERT OR IGNORE INTO character_tags VALUES (?,?)", ((character_id, tag) for tag in tags))
+
+        # ---- CCB 声优（person-characters + person） ----
+        # person.jsonlines 同样没有 name_cn 列，中文名也要落到 infobox 解析上。
+        persons: dict[int, tuple[str, str]] = {}
+        for item in lines(dump / "person.jsonlines"):
+            singles, _ = parse_infobox(item.get("infobox", ""))
+            persons[item["id"]] = (item.get("name", ""), first_matching(singles, INFOBOX_NAME_KEYS))
+        for rel in lines(dump / "person-characters.jsonlines"):
+            subject = subjects.get(rel.get("subject_id"))
+            if not subject or subject.get("type") not in (2, 4):
+                continue
+            person = persons.get(rel.get("person_id"))
+            if not person or not person[0]:
+                continue
+            char_sub.execute("INSERT OR IGNORE INTO character_vas VALUES (?,?,?,?)", (rel["character_id"], rel["person_id"], person[0], person[1]))
+
         song.executescript("INSERT INTO subject_search(rowid,name,name_cn) SELECT id,name,name_cn FROM subjects; INSERT INTO music_search(rowid,name,name_cn) SELECT id,name,name_cn FROM music_subjects;")
         char.execute("INSERT INTO character_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM characters;")
-        song.commit(); char.commit(); song.close(); char.close()
+        song.commit(); char.commit()
+        # 填充率守卫：任一项为 0 都在这里抛错，由 finally 收拾现场。
+        report_character_stats(char)
+
+        song.close(); char.close()
         for source, target in ((song_path, out / song_path.name), (char_path, out / char_path.name)):
             source.replace(target)
+    finally:
+        song.close(); char.close()
+        shutil.rmtree(temp, ignore_errors=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dump", type=Path)
     parser.add_argument("out", type=Path)
+    parser.add_argument(
+        "--tags",
+        type=Path,
+        default=Path(__file__).resolve().parent / "data" / "character-tags.json",
+        help="CCB 角色标签快照（由 tools/import_character_tags.py 生成）",
+    )
     args = parser.parse_args()
-    build(args.dump, args.out)
+    if not args.tags.exists():
+        raise SystemExit(f"缺少角色标签文件 {args.tags}，先跑 tools/import_character_tags.py 生成。")
+    build(args.dump, args.out, args.tags)
