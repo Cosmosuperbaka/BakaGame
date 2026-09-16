@@ -6,6 +6,7 @@ import { SonGuessrService } from "../application/SonGuessrService";
 import { CCBService } from "../application/CCBService";
 import type { AppEnv } from "../config/Env";
 import { isAppError } from "../domain/Errors";
+import type { ConnectionRecord } from "../domain/Model";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { BangumiWorkerProvider } from "../infrastructure/BangumiWorkerProvider";
@@ -224,6 +225,149 @@ const isAllowedOrigin = (
   return false;
 };
 
+/** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
+interface GameSocketLike {
+  data: unknown;
+  send: (data: string) => unknown;
+  close: (code?: number, reason?: string) => unknown;
+}
+
+interface GameSocketHandlers<TMessage extends { id: string; type: string; traceId?: string }> {
+  /** 只用于错误日志前缀，便于把异常定位到具体游戏。 */
+  serviceName: string;
+  parse: (raw: unknown) => TMessage;
+  execute: (connectionId: string, message: TMessage) => Promise<unknown>;
+}
+
+const connectionIdOf = (ws: GameSocketLike): string | undefined =>
+  (ws.data as { connectionId?: string }).connectionId;
+
+/** Origin 白名单校验：三个游戏入口完全一致，不通过即拒绝升级。 */
+const rejectDisallowedOrigin = (
+  headers: unknown,
+  request: Request | undefined,
+  clientUrl?: string,
+): { status: 403 } | undefined => {
+  const origin =
+    request?.headers?.get("origin") ??
+    (headers as Record<string, string> | undefined)?.["origin"];
+  return isAllowedOrigin(origin, clientUrl) ? undefined : { status: 403 };
+};
+
+/** 建立连接上下文，后续所有命令都靠它定位会话。 */
+const openGameConnection = (
+  ws: GameSocketLike,
+  register: (connection: ConnectionRecord) => void,
+): void => {
+  const connectionId = crypto.randomUUID();
+  (ws.data as { connectionId?: string }).connectionId = connectionId;
+  const stateSync = createStateSyncSender((payload) => {
+    sendPacket(ws, payload);
+  });
+  register({
+    id: connectionId,
+    lobbySubscribed: false,
+    send: stateSync.send,
+    resetStateSync: stateSync.reset,
+    sendStateSyncCalibration: stateSync.calibrate,
+    sendPacket: (payload: unknown) => sendPacket(ws, payload),
+    close: (code?: number, reason?: string) => ws.close(code, reason),
+  });
+};
+
+/** Bun/Elysia 可能给字符串、二进制或已解析对象，这里统一归一化。 */
+const decodeIncoming = (incoming: unknown, decoder: TextDecoder): unknown =>
+  typeof incoming === "string"
+    ? incoming
+    : incoming instanceof ArrayBuffer
+      ? decoder.decode(new Uint8Array(incoming))
+      : ArrayBuffer.isView(incoming)
+        ? decoder.decode(new Uint8Array(incoming.buffer, incoming.byteOffset, incoming.byteLength))
+        : incoming;
+
+/**
+ * 三个游戏共用的消息处理：解析 → 幂等执行 → ACK/错误封包。
+ *
+ * 只在「解析器、服务、日志前缀」上不同（`Spec.md §11.2` 要求网关对称消费各游戏解析器），
+ * 其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
+ */
+const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
+  ws: GameSocketLike,
+  incoming: unknown,
+  decoder: TextDecoder,
+  logger: EventLogger,
+  { serviceName, parse, execute }: GameSocketHandlers<TMessage>,
+): Promise<void> => {
+  const connectionId = connectionIdOf(ws);
+  if (!connectionId) return;
+
+  const startedAt = performance.now();
+  let parsedId = "unknown";
+  let parsedType = "raw";
+  let traceId: string | undefined;
+  try {
+    const parsed = parse(decodeIncoming(incoming, decoder));
+    parsedId = parsed.id;
+    parsedType = parsed.type;
+    traceId = parsed.traceId;
+
+    await executeWithDeduplication({
+      ws,
+      connectionId,
+      parsed,
+      startTime: startedAt,
+      logger,
+      execute: () => execute(connectionId, parsed),
+      serviceName,
+    });
+  } catch (error) {
+    if (isAppError(error)) {
+      logger.logOperation({
+        status: 400,
+        durationMs: performance.now() - startedAt,
+        identifier: connectionId,
+        action: `WS ${parsedType}`,
+        level: "WARN",
+        traceId,
+      });
+      sendPacket(
+        ws,
+        createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
+      );
+      return;
+    }
+
+    logger.error(`${serviceName} WS 内部异常 [${parsedType}]`, {
+      ...describeError(error),
+      error: error instanceof Error ? error : new Error(String(error)),
+      connectionId,
+      traceId,
+      parsedId,
+    });
+
+    logger.logOperation({
+      status: 500,
+      durationMs: performance.now() - startedAt,
+      identifier: connectionId,
+      action: `WS ${parsedType}`,
+      level: "ERROR",
+      traceId,
+    });
+    sendPacket(
+      ws,
+      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+    );
+  }
+};
+
+const closeGameConnection = async (
+  ws: GameSocketLike,
+  unregister: (connectionId: string) => Promise<void>,
+): Promise<void> => {
+  const connectionId = connectionIdOf(ws);
+  if (connectionId) await unregister(connectionId);
+};
+
 export const createApp = ({
   env,
   whoIsFakerService,
@@ -388,338 +532,40 @@ export const createApp = ({
     )
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
-      upgrade({ headers, request }) {
-        const origin =
-          request?.headers?.get("origin") ??
-          (headers as Record<string, string> | undefined)?.["origin"];
-        if (!isAllowedOrigin(origin, env.clientUrl)) {
-          return { status: 403 };
-        }
-      },
-      open(ws) {
-        // 为每个连接建立独立的连接上下文，后续所有命令都靠它定位会话。
-        const connectionId = crypto.randomUUID();
-        (ws.data as { connectionId?: string }).connectionId = connectionId;
-        const stateSync = createStateSyncSender((payload) => {
-          sendPacket(ws, payload);
-        });
-        fakerService.registerConnection({
-          id: connectionId,
-          lobbySubscribed: false,
-          send: stateSync.send,
-          resetStateSync: stateSync.reset,
-          sendStateSyncCalibration: stateSync.calibrate,
-          sendPacket: (payload) => sendPacket(ws, payload),
-          close: (code?: number, reason?: string) => {
-            ws.close(code, reason);
-          },
-        });
-      },
-      async message(ws, incoming) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-
-        if (!connectionId) {
-          return;
-        }
-
-        // Bun/Elysia 可能给字符串、二进制或已解析对象，这里统一归一化。
-        const raw =
-          typeof incoming === "string"
-            ? incoming
-            : incoming instanceof ArrayBuffer
-              ? decoder.decode(new Uint8Array(incoming))
-              : ArrayBuffer.isView(incoming)
-                ? decoder.decode(
-                    new Uint8Array(
-                      incoming.buffer,
-                      incoming.byteOffset,
-                      incoming.byteLength,
-                    ),
-                  )
-                : incoming;
-
-        const startTime = performance.now();
-        let parsedId = "unknown";
-        let parsedType = "raw";
-        let traceId: string | undefined;
-
-        try {
-          const parsed = parseWhoIsFakerMessage(raw);
-          parsedId = parsed.id;
-          parsedType = parsed.type;
-          traceId = parsed.traceId;
-
-          await executeWithDeduplication({
-            ws,
-            connectionId,
-            parsed,
-            startTime,
-            logger,
-            execute: () => fakerService.execute(connectionId, parsed),
-          });
-        } catch (error) {
-          const durationMs = performance.now() - startTime;
-          if (isAppError(error)) {
-            logger.logOperation({
-              status: 400,
-              durationMs,
-              identifier: connectionId,
-              action: `WS ${parsedType}`,
-              level: "WARN",
-              traceId,
-            });
-            sendPacket(
-              ws,
-              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
-            );
-            return;
-          }
-
-          logger.error(`WS 内部异常 [${parsedType}]`, {
-            ...describeError(error),
-            error: error instanceof Error ? error : new Error(String(error)),
-            connectionId,
-            traceId,
-            parsedId,
-          });
-
-          logger.logOperation({
-            status: 500,
-            durationMs,
-            identifier: connectionId,
-            action: `WS ${parsedType}`,
-            level: "ERROR",
-            traceId,
-          });
-          sendPacket(
-            ws,
-            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
-          );
-        }
-      },
-      async close(ws) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-
-        if (connectionId) {
-          await fakerService.unregisterConnection(connectionId);
-        }
-      },
+      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      open: (ws) => openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
+      message: (ws, incoming) =>
+        handleGameMessage(ws, incoming, decoder, logger, {
+          serviceName: "WhoIsFaker",
+          parse: parseWhoIsFakerMessage,
+          execute: (connectionId, message) => fakerService.execute(connectionId, message),
+        }),
+      close: (ws) =>
+        closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId)),
     })
-    // Songuessr 与 Who is Faker 共用相同封包、错误与会话约定，但状态机彼此隔离。
     .ws("/api/songuessr/ws", {
-      upgrade({ headers, request }) {
-        const origin =
-          request?.headers?.get("origin") ??
-          (headers as Record<string, string> | undefined)?.["origin"];
-        if (!isAllowedOrigin(origin, env.clientUrl)) {
-          return { status: 403 };
-        }
-      },
-      open(ws) {
-        const connectionId = crypto.randomUUID();
-        (ws.data as { connectionId?: string }).connectionId = connectionId;
-        const stateSync = createStateSyncSender((payload) => {
-          sendPacket(ws, payload);
-        });
-        songService.registerConnection({
-          id: connectionId,
-          lobbySubscribed: false,
-          send: stateSync.send,
-          resetStateSync: stateSync.reset,
-          sendStateSyncCalibration: stateSync.calibrate,
-          sendPacket: (payload: unknown) => sendPacket(ws, payload),
-          close: (code?: number, reason?: string) => ws.close(code, reason),
-        });
-      },
-      async message(ws, incoming) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-        if (!connectionId) return;
-
-        const raw =
-          typeof incoming === "string"
-            ? incoming
-            : incoming instanceof ArrayBuffer
-              ? decoder.decode(new Uint8Array(incoming))
-              : ArrayBuffer.isView(incoming)
-                ? decoder.decode(
-                    new Uint8Array(
-                      incoming.buffer,
-                      incoming.byteOffset,
-                      incoming.byteLength,
-                    ),
-                  )
-                : incoming;
-
-        const startedAt = performance.now();
-        let parsedId = "unknown";
-        let parsedType = "raw";
-        let traceId: string | undefined;
-        try {
-          const parsed = parseSonGuessrMessage(raw);
-          parsedId = parsed.id;
-          parsedType = parsed.type;
-          traceId = parsed.traceId;
-
-          await executeWithDeduplication({
-            ws,
-            connectionId,
-            parsed,
-            startTime: startedAt,
-            logger,
-            execute: () => songService.execute(connectionId, parsed),
-            serviceName: "SonGuessr",
-          });
-        } catch (error) {
-          if (isAppError(error)) {
-            logger.logOperation({
-              status: 400,
-              durationMs: performance.now() - startedAt,
-              identifier: connectionId,
-              action: `WS ${parsedType}`,
-              level: "WARN",
-              traceId,
-            });
-            sendPacket(
-              ws,
-              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
-            );
-            return;
-          }
-
-          logger.error(`SonGuessr WS 内部异常 [${parsedType}]`, {
-            ...describeError(error),
-            error: error instanceof Error ? error : new Error(String(error)),
-            connectionId,
-            traceId,
-            parsedId,
-          });
-
-          logger.logOperation({
-            status: 500,
-            durationMs: performance.now() - startedAt,
-            identifier: connectionId,
-            action: `WS ${parsedType}`,
-            level: "ERROR",
-            traceId,
-          });
-          sendPacket(
-            ws,
-            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
-          );
-        }
-      },
-      async close(ws) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-        if (connectionId) await songService.unregisterConnection(connectionId);
-      },
+      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
+      message: (ws, incoming) =>
+        handleGameMessage(ws, incoming, decoder, logger, {
+          serviceName: "SonGuessr",
+          parse: parseSonGuessrMessage,
+          execute: (connectionId, message) => songService.execute(connectionId, message),
+        }),
+      close: (ws) =>
+        closeGameConnection(ws, (connectionId) => songService.unregisterConnection(connectionId)),
     })
-    // CCB 与另两个游戏共用封包、错误与会话约定，状态机彼此隔离。
     .ws("/api/ccb/ws", {
-      upgrade({ headers, request }) {
-        const origin =
-          request?.headers?.get("origin") ??
-          (headers as Record<string, string> | undefined)?.["origin"];
-        if (!isAllowedOrigin(origin, env.clientUrl)) {
-          return { status: 403 };
-        }
-      },
-      open(ws) {
-        const connectionId = crypto.randomUUID();
-        (ws.data as { connectionId?: string }).connectionId = connectionId;
-        const stateSync = createStateSyncSender((payload) => {
-          sendPacket(ws, payload);
-        });
-        ccbSvc.registerConnection({
-          id: connectionId,
-          lobbySubscribed: false,
-          send: stateSync.send,
-          resetStateSync: stateSync.reset,
-          sendStateSyncCalibration: stateSync.calibrate,
-          sendPacket: (payload: unknown) => sendPacket(ws, payload),
-          close: (code?: number, reason?: string) => ws.close(code, reason),
-        });
-      },
-      async message(ws, incoming) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-        if (!connectionId) return;
-
-        const raw =
-          typeof incoming === "string"
-            ? incoming
-            : incoming instanceof ArrayBuffer
-              ? decoder.decode(new Uint8Array(incoming))
-              : ArrayBuffer.isView(incoming)
-                ? decoder.decode(
-                    new Uint8Array(
-                      incoming.buffer,
-                      incoming.byteOffset,
-                      incoming.byteLength,
-                    ),
-                  )
-                : incoming;
-
-        const startedAt = performance.now();
-        let parsedId = "unknown";
-        let parsedType = "raw";
-        let traceId: string | undefined;
-        try {
-          const parsed = parseCCBMessage(raw);
-          parsedId = parsed.id;
-          parsedType = parsed.type;
-          traceId = parsed.traceId;
-
-          await executeWithDeduplication({
-            ws,
-            connectionId,
-            parsed,
-            startTime: startedAt,
-            logger,
-            execute: () => ccbSvc.execute(connectionId, parsed),
-            serviceName: "CCB",
-          });
-        } catch (error) {
-          if (isAppError(error)) {
-            logger.logOperation({
-              status: 400,
-              durationMs: performance.now() - startedAt,
-              identifier: connectionId,
-              action: `WS ${parsedType}`,
-              level: "WARN",
-              traceId,
-            });
-            sendPacket(
-              ws,
-              createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
-            );
-            return;
-          }
-
-          logger.error(`CCB WS 内部异常 [${parsedType}]`, {
-            ...describeError(error),
-            error: error instanceof Error ? error : new Error(String(error)),
-            connectionId,
-            traceId,
-            parsedId,
-          });
-
-          logger.logOperation({
-            status: 500,
-            durationMs: performance.now() - startedAt,
-            identifier: connectionId,
-            action: `WS ${parsedType}`,
-            level: "ERROR",
-            traceId,
-          });
-          sendPacket(
-            ws,
-            createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
-          );
-        }
-      },
-      async close(ws) {
-        const connectionId = (ws.data as { connectionId?: string }).connectionId;
-        if (connectionId) await ccbSvc.unregisterConnection(connectionId);
-      },
+      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      open: (ws) => openGameConnection(ws, (connection) => ccbSvc.registerConnection(connection)),
+      message: (ws, incoming) =>
+        handleGameMessage(ws, incoming, decoder, logger, {
+          serviceName: "CCB",
+          parse: parseCCBMessage,
+          execute: (connectionId, message) => ccbSvc.execute(connectionId, message),
+        }),
+      close: (ws) =>
+        closeGameConnection(ws, (connectionId) => ccbSvc.unregisterConnection(connectionId)),
     });
 
   return {
