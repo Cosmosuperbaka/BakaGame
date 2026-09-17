@@ -1405,22 +1405,11 @@ export const sanitizeLyrics = (
     invalid[index] = true;
   }
 
-  const seen = new Set<string>();
   const filtered = lyrics.filter((line, index) => {
     if (invalid[index]) return false;
 
     const normalizedLine = normalizeComparableText(line.text);
     if (forbidden.has(normalizedLine)) return false;
-    if (title.length >= 2 && normalizedLine.includes(title)) return false;
-    for (const token of artistTokens) {
-      if (normalizedLine.includes(token)) return false;
-    }
-    if (album.length >= 2 && normalizedLine.includes(album)) return false;
-
-    // 第三步：重复行去重。副歌反复出现会让同一句占满整个候选窗口，
-    // 只保留首次出现，避免出题截到一片重复文本。
-    if (seen.has(normalizedLine)) return false;
-    seen.add(normalizedLine);
     return true;
   });
 

@@ -105,23 +105,28 @@ describe("NeteaseMusicProvider", () => {
       artist: "测试歌手",
       album: "测试专辑",
     })).toEqual([
-      { time: 3_000, endTime: 7_000, text: "第一句歌词" },
+      { time: 3_000, endTime: 4_000, text: "第一句歌词" },
+      { time: 4_000, endTime: 7_000, text: "我们在唱答案歌" },
       { time: 7_000, endTime: 12_000, text: "第二句歌词" },
     ]);
   });
 
-  test("多歌手合唱歌曲中的单个人名歌词会被正确过滤", () => {
+  test("多歌手合唱歌曲中的单个人名元数据行会被正确过滤，真实歌词完整保留", () => {
     const lyrics = parseLrc([
-      "[00:01.00]（周杰伦）天青色等烟雨",
-      "[00:04.00]（费玉清）而我在等你",
+      "[00:01.00]周杰伦",
+      "[00:02.00]费玉清",
+      "[00:04.00]（周杰伦）天青色等烟雨",
+      "[00:06.00]我不是洛天依",
       "[00:08.00]炊烟袅袅升起",
     ].join("\n"));
 
     expect(sanitizeLyrics(lyrics, {
       title: "千里之外",
-      artist: "周杰伦 / 费玉清",
+      artist: "周杰伦 / 费玉清 / 洛天依",
       album: "依然范特西",
     })).toEqual([
+      { time: 4_000, endTime: 6_000, text: "（周杰伦）天青色等烟雨" },
+      { time: 6_000, endTime: 8_000, text: "我不是洛天依" },
       { time: 8_000, endTime: 13_000, text: "炊烟袅袅升起" },
     ]);
   });
@@ -360,7 +365,7 @@ describe("NeteaseMusicProvider", () => {
     }
   });
 
-  test("连排制作名单整块剔除，重复行只保留首次出现", () => {
+  test("连排制作名单整块剔除，副歌与重复演唱歌词完整保留", () => {
     const lyrics = parseLrc([
       "[00:01.00]翻策：邹铁牛",
       "[00:02.00]美工：问绮灯",
@@ -370,11 +375,14 @@ describe("NeteaseMusicProvider", () => {
       "[00:08.00]第一句真实歌词",
       "[00:10.00]第二句真实歌词",
       "[00:12.00]第一句真实歌词",
+      "[00:14.00]珠玉早沉浮在泥沙",
     ].join("\n"));
 
-    expect(sanitizeLyrics(lyrics, { title: "某歌", artist: "某人" })).toEqual([
+    expect(sanitizeLyrics(lyrics, { title: "珠玉", artist: "严艺丹" })).toEqual([
       { time: 8_000, endTime: 10_000, text: "第一句真实歌词" },
-      { time: 10_000, endTime: 15_000, text: "第二句真实歌词" },
+      { time: 10_000, endTime: 12_000, text: "第二句真实歌词" },
+      { time: 12_000, endTime: 14_000, text: "第一句真实歌词" },
+      { time: 14_000, endTime: 19_000, text: "珠玉早沉浮在泥沙" },
     ]);
   });
 
