@@ -88,7 +88,7 @@ describe("SongLyricPlayer", () => {
     expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
   });
 
-  it("音频播放完毕时自动切换为纯净歌词总览视图（无描述性标题，展示全部选中歌词及翻译）", () => {
+  it("音频播放完毕时自动切换为纯净歌词总览视图（固定高度、无滚动、字体字重与动态一致）", () => {
     const lines: SongLyricLine[] = [
       { time: 1000, endTime: 3000, text: "选中的第一句歌词", translatedLyric: "Translation 1" },
       { time: 3000, endTime: 6000, text: "选中的第二句歌词" },
@@ -101,12 +101,20 @@ describe("SongLyricPlayer", () => {
       />,
     );
 
+    const container = screen.getByTestId("baka-song-lyric-container");
+    expect(container).toHaveClass("h-64");
+
     const overview = screen.getByTestId("baka-song-lyric-overview");
     expect(overview).toBeInTheDocument();
-    expect(overview).toHaveClass("min-h-[11rem]");
+    expect(overview).toHaveClass("h-full");
     expect(screen.queryByText("题目歌词总览")).toBeNull();
     expect(screen.queryByText(/重播可再次查看/)).toBeNull();
-    expect(screen.getByText("选中的第一句歌词")).toBeInTheDocument();
+
+    const lyric1 = screen.getByText("选中的第一句歌词");
+    expect(lyric1).toBeInTheDocument();
+    expect(lyric1).toHaveClass("font-semibold");
+    expect(lyric1).toHaveClass("font-serif");
+
     expect(screen.getByText("Translation 1")).toBeInTheDocument();
     expect(screen.getByText("选中的第二句歌词")).toBeInTheDocument();
   });
@@ -126,6 +134,20 @@ describe("SongLyricPlayer", () => {
     player!.dispatchEvent(wheelEvent);
     expect(stopPropagationSpy).toHaveBeenCalled();
     expect(stopImmediatePropagationSpy).toHaveBeenCalled();
+  });
+
+  it("当外部传入相同内容的新 lines 数组引用时保持稳定渲染，阻止虚假重刷", () => {
+    const lines1: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "稳定歌词" },
+    ];
+    const { rerender } = render(<SongLyricPlayer lines={lines1} />);
+    expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
+
+    const lines2: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "稳定歌词" },
+    ];
+    rerender(<SongLyricPlayer lines={lines2} audioStatus="ready" />);
+    expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
   });
 });
 
