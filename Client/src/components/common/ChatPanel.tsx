@@ -242,7 +242,6 @@ export function ChatPanel({
                       <img
                         src={safeStickerPath}
                         alt="表情"
-                        draggable={false}
                         className="h-20 w-20 object-contain"
                       />
                     ) : (
