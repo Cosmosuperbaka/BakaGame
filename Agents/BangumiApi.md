@@ -228,6 +228,14 @@ subject_type, year, rating)`，`position` 即原版的排序位次。
   全集才能还原两条分支；`nsfw` 在原版客户端里从未被引用。
 - **无法还原 `locked`**：原版会丢弃 `locked` 作品，dump 没有该字段 —— 已知差异。
 
+### 热度 `subjects.heat`（出题排序用）
+
+出题是**两级采样**：先按大类 + 年份区间 + meta 过滤项抽一部作品，再从作品的角色里抽一个。
+线上用 `POST /v0/search/subjects` 的 `sort: "heat"` 排序，dump 没有热度字段，因此用收藏分布
+`favorite` 五个桶（`wish` / `done` / `doing` / `on_hold` / `dropped`）求和近似 —— 与歌库的
+`heat` 同一口径。实测 29,645 部动画里 29,135 部热度 > 0，2010 年抽样前三为
+`けいおん！！` / `涼宮ハルヒの消失` / `Angel Beats!`，与直觉一致。
+
 ### 标签池**禁止落库**（铁律）
 
 原版的标签池（`metaTags` / `rawTags`）是 `filteredAppearances` 的函数，而 `filteredAppearances`
@@ -251,9 +259,9 @@ subject_type, year, rating)`，`position` 即原版的排序位次。
 
 ### 体积
 
-修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 261 MiB）：
+修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 262 MiB）：
 `summary` 列、`aliases` 让 trigram 索引显著增长，`subjects` 补齐音乐类型后 634,649 行，
-另有 `character_appearances`（374,377 行）与两张新表。
+另有 `character_appearances`（374,377 行）、`subjects.heat` 与两张新表。
 文本本身不大（`raw_tags` 约 33 MiB / `summary` 23.6 MiB / `aliases` 3.0 MiB / 标签与声优合计约 1.1 MiB）。
 
 ⚠️ 曾经把标签池 `tag_pool` / `raw_tag_pool` 也落库，库涨到 **343 MiB**（+82 MiB 纯属浪费），
