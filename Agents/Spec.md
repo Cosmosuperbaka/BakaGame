@@ -304,3 +304,25 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   - **本可重试成功**（播放地址、临时授权态、限流期间的空响应）：**严禁缓存空结果**，取空即当次失败、下次回源重试（`cached()` 显式传 `cacheNegative: false`）。
   判据是"这一次空，下一次是否可能非空"：是则不得缓存。任何"缓存了该值导致用户重试永远拿到同一结果"的现象都属于本类缺陷，必须为可重试取值补"首次取空、二次必须回源成功"的回归用例。
 - **缓存不得稀释出题随机性（Randomness Preservation Invariant）**：缓存层只允许缓存**上游原始数据**，严禁把派生出的随机选择结果（歌词切片、随机片段窗口、随机候选索引）写进缓存。随机性必须在**每次出题**重新采样，否则同一首歌会被永远钉在同一段歌词/同一段音频上，"随机出题"退化为"固定出题"。审查缓存命名空间时，凡是缓存对象包含随机选取窗口/偏移量的，一律视为缺陷。
+
+## 15. 前端工程化、架构分层与组件质量铁律 (Frontend Architecture, Clean Modularity & Component Quality Invariants)
+
+### 15.1 反巨型“上帝组件”与容器/展示组件分层 (Anti-God Components & Container/Presentational Separation)
+- **单文件行数硬约束与拆分阈值**：单个 React 组件 `.tsx` 文件行数严禁失控膨胀。当单文件行数超过 300 行时，必须主动审视职责分离；超过 500 行的“上帝组件”严禁并入主线。
+- **业务逻辑与平台副作用专用 Hook 下沉**：复杂音频切片调度、定时看门狗轮询、WebSocket 生命周期管理与会话重连，必须封装为专用 Custom Hook（如 `useAudioClipPlayer`、`useSongRoomLifecycle`、`useLobbySession`），严禁将网络订阅、音视频回放与视图 JSX 混杂在一处。
+- **阶段子视图物理拆分**：多阶段游戏房间必须拆分为独立的阶段组件（如 `WaitingPhase`、`GameStage`、`RoundResultPhase`、`SongSettingsPanels`），根页面组件（如 `SonGuessrRoomPage.tsx`）仅作为顶层路由容器（Container/Smart Component），只负责组装 Store 订阅与分发事件。
+- **基础控件规范化与拒绝假轮子**：连续数值与音量调节必须使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件，严禁手写底层透明 `<input type="range">` 伪装滑块；交互命令必须通过标准 `Button` 组件派发，严禁裸写 `<button>` 或 `<motion.button>`。
+
+### 15.2 状态机权威性与禁止全局 DOM 事件横向绕过 (State Machine Authority & Zero DOM Bypass)
+- **严禁利用全局 DOM 事件传递业务信号**：游戏阶段切换、倒计时超时与玩家动作，必须严格由服务端权威推送或全局 Store（Zustand）统一管理驱动。绝对严禁使用 `window.dispatchEvent(new CustomEvent(...))` 绕过状态机横向传递业务事件（如 `whoisfaker:phase-timeout`）。
+- **声明式超时与动作响应**：所有因时限触发的自动提交或阶段推进，必须基于全局 Store 中的阶段截止时间戳（`phaseTimedOutEndsAt`）声明式响应，确保组件随生命周期优雅解绑，杜绝因组件卸载或事件监听器漏注导致的死锁。
+
+### 15.3 React 19 渲染期纯洁性与 Effect 调度准则 (Render Purity & Non-Cascading Effects)
+- **严禁在 Effect 内部同步调用 setState**：严格遵循 React 官方《You Might Not Need an Effect》设计规范，严禁在 `useEffect` 主体中同步调用 `setState` 触发级联重渲染（`react-hooks/set-state-in-effect`）。
+- **异步调度与衍生计算**：必须将级联状态更新调整为基于 props/state 的实时纯计算衍生状态，或在必要时通过 `window.setTimeout(..., 0)` 将回调推入宏任务队列，消除渲染卡顿与死循环隐患。
+- **严格遵循 Ref 访问规范**：严格遵守 `react-hooks/refs` 规则，严禁在渲染流程中读写 `ref.current`，保证组件渲染过程的纯洁性与可并发性。
+
+### 15.4 骨架屏防御与消除空状态闪烁 (FOES Defense & Skeleton Loading Standards)
+- **防御空状态闪烁 (Flash of Empty State, FOES)**：对于游戏大厅房间列表、排行榜等需要等待 WebSocket 握手或异步数据拉取的容器，在首次连接握手完成前，必须展示骨架屏（`RoomCardSkeleton`），严禁在真实列表到达前瞬间闪现“暂无房间”的假空状态，破坏用户体感。
+- **骨架屏结构对齐**：骨架屏的卡片尺寸、间距与圆角必须与真实卡片严格对齐，并统一配置 `role="status"` 与 `aria-label="正在加载..."` 无障碍语义支持。
+

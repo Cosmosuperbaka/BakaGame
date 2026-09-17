@@ -23,8 +23,24 @@
 - 动效使用项目已有的 `framer-motion`，只用于状态切换、列表变化、面板进入退出和必要反馈。
 - 动效令牌统一维护于 `Client/src/lib/Motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
 - 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/Motion.ts` 保持一致。
-- 全局色值、圆角或字体基线应在现有主题变量和公共组件中统一维护，避免在业务组件中散落重复定义。
 - 全站图片全局禁止原生拖拽与幽灵虚影：在 `Client/src/index.css` 声明 `img { -webkit-user-drag: none; user-drag: none; }` 并在应用启动入口通过 `setupGlobalImageProtection()` 拦截原生 `dragstart` 事件，确保全平台/全浏览器（包括 WebKit、Chromium、Gecko 及移动端）下所有 `<img>` 标签天然免于误触与幽灵框，杜绝在业务组件中人肉散落 `draggable={false}` 补丁。
+
+### 2.1 全局层叠标尺与 Z-Index 语义令牌 (`--z-*`)
+
+全站层叠上下文严格收敛于 `Client/src/index.css` 的 `@theme inline` 语义变量，禁止在业务组件中随手写死任意魔数（如 `z-[80]`、`z-[100]`、`z-[110]`）。所有组件必须且只能使用以下语义标尺：
+
+| 语义变量 | 数值 | 对应的 Tailwind 类 | 适用场景与真相源说明 |
+| :--- | :--- | :--- | :--- |
+| `--z-base` | `0` | `z-base` | 文档流默认层级与普通流内容 |
+| `--z-panel` | `10` | `z-panel` | 游戏房间工作面板、吸顶表格行、固定列 |
+| `--z-sticky` | `20` | `z-sticky` | 页面局部/全局粘性表头、粘性导航栏 |
+| `--z-drawer` | `30` | `z-drawer` | 移动端侧栏抽屉、从边缘划入的操作栏 |
+| `--z-dropdown` | `40` | `z-dropdown` | 常规页面级下拉菜单、未凌驾于模态框之上的弹出选项 |
+| `--z-overlay` | `50` | `z-overlay` | 全局暗色遮罩（`DialogOverlay`、全屏 Backdrop 模糊层） |
+| `--z-modal` | `60` | `z-modal` | 对话框主体（`DialogContent`）、核心弹出模态卡片 |
+| `--z-popover` | `70` | `z-popover` | 允许凌驾于模态框之上的下拉列表（`SelectContent`、`Tooltip`、右键上下文菜单） |
+| `--z-toast` | `100` | `z-toast` | 顶层通知消息（`Toast`）、新版本更新公告栏（`VersionUpdateNotice`） |
+
 
 ## 3. 颜色与信息层级
 
@@ -80,6 +96,8 @@
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
+- 连续数值与音量调节统一使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件（`Client/src/components/ui/Slider.tsx`），自动具备键盘方向键/Home/End 步进及触控无障碍支持，严禁在业务组件中手写透明原生 `<input type="range">` 假滑块。
+- 房间列表与数据面板加载过渡统一使用 `RoomCardSkeleton` 骨架屏组件，尺寸与实际卡片保持严格一致，防御初次加载网络等待期间出现的空状态闪烁（FOES）。
 - 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效；开发环境（`import.meta.env.DEV`）下不发起检测也不展示，避免打断本地调试。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
