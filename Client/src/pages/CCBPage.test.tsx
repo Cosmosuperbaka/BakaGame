@@ -1,31 +1,31 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrRoomSummary } from "@bakagame/shared";
-import SonGuessrPage from "./SonGuessrPage";
+import { useCCBStore } from "@/stores/UseCCBStore";
+import type { CCBRoomSummary } from "@bakagame/shared";
+import CCBPage from "./CCBPage";
 
-const initialStoreState = useSonGuessrStore.getState();
+const initialStoreState = useCCBStore.getState();
 
-const mockRooms: SonGuessrRoomSummary[] = [
+const mockRooms: CCBRoomSummary[] = [
   {
     roomId: "8629",
-    name: "绫地喰喰的房间",
-    phase: "playing",
-    playerCount: 2,
-    spectatorCount: 3,
+    name: "二刺猿测试房一",
+    phase: "guessing",
+    playerCount: 3,
+    spectatorCount: 2,
     onlineCount: 5,
     visibility: "public",
     hasPassword: true,
     allowSpectators: true,
   },
   {
-    roomId: "1234",
-    name: "日常听歌房",
+    roomId: "6666",
+    name: "二刺猿测试房二",
     phase: "waiting",
-    playerCount: 5,
+    playerCount: 4,
     spectatorCount: 0,
-    onlineCount: 5,
+    onlineCount: 4,
     visibility: "public",
     hasPassword: false,
     allowSpectators: false,
@@ -34,34 +34,34 @@ const mockRooms: SonGuessrRoomSummary[] = [
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/songuessr"]}>
+    <MemoryRouter initialEntries={["/ccb"]}>
       <Routes>
-        <Route path="/songuessr" element={<SonGuessrPage />} />
-        <Route path="/songuessr/room/:id" element={<div data-testid="room-target" />} />
+        <Route path="/ccb" element={<CCBPage />} />
+        <Route path="/ccb/room/:id" element={<div data-testid="room-target" />} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
+describe("CCBPage 房间列表渲染与卡片隔离", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useSonGuessrStore.setState(initialStoreState, true);
+    useCCBStore.setState(initialStoreState, true);
   });
 
   afterEach(() => {
-    useSonGuessrStore.setState(initialStoreState, true);
+    useCCBStore.setState(initialStoreState, true);
   });
 
   it("当房间列表为空且已连接时渲染空状态提示", () => {
-    useSonGuessrStore.setState({ rooms: [], connected: true });
+    useCCBStore.setState({ rooms: [], connected: true });
     renderPage();
 
     expect(screen.getByText("暂无房间，点击上方按钮创建一个吧")).toBeInTheDocument();
   });
 
   it("初次加载尚未完成握手同步时渲染骨架屏防御 FOES", () => {
-    useSonGuessrStore.setState({ rooms: [], connected: false });
+    useCCBStore.setState({ rooms: [], connected: false });
     renderPage();
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
@@ -69,30 +69,30 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
   });
 
   it("正常渲染房间列表卡片，且列表项外壳具备实底不透明背景类", () => {
-    useSonGuessrStore.setState({ rooms: mockRooms });
+    useCCBStore.setState({ rooms: mockRooms });
     renderPage();
 
-    expect(screen.getByText("绫地喰喰的房间")).toBeInTheDocument();
+    expect(screen.getByText("二刺猿测试房一")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
     expect(screen.getByText("可观战")).toBeInTheDocument();
 
-    expect(screen.getByText("日常听歌房")).toBeInTheDocument();
-    expect(screen.getByText("1234")).toBeInTheDocument();
+    expect(screen.getByText("二刺猿测试房二")).toBeInTheDocument();
+    expect(screen.getByText("6666")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
     expect(screen.getByText("禁观战")).toBeInTheDocument();
 
-    const roomOne = screen.getByText("绫地喰喰的房间").closest('[role="button"]');
-    expect(roomOne).toHaveTextContent("2玩家");
-    expect(roomOne).toHaveTextContent("3旁观");
+    const roomOne = screen.getByText("二刺猿测试房一").closest('[role="button"]');
+    expect(roomOne).toHaveTextContent("3玩家");
+    expect(roomOne).toHaveTextContent("2旁观");
 
-    const roomTwo = screen.getByText("日常听歌房").closest('[role="button"]');
-    expect(roomTwo).toHaveTextContent("5玩家");
+    const roomTwo = screen.getByText("二刺猿测试房二").closest('[role="button"]');
+    expect(roomTwo).toHaveTextContent("4玩家");
     expect(roomTwo).toHaveTextContent("0旁观");
 
     const digitElements = screen.getAllByText(/^[0-9]+$/);
     for (const digit of digitElements) {
-      if (digit.textContent === "8629" || digit.textContent === "1234" || digit.textContent === "2") {
+      if (digit.textContent === "8629" || digit.textContent === "6666" || digit.textContent === "2") {
         continue;
       }
       expect(digit).toHaveClass("w-[2ch]");
@@ -100,8 +100,7 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
       expect(digit).toHaveClass("tabular-nums");
     }
 
-    // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
-    const roomOneName = screen.getByText("绫地喰喰的房间");
+    const roomOneName = screen.getByText("二刺猿测试房一");
     const cardElement = roomOneName.closest('[role="button"]');
     expect(cardElement).toBeInTheDocument();
     const motionWrapper = cardElement?.parentElement;

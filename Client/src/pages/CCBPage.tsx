@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Eye, EyeOff, Lock, Plus, Users } from "lucide-react";
@@ -15,72 +14,47 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
+import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import { Seo } from "@/components/common/Seo";
-import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import { randomRoomId } from "@/lib/Random";
 import { backdrop, listItem, selectable, spring, listContainer } from "@/lib/Motion";
-import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { useCCBStore } from "@/stores/UseCCBStore";
+import { useLobbySession } from "@/hooks/UseLobbySession";
 import { cn } from "@/lib/Utils";
 import type { CCBRoomSummary } from "@/types";
 
 export default function CCBPage() {
   const navigate = useNavigate();
   const rooms = useCCBStore((state) => state.rooms);
+  const connected = useCCBStore((state) => state.connected);
   const createRoom = useCCBStore((state) => state.createRoom);
   const joinRoom = useCCBStore((state) => state.joinRoom);
   const reconnectRoom = useCCBStore((state) => state.reconnectRoom);
   const setNotice = useCCBStore((state) => state.setNotice);
 
-  const [userName, setUserName] = useState(getSavedUsername);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [joinTarget, setJoinTarget] = useState<CCBRoomSummary | null>(null);
-  const [joinPassword, setJoinPassword] = useState("");
-  const createOrigin = useOriginTracker();
-  const joinOrigin = useOriginTracker();
-
-  useEffect(() => {
-    if (userName.trim()) saveUsername(userName.trim());
-  }, [userName]);
-
-  const handleJoinRoom = useCallback(
-    async (room: CCBRoomSummary, event: React.MouseEvent<HTMLElement>) => {
-      joinOrigin.capture(event);
-      if (!userName.trim()) {
-        setNotice("请先设置用户名", "error");
-        return;
-      }
-      // 先尝试沿用已有会话，刷新后回到同一席位而不是新占一个位置。
-      const reconnected = await reconnectRoom(room.roomId);
-      if (reconnected) {
-        navigate(`/ccb/room/${room.roomId}`);
-        return;
-      }
-      if (room.hasPassword) {
-        setJoinTarget(room);
-        setJoinPassword("");
-      } else {
-        try {
-          await joinRoom(room.roomId, userName.trim());
-          navigate(`/ccb/room/${room.roomId}`);
-        } catch (error) {
-          setNotice((error as { message: string }).message, "error");
-        }
-      }
-    },
-    [joinRoom, navigate, reconnectRoom, setNotice, userName], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const handlePasswordJoin = useCallback(async () => {
-    if (!joinTarget) return;
-    try {
-      await joinRoom(joinTarget.roomId, userName.trim(), joinPassword);
-      setJoinTarget(null);
-      navigate(`/ccb/room/${joinTarget.roomId}`);
-    } catch (error) {
-      setNotice((error as { message: string }).message, "error");
-    }
-  }, [joinPassword, joinRoom, joinTarget, navigate, setNotice, userName]);
+  const {
+    userName,
+    setUserName,
+    createOpen,
+    setCreateOpen,
+    joinTarget,
+    setJoinTarget,
+    joinPassword,
+    setJoinPassword,
+    createOrigin,
+    joinOrigin,
+    handleJoinRoom,
+    handlePasswordJoin,
+    handleCreateRoom,
+    isInitialLoading,
+  } = useLobbySession<CCBRoomSummary>({
+    gamePath: "/ccb",
+    rooms,
+    connected,
+    createRoom,
+    joinRoom,
+    reconnectRoom,
+    showError: (message) => setNotice(message, "error"),
+  });
 
   return (
     <motion.div
@@ -148,7 +122,9 @@ export default function CCBPage() {
           animate="animate"
         >
           <AnimatePresence initial={false}>
-            {rooms.length === 0 ? (
+            {isInitialLoading ? (
+              <RoomCardSkeleton count={3} />
+            ) : rooms.length === 0 ? (
               <motion.div
                 key="empty"
                 variants={backdrop}
@@ -268,24 +244,7 @@ export default function CCBPage() {
         origin={createOrigin.origin}
         defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
         onValidationError={(message) => setNotice(message, "error")}
-        onCreate={async (params) => {
-          if (!userName.trim()) {
-            setNotice("请先设置用户名", "error");
-            return;
-          }
-          try {
-            const generatedRoomId = randomRoomId();
-            await createRoom({
-              ...params,
-              roomId: generatedRoomId,
-              userName: userName.trim(),
-            });
-            setCreateOpen(false);
-            navigate(`/ccb/room/${generatedRoomId}`);
-          } catch (error) {
-            setNotice((error as { message: string }).message, "error");
-          }
-        }}
+        onCreate={handleCreateRoom}
       />
 
       <Dialog

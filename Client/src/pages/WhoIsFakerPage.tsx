@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { listItem, selectable, backdrop, spring, listContainer } from "@/lib/Motion";
-import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { ArrowLeft, Plus, Lock, Users, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -17,70 +15,46 @@ import {
   DialogDescription,
 } from "@/components/ui/Dialog";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useLobbySession } from "@/hooks/UseLobbySession";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
+import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import { Seo } from "@/components/common/Seo";
-import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import { randomRoomId } from "@/lib/Random";
 import { cn } from "@/lib/Utils";
 import type { RoomSummary } from "@/types";
 
 export default function WhoIsFakerPage() {
   const navigate = useNavigate();
   const rooms = useWhoIsFakerStore((state) => state.rooms);
+  const connected = useWhoIsFakerStore((state) => state.connected);
   const createRoom = useWhoIsFakerStore((state) => state.createRoom);
   const joinRoom = useWhoIsFakerStore((state) => state.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
 
-  const [userName, setUserName] = useState(getSavedUsername);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
-  const [joinPassword, setJoinPassword] = useState("");
-  const createOrigin = useOriginTracker();
-  const joinOrigin = useOriginTracker();
-
-  useEffect(() => {
-    if (userName.trim()) saveUsername(userName.trim());
-  }, [userName]);
-
-  const handleJoinRoom = useCallback(
-    async (room: RoomSummary, event: React.MouseEvent<HTMLElement>) => {
-      joinOrigin.capture(event);
-      if (!userName.trim()) {
-        addToast("请先设置用户名", "error");
-        return;
-      }
-      const reconnected = await reconnectRoom(room.roomId);
-      if (reconnected) {
-        navigate(`/whoisfaker/room/${room.roomId}`);
-        return;
-      }
-      if (room.hasPassword) {
-        setJoinTarget(room);
-        setJoinPassword("");
-      } else {
-        try {
-          await joinRoom(room.roomId, userName.trim());
-          navigate(`/whoisfaker/room/${room.roomId}`);
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        }
-      }
-    },
-    // joinOrigin.capture 是稳定的闭包，无需纳入依赖
-    [userName, joinRoom, reconnectRoom, navigate, addToast] // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const handlePasswordJoin = useCallback(async () => {
-    if (!joinTarget) return;
-    try {
-      await joinRoom(joinTarget.roomId, userName.trim(), joinPassword);
-      setJoinTarget(null);
-      navigate(`/whoisfaker/room/${joinTarget.roomId}`);
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
-  }, [joinTarget, joinPassword, userName, joinRoom, navigate, addToast]);
+  const {
+    userName,
+    setUserName,
+    createOpen,
+    setCreateOpen,
+    joinTarget,
+    setJoinTarget,
+    joinPassword,
+    setJoinPassword,
+    createOrigin,
+    joinOrigin,
+    handleJoinRoom,
+    handlePasswordJoin,
+    handleCreateRoom,
+    isInitialLoading,
+  } = useLobbySession<RoomSummary>({
+    gamePath: "/whoisfaker",
+    rooms,
+    connected,
+    createRoom,
+    joinRoom,
+    reconnectRoom,
+    showError: (message) => addToast(message, "error"),
+  });
 
   return (
     <motion.div
@@ -150,7 +124,9 @@ export default function WhoIsFakerPage() {
           animate="animate"
         >
           <AnimatePresence initial={false}>
-            {rooms.length === 0 ? (
+            {isInitialLoading ? (
+              <RoomCardSkeleton count={3} />
+            ) : rooms.length === 0 ? (
               <motion.div
                 key="empty"
                 variants={backdrop}
@@ -263,20 +239,8 @@ export default function WhoIsFakerPage() {
         onOpenChange={setCreateOpen}
         origin={createOrigin.origin}
         defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
-        onCreate={async (params) => {
-          if (!userName.trim()) {
-            addToast("请先设置用户名", "error");
-            return;
-          }
-          try {
-            const rid = randomRoomId();
-            await createRoom({ ...params, roomId: rid, userName: userName.trim() });
-            setCreateOpen(false);
-            navigate(`/whoisfaker/room/${rid}`);
-          } catch (e) {
-            addToast((e as { message: string }).message, "error");
-          }
-        }}
+        onValidationError={(message) => addToast(message, "error")}
+        onCreate={handleCreateRoom}
       />
 
       <Dialog
