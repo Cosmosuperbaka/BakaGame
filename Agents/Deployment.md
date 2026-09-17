@@ -153,7 +153,8 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
    - 切换至 `/BakaGame` 仓库目录。
    - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支，并按 OID 校验或增量下载 LFS SQLite 数据库。
 4. **停机预告与客户端排空 (`Pre-restart Drain`)**：
-   - 调用 `POST http://127.0.0.1:4850/api/system/notify-shutdown` 运维端点（该接口严格校验 `X-Forwarded-For` 与 `X-Real-IP`，拦截任何公网代理请求，仅允许本地回环与私网调用）。
+   - 调用 `POST http://127.0.0.1:4850/api/system/notify-shutdown` 运维端点（该接口**严格且 fail-closed** 地校验 `X-Forwarded-For` 与 `X-Real-IP`：取不到来源 IP 或任一跳为公网 IP 一律 403，仅允许本地回环与私网调用）。
+   - ⚠️ **调用方必须显式带上来源头**（流水线里写的是 `-H "X-Real-IP: 127.0.0.1"`）。本机直连 4850 端口时不经过任何反向代理，两个转发头都不存在；在旧的 fail-open 实现下这会整块跳过校验，而改 fail-closed 之后会被直接拒绝 —— 忘记带头的部署脚本会拿不到 200，只能拿到 403。
    - 服务端向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机公告（`SERVER_SHUTDOWN_MESSAGE`），并立即使 `/readyz` 探针返回 503 摘除流量。
    - 部署脚本预留 3 秒排空缓冲（`sleep 3`），确保客户端长连接在容器网络被 Docker 拆除前安全接收协议、清除会话凭据并平滑退回大厅。
 5. **容器热重启**：

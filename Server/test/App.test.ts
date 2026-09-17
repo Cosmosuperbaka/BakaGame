@@ -500,6 +500,29 @@ test("POST /api/system/notify-shutdown 拦截携带公网代理转发头的外�
   }
 });
 
+test("POST /api/system/notify-shutdown 缺少任何来源 IP 头时同样拒绝，且不触发停机 (fail-closed)", async () => {
+  let shutdownTriggered = false;
+  const { port, stop } = startTestServer({
+    onTriggerShutdown: async () => {
+      shutdownTriggered = true;
+    },
+  });
+
+  try {
+    // 直接打本机端口、不经过任何反向代理时，两个转发头都不存在。
+    // 以前这会让整个校验块落空、直接触发全服停机广播。
+    const res = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as { error?: string };
+    expect(json.error).toContain("Forbidden");
+    expect(shutdownTriggered).toBe(false);
+  } finally {
+    await stop();
+  }
+});
+
 test("POST /api/system/notify-shutdown 本地调用成功，触发广播、探针状态切换与回调执行", async () => {
   let shutdownTriggered = false;
   const { port, stop } = startTestServer({
@@ -516,9 +539,11 @@ test("POST /api/system/notify-shutdown 本地调用成功，触发广播、探�
     const initialReady = await fetch(`http://127.0.0.1:${port}/readyz`);
     expect(initialReady.status).toBe(200);
 
-    // 本地调用停机通知接口
+    // 本地调用停机通知接口：运维脚本必须显式带上私网来源头，
+    // fail-closed 之后缺头的请求一律按来源不可信拒绝。
     const shutdownRes = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
       method: "POST",
+      headers: { "x-real-ip": "127.0.0.1" },
     });
     expect(shutdownRes.status).toBe(200);
     const shutdownBody = await shutdownRes.json();

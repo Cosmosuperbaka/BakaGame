@@ -4,45 +4,7 @@ import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import type { CCBService } from "../../application/CCBService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
-
-export class SlidingWindowRateLimiter {
-  private readonly windows = new Map<string, number[]>();
-  private readonly windowMs: number;
-  private readonly maxRequests: number;
-
-  constructor(options: { windowMs?: number; maxRequests?: number } = {}) {
-    this.windowMs = options.windowMs ?? 60_000;
-    this.maxRequests = options.maxRequests ?? 60;
-  }
-
-  public allow(key: string, now = Date.now()): boolean {
-    const windowStart = now - this.windowMs;
-    const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
-    if (timestamps.length >= this.maxRequests) {
-      this.windows.set(key, timestamps);
-      return false;
-    }
-    timestamps.push(now);
-    this.windows.set(key, timestamps);
-
-    if (this.windows.size > 1000) {
-      for (const [k, ts] of this.windows.entries()) {
-        const valid = ts.filter((t) => t > windowStart);
-        if (valid.length === 0) {
-          this.windows.delete(k);
-        } else {
-          this.windows.set(k, valid);
-        }
-      }
-    }
-
-    return true;
-  }
-
-  public reset(): void {
-    this.windows.clear();
-  }
-}
+import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 
 export class TelemetryRateLimiter {
   private readonly ipLimiter: SlidingWindowRateLimiter;
@@ -318,17 +280,16 @@ export const systemRoutes = ({
         const xRealIp =
           typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"].trim() : undefined;
 
-        if (xForwardedFor || xRealIp) {
-          const forwardedIps = [
-            ...(xForwardedFor ? xForwardedFor.split(",").map((s) => s.trim()) : []),
-            ...(xRealIp ? [xRealIp] : []),
-          ].filter(Boolean);
+        // fail-closed：拿不到任何来源 IP 等于「来源不可信」，必须拒绝，
+        // 不能像以前那样让整个校验块落空、直接触发全服停机广播。
+        const forwardedIps = [
+          ...(xForwardedFor ? xForwardedFor.split(",").map((s) => s.trim()) : []),
+          ...(xRealIp ? [xRealIp] : []),
+        ].filter(Boolean);
 
-          const hasExternalIp = forwardedIps.some((ip) => !isPrivateLanHost(ip));
-          if (hasExternalIp) {
-            set.status = 403;
-            return { error: "Forbidden: 运维接口仅限本机内部调用" };
-          }
+        if (forwardedIps.length === 0 || forwardedIps.some((ip) => !isPrivateLanHost(ip))) {
+          set.status = 403;
+          return { error: "Forbidden: 运维接口仅限本机内部调用" };
         }
 
         fakerService?.notifyShutdown();
