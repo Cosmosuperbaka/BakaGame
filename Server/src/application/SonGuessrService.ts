@@ -9,7 +9,14 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
 import { AppError } from "../domain/Errors";
-import { ensureRoomId, normalizeName, normalizeWord, shuffle, type RandomSource } from "../domain/Rules";
+import {
+  ensureRoomId,
+  normalizeName,
+  normalizeWord,
+  safeEqualToken,
+  shuffle,
+  type RandomSource,
+} from "../domain/Rules";
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
@@ -158,6 +165,8 @@ interface SonGuessrRoomRecord {
   hostReconnectDeadlineAt?: number;
   recentSongIds?: string[];
   recentSubjectIds?: string[];
+  /** 空闲关闭预警是否已经广播过，避免每个巡检周期重复下发。 */
+  expiringNotified?: boolean;
 }
 
 export interface SonGuessrServiceOptions {
@@ -369,6 +378,17 @@ export const AUTO_SONG_CANDIDATE_LIMIT = 5;
  */
 const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
 const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** 同一连接对同一房间的密码尝试：一分钟内最多 5 次，超出直接拒绝。 */
+const JOIN_FAILURE_MAX_ATTEMPTS = 5;
+const JOIN_FAILURE_WINDOW_MS = 60_000;
+
+/** 聊天：每秒 2 条、突发 5 条。 */
+const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
+const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
+
+/** 房间因空闲被关闭前的预警提前量。 */
+const ROOM_EXPIRING_WARNING_MS = 60_000;
 /**
  * 单次番剧歌曲解析允许发起的上游搜索次数（一次搜索只对应一个上游请求，成本最低）。
  */
@@ -458,6 +478,19 @@ export class SonGuessrService {
   private readonly musicLimiter = new SlidingWindowRateLimiter({
     windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
     maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
+  });
+  /**
+   * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
+   * 房间号只有 9000 个且私密房密码没有退避，不设限流就能一直试。
+   */
+  private readonly joinFailureLimiter = new SlidingWindowRateLimiter({
+    windowMs: JOIN_FAILURE_WINDOW_MS,
+    maxRequests: JOIN_FAILURE_MAX_ATTEMPTS,
+  });
+  /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。 */
+  private readonly chatLimiter = new SlidingWindowRateLimiter({
+    windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+    maxRequests: CHAT_RATE_LIMIT_PER_CONNECTION,
   });
 
   constructor(private readonly options: SonGuessrServiceOptions) {
@@ -841,7 +874,8 @@ export class SonGuessrService {
     }
     const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
-      (candidate) => candidate.sessionToken === token && candidate.membership !== "kicked",
+      (candidate) =>
+        safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked",
     );
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
@@ -1910,8 +1944,10 @@ export class SonGuessrService {
   private async guess(connection: ConnectionRecord, songId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
-    const state = round.players[player.id];
-    if (!state || player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
+    if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
+    // 正式成员恰好在 installRound 期间掉线、随后又重连回来时，回合里没有他的状态。
+    // 这时他是合法参与者，只是错过了状态构建 —— 补一份即可，不能按旁观者拦掉。
+    const state = round.players[player.id] ?? this.attachRoundState(room, round, player);
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
     }
@@ -2203,6 +2239,28 @@ export class SonGuessrService {
     this.publishRoom(room);
     this.publishLobby();
     return { waiting: true, roundNumber: room.roundNumber };
+  }
+
+  /**
+   * 为「回合已经开打但没有回合状态」的正式成员补一份状态。
+   * 场景：installRound 只按当时在线的人建状态，玩家恰好在这期间掉线又重连回来。
+   */
+  private attachRoundState(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRound,
+    player: SonGuessrPlayerRecord,
+  ): SonGuessrRoundPlayerState {
+    const state: SonGuessrRoundPlayerState = {
+      audioReady: true,
+      guessesUsed: 0,
+      correct: false,
+      gaveUp: false,
+      deadlineAt: round.settings.showGuessTimer
+        ? this.now() + round.settings.guessDurationSeconds * 1_000
+        : undefined,
+    };
+    round.players[player.id] = state;
+    return state;
   }
 
   private recordTimeout(room: SonGuessrRoomRecord, playerId: string) {

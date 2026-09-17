@@ -37,6 +37,7 @@ import {
   normalizeWord,
   recordEliminations,
   resolveNightEliminations,
+  safeEqualToken,
   shuffle,
   shouldEnterFinalBlankGuess,
   isRoleConfigSatisfied,
@@ -454,7 +455,7 @@ export class WhoIsFakerService {
 
     const room = this.getRoom(ensureRoomId(message.payload.roomId));
     const player = Object.values(room.players).find(
-      (item) => item.sessionToken === message.payload.sessionToken,
+      (item) => safeEqualToken(item.sessionToken, message.payload.sessionToken),
     );
 
     if (!player) {

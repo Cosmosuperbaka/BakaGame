@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { AppError } from "./Errors";
 import {
   ABSTAIN_TARGET_ID,
@@ -37,12 +39,20 @@ export const getRoomRoleLimits = (playerCount: number): RoleLimits => ({
   canEnableBlank: playerCount >= 8,
 });
 
+/**
+ * 剥离控制字符与零宽字符：换行、\x00、零宽空格之类会让 UI 出现伪冒
+ * 与换行错乱（渲染层已转义，不构成 XSS，但会让"看起来不同的名字"其实相同）。
+ */
+const stripControlChars = (value: string): string =>
+  // eslint-disable-next-line no-control-regex
+  value.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\uFEFF]/g, "");
+
 // 用户名只做轻量修剪，唯一性由房间层保证。
-export const normalizeName = (value: string): string => value.trim();
+export const normalizeName = (value: string): string => stripControlChars(value).trim();
 
 // 词语和自由文本统一做空白折叠，避免“看起来不同、实际上相同”的输入。
 export const normalizeWord = (value: string): string =>
-  value
+  stripControlChars(value)
     .trim()
     .replace(/\s+/g, " ");
 
@@ -429,6 +439,25 @@ export const evaluateBlankGuess = (
     createdAt,
     reason,
   };
+};
+
+/**
+ * 会话令牌的常量时间比较。
+ *
+ * 令牌本身是 128bit 随机值，实际被爆破的成本极高；这里补上常量时间比较
+ * 是为了不留下"逐字节提前返回"这类可被计时侧信道利用的写法。
+ */
+export const safeEqualToken = (left?: string, right?: string): boolean => {
+  if (typeof left !== "string" || typeof right !== "string" || left.length === 0 || right.length === 0) {
+    return left === right;
+  }
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  if (leftBytes.length !== rightBytes.length) {
+    timingSafeEqual(leftBytes, leftBytes);
+    return false;
+  }
+  return timingSafeEqual(leftBytes, rightBytes);
 };
 
 export const ensureRoomId = (roomId: string): string => {
