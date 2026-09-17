@@ -147,14 +147,16 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 **外文歌词翻译与总览展示规范**：
 - **服务端四级融合翻译**：在获取歌词四级链路中统一接入 `mergeTranslations`。自动提取网易云官方 `ytlrc` 与 `tlyric`（以及 `yromalrc` 与 `romalrc`），以 `<= 1500ms` 时间戳容差智能对齐，为每行歌词注入 `translatedLyric`。清洗算法保留翻译完整性，确保日文、英文等外文歌曲拥有中文翻译。
 - **逐字动态播放副行渲染**：客户端在 `index.css` 中显式针对 `[class*="lyricSubLine"]` 配置衬线字体、`opacity: 0.65`、`font-size: 0.85rem` 与居中排版，使 AMLL 播放器在歌词点亮时同步展示副文本翻译。
-- **纯净自适应高度总览**：音频播放完成后（`audioPlaybackState === "completed"`），自动切换为全量歌词总览卡片。严格去除“题目歌词总览”、“共x句...”等冗余描述性文本；容器采用 `min-h-[11rem] w-full` 自适应高度（`h-auto`），平铺容纳全部截取歌词行与双语翻译，禁止滚动截断，保障猜题推断体验。
+- **歌词引用稳定防二次重刷**：`SongLyricPlayer` 必须基于歌词文本、起止时间与逐字数据生成稳定摘要键（`linesKey`）进行 memoization，严禁以快照数组引用作为依赖，杜绝音频就绪广播（`audioReadyPlayers` 改变）触发 AMLL DOM 销毁重建与入场渐入动画重播。
+- **固定高度与连贯缩小动效总览**：音频播放完成后（`audioPlaybackState === "completed"`），自动切换为全量歌词总览卡片。严格去除“题目歌词总览”、“共x句...”等冗余描述性文本；动态播放容器与总览容器高度完全一致并统一锁定为固定高度（`h-64 sm:h-72`），坚决杜绝高度跳变；总览内部平铺全部截取歌词行与双语翻译，禁止滚动截断；总览主字体字重严格对齐动态高亮行（`text-base sm:text-lg font-semibold font-serif`）；切换转场接入 `AnimatePresence` 镜面缩小动效（`initial={{ opacity: 0, scale: 1.08 }} animate={{ opacity: 1, scale: 1 }}`），实现镜头平滑拉远全景展现。
 
 ### 歌词清洗
 
 时间轴歌词进入游戏前必须：
 
 - 解析多时间戳 LRC，并重新计算每句结束时间。
-- 删除歌名、歌手、专辑名等标题行。
+- 仅删除整行完全匹配歌名、歌手、专辑名的纯元数据标题行（`forbidden.has(normalizedLine)`），**严禁使用子串包含（`includes`）误杀唱到歌名（如《珠玉》）或歌手名（如《我是初音未来》）的真实歌词**。
+- **严禁对歌词进行全局副歌去重**，必须在整曲时间轴上完整保留副歌与所有重复演唱，杜绝出题切片跨副歌时产生歌词缺失与时间轴空洞。
 - 删除中文和英文作词、作曲、编曲、制作、录音、混音、母带、乐器演奏及发行署名行，包括 `Production Coordination`、`Keyboards & Programming`、`Drums`、`Strings Arranged & Conducted`、`Recorded at`、`Engineered by` 等变体。
 - 过滤后的歌词行数达到设置要求时，交给 `createSongLyricClip` 选择连续歌词片段；单句跨度超过 12 秒的候选片段必须跳过，避免截取过长间奏。
 - 过滤后的歌词行数不足时，允许纯音乐或未上传歌词的歌曲出题，改为在歌曲时长内随机截取 `设置歌词行数 * 6` 秒的音频片段（该降级策略保持不变）。
