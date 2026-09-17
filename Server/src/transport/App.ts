@@ -198,7 +198,15 @@ const isAllowedOrigin = (
   clientUrl?: string,
 ): boolean => {
   if (!origin) return true;
-  if (!clientUrl) return true;
+  // 没有配置白名单时不能「放行一切」——那是 CSWSH 的入口。
+  // 此时退化为「只允许同属私网/本机的来源」，公网浏览器页面一律拒绝。
+  if (!clientUrl) {
+    try {
+      return isPrivateLanHost(new URL(origin).hostname);
+    } catch {
+      return false;
+    }
+  }
   try {
     const originUrl = new URL(origin);
     const allowedUrls = clientUrl
