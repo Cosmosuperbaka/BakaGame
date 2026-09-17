@@ -1,41 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
-  Check,
-  ChevronDown,
-  Clock3,
-  Copy,
   Eye,
-  Flag,
-  Film,
-  FlaskConical,
-  Gamepad2,
-  Globe,
   Headphones,
-  Link,
-  Lock,
   Menu,
   MessageSquare,
-  Minus,
-  Music2,
-  Play,
-  Plus,
-  RotateCcw,
-  Settings,
-  UserCheck,
-  Users,
-  Volume2,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Badge } from "@/components/ui/Badge";
-import { Label } from "@/components/ui/Label";
-import { Switch } from "@/components/ui/Switch";
-import { ScrollArea } from "@/components/ui/ScrollArea";
-import { Seo } from "@/components/common/Seo";
 import {
   Dialog,
   DialogContent,
@@ -44,380 +18,49 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { Seo } from "@/components/common/Seo";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
-import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
 import { PlayerList } from "@/components/songuessr/PlayerList";
-import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
-import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
-import {
-  clearSongSoloRoomId,
-  getSavedUsername,
-  getSongSoloRoomId,
-  saveSongSoloRoomId,
-  saveUsername,
-} from "@/lib/Storage";
-import { randomRoomId } from "@/lib/Random";
-import { sonGuessrWs } from "@/lib/SonGuessrWs";
-import {
-  clearStoredSongMusicSession,
-  getStoredSongMusicSession,
-  saveSongMusicSession,
-  SONGUESSR_MUSIC_SESSION_CHANGED,
-} from "@/lib/SonGuessrMusicSession";
+import { VolumeControl } from "@/components/songuessr/layout/VolumeControl";
+import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
+import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
+import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import {
   backdrop,
-  collapsible,
   duration,
   ease,
-  headerTappable,
-  listContainer,
-  listItem,
-  phaseSwap,
-  pressable,
-  selectable,
   spinner,
   spring,
 } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
-import { useAutoSave } from "@/hooks/UseAutoSave";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { BANGUMI_TRACK_KIND_LABELS, detectExplicitTrackKind, isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
-import type {
-  SongArtistFilter,
-  SongArtistSearchResult,
-  SongPlaylistInfo,
-  SongGuessAttempt,
-  SongGuessDirection,
-  BangumiSubjectSearchResult,
-  BangumiMusicTrack,
-  BangumiMusicTrackKind,
-  AnimeAutoFilters,
-  SonGuessrMusicAccount,
-  SonGuessrPrivateState,
-  SonGuessrPlayerView,
-  SonGuessrRoomSnapshot,
-  SonGuessrRoundSummary,
-} from "@/types";
-
-const SONG_VOLUME_KEY = "songuessr_volume";
-
-/**
- * 出题类命令需要服务端连续回源网易云与 Bangumi，冷缓存下可能耗时几十秒。
- * 它们不能用默认请求超时（超时只会制造「后端还在选曲、前端已提示失败」的假失败），
- * 改为不设超时，并在等待期间每 3 秒轻量同步一次房间状态。
- */
-const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
-const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
-
-const isLongRunningCommand = (type: string): boolean =>
-  (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
-
-const directionSymbol: Record<SongGuessDirection, string> = {
-  higher: "↑",
-  lower: "↓",
-  equal: "=",
-  unknown: "?",
-};
-
-function formatTrackKind(
-  kind?: BangumiMusicTrackKind,
-  track?: BangumiMusicTrack,
-  song?: SonGuessrRoundSummary["song"],
-): string {
-  const candidateText = `${track?.title ?? ""} ${song?.title ?? ""} ${song?.album ?? ""} ${song?.encyclopedia?.tags?.join(" ") ?? ""}`;
-  // 歌曲元数据里明确写着片头曲 / 片尾曲 / 插入歌时以此为准。Bangumi 的关联条目
-  // 分类常比歌曲自身标注更粗（把片尾曲挂在「插入歌」下），只信 Bangumi 会出现
-  // 「片尾曲的歌配着插曲徽章」。判定函数与服务端校准共用，保证两端一致。
-  let effectiveKind: BangumiMusicTrackKind | undefined = detectExplicitTrackKind(candidateText) ?? track?.kind ?? kind;
-  if (!effectiveKind || effectiveKind === "theme") {
-    if (/原声|soundtrack|\bost\b/i.test(candidateText)) effectiveKind = "ost";
-    else if (/角色[歌曲]|character(?:\s*song)?/i.test(candidateText)) effectiveKind = "character";
-    else if (/\bremix\b|重混/i.test(candidateText)) effectiveKind = "remix";
-    else if (/同人/i.test(candidateText)) effectiveKind = "doujin";
-    else if (/印象[曲歌]|image(?:\s*song)?/i.test(candidateText)) effectiveKind = "image";
-    else if (/vocaloid/i.test(candidateText)) effectiveKind = "vocaloid";
-    else if (/\bdrama\b|广播剧|廣播劇/i.test(candidateText)) effectiveKind = "drama";
-    else if (/\bvocal\b/i.test(candidateText)) effectiveKind = "vocal";
-    else if (/\bradio\b|广播|廣播/i.test(candidateText)) effectiveKind = "radio";
-    else if (/\barrange\b|改编|改編|编曲|編曲/i.test(candidateText)) effectiveKind = "arrange";
-    else if (/单曲|單曲|\bsingle\b/i.test(candidateText)) effectiveKind = "single";
-    else if (/精选|精選|\bbest\b|collection/i.test(candidateText)) effectiveKind = "collection";
-    else if (/朗读|朗讀/i.test(candidateText)) effectiveKind = "reading";
-    else if (/艺人|藝人|album/i.test(candidateText)) effectiveKind = "artistAlbum";
-    else effectiveKind = "theme";
-  }
-  return BANGUMI_TRACK_KIND_LABELS[effectiveKind] ?? "主题曲";
-}
-
-function SongSettlementDetails({
-  song,
-  trackKindBadge,
-}: {
-  song: SonGuessrRoundSummary["song"];
-  trackKindBadge?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-      {song.pictureUrl ? (
-        <img src={song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-md" />
-      ) : (
-        <div className="flex h-28 w-28 items-center justify-center rounded-md bg-background/60">
-          <Music2 className="h-9 w-9" />
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-          <h2 className="break-words text-2xl font-bold">{song.title}</h2>
-          {trackKindBadge}
-        </div>
-        <p className="mt-1 text-muted-foreground">
-          {song.artist}{song.album ? ` · ${song.album}` : ""}
-        </p>
-        <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
-          {song.releaseYear ? <Badge variant="outline">{song.releaseYear}</Badge> : null}
-          {song.language ? <Badge variant="outline">{song.language}</Badge> : null}
-          {song.encyclopedia?.tags?.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
-        </div>
-
-        {song.encyclopedia?.aliases?.length ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            别名：{song.encyclopedia.aliases.join("、")}
-          </p>
-        ) : null}
-        {song.encyclopedia?.summary ? (
-          <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-            {song.encyclopedia.summary}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
   const navigate = useNavigate();
-  const { roomId: routeRoomId = "" } = useParams();
-  const [soloRoomId, setSoloRoomId] = useState(() =>
-    solo ? getSongSoloRoomId() || randomRoomId() : "",
-  );
-  const roomId = solo
-    ? soloRoomId
-    : routeRoomId.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()
-      ? ROOM_ID_TEST_MODE
-      : routeRoomId.trim();
-  // 单人模式入口在首页，退出与失败都回首页；多人房间回大厅。
-  const exitPath = solo ? "/" : "/songuessr";
-  const snapshot = useSonGuessrStore((state) => state.snapshot);
-  const privateState = useSonGuessrStore((state) => state.privateState);
-  const storedRoomId = useSonGuessrStore((state) => state.roomId);
-  const roomClosedAt = useSonGuessrStore((state) => state.roomClosedAt);
-  const connected = useSonGuessrStore((state) => state.connected);
-  const createRoom = useSonGuessrStore((state) => state.createRoom);
-  const joinRoom = useSonGuessrStore((state) => state.joinRoom);
-  const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
-  const leaveRoom = useSonGuessrStore((state) => state.leaveRoom);
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const alreadyInRoom = storedRoomId === roomId && snapshot?.roomId === roomId;
-  const [joining, setJoining] = useState(!alreadyInRoom);
-  const [needsName, setNeedsName] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
-  const [needsPassword, setNeedsPassword] = useState(false);
-  const [passwordDraft, setPasswordDraft] = useState("");
-  const [pendingJoinName, setPendingJoinName] = useState("");
-  const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
-  const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
-  const [volume, setVolume] = useState(() => {
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
-        return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
-      }
-    } catch {
-      // 忽略 SSR 或浏览器隐身沙箱异常
-    }
-    return 0.65;
-  });
-  const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">("idle");
-  const [audioRetryToken, setAudioRetryToken] = useState(0);
-  const [musicSessionRevision, setMusicSessionRevision] = useState(0);
-  const [clock, setClock] = useState(() => Date.now());
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const audioReadyKey = useRef<string | null>(null);
-  const audioAutoPlayKey = useRef<string | null>(null);
-  const loadedAudioUrlRef = useRef<string | null>(null);
-  const audioFailureKey = useRef<string | null>(null);
-  const sendCommandRef = useRef(sendCommand);
-  const leavingRef = useRef(false);
-  const volumeRef = useRef(volume);
-  const mountedMusicSessionRef = useRef<string | null>(null);
-  const inFlightCommandsRef = useRef<Set<string>>(new Set());
-  const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
+  const connected = useSonGuessrStore((state) => state.connected);
 
-  const isPending = useCallback(
-    (type: string) => Boolean(pendingCommands[type]),
-    [pendingCommands],
-  );
-
-  // 长任务等待期间定时同步房间状态：出题完成后服务端会推进阶段，
-  // 轮询保证加载中的界面与后端真实进度对齐，而不是死等一个 ACK。
-  const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => Boolean(pendingCommands[type]));
-  useEffect(() => {
-    if (!longRunningPending) return;
-    const timer = setInterval(() => {
-      void sendCommandRef.current("song.room.requestSync").catch(() => {});
-    }, LONG_RUNNING_POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [longRunningPending]);
-
-  const handleSendChatMessage = useCallback(
-    async (chatText: string) => {
-      try {
-        await sendCommand("song.chat.send", { text: chatText });
-      } catch (error) {
-        setNotice((error as { message: string }).message, "error");
-      }
-    },
-    [sendCommand, setNotice],
-  );
-
-  const enterWithName = useCallback(
-    async (name: string, password?: string) => {
-      setJoining(true);
-      try {
-        await joinRoom(roomId, name, password);
-        setNeedsPassword(false);
-        setJoining(false);
-      } catch (error) {
-        const appError = error as { code?: string; message?: string };
-        if (appError.code === "ROOM_NOT_FOUND") {
-          try {
-            await createRoom({
-              roomId,
-              name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
-              visibility: "public",
-              allowSpectators: true,
-              userName: name,
-            });
-            setJoining(false);
-            return;
-          } catch (createError) {
-            setNotice((createError as { message?: string }).message ?? "创建房间失败", "error");
-          }
-        } else if (appError.code === "PASSWORD_INCORRECT" || appError.code === "PASSWORD_REQUIRED") {
-          setPendingJoinName(name);
-          setPasswordDraft("");
-          setNeedsPassword(true);
-          setJoining(false);
-          return;
-        } else {
-          setNotice(appError.message ?? "加入房间失败", "error");
-        }
-        navigate("/songuessr", { replace: true });
-      }
-    },
-    [createRoom, joinRoom, navigate, roomId, setNotice],
-  );
-
-  // 单人房间由本机独占：优先重连上局，房间已消失或房间号撞车时换号重建。
-  const createSoloRoom = useCallback(
-    async (targetRoomId: string) => {
-      await createRoom({
-        roomId: targetRoomId,
-        name: "单人模式",
-        visibility: "public",
-        allowSpectators: false,
-        userName: getSavedUsername() || "单人玩家",
-        solo: true,
-      });
-      saveSongSoloRoomId(targetRoomId);
-    },
-    [createRoom],
-  );
-
-  const enterSoloRoom = useCallback(
-    async (targetRoomId: string) => {
-      try {
-        await createSoloRoom(targetRoomId);
-        setJoining(false);
-        return;
-      } catch (error) {
-        if ((error as { code?: string }).code !== "ROOM_EXISTS") {
-          setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-          navigate("/", { replace: true });
-          return;
-        }
-      }
-      const nextRoomId = randomRoomId();
-      setSoloRoomId(nextRoomId);
-      try {
-        await createSoloRoom(nextRoomId);
-        setJoining(false);
-      } catch (error) {
-        setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-        navigate("/", { replace: true });
-      }
-    },
-    [createSoloRoom, navigate, setNotice],
-  );
-
-  useEffect(() => {
-    if (!roomId || alreadyInRoom) return;
-    if (!isValidRoomId(roomId)) {
-      setNotice("房间号无效，请检查链接", "error");
-      navigate(exitPath, { replace: true });
-      return;
-    }
-
-    let cancelled = false;
-    const tryEnter = async () => {
-      setJoining(true);
-      try {
-        await sonGuessrWs.waitForConnection(8_000);
-      } catch {
-        if (!cancelled) {
-          setNotice("连接服务器超时，请刷新重试", "error");
-          navigate(exitPath, { replace: true });
-        }
-        return;
-      }
-      if (cancelled) return;
-      if (await reconnectRoom(roomId)) {
-        if (!cancelled) setJoining(false);
-        return;
-      }
-      if (cancelled || useSonGuessrStore.getState().roomClosedAt) return;
-      if (solo) {
-        await enterSoloRoom(roomId);
-        return;
-      }
-      const savedName = getSavedUsername();
-      if (!savedName) {
-        setJoining(false);
-        setNameDraft("");
-        setNeedsName(true);
-        return;
-      }
-      await enterWithName(savedName);
-    };
-    void tryEnter();
-    return () => {
-      cancelled = true;
-    };
-  }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!roomClosedAt || leavingRef.current) return;
-    if (solo) clearSongSoloRoomId();
-    navigate(exitPath, { replace: true });
-  }, [exitPath, navigate, roomClosedAt, solo]);
+  const {
+    roomId,
+    snapshot,
+    privateState,
+    joining,
+    needsName,
+    nameDraft,
+    setNameDraft,
+    needsPassword,
+    passwordDraft,
+    setPasswordDraft,
+    handleConfirmName,
+    handleConfirmPassword,
+    runCommand,
+    isPending,
+    leave,
+    sendCommand,
+  } = useSongRoomLifecycle({ solo });
 
   const isPlayingPhase = snapshot?.phase === "playing";
   const isRoundResultPhase = snapshot?.phase === "roundResult";
-
   const round = snapshot?.currentRound;
   const roundSummary = snapshot?.roundSummary;
 
@@ -445,293 +88,28 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       ? roundSummary?.song?.chorus?.endTime
       : undefined;
 
-  useEffect(() => {
-    sendCommandRef.current = sendCommand;
-  }, [sendCommand]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (
-      !audio ||
-      currentPhaseRoundNumber === undefined ||
-      !currentAudioUrl ||
-      currentClipStartTime === undefined
-    ) {
-      if (audio) {
-        audio.pause();
-        loadedAudioUrlRef.current = null;
-      }
-      return;
-    }
-    const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
-    setAudioStatus("loading");
-    setAudioPlaybackState("idle");
-    audio.volume = volumeRef.current;
-    const startSeconds = currentClipStartTime / 1_000;
-    const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
-
-    const moveToStart = () => {
-      audio.volume = volumeRef.current;
-      if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
-    };
-    const stopAtEnd = () => {
-      if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
-        audio.pause();
-        audio.currentTime = startSeconds;
-        setAudioPlaybackState("completed");
-      }
-    };
-    const keepPlaybackInClip = () => {
-      audio.volume = volumeRef.current;
-      if (
-        audio.currentTime < startSeconds - 0.25 ||
-        (endSeconds !== undefined && audio.currentTime >= endSeconds)
-      ) {
-        audio.currentTime = startSeconds;
-      }
-    };
-    let readyState = false;
-    let disposed = false;
-    const ready = () => {
-      if (disposed) return;
-      audio.volume = volumeRef.current;
-      moveToStart();
-      readyState = true;
-      setAudioStatus("ready");
-      const state = useSonGuessrStore.getState();
-      const currentPrivateState = state.privateState;
-      const currentSnapshot = state.snapshot;
-      const currentPlayer = currentSnapshot?.players.find(
-        (player) => player.id === currentPrivateState?.playerId,
-      );
-      if (
-        isPlayingPhase &&
-        currentPrivateState &&
-        !(currentPrivateState.isSubmitter && !currentSnapshot?.testMode) &&
-        currentPlayer?.membership === "active" &&
-        audioReadyKey.current !== loadKey
-      ) {
-        audioReadyKey.current = loadKey;
-        void Promise.resolve(sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })).catch(() => {
-          if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
-        });
-      }
-
-      // 加载完成后自动播放；浏览器禁止自动播放时保留小型播放按钮作为后备。
-      if (audioAutoPlayKey.current !== loadKey) {
-        audioAutoPlayKey.current = loadKey;
-        audio.volume = volumeRef.current;
-        moveToStart();
-        void Promise.resolve(audio.play()).catch(() => {
-          if (!disposed) setAudioPlaybackState("idle");
-        });
-      }
-    };
-    const failed = () => {
-      if (disposed || readyState) return;
-      setAudioPlaybackState("idle");
-      setAudioStatus("error");
-      if (audioFailureKey.current !== loadKey && isPlayingPhase && currentPhaseRoundNumber !== undefined) {
-        audioFailureKey.current = loadKey;
-        void Promise.resolve(sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber })).catch(() => {
-          if (audioFailureKey.current === loadKey) audioFailureKey.current = null;
-        });
-      }
-    };
-    const playing = () => {
-      audio.volume = volumeRef.current;
-      setAudioPlaybackState("playing");
-    };
-    const completed = () => {
-      audio.currentTime = startSeconds;
-      setAudioPlaybackState("completed");
-    };
-
-    audio.addEventListener("loadedmetadata", moveToStart);
-    audio.addEventListener("timeupdate", stopAtEnd);
-    audio.addEventListener("play", keepPlaybackInClip);
-    audio.addEventListener("play", playing);
-    audio.addEventListener("ended", completed);
-    audio.addEventListener("canplay", ready);
-    audio.addEventListener("canplaythrough", ready);
-    audio.addEventListener("loadeddata", ready);
-    audio.addEventListener("error", failed);
-    if (loadedAudioUrlRef.current !== currentAudioUrl) {
-      loadedAudioUrlRef.current = currentAudioUrl;
-      audio.src = currentAudioUrl;
-      audio.load();
-    }
-    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) moveToStart();
-    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) ready();
-    const loadTimeout = window.setTimeout(() => {
-      if (!disposed && !readyState && audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        setAudioStatus("error");
-      }
-    }, 15_000);
-    return () => {
-      disposed = true;
-      window.clearTimeout(loadTimeout);
-      audio.pause();
-      audio.removeEventListener("loadedmetadata", moveToStart);
-      audio.removeEventListener("timeupdate", stopAtEnd);
-      audio.removeEventListener("play", keepPlaybackInClip);
-      audio.removeEventListener("play", playing);
-      audio.removeEventListener("ended", completed);
-      audio.removeEventListener("canplay", ready);
-      audio.removeEventListener("canplaythrough", ready);
-      audio.removeEventListener("loadeddata", ready);
-      audio.removeEventListener("error", failed);
-    };
-  }, [
-    audioRetryToken,
-    currentAudioUrl,
-    currentClipEndTime,
-    currentClipStartTime,
-    currentPhaseRoundNumber,
-    isPlayingPhase,
-    roomId,
-    snapshot?.phase,
-  ]);
-
-  useEffect(() => {
-    const syncAudioOnActive = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      audio.volume = volumeRef.current;
-      if (audioPlaybackState === "completed" || audioPlaybackState === "idle") {
-        audio.pause();
-      }
-    };
-    document.addEventListener("visibilitychange", syncAudioOnActive);
-    window.addEventListener("focus", syncAudioOnActive);
-    return () => {
-      document.removeEventListener("visibilitychange", syncAudioOnActive);
-      window.removeEventListener("focus", syncAudioOnActive);
-    };
-  }, [audioPlaybackState, audioStatus]);
-
-  // 音频可能先于房间私有状态完成加载；私有状态到达后补发一次准备通知。
-  useEffect(() => {
-    if (
-      audioStatus !== "ready" ||
-      !isPlayingPhase ||
-      currentPhaseRoundNumber === undefined ||
-      !currentAudioUrl ||
-      currentClipStartTime === undefined
-    ) return;
-    const currentPlayer = snapshot?.players.find((player) => player.id === privateState?.playerId);
-    if (
-      !privateState ||
-      (privateState.isSubmitter && !snapshot?.testMode) ||
-      currentPlayer?.membership !== "active"
-    ) return;
-    const loadKey = `${roomId}:${snapshot?.phase}:${currentPhaseRoundNumber}:${currentAudioUrl}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
-    if (audioReadyKey.current === loadKey) return;
-    audioReadyKey.current = loadKey;
-    void Promise.resolve(sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })).catch(() => {
-      if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
-    });
-  }, [
-    audioRetryToken,
+  const {
+    audioRef,
+    volume,
+    setVolume,
     audioStatus,
-    currentAudioUrl,
-    currentClipEndTime,
-    currentClipStartTime,
+    audioPlaybackState,
+    playAudio,
+    retryAudio,
+  } = useAudioClipPlayer({
+    roomId,
+    phase: snapshot?.phase,
     currentPhaseRoundNumber,
+    currentAudioUrl,
+    currentClipStartTime,
+    currentClipEndTime,
     isPlayingPhase,
-    privateState,
-    privateState?.isSubmitter,
-    privateState?.playerId,
-    roomId,
-    snapshot?.phase,
-    snapshot?.players,
-    snapshot?.testMode,
-  ]);
-
-  const playAudio = useCallback(async () => {
-    const audio = audioRef.current;
-    if (
-      !audio ||
-      audioStatus !== "ready" ||
-      audioPlaybackState === "playing" ||
-      currentClipStartTime === undefined
-    ) return;
-    const startSeconds = currentClipStartTime / 1_000;
-    const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
-    if (
-      audio.currentTime < startSeconds - 0.25 ||
-      (endSeconds !== undefined && audio.currentTime >= endSeconds)
-    ) {
-      audio.currentTime = startSeconds;
-    }
-    audio.volume = volumeRef.current;
-    try {
-      await audio.play();
-    } catch {
-      setAudioPlaybackState("idle");
-    }
-  }, [audioPlaybackState, audioStatus, currentClipEndTime, currentClipStartTime]);
-
-
-  useEffect(() => {
-    volumeRef.current = volume;
-    window.localStorage.setItem(SONG_VOLUME_KEY, String(volume));
-    if (audioRef.current) audioRef.current.volume = volume;
-  }, [volume]);
-
-  useEffect(() => {
-    const handleSessionChanged = () => setMusicSessionRevision((revision) => revision + 1);
-    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
-    return () => window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
-  }, []);
-
-  useEffect(() => {
-    if (!connected) {
-      mountedMusicSessionRef.current = null;
-      return;
-    }
-    if (
-      !snapshot ||
-      !privateState ||
-      snapshot.roomId !== roomId ||
-      snapshot.hostPlayerId !== privateState.playerId
-    ) {
-      mountedMusicSessionRef.current = null;
-      return;
-    }
-    const storedSession = getStoredSongMusicSession();
-    if (!storedSession) {
-      mountedMusicSessionRef.current = null;
-      return;
-    }
-    const mountKey = `${snapshot.roomId}:${privateState.playerId}:${storedSession.cookie}`;
-    if (mountedMusicSessionRef.current === mountKey) return;
-    mountedMusicSessionRef.current = mountKey;
-    void sendCommand<{ account: SonGuessrMusicAccount }>("song.auth.useCookie", { cookie: storedSession.cookie })
-      .then((result) => {
-        if (!result?.account) return;
-        saveSongMusicSession(
-          { cookie: storedSession.cookie, account: result.account },
-          storedSession.persistent,
-        );
-      })
-      .catch((error) => {
-        mountedMusicSessionRef.current = null;
-        const appError = error as { code?: string; message?: string };
-        if (appError.code === "MUSIC_SESSION_INVALID") {
-          clearStoredSongMusicSession();
-          setNotice("网易云登录状态已失效，请重新扫码登录", "error");
-        }
-      });
-  }, [
-    connected,
-    musicSessionRevision,
-    privateState,
-    roomId,
     sendCommand,
-    setNotice,
-    snapshot,
-  ]);
+  });
+
+  const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
+  const [clock, setClock] = useState(() => Date.now());
 
   const guessDeadlineAt = privateState?.guessDeadlineAt;
   useEffect(() => {
@@ -744,30 +122,22 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     ? Math.max(0, Math.ceil((guessDeadlineAt - clock) / 1_000))
     : 0;
 
-  const handleConfirmName = async () => {
-    const name = nameDraft.trim();
-    if (!name) {
-      setNotice("请输入用户名", "error");
-      return;
-    }
-    saveUsername(name);
-    setNeedsName(false);
-    await enterWithName(name);
-  };
-
-  const handleConfirmPassword = async () => {
-    if (!pendingJoinName || !passwordDraft.trim()) return;
-    setNeedsPassword(false);
-    await enterWithName(pendingJoinName, passwordDraft);
-  };
+  const handleSendChatMessage = useCallback(
+    async (chatText: string) => {
+      try {
+        await sendCommand("song.chat.send", { text: chatText });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
 
   const audioNode = (
     <audio
       ref={(node) => {
         audioRef.current = node;
-        if (node) {
-          node.volume = volumeRef.current;
-        }
+        if (node) node.volume = volume;
       }}
       className="hidden"
       preload="auto"
@@ -776,8 +146,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     />
   );
 
-  // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
-  // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
   const seoNode = (
     <Seo
       description="BakaGame 听歌猜歌对局页面，内容由服务端实时状态驱动。"
@@ -792,82 +160,82 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         {seoNode}
         {audioNode}
         <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
-        {!needsName && !needsPassword ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: duration.base, ease: ease.out }}
-            className="flex flex-col items-center gap-3"
-          >
+          {!needsName && !needsPassword ? (
             <motion.div
-              className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
-              {...spinner}
-            />
-            <span className="text-sm text-muted-foreground">正在加入房间...</span>
-          </motion.div>
-        ) : null}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: duration.base, ease: ease.out }}
+              className="flex flex-col items-center gap-3"
+            >
+              <motion.div
+                className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
+                {...spinner}
+              />
+              <span className="text-sm text-muted-foreground">正在加入房间...</span>
+            </motion.div>
+          ) : null}
 
-        <Dialog
-          open={needsName}
-          onOpenChange={(open) => {
-            if (!open) navigate("/songuessr", { replace: true });
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>设置用户名</DialogTitle>
-              <DialogDescription>
-                进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
-              </DialogDescription>
-            </DialogHeader>
-            <Input
-              autoFocus
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && void handleConfirmName()}
-              placeholder="用户名"
-              maxLength={20}
-            />
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
-                返回大厅
-              </Button>
-              <Button onClick={() => void handleConfirmName()} disabled={!nameDraft.trim()}>
-                进入房间
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          <Dialog
+            open={needsName}
+            onOpenChange={(open) => {
+              if (!open) navigate("/songuessr", { replace: true });
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>设置用户名</DialogTitle>
+                <DialogDescription>
+                  进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
+                </DialogDescription>
+              </DialogHeader>
+              <Input
+                autoFocus
+                value={nameDraft}
+                onChange={(event) => setNameDraft(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && void handleConfirmName()}
+                placeholder="用户名"
+                maxLength={20}
+              />
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
+                  返回大厅
+                </Button>
+                <Button onClick={() => void handleConfirmName()} disabled={!nameDraft.trim()}>
+                  进入房间
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-        <Dialog
-          open={needsPassword}
-          onOpenChange={(open) => {
-            if (!open) navigate("/songuessr", { replace: true });
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>输入房间密码</DialogTitle>
-              <DialogDescription>该链接指向一个私密房间。</DialogDescription>
-            </DialogHeader>
-            <Input
-              autoFocus
-              type="password"
-              value={passwordDraft}
-              onChange={(event) => setPasswordDraft(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && void handleConfirmPassword()}
-              placeholder="请输入密码"
-            />
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
-                返回大厅
-              </Button>
-              <Button onClick={() => void handleConfirmPassword()} disabled={!passwordDraft.trim()}>
-                加入房间
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          <Dialog
+            open={needsPassword}
+            onOpenChange={(open) => {
+              if (!open) navigate("/songuessr", { replace: true });
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>输入房间密码</DialogTitle>
+                <DialogDescription>该链接指向一个私密房间。</DialogDescription>
+              </DialogHeader>
+              <Input
+                autoFocus
+                type="password"
+                value={passwordDraft}
+                onChange={(event) => setPasswordDraft(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && void handleConfirmPassword()}
+                placeholder="请输入密码"
+              />
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => navigate("/songuessr", { replace: true })}>
+                  返回大厅
+                </Button>
+                <Button onClick={() => void handleConfirmPassword()} disabled={!passwordDraft.trim()}>
+                  加入房间
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </>
     );
@@ -877,1824 +245,204 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const isSpectator = me?.membership === "spectator";
 
-  const run = async (type: string, payload: Record<string, unknown> = {}, success?: string) => {
-    if (inFlightCommandsRef.current.has(type)) return;
-    inFlightCommandsRef.current.add(type);
-    setPendingCommands((prev) => ({ ...prev, [type]: true }));
-    try {
-      await sendCommand(type, payload, isLongRunningCommand(type) ? { timeout: 0 } : undefined);
-      if (success) setNotice(success, "success");
-    } catch (error) {
-      const appError = error as { code?: string; message?: string };
-      if (appError.code === "MUSIC_SESSION_INVALID") {
-        mountedMusicSessionRef.current = null;
-        clearStoredSongMusicSession();
-        setNotice("网易云登录状态已失效，请重新扫码登录", "error");
-        return;
-      }
-      setNotice(appError.message ?? "操作失败", "error");
-    } finally {
-      inFlightCommandsRef.current.delete(type);
-      setPendingCommands((prev) => {
-        if (!prev[type]) return prev;
-        const next = { ...prev };
-        delete next[type];
-        return next;
-      });
-    }
-  };
-
-  const leave = async () => {
-    leavingRef.current = true;
-    if (solo) clearSongSoloRoomId();
-    await leaveRoom();
-    navigate(exitPath, { replace: true });
-  };
-
   return (
     <>
       {seoNode}
       {audioNode}
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => void leave()}
-            className="shrink-0"
-            aria-label="离开房间"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <span className="hidden truncate text-base font-semibold md:block">
-            {solo ? "单人模式" : snapshot.name}
-          </span>
-          {solo ? null : (
-            <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
-          )}
-        </div>
-
-        <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
-          {snapshot.roundNumber > 0 ? (
-            <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
-              第 {snapshot.roundNumber} 轮
-            </span>
-          ) : null}
-          {privateState.isSubmitter ? (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-              <Headphones className="h-3.5 w-3.5" />出题人视角
-            </span>
-          ) : null}
-          {isSpectator ? (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-              <Eye className="h-3.5 w-3.5" />旁观视角
-            </span>
-          ) : null}
-        </div>
-
-        <div className="flex items-center justify-end gap-0 md:gap-1">
-          {!connected ? (
-            <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
-          ) : null}
-          <VolumeControl volume={volume} onVolumeChange={setVolume} />
-          {!solo ? (
-            <div className="flex gap-1 md:hidden">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                aria-label="玩家列表"
-                aria-expanded={mobilePanel === "players"}
-                onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                aria-label="聊天"
-                aria-expanded={mobilePanel === "chat"}
-                onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
-              >
-                <MessageSquare className="h-5 w-5" />
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </header>
-
-      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
-          {!solo ? (
-            <>
-              <div
-                className="hidden shrink-0 md:block"
-                style={{ width: PLAYER_COLUMN_WIDTH }}
-                aria-hidden="true"
-              />
-
-              <motion.aside
-                className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
-                initial={false}
-                animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
-                transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
-              >
-                <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-                  <PlayerList
-                    players={snapshot.players}
-                    myPlayerId={privateState.playerId}
-                    isHost={isHost}
-                    phase={snapshot.phase}
-                    allowSpectators={snapshot.allowSpectators}
-                  />
-                </div>
-              </motion.aside>
-            </>
-          ) : null}
-
-          <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
-            <SongGameArea
-              snapshot={snapshot}
-              privateState={privateState}
-              me={me}
-              isHost={isHost}
-              secondsLeft={secondsLeft}
-              volume={volume}
-              onVolumeChange={setVolume}
-              audioStatus={audioStatus}
-              audioPlaybackState={audioPlaybackState}
-              onPlayAudio={() => void playAudio()}
-              onRetryAudio={() => setAudioRetryToken((token) => token + 1)}
-              openSearch={setSearchMode}
-              searchMode={searchMode}
-              closeSearch={() => setSearchMode(null)}
-              onSelectSearchSong={async (songId, mode) => {
-                if (snapshot.settings.questionType === "anime") {
-                  await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", { subjectId: songId });
-                } else {
-                  await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
-                }
-              }}
-              run={run}
-              isPending={isPending}
-            />
-          </main>
-        </section>
-
-        {!solo ? (
-          <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
-            <ChatPanel
-              messages={snapshot.chat ?? []}
-              players={snapshot.players}
-              myPlayerId={privateState.playerId}
-              onSendMessage={handleSendChatMessage}
-            />
-          </aside>
-        ) : null}
-
-        <AnimatePresence>
-          {mobilePanel === "players" ? (
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0, transition: spring.swift }}
-              exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
+        <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => void leave()}
+              className="shrink-0"
+              aria-label="离开房间"
             >
-              <PlayerList
-                players={snapshot.players}
-                myPlayerId={privateState.playerId}
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <span className="hidden truncate text-base font-semibold md:block">
+              {solo ? "单人模式" : snapshot.name}
+            </span>
+            {solo ? null : (
+              <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">
+                #{snapshot.roomId}
+              </span>
+            )}
+          </div>
+
+          <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
+            {snapshot.roundNumber > 0 ? (
+              <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
+                第 {snapshot.roundNumber} 轮
+              </span>
+            ) : null}
+            {privateState.isSubmitter ? (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+                <Headphones className="h-3.5 w-3.5" />出题人视角
+              </span>
+            ) : null}
+            {isSpectator ? (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                <Eye className="h-3.5 w-3.5" />旁观视角
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-end gap-0 md:gap-1">
+            {!connected ? (
+              <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">
+                断线中...
+              </span>
+            ) : null}
+            <VolumeControl volume={volume} onVolumeChange={setVolume} />
+            {!solo ? (
+              <div className="flex gap-1 md:hidden">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  aria-label="玩家列表"
+                  aria-expanded={mobilePanel === "players"}
+                  onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  aria-label="聊天"
+                  aria-expanded={mobilePanel === "chat"}
+                  onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
+                >
+                  <MessageSquare className="h-5 w-5" />
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </header>
+
+        <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
+          <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
+            {!solo ? (
+              <>
+                <div
+                  className="hidden shrink-0 md:block"
+                  style={{ width: PLAYER_COLUMN_WIDTH }}
+                  aria-hidden="true"
+                />
+
+                <motion.aside
+                  className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
+                  initial={false}
+                  animate={{ width: PLAYER_COLUMN_WIDTH, boxShadow: "var(--shadow-2xs)" }}
+                  transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
+                >
+                  <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
+                    <PlayerList
+                      players={snapshot.players}
+                      myPlayerId={privateState.playerId}
+                      isHost={isHost}
+                      phase={snapshot.phase}
+                      allowSpectators={snapshot.allowSpectators}
+                    />
+                  </div>
+                </motion.aside>
+              </>
+            ) : null}
+
+            <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
+              <SongGameArea
+                snapshot={snapshot}
+                privateState={privateState}
+                me={me}
                 isHost={isHost}
-                phase={snapshot.phase}
-                allowSpectators={snapshot.allowSpectators}
+                secondsLeft={secondsLeft}
+                volume={volume}
+                onVolumeChange={setVolume}
+                audioStatus={audioStatus}
+                audioPlaybackState={audioPlaybackState}
+                onPlayAudio={() => void playAudio()}
+                onRetryAudio={retryAudio}
+                openSearch={setSearchMode}
+                searchMode={searchMode}
+                closeSearch={() => setSearchMode(null)}
+                onSelectSearchSong={async (songId, mode) => {
+                  if (snapshot.settings.questionType === "anime") {
+                    await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", { subjectId: songId });
+                  } else {
+                    await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
+                  }
+                }}
+                run={runCommand}
+                isPending={isPending}
               />
-            </motion.aside>
-          ) : null}
-        </AnimatePresence>
+            </main>
+          </section>
 
-        <AnimatePresence>
-          {mobilePanel === "chat" ? (
-            <motion.aside
-              initial={{ x: "100%" }}
-              animate={{ x: 0, transition: spring.swift }}
-              exit={{ x: "100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col overflow-hidden border-l bg-panel shadow-xl lg:hidden"
-            >
+          {!solo ? (
+            <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
               <ChatPanel
                 messages={snapshot.chat ?? []}
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
                 onSendMessage={handleSendChatMessage}
               />
-            </motion.aside>
+            </aside>
           ) : null}
-        </AnimatePresence>
 
-        <AnimatePresence>
-          {mobilePanel !== "none" ? (
-            <motion.div
-              variants={backdrop}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="absolute inset-0 z-20 bg-foreground/20 md:hidden"
-              onClick={() => setMobilePanel("none")}
-            />
-          ) : null}
-        </AnimatePresence>
-      </div>
-
-    </div>
-    </>
-  );
-}
-
-interface SongGameAreaProps {
-  snapshot: SonGuessrRoomSnapshot;
-  privateState: SonGuessrPrivateState;
-  me?: SonGuessrPlayerView;
-  isHost: boolean;
-  secondsLeft: number;
-  volume: number;
-  onVolumeChange: (value: number) => void;
-  audioStatus: "loading" | "ready" | "error";
-  audioPlaybackState: "idle" | "playing" | "completed";
-  onPlayAudio: () => void;
-  onRetryAudio: () => void;
-  openSearch: (mode: "submit" | "guess") => void;
-  searchMode: "submit" | "guess" | null;
-  closeSearch: () => void;
-  onSelectSearchSong: (songId: string, mode: "submit" | "guess") => Promise<void>;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
-  isPending?: (type: string) => boolean;
-}
-
-function SongGameArea(props: SongGameAreaProps) {
-  const phaseRef = useRef<HTMLDivElement>(null);
-
-  return (
-    <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", props.snapshot.testMode && "pb-16")}>
-      <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
-        <div className="p-6 md:p-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={props.snapshot.phase}
-              variants={phaseSwap}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              onAnimationComplete={(definition) => {
-                if (definition !== "animate") return;
-                const node = phaseRef.current;
-                if (node) node.style.transform = "";
-              }}
-              ref={phaseRef}
-              style={{ willChange: "transform, opacity" }}
-            >
-              <GameStage {...props} />
-            </motion.div>
-          </AnimatePresence>
-          {props.searchMode && props.snapshot.settings.questionType === "anime" ? (
-          <BangumiSearchDialog open onOpenChange={(open) => { if (!open) props.closeSearch(); }} title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"} description="番剧信息只会在回合结束后公开。" actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"} onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)} />
-          ) : props.searchMode ? (
-            <SongSearchDialog
-              open
-              onOpenChange={(open) => { if (!open) props.closeSearch(); }}
-              title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
-              description={props.searchMode === "submit" ? "歌曲信息只会在回合结束后公开。" : "每次错误猜测会提供年代、热度、语种与标签反馈。"}
-              actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
-              onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
-            />
-          ) : null}
-        </div>
-      </ScrollArea>
-      {props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} /> : null}
-    </div>
-  );
-}
-
-function GameStage({
-  snapshot,
-  privateState,
-  me,
-  isHost,
-  secondsLeft,
-  audioStatus,
-  audioPlaybackState,
-  onPlayAudio,
-  onRetryAudio,
-  openSearch,
-  run,
-  isPending,
-}: SongGameAreaProps) {
-  if (snapshot.phase === "waiting") {
-    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
-  }
-
-  if (snapshot.phase === "choosingSubmitter") {
-    const activeCandidates = snapshot.players.filter(
-      (player) => player.membership === "active" && player.online && !player.isBot,
-    );
-    const spectatorCandidates = snapshot.players.filter(
-      (player) => player.membership === "spectator" && player.online && !player.isBot,
-    );
-    return (
-      <div className="flex flex-col items-center gap-6">
-        <PhaseHeader icon={UserCheck} title="指定出题人" />
-        {isHost ? (
-          <div className="w-full max-w-xl space-y-5">
-            {spectatorCandidates.length > 0 ? (
-              <section>
-                <SectionHeader title="旁观玩家" icon={<Eye className="h-3.5 w-3.5" />} />
-                <CandidateGrid
-                  candidates={spectatorCandidates}
-                  tone="recommended"
-                  onPick={(playerId) => run("song.game.chooseSubmitter", { playerId })}
+          <AnimatePresence>
+            {mobilePanel === "players" ? (
+              <motion.aside
+                initial={{ x: "-100%" }}
+                animate={{ x: 0, transition: spring.swift }}
+                exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
+                className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
+              >
+                <PlayerList
+                  players={snapshot.players}
+                  myPlayerId={privateState.playerId}
+                  isHost={isHost}
+                  phase={snapshot.phase}
+                  allowSpectators={snapshot.allowSpectators}
                 />
-              </section>
+              </motion.aside>
             ) : null}
-            <section>
-              <SectionHeader title="玩家" icon={<UserCheck className="h-3.5 w-3.5" />} />
-              <CandidateGrid
-                candidates={activeCandidates}
-                tone="default"
-                onPick={(playerId) => run("song.game.chooseSubmitter", { playerId })}
-              />
-            </section>
-          </div>
-        ) : null}
-      </div>
-    );
-  }
+          </AnimatePresence>
 
-  if (snapshot.phase === "submittingSong") {
-    const submitter = snapshot.players.find(
-      (player) => player.id === snapshot.pendingSubmitterPlayerId,
-    );
-    return (
-      <div className="mx-auto flex max-w-md flex-col items-center gap-6 text-center">
-        <PhaseHeader
-          icon={snapshot.settings.questionType === "anime" ? Film : Music2}
-          title={privateState.canSubmitSong ? "轮到你出题" : snapshot.settings.questionType === "anime" ? "等待出题人选番" : "等待出题人选歌"}
-        />
-        {privateState.canSubmitSong ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {snapshot.settings.questionType === "anime" ? "搜索一部有主题曲的番剧。" : "搜索一首可播放的网易云音乐歌曲。"}
-            </p>
-            <Button size="lg" className="min-w-[120px] gap-2" onClick={() => openSearch("submit")}>
-            {snapshot.settings.questionType === "anime" ? <Film className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
-            </Button>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {submitter?.name ?? "出题人"} 正在选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (snapshot.phase === "playing" && snapshot.currentRound) {
-    const canObserveAllAttempts = privateState.isSubmitter || me?.membership === "spectator";
-    const hasGivenUp = privateState.visibleAttempts.some(
-      (attempt) => attempt.playerId === privateState.playerId && attempt.result === "gaveUp",
-    );
-    const hasLyrics = (snapshot.currentRound.lyricClip?.lines?.length ?? 0) > 0;
-    return (
-      <div className="mx-auto max-w-2xl space-y-5">
-        <PhaseHeader icon={Headphones} title={snapshot.settings.questionType === "anime" ? "听歌猜番" : "听歌猜曲"} />
-        <section className="space-y-5 rounded-md bg-muted p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
-            </h3>
-            <div className="flex items-center gap-2">
-              {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
-                <Badge variant={secondsLeft <= 10 ? "destructive" : "outline"} className="gap-1 font-mono">
-                  <Clock3 className="h-3.5 w-3.5" />{secondsLeft}s
-                </Badge>
-              ) : null}
-              {audioStatus === "loading" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">
-                  <motion.span
-                    className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent"
-                    {...spinner}
-                  />
-                </Button>
-              ) : audioStatus === "error" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onRetryAudio} aria-label="重新加载音频">
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              ) : audioPlaybackState === "playing" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频播放中">
-                  <motion.span
-                    className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent"
-                    {...spinner}
-                  />
-                </Button>
-              ) : audioPlaybackState === "completed" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="播放音频">
-                  <Play className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-          {snapshot.settings.questionMode === "automatic" ? (
-            snapshot.settings.questionType === "anime"
-              ? <AnimeAutoFilterSummary snapshot={snapshot} />
-              : <SongAutoFilterSummary snapshot={snapshot} />
-          ) : null}
-          {snapshot.settings.showLyrics ? (
-            <div
-              className="select-none space-y-2 rounded-md bg-background/60 p-5 text-center"
-              draggable={false}
-              onDragStart={(event) => event.preventDefault()}
-            >
-              {hasLyrics ? (
-                snapshot.currentRound.lyricClip.lines.map((line) => (
-                  <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">当前歌曲为纯音乐或无歌词</p>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md bg-background/60 p-5 text-center text-sm text-muted-foreground">
-              本房间已关闭歌词提示，请根据音乐进行猜测
-            </div>
-          )}
-          {snapshot.settings.questionType === "anime" && privateState.submittedAnime ? (
-            <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
-          ) : privateState.submittedSong ? (
-            <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-              本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
-            </div>
-          ) : null}
-          {me?.membership === "spectator" ? (
-            <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>
-          ) : privateState.canGuess || privateState.canGiveUp ? (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {privateState.canGuess ? (
-                <Button className="flex-1 gap-2" onClick={() => openSearch("guess")}>
-                  <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "番剧猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
-                </Button>
-              ) : null}
-              {privateState.canGiveUp ? (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={isPending?.("song.game.giveUp")}
-                  loading={isPending?.("song.game.giveUp")}
-                  onClick={() => void run("song.game.giveUp")}
-                >
-                  {isPending?.("song.game.giveUp") ? (
-                    "正在放弃..."
-                  ) : (
-                    <>
-                      <Flag className="h-4 w-4" />投降
-                    </>
-                  )}
-                </Button>
-              ) : null}
-            </div>
-          ) : hasGivenUp ? (
-            <p className="text-center text-sm text-muted-foreground">
-              {snapshot.solo ? "你已放弃本回合" : "你已放弃本回合，等待其他玩家"}
-            </p>
-          ) : !privateState.isSubmitter ? (
-            <p className="text-center text-sm text-muted-foreground">本轮操作已完成</p>
-          ) : null}
-        </section>
-        <AttemptList
-          attempts={privateState.visibleAttempts}
-          title={canObserveAllAttempts ? "全房猜测" : "我的猜测"}
-          showPlayerName={canObserveAllAttempts}
-        />
-      </div>
-    );
-  }
-
-  if (snapshot.phase === "roundResult" && snapshot.roundSummary) {
-    const summary = snapshot.roundSummary;
-    const isNextRound = Boolean(isPending?.("song.game.nextRound"));
-    const isFinishing = Boolean(isPending?.("song.game.finish"));
-
-    return (
-      <div className="mx-auto max-w-2xl space-y-5">
-        <PhaseHeader icon={snapshot.settings.questionType === "anime" ? Film : Music2} title="答案揭晓" />
-        {snapshot.settings.questionType === "anime" && summary.anime ? (
-          <section className="space-y-4 rounded-md bg-muted p-4">
-            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-              {summary.anime.imageUrl ? (
-                <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-md" />
-              ) : (
-                <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background/60">
-                  <Film className="h-9 w-9" />
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2>
-                <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
-                  {summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}
-                  {summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}
-                  {summary.anime.tags.slice(0, 5).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-border/60 pt-4">
-              <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
-                <Music2 className="h-3.5 w-3.5" />
-                <span>关联歌曲</span>
-              </div>
-              <SongSettlementDetails
-                song={summary.song}
-                trackKindBadge={
-                  <Badge variant="default">
-                    {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
-                  </Badge>
-                }
-              />
-            </div>
-          </section>
-        ) : (
-          <section className="rounded-md bg-muted p-4">
-            <SongSettlementDetails song={summary.song} />
-          </section>
-        )}
-        {snapshot.solo ? (
-          <SoloRoundOutcome
-            correct={summary.correctPlayerIds.includes(privateState.playerId)}
-            me={me}
-            rounds={snapshot.roundNumber}
-          />
-        ) : (
-          <ScoreTable scores={summary.scores} />
-        )}
-        {isHost ? (
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              disabled={isFinishing || isNextRound}
-              loading={isFinishing}
-              onClick={() => void run("song.game.finish")}
-            >
-              {isFinishing ? "正在返回..." : snapshot.solo ? "结束本局" : "返回等待阶段"}
-            </Button>
-            <Button
-              disabled={
-                (snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady) ||
-                isNextRound ||
-                isFinishing
-              }
-              loading={isNextRound}
-              onClick={() => void run("song.game.nextRound")}
-            >
-              {isNextRound ? "正在准备下一轮..." : "再来一轮"}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  // 阶段快照不完整时直接回退到可操作的等待界面，避免留下悬空页面。
-  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
-}
-
-function SongWaitingPhase({
-  snapshot,
-  me,
-  isHost,
-  run,
-  isPending,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  me?: SonGuessrPlayerView;
-  isHost: boolean;
-  run: SongGameAreaProps["run"];
-  isPending?: (type: string) => boolean;
-}) {
-  if (snapshot.solo) {
-    return <SongSoloWaitingPanel snapshot={snapshot} run={run} isPending={isPending} />;
-  }
-
-  const activePlayers = snapshot.players.filter((player) => player.membership === "active");
-  const nonHostActive = activePlayers.filter((player) => !player.isHost);
-  const readyCount = nonHostActive.filter((player) => player.isReady).length;
-  const showProgress = nonHostActive.length > 0;
-  const allReady = activePlayers.length >= 2 && nonHostActive.every((player) => player.isReady);
-  const isReadyPending = Boolean(isPending?.("song.player.setReady"));
-
-  if (isHost) {
-    return (
-      <SongHostWaitingPanel
-        snapshot={snapshot}
-        showProgress={showProgress}
-        readyCount={readyCount}
-        nonHostTotal={nonHostActive.length}
-        allReady={allReady}
-        canStart={allReady && snapshot.musicAccountReady}
-        run={run}
-        isPending={isPending}
-      />
-    );
-  }
-
-  return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-6">
-      <PhaseHeader icon={Gamepad2} title="等待开始" />
-      <SongRoomLinkShare roomId={snapshot.roomId} />
-      <SongSettingsPreview snapshot={snapshot} />
-      {showProgress ? (
-        <div className="w-full space-y-2 text-center">
-          <p className="text-sm text-muted-foreground">
-            {readyCount}/{nonHostActive.length} 名玩家已准备
-          </p>
-          <div className="mx-auto h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostActive.length) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      ) : null}
-      {me?.membership === "active" ? (
-        <Button
-          variant={me.isReady ? "outline" : "default"}
-          size="lg"
-          disabled={isReadyPending}
-          loading={isReadyPending}
-          onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
-          className="gap-2 min-w-[120px]"
-        >
-          {isReadyPending ? (
-            me.isReady ? "正在取消..." : "正在准备..."
-          ) : me.isReady ? (
-            <><X className="h-4 w-4" />取消准备</>
-          ) : (
-            <><Check className="h-4 w-4" />准备</>
-          )}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function SongSoloWaitingPanel({
-  snapshot,
-  run,
-  isPending,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  run: SongGameAreaProps["run"];
-  isPending?: (type: string) => boolean;
-}) {
-  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
-  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
-  const isStarting = Boolean(isPending?.("song.game.start"));
-
-  return (
-    <div className="mx-auto w-full max-w-md space-y-5">
-      <PhaseHeader icon={Headphones} title="准备开始" />
-      <SongAccountSettings snapshot={snapshot} />
-      <SettingsAccordion
-        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
-        title="题目设置"
-        open={questionSettingsOpen}
-        onOpenChange={setQuestionSettingsOpen}
-      >
-        <SongQuestionSettings snapshot={snapshot} solo />
-      </SettingsAccordion>
-      <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
-        title="猜测设置"
-        open={gameSettingsOpen}
-        onOpenChange={setGameSettingsOpen}
-      >
-        <SongGameSettings snapshot={snapshot} solo />
-      </SettingsAccordion>
-      <Button
-        size="lg"
-        disabled={!snapshot.musicAccountReady || isStarting}
-        loading={isStarting}
-        onClick={() => void run("song.game.start")}
-        className="w-full text-base"
-      >
-        {isStarting
-          ? "正在开始游戏..."
-          : snapshot.musicAccountReady
-            ? "开始游戏"
-            : "请先扫码登录网易云账号"}
-      </Button>
-    </div>
-  );
-}
-
-function SongHostWaitingPanel({
-  snapshot,
-  showProgress,
-  readyCount,
-  nonHostTotal,
-  allReady,
-  canStart,
-  run,
-  isPending,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  showProgress: boolean;
-  readyCount: number;
-  nonHostTotal: number;
-  allReady: boolean;
-  canStart: boolean;
-  run: SongGameAreaProps["run"];
-  isPending?: (type: string) => boolean;
-}) {
-  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
-  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
-  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
-  const isStarting = Boolean(isPending?.("song.game.start"));
-
-  return (
-    <div className="mx-auto w-full max-w-md space-y-5">
-      <PhaseHeader icon={Gamepad2} title="等待玩家加入" />
-
-      <SongRoomLinkShare roomId={snapshot.roomId} />
-
-      {showProgress ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>玩家准备进度</span>
-            <span>{readyCount}/{nonHostTotal}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostTotal) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      <SongAccountSettings snapshot={snapshot} />
-
-      <SettingsAccordion
-        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
-        title="题目设置"
-        open={questionSettingsOpen}
-        onOpenChange={setQuestionSettingsOpen}
-      >
-        <SongQuestionSettings snapshot={snapshot} />
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
-        title="猜测设置"
-        open={gameSettingsOpen}
-        onOpenChange={setGameSettingsOpen}
-      >
-        <SongGameSettings snapshot={snapshot} />
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
-        title="房间设置"
-        open={roomSettingsOpen}
-        onOpenChange={setRoomSettingsOpen}
-      >
-        <SongRoomSettings snapshot={snapshot} />
-      </SettingsAccordion>
-
-      <Button
-        size="lg"
-        disabled={!canStart || isStarting}
-        loading={isStarting}
-        onClick={() => void run("song.game.start")}
-        className="w-full text-base"
-      >
-        {isStarting
-          ? "正在开始游戏..."
-          : !snapshot.musicAccountReady && allReady
-          ? "请先扫码登录网易云账号"
-          : allReady
-          ? "开始游戏"
-          : nonHostTotal === 0
-            ? "等待玩家加入"
-            : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
-      </Button>
-    </div>
-  );
-}
-
-function SongRoomLinkShare({ roomId }: { roomId: string }) {
-  const [copied, setCopied] = useState(false);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const shareUrl = `${window.location.origin}/songuessr/room/${roomId}`;
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2_000);
-    } catch {
-      setNotice("复制失败，请手动复制", "error");
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      <Label className="text-xs text-muted-foreground">房间链接</Label>
-      <div className="flex gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {shareUrl}
-          </span>
-        </div>
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={() => void handleCopy()}
-          className={cn(
-            "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-            copied
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
-              : "hover:bg-accent/60",
-          )}
-        >
-          <Copy className="h-3.5 w-3.5" />
-          {copied ? "已复制" : "复制"}
-        </motion.button>
-      </div>
-    </div>
-  );
-}
-
-function SettingsAccordion({
-  icon,
-  title,
-  open,
-  onOpenChange,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-md border">
-      <motion.button
-        type="button"
-        {...pressable}
-        onClick={() => onOpenChange(!open)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
-      >
-        {icon}
-        <span className="flex-1 text-left">{title}</span>
-        <motion.span
-          className="inline-flex text-muted-foreground"
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={spring.snap}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </motion.span>
-      </motion.button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            variants={collapsible}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden"
-          >
-            <div className="border-t px-4 py-4">{children}</div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function SongQuestionSettings({
-  snapshot,
-  solo = false,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  solo?: boolean;
-}) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
-  const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
-  const [autoRotateSubmitter, setAutoRotateSubmitter] = useState(snapshot.settings.autoRotateSubmitter);
-  const [playlistDraft, setPlaylistDraft] = useState(snapshot.settings.autoFilters.playlist?.id ?? "");
-  const [playlist, setPlaylist] = useState(snapshot.settings.autoFilters.playlist);
-  const [artistDraft, setArtistDraft] = useState("");
-  const [artists, setArtists] = useState<SongArtistFilter[]>(snapshot.settings.autoFilters.artists);
-  const [artistResults, setArtistResults] = useState<SongArtistSearchResult[]>([]);
-  const [searchingArtists, setSearchingArtists] = useState(false);
-  const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
-  const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
-  const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
-
-  const resolvePlaylist = async () => {
-    if (resolvingPlaylist) return;
-    setResolvingPlaylist(true);
-    try {
-      const result = await sendCommand<{ playlist: SongPlaylistInfo }>("song.music.playlist.resolve", {
-        value: playlistDraft,
-      });
-      setPlaylist(result.playlist);
-      setNotice(`已读取歌单：${result.playlist.name}（${result.playlist.songCount} 首）`, "success");
-    } catch (error) {
-      setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
-    } finally {
-      setResolvingPlaylist(false);
-    }
-  };
-
-  const searchArtists = async () => {
-    const keyword = artistDraft.trim();
-    if (!keyword) return;
-    setSearchingArtists(true);
-    try {
-      const result = await sendCommand<{ results: SongArtistSearchResult[] }>("song.music.artist.search", { keyword });
-      setArtistResults(result.results);
-    } catch (error) {
-      setNotice((error as { message?: string }).message ?? "搜索歌手失败", "error");
-    } finally {
-      setSearchingArtists(false);
-    }
-  };
-
-  useAutoSave(
-    {
-      questionType,
-      questionMode,
-      autoRotateSubmitter,
-      autoFilters: { playlist, artists, minPopularity },
-      animeAutoFilters: animeFilters,
-    },
-    (payload) => sendCommand("song.room.updateSettings", payload),
-    {
-      enabled: snapshot.phase === "waiting",
-      onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
-    },
-  );
-
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          variant={questionType === "song" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionType("song")}
-        >
-          听歌识曲
-        </Button>
-        <Button
-          type="button"
-          variant={questionType === "anime" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionType("anime")}
-        >
-          听歌识番
-        </Button>
-      </div>
-
-      {!solo ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant={questionMode === "manual" ? "default" : "outline"}
-            className="h-10"
-            onClick={() => setQuestionMode("manual")}
-          >
-            手动出题
-          </Button>
-          <Button
-            type="button"
-            variant={questionMode === "automatic" ? "default" : "outline"}
-            className="h-10"
-            onClick={() => setQuestionMode("automatic")}
-          >
-            自动出题
-          </Button>
-        </div>
-      ) : null}
-
-      {questionMode === "manual" ? (
-        <div className="flex items-center justify-between rounded-md bg-muted/40 p-3">
-          <div>
-            <Label className="text-xs">自动轮流出题</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">每轮按玩家加入顺序自动指定下一位出题人。</p>
-          </div>
-          <Switch checked={autoRotateSubmitter} onCheckedChange={setAutoRotateSubmitter} />
-        </div>
-      ) : null}
-
-      {questionMode === "automatic" && questionType === "song" ? (
-        <div className="space-y-4 rounded-md bg-muted/40 p-3">
-          <div className="space-y-2">
-            <Label className="text-xs">歌单筛选</Label>
-            <div className="flex gap-2">
-              <Input
-                value={playlistDraft}
-                onChange={(event) => setPlaylistDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void resolvePlaylist();
-                  }
-                }}
-                placeholder="粘贴网易云歌单链接或 ID"
-                className="h-9"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={resolvingPlaylist}
-                loading={resolvingPlaylist}
-                onClick={() => void resolvePlaylist()}
+          <AnimatePresence>
+            {mobilePanel === "chat" ? (
+              <motion.aside
+                initial={{ x: "100%" }}
+                animate={{ x: 0, transition: spring.swift }}
+                exit={{ x: "100%", transition: { duration: duration.quick, ease: ease.inOut } }}
+                className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col overflow-hidden border-l bg-panel shadow-xl lg:hidden"
               >
-                {resolvingPlaylist ? "读取中" : "读取"}
-              </Button>
-            </div>
-            {playlist ? (
-              <div className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-2 text-xs">
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <span className="truncate">{playlist.name ?? playlist.id}</span>
-                  <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    setPlaylist(undefined);
-                    setPlaylistDraft("");
-                  }}
-                  aria-label="清除歌单筛选"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+                <ChatPanel
+                  messages={snapshot.chat ?? []}
+                  players={snapshot.players}
+                  myPlayerId={privateState.playerId}
+                  onSendMessage={handleSendChatMessage}
+                />
+              </motion.aside>
             ) : null}
-          </div>
+          </AnimatePresence>
 
-          <div className="space-y-2">
-            <Label className="text-xs">歌手筛选（可多选）</Label>
-            <div className="flex gap-2">
-              <Input
-                value={artistDraft}
-                onChange={(event) => setArtistDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void searchArtists();
-                  }
-                }}
-                placeholder="输入歌手名后搜索"
-                className="h-9"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={searchingArtists}
-                loading={searchingArtists}
-                onClick={() => void searchArtists()}
-              >
-                {searchingArtists ? "搜索中" : "搜索"}
-              </Button>
-            </div>
-            {artistResults.length > 0 ? (
-              <div className="space-y-1 rounded border bg-background p-2">
-                {artistResults.map((artist) => {
-                  const selected = artists.some((item) => item.id === artist.id);
-                  return (
-                    <button
-                      key={artist.id}
-                      type="button"
-                      className={cn("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-muted", selected && "bg-primary/10 text-primary")}
-                      onClick={() => setArtists((current) => selected ? current.filter((item) => item.id !== artist.id) : [...current, { id: artist.id, name: artist.name }])}
-                    >
-                      <span>{artist.name}</span>
-                      <span>{selected ? "已选" : "选择"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-            {artists.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {artists.map((artist) => (
-                  <button
-                    key={artist.id}
-                    type="button"
-                    className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary"
-                    onClick={() => setArtists((current) => current.filter((item) => item.id !== artist.id))}
-                    title="移除歌手筛选"
-                  >
-                    {artist.name} ×
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs">热度筛选</Label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {([0, 1_000, 10_000, 100_000] as const).map((value) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  variant={minPopularity === value ? "default" : "outline"}
-                  onClick={() => setMinPopularity(value)}
-                >
-                  {value === 0 ? "不限" : `${value}+`}
-                </Button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
-          </div>
-          {!playlist && artists.length === 0 ? (
-            <p className="rounded border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
-              未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {questionMode === "automatic" && questionType === "anime" ? (
-        <div className="space-y-3 rounded-md bg-muted/40 p-3">
-          <Label className="text-xs">番剧筛选</Label>
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="w-20 text-sm text-muted-foreground">年份范围</span>
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.startYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, startYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="起始年份" />
-              <span className="text-muted-foreground">-</span>
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="结束年份" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="w-20 text-sm text-muted-foreground">热度范围</span>
-              <div className="flex rounded-md border bg-background p-1">
-                {(["all", "year"] as const).map((ranking) => <Button key={ranking} type="button" size="sm" variant={(animeFilters.ranking ?? "all") === ranking ? "default" : "ghost"} onClick={() => setAnimeFilters((f) => ({ ...f, ranking }))}>{ranking === "all" ? "总榜" : "年榜"}</Button>)}
-              </div>
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" min="1" max="1000" value={animeFilters.subjectLimit ?? 50} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectLimit: e.target.value ? Number(e.target.value) : undefined }))} aria-label="作品数量" />
-              <span className="text-sm text-muted-foreground">部</span>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">网易云歌曲热度</Label>
-              <div className="grid grid-cols-4 gap-1.5">{([0, 1_000, 10_000, 100_000] as const).map((value) => <Button key={value} type="button" size="sm" variant={(animeFilters.songMinPopularity ?? 0) === value ? "default" : "outline"} onClick={() => setAnimeFilters((f) => ({ ...f, songMinPopularity: value }))}>{value === 0 ? "不限" : `${value}+`}</Button>)}</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-    </div>
-  );
-}
-
-function SongGameSettings({
-  snapshot,
-  solo = false,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  solo?: boolean;
-}) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
-  const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
-  const [showGuessTimer, setShowGuessTimer] = useState(snapshot.settings.showGuessTimer);
-  const [lyricsLineCount, setLyricsLineCount] = useState(snapshot.settings.lyricsLineCount);
-  const [maxGuesses, setMaxGuesses] = useState(snapshot.settings.maxGuessesPerRound);
-  const [guessDuration, setGuessDuration] = useState(snapshot.settings.guessDurationSeconds);
-
-  useAutoSave(
-    {
-      lyricsLineCount,
-      showLyrics,
-      maxGuessesPerRound: maxGuesses,
-      guessDurationSeconds: guessDuration,
-      showGuessTimer,
-      bloodMode,
-    },
-    (payload) => sendCommand("song.room.updateSettings", payload),
-    {
-      enabled: snapshot.phase === "waiting",
-      onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
-    },
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">显示歌词</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">关闭后只播放音乐，不显示歌词提示。</p>
-          </div>
-          <Switch checked={showLyrics} onCheckedChange={setShowLyrics} />
-        </div>
-        {showLyrics ? (
-          <CountStepper
-            label="歌词行数"
-            value={lyricsLineCount}
-            minimum={1}
-            maximum={10}
-            onChange={setLyricsLineCount}
-          />
-        ) : null}
-      </div>
-      <CountStepper
-        label="猜测次数"
-        value={maxGuesses}
-        minimum={1}
-        maximum={10}
-        onChange={setMaxGuesses}
-      />
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">猜测时限</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">关闭后本轮不会倒计时。</p>
-          </div>
-          <Switch checked={showGuessTimer} onCheckedChange={setShowGuessTimer} />
-        </div>
-        {showGuessTimer ? (
-          <CountStepper
-            label="每次猜测时限"
-            value={guessDuration}
-            minimum={10}
-            maximum={180}
-            step={10}
-            onChange={setGuessDuration}
-          />
-        ) : null}
-      </div>
-      {!solo ? (
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">血战模式</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">首位答对获得正式玩家数分，之后每位答对者依次少 1 分。</p>
-          </div>
-          <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SongRoomSettings({
-  snapshot,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-}) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [name, setName] = useState(snapshot.name);
-  const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
-  const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
-
-  useAutoSave(
-    {
-      name: name || undefined,
-      visibility: isPrivate ? "private" : "public",
-      password: isPrivate ? password || undefined : "",
-      allowSpectators,
-    },
-    (payload) => sendCommand("song.room.updateSettings", payload),
-    {
-      enabled:
-        snapshot.phase === "waiting" &&
-        (!isPrivate || snapshot.hasPassword || password.trim().length > 0),
-      onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
-    },
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label className="text-xs">房间名称</Label>
-        <Input value={name} onChange={(event) => setName(event.target.value)} className="h-9" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isPrivate ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
-          <Label className="text-xs">私密房间</Label>
-        </div>
-        <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-      </div>
-      <AnimatePresence initial={false}>
-        {isPrivate ? (
-          <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-            <div className="space-y-1.5 pt-1">
-              <Label className="text-xs">密码</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="留空则保留当前密码"
-                className="h-9"
-              />
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label className="text-xs">允许旁观</Label>
-        </div>
-        <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
-      </div>
-    </div>
-  );
-}
-
-function CountStepper({
-  label,
-  value,
-  minimum,
-  maximum,
-  step = 1,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  value: number;
-  minimum: number;
-  maximum: number;
-  step?: number;
-  onChange: (value: number) => void;
-  disabled?: boolean;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  const commit = (raw: string) => {
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      setDraft(String(value));
-      return;
-    }
-    const next = Math.max(minimum, Math.min(maximum, Math.round(parsed)));
-    setDraft(String(next));
-    onChange(next);
-  };
-
-  return (
-    <div className="flex items-center justify-between">
-      <Label className="text-xs">{label}</Label>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9"
-          onClick={() => commit(String(Math.max(minimum, value - step)))}
-          disabled={disabled || value <= minimum}
-          aria-label={`减少${label}`}
-        >
-          <Minus className="h-3 w-3" />
-        </Button>
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={draft}
-          disabled={disabled}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            if (event.target.value !== "") commit(event.target.value);
-          }}
-          onBlur={() => commit(draft)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit(draft);
-          }}
-          aria-label={label}
-          className="h-9 w-16 bg-muted/30 px-1 text-center text-base font-medium tabular-nums shadow-inner"
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9"
-          onClick={() => commit(String(Math.min(maximum, value + step)))}
-          disabled={disabled || value >= maximum}
-          aria-label={`增加${label}`}
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SongSettingsPreview({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const items = [
-    snapshot.settings.questionMode === "automatic"
-      ? "自动出题"
-      : snapshot.settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
-    snapshot.visibility === "private" ? "私密房间" : "公开房间",
-    snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-    snapshot.settings.showLyrics ? `${snapshot.settings.lyricsLineCount} 行歌词` : "歌词已关闭",
-    `每人 ${snapshot.settings.maxGuessesPerRound} 次猜测`,
-    snapshot.settings.showGuessTimer ? `每次 ${snapshot.settings.guessDurationSeconds} 秒` : "猜测时限已关闭",
-    snapshot.settings.bloodMode ? "血战模式" : "普通模式",
-  ];
-  return (
-    <div className="flex flex-wrap justify-center gap-2">
-      {items.map((item) => (
-        <span key={item} className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          {item}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const filters = snapshot.settings.autoFilters;
-  const popularityLabel = filters.minPopularity === 0
-    ? "不限热度"
-    : `热度 ≥ ${filters.minPopularity >= 100_000 ? "100000" : filters.minPopularity}`;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
-      {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
-      <Badge variant="outline">{popularityLabel}</Badge>
-    </div>
-  );
-}
-
-function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const filters = snapshot.settings.animeAutoFilters ?? {};
-  const hasCustomKinds = filters.trackKinds && filters.trackKinds.length > 0 && filters.trackKinds.length < 18;
-  const kindLabel = hasCustomKinds
-    ? filters.trackKinds!.map((kind) => BANGUMI_TRACK_KIND_LABELS[kind] ?? kind).join("、")
-    : undefined;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      <Badge variant="outline">番剧作品</Badge>
-      {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}
-      <Badge variant="outline">{filters.ranking === "year" ? "年榜" : "总榜"}前{filters.subjectLimit ?? 50}部</Badge>
-      {kindLabel ? <Badge variant="outline">歌曲 {kindLabel}</Badge> : null}
-      <Badge variant="outline">网易云热度 ≥ {(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}</Badge>
-    </div>
-  );
-}
-
-function VolumeControl({
-  volume,
-  onVolumeChange,
-}: {
-  volume: number;
-  onVolumeChange: (value: number) => void;
-}) {
-  const percentage = Math.round(volume * 100);
-  return (
-    <motion.div
-      layout
-      className="flex items-center gap-2 rounded-md border border-border/70 bg-panel px-2.5 py-1.5 shadow-sm"
-      title={`播放音量 ${percentage}%`}
-    >
-      <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="relative h-4 w-20 sm:w-28">
-        <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-muted" />
-        <motion.div
-          aria-hidden="true"
-          className="pointer-events-none absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-primary"
-          animate={{ width: `${Math.max(0, Math.min(1, volume)) * 100}%` }}
-          transition={spring.settle}
-        />
-        <motion.span
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm"
-          animate={{ left: `${Math.max(0, Math.min(1, volume)) * 100}%` }}
-          transition={spring.settle}
-        />
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={volume}
-          onChange={(event) => onVolumeChange(Number(event.target.value))}
-          className="absolute inset-0 h-4 w-full cursor-pointer opacity-0"
-          aria-label="播放音量"
-        />
-      </div>
-      <motion.span
-        key={percentage}
-        initial={{ opacity: 0.5, y: 2, scale: 0.92 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={spring.snap}
-        className="min-w-10 text-right text-sm font-semibold tabular-nums text-foreground"
-      >
-        {percentage}%
-      </motion.span>
-    </motion.div>
-  );
-}
-
-function SongTestController({
-  snapshot,
-  run,
-  isPending,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  run: SongGameAreaProps["run"];
-  isPending?: (type: string) => boolean;
-}) {
-  const [open, setOpen] = useState(true);
-  const botCount = snapshot.players.filter((player) => player.isBot).length;
-
-  return (
-    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-30 md:bottom-5 md:left-auto md:right-5">
-      <div className="pointer-events-auto flex justify-end">
-        <motion.div
-          layout
-          transition={spring.settle}
-          className="w-full max-w-full overflow-hidden rounded-md border bg-background/95 shadow-xl backdrop-blur-md md:w-96"
-        >
-          <motion.button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            aria-expanded={open}
-            {...headerTappable}
-            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
-          >
-            <FlaskConical className="h-4 w-4 text-primary" />
-            <span>测试控制器</span>
-            <motion.span
-              aria-hidden="true"
-              className="ml-auto inline-flex text-muted-foreground"
-              animate={{ rotate: open ? 180 : 0 }}
-              transition={spring.snap}
-            >
-              <ChevronDown className="h-4 w-4" />
-            </motion.span>
-          </motion.button>
-          <AnimatePresence initial={false}>
-            {open ? (
+          <AnimatePresence>
+            {mobilePanel !== "none" ? (
               <motion.div
-                variants={collapsible}
+                variants={backdrop}
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="overflow-hidden"
-              >
-                <div className="space-y-2 border-t px-4 pb-4 pt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Users className="h-3.5 w-3.5 text-sky-500" />
-                    测试人机
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 flex-1 gap-1 text-xs"
-                      aria-label="移除一个测试人机"
-                      disabled={botCount === 0 || isPending?.("song.test.removeBot")}
-                      loading={isPending?.("song.test.removeBot")}
-                      onClick={() => void run("song.test.removeBot", { count: 1 })}
-                    >
-                      <Minus className="h-3 w-3" />
-                      减一个
-                    </Button>
-                    <span className="w-10 text-center text-sm font-medium tabular-nums">
-                      {botCount}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 flex-1 gap-1 text-xs"
-                      aria-label="添加一个测试人机"
-                      disabled={isPending?.("song.test.addBot")}
-                      loading={isPending?.("song.test.addBot")}
-                      onClick={() => void run("song.test.addBot", { count: 1 })}
-                    >
-                      <Plus className="h-3 w-3" />
-                      加一个
-                    </Button>
-                  </div>
-                </div>
-              </motion.div>
+                className="absolute inset-0 z-20 bg-foreground/20 md:hidden"
+                onClick={() => setMobilePanel("none")}
+              />
             ) : null}
           </AnimatePresence>
-        </motion.div>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function SectionHeader({ title, icon }: { title: string; icon?: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between mb-2.5 px-1">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-        {icon ?? <UserCheck className="h-3.5 w-3.5" />}
-        {title}
-      </div>
-    </div>
-  );
-}
-
-function CandidateGrid({
-  candidates,
-  tone,
-  onPick,
-}: {
-  candidates: Array<{ id: string; name: string }>;
-  tone: "recommended" | "default";
-  onPick: (playerId: string) => void;
-}) {
-  if (candidates.length === 0) {
-    return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
-  }
-
-  return (
-    <motion.div
-      className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-      variants={listContainer(candidates.length)}
-      initial="initial"
-      animate="animate"
-    >
-      {candidates.map((candidate) => (
-        <motion.button
-          key={candidate.id}
-          type="button"
-          variants={listItem}
-          {...selectable}
-          onClick={() => onPick(candidate.id)}
-          className={cn(
-            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            tone === "recommended"
-              ? "border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
-              : "hover:border-primary/40 hover:bg-primary/5",
-          )}
-        >
-          <div className="flex items-center gap-1.5">
-            {tone === "recommended" ? (
-              <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
-            ) : (
-              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span className="break-words font-medium">{candidate.name}</span>
-          </div>
-        </motion.button>
-      ))}
-    </motion.div>
-  );
-}
-
-function AttemptList({
-  attempts,
-  title,
-  showPlayerName = false,
-}: {
-  attempts: SongGuessAttempt[];
-  title: string;
-  showPlayerName?: boolean;
-}) {
-  if (attempts.length === 0) return null;
-  return (
-    <section className="overflow-hidden rounded-md bg-muted">
-      <div className="border-b border-background px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
-      </div>
-      <div>
-        {attempts.map((attempt) => (
-          <div
-            key={attempt.id}
-            className="flex flex-col gap-2 border-b border-background px-4 py-3 last:border-b-0 sm:flex-row sm:items-center"
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              {attempt.result === "correct" ? (
-                <Check className="h-4 w-4 text-emerald-600" />
-              ) : attempt.result === "timeout" ? (
-                <Clock3 className="h-4 w-4 text-amber-600" />
-              ) : attempt.result === "gaveUp" ? (
-                <Flag className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <X className="h-4 w-4 text-red-500" />
-              )}
-              <span className="min-w-0 break-words text-sm">
-                {showPlayerName ? `${attempt.playerName}：` : ""}
-                {attempt.guessedAnime
-                  ? (attempt.guessedAnime.nameCn || attempt.guessedAnime.name)
-                  : attempt.guessedSong
-                  ? `${attempt.guessedSong.title} · ${attempt.guessedSong.artist}`
-                  : attempt.result === "gaveUp"
-                    ? "投降"
-                    : "超时"}
-              </span>
-            </div>
-            {attempt.feedback ? (
-              <div className="flex flex-wrap gap-1 text-[11px]">
-                <Badge variant="outline">
-                  年份 {attempt.feedback.releaseYear ?? "?"} {directionSymbol[attempt.feedback.releaseYearDirection]}
-                </Badge>
-                <Badge variant="outline">
-                  热度 {attempt.feedback.popularity ?? "?"} {directionSymbol[attempt.feedback.popularityDirection]}
-                </Badge>
-                {attempt.feedback.languageMatch !== undefined ? (
-                  <Badge variant="outline">语种 {attempt.feedback.languageMatch ? "✓" : "×"}</Badge>
-                ) : null}
-                {attempt.feedback.sharedTags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function SoloRoundOutcome({
-  correct,
-  me,
-  rounds,
-}: {
-  correct: boolean;
-  me?: SonGuessrPlayerView;
-  rounds: number;
-}) {
-  return (
-    <section className="rounded-md bg-muted p-4 text-center">
-      <p className="text-base font-semibold">{correct ? "本轮答对" : "本轮未答对"}</p>
-      <div className="mt-2 flex items-center justify-center gap-4 text-sm text-muted-foreground">
-        <span>累计得分 {me?.score ?? 0}</span>
-        <span data-testid="solo-correct-rounds">答对 {me?.correctGuesses ?? 0}/{rounds} 轮</span>
-      </div>
-    </section>
-  );
-}
-
-function ScoreTable({
-  scores,
-}: {
-  scores: Array<{
-    playerId: string;
-    playerName: string;
-    score: number;
-    delta: number;
-    correctGuesses: number;
-    totalGuesses: number;
-  }>;
-}) {
-  return (
-    <section className="overflow-hidden rounded-md bg-muted">
-      <div className="border-b border-background px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">得分统计</h3>
-      </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-background text-xs text-muted-foreground">
-            <th className="px-4 py-2 text-left font-medium">玩家</th>
-            <th className="px-4 py-2 text-right font-medium">本轮</th>
-            <th className="px-4 py-2 text-right font-medium">总分</th>
-            <th className="px-4 py-2 text-right font-medium">命中</th>
-          </tr>
-        </thead>
-        <tbody>
-          {scores.map((score, index) => (
-            <tr key={score.playerId} className="border-b border-background last:border-b-0">
-              <td className="px-4 py-2.5 font-medium">{index === 0 ? "🏆 " : ""}{score.playerName}</td>
-              <td className="px-4 py-2.5 text-right">{score.delta >= 0 ? "+" : ""}{score.delta}</td>
-              <td className="px-4 py-2.5 text-right font-semibold">{score.score}</td>
-              <td className="px-4 py-2.5 text-right text-muted-foreground">
-                {score.correctGuesses}/{score.totalGuesses}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    </>
   );
 }
