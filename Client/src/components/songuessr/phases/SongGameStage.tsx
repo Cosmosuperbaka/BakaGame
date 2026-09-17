@@ -367,6 +367,8 @@ export function GameStage(props: SongGameAreaProps) {
             <SongLyricPlayer
               lines={snapshot.currentRound.lyricClip?.lines ?? []}
               audioRef={audioRef}
+              audioPlaybackState={audioPlaybackState}
+              audioStatus={audioStatus}
             />
           ) : (
             <div className="rounded-md bg-background/60 p-5 text-center text-sm text-muted-foreground">

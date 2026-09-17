@@ -1,16 +1,41 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { LyricPlayer } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
+import { BookOpen } from "lucide-react";
 import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
 
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
   audioRef?: RefObject<HTMLAudioElement | null>;
+  audioPlaybackState?: "idle" | "playing" | "completed";
+  audioStatus?: "loading" | "ready" | "error";
   className?: string;
 }
 
-export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerProps) {
+export function SongLyricPlayer({
+  lines,
+  audioRef,
+  audioPlaybackState = "idle",
+  audioStatus = "ready",
+  className,
+}: SongLyricPlayerProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 4. 禁用滚轮滚动歌词组件：在捕获阶段截断事件，阻止进入 AMLL 内部触发重排与内部滚动
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const preventWheel = (e: WheelEvent) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
+    el.addEventListener("wheel", preventWheel, { capture: true, passive: true });
+    return () => {
+      el.removeEventListener("wheel", preventWheel, { capture: true });
+    };
+  }, []);
+
   const amllLines = useMemo<LyricLine[]>(() => {
     return lines.map((line) => {
       const hasWords = Array.isArray(line.words) && line.words.length > 0;
@@ -46,12 +71,20 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
   const [currentTime, setCurrentTime] = useState<number>(firstLineTime);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
+  // 1. 状态机严格同步：只有当音频明确进入 playing 且 ready 状态时才允许开始逐字时间轴
   useEffect(() => {
     const audio = audioRef?.current;
     if (!audio) {
       setCurrentTime(firstLineTime);
+      setIsPlaying(false);
       return;
     }
+
+    const isAudioActuallyPlaying =
+      audioPlaybackState === "playing" &&
+      audioStatus === "ready" &&
+      !audio.paused &&
+      !audio.ended;
 
     const resolveCurrentMs = () => {
       const audioMs = Math.floor(audio.currentTime * 1000);
@@ -61,22 +94,29 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
       return audioMs;
     };
 
-    setCurrentTime(resolveCurrentMs());
-    setIsPlaying(!audio.paused && !audio.ended);
+    if (isAudioActuallyPlaying) {
+      setCurrentTime(resolveCurrentMs());
+      setIsPlaying(true);
+    } else {
+      setCurrentTime(firstLineTime);
+      setIsPlaying(false);
+    }
 
     let rafId: number | null = null;
 
     const tick = () => {
-      if (!audio.paused && !audio.ended) {
+      if (!audio.paused && !audio.ended && audioPlaybackState === "playing") {
         setCurrentTime(resolveCurrentMs());
         rafId = requestAnimationFrame(tick);
       }
     };
 
     const onPlay = () => {
-      setIsPlaying(true);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(tick);
+      if (audioPlaybackState === "playing") {
+        setIsPlaying(true);
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(tick);
+      }
     };
 
     const onPause = () => {
@@ -89,7 +129,9 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
     };
 
     const onTimeUpdate = () => {
-      setCurrentTime(resolveCurrentMs());
+      if (audioPlaybackState === "playing") {
+        setCurrentTime(resolveCurrentMs());
+      }
     };
 
     audio.addEventListener("play", onPlay);
@@ -98,8 +140,7 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("seeked", onTimeUpdate);
 
-    if (!audio.paused && !audio.ended) {
-      setIsPlaying(true);
+    if (isAudioActuallyPlaying) {
       rafId = requestAnimationFrame(tick);
     }
 
@@ -111,7 +152,7 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("seeked", onTimeUpdate);
     };
-  }, [audioRef, firstLineTime]);
+  }, [audioRef, firstLineTime, audioPlaybackState, audioStatus]);
 
   if (lines.length === 0) {
     return (
@@ -127,8 +168,45 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
     );
   }
 
+  // 3. 歌曲播放完毕后，自动展示全量歌词总览视图
+  if (audioPlaybackState === "completed") {
+    return (
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative flex h-44 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/70 p-3 sm:h-52 sm:p-4 select-none",
+          className,
+        )}
+        data-testid="baka-song-lyric-overview"
+      >
+        <div className="mb-2 flex items-center justify-between border-b border-border/30 pb-1.5 text-xs text-muted-foreground font-serif">
+          <span className="flex items-center gap-1.5 font-medium text-foreground/80">
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            题目歌词总览
+          </span>
+          <span>共 {lines.length} 句（重播可再次查看逐字播放）</span>
+        </div>
+        <div className="space-y-2 overflow-y-auto px-1 py-1 text-center font-serif scrollbar-hidden">
+          {lines.map((line, idx) => (
+            <div key={`${line.time}-${idx}`} className="group space-y-0.5">
+              <p className="text-sm font-semibold text-foreground tracking-wide sm:text-base">
+                {line.text}
+              </p>
+              {line.translatedLyric ? (
+                <p className="text-xs text-muted-foreground">
+                  {line.translatedLyric}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
+      ref={containerRef}
       className={cn(
         "relative h-44 w-full overflow-hidden rounded-md border border-border/40 bg-background/60 p-2 sm:h-52 select-none",
         className,

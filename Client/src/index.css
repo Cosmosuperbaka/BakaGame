@@ -325,6 +325,26 @@ img {
   mix-blend-mode: normal !important;
 }
 
+/* 居中排版与消除右侧死留白 */
+.baka-lyric-player [class*="lyricLineWrapper"] {
+  align-items: center !important;
+  text-align: center !important;
+}
+
+.baka-lyric-player [class*="lyricLine"] {
+  text-align: center !important;
+  transform-origin: center center !important;
+}
+
+.baka-lyric-player [class*="lyricMainLine"] {
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.baka-lyric-player [class*="lyricMainLine"] span {
+  text-align: center !important;
+}
+
 .baka-lyric-player [class*="lyricLine"],
 .amll-lyric-player [class*="lyricLine"],
 .baka-lyric-player [class*="lyricMainLine"],
@@ -336,9 +356,16 @@ img {
   text-shadow: none !important;
 }
 
+.baka-lyric-player [class*="interludeDots"],
+.amll-lyric-player [class*="interludeDots"] {
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
 .baka-lyric-player [class*="interludeDots"] > *,
 .amll-lyric-player [class*="interludeDots"] > * {
   background-color: var(--color-foreground) !important;
 }
+
 
 
