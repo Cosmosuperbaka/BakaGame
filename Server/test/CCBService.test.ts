@@ -137,7 +137,7 @@ describe("CCB 房间生命周期", () => {
       roundNumber: 0,
       testMode: false,
       hasPassword: false,
-      settings: { mode: "normal", maxAttempts: 10, metaTags: ["动画"] },
+      settings: { mode: "normal", maxAttempts: 10, metaTags: ["", "", ""] },
     });
     expect(created.snapshot.players).toHaveLength(1);
     expect(created.snapshot.players[0]).toMatchObject({

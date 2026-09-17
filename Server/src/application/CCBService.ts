@@ -71,6 +71,7 @@ const applySettingsPatch = (settings: CCBGameSettings, patch: Partial<CCBGameSet
   if (patch.characterTagNum !== undefined) settings.characterTagNum = patch.characterTagNum;
   if (patch.tagBan !== undefined) settings.tagBan = patch.tagBan;
   if (patch.globalPick !== undefined) settings.globalPick = patch.globalPick;
+  if (patch.subjectSearch !== undefined) settings.subjectSearch = patch.subjectSearch;
 
   if (
     settings.startYear !== undefined &&
