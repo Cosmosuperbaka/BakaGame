@@ -296,29 +296,49 @@ img {
 }
 
 /* AMLL 逐字歌词 Vintage-Paper 复古纸质主题深度适配 */
-.baka-lyric-player.amll-lyric-player {
+.baka-lyric-player {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.baka-lyric-player .amll-lyric-player,
+.amll-lyric-player {
+  width: 100% !important;
+  height: 100% !important;
   mix-blend-mode: normal !important;
   color: var(--color-foreground) !important;
   font-family: var(--font-serif) !important;
   --amll-lp-color: var(--color-foreground);
-  --amll-lp-inactive-opacity: 0.35;
+  --amll-lp-inactive-opacity: 0.45;
   --amll-lp-active-scale: 1.04;
   --amll-lp-font-size: 1.125rem;
   --amll-lp-line-height: 1.8;
   --amll-lp-font-weight: 600;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  overflow: hidden !important;
   user-select: none;
 }
 
-.baka-lyric-player .amll-lyric-line {
+.baka-lyric-player *,
+.amll-lyric-player * {
+  mix-blend-mode: normal !important;
+}
+
+.baka-lyric-player [class*="lyricLine"],
+.amll-lyric-player [class*="lyricLine"],
+.baka-lyric-player [class*="lyricMainLine"],
+.amll-lyric-player [class*="lyricMainLine"],
+.baka-lyric-player [class*="lyricWord"],
+.amll-lyric-player [class*="lyricWord"] {
   color: var(--color-foreground) !important;
   font-family: var(--font-serif) !important;
   text-shadow: none !important;
 }
 
-.baka-lyric-player .amll-lyric-word {
-  color: var(--color-foreground) !important;
+.baka-lyric-player [class*="interludeDots"] > *,
+.amll-lyric-player [class*="interludeDots"] > * {
+  background-color: var(--color-foreground) !important;
 }
+
 

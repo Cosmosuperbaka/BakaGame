@@ -42,21 +42,33 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
     });
   }, [lines]);
 
-  const [currentTime, setCurrentTime] = useState<number>(0);
+  const firstLineTime = lines[0]?.time ?? 0;
+  const [currentTime, setCurrentTime] = useState<number>(firstLineTime);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
   useEffect(() => {
     const audio = audioRef?.current;
-    if (!audio) return;
+    if (!audio) {
+      setCurrentTime(firstLineTime);
+      return;
+    }
 
-    setCurrentTime(Math.floor(audio.currentTime * 1000));
+    const resolveCurrentMs = () => {
+      const audioMs = Math.floor(audio.currentTime * 1000);
+      if (audio.paused || audioMs < firstLineTime) {
+        return firstLineTime;
+      }
+      return audioMs;
+    };
+
+    setCurrentTime(resolveCurrentMs());
     setIsPlaying(!audio.paused && !audio.ended);
 
     let rafId: number | null = null;
 
     const tick = () => {
       if (!audio.paused && !audio.ended) {
-        setCurrentTime(Math.floor(audio.currentTime * 1000));
+        setCurrentTime(resolveCurrentMs());
         rafId = requestAnimationFrame(tick);
       }
     };
@@ -73,11 +85,11 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      setCurrentTime(Math.floor(audio.currentTime * 1000));
+      setCurrentTime(resolveCurrentMs());
     };
 
     const onTimeUpdate = () => {
-      setCurrentTime(Math.floor(audio.currentTime * 1000));
+      setCurrentTime(resolveCurrentMs());
     };
 
     audio.addEventListener("play", onPlay);
@@ -99,7 +111,7 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("seeked", onTimeUpdate);
     };
-  }, [audioRef]);
+  }, [audioRef, firstLineTime]);
 
   if (lines.length === 0) {
     return (
@@ -127,7 +139,7 @@ export function SongLyricPlayer({ lines, audioRef, className }: SongLyricPlayerP
         {lines.map((l) => l.text).join(" ")}
       </div>
       <LyricPlayer
-        className="baka-lyric-player"
+        className="baka-lyric-player h-full w-full"
         lyricLines={amllLines}
         currentTime={currentTime}
         playing={isPlaying}
