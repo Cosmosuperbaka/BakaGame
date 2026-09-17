@@ -373,7 +373,11 @@ jobs:
 
             # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
             say "向在线玩家广播停机维护通知并摘除就绪流量"
-            curl -sS -X POST http://127.0.0.1:4850/api/system/notify-shutdown 2>/dev/null || true
+            # 该端点已改为 fail-closed：拿不到来源 IP 一律按不可信拒绝，
+            # 这里必须显式声明本机回环来源，否则会被自己的校验挡在门外。
+            curl -sS -X POST \
+              -H "X-Real-IP: 127.0.0.1" \
+              http://127.0.0.1:4850/api/system/notify-shutdown 2>/dev/null || true
             say "等待客户端接收通知与平滑退回大厅 (3s)"
             sleep 3
 
