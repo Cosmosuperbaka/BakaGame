@@ -74,7 +74,7 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 |---|---|---|---|
 | 1 | 客户端抽题 + AES 密钥下发 + `/api/room-info` 泄露答案密文 | 服务端出题，答案不出服务端 | 待 P1 |
 | 2 | `isPartialCorrect` 由客户端上报并被信任 | 服务端依据本地数据判定 | 待 P1 |
-| 3 | `⏱️` 是双码点（`U+23F1 U+FE0F`），`Array.from` 长度算 2 → `guessCount` 虚高、`quickGuess` 加成判定偏差 | 标记计数一律用 `countAttemptMarks`（正则整体匹配），严禁按字符长度算 | 待 P1 |
+| 3 | ~~`⏱️` 是双码点（`U+23F1 U+FE0F`）导致 `guessCount` 虚高、`quickGuess` 加成偏差~~ —— **实测不成立，原判断有误**：`calculateWinnerScore` 的 strip 字符类 `/[✌👑💀🏳️🏆]/` 里含 FE0F，会把 `⏱️` 一并剥成单码点 `⏱`，**两条路径都按 1 次计** | 仍保留两套计数函数（次数上限用正则、加分档位用码点），并各写回归用例钉死行为；`⏱️` 与 `🏳️` 的 FE0F 必须照抄进字符类，**擅自去掉 FE0F 会真的把两条路径改成不一致** | ✅ 已核实 |
 | 4 | `syncPlayersCompleted` / `globalPickState` 用 `Map`/`Set` 只在内存，重启即失 | 改为可序列化派生结构，保留原版「从猜测历史重建」的自愈思路 | 待 P2 |
 | 5 | 无任何服务端限流（`createRoom`、`playerGuess`、`tagBanSharedMetaTags` 尤甚） | 在服务端补事件限流 | 待 P1 |
 | 6 | `startAutoClean` 被调用两次（两组 interval 重复注册）；`/api/quick-join` 注释说排除进行中房间但代码没过滤 | 不移植这两个实现，本项目的清理只由 `runHousekeeping` 单一入口驱动 | ✅ 天然规避 |
@@ -98,22 +98,58 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 | 字段 | 判定 |
 |---|---|
 | `gender` | 相等 → `yes`，否则 `no`；非 `male/female` 一律归一为 `?` |
-| `popularity` | `diff = guess − answer`；`abs(diff) ≤ 5%` → `=`；`diff > 0` → `≤20% ? '+' : '++'`；`diff < 0` → `≥−20% ? '-' : '--'` |
-| `rating`（最高分） | 任一方 `−1` → `?`；`abs(diff) ≤ 0.3` → `=`；`diff > 0` → `≤1 ? '+' : '++'`；否则 `-` / `--` |
-| `appearancesCount` | `0 → =`；`> 0 → ≤2 ? '+' : '++'`；`< 0 → ≥−2 ? '-' : '--'` |
-| `latestAppearance` / `earliestAppearance` | 同作品数；任一方 `−1` → `?`；双方均 `−1` → `=` |
-| `shared_appearances` | **用 `appearanceIds` 求交集**（不是作品名），产出 `{first, firstOriginal, firstCn, count}` |
-| `metaTags` | 作品标签 ∩ + 角色标签 ∩（`id_tags`）+ CV 交集；shared 优先补足到 `subjectTagNum` / `characterTagNum` |
+| `popularity` | `diff = guess − answer`，阈值以**答案**为基准：`abs ≤ 5%` → `=`；`diff > 0` → `≤20% ? '+' : '++'`；`diff < 0` → `≥−20% ? '-' : '--'` |
+| `rating`（最高分，**不是平均分**） | 任一方 `−1` → `?`；`abs ≤ 0.3` → `=`；`diff > 0` → `≤1 ? '+' : '++'`；否则 `≥−1 ? '-' : '--'`。⚠️ `guess` 字段**保留原值 `−1`**（只有年份字段才换成 `?`）；⚠️ 边界在 IEEE754 下**不对称** —— `8.3−8 = +0.3000000000000007` 给 `+`，`7.7−8 = −0.2999999999999998` 给 `=`，必须照抄 |
+| `appearancesCount` | 差为 `0` → `=`；`> 0` → `≤2 ? '+' : '++'`；`< 0` → `≥−2 ? '-' : '--'` |
+| `latestAppearance` / `earliestAppearance` | 任一方 `−1` 时：**双方都 `−1` → `=`**，否则 `?`；两侧都有值时 `0 → =`、`>0 → ≤2 ? '+' : '++'`、`<0 → ≥−2 ? '-' : '--'` |
+| `shared_appearances` | **两套口径并存**：`first` 按**作品名**求交集；`firstOriginal` / `firstCn` 按 **subject id** 求交集取首个；`count` 优先取 id 交集大小、为空时**回落**到名字交集大小 |
+| `metaTags` | `commonTags` 模式：作品标签与角色标签各「先取交集、再用非交集项补足」到 `subjectTagNum` / `characterTagNum`，声优取交集**不截断**，`shared` 只含三类交集；默认模式：`guess` 全量、`shared` 取交集 |
 
 **高亮与箭头（反直觉，务必照抄）**：
 
 - 绿 = `yes` / `=`；黄 = `+` / `-`；`?` 灰。
 - 箭头：`+*` → `↓`（提示往低猜），`-*` → `↑`（提示往高猜）。
 
-### 6.4 计分
+### 6.4 标记与计分（P1 落地）
 
-基础分 2；大赢家 +12；好快的猜 +2 / +1；作品分 +1；出题人分按其他玩家表现结算。
-`CCBRules.ts` 必须是**纯函数**，先写表驱动测试再接服务端。
+真相源 `server/utils/gameplay.js`；落地在 `Server/src/domain/CCBRules.ts`，
+表驱动用例在 `Server/test/CCBRules.test.ts`。**改规则先改这里，再改实现。**
+
+标记存在 `player.guesses`（字符串），队伍模式另有 `room.currentGame.teamGuesses[teamId]`。
+
+| 标记 | 触发条件 | 追加方式 |
+|---|---|---|
+| `⏱️` | 服务端计时到期 | `+=`（**可叠加**；队伍模式追加队友数份并覆盖到全体队友） |
+| `💡` | 猜错但 `shared_appearances.count > 0` | `+=` |
+| `✔` | 猜对 | `+=` |
+| `❌` | 猜错且无共同作品 | `+=` |
+| `✌` / `👑` | 猜对后结算 | `stripEndMarks + mark`，**顺序是先 `✔` 再追加**，成品形如 `...✔✌`；隐式去重 |
+| `💀` | 次数用尽（`enforceAttemptLimit`） | 剥离式去重（**唯一使用 `appendEndMarkOnce` 的地方**） |
+| `🏳️` | 投降（`enterObserverMode`） | 剥离式去重。**次数已用尽时记 `💀` 而不是 `🏳️`** |
+| `🏆` | 队伍模式下**其他队友**收到「队友猜对」 | `includes` 检查后 `+=`；同时把队友置为 `_tempObserver` |
+
+**两套「次数」计数器，务必分清，不要合并**：
+
+- `countCCBAttemptMarks(marks)`：正则 `/(?:⏱️?|💡|✔|❌)/g` 整体匹配 —— 用于**次数上限**判定、
+  剩余次数显示、大赢家判定（`=== 1`）。这是「次数」的唯一权威。
+- `calculateCCBWinnerScore({guesses}).guessCount`：先 `replace(/[✌👑💀🏳️🏆]/g,'')` 再数**码点** ——
+  只用于**好快的猜分档**。实测两者对 `⏱️` 都给 1（见 §5 缺陷 #3）。
+
+**计分**：
+
+| 项 | 规则 |
+|---|---|
+| 基础分 | 普通/同步固定 `2`；血战 `base = max(1, 初始参战人数 − 此前已胜人数)` |
+| `quickGuess` | 仅非大赢家：`guessCount ∈ [2,3]` → `+2`；`∈ [4, ceil(totalRounds/2)]` → `+1`；其余 `0`。**按已用次数分档，不是按剩余时间** |
+| `bigWin`（`👑`） | 固定 `+12`。产生条件 = **首次猜测即猜中** 或 **本命头像 `avatarId` 就是答案角色**（**不是**「唯一猜对」/「第一个猜对」） |
+| 作品分 | `+1`，仅给「猜错但同作品」中**每个队伍的第一次**（同序号按用户名升序破平），且**胜者不参与**；`breakdown.partial = 1` |
+| 出题人（普通/同步） | 大赢家 → `−max(1, ⌊大赢家得分/2⌋)`「纯在送分」；有胜者且次数 `≤3` → `−1`「太简单了」；`> totalRounds/2` → `+1`「难度适中」；其余 `0`；**无胜者 → `−1`「没人猜中」** |
+| 出题人（血战） | 大赢家同上；无胜者 → `−2 × max(1, ⌈参战人数/2⌉)`；否则按猜中率 `≤0.25`→`1×`「难度偏高」、`≥0.75`→`1×`「难度偏低」、其余`2×`「难度适中」，乘数 = `max(1, ⌈参战人数/2⌉)` |
+| 猜错 / 超时 / 投降 | **一律不扣分**。唯一可能为负的只有出题人 |
+
+**结束条件**：次数用尽 → `💀`（**淘汰语义，但不移出房间、只禁猜**；队伍共享计数，任一成员耗尽即全队 `💀`）；
+普通模式**一旦出现胜者立即结算**；同步模式要等本轮全员完成（`syncReadyToEnd`）；
+血战要等 `remainingPlayers` 归零。投降后**留在房间观战**（`_tempObserver`）。
 
 ### 6.5 数据层规则（P0 已落地，P1 只消费）
 
@@ -158,6 +194,43 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 「多出的作品」经断言**100% 由音乐类型或 nsfw 解释**；角色标签的少量差异来自上游标签快照版本
 （本库用 421 标签的新快照，CCBFilter 用 dump 里的旧快照 372 标签）。
 
+### 6.6 三种模式的差异
+
+| | 普通 | 同步 | 血战 |
+|---|---|---|---|
+| 推进单位 | 无轮次，出胜者即结算 | `syncRound` 递增，**全员完成才进下一轮** | 进度制（`remainingCount`），与轮次无关 |
+| 胜者集合 | 单个（`👑` 优先于 `✌`） | 本轮所有 `✌`/`👑` | `nonstopWinners` 按猜对顺序累积，**每次结算都加分** |
+| 队友得分 | `0`（`result: 'teamwin'`） | **共享胜者分数**（队友字符串被 `syncTeamGuesses` 覆盖成含 `✌`，于是全队进胜者集合） | `0`（`result: 'teamwin'`） |
+| 超时 | 重置本人计时 | 视为本轮完成 | 同普通 |
+| 结算触发 | 出现胜者 或 全员结束 | 本轮全员完成且已有胜者 | `remainingPlayers` 归零 |
+
+### 6.7 设置字段对照（原版 → 本项目）
+
+| 原版 | 本项目 | 说明 |
+|---|---|---|
+| `metaTags: string[]`（有序，`[0]` 为 primary） | 同名 | 大类与 meta 标签混编；`[0]` 决定作品类型 |
+| `maxAttempts` | 同名 | 猜测次数上限，缺省 `10` |
+| `timeLimit`（**秒**） | `timeLimitMs`（**毫秒**） | `<= 0` 关闭，否则下限 10 秒 |
+| `useHints`（数字数组阈值） | 同名 | 剩余次数 `≤ 阈值` 时显示第 i 条文本提示 |
+| `useImageHint`（数字阈值） | 同名 | 模糊半径 = 剩余次数 |
+| `characterNum` / `mainCharacterOnly` | 同名 | 从作品里取前 N 个主角/配角 / 只取主角 |
+| `commonTags` / `subjectTagNum` / `characterTagNum` | 同名 | 共同标签模式与两类标签数量 |
+| `tagBan` / `globalPick` | 同名 | 标签全局 BP / 角色全局 BP |
+| `syncMode` + `nonstopMode`（两个布尔） | `mode: "normal" \| "sync" \| "bloodbath"` | 收敛成枚举 |
+| `useSubjectPerYear` | 同名 | 按年份均分抽样 |
+| `useIndex` / `indexId` / `addedSubjects` | **不移植**（P3 手动出题范围） | 原版的「指定作品集」入口 |
+
+⚠️ **两处「大类 → 作品类型」的规则不同，不要合并**：
+`getCharacterAppearances` 用 `includes` + else-if 链（顺序：游戏 → 书籍 → 三次元 → 全部 → 默认 `[2]`，
+**没有 Galgame 分支**，因此只选 Galgame 时登场作品会先按动画过滤、为空再回退全部）；
+`getRandomCharacter.buildFilter` 只看 `metaTags[0]`（primary），且 `Galgame` 会把 meta 过滤项
+**替换**成 `['Galgame']`。两者在 `CCBRules.ts` 里各有对应函数，字段含义见该文件注释。
+
+**出题是两级采样**（`getRandomCharacter`）：先按 `type` + 年份区间 + meta 过滤项（`sort: heat`，
+取前 `min(topNSubjects, 1000)`）抽一部作品，再从该作品的角色里取 `主角/配角`（`mainCharacterOnly`
+时只取主角，否则 `.slice(0, characterNum)`）随机选一个。本地以 `subjects.heat`
+（`favorite` 五桶求和）近似线上 `sort: heat` 的排序口径。
+
 ## 7. 客户端落地
 
 与另两个游戏同构，逐层对齐（严禁跨游戏目录导入，通用件只在 `components/common/`）：
@@ -185,7 +258,9 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | 数据地基、契约、协议与传输、房间服务、房间生命周期测试、前端大厅与三栏房间骨架、角色派生字段输入物化 | ✅ 已完成 |
-| P1 | `domain/CCBRules.ts`、服务端出题与猜测、权威计时、前端搜索栏与猜测表 | 待办 |
+| P1a | `domain/CCBRules.ts`（标记/反馈/计分/设置派生，纯函数 + 表驱动测试）+ 设置契约按原版重写 | ✅ 已完成 |
+| P1b | 服务端出题（两级采样）与猜测、权威计时、结算广播、`shared/CCB.ts` 补齐 `ccb.game.*` Schema | 待办 |
+| P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | 待办 |
 | P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
