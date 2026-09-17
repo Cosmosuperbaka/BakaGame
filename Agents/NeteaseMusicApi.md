@@ -108,6 +108,34 @@ fetch(url, { credentials: "include" });
   判据是「重试可能成功」：副歌、百科、元数据这类**上游确实没有该数据**的空结果照旧缓存，不可混为一谈。
 - 浏览器报告播放地址失效时，客户端发送 `song.game.audioFailed`。服务端删除该 Cookie 作用域的旧 URL，强制请求一次新地址并广播最新房间快照；新地址仍不可用时才向前端返回音乐错误。
 
+### 歌词多级回退与 AMLL 逐字播放
+
+Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平滑滚动居中与精确时间轴同步。歌词数据获取遵循严格的三级回退策略：
+
+1. **优先级 1（首选）：网易云官方 `yrc` 逐字歌词**
+   - 从 `lyric_new` / `lyric` 返回的 `yrc.lyric` 提取；
+   - 通过 `@applemusic-like-lyrics/lyric` 的 `parseYrc` 解析每个单词的起止时间（`startTime`, `endTime`）与注音；
+   - 若解析出有效行且包含逐字信息，直接作为本曲歌词。网易云已命中 YRC 时零外部网络开销，不请求第三方服务。
+2. **优先级 2（次选）：AMLL 官方 TTML 歌词库**
+   - 网易云无有效 YRC 逐字歌词时，异步降级请求 AMLL 官方歌词库：`GET https://api.amll.dev/v1/lyrics/get?ncmMusicId=${id}`；
+   - 设置 3 秒超时限制（`AbortController`）并纳入 24 小时 LRU 缓存；
+   - 通过 `@applemusic-like-lyrics/ttml` 的 `parseTTML` 解析 XML，内置 `xmlns:itunes` 命名空间与 `itunes:key` 自愈兼容容错；
+   - 若解析出有效行且包含逐字信息，作为本曲歌词。
+3. **优先级 3（兜底）：网易云普通 `lrc` 歌词**
+   - 无 YRC 且 AMLL TTML 接口超时/404/不可用时，兜底解析网易云普通 `lrc`；
+   - 客户端将普通行级歌词每行转换为全行时长的单个单词（`words: [{ startTime: line.time, endTime: line.endTime, word: line.text }]`），AMLL 播放器同样支持顺畅的行级渐变高亮与垂直滚动居中。
+4. **优先级 4：纯音乐或无歌词**
+   - 若三级回退均为空，则 `lyrics = []`，系统展示“当前歌曲为纯音乐或无歌词”并以随机切片截取播放。
+
+**逐字时间轴保护规范**：
+- 对于带有 `words` 逐字信息的歌词行，`sanitizeLyrics` 必须严格保留其原本精确的 `line.endTime`，严禁被下一行的起始时间粗暴覆盖，以保证歌唱停顿、长间奏和逐字动画停靠精确；
+- 对于无 `words` 的普通 LRC 兜底行，保持使用下一行起始时间或 `+5000ms` 兜底，使纯行级高亮在间奏期间自然驻留并居中滚动。
+
+**客户端 Vintage-Paper 复古纸质规范**：
+- 默认 AMLL 采用深色荧光风格（`mix-blend-mode: plus-lighter` 与白色字体），在项目浅色纸质背景上会导致文字不可见或反白破损；
+- 必须在 `Client/src/index.css` 强制覆写 `.baka-lyric-player.amll-lyric-player`：`mix-blend-mode: normal !important`、`color: var(--color-foreground) !important`、`font-family: var(--font-serif) !important`、`text-shadow: none !important`；
+- 时间轴驱动：`SongLyricPlayer` 接收 `audioRef`，监听 `play/pause/timeupdate/seeked`，并在播放期间通过 `requestAnimationFrame` 驱动 60fps/120fps 流畅逐字渐变渲染；同时在容器内挂载 `sr-only` 隐藏全文本节点，保障屏幕阅读器无障碍与集成测试稳定性。
+
 ### 歌词清洗
 
 时间轴歌词进入游戏前必须：
