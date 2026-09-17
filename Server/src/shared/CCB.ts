@@ -122,24 +122,43 @@ export interface CCBGameSettings {
   tagBan: boolean;
   /** 角色全局 BP：同一角色不可被重复猜（原版对「自己猜过的」放行）。 */
   globalPick: boolean;
+  /** 允许「先搜作品、再从作品里挑角色」的搜索模式（原版 `subjectSearch`，纯前端行为）。 */
+  subjectSearch: boolean;
 }
 
+/** 原版 `createBasePreset()` 的默认年份窗口是 `[当前年 − 10, 当前年]`。 */
+const DEFAULT_YEAR = new Date().getFullYear();
+
+/**
+ * 默认设置，逐字段对齐原版 `client/src/data/presets.js` 的 `createBasePreset()`。
+ *
+ * ⚠️ 三处容易照「直觉」写错的地方：
+ * ① `metaTags` 默认是**三个空串**（不是 `["动画"]`）—— 空串被过滤掉即「不加 meta 过滤」，
+ *    而 primary 为空走默认分支得到 `type = [2]`，所以默认就是「全部动画」。
+ *    写成 `["动画"]` 会把题库收窄到 meta_tags 含「动画」的那 1428 部（实测）。
+ * ② `commonTags` 默认是 **`true`**（共同标签模式），不是 `false`。
+ * ③ `timeLimitMs` 默认 **0（不限时）** —— 原版 `timeLimit` 在基础预设里根本没有，
+ *    含义就是「留空即关闭」。
+ */
 export const DEFAULT_CCB_SETTINGS: CCBGameSettings = {
   mode: "normal",
-  metaTags: ["动画"],
-  topNSubjects: 500,
+  metaTags: ["", "", ""],
+  startYear: DEFAULT_YEAR - 10,
+  endYear: DEFAULT_YEAR,
+  topNSubjects: 50,
   useSubjectPerYear: false,
-  characterNum: 10,
-  mainCharacterOnly: false,
+  characterNum: 6,
+  mainCharacterOnly: true,
   maxAttempts: 10,
-  timeLimitMs: 60_000,
+  timeLimitMs: 0,
   useHints: [],
   useImageHint: 0,
-  commonTags: false,
+  commonTags: true,
   subjectTagNum: 3,
-  characterTagNum: 8,
+  characterTagNum: 4,
   tagBan: false,
   globalPick: false,
+  subjectSearch: true,
 };
 
 /**

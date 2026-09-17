@@ -43,6 +43,7 @@ export const CCBSettingsPatchSchema = t.Object(
     characterTagNum: t.Optional(t.Integer({ minimum: 0, maximum: 50 })),
     tagBan: t.Optional(t.Boolean()),
     globalPick: t.Optional(t.Boolean()),
+    subjectSearch: t.Optional(t.Boolean()),
   },
   { additionalProperties: false },
 );
