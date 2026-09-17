@@ -272,7 +272,9 @@ export const SonGuessrMessageSchemas = {
     "song.game.submitSong",
     t.Object(
       {
-        songId: t.String({ minLength: 1, maxLength: 64 }),
+        // 限定字符集：任意 64 字符都会被当成歌曲 ID 打到网易云并成为缓存键，
+        // 反过来污染缓存。歌曲 ID 只可能是数字，这里放宽到常见 ID 形态以保持兼容。
+        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
       },
       { additionalProperties: false },
     ),
@@ -304,7 +306,9 @@ export const SonGuessrMessageSchemas = {
     "song.game.guess",
     t.Object(
       {
-        songId: t.String({ minLength: 1, maxLength: 64 }),
+        // 限定字符集：任意 64 字符都会被当成歌曲 ID 打到网易云并成为缓存键，
+        // 反过来污染缓存。歌曲 ID 只可能是数字，这里放宽到常见 ID 形态以保持兼容。
+        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
       },
       { additionalProperties: false },
     ),
