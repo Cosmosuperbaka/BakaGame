@@ -115,6 +115,49 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 基础分 2；大赢家 +12；好快的猜 +2 / +1；作品分 +1；出题人分按其他玩家表现结算。
 `CCBRules.ts` 必须是**纯函数**，先写表驱动测试再接服务端。
 
+### 6.5 数据层规则（P0 已落地，P1 只消费）
+
+`CCBRules.ts` 的输入全部来自本地 `bangumi-character.sqlite`，**不联网**。原版的每一条
+数据规则都在构建期对齐（`tools/build_bangumi_db.py`），明细见 `BangumiApi.md §本地数据集构建`。
+这里只记「P1 必须知道」的三件事：
+
+1. **标签池是房间设置的函数，必须运行时算。** `getCharacterAppearances` 先按
+   `gameSettings.metaTags` 推出 `bigTypes`（默认 `[2]`；`else if` 链：游戏→`[4]`、
+   书籍→`[1]`、三次元→`[6]`、全部→`[1,2,4,6]`）过滤登场作品，**过滤后为空则回退到全部类型**，
+   再由 `commonTags` / `subjectTagNum` / `characterTagNum` 决定截断。**库里没有、也不许有
+   标签池列**——任何物化都把某一种设置写死。
+2. **`details.tags` 与 `details.raw_tags` 是两份不同的数据。**
+   `raw_tags = subjects.raw_tags`（全类型、未过滤）；
+   `tags = (type ∈ {2,4}) ? raw_tags 剔除标签名含 "20" 的项 : {}`。
+   标签累积的普通标签循环用 `tags`，`commonTags` 分支用 `raw_tags`（它在合并后才做 "20" 过滤）。
+3. **`rating_count` 是排序依据**，等于 dump 的 `score_details` 直方图求和（≈ API 的
+   `rating.total`）。登场作品的顺序、`shared_appearances` 的「第一个共同作品」都依赖它。
+
+**已知差异（无法还原，P1 需按此口径实现）**：
+
+| 项 | 原版 | 本项目 | 影响 |
+|---|---|---|---|
+| `locked` 作品 | `getSubjectDetails` 返回 null → 丢弃 | dump 无该字段 → 保留 | 极少数被锁定条目会多出一条登场作品 |
+| `nsfw` 作品 | **不检查**，正常纳入 | 一致（纳入） | 反馈里会出现成人向游戏标题，**上线前需产品/合规决策** |
+| `animeVAs` 顺序 | API 返回顺序（`Set` 插入序） | dump 关系文件顺序 | 仅影响 CV 标签的显示先后 |
+
+**CCBFilter（`CCBFilter`）差异登记** —— 它是同一份 dump 的另一个消费者，**不是真相源**，
+有下列刻意差异，对拍时不要照它改：
+
+| # | CCBFilter 的行为 | 原版（本项目采用） |
+|---|---|---|
+| 1 | 无条件排除 `type=3`（音乐）作品 | 大类过滤为空时**回退到全部类型**，会纳入音乐 |
+| 2 | 无条件排除 `nsfw=true` 作品 | 从不引用 `nsfw` |
+| 3 | 登场作品按 dump 文件顺序 | 按 `rating_count` 降序 |
+| 4 | `extractAnimeVAs` **不过滤** `subject_type`，且用 `nameCn \|\| name` | 过滤 `subject_type ∈ {2,4}`，用 `name` |
+| 5 | `metaTags` 是自算的一套池（含角色标签与声优） | `allMetaTags` 由 `subjectTagNum` 截断后才拼角色标签与地区标签 |
+| 6 | 标签池放**全部**来源标签 | 只放权重最高的那一个 |
+
+对拍脚本在 `.workbuddy/tmp/diff-ccb.ts`（临时件，不入库）。110 个抽样角色的结论：
+`popularity` / 登场作品明细 / `latest`·`earliest`·`highest` / 排序 全部一致；
+「多出的作品」经断言**100% 由音乐类型或 nsfw 解释**；角色标签的少量差异来自上游标签快照版本
+（本库用 421 标签的新快照，CCBFilter 用 dump 里的旧快照 372 标签）。
+
 ## 7. 客户端落地
 
 与另两个游戏同构，逐层对齐（严禁跨游戏目录导入，通用件只在 `components/common/`）：
@@ -141,7 +184,7 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P0 | 数据地基、契约、协议与传输、房间服务、房间生命周期测试、前端大厅与三栏房间骨架 | ✅ 已完成 |
+| P0 | 数据地基、契约、协议与传输、房间服务、房间生命周期测试、前端大厅与三栏房间骨架、角色派生字段输入物化 | ✅ 已完成 |
 | P1 | `domain/CCBRules.ts`、服务端出题与猜测、权威计时、前端搜索栏与猜测表 | 待办 |
 | P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |

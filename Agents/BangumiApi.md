@@ -211,6 +211,37 @@ BakaGame    bangumi-data.yml               北京时间 周一 05:00（兜底）
   且同时进 `metaTags` 与 `animeVAs`。人物 infobox 里虽有 `|简体中文名=`（水樹奈々 → 水树奈奈），
   但用它会对不上原版反馈。库里 `name` 与 `name_cn` 各存一列，`name_cn` 仅供 UI 展示。
 
+### 登场作品 `character_appearances`
+
+原版 `getCharacterAppearances` 的登场作品集，落库为 `(character_id, position, subject_id,
+subject_type, year, rating)`，`position` 即原版的排序位次。
+
+- **只收主角/配角**：`relation_type IN (1,2)`，对应原版 `staff === '主角' || staff === '配角'`。
+- **年份无效或未上映的丢弃**：原版 `if (!details || details.year === null) return null`，
+  以及 `getSubjectDetails` 里的「未来日期 → null」。
+- **按 `rating_count` 降序**：原版 `.sort((a, b) => b.rating_count - a.rating_count)`，
+  `shared_appearances` 的「第一个共同作品」直接依赖这个顺序；同票按 `subject_id` 升序。
+  dump 没有 `rating.total`，用评分直方图 `score_details` 求和代替（已与线上 API 对过，
+  结构一致，仅因 dump 较旧而略小）。
+- **故意不收窄作品类型**（含音乐 3），也**不看 `nsfw`**：原版先按房间设置的大类过滤
+  （`gameSettings.metaTags` → `bigTypes`），**过滤后为空则回退到全部类型**，所以只有保留
+  全集才能还原两条分支；`nsfw` 在原版客户端里从未被引用。
+- **无法还原 `locked`**：原版会丢弃 `locked` 作品，dump 没有该字段 —— 已知差异。
+
+### 标签池**禁止落库**（铁律）
+
+原版的标签池（`metaTags` / `rawTags`）是 `filteredAppearances` 的函数，而 `filteredAppearances`
+依赖**房间设置**：`gameSettings.metaTags` 决定 `bigTypes`（默认 `[2]`，选「游戏」→`[4]`、
+「书籍」→`[1]`、「三次元」→`[6]`、「全部」→`[1,2,4,6]`，注意是 `else if` 链），再叠加
+`commonTags` / `subjectTagNum` / `characterTagNum`。**同一个角色在不同设置下标签池不同。**
+
+因此构建脚本只物化**输入**：`subjects.raw_tags`（全类型未过滤的 `{标签: 票数}`）+
+`subjects.meta_tags` + `character_appearances` + `character_tags` + `character_vas`，
+标签累积一律由运行时的 `domain/CCBRules.ts` 计算（规则见 `Agents/CCB.md §6.5`）。
+**物化任何一份标签池都是错的**——那会把某一种房间设置写死。
+
+推论：`subjects` 必须包含**全部类型**（含音乐 3），否则「回退到全部类型」那条分支拿不到标签。
+
 ### 角色库检索的已知限制
 
 `character_search` 是 **FTS5 trigram**，**查询串短于 3 个字符时必然返回 0 条**
@@ -220,9 +251,13 @@ BakaGame    bangumi-data.yml               北京时间 周一 05:00（兜底）
 
 ### 体积
 
-修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 228 MiB），
-主要来自 `summary` 列、`aliases` 让 trigram 索引显著增长，以及两张新表。
-文本本身很小（summary 23.6 MiB / aliases 3.0 MiB / 标签与声优合计约 1.1 MiB）。
+修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 261 MiB）：
+`summary` 列、`aliases` 让 trigram 索引显著增长，`subjects` 补齐音乐类型后 634,649 行，
+另有 `character_appearances`（374,377 行）与两张新表。
+文本本身不大（`raw_tags` 约 33 MiB / `summary` 23.6 MiB / `aliases` 3.0 MiB / 标签与声优合计约 1.1 MiB）。
+
+⚠️ 曾经把标签池 `tag_pool` / `raw_tag_pool` 也落库，库涨到 **343 MiB**（+82 MiB 纯属浪费），
+且规则本身就是错的（见上一节）。**不要重新引入这两列。**
 **不要给 `character_vas` 加 `(character_id, person_id)` 索引**——主键已是这两列，重复索引白占体积。
 
 ## 隐私与协议
