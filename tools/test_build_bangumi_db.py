@@ -290,9 +290,9 @@ def test_build_end_to_end() -> None:
         # 标签池**故意不落库**：它是房间设置（大类 + subjectTagNum/characterTagNum + commonTags）
         # 的函数，物化任意一份都会把某一种设置写死。这里只断言「输入」齐备。
         check(
-            "角色库的 subjects 存 raw_tags 票数与投票人数",
-            char.execute("SELECT raw_tags, rating_count FROM subjects WHERE id = 8").fetchone(),
-            ('{"机战": 10}', 0),
+            "角色库的 subjects 存 raw_tags 票数、投票人数与热度",
+            char.execute("SELECT raw_tags, rating_count, heat FROM subjects WHERE id = 8").fetchone(),
+            ('{"机战": 10}', 0, 100),
         )
         # 音乐(3) 也必须进角色库：原版的大类过滤为空时会回退到全部类型，那时要用它的标签。
         check(
