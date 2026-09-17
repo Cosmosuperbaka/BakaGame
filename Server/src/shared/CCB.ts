@@ -211,6 +211,13 @@ export interface CCBAnswerView {
   revealed: boolean;
 }
 
+/** 第一级采样得到的作品（出题数据源与房间记录共用）。 */
+export interface CCBSubjectPick {
+  id: number;
+  name: string;
+  nameCn: string;
+}
+
 export interface CCBRoomSnapshot {
   roomId: string;
   name: string;
@@ -252,11 +259,53 @@ export interface CCBPrivateState {
   hints: string[];
 }
 
+/** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
+export type CCBCompareFeedback = "=" | "+" | "++" | "-" | "--" | "?";
+
+export interface CCBScalarFeedback {
+  /** `?` 表示该侧不可比（原版用 `-1` 哨兵）。 */
+  guess: number | "?";
+  feedback: CCBCompareFeedback;
+}
+
+export interface CCBSharedAppearancesFeedback {
+  /** 按**作品名**求交集得到的第一个共同作品。 */
+  first: string;
+  /** 按 **subject id** 求交集得到的第一个共同作品原名。 */
+  firstOriginal: string;
+  /** 同上，中文名。 */
+  firstCn: string;
+  /** 共同作品数：优先取 id 交集的大小，为空时回落到名字交集的大小。 */
+  count: number;
+}
+
 /**
- * 一次猜测的记录。落点 P1。
+ * 一次猜测的逐字段反馈。8 个字段与原版 `generateFeedback` 一一对应。
  *
- * `feedback` 为未知结构（`unknown`）：逐字段的等级/箭头取值随 `CCBRules.ts` 在 P1 定稿，
- * 现在写死类型只会制造返工。服务端与客户端通过同一份 `CCBRules` 解释它。
+ * 放在共享契约里（而不是 `domain/CCBRules.ts`）是因为**客户端要渲染它**：
+ * 高亮色与 ↑↓ 箭头都依赖这些取值，前端必须拿到同一份类型。
+ * 判定逻辑仍在 `CCBRules.generateCCBFeedback`，这里只有形状。
+ */
+export interface CCBFeedback {
+  gender: { guess: CCBGender; feedback: "yes" | "no" };
+  popularity: CCBScalarFeedback;
+  /** 最高分（`highestRating`），**不是**平均分。 */
+  rating: CCBScalarFeedback;
+  shared_appearances: CCBSharedAppearancesFeedback;
+  appearancesCount: CCBScalarFeedback;
+  metaTags: { guess: string[]; shared: string[] };
+  latestAppearance: CCBScalarFeedback;
+  earliestAppearance: CCBScalarFeedback;
+}
+
+/** 本局结束方式，由标记串推断（`🏆` > `💀` > `🏳️`）。 */
+export type CCBEndResult = "teamwin" | "lose" | "surrender" | "";
+
+/**
+ * 一次猜测的记录。
+ *
+ * `feedback` 的结构由 `shared/CCB.ts` 定义、取值由 `domain/CCBRules.ts` 计算，
+ * 两侧共用同一份契约 —— 客户端不再需要自己复刻判定逻辑。
  */
 export interface CCBGuessRecord {
   characterId: number;
@@ -265,7 +314,7 @@ export interface CCBGuessRecord {
   imageUrl?: string;
   submittedAt: number;
   correct: boolean;
-  feedback: unknown;
+  feedback: CCBFeedback;
 }
 
 // ==================== 服务端内部记录（跨层传递，故与另两个游戏一致放在 shared） ====================
@@ -331,6 +380,8 @@ export interface CCBRoomRecord {
   players: Record<string, CCBPlayerRecord>;
   chat: ChatMessage[];
   currentRound?: CCBRoundRecord;
+  /** 结算后公开的答案卡。增强版由服务端出题，因此只在 `settled` 阶段填充。 */
+  revealedAnswer?: CCBAnswerView;
   answerSetterPlayerId?: string;
   createdAt: number;
   updatedAt: number;

@@ -17,7 +17,12 @@ import {
   resolveCCBSubjectSearchTypes,
   type CCBCharacterView,
 } from "../domain/CCBRules";
-import type { CCBCharacterSearchResult, CCBGameSettings, CCBGender } from "../shared/Index";
+import type {
+  CCBCharacterSearchResult,
+  CCBGameSettings,
+  CCBGender,
+  CCBSubjectPick,
+} from "../shared/Index";
 
 /** 原版 `stuffFactor`：主角 3 倍、配角 1 倍；同时也定义了「哪些关联算登场作品」。 */
 const MAIN_ROLE_TYPE = 1;
@@ -103,11 +108,9 @@ export interface CCBCharacterRepositoryOptions {
   random?: () => number;
 }
 
-export interface CCBSubjectPick {
-  id: number;
-  name: string;
-  nameCn: string;
-}
+// 出题数据源的类型真相源在共享契约（application 层的 `CCBCharacterSource` 也要用），
+// 这里只做转发，保持既有 import 路径不变。
+export type { CCBSubjectPick };
 
 export class CCBCharacterRepository {
   private readonly character: Database;
