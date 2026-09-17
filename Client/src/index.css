@@ -5,6 +5,7 @@
 @import "@fontsource-variable/noto-sans-sc";
 @import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
+@import "@applemusic-like-lyrics/core/style.css";
 
 @theme inline {
   --color-background: var(--background);
@@ -293,3 +294,31 @@ img {
   -o-user-drag: none;
   user-drag: none;
 }
+
+/* AMLL 逐字歌词 Vintage-Paper 复古纸质主题深度适配 */
+.baka-lyric-player.amll-lyric-player {
+  mix-blend-mode: normal !important;
+  color: var(--color-foreground) !important;
+  font-family: var(--font-serif) !important;
+  --amll-lp-color: var(--color-foreground);
+  --amll-lp-inactive-opacity: 0.35;
+  --amll-lp-active-scale: 1.04;
+  --amll-lp-font-size: 1.125rem;
+  --amll-lp-line-height: 1.8;
+  --amll-lp-font-weight: 600;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+
+.baka-lyric-player .amll-lyric-line {
+  color: var(--color-foreground) !important;
+  font-family: var(--font-serif) !important;
+  text-shadow: none !important;
+}
+
+.baka-lyric-player .amll-lyric-word {
+  color: var(--color-foreground) !important;
+}
+

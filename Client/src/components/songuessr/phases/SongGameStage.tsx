@@ -22,6 +22,7 @@ import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundRes
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
 import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
 import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
+import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
   listContainer,
   listItem,
@@ -220,6 +221,7 @@ export interface SongGameAreaProps {
   onSelectSearchSong: (songId: string, mode: "submit" | "guess") => Promise<void>;
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
 export function GameStage(props: SongGameAreaProps) {
@@ -236,6 +238,7 @@ export function GameStage(props: SongGameAreaProps) {
     openSearch,
     run,
     isPending,
+    audioRef,
   } = props;
 
   if (snapshot.phase === "waiting") {
@@ -361,15 +364,10 @@ export function GameStage(props: SongGameAreaProps) {
               : <SongAutoFilterSummary snapshot={snapshot} />
           ) : null}
           {snapshot.settings.showLyrics ? (
-            <div className="select-none space-y-2 rounded-md bg-background/60 p-5 text-center">
-              {hasLyrics ? (
-                snapshot.currentRound.lyricClip.lines.map((line) => (
-                  <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">当前歌曲为纯音乐或无歌词</p>
-              )}
-            </div>
+            <SongLyricPlayer
+              lines={snapshot.currentRound.lyricClip?.lines ?? []}
+              audioRef={audioRef}
+            />
           ) : (
             <div className="rounded-md bg-background/60 p-5 text-center text-sm text-muted-foreground">
               本房间已关闭歌词提示，请根据音乐进行猜测
