@@ -89,6 +89,14 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
+- **正文外壳必须在首次绘制之前消失**：外壳插在 `#root` 内，紧随其后是一段 parser-blocking
+  内联脚本 `document.getElementById("root").replaceChildren()`，随解析同步清空。入口是 defer 的
+  module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后——只靠它替换 `#root`，
+  用户进站会先看到一段未排版的裸文本（线上实际发生过）。**不要改成 `#root{display:none}` 之类的
+  CSS 兜底**：那等于把正文标成隐藏文本，与 hidden text 同类；此处不隐藏任何东西，只是让
+  JS 客户端先移除、再交给应用渲染。**也不要用 `<noscript>`**：目标恰恰是不执行 JS 的爬虫，
+  noscript 内容在多数引擎眼中信号更弱。不执行 JS 的爬虫读的是原始 HTML，外壳照旧可见——
+  两边本来就是同一份正文。
 - **静态标签必须在客户端启动时摘掉**：注入的 head 标签带 `data-static-seo="1"`，
   `Client/src/lib/StaticSeo.ts` 的 `stripStaticSeo()` 在入口模块（`Main.tsx`）里把它们整体移除，
   再由 react-helmet-async 按当前路由写入真值。**不要改成「让 Helmet 接管静态标签」**——

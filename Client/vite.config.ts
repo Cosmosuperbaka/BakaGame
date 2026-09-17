@@ -288,8 +288,20 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
 // （client.ts 里按 isEqualNode 复用旧标签的逻辑只在旧路径生效），它会直接渲染新标签，
 // 静态标签留在原地就会变成重复 canonical —— 搜索引擎遇到重复 canonical 会判定整组失效。
 // JSON-LD 例外：它用固定 id，Seo 的 useEffect 按同一 id 覆盖内容，不产生重复。
+//
+// 正文外壳必须在**首次绘制之前**从执行 JS 的客户端里消失，否则用户进站会先看到一段裸文本。
+// 入口是 defer 的 module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后，
+// 只靠它替换 #root 就会漏出这段文字。因此在外壳之后紧邻插入一段 parser-blocking 内联脚本，
+// 随解析同步清空外壳：它被 <head> 里的渲染阻塞样式表挡住，必然早于首次绘制执行。
+// 不执行 JS 的爬虫读的是原始 HTML，外壳照旧可见——两边的正文本来就是同一份。
+//
+// 为什么不用 `#root{display:none}` 之类的 CSS 兜底：那等于把正文标成隐藏文本，
+// 在审核视角下与 hidden text 无异。此处不隐藏任何东西，只是让 JS 客户端先移除、再交给应用渲染。
+// 也不用 <noscript>：目标恰恰是不执行 JS 的爬虫，而 noscript 里的内容在多数引擎眼中信号更弱。
 const STATIC_SEO_ATTRIBUTE = 'data-static-seo'
 const STRUCTURED_DATA_ID = 'bakagame-structured-data'
+// 清空外壳的内联脚本（构建后必须存在，缺失即断言失败）
+const SHELL_CLEAR_CODE = 'document.getElementById("root").replaceChildren()'
 
 function escapeHtml(value: string) {
   return value
@@ -341,7 +353,10 @@ function staticShellPlugin() {
 
         const html = original
           .replace('</head>', `  ${head}\n  </head>`)
-          .replace('<div id="root"></div>', `<div id="root"><main>${body}</main></div>`)
+          .replace(
+            '<div id="root"></div>',
+            `<div id="root"><main>${body}</main></div>\n    <script>${SHELL_CLEAR_CODE}</script>`,
+          )
 
         const segment = meta.path.replace(/^\//, '').replace(/\/$/, '')
         return {
@@ -361,7 +376,7 @@ function staticShellPlugin() {
         }
         const primary = path.join(distDir, page.outputs[0])
         const written = fs.readFileSync(primary, 'utf8')
-        for (const marker of ['<div id="root"><main>', `${STATIC_SEO_ATTRIBUTE}="1"`, STRUCTURED_DATA_ID]) {
+        for (const marker of ['<div id="root"><main>', SHELL_CLEAR_CODE, `${STATIC_SEO_ATTRIBUTE}="1"`, STRUCTURED_DATA_ID]) {
           if (!written.includes(marker)) {
             throw new Error(`静态外壳：${page.outputs[0]} 缺少 ${marker}`)
           }
