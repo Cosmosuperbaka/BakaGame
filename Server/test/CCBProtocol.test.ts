@@ -219,9 +219,12 @@ test("CCB 协议拒绝脏字段、非法载荷与未挂载指令", () => {
     expect.objectContaining({ code: "INVALID_MESSAGE" }),
   );
 
-  // 对局指令的 wire 格式已在契约中固化，但 P1 才挂载 Schema；此刻应明确报未知类型。
+  // 对局指令已在 P1b 挂载；P3 的手动出题指令仍未挂载，此刻应明确报未知类型。
+  expect(parseCCBMessage({ id: "start", type: "ccb.game.start", payload: {} })).toMatchObject({
+    type: "ccb.game.start",
+  });
   expect(() =>
-    parseCCBMessage({ id: "start", type: "ccb.game.start", payload: {} }),
+    parseCCBMessage({ id: "set-answer", type: "ccb.game.setAnswer", payload: {} }),
   ).toThrow(expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" }));
 });
 
