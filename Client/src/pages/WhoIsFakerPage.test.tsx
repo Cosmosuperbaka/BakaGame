@@ -55,11 +55,19 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     useWhoIsFakerStore.setState(initialStoreState, true);
   });
 
-  it("当房间列表为空时渲染空状态提示", () => {
-    useWhoIsFakerStore.setState({ rooms: [] });
+  it("当房间列表为空且已连接时渲染空状态提示", () => {
+    useWhoIsFakerStore.setState({ rooms: [], connected: true });
     renderPage();
 
     expect(screen.getByText("暂无房间，点击上方按钮创建一个吧")).toBeInTheDocument();
+  });
+
+  it("初次加载尚未完成握手同步时渲染骨架屏防御 FOES", () => {
+    useWhoIsFakerStore.setState({ rooms: [], connected: false });
+    renderPage();
+
+    expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
+    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
   });
 
   it("正常渲染房间列表卡片，且列表项外壳具备实底不透明背景类", () => {
