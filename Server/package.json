@@ -16,10 +16,13 @@
     "docs:openapi": "bun run src/scripts/ExportOpenapi.ts"
   },
   "dependencies": {
+    "@applemusic-like-lyrics/lyric": "^1.0.2",
+    "@applemusic-like-lyrics/ttml": "^1.0.1",
     "@elysiajs/cors": "^1.4.2",
     "@neteasecloudmusicapienhanced/api": "4.40.0",
     "@sentry/bun": "^10.73.0",
     "@sinclair/typebox": "^0.34.52",
+    "@xmldom/xmldom": "^0.9.12",
     "bun": "1.3.14",
     "elysia": "^1.2.10",
     "fast-json-patch": "^3.1.1",

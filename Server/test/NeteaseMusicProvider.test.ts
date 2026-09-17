@@ -14,6 +14,8 @@ import {
   isTooShortLyricLine,
   isUnusableLyricLine,
   parseLrc,
+  parseTTML,
+  parseYrc,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
 
@@ -1622,5 +1624,160 @@ describe("NeteaseMusicProvider", () => {
     const song = await provider.getSong("92");
     expect(song.audioUrl).toBe("https://official.example.com/92.mp3");
     expect(unblockCalls).toBe(0);
+  });
+
+  test("parseYrc 正确解析网易云逐字歌词并提取词级起止时间", () => {
+    const yrcRaw = [
+      "[1000,2000](1000,800,0)故事(1800,1200,0)的小黄花",
+      "[3500,2000](3500,1000,0)从出生(4500,1000,0)那年就飘着",
+    ].join("\n");
+    const parsed = parseYrc(yrcRaw);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].time).toBe(1000);
+    expect(parsed[0].endTime).toBe(3000);
+    expect(parsed[0].text).toBe("故事的小黄花");
+    expect(parsed[0].words).toBeDefined();
+    expect(parsed[0].words).toHaveLength(2);
+    expect(parsed[0].words![0]).toEqual({
+      startTime: 1000,
+      endTime: 1800,
+      word: "故事",
+      romanWord: undefined,
+    });
+    expect(parsed[0].words![1]).toEqual({
+      startTime: 1800,
+      endTime: 3000,
+      word: "的小黄花",
+      romanWord: undefined,
+    });
+  });
+
+  test("parseTTML 正确解析 AMLL TTML 格式逐字歌词", () => {
+    const ttmlRaw = `
+      <tt xmlns="http://www.w3.org/ns/ttml">
+        <body>
+          <div>
+            <p begin="00:02.000" end="00:05.000">
+              <span begin="00:02.000" end="00:03.000">海</span>
+              <span begin="00:03.000" end="00:05.000">阔天空</span>
+            </p>
+          </div>
+        </body>
+      </tt>
+    `;
+    const parsed = parseTTML(ttmlRaw);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].time).toBe(2000);
+    expect(parsed[0].endTime).toBe(5000);
+    expect(parsed[0].text).toBe("海阔天空");
+    expect(parsed[0].words).toHaveLength(2);
+    expect(parsed[0].words![0].word).toBe("海");
+    expect(parsed[0].words![1].word).toBe("阔天空");
+  });
+
+  test("sanitizeLyrics 对逐字歌词保留真实精确 endTime 而非被下一句起始时间粗暴覆盖", () => {
+    const lines = [
+      {
+        time: 1000,
+        endTime: 3000,
+        text: "第一句",
+        words: [{ startTime: 1000, endTime: 3000, word: "第一句" }],
+      },
+      {
+        time: 15000,
+        endTime: 18000,
+        text: "第二句",
+        words: [{ startTime: 15000, endTime: 18000, word: "第二句" }],
+      },
+    ];
+    const sanitized = sanitizeLyrics(lines, { title: "歌名", artist: "歌手" });
+    expect(sanitized).toHaveLength(2);
+    // 第一句 endTime 不应该被拉伸到 15000
+    expect(sanitized[0].endTime).toBe(3000);
+    expect(sanitized[1].endTime).toBe(18000);
+  });
+
+  test("歌词三级回退优先级：网易云 YRC > AMLL TTML > 网易云 LRC", async () => {
+    const mockDetail = { songs: [{ id: 101, name: "测试曲目", ar: [{ name: "测试歌手" }] }] };
+    const mockUrl = { data: [{ id: 101, url: "http://example.com/101.mp3" }] };
+
+    let amllFetched = false;
+    const fetchAmllLyrics = async (id: string) => {
+      amllFetched = true;
+      if (id === "101") {
+        return `
+          <tt xmlns="http://www.w3.org/ns/ttml">
+            <body>
+              <div>
+                <p begin="00:01.000" end="00:04.000">
+                  <span begin="00:01.000" end="00:04.000">AMLL逐字歌词</span>
+                </p>
+              </div>
+            </body>
+          </tt>
+        `;
+      }
+      return undefined;
+    };
+
+    // 1. 存在 YRC 时，优先使用 YRC，不调用 AMLL TTML
+    const providerWithYrc = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      fetchAmllLyrics,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: mockDetail }),
+        song_url: async () => ({ body: mockUrl }),
+        lyric_new: async () => ({
+          body: {
+            yrc: { lyric: "[1000,3000](1000,3000,0)网易云YRC歌词" },
+            lrc: { lyric: "[00:01.00]网易云LRC歌词" },
+          },
+        }),
+      }),
+    });
+    amllFetched = false;
+    const song1 = await providerWithYrc.getSong("101");
+    expect(song1.lyrics[0].text).toBe("网易云YRC歌词");
+    expect(song1.lyrics[0].words).toBeDefined();
+    expect(song1.lyrics[0].words![0].word).toBe("网易云YRC歌词");
+    expect(amllFetched).toBe(false);
+
+    // 2. 无 YRC 但有 AMLL TTML 时，使用 AMLL TTML
+    const providerWithAmll = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      fetchAmllLyrics,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: mockDetail }),
+        song_url: async () => ({ body: mockUrl }),
+        lyric_new: async () => ({
+          body: {
+            lrc: { lyric: "[00:01.00]网易云普通LRC歌词" },
+          },
+        }),
+      }),
+    });
+    amllFetched = false;
+    const song2 = await providerWithAmll.getSong("101");
+    expect(song2.lyrics[0].text).toBe("AMLL逐字歌词");
+    expect(song2.lyrics[0].words).toBeDefined();
+    expect(amllFetched).toBe(true);
+
+    // 3. 无 YRC 且 AMLL TTML 返回 undefined 时，兜底使用网易云普通 LRC
+    const providerWithLrc = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      fetchAmllLyrics: async () => undefined,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: mockDetail }),
+        song_url: async () => ({ body: mockUrl }),
+        lyric_new: async () => ({
+          body: {
+            lrc: { lyric: "[00:01.00]网易云普通LRC兜底歌词" },
+          },
+        }),
+      }),
+    });
+    const song3 = await providerWithLrc.getSong("101");
+    expect(song3.lyrics[0].text).toBe("网易云普通LRC兜底歌词");
+    expect(song3.lyrics[0].words).toBeUndefined();
   });
 });
