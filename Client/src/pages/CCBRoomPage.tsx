@@ -3,10 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
-  Bot,
   MessageSquare,
-  Play,
-  Settings,
   UserRound,
   Users,
 } from "lucide-react";
@@ -26,13 +23,14 @@ import { Switch } from "@/components/ui/Switch";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { Seo } from "@/components/common/Seo";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { CCBGameArea } from "@/components/ccb/GameArea";
 import { PlayerList } from "@/components/ccb/PlayerList";
 import { backdrop, duration, ease, spring } from "@/lib/Motion";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { CCBWs } from "@/lib/CCBWs";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
-import type { CCBPlayerView, CCBRoomSnapshot } from "@/types";
+import type { CCBRoomSnapshot } from "@/types";
 
 type MobilePanel = "none" | "players" | "chat";
 
@@ -325,10 +323,6 @@ export default function CCBRoomPage() {
 
             <main className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
               <CCBGameArea
-                snapshot={snapshot}
-                me={me}
-                isHost={isHost}
-                isTestRoom={isTestRoom}
                 botPending={botPending}
                 onToggleReady={handleToggleReady}
                 onBots={handleBots}
@@ -448,96 +442,6 @@ export default function CCBRoomPage() {
         snapshot={snapshot}
       />
     </>
-  );
-}
-
-interface CCBGameAreaProps {
-  snapshot: CCBRoomSnapshot;
-  me?: CCBPlayerView;
-  isHost: boolean;
-  isTestRoom: boolean;
-  botPending: boolean;
-  onToggleReady: () => Promise<void>;
-  onBots: (add: boolean) => Promise<void>;
-  onOpenSettings: () => void;
-}
-
-function CCBGameArea({
-  snapshot,
-  me,
-  isHost,
-  isTestRoom,
-  botPending,
-  onToggleReady,
-  onBots,
-  onOpenSettings,
-}: CCBGameAreaProps) {
-  const isSpectator = me?.membership === "spectator";
-
-  return (
-    <div className="scrollbar-hidden flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-4 py-8">
-      <div className="flex flex-col items-center gap-1 text-center">
-        <span className="font-mono text-3xl font-semibold tracking-[0.3em] text-foreground/80">
-          {snapshot.roomId}
-        </span>
-        <span className="text-sm text-muted-foreground">
-          {isSpectator
-            ? "你正在旁观本房间"
-            : isHost
-              ? "等待你开始本局"
-              : "等待房主开始本局"}
-        </span>
-      </div>
-
-      {isSpectator ? null : (
-        <Button
-          variant={me?.isReady ? "secondary" : "default"}
-          onClick={() => void onToggleReady()}
-        >
-          {me?.isReady ? "取消准备" : "准备"}
-        </Button>
-      )}
-
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {isHost ? (
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onOpenSettings}>
-            <Settings className="h-3.5 w-3.5" />
-            房间设置
-          </Button>
-        ) : null}
-        {isHost && isTestRoom ? (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={botPending}
-              onClick={() => void onBots(true)}
-            >
-              <Bot className="h-3.5 w-3.5" />
-              增加人机
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={botPending}
-              onClick={() => void onBots(false)}
-            >
-              移除人机
-            </Button>
-          </>
-        ) : null}
-        <Button size="sm" className="gap-1.5" disabled title="在线对局功能开发中">
-          <Play className="h-3.5 w-3.5" />
-          开始游戏
-        </Button>
-      </div>
-
-      <p className="max-w-md text-center text-xs text-muted-foreground/70">
-        在线对局（出题、逐字段反馈与计分）正在开发中；当前可以创建房间、聊天、准备与旁观。
-      </p>
-    </div>
   );
 }
 
