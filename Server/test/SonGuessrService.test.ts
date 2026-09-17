@@ -3,13 +3,19 @@ import { describe, expect, test } from "bun:test";
 import {
   ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
+  AUTO_SONG_CANDIDATE_LIMIT,
   createSongLyricClip,
   isSongTitleMatch,
   SonGuessrService,
 } from "../src/application/SonGuessrService";
 import { detectExplicitTrackKind } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
-import { ROOM_EMPTY_GRACE_PERIOD_MS, HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
+import {
+  ROOM_EMPTY_GRACE_PERIOD_MS,
+  HOST_RECONNECT_TIMEOUT_MS,
+  ROOM_IDLE_TIMEOUT_MS,
+  TEST_MODE_MAX_PLAYERS,
+} from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
@@ -2512,7 +2518,7 @@ describe("SonGuessrService", () => {
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.attempts[0]).toMatchObject({ result: "timeout", playerName: "玩家" });
     expect(result.roundSummary?.scores).toEqual(
-      expect.arrayContaining([expect.objectContaining({ playerName: "房主", score: 5 })]),
+      expect.arrayContaining([expect.objectContaining({ playerName: "房主", score: 2 })]),
     );
   });
 
@@ -3250,6 +3256,331 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
 
     const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
     expect(summary.animeTrack?.kind).toBe("insert");
+  });
+});
+
+describe("上线前 P0 修复回归", () => {
+
+  test("P0-1 一条连接加入另一个房间时，旧房间的幽灵席位被清理并直接关房", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const hostA = connection(service, "switch-a");
+    const hostB = connection(service, "switch-b");
+    await createRoom(service, hostA, { roomId: "1234" });
+    await createRoom(service, hostB, { roomId: "5678", name: "新房间", userName: "乙房主" });
+
+    // A 从 1234 切到 5678：旧房间只剩它一个人，必须被正常回收
+    await execute(service, hostA, {
+      id: "switch-join",
+      type: "song.room.join",
+      roomId: "5678",
+      payload: { userName: "房主" },
+    });
+
+    const summaries = service.getRoomSummaries().map((summary) => summary.roomId);
+    expect(summaries).toContain("5678");
+    expect(summaries).not.toContain("1234");
+  });
+
+  test("P0-1 同一条连接重连它原本所在的房间不会被自己踢掉", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "reconnect-seat");
+    await createRoom(service, host, { roomId: "4321" });
+    const seat = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+
+    await expect(execute(service, host, {
+      id: "self-reconnect",
+      type: "song.room.reconnect",
+      payload: { roomId: "4321", sessionToken: seat.sessionToken },
+    })).resolves.toMatchObject({ roomId: "4321" });
+  });
+
+  test("P0-2a 测试房间加机器人到总人数上限后拒绝继续添加", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "bot-host");
+    await createRoom(service, host, { roomId: "Oblivionis" });
+
+    const first = await execute(service, host, {
+      id: "add-bots-1",
+      type: "song.test.addBot",
+      roomId: "Oblivionis",
+      payload: { count: 64 },
+    }) as { addedPlayerIds: string[] };
+    expect(first.addedPlayerIds).toHaveLength(TEST_MODE_MAX_PLAYERS - 1);
+
+    await expect(execute(service, host, {
+      id: "add-bots-2",
+      type: "song.test.addBot",
+      roomId: "Oblivionis",
+      payload: { count: 1 },
+    })).rejects.toMatchObject({ code: "ROOM_FULL" });
+  });
+
+  test("P0-2b 测试房间空闲超时后被回收，未超时则保留", async () => {
+    let now = 1_000_000;
+    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+    const host = connection(service, "idle-test-host");
+    await createRoom(service, host, { roomId: "Oblivionis" });
+
+    now += ROOM_IDLE_TIMEOUT_MS / 2;
+    await service.runHousekeeping();
+    expect(service.getHealthSnapshot().roomCount).toBe(1);
+
+    now += ROOM_IDLE_TIMEOUT_MS;
+    await service.runHousekeeping();
+    expect(service.getHealthSnapshot().roomCount).toBe(0);
+  });
+
+  test("P0-4 单条连接的音乐请求超过配额后被拒且不影响其他连接", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "limit-host");
+    const guest = connection(service, "limit-guest");
+    await createRoom(service, host, { roomId: "8888" });
+    await joinRoom(service, guest, "限流玩家", "8888");
+
+    for (let index = 0; index < 20; index += 1) {
+      await execute(service, host, {
+        id: `search-${index}`,
+        type: "song.music.search",
+        roomId: "8888",
+        payload: { keyword: "测试" },
+      });
+    }
+
+    await expect(execute(service, host, {
+      id: "search-over",
+      type: "song.music.search",
+      roomId: "8888",
+      payload: { keyword: "测试" },
+    })).rejects.toMatchObject({ code: "RATE_LIMITED" });
+
+    await expect(execute(service, guest, {
+      id: "search-other",
+      type: "song.music.search",
+      roomId: "8888",
+      payload: { keyword: "测试" },
+    })).resolves.toBeTruthy();
+  });
+
+  test("P0-4 旁观者不能发起音乐类请求", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "spectator-host");
+    const spectator = connection(service, "spectator-guest");
+    await createRoom(service, host, { roomId: "1212" });
+    await joinRoom(service, spectator, "旁观者", "1212");
+
+    await execute(service, spectator, {
+      id: "to-spectator",
+      type: "song.player.setSpectator",
+      roomId: "1212",
+      payload: { spectator: true },
+    });
+
+    await expect(execute(service, spectator, {
+      id: "spectator-search",
+      type: "song.music.search",
+      roomId: "1212",
+      payload: { keyword: "测试" },
+    })).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
+  });
+
+  test("P0-5 大歌单全会员曲时自动出题的回源次数不超过常量上界", async () => {
+    let attempts = 0;
+    const pool = Array.from({ length: 30 }, (_, index) => ({
+      ...songs.answer,
+      id: `pool-${index}`,
+      title: `候选${index}`,
+    }));
+    const vipProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { nickname: "测试账号", vipStatus: "nonVip" },
+      }),
+      getPlaylistSongs: async (playlistId) => ({
+        info: { id: playlistId, name: "大歌单", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id) => {
+        attempts += 1;
+        return { ...songs.answer, id, title: `候选${attempts}`, requiresVip: true };
+      },
+    };
+
+    let now = 2_000_000;
+    const service = new SonGuessrService({ musicProvider: vipProvider, now: () => now, random: { nextInt: () => 0 } });
+    const host = connection(service, "limit-host-2");
+    const guest = connection(service, "limit-guest-2");
+    await createRoom(service, host, { roomId: "2222" });
+    await joinRoom(service, guest, "回源玩家", "2222");
+    await execute(service, host, {
+      id: "auto-settings",
+      type: "song.room.updateSettings",
+      roomId: "2222",
+      payload: { questionMode: "automatic", autoFilters: { artists: [], minPopularity: 0 } },
+    });
+    await execute(service, guest, {
+      id: "auto-ready",
+      type: "song.player.setReady",
+      roomId: "2222",
+      payload: { ready: true },
+    });
+
+    await expect(execute(service, host, {
+      id: "auto-start",
+      type: "song.game.start",
+      roomId: "2222",
+      payload: {},
+    })).rejects.toMatchObject({ code: "MUSIC_VIP_REQUIRED" });
+
+    expect(attempts).toBeLessThanOrEqual(AUTO_SONG_CANDIDATE_LIMIT);
+  });
+
+  test("P0-6 巡检不会抢占仍在上游校验中的猜测", async () => {
+    let now = 3_000_000;
+    let releaseMetadata: ((song: SongDetails) => void) | undefined;
+    const slowProvider: MusicProvider = {
+      ...provider,
+      getSongMetadata: () => new Promise<SongDetails>((resolve) => {
+        releaseMetadata = resolve;
+      }),
+    };
+    const service = new SonGuessrService({ musicProvider: slowProvider, now: () => now });
+    const host = connection(service, "inflight-host");
+    const guest = connection(service, "inflight-guest");
+    await createRoom(service, host, { roomId: "3333" });
+    const hostSeat = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "慢上游玩家", "3333");
+    await startRound(service, host, guest, hostSeat.playerId);
+    await execute(service, guest, {
+      id: "inflight-audio",
+      type: "song.game.audioReady",
+      roomId: "3333",
+      payload: { roundNumber: 1 },
+    });
+
+    const guessing = execute(service, guest, {
+      id: "inflight-guess",
+      type: "song.game.guess",
+      roomId: "3333",
+      payload: { songId: "wrong" },
+    });
+
+    // 猜测还卡在上游，此时巡检到达判定时间也不能替它记一次 timeout
+    now += 60_000;
+    await service.runHousekeeping();
+
+    releaseMetadata!(songs.wrong);
+    await guessing;
+
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
+    const privateState = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    // 只被扣了一次配额（默认上限 3，剩 2），且回合没有被巡检提前结算
+    expect(privateState.remainingGuesses).toBe(2);
+    expect(snapshot.phase).toBe("playing");
+  });
+
+  test("P0-7 未注册的命令不再静默 ACK", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "unknown-host");
+    await createRoom(service, host, { roomId: "4444" });
+
+    await expect(execute(service, host, {
+      id: "unknown",
+      type: "song.unknown.command" as unknown as SonGuessrClientMessage["type"],
+      roomId: "4444",
+      payload: {},
+    } as unknown as SonGuessrClientMessage)).rejects.toMatchObject({ code: "UNSUPPORTED_COMMAND" });
+  });
+
+  test("H-3 房主跳过回合不结算出题人奖励", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "skip-host");
+    const guest = connection(service, "skip-guest");
+    await createRoom(service, host, { roomId: "5555" });
+    const hostSeat = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "跳过玩家", "5555");
+    await startRound(service, host, guest, hostSeat.playerId);
+
+    const result = await execute(service, host, {
+      id: "skip",
+      type: "song.game.skipRound",
+      roomId: "5555",
+      payload: {},
+    });
+    expect(result).toMatchObject({ skipped: true });
+
+    // 跳过不是「无人猜中」，出题人拿不到任何奖励（否则反复跳就能零成本刷分）
+    const summary = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
+    expect(summary?.scores.find((score) => score.playerId === hostSeat.playerId)?.score).toBe(0);
+  });
+
+  test("audioFailed 会刷新当前回合的播放地址", async () => {
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        refreshSongAudio: async () => "https://audio/refreshed.mp3",
+      },
+    });
+    const host = connection(service, "audio-host");
+    const guest = connection(service, "audio-guest");
+    await createRoom(service, host, { roomId: "6666" });
+    const hostSeat = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "刷新玩家", "6666");
+    await startRound(service, host, guest, hostSeat.playerId);
+
+    await expect(execute(service, guest, {
+      id: "audio-failed",
+      type: "song.game.audioFailed",
+      roomId: "6666",
+      payload: { roundNumber: 1 },
+    })).resolves.toMatchObject({ refreshed: true });
+
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.audioUrl)
+      .toBe("https://audio/refreshed.mp3");
+  });
+
+  test("歌单解析支持链接与数字 ID", async () => {
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getPlaylistSongs: async (playlistId) => ({
+          info: { id: playlistId, name: "测试歌单", songCount: 2 },
+          songs: [songs.answer, songs.wrong],
+        }),
+      },
+    });
+    const host = connection(service, "playlist-host");
+    await createRoom(service, host, { roomId: "7778" });
+
+    await expect(execute(service, host, {
+      id: "playlist-resolve",
+      type: "song.music.playlist.resolve",
+      roomId: "7778",
+      payload: { value: "https://music.163.com/#/playlist?id=123456" },
+    })).resolves.toMatchObject({ playlist: { id: "123456", name: "测试歌单" } });
+  });
+
+  test("歌手搜索返回 provider 的结果", async () => {
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        searchArtists: async () => [{ id: "artist-1", name: "测试歌手" }],
+      },
+    });
+    const host = connection(service, "artist-host");
+    await createRoom(service, host, { roomId: "7779" });
+
+    await expect(execute(service, host, {
+      id: "artist-search",
+      type: "song.music.artist.search",
+      roomId: "7779",
+      payload: { keyword: "测试" },
+    })).resolves.toMatchObject({ results: [{ id: "artist-1", name: "测试歌手" }] });
+  });
+
+  test("两个候选回源常量都存在且取正值", () => {
+    expect(AUTO_ANIME_CANDIDATE_LIMIT).toBeGreaterThan(0);
+    expect(AUTO_SONG_CANDIDATE_LIMIT).toBeGreaterThan(0);
   });
 });
 

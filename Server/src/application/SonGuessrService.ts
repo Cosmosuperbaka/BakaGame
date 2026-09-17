@@ -6,11 +6,13 @@ import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
   TEST_BOT_BATCH_LIMIT,
+  TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
 import { AppError } from "../domain/Errors";
 import { ensureRoomId, normalizeName, normalizeWord, shuffle, type RandomSource } from "../domain/Rules";
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
+import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type {
   MusicLoginSession,
   MusicProvider,
@@ -50,6 +52,7 @@ import type {
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
+import { unsupportedCommand } from "./handlers/CommandHandler";
 
 const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionType: "song",
@@ -71,7 +74,15 @@ const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
 const SCORING = {
   correct: 1,
   submitterPerCorrect: 3,
-  submitterNobodyCorrect: 5,
+  /**
+   * 无人猜中时出题人的保底奖励。
+   *
+   * 必须严格小于 `submitterPerCorrect`（一人猜中），否则「出无人能猜的题」比
+   * 「出有人猜中的题」收益更高，出题人的最优策略会与游戏目标相反。
+   * 取 2 而非 3：0 人猜中 = 2、1 人猜中 = 3、2 人猜中 = 6，单调性成立。
+   * 「取 2 还是取 0」属手感调优，留到有真实对局数据后再定。
+   */
+  submitterNobodyCorrect: 2,
 } as const;
 
 interface SonGuessrPlayerRecord {
@@ -342,6 +353,23 @@ const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
  */
 export const AUTO_ANIME_CANDIDATE_LIMIT = 5;
 /**
+ * 自动出题时最多尝试的歌曲候选数，语义与 `AUTO_ANIME_CANDIDATE_LIMIT` 对齐。
+ *
+ * 歌曲分支此前是裸 `while (pool.length > 0)`：大歌单且多为会员曲时，
+ * `continue` 会让循环一路串行回源到池子见底（每次回源约 5~6 个上游请求），
+ * 期间 `automaticRoundLoading` 长占，客户端对该命令发的是 `timeout: 0`，
+ * 房主 UI 会长时间卡在「出题中」且没有任何超时提示。
+ */
+export const AUTO_SONG_CANDIDATE_LIMIT = 5;
+/**
+ * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
+ *
+ * 只卡命令入口，不卡出题解析器内部的上游调用：后者只由房主的
+ * `song.game.start` / `nextRound` 间接触发，不是滥用面。
+ */
+const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
+const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
+/**
  * 单次番剧歌曲解析允许发起的上游搜索次数（一次搜索只对应一个上游请求，成本最低）。
  */
 export const ANIME_SONG_SEARCH_BUDGET = 24;
@@ -420,6 +448,17 @@ export class SonGuessrService {
   private readonly now: () => number;
   private readonly random: RandomSource;
   private idCounter = 0;
+  /**
+   * 按连接统计的音乐上游调用配额。
+   *
+   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64 / 触发限流后冷却 5s→60s），
+   * 没有按连接的配额时，一个人打满队列会让上游返回 405 并进入全局冷却，
+   * 结果是全服所有房间在这一分钟里搜歌、出题一起报错。
+   */
+  private readonly musicLimiter = new SlidingWindowRateLimiter({
+    windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
+    maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
+  });
 
   constructor(private readonly options: SonGuessrServiceOptions) {
     this.now = options.now ?? (() => Date.now());
@@ -570,22 +609,34 @@ export class SonGuessrService {
         return this.addBots(connection, message.payload.count);
       case "song.test.removeBot":
         return this.removeBots(connection, message.payload.count);
+      default: {
+        // 穷尽性断言：协议新增命令类型但这里漏 case 时，下面这行会直接编译失败。
+        // 没有它的话漏 case 的后果是「协议校验通过 → ACK 成功 → payload 为空 → 客户端以为命令执行成功」。
+        const exhaustiveCheck: never = message;
+        void exhaustiveCheck;
+        return unsupportedCommand();
+      }
     }
   }
 
   async runHousekeeping(): Promise<void> {
     const currentTime = this.now();
     for (const room of [...this.rooms.values()]) {
-      if (this.isTestRoom(room)) continue;
-      if (this.onlineCount(room) === 0 || currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS) {
-        if (this.onlineCount(room) === 0) {
+      const isEmpty = this.onlineCount(room) === 0;
+      const isIdleTimeout = currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS;
+      // 测试房间豁免「无人立即回收」——它常态就是一间等人加入的空房；
+      // 但仍受空闲超时约束：否则那唯一的房间记录会永久驻留，
+      // 加出来的机器人也永远不会被回收，只能靠重启释放。
+      if (this.isTestRoom(room) && isEmpty && !isIdleTimeout) continue;
+      if (isEmpty || isIdleTimeout) {
+        if (isEmpty) {
           room.emptySinceAt ??= currentTime;
           if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) {
             this.publishRoomCalibration(room);
             continue;
           }
         }
-        this.closeRoom(room, this.onlineCount(room) === 0 ? "empty" : "idle_timeout");
+        this.closeRoom(room, isEmpty ? "empty" : "idle_timeout");
         continue;
       }
       room.emptySinceAt = undefined;
@@ -636,6 +687,13 @@ export class SonGuessrService {
             state.gaveUp ||
             state.guessesUsed >= round.settings.maxGuessesPerRound
           ) {
+            continue;
+          }
+          // 上游正在校验这次猜测（占位已扣、结果未回）：超时由 in-flight 流程自己判定。
+          // 巡检在这里抢先记一次 timeout，会让一次真实猜测扣掉两次配额，
+          // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
+          // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
+          if (state.inFlight && !isRoundHardExpired) {
             continue;
           }
 
@@ -775,8 +833,13 @@ export class SonGuessrService {
   }
 
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
-    this.ensureConnectionFree(connection);
-    const room = this.getRoom(ensureRoomId(roomIdValue));
+    const targetRoomId = ensureRoomId(roomIdValue);
+    // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
+    // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
+    if (!(connection.roomId === targetRoomId && connection.playerId)) {
+      this.ensureConnectionFree(connection);
+    }
+    const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
       (candidate) => candidate.sessionToken === token && candidate.membership !== "kicked",
     );
@@ -820,9 +883,25 @@ export class SonGuessrService {
   }
 
   private leaveRoom(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
     // 显式离开代表账号主动退出，只有此时销毁其房间级音乐会话；网络断线由宽限期处理。
-    this.clearMusicSession(room, player.id);
+    return this.detachFromRoom(connection, { keepMusicSession: false });
+  }
+
+  /**
+   * 让连接与其当前席位彻底脱钩，并与房间内的 player 记录同步，避免出现
+   * 「在线但没有任何连接」的幽灵玩家（onlineCount 永不归零 → 房间永不关闭 →
+   * 4 位房间号被耗尽，且只能靠重启进程恢复）。
+   *
+   * @param keepMusicSession 切房间 / 被接管时传 true：人是被动离开的，
+   *   保留其网易云会话可以让旧房间继续出题（凭据只在内存，房间关闭即随之释放）；
+   *   显式退出传 false，按原语义一并清除。
+   */
+  private detachFromRoom(
+    connection: ConnectionRecord,
+    { keepMusicSession }: { keepMusicSession: boolean },
+  ) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (!keepMusicSession) this.clearMusicSession(room, player.id);
     delete room.players[player.id];
     connection.roomId = undefined;
     connection.playerId = undefined;
@@ -964,7 +1043,8 @@ export class SonGuessrService {
   }
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
-    const { room } = this.requireRoomPlayer(connection);
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.requireMusicQuota(connection, player);
     return {
       results: await this.options.musicProvider.search(
         keyword,
@@ -975,7 +1055,8 @@ export class SonGuessrService {
   }
 
   private async resolvePlaylist(connection: ConnectionRecord, value: string) {
-    const { room } = this.requireRoomPlayer(connection);
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.requireMusicQuota(connection, player);
     const playlistId = this.parsePlaylistId(value);
     const resolve = this.options.musicProvider.getPlaylistSongs;
     if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
@@ -984,7 +1065,8 @@ export class SonGuessrService {
   }
 
   private async searchArtists(connection: ConnectionRecord, keyword: string) {
-    const { room } = this.requireRoomPlayer(connection);
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.requireMusicQuota(connection, player);
     const search = this.options.musicProvider.searchArtists;
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
     return {
@@ -997,6 +1079,21 @@ export class SonGuessrService {
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     return { results: await provider.searchSubjects(keyword, 20) };
+  }
+
+  /**
+   * 客户端可直接触发的音乐类命令的统一前置闸门：正式成员才可调用 + 按连接配额。
+   *
+   * 这两条此前都缺：命令只要求「人在房间里」，旁观者同样能发起搜索；
+   * 且完全没有调用配额，见 `musicLimiter` 的注释。
+   */
+  private requireMusicQuota(connection: ConnectionRecord, player: SonGuessrPlayerRecord) {
+    if (player.membership !== "active") {
+      throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能进行音乐操作");
+    }
+    if (!this.musicLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
+    }
   }
 
   private parsePlaylistId(value: string): string {
@@ -1231,7 +1328,17 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
-    const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
+    const currentCount = Object.values(room.players).length;
+    if (currentCount >= TEST_MODE_MAX_PLAYERS) {
+      throw new AppError("ROOM_FULL", `测试房间最多 ${TEST_MODE_MAX_PLAYERS} 名玩家`);
+    }
+    // 单条指令的批量上限只约束「一次能加多少」，必须再卡一次总人数：
+    // 否则反复调用就能把房间撑到任意规模，内存与全房广播量都无上界。
+    const count = clampInt(
+      countValue ?? 1,
+      1,
+      Math.min(TEST_BOT_BATCH_LIMIT, TEST_MODE_MAX_PLAYERS - currentCount),
+    );
     const added: string[] = [];
     for (let index = 0; index < count; index += 1) {
       const botIndex = Object.values(room.players).filter((candidate) => candidate.isBot).length;
@@ -1676,7 +1783,9 @@ export class SonGuessrService {
     const playable = (freshCandidates.length > 0 ? freshCandidates : candidates)
       .filter((song) => room.musicSession?.account.vipStatus !== "nonVip" || !song.requiresVip);
     const pool = [...playable];
-    while (pool.length > 0) {
+    let attempts = 0;
+    while (pool.length > 0 && attempts < AUTO_SONG_CANDIDATE_LIMIT) {
+      attempts += 1;
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
       const song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
       if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
@@ -1783,6 +1892,10 @@ export class SonGuessrService {
     if (room.phase !== "playing" || !round || round.number !== roundNumber) return { ignored: true };
     if (player.membership !== "active" || (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id))) {
       return { ignored: true };
+    }
+    // 刷新播放地址同样命中那个共享的上游实例，必须一起计入配额。
+    if (!this.musicLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
     }
     const refresh = this.options.musicProvider.refreshSongAudio;
     if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
@@ -1997,7 +2110,8 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     this.requireActiveRound(room);
-    this.finishRound(room);
+    // 跳过不参与结算：出题人拿不到任何奖励，避免「选出题人 → 立刻跳过」的零成本刷分。
+    this.finishRound(room, true);
     this.publishRoom(room);
     this.publishLobby();
     return { skipped: true };
@@ -2113,11 +2227,16 @@ export class SonGuessrService {
       : undefined;
   }
 
-  private finishRound(room: SonGuessrRoomRecord) {
+  /**
+   * @param skipped 房主直接跳过本回合。跳过不是「无人猜中」，
+   *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
+   *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
+   */
+  private finishRound(room: SonGuessrRoomRecord, skipped = false) {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;
     const submitter = room.players[round.submitterPlayerId];
-    if (submitter) {
+    if (submitter && !skipped) {
       submitter.score += round.correctPlayerIds.length > 0
         ? round.correctPlayerIds.length * SCORING.submitterPerCorrect
         : SCORING.submitterNobodyCorrect;
@@ -2540,10 +2659,15 @@ export class SonGuessrService {
   }
 
   private ensureConnectionFree(connection: ConnectionRecord) {
-    if (connection.roomId || connection.playerId) {
-      connection.roomId = undefined;
-      connection.playerId = undefined;
+    if (!connection.roomId && !connection.playerId) return;
+    if (connection.roomId && connection.playerId && this.rooms.has(connection.roomId)) {
+      this.detachFromRoom(connection, { keepMusicSession: true });
+      return;
     }
+    // 房间已经不存在（或只有一半字段有值）时，requireRoomPlayer 会抛 ROOM_NOT_FOUND
+    // 并把正常的 create / join / reconnect 一起打断；这种残余状态退回原来的置空即可。
+    connection.roomId = undefined;
+    connection.playerId = undefined;
   }
 
   private ensureHost(room: SonGuessrRoomRecord, playerId: string) {
