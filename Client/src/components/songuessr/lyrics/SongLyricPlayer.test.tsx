@@ -88,7 +88,7 @@ describe("SongLyricPlayer", () => {
     expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
   });
 
-  it("音频播放完毕时自动切换为纯净歌词总览视图（固定高度、无滚动、字体字重与动态一致）", () => {
+  it("音频播放完毕时自动切换为纯净歌词总览视图（原生 AMLL 总览、自适应高度、平滑缩放）", () => {
     const lines: SongLyricLine[] = [
       { time: 1000, endTime: 3000, text: "选中的第一句歌词", translatedLyric: "Translation 1" },
       { time: 3000, endTime: 6000, text: "选中的第二句歌词" },
@@ -102,21 +102,15 @@ describe("SongLyricPlayer", () => {
     );
 
     const container = screen.getByTestId("baka-song-lyric-container");
-    expect(container).toHaveClass("h-64");
+    expect(container.style.height).toBe("220px");
 
     const overview = screen.getByTestId("baka-song-lyric-overview");
     expect(overview).toBeInTheDocument();
-    expect(overview).toHaveClass("h-full");
+    expect(overview.querySelector(".baka-lyric-player")).toHaveClass("baka-overview-mode");
     expect(screen.queryByText("题目歌词总览")).toBeNull();
     expect(screen.queryByText(/重播可再次查看/)).toBeNull();
 
-    const lyric1 = screen.getByText("选中的第一句歌词");
-    expect(lyric1).toBeInTheDocument();
-    expect(lyric1).toHaveClass("font-semibold");
-    expect(lyric1).toHaveClass("font-serif");
-
-    expect(screen.getByText("Translation 1")).toBeInTheDocument();
-    expect(screen.getByText("选中的第二句歌词")).toBeInTheDocument();
+    expect(screen.getByText(/选中的第一句歌词/)).toBeInTheDocument();
   });
 
   it("歌词组件拦截并阻止滚轮事件向下冒泡，避免组件内部错位滚动", () => {
@@ -148,6 +142,20 @@ describe("SongLyricPlayer", () => {
     ];
     rerender(<SongLyricPlayer lines={lines2} audioStatus="ready" />);
     expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
+  });
+
+  it("当包含多行双语翻译歌词时自适应扩展容器高度，避免总览溢出", () => {
+    const lines: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "夜空に浮かぶ星たち", translatedLyric: "浮现在夜空中的群星点点" },
+      { time: 3000, endTime: 6000, text: "静寂を切り裂いていく", translatedLyric: "将这无尽的寂静一点点撕裂开来" },
+      { time: 6000, endTime: 9000, text: "いつか届くはずの想い", translatedLyric: "总有一天这份思念能够传达到你的身边" },
+      { time: 9000, endTime: 12000, text: "未来へと紡いでいく", translatedLyric: "交织着向未知的未来不断延伸" },
+    ];
+
+    render(<SongLyricPlayer lines={lines} audioPlaybackState="completed" />);
+    const container = screen.getByTestId("baka-song-lyric-container");
+    const height = parseInt(container.style.height, 10);
+    expect(height).toBeGreaterThanOrEqual(400);
   });
 });
 
