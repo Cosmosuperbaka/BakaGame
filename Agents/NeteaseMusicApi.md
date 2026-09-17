@@ -144,6 +144,11 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - 必须在 `Client/src/index.css` 强制覆写 `.baka-lyric-player.amll-lyric-player`：`mix-blend-mode: normal !important`、`color: var(--color-foreground) !important`、`font-family: var(--font-serif) !important`、`text-shadow: none !important`；
 - 时间轴驱动：`SongLyricPlayer` 接收 `audioRef`，监听 `play/pause/timeupdate/seeked`，并在播放期间通过 `requestAnimationFrame` 驱动 60fps/120fps 流畅逐字渐变渲染；同时在容器内挂载 `sr-only` 隐藏全文本节点，保障屏幕阅读器无障碍与集成测试稳定性。
 
+**外文歌词翻译与总览展示规范**：
+- **服务端四级融合翻译**：在获取歌词四级链路中统一接入 `mergeTranslations`。自动提取网易云官方 `ytlrc` 与 `tlyric`（以及 `yromalrc` 与 `romalrc`），以 `<= 1500ms` 时间戳容差智能对齐，为每行歌词注入 `translatedLyric`。清洗算法保留翻译完整性，确保日文、英文等外文歌曲拥有中文翻译。
+- **逐字动态播放副行渲染**：客户端在 `index.css` 中显式针对 `[class*="lyricSubLine"]` 配置衬线字体、`opacity: 0.65`、`font-size: 0.85rem` 与居中排版，使 AMLL 播放器在歌词点亮时同步展示副文本翻译。
+- **纯净自适应高度总览**：音频播放完成后（`audioPlaybackState === "completed"`），自动切换为全量歌词总览卡片。严格去除“题目歌词总览”、“共x句...”等冗余描述性文本；容器采用 `min-h-[11rem] w-full` 自适应高度（`h-auto`），平铺容纳全部截取歌词行与双语翻译，禁止滚动截断，保障猜题推断体验。
+
 ### 歌词清洗
 
 时间轴歌词进入游戏前必须：
