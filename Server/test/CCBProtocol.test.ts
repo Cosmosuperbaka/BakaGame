@@ -18,7 +18,7 @@ test("CCB 协议解析大厅与房间生命周期指令", () => {
         password: "pw",
         allowSpectators: true,
         userName: "房主",
-        settings: { mode: "sync", guessLimit: 8, subjectTypes: [2, 4] },
+        settings: { mode: "sync", maxAttempts: 8, metaTags: ["动画", "科幻"] },
       },
     }),
   ).toMatchObject({
@@ -26,7 +26,7 @@ test("CCB 协议解析大厅与房间生命周期指令", () => {
     payload: {
       roomId: "1234",
       visibility: "private",
-      settings: { mode: "sync", guessLimit: 8, subjectTypes: [2, 4] },
+      settings: { mode: "sync", maxAttempts: 8, metaTags: ["动画", "科幻"] },
     },
   });
 
@@ -123,11 +123,11 @@ test("CCB 协议解析房间设置并拒绝越界取值", () => {
         topNSubjects: 300,
         startYear: 2015,
         endYear: 2026,
-        subjectTypes: [2],
-        guessLimit: 20,
+        metaTags: ["动画"],
+        maxAttempts: 20,
         timeLimitMs: 120_000,
-        textHint: false,
-        blurHint: false,
+        useHints: [5, 3],
+        useImageHint: 7,
         tagBan: true,
         globalPick: true,
       },
@@ -136,15 +136,17 @@ test("CCB 协议解析房间设置并拒绝越界取值", () => {
     payload: {
       mode: "bloodbath",
       topNSubjects: 300,
-      subjectTypes: [2],
-      guessLimit: 20,
+      metaTags: ["动画"],
+      maxAttempts: 20,
       timeLimitMs: 120_000,
+      useHints: [5, 3],
+      useImageHint: 7,
       tagBan: true,
       globalPick: true,
     },
   });
 
-  // 模式与作品类型是枚举，主题类型不能为空数组
+  // 模式是枚举；metaTags 不能为空数组，提示阈值不能为负
   expect(() =>
     parseCCBMessage({
       id: "bad-mode",
@@ -155,26 +157,26 @@ test("CCB 协议解析房间设置并拒绝越界取值", () => {
 
   expect(() =>
     parseCCBMessage({
-      id: "bad-subject-types",
+      id: "bad-meta-tags",
       type: "ccb.room.updateSettings",
-      payload: { subjectTypes: [] },
+      payload: { metaTags: [] },
     }),
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 
   expect(() =>
     parseCCBMessage({
-      id: "bad-subject-type-value",
+      id: "bad-hint-threshold",
       type: "ccb.room.updateSettings",
-      payload: { subjectTypes: [3] },
+      payload: { useImageHint: -1 },
     }),
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 
-  // 次数上限与年份都必须在 Schema 区间内，超出即拒绝而不是静默夹取
+  // 次数上限、年份与时限都必须在 Schema 区间内，超出即拒绝而不是静默夹取
   expect(() =>
     parseCCBMessage({
       id: "bad-guess-limit",
       type: "ccb.room.updateSettings",
-      payload: { guessLimit: 0 },
+      payload: { maxAttempts: 0 },
     }),
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 

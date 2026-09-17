@@ -137,7 +137,7 @@ describe("CCB 房间生命周期", () => {
       roundNumber: 0,
       testMode: false,
       hasPassword: false,
-      settings: { mode: "normal", guessLimit: 10, subjectTypes: [2] },
+      settings: { mode: "normal", maxAttempts: 10, metaTags: ["动画"] },
     });
     expect(created.snapshot.players).toHaveLength(1);
     expect(created.snapshot.players[0]).toMatchObject({
@@ -173,13 +173,13 @@ describe("CCB 房间生命周期", () => {
     const host = connection(service, "host");
 
     const created = (await createRoom(service, host, {
-      settings: { mode: "sync", topNSubjects: 100, guessLimit: 6, timeLimitMs: 60_000 },
+      settings: { mode: "sync", topNSubjects: 100, maxAttempts: 6, timeLimitMs: 60_000 },
     })) as { snapshot: CCBRoomSnapshot };
 
     expect(created.snapshot.settings).toMatchObject({
       mode: "sync",
       topNSubjects: 100,
-      guessLimit: 6,
+      maxAttempts: 6,
       timeLimitMs: 60_000,
     });
 
@@ -593,15 +593,15 @@ describe("CCB 房间设置", () => {
     const updated = (await execute(service, host, {
       id: "settings",
       type: "ccb.room.updateSettings",
-      payload: { name: "改名了", visibility: "public", mode: "bloodbath", guessLimit: 4 },
-    })) as { settings: { mode: string; guessLimit: number } };
-    expect(updated.settings).toMatchObject({ mode: "bloodbath", guessLimit: 4 });
+      payload: { name: "改名了", visibility: "public", mode: "bloodbath", maxAttempts: 4 },
+    })) as { settings: { mode: string; maxAttempts: number } };
+    expect(updated.settings).toMatchObject({ mode: "bloodbath", maxAttempts: 4 });
 
     expect(lastEvent<CCBRoomSnapshot>(host, "ccb.room.snapshot")).toMatchObject({
       name: "改名了",
       visibility: "public",
       hasPassword: false,
-      settings: { mode: "bloodbath", guessLimit: 4 },
+      settings: { mode: "bloodbath", maxAttempts: 4 },
     });
   });
 
