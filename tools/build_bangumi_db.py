@@ -10,7 +10,6 @@ import shutil
 import sqlite3
 import tempfile
 import urllib.request
-from datetime import date
 from pathlib import Path
 
 # CCB 角色标签的权威来源：CCB-TagsCI 每周一 04:00（北京时间）把合并了用户反馈的
@@ -121,18 +120,9 @@ def setup_character(db: sqlite3.Connection):
         person_id INTEGER NOT NULL, name TEXT NOT NULL, name_cn TEXT NOT NULL,
         PRIMARY KEY(character_id, person_id)
       );
-      -- CCB 登场作品：原版 `getCharacterAppearances` 里「主角/配角 + 年份有效 + 未上映」
-      -- 的那批，按 `rating_count` 降序（原版 `.sort((a,b) => b.rating_count - a.rating_count)`）。
-      -- 这里**故意保留全部作品类型**（含音乐 3）：原版先按房间设置的大类过滤，过滤后为空
-      -- 会**回退到全部类型**，所以只有保留全集才能还原两种分支。
-      -- 注意：原版还会丢弃 `locked` 作品，dump 没有该字段，属已知差异。
-      CREATE TABLE character_appearances (
-        character_id INTEGER NOT NULL, position INTEGER NOT NULL,
-        subject_id INTEGER NOT NULL, subject_type INTEGER NOT NULL,
-        year INTEGER NOT NULL, rating REAL NOT NULL,
-        PRIMARY KEY(character_id, position)
-      );
       CREATE INDEX csr_character ON character_subject_relations(character_id, relation_order);
+      -- 出题 stage 2 要「按作品取角色」，方向与上面那条相反，必须单独建。
+      CREATE INDEX csr_subject ON character_subject_relations(subject_id, relation_order);
       CREATE INDEX csubjects_type_date ON subjects(type, date);
       CREATE INDEX characters_collects ON characters(collects DESC);
       CREATE INDEX character_tags_tag ON character_tags(tag, character_id);
@@ -346,50 +336,7 @@ CHARACTER_FLOOR_MESSAGE = (
 
 # 主角权重 3 倍、配角 1 倍（原版 `stuffFactor`）。同时也是「哪些关联算登场作品」的判据：
 # 原版只认 staff 为 主角/配角，对应 dump 的 relation_type 1/2。
-CCB_STUFF_FACTOR = {1: 3, 2: 1}
-# 声优只取「动画(2)/游戏(4)」的配音关系（原版 `person.subject_type` 过滤）。
 CCB_VA_SUBJECT_TYPES = (2, 4)
-
-
-def ccb_year(date: str) -> int | None:
-    """取作品年份。空 date 等价于原版 `details.year === null` —— 原版会**丢弃**该作品
-    （`if (!details || details.year === null) return null`）。"""
-    head = (date or "")[:4]
-    return int(head) if head.isdigit() else None
-
-
-def ccb_is_future(date: str, today: str) -> bool:
-    """未上映作品。原版比较完整日期与当前时间，这里用 ISO 前缀做字典序比较；
-    因此产物与构建日期有关，由每周重建任务保持新鲜。"""
-    return bool(date) and date[:10] > today
-
-
-def derive_ccb_appearances(
-    relations: list[tuple[int, int]],
-    subjects: dict[int, dict],
-    today: str,
-) -> list[tuple[int, int, int, float]]:
-    """算出一个角色的登场作品，顺序 = 原版的 `rating_count` 降序（`shared_appearances`
-    的「第一个共同作品」直接依赖这个顺序）。
-
-    返回 `(subject_id, subject_type, year, rating)`；年份缺失或未上映的作品按原版丢弃。
-    """
-    rows: list[tuple[int, int, int, float, int]] = []
-    for subject_id, relation_type in relations:
-        if relation_type not in CCB_STUFF_FACTOR:
-            continue
-        subject = subjects.get(subject_id)
-        if subject is None:
-            continue
-        date = subject.get("date", "") or ""
-        year = ccb_year(date)
-        if year is None or ccb_is_future(date, today):
-            continue
-        rating_count = int(subject.get("_rating_count", 0) or 0)
-        rows.append((subject_id, int(subject.get("type", 0) or 0), year, float(subject.get("score", 0) or 0), rating_count))
-    # 同票数按 subject_id 升序，保证同权重时的顺序与累积顺序一致（原版靠稳定排序）。
-    rows.sort(key=lambda row: (-row[4], row[0]))
-    return [(row[0], row[1], row[2], row[3]) for row in rows]
 
 
 def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
@@ -410,8 +357,7 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             "SELECT count(DISTINCT r.character_id) FROM character_subject_relations r "
             "JOIN subjects s ON s.id = r.subject_id WHERE s.type = 2"
         ),
-        "appearances": scalar("SELECT count(*) FROM character_appearances"),
-        "appearance_characters": scalar("SELECT count(DISTINCT character_id) FROM character_appearances"),
+        "relations": scalar("SELECT count(*) FROM character_subject_relations"),
         "subjects": scalar("SELECT count(*) FROM subjects"),
         "subjects_animated": scalar("SELECT count(*) FROM subjects WHERE type = 2"),
         "animated_with_heat": scalar("SELECT count(*) FROM subjects WHERE type = 2 AND heat > 0"),
@@ -428,12 +374,12 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
         raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
-    # CCB 派生字段为空同样是静默回归：登场作品/热度算不出来时，出题与核心反馈就全部失真。
-    for column in ("appearances", "appearance_characters", "animated_with_heat"):
+    # 出题与反馈全都要靠「关系 × 作品」联表算，这两项任一为 0 就说明 dump 没读对。
+    for column in ("relations", "animated_characters", "animated_with_heat"):
         if stats[column] == 0:
             raise SystemExit(
-                f"CCB 派生字段 {column} 全库为 0：dump 的 subject-characters / subject 未被正确读取，"
-                "或登场作品/热度推导规则被改坏。"
+                f"CCB 基础数据 {column} 全库为 0：dump 的 subject-characters / subject 未被正确读取，"
+                "或关联/热度推导被改坏。"
             )
     return stats
 
@@ -494,16 +440,9 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
             if item.get("type") != 2: continue
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
                 song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
-        # ---- CCB 关系与声优先按角色分组，派生登场作品与标签池都要按角色聚合 ----
-        relations_by_character: dict[int, list[tuple[int, int]]] = {}
-        seen_relation: set[tuple[int, int]] = set()
+        # ---- CCB 角色 ↔ 作品关联（登场作品与标签池都由运行时联表算）----
+        # 主键 (character_id, subject_id) + INSERT OR IGNORE 已经去重，无需在内存里再判一次。
         for rel in lines(dump / "subject-characters.jsonlines"):
-            relation = (rel["character_id"], rel["subject_id"])
-            if relation not in seen_relation:
-                seen_relation.add(relation)
-                relations_by_character.setdefault(rel["character_id"], []).append(
-                    (rel["subject_id"], int(rel.get("type", 0) or 0))
-                )
             char_sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
 
         # ---- CCB 声优（person-characters + person） ----
@@ -542,26 +481,19 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
                 ),
             )
 
-        # ---- 角色本体 + CCB 派生字段 ----
-        today = date.today().isoformat()
+        # ---- 角色本体 ----
+        # 登场作品**不落库**：它是 `character_subject_relations × subjects` 的函数，
+        # 还要按房间设置的大类过滤，且原版在运行时才做「年份有效/未上映」判定。
+        # 物化一份只会制造第二真相源（且算标签权重必需的 `relation_type` 也不在里面）。
+        # 运行时由 `infrastructure/CCBCharacterRepository.ts` 联表算。
         for item in lines(dump / "character.jsonlines"):
             character_id = item["id"]
             name_cn, gender, aliases = parse_character_infobox(item.get("infobox", ""))
-            relations = relations_by_character.get(character_id, [])
             char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
                 character_id, int(item.get("role", 0) or 0), item.get("name", ""), name_cn, gender,
                 json.dumps(aliases, ensure_ascii=False), item.get("summary", ""),
                 item.get("comments", 0), item.get("collects", 0),
             ))
-            appearances = derive_ccb_appearances(relations, subjects, today)
-            if appearances:
-                char_sub.executemany(
-                    "INSERT INTO character_appearances VALUES (?,?,?,?,?,?)",
-                    (
-                        (character_id, position, subject_id, subject_type, year, rating)
-                        for position, (subject_id, subject_type, year, rating) in enumerate(appearances)
-                    ),
-                )
 
         # ---- CCB 角色标签（上游 id_tags 快照） ----
         for character_id, tags in character_tags.items():
