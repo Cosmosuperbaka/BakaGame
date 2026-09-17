@@ -55,4 +55,18 @@ describe("SongLyricPlayer", () => {
     expect(removeEventListenerSpy).toHaveBeenCalledWith("pause", expect.any(Function));
     expect(removeEventListenerSpy).toHaveBeenCalledWith("timeupdate", expect.any(Function));
   });
+
+  it("首句时间非 0 且音频未播放时，初始时间轴锚定在首句时间且容器拥有全高全宽类名", () => {
+    const lines: SongLyricLine[] = [
+      { time: 35000, endTime: 40000, text: "副歌第一句" },
+      { time: 40000, endTime: 45000, text: "副歌第二句" },
+    ];
+
+    const { container } = render(<SongLyricPlayer lines={lines} />);
+    const playerWrapper = container.querySelector(".baka-lyric-player");
+    expect(playerWrapper).not.toBeNull();
+    expect(playerWrapper).toHaveClass("h-full");
+    expect(playerWrapper).toHaveClass("w-full");
+  });
 });
+
