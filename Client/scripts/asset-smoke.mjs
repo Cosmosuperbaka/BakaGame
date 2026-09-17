@@ -93,6 +93,8 @@ try {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
     const markers = [
       '<div id="root"><main>',
+      // 外壳清除脚本：执行 JS 的客户端必须在首帧前清空外壳，否则用户进站会先看到一段裸文本
+      'document.getElementById("root").replaceChildren()',
       `<link rel="canonical" href="${canonical}" data-static-seo="1" />`,
       `<meta name="description"`,
       'type="application/ld+json"',

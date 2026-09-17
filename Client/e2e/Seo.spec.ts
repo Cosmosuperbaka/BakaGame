@@ -44,4 +44,18 @@ test.describe("页面 SEO 元信息", () => {
     const robots = page.locator('head meta[name="robots"]');
     await expect(robots).toHaveAttribute("content", /noindex/);
   });
+
+  // 静态外壳只服务不执行 JS 的爬虫，对执行 JS 的客户端必须在首帧之前消失，
+  // 否则用户进站会先看到一段裸文本（曾是线上实际观感问题）。
+  // 这里把应用脚本全部掐掉，模拟「首屏 JS 最慢」的极端情况：外壳仍不得出现在页面上，
+  // 而原始 HTML 里必须留有正文——两边都不能少。
+  test("静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空", async ({ page }) => {
+    const raw = await (await page.request.get("/whoisfaker")).text();
+    expect(raw).toContain("在线版谁是卧底");
+    expect(raw).toContain('<div id="root"><main>');
+
+    await page.route("**/*.js", (route) => route.abort());
+    await page.goto("/whoisfaker", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#root")).toBeEmpty();
+  });
 });
