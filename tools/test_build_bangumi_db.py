@@ -195,6 +195,43 @@ def make_dump(root: Path) -> None:
     )
 
 
+def subject_record(
+    subject_id: int,
+    subject_type: int,
+    date: str,
+    tags: list[tuple[str, int]] | None = None,
+    meta_tags: list[str] | None = None,
+    score: float = 0.0,
+    rating_count: int = 0,
+) -> dict:
+    return {
+        "id": subject_id,
+        "type": subject_type,
+        "date": date,
+        "tags": [{"name": name, "count": count} for name, count in (tags or [])],
+        "meta_tags": meta_tags or [],
+        "score": score,
+        "_rating_count": rating_count,
+    }
+
+
+def test_derive_ccb_appearances() -> None:
+    print("derive_ccb_appearances（登场作品排序）")
+    today = "2026-09-16"
+    subjects = {
+        1: subject_record(1, 2, "2008-04-06", score=8.3, rating_count=18_213),
+        2: subject_record(2, 1, "2006-10-05", score=8.6, rating_count=5),
+        3: subject_record(3, 4, "2011-06-16", score=7.9, rating_count=900),
+        4: subject_record(4, 2, "", score=9.9, rating_count=99_999),
+    }
+    rows = subject.derive_ccb_appearances([(1, 1), (2, 1), (3, 2), (4, 1)], subjects, today)
+    # rating_count 降序；年份缺失的作品被丢弃，所以 4 不在列表里。
+    check("按投票人数降序并丢弃无年份作品", rows, [(1, 2, 2008, 8.3), (3, 4, 2011, 7.9), (2, 1, 2006, 8.6)])
+
+    # 非主角/配角的关系（如 3=客串）不参与。
+    check("无关关系类型被忽略", subject.derive_ccb_appearances([(1, 3)], subjects, today), [])
+
+
 def test_build_end_to_end() -> None:
     print("build（合成 dump 端到端）")
     with tempfile.TemporaryDirectory() as tmp:
@@ -226,9 +263,51 @@ def test_build_end_to_end() -> None:
         check("character_tags 行数", char.execute("SELECT count(*) FROM character_tags").fetchone()[0], 2)
         # 注意：SQLite 的 TEXT 排序是 BINARY，中文按码点/UTF-8 字节序，不是拼音。
         check("character_tags 内容", char.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY tag").fetchall(), [("紫瞳",), ("腹黑",)])
+        # position 必须保持 id_tags 的数组序：原版按 `slice(0, characterTagNum)` 取前若干个。
+        check(
+            "character_tags 保序",
+            char.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY position").fetchall(),
+            [("紫瞳",), ("腹黑",)],
+        )
 
-        vas = char.execute("SELECT character_id, person_id, name, name_cn FROM character_vas ORDER BY character_id").fetchall()
-        check("声优只保留动画/游戏作品", vas, [(1, 1, "水樹奈々", "水树奈奈")])
+        # CCB 登场作品：主角/配角都算，按投票人数降序（同票按 subject_id）；
+        # 书籍(999) 虽然类型不是动画，但年份齐全，也要进列表（类型过滤发生在查询期）。
+        check(
+            "character_appearances 落库",
+            char.execute(
+                "SELECT subject_id, subject_type, year, rating FROM character_appearances WHERE character_id = 1 ORDER BY position"
+            ).fetchall(),
+            [(8, 2, 2006, 8.6), (999, 1, 2007, 7.0)],
+        )
+        check(
+            "配角也进登场作品",
+            char.execute(
+                "SELECT subject_id, subject_type FROM character_appearances WHERE character_id = 2 ORDER BY position"
+            ).fetchall(),
+            [(8, 2)],
+        )
+
+        # 标签池**故意不落库**：它是房间设置（大类 + subjectTagNum/characterTagNum + commonTags）
+        # 的函数，物化任意一份都会把某一种设置写死。这里只断言「输入」齐备。
+        check(
+            "角色库的 subjects 存 raw_tags 票数与投票人数",
+            char.execute("SELECT raw_tags, rating_count FROM subjects WHERE id = 8").fetchone(),
+            ('{"机战": 10}', 0),
+        )
+        # 音乐(3) 也必须进角色库：原版的大类过滤为空时会回退到全部类型，那时要用它的标签。
+        check(
+            "音乐条目也进角色库",
+            char.execute("SELECT type, rating_count FROM subjects WHERE id = 77").fetchone(),
+            (3, 0),
+        )
+        check(
+            "characters 表不含标签池列",
+            [row[1] for row in char.execute("PRAGMA table_info(characters)")],
+            ["id", "role", "name", "name_cn", "gender", "aliases", "summary", "comments", "collects"],
+        )
+
+        vas = char.execute("SELECT character_id, position, person_id, name, name_cn FROM character_vas ORDER BY character_id").fetchall()
+        check("声优只保留动画/游戏作品", vas, [(1, 0, 1, "水樹奈々", "水树奈奈")])
 
         # FTS 索引必须仍然可用，且能靠中文名检索
         hit = char.execute("SELECT rowid FROM character_search WHERE character_search MATCH ?", ("鲁路修*",)).fetchall()
@@ -268,6 +347,7 @@ def test_build_guard() -> None:
 def main() -> int:
     test_parse_character_infobox()
     test_load_character_tags()
+    test_derive_ccb_appearances()
     test_build_end_to_end()
     test_build_guard()
     print()

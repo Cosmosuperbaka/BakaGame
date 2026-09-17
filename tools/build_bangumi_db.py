@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import tempfile
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 # CCB 角色标签的权威来源：CCB-TagsCI 每周一 04:00（北京时间）把合并了用户反馈的
@@ -89,7 +90,13 @@ def setup_character(db: sqlite3.Connection):
       CREATE TABLE subjects (
         id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
         name_cn TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
-        tags TEXT NOT NULL, meta_tags TEXT NOT NULL, score REAL NOT NULL
+        -- 原版 `details.raw_tags`：全类型、未过滤的 {标签: 票数}。
+        -- 原版的 `details.tags`（只对动画(2)/游戏(4)填充、且剔除含 "20" 的年份型标签）
+        -- 由它 + 类型在运行时导出 —— 存两份会制造漂移。
+        raw_tags TEXT NOT NULL, meta_tags TEXT NOT NULL, score REAL NOT NULL,
+        -- 投票人数：登场作品按它降序，`shared_appearances` 的第一个共同作品依赖该顺序。
+        -- dump 没有 `rating.total`，用评分直方图 `score_details` 求和（已与线上 API 对过）。
+        rating_count INTEGER NOT NULL
       );
       CREATE TABLE character_subject_relations (
         character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
@@ -97,16 +104,29 @@ def setup_character(db: sqlite3.Connection):
         PRIMARY KEY(character_id, subject_id)
       );
       -- CCB 角色标签，来自上游 id_tags 快照（32705 角色 / 421 标签）。
+      -- position 是它在 id_tags 数组里的下标：原版按 `slice(0, characterTagNum)` 取前若干个。
       CREATE TABLE character_tags (
-        character_id INTEGER NOT NULL, tag TEXT NOT NULL,
+        character_id INTEGER NOT NULL, position INTEGER NOT NULL, tag TEXT NOT NULL,
         PRIMARY KEY(character_id, tag)
       );
       -- CCB 声优：只保留作品类型为动画(2)/游戏(4)的配音关系，与原版
       -- `persons.filter(p => p.subject_type === 2 || p.subject_type === 4)` 对齐。
+      -- position 是遍历顺序（原版把 `animeVAs` 当有序数组发给前端，顺序有意义）。
       CREATE TABLE character_vas (
-        character_id INTEGER NOT NULL, person_id INTEGER NOT NULL,
-        name TEXT NOT NULL, name_cn TEXT NOT NULL,
+        character_id INTEGER NOT NULL, position INTEGER NOT NULL,
+        person_id INTEGER NOT NULL, name TEXT NOT NULL, name_cn TEXT NOT NULL,
         PRIMARY KEY(character_id, person_id)
+      );
+      -- CCB 登场作品：原版 `getCharacterAppearances` 里「主角/配角 + 年份有效 + 未上映」
+      -- 的那批，按 `rating_count` 降序（原版 `.sort((a,b) => b.rating_count - a.rating_count)`）。
+      -- 这里**故意保留全部作品类型**（含音乐 3）：原版先按房间设置的大类过滤，过滤后为空
+      -- 会**回退到全部类型**，所以只有保留全集才能还原两种分支。
+      -- 注意：原版还会丢弃 `locked` 作品，dump 没有该字段，属已知差异。
+      CREATE TABLE character_appearances (
+        character_id INTEGER NOT NULL, position INTEGER NOT NULL,
+        subject_id INTEGER NOT NULL, subject_type INTEGER NOT NULL,
+        year INTEGER NOT NULL, rating REAL NOT NULL,
+        PRIMARY KEY(character_id, position)
       );
       CREATE INDEX csr_character ON character_subject_relations(character_id, relation_order);
       CREATE INDEX csubjects_type_date ON subjects(type, date);
@@ -310,6 +330,64 @@ CHARACTER_FLOOR_MESSAGE = (
 )
 
 
+# ==================== CCB 派生字段 ====================
+# 逐条对照原版 `anime-character-guessr/client/src/utils/bangumi.js` 的
+# `getCharacterAppearances`。与 `CCBFilter` 的差异（原版为准，因为兼容模式要求
+# 反馈一致）登记在 `Agents/CCB.md`；本节只实现原版规则。
+#
+# **这里只物化「输入」，不物化标签池**：原版的标签池是 `filteredAppearances` 的函数，
+# 而 `filteredAppearances` 依赖房间设置 `gameSettings.metaTags`（决定只看哪几个大类）
+# 以及「过滤后为空则回退到全部类型」这条兜底 —— 同一个角色在不同设置下标签池不同。
+# 因此标签累积必须由运行时的 `domain/CCBRules.ts` 算，落库只会把某一种设置写死。
+
+# 主角权重 3 倍、配角 1 倍（原版 `stuffFactor`）。同时也是「哪些关联算登场作品」的判据：
+# 原版只认 staff 为 主角/配角，对应 dump 的 relation_type 1/2。
+CCB_STUFF_FACTOR = {1: 3, 2: 1}
+# 声优只取「动画(2)/游戏(4)」的配音关系（原版 `person.subject_type` 过滤）。
+CCB_VA_SUBJECT_TYPES = (2, 4)
+
+
+def ccb_year(date: str) -> int | None:
+    """取作品年份。空 date 等价于原版 `details.year === null` —— 原版会**丢弃**该作品
+    （`if (!details || details.year === null) return null`）。"""
+    head = (date or "")[:4]
+    return int(head) if head.isdigit() else None
+
+
+def ccb_is_future(date: str, today: str) -> bool:
+    """未上映作品。原版比较完整日期与当前时间，这里用 ISO 前缀做字典序比较；
+    因此产物与构建日期有关，由每周重建任务保持新鲜。"""
+    return bool(date) and date[:10] > today
+
+
+def derive_ccb_appearances(
+    relations: list[tuple[int, int]],
+    subjects: dict[int, dict],
+    today: str,
+) -> list[tuple[int, int, int, float]]:
+    """算出一个角色的登场作品，顺序 = 原版的 `rating_count` 降序（`shared_appearances`
+    的「第一个共同作品」直接依赖这个顺序）。
+
+    返回 `(subject_id, subject_type, year, rating)`；年份缺失或未上映的作品按原版丢弃。
+    """
+    rows: list[tuple[int, int, int, float, int]] = []
+    for subject_id, relation_type in relations:
+        if relation_type not in CCB_STUFF_FACTOR:
+            continue
+        subject = subjects.get(subject_id)
+        if subject is None:
+            continue
+        date = subject.get("date", "") or ""
+        year = ccb_year(date)
+        if year is None or ccb_is_future(date, today):
+            continue
+        rating_count = int(subject.get("_rating_count", 0) or 0)
+        rows.append((subject_id, int(subject.get("type", 0) or 0), year, float(subject.get("score", 0) or 0), rating_count))
+    # 同票数按 subject_id 升序，保证同权重时的顺序与累积顺序一致（原版靠稳定排序）。
+    rows.sort(key=lambda row: (-row[4], row[0]))
+    return [(row[0], row[1], row[2], row[3]) for row in rows]
+
+
 def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
     def scalar(query: str) -> int:
         return int(db.execute(query).fetchone()[0])
@@ -328,6 +406,10 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             "SELECT count(DISTINCT r.character_id) FROM character_subject_relations r "
             "JOIN subjects s ON s.id = r.subject_id WHERE s.type = 2"
         ),
+        "appearances": scalar("SELECT count(*) FROM character_appearances"),
+        "appearance_characters": scalar("SELECT count(DISTINCT character_id) FROM character_appearances"),
+        "subjects": scalar("SELECT count(*) FROM subjects"),
+        "subjects_animated": scalar("SELECT count(*) FROM subjects WHERE type = 2"),
     }
     total = stats["characters"]
     print("[character db] 填充率报告")
@@ -341,6 +423,13 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
         raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
+    # CCB 派生字段为空同样是静默回归：登场作品算不出来时，对局的核心反馈就全部失真。
+    for column in ("appearances", "appearance_characters"):
+        if stats[column] == 0:
+            raise SystemExit(
+                f"CCB 派生字段 {column} 全库为 0：dump 的 subject-characters / subject 未被正确读取，"
+                "或登场作品推导规则被改坏。"
+            )
     return stats
 
 
@@ -367,13 +456,25 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
         song_sub = song.cursor(); char_sub = char.cursor()
         for item in subjects.values():
             tags = json.dumps([x.get("name", "") for x in item.get("tags", [])], ensure_ascii=False)
+            # 角色库存的是原版 `details.raw_tags`：**全类型、未过滤**的 {标签: 票数}。
+            # 原版的 `details.tags`（只对动画/游戏填充、且剔除含 "20" 的年份型标签）
+            # 由它 + 作品类型在运行时导出，两份都存会制造漂移。
+            raw_tags = json.dumps(
+                {x.get("name", ""): int(x.get("count", 0) or 0) for x in item.get("tags", []) if x.get("name")},
+                ensure_ascii=False,
+            )
             meta = json.dumps(item.get("meta_tags", []), ensure_ascii=False)
+            # 投票人数 = 评分分布直方图求和（dump 没有直接给 rating.total）。
+            rating_count = sum(int(value or 0) for value in (item.get("score_details") or {}).values())
+            item["_rating_count"] = rating_count
             fav = item.get("favorite", {})
             heat = sum(int(fav.get(k, 0) or 0) for k in ("wish", "done", "doing", "on_hold", "dropped"))
             row = (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("infobox", ""), item.get("summary", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), tags, meta, float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0), heat, "")
             if item.get("type") == 2: song_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
             elif item.get("type") == 3: song_sub.execute("INSERT INTO music_subjects VALUES (?,?,?,?,?)", (item["id"], item.get("name", ""), item.get("name_cn", ""), float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0)))
-            if item.get("type") != 3: char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), tags, meta, float(item.get("score", 0) or 0)))
+            # 角色库收**全部类型**的条目（含音乐 3）：原版的登场作品在「按大类过滤后为空」
+            # 时会回退到全部类型，那时音乐/书籍/三次元的标签也要参与计算。
+            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:
@@ -388,34 +489,81 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
             if item.get("type") != 2: continue
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
                 song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
-        for item in lines(dump / "character.jsonlines"):
-            name_cn, gender, aliases = parse_character_infobox(item.get("infobox", ""))
-            char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
-                item["id"], int(item.get("role", 0) or 0), item.get("name", ""), name_cn, gender,
-                json.dumps(aliases, ensure_ascii=False), item.get("summary", ""),
-                item.get("comments", 0), item.get("collects", 0),
-            ))
+        # ---- CCB 关系与声优先按角色分组，派生登场作品与标签池都要按角色聚合 ----
+        relations_by_character: dict[int, list[tuple[int, int]]] = {}
+        seen_relation: set[tuple[int, int]] = set()
         for rel in lines(dump / "subject-characters.jsonlines"):
+            relation = (rel["character_id"], rel["subject_id"])
+            if relation not in seen_relation:
+                seen_relation.add(relation)
+                relations_by_character.setdefault(rel["character_id"], []).append(
+                    (rel["subject_id"], int(rel.get("type", 0) or 0))
+                )
             char_sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
-
-        # ---- CCB 角色标签（上游 id_tags 快照） ----
-        for character_id, tags in character_tags.items():
-            char_sub.executemany("INSERT OR IGNORE INTO character_tags VALUES (?,?)", ((character_id, tag) for tag in tags))
 
         # ---- CCB 声优（person-characters + person） ----
         # person.jsonlines 同样没有 name_cn 列，中文名也要落到 infobox 解析上。
+        # 只保留作品类型为动画(2)/游戏的(4)的配音关系，与原版
+        # `persons.filter(p => p.subject_type === 2 || p.subject_type === 4)` 对齐。
         persons: dict[int, tuple[str, str]] = {}
         for item in lines(dump / "person.jsonlines"):
             singles, _ = parse_infobox(item.get("infobox", ""))
             persons[item["id"]] = (item.get("name", ""), first_matching(singles, INFOBOX_NAME_KEYS))
+        # 顺序即 dump 文件顺序，也就是原版 `animeVAs`（一个 Set，按遍历顺序）的顺序；
+        # 它在反馈里是有序数组，所以 position 必须落库。
+        vas_by_character: dict[int, list[tuple[int, str, str]]] = {}
+        seen_va: set[tuple[int, int]] = set()
         for rel in lines(dump / "person-characters.jsonlines"):
             subject = subjects.get(rel.get("subject_id"))
-            if not subject or subject.get("type") not in (2, 4):
+            if not subject or subject.get("type") not in CCB_VA_SUBJECT_TYPES:
                 continue
             person = persons.get(rel.get("person_id"))
             if not person or not person[0]:
                 continue
-            char_sub.execute("INSERT OR IGNORE INTO character_vas VALUES (?,?,?,?)", (rel["character_id"], rel["person_id"], person[0], person[1]))
+            relation = (rel["character_id"], rel["person_id"])
+            if relation in seen_va:
+                continue
+            seen_va.add(relation)
+            # 原版用日文原名（`person.name`）进标签池与 CV 列表，中文名只另存一列。
+            vas_by_character.setdefault(rel["character_id"], []).append(
+                (rel["person_id"], person[0], person[1])
+            )
+        for character_id, entries in vas_by_character.items():
+            char_sub.executemany(
+                "INSERT INTO character_vas VALUES (?,?,?,?,?)",
+                (
+                    (character_id, position, person_id, name, name_cn)
+                    for position, (person_id, name, name_cn) in enumerate(entries)
+                ),
+            )
+
+        # ---- 角色本体 + CCB 派生字段 ----
+        today = date.today().isoformat()
+        for item in lines(dump / "character.jsonlines"):
+            character_id = item["id"]
+            name_cn, gender, aliases = parse_character_infobox(item.get("infobox", ""))
+            relations = relations_by_character.get(character_id, [])
+            char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
+                character_id, int(item.get("role", 0) or 0), item.get("name", ""), name_cn, gender,
+                json.dumps(aliases, ensure_ascii=False), item.get("summary", ""),
+                item.get("comments", 0), item.get("collects", 0),
+            ))
+            appearances = derive_ccb_appearances(relations, subjects, today)
+            if appearances:
+                char_sub.executemany(
+                    "INSERT INTO character_appearances VALUES (?,?,?,?,?,?)",
+                    (
+                        (character_id, position, subject_id, subject_type, year, rating)
+                        for position, (subject_id, subject_type, year, rating) in enumerate(appearances)
+                    ),
+                )
+
+        # ---- CCB 角色标签（上游 id_tags 快照） ----
+        for character_id, tags in character_tags.items():
+            char_sub.executemany(
+                "INSERT OR IGNORE INTO character_tags VALUES (?,?,?)",
+                ((character_id, position, tag) for position, tag in enumerate(tags)),
+            )
 
         song.executescript("INSERT INTO subject_search(rowid,name,name_cn) SELECT id,name,name_cn FROM subjects; INSERT INTO music_search(rowid,name,name_cn) SELECT id,name,name_cn FROM music_subjects;")
         char.execute("INSERT INTO character_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM characters;")
