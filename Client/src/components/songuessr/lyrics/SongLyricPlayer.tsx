@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { LyricPlayer } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
@@ -35,6 +36,17 @@ export function SongLyricPlayer({
     };
   }, []);
 
+  // 根除音频就绪导致歌词二次重刷与渐入动画重播：
+  // 基于歌词真实内容与时间戳生成稳定的摘要键，阻断外部快照引用突变导致的新数组生成。
+  const linesKey = useMemo(() => {
+    return lines
+      .map(
+        (l) =>
+          `${l.time}-${l.endTime}-${l.text}-${l.words?.length ?? 0}-${l.translatedLyric ?? ""}`,
+      )
+      .join("|");
+  }, [lines]);
+
   const amllLines = useMemo<LyricLine[]>(() => {
     return lines.map((line) => {
       const hasWords = Array.isArray(line.words) && line.words.length > 0;
@@ -64,7 +76,8 @@ export function SongLyricPlayer({
         isDuet: Boolean(line.isDuet),
       };
     });
-  }, [lines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linesKey]);
 
   const firstLineTime = lines[0]?.time ?? 0;
   const [currentTime, setCurrentTime] = useState<number>(firstLineTime);
@@ -157,7 +170,7 @@ export function SongLyricPlayer({
     return (
       <div
         className={cn(
-          "flex h-36 items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
+          "flex h-64 sm:h-72 w-full items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
           className,
         )}
         data-testid="baka-song-lyric-empty"
@@ -167,58 +180,68 @@ export function SongLyricPlayer({
     );
   }
 
-  // 3. 歌曲播放完毕后，自动展示全量歌词总览视图（高度自适应完整展示所有行，无滚动条，无冗余描述性文本）
-  if (audioPlaybackState === "completed") {
-    return (
-      <div
-        ref={containerRef}
-        className={cn(
-          "relative flex min-h-[11rem] w-full flex-col items-center justify-center rounded-md border border-border/40 bg-background/70 p-4 sm:min-h-[13rem] sm:p-5 select-none",
-          className,
-        )}
-        data-testid="baka-song-lyric-overview"
-      >
-        <div className="flex w-full flex-col items-center justify-center space-y-2.5 text-center font-serif">
-          {lines.map((line, idx) => (
-            <div key={`${line.time}-${idx}`} className="space-y-0.5">
-              <p className="text-sm font-semibold text-foreground tracking-wide sm:text-base">
-                {line.text}
-              </p>
-              {line.translatedLyric ? (
-                <p className="text-xs text-muted-foreground sm:text-sm font-normal">
-                  {line.translatedLyric}
-                </p>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const isCompleted = audioPlaybackState === "completed";
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "relative h-44 w-full overflow-hidden rounded-md border border-border/40 bg-background/60 p-2 sm:h-52 select-none",
+        "relative flex h-64 sm:h-72 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none",
         className,
       )}
-      data-testid="baka-song-lyric-player"
+      data-testid="baka-song-lyric-container"
     >
-      <div className="sr-only">
-        {lines.map((l) => l.text).join(" ")}
-      </div>
-      <LyricPlayer
-        className="baka-lyric-player h-full w-full"
-        lyricLines={amllLines}
-        currentTime={currentTime}
-        playing={isPlaying}
-        alignAnchor="center"
-        alignPosition={0.5}
-        enableSpring
-        enableBlur
-        enableScale={false}
-      />
+      <AnimatePresence mode="wait" initial={false}>
+        {isCompleted ? (
+          <motion.div
+            key="overview"
+            initial={{ opacity: 0, scale: 1.08 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            className="flex h-full w-full flex-col items-center justify-center space-y-2 sm:space-y-2.5 text-center font-serif"
+            data-testid="baka-song-lyric-overview"
+          >
+            {lines.map((line, idx) => (
+              <div key={`${line.time}-${idx}`} className="space-y-0.5">
+                <p className="text-base sm:text-lg font-semibold text-foreground font-serif tracking-wide leading-relaxed">
+                  {line.text}
+                </p>
+                {line.translatedLyric ? (
+                  <p className="text-xs sm:text-sm text-muted-foreground font-serif opacity-75 leading-normal">
+                    {line.translatedLyric}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="player"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.25 }}
+            className="h-full w-full"
+            data-testid="baka-song-lyric-player"
+          >
+            <div className="sr-only">
+              {lines.map((l) => l.text).join(" ")}
+            </div>
+            <LyricPlayer
+              className="baka-lyric-player h-full w-full"
+              lyricLines={amllLines}
+              currentTime={currentTime}
+              playing={isPlaying}
+              alignAnchor="center"
+              alignPosition={0.5}
+              enableSpring
+              enableBlur
+              enableScale={false}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
