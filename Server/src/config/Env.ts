@@ -102,6 +102,8 @@ const resolveDefaultWordBankPath = (): string => {
   return resolve(import.meta.dir, "../../storage/word-bank.json");
 };
 
+const DEFAULT_CLIENT_URL = "http://localhost:5173";
+
 const resolveDefaultBangumiEnrichmentPath = (): string => {
   if (Bun.env.BANGUMI_ENRICHMENT_PATH) {
     return resolve(process.cwd(), Bun.env.BANGUMI_ENRICHMENT_PATH);
@@ -150,8 +152,12 @@ export const readEnv = (): AppEnv => {
     } catch { /* 非法 DSN 由 Sentry 初始化阶段处理 */ }
   }
 
+  // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
+  // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
+  const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
+
   return {
-    clientUrl: Bun.env.CLIENT_URL ?? "http://localhost:5173",
+    clientUrl,
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
