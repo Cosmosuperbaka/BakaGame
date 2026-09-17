@@ -1303,6 +1303,68 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
 };
 
 /**
+ * 将外文歌曲的翻译与音译歌词合并到主歌词行中。
+ * 支持依据时间戳误差 <= 1500ms 智能就近匹配。
+ */
+export const mergeTranslations = (
+  lines: SongLyricLine[],
+  translationRaw?: string,
+  romanRaw?: string,
+): SongLyricLine[] => {
+  if (!translationRaw && !romanRaw) return lines;
+
+  const transLines = translationRaw
+    ? parseLrc(translationRaw).filter((l) => !isCreditLyricLine(l.text))
+    : [];
+  const romanLines = romanRaw
+    ? parseLrc(romanRaw).filter((l) => !isCreditLyricLine(l.text))
+    : [];
+
+  if (transLines.length === 0 && romanLines.length === 0) return lines;
+
+  return lines.map((line) => {
+    let translatedLyric = line.translatedLyric;
+    let romanLyric = line.romanLyric;
+
+    if (!translatedLyric && transLines.length > 0) {
+      let bestTrans: SongLyricLine | undefined;
+      let minDiff = 1500;
+      for (const t of transLines) {
+        const diff = Math.abs(t.time - line.time);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestTrans = t;
+        }
+      }
+      if (bestTrans && bestTrans.text.trim()) {
+        translatedLyric = bestTrans.text.trim();
+      }
+    }
+
+    if (!romanLyric && romanLines.length > 0) {
+      let bestRoman: SongLyricLine | undefined;
+      let minDiff = 1500;
+      for (const r of romanLines) {
+        const diff = Math.abs(r.time - line.time);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestRoman = r;
+        }
+      }
+      if (bestRoman && bestRoman.text.trim()) {
+        romanLyric = bestRoman.text.trim();
+      }
+    }
+
+    return {
+      ...line,
+      translatedLyric: translatedLyric || undefined,
+      romanLyric: romanLyric || undefined,
+    };
+  });
+};
+
+/**
  * 去掉作词、作曲、编曲等署名，以及会直接暴露答案的歌名行。
  * 过滤后重新计算每句结束时间，避免被删除的元数据行造成音频切片错位。
  *
@@ -1969,13 +2031,23 @@ export class NeteaseMusicProvider implements MusicProvider {
       const lyricBody = responseBody(lyricResponse);
       const yrcRaw = readString(asRecord(lyricBody.yrc).lyric);
       const lrcRaw = readString(asRecord(lyricBody.lrc).lyric);
+      const ytlrcRaw = readString(asRecord(lyricBody.ytlrc).lyric);
+      const tlyricRaw = readString(asRecord(lyricBody.tlyric).lyric);
+      const yromalrcRaw = readString(asRecord(lyricBody.yromalrc).lyric);
+      const romalrcRaw = readString(asRecord(lyricBody.romalrc).lyric);
+
+      const yrcTrans = ytlrcRaw || tlyricRaw;
+      const yrcRoma = yromalrcRaw || romalrcRaw;
+      const lrcTrans = tlyricRaw || ytlrcRaw;
+      const lrcRoma = romalrcRaw || yromalrcRaw;
 
       // 1. 优先使用网易云官方 YRC 逐字歌词
       if (yrcRaw) {
         try {
           const parsed = parseYrc(yrcRaw);
           if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-            lyrics = sanitizeLyrics(parsed, base);
+            const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
+            lyrics = sanitizeLyrics(merged, base);
           }
         } catch (err) {
           this.options.logger?.warn?.(`解析网易云 YRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
@@ -1989,7 +2061,8 @@ export class NeteaseMusicProvider implements MusicProvider {
           if (ttmlRaw) {
             const parsed = parseTTML(ttmlRaw);
             if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-              lyrics = sanitizeLyrics(parsed, base);
+              const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
+              lyrics = sanitizeLyrics(merged, base);
             }
           }
         } catch (err) {
@@ -2004,7 +2077,8 @@ export class NeteaseMusicProvider implements MusicProvider {
           if (ttmlRaw) {
             const parsed = parseTTML(ttmlRaw);
             if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-              lyrics = sanitizeLyrics(parsed, base);
+              const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
+              lyrics = sanitizeLyrics(merged, base);
             }
           }
         } catch (err) {
@@ -2015,7 +2089,9 @@ export class NeteaseMusicProvider implements MusicProvider {
       // 4. 兜底使用网易云普通 LRC（行级滚动高亮）
       if (lyrics.length === 0 && lrcRaw) {
         try {
-          lyrics = sanitizeLyrics(parseLrc(lrcRaw), base);
+          const parsed = parseLrc(lrcRaw);
+          const merged = mergeTranslations(parsed, lrcTrans, lrcRoma);
+          lyrics = sanitizeLyrics(merged, base);
         } catch (err) {
           this.options.logger?.warn?.(`解析网易云 LRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
         }
