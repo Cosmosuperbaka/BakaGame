@@ -16,6 +16,7 @@ import {
   parseLrc,
   parseTTML,
   parseYrc,
+  mergeTranslations,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
 
@@ -1824,5 +1825,66 @@ describe("NeteaseMusicProvider", () => {
     });
     const song4 = await providerWithLrc.getSong("101");
     expect(song4.lyrics[0].text).toBe("网易云普通LRC兜底歌词");
+  });
+
+  test("mergeTranslations 依据时间戳误差智能对齐并排除署名噪声", () => {
+    const lines = [
+      { time: 1000, endTime: 3000, text: "何も言わないで" },
+      { time: 3000, endTime: 5000, text: "階段をみつめて" },
+    ];
+    const transRaw = `
+[00:00.00]翻译作词：某某某
+[00:01.05]缄默不言
+[00:03.00]紧紧盯着
+`;
+    const romanRaw = `
+[00:01.00]na ni mo i wa na i de
+[00:03.00]ka i da n wo mi tsu me te
+`;
+
+    const merged = mergeTranslations(lines, transRaw, romanRaw);
+    expect(merged[0].translatedLyric).toBe("缄默不言");
+    expect(merged[0].romanLyric).toBe("na ni mo i wa na i de");
+    expect(merged[1].translatedLyric).toBe("紧紧盯着");
+    expect(merged[1].romanLyric).toBe("ka i da n wo mi tsu me te");
+  });
+
+  test("getSong 提取网易云 ytlrc 与 tlyric 时自动为歌词赋予对应翻译", () => {
+    const mockDetail = {
+      songs: [
+        {
+          id: 202,
+          name: "Pale",
+          ar: [{ id: 1, name: "MIMI" }],
+          al: { id: 1, name: "Pale", picUrl: "https://example.com/p.jpg" },
+          dt: 150000,
+          fee: 0,
+        },
+      ],
+    };
+    const mockUrl = {
+      data: [{ id: 202, url: "https://example.com/audio.mp3" }],
+    };
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: mockDetail }),
+        song_url: async () => ({ body: mockUrl }),
+        lyric_new: async () => ({
+          body: {
+            yrc: { lyric: "[1000,2000](1000,2000,0)何も言わないで\n[3000,2000](3000,2000,0)階段をみつめて" },
+            ytlrc: { lyric: "[00:01.00]缄默不言\n[00:03.00]紧紧盯着" },
+          },
+        }),
+      }),
+    });
+
+    return provider.getSong("202").then((song) => {
+      expect(song.lyrics).toHaveLength(2);
+      expect(song.lyrics[0].text).toBe("何も言わないで");
+      expect(song.lyrics[0].translatedLyric).toBe("缄默不言");
+      expect(song.lyrics[1].text).toBe("階段をみつめて");
+      expect(song.lyrics[1].translatedLyric).toBe("紧紧盯着");
+    });
   });
 });
