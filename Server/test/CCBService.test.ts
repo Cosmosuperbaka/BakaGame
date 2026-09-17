@@ -155,7 +155,8 @@ describe("CCB 房间生命周期", () => {
     });
     expect(created.privateState).toMatchObject({
       playerId: created.playerId,
-      canStartRound: false,
+      // 等待阶段房主即可开局（P1b 起对局指令已挂载）。
+      canStartRound: true,
       canGuess: false,
       canSetAnswer: false,
       canSurrender: false,
