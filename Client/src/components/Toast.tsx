@@ -32,7 +32,7 @@ function ToastViewport({
 }) {
 
   return (
-    <div className="fixed top-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm">
+    <div className="fixed top-5 right-5 z-toast flex flex-col gap-2 pointer-events-none max-w-sm">
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <motion.div

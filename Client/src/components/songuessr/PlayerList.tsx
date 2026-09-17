@@ -230,7 +230,7 @@ function SongPlayerRow({
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-[80] overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
+            className="z-popover overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
           >
             <div className="flex flex-col">
               {canTransfer ? (

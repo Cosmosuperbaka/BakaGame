@@ -574,7 +574,7 @@ export function PlayerRow(props: PlayerRowProps) {
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-[80] overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
+            className="z-popover overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
           >
             {/* 身份猜测行：与下方管理按钮等宽，无缝 */}
             {canMark ? (

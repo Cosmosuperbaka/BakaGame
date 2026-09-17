@@ -47,7 +47,7 @@ const DialogOverlay = React.forwardRef<
       initial="initial"
       animate="animate"
       exit="exit"
-      className={cn("fixed inset-0 z-50 bg-foreground/25 backdrop-blur-[2px]", className)}
+      className={cn("fixed inset-0 z-overlay bg-foreground/25 backdrop-blur-[2px]", className)}
     />
   </DialogPrimitive.Overlay>
 ))
@@ -74,7 +74,7 @@ const DialogContent = React.forwardRef<
           exit="exit"
           style={originStyle}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-modal grid max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
             "scrollbar-hidden gap-4 overflow-y-auto rounded-md border bg-popover p-6 text-popover-foreground shadow-lg",
             className
           )}
