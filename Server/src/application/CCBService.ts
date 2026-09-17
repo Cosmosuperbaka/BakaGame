@@ -39,9 +39,11 @@ export interface CCBServiceOptions {
 const clampInt = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Math.round(value)));
 
+/** 深拷贝：`metaTags` / `useHints` 是数组，不拷贝会与默认值共享引用。 */
 const cloneSettings = (settings: CCBGameSettings): CCBGameSettings => ({
   ...settings,
-  subjectTypes: [...settings.subjectTypes],
+  metaTags: [...settings.metaTags],
+  useHints: [...settings.useHints],
 });
 
 /**
@@ -53,14 +55,20 @@ const cloneSettings = (settings: CCBGameSettings): CCBGameSettings => ({
  */
 const applySettingsPatch = (settings: CCBGameSettings, patch: Partial<CCBGameSettings>): void => {
   if (patch.mode !== undefined) settings.mode = patch.mode;
-  if (patch.topNSubjects !== undefined) settings.topNSubjects = patch.topNSubjects;
+  if (patch.metaTags !== undefined) settings.metaTags = [...patch.metaTags];
   if (patch.startYear !== undefined) settings.startYear = patch.startYear;
   if (patch.endYear !== undefined) settings.endYear = patch.endYear;
-  if (patch.subjectTypes !== undefined) settings.subjectTypes = [...patch.subjectTypes];
-  if (patch.guessLimit !== undefined) settings.guessLimit = patch.guessLimit;
+  if (patch.topNSubjects !== undefined) settings.topNSubjects = patch.topNSubjects;
+  if (patch.useSubjectPerYear !== undefined) settings.useSubjectPerYear = patch.useSubjectPerYear;
+  if (patch.characterNum !== undefined) settings.characterNum = patch.characterNum;
+  if (patch.mainCharacterOnly !== undefined) settings.mainCharacterOnly = patch.mainCharacterOnly;
+  if (patch.maxAttempts !== undefined) settings.maxAttempts = patch.maxAttempts;
   if (patch.timeLimitMs !== undefined) settings.timeLimitMs = patch.timeLimitMs;
-  if (patch.textHint !== undefined) settings.textHint = patch.textHint;
-  if (patch.blurHint !== undefined) settings.blurHint = patch.blurHint;
+  if (patch.useHints !== undefined) settings.useHints = [...patch.useHints];
+  if (patch.useImageHint !== undefined) settings.useImageHint = patch.useImageHint;
+  if (patch.commonTags !== undefined) settings.commonTags = patch.commonTags;
+  if (patch.subjectTagNum !== undefined) settings.subjectTagNum = patch.subjectTagNum;
+  if (patch.characterTagNum !== undefined) settings.characterTagNum = patch.characterTagNum;
   if (patch.tagBan !== undefined) settings.tagBan = patch.tagBan;
   if (patch.globalPick !== undefined) settings.globalPick = patch.globalPick;
 
@@ -623,7 +631,7 @@ export class CCBService {
     player: CCBPlayerRecord,
   ): CCBPrivateState {
     const isActive = player.membership === "active";
-    const guessLimit = room.settings.guessLimit;
+    const maxAttempts = room.settings.maxAttempts;
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
@@ -632,7 +640,7 @@ export class CCBService {
       canGuess: false,
       canSurrender: false,
       canStartRound: false,
-      remainingGuesses: isActive ? Math.max(0, guessLimit - player.guessCount) : 0,
+      remainingGuesses: isActive ? Math.max(0, maxAttempts - player.guessCount) : 0,
       ownGuesses: [],
       hints: [],
     };

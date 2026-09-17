@@ -37,10 +37,32 @@ export type CCBGender = "male" | "female" | "?";
 export const CCB_SUBJECT_TYPES = [1, 2, 4, 6] as const;
 export type CCBSubjectType = (typeof CCB_SUBJECT_TYPES)[number];
 
+/**
+ * 大类选项：原版把「大类」与普通 meta 标签**混在同一个 `metaTags: string[]` 里**，
+ * 并用 `metaTags[0]`（primary）决定作品类型 —— 这条规则被 `getRandomCharacter` 与
+ * `getCharacterAppearances` 共用，所以必须原样保留「有序数组 + 首元素为准」的形态。
+ * 本表是允许出现在数组里的大类字面量；其余元素一律视为 meta 标签过滤项。
+ */
+export const CCB_CATEGORY_META_TAGS = ["动画", "游戏", "Galgame", "书籍", "三次元", "全部"] as const;
+export type CCBCategoryMetaTag = (typeof CCB_CATEGORY_META_TAGS)[number];
+
+/**
+ * 大类 → 作品类型。`Galgame` 与 `游戏` 都是 4，区别只在 meta 标签过滤：
+ * 原版 `primaryTag === 'Galgame'` 时把 meta 过滤项**替换**成 `['Galgame']`。
+ */
+export const CCB_CATEGORY_TYPES: Record<CCBCategoryMetaTag, number[]> = {
+  动画: [2],
+  游戏: [4],
+  Galgame: [4],
+  书籍: [1],
+  三次元: [6],
+  全部: [1, 2, 4, 6],
+};
+
 /** 单条自定义短消息长度上限（玩家点自己名字编辑）。 */
 export const CCB_PLAYER_MESSAGE_LIMIT = 32;
 
-/** 角色搜索结果：字段全部来自本地只读数据集，图片由回填缓存补充。落点 P1。 */
+/** 角色搜索结果：字段全部来自本地只读数据集，图片由回填缓存补充。 */
 export interface CCBCharacterSearchResult {
   id: number;
   /** 原名（多为日文）。 */
@@ -53,41 +75,69 @@ export interface CCBCharacterSearchResult {
   imageUrl?: string;
 }
 
-/** 角色标签（来自 `character_tags` 表的上游 `id_tags` 快照）。落点 P1。 */
+/** 角色标签（来自 `character_tags` 表的上游 `id_tags` 快照）。 */
 export interface CCBCharacterTags {
   id: number;
   tags: string[];
 }
 
+/**
+ * 对局设置。字段口径逐条对齐原版 `gameSettings`（见 `Agents/CCB.md §6.6` 对照表）：
+ * 只有 `mode` 是把原版的 `syncMode` / `nonstopMode` 两个布尔收敛成枚举，其余保持同名同义。
+ */
 export interface CCBGameSettings {
   mode: CCBGameMode;
-  /** 题库范围：按热度取前 N 部动画；0 表示不限。 */
-  topNSubjects: number;
+  /**
+   * 大类 + meta 标签过滤项，**有序**：`[0]` 为 primary，决定取哪些作品类型（`CCB_CATEGORY_TYPES`）。
+   * 非大类的元素作为 meta 标签过滤项传给作品检索。
+   */
+  metaTags: string[];
+  /** 起始年份（含）。 */
   startYear?: number;
+  /** 结束年份（含）。原版会与当前年份取 min。 */
   endYear?: number;
-  subjectTypes: CCBSubjectType[];
-  /** 每位玩家的猜测次数上限。 */
-  guessLimit: number;
-  /** 单局时限（毫秒）；0 表示不限时。 */
+  /** 每年取热度前 N 部作品；原版另与 1000 取 min。0 表示不限。 */
+  topNSubjects: number;
+  /** 按年份均分抽样（原版 `useSubjectPerYear`）。关闭时在整段年份区间内一起排序。 */
+  useSubjectPerYear: boolean;
+  /** 从作品中取前 N 个主角/配角作为候选题面角色（原版 `characterNum`）。 */
+  characterNum: number;
+  /** 只从「主角」里出题（原版 `mainCharacterOnly`）。 */
+  mainCharacterOnly: boolean;
+  /** 每位玩家的猜测次数上限（原版 `maxAttempts`，默认 10）。 */
+  maxAttempts: number;
+  /** 单局时限（毫秒）；`<= 0` 表示不限时，否则下限 10 秒（原版 `timeLimit` 以秒计）。 */
   timeLimitMs: number;
-  /** 文本提示（来自角色简介）。 */
-  textHint: boolean;
-  /** 模糊图提示：按剩余次数递减模糊半径。 */
-  blurHint: boolean;
-  /** 标签全局 BP：暴露共享标签的人，其他人看到 `???`。落点 P2。 */
+  /** 文本提示阈值（剩余次数），从左到右从大到小；空数组＝关闭（原版 `useHints`）。 */
+  useHints: number[];
+  /** 图片提示阈值（剩余次数），模糊半径＝剩余次数；`0`＝关闭（原版 `useImageHint`）。 */
+  useImageHint: number;
+  /** 共同标签模式：标签池改由作品 `rawTags` 驱动（原版 `commonTags`）。 */
+  commonTags: boolean;
+  /** `metaTags` / 共同标签模式下展示的作品标签数（原版 `subjectTagNum`，默认 3）。 */
+  subjectTagNum: number;
+  /** 展示的角色标签数（原版 `characterTagNum`）。 */
+  characterTagNum: number;
+  /** 标签全局 BP：被他人揭示过的共享标签对自己显示为 `???`。 */
   tagBan: boolean;
-  /** 角色全局 BP：同一角色不可被重复猜。落点 P2。 */
+  /** 角色全局 BP：同一角色不可被重复猜（原版对「自己猜过的」放行）。 */
   globalPick: boolean;
 }
 
 export const DEFAULT_CCB_SETTINGS: CCBGameSettings = {
   mode: "normal",
+  metaTags: ["动画"],
   topNSubjects: 500,
-  subjectTypes: [2],
-  guessLimit: 10,
-  timeLimitMs: 0,
-  textHint: true,
-  blurHint: true,
+  useSubjectPerYear: false,
+  characterNum: 10,
+  mainCharacterOnly: false,
+  maxAttempts: 10,
+  timeLimitMs: 60_000,
+  useHints: [],
+  useImageHint: 0,
+  commonTags: false,
+  subjectTagNum: 3,
+  characterTagNum: 8,
   tagBan: false,
   globalPick: false,
 };

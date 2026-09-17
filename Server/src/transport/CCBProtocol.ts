@@ -1,11 +1,7 @@
 import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
-import {
-  CCB_GAME_MODES,
-  CCB_SUBJECT_TYPES,
-  type CCBClientMessage,
-} from "../shared/Index";
+import { CCB_GAME_MODES, type CCBClientMessage } from "../shared/Index";
 
 // 本文件只挂载**当前已实现**的指令。对局类指令（`ccb.character.search` 与 `ccb.game.*`）的
 // wire 格式已在 `shared/CCB.ts` 的 `CCBClientMessage` 里固化，P1 接入 `CCBRules.ts` 时在此
@@ -15,22 +11,36 @@ export const CCBVisibilitySchema = t.Union([t.Literal("public"), t.Literal("priv
 export const CCBGameModeSchema = t.Union(
   CCB_GAME_MODES.map((mode) => t.Literal(mode)),
 );
-export const CCBSubjectTypeSchema = t.Union(
-  CCB_SUBJECT_TYPES.map((type) => t.Literal(type)),
-);
 
-/** 设置补丁：创建与修改共用一份，客户端只需提交要改的字段。 */
+/**
+ * 设置补丁：创建与修改**共用这一份**（`updateSettings` 直接展开它的 `properties`，
+ * 避免两处字段漂移）。客户端只提交要改的字段。
+ *
+ * `metaTags` 是「大类 + meta 标签」的混编有序数组（原版形态），首个元素决定作品类型，
+ * 所以这里只能约束成字符串数组，语义校验归 `domain/CCBRules.ts`。
+ * 区间上限只负责防滥用/防 OOM，业务上的「有意义取值」由服务端归一化处理（`Spec.md §8.1`）。
+ */
 export const CCBSettingsPatchSchema = t.Object(
   {
     mode: t.Optional(CCBGameModeSchema),
-    topNSubjects: t.Optional(t.Integer({ minimum: 0, maximum: 5_000 })),
+    metaTags: t.Optional(
+      t.Array(t.String({ minLength: 1, maxLength: 32 }), { minItems: 1, maxItems: 16 }),
+    ),
     startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
     endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
-    subjectTypes: t.Optional(t.Array(CCBSubjectTypeSchema, { minItems: 1, maxItems: 4 })),
-    guessLimit: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
+    topNSubjects: t.Optional(t.Integer({ minimum: 0, maximum: 5_000 })),
+    useSubjectPerYear: t.Optional(t.Boolean()),
+    characterNum: t.Optional(t.Integer({ minimum: 1, maximum: 200 })),
+    mainCharacterOnly: t.Optional(t.Boolean()),
+    maxAttempts: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
     timeLimitMs: t.Optional(t.Integer({ minimum: 0, maximum: 3_600_000 })),
-    textHint: t.Optional(t.Boolean()),
-    blurHint: t.Optional(t.Boolean()),
+    useHints: t.Optional(
+      t.Array(t.Integer({ minimum: 0, maximum: 100 }), { maxItems: 10 }),
+    ),
+    useImageHint: t.Optional(t.Integer({ minimum: 0, maximum: 100 })),
+    commonTags: t.Optional(t.Boolean()),
+    subjectTagNum: t.Optional(t.Integer({ minimum: 0, maximum: 50 })),
+    characterTagNum: t.Optional(t.Integer({ minimum: 0, maximum: 50 })),
     tagBan: t.Optional(t.Boolean()),
     globalPick: t.Optional(t.Boolean()),
   },
@@ -102,17 +112,8 @@ export const CCBMessageSchemas = {
         visibility: t.Optional(CCBVisibilitySchema),
         password: t.Optional(t.String({ maxLength: 64 })),
         allowSpectators: t.Optional(t.Boolean()),
-        mode: t.Optional(CCBGameModeSchema),
-        topNSubjects: t.Optional(t.Integer({ minimum: 0, maximum: 5_000 })),
-        startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
-        endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
-        subjectTypes: t.Optional(t.Array(CCBSubjectTypeSchema, { minItems: 1, maxItems: 4 })),
-        guessLimit: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
-        timeLimitMs: t.Optional(t.Integer({ minimum: 0, maximum: 3_600_000 })),
-        textHint: t.Optional(t.Boolean()),
-        blurHint: t.Optional(t.Boolean()),
-        tagBan: t.Optional(t.Boolean()),
-        globalPick: t.Optional(t.Boolean()),
+        // 房间字段 + 对局设置共用一份定义，别再抄一遍。
+        ...CCBSettingsPatchSchema.properties,
       },
       { additionalProperties: false },
     ),
