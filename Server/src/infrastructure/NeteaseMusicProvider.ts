@@ -48,6 +48,7 @@ export interface MusicProvider {
   getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
   getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
   getAmllTtmlLyrics?(songId: string): Promise<string | undefined>;
+  searchAmllTtmlLyrics?(songName: string, artistName?: string): Promise<string | undefined>;
   createQrLogin?(): Promise<MusicQrLogin>;
   checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
@@ -82,6 +83,8 @@ export interface NeteaseMusicProviderOptions {
   enableGeneralUnblock?: boolean;
   /** 自定义 AMLL 官方 TTML 歌词检索实现（单元测试注入用）。 */
   fetchAmllLyrics?: (id: string) => Promise<string | undefined>;
+  /** 自定义 AMLL 官方 TTML 歌曲名检索实现（单元测试注入用）。 */
+  fetchAmllSearchLyrics?: (songName: string, artistName?: string) => Promise<string | undefined>;
 }
 
 export interface MusicLoginSession {
@@ -1629,6 +1632,77 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
+  async searchAmllTtmlLyrics(songName: string, artistName?: string): Promise<string | undefined> {
+    const title = songName.trim();
+    if (!title) return undefined;
+    const cacheKey = this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`);
+    return this.cached(
+      cacheKey,
+      SONG_LYRICS_CACHE_TTL_MS,
+      async () => {
+        if (this.options.fetchAmllSearchLyrics) {
+          return this.options.fetchAmllSearchLyrics(title, artistName);
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3_000);
+        try {
+          const query = artistName ? `${title} ${artistName}` : title;
+          const searchRes = await fetch(
+            `https://api.amll.dev/v1/lyrics/search?q=${encodeURIComponent(query)}&pageSize=5`,
+            {
+              signal: controller.signal,
+              headers: {
+                "User-Agent": "BakaGame-Songuessr/1.0",
+              },
+            },
+          );
+          if (!searchRes.ok) return undefined;
+          const searchJson = (await searchRes.json()) as {
+            status?: number;
+            data?: {
+              items?: Array<{
+                id: number | string;
+                filename: string;
+                musicNames?: string[];
+                artistNames?: string[];
+              }>;
+            };
+          };
+
+          const items = searchJson?.data?.items;
+          if (!Array.isArray(items) || items.length === 0) return undefined;
+          const matchedItem = items[0];
+          if (!matchedItem?.id) return undefined;
+
+          const getRes = await fetch(
+            `https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(String(matchedItem.id))}`,
+            {
+              signal: controller.signal,
+              headers: {
+                "User-Agent": "BakaGame-Songuessr/1.0",
+              },
+            },
+          );
+          if (!getRes.ok) return undefined;
+          const getJson = (await getRes.json()) as { status?: number; data?: { lyrics?: string } };
+          if (
+            getJson?.status === 200 &&
+            typeof getJson?.data?.lyrics === "string" &&
+            getJson.data.lyrics.trim().length > 0
+          ) {
+            return getJson.data.lyrics.trim();
+          }
+          return undefined;
+        } catch (err) {
+          this.options.logger?.warn?.(`搜索 AMLL 歌词失败 [Title: ${title}]: ${describeError(err)}`);
+          return undefined;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    );
+  }
+
   async getPlaylistSongs(playlistId: string, cookie?: string) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
@@ -1908,7 +1982,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         }
       }
 
-      // 2. 次优先使用 AMLL 官方 TTML 歌词库
+      // 2. 次优先使用 AMLL API 通过网易云音乐 ID 匹配
       if (lyrics.length === 0) {
         try {
           const ttmlRaw = await this.getAmllTtmlLyrics(id);
@@ -1919,11 +1993,26 @@ export class NeteaseMusicProvider implements MusicProvider {
             }
           }
         } catch (err) {
-          this.options.logger?.warn?.(`解析 AMLL TTML 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+          this.options.logger?.warn?.(`解析 AMLL 网易云 ID 匹配 TTML 歌词失败 [ID: ${id}]: ${describeError(err)}`);
         }
       }
 
-      // 3. 兜底使用网易云普通 LRC（行级滚动高亮）
+      // 3. 第三优先使用 AMLL API 搜索歌曲名字匹配
+      if (lyrics.length === 0 && base.title) {
+        try {
+          const ttmlRaw = await this.searchAmllTtmlLyrics(base.title, base.artist);
+          if (ttmlRaw) {
+            const parsed = parseTTML(ttmlRaw);
+            if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
+              lyrics = sanitizeLyrics(parsed, base);
+            }
+          }
+        } catch (err) {
+          this.options.logger?.warn?.(`解析 AMLL 歌曲名搜索 TTML 歌词失败 [Title: ${base.title}]: ${describeError(err)}`);
+        }
+      }
+
+      // 4. 兜底使用网易云普通 LRC（行级滚动高亮）
       if (lyrics.length === 0 && lrcRaw) {
         try {
           lyrics = sanitizeLyrics(parseLrc(lrcRaw), base);
