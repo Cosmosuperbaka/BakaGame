@@ -68,5 +68,62 @@ describe("SongLyricPlayer", () => {
     expect(playerWrapper).toHaveClass("h-full");
     expect(playerWrapper).toHaveClass("w-full");
   });
+
+  it("音频处于加载中状态时，歌词不提前播放且时间轴锁定在首句", () => {
+    const lines: SongLyricLine[] = [
+      { time: 20000, endTime: 25000, text: "等待音频加载的歌词" },
+    ];
+    const mockAudio = document.createElement("audio");
+    const audioRef = createRef<HTMLAudioElement | null>();
+    audioRef.current = mockAudio;
+
+    render(
+      <SongLyricPlayer
+        lines={lines}
+        audioRef={audioRef}
+        audioPlaybackState="idle"
+        audioStatus="loading"
+      />,
+    );
+    expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
+  });
+
+  it("音频播放完毕时自动切换为题目歌词总览视图并展示全部选中歌词", () => {
+    const lines: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "选中的第一句歌词", translatedLyric: "Translation 1" },
+      { time: 3000, endTime: 6000, text: "选中的第二句歌词" },
+    ];
+
+    render(
+      <SongLyricPlayer
+        lines={lines}
+        audioPlaybackState="completed"
+      />,
+    );
+
+    expect(screen.getByTestId("baka-song-lyric-overview")).toBeInTheDocument();
+    expect(screen.getByText("题目歌词总览")).toBeInTheDocument();
+    expect(screen.getByText("选中的第一句歌词")).toBeInTheDocument();
+    expect(screen.getByText("Translation 1")).toBeInTheDocument();
+    expect(screen.getByText("选中的第二句歌词")).toBeInTheDocument();
+  });
+
+  it("歌词组件拦截并阻止滚轮事件向下冒泡，避免组件内部错位滚动", () => {
+    const lines: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "测试滚轮" },
+    ];
+    const { container } = render(<SongLyricPlayer lines={lines} />);
+    const player = container.querySelector("[data-testid='baka-song-lyric-player']");
+    expect(player).not.toBeNull();
+
+    const wheelEvent = new WheelEvent("wheel", { bubbles: true, cancelable: true });
+    const stopPropagationSpy = vi.spyOn(wheelEvent, "stopPropagation");
+    const stopImmediatePropagationSpy = vi.spyOn(wheelEvent, "stopImmediatePropagation");
+
+    player!.dispatchEvent(wheelEvent);
+    expect(stopPropagationSpy).toHaveBeenCalled();
+    expect(stopImmediatePropagationSpy).toHaveBeenCalled();
+  });
 });
+
 
