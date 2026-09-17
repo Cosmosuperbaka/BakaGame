@@ -95,6 +95,7 @@ export function DescriptionPhase() {
   const privateState = useGameStore((state) => state.privateState);
   const sendCommand = useGameStore((state) => state.sendCommand);
   const addToast = useGameStore((state) => state.addToast);
+  const phaseTimedOutEndsAt = useGameStore((state) => state.phaseTimedOutEndsAt);
   const [text, setText] = useState("");
 
   const phase = snapshot.status.phase;
@@ -209,14 +210,17 @@ export function DescriptionPhase() {
 
   // 阶段倒计时归零时，自动将本地已输入的内容发送提交
   useEffect(() => {
-    const handleTimeout = () => {
-      if (canSpeak && text.trim() && !submitting) {
-        void handleSubmit();
-      }
-    };
-    window.addEventListener("whoisfaker:phase-timeout", handleTimeout);
-    return () => window.removeEventListener("whoisfaker:phase-timeout", handleTimeout);
-  }, [canSpeak, handleSubmit, text, submitting]);
+    if (
+      phaseTimedOutEndsAt &&
+      snapshot.status.phaseTimer &&
+      phaseTimedOutEndsAt === snapshot.status.phaseTimer.endsAt &&
+      canSpeak &&
+      text.trim() &&
+      !submitting
+    ) {
+      void handleSubmit();
+    }
+  }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, canSpeak, text, submitting, handleSubmit]);
 
   const handleAdvance = useCallback(async () => {
     if (advancing) return;

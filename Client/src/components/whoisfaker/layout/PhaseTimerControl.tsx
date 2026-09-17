@@ -14,13 +14,15 @@ const DURATION_OPTIONS = [
 
 interface Props {
   className?: string;
+  onTimeout?: () => void;
 }
 
-export function PhaseTimerControl({ className }: Props = {}) {
+export function PhaseTimerControl({ className, onTimeout }: Props = {}) {
   const snapshot = useGameStore((s) => s.snapshot);
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
+  const triggerPhaseTimeout = useGameStore((s) => s.triggerPhaseTimeout);
 
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
   const [starting, setStarting] = useState(false);
@@ -62,14 +64,15 @@ export function PhaseTimerControl({ className }: Props = {}) {
     ? Math.max(0, Math.min(100, (remainingMs / (totalSec * 1000)) * 100))
     : 0;
 
-  // 倒计时归零时广播本地超时事件，供各阶段输入框自动提交暂存草稿
+  // 倒计时归零时触发 store 动作与本地回调，供输入框自动提交草稿
   useEffect(() => {
     if (!phaseTimer) return;
     if (remainingMs <= 0 && firedTimeoutForEndsAt.current !== phaseTimer.endsAt) {
       firedTimeoutForEndsAt.current = phaseTimer.endsAt;
-      window.dispatchEvent(new CustomEvent("whoisfaker:phase-timeout"));
+      triggerPhaseTimeout();
+      onTimeout?.();
     }
-  }, [phaseTimer, remainingMs]);
+  }, [phaseTimer, remainingMs, triggerPhaseTimeout, onTimeout]);
 
   const handleStartTimer = useCallback(async () => {
     setStarting(true);

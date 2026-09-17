@@ -95,6 +95,7 @@ function BlankGuessInput() {
   const snapshot = useGameStore((s) => s.snapshot)!;
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
+  const phaseTimedOutEndsAt = useGameStore((s) => s.phaseTimedOutEndsAt);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -113,13 +114,15 @@ function BlankGuessInput() {
   }, [wordA, wordB, pendingReview, sendCommand]);
 
   const handleSubmit = useCallback(async () => {
-    if (!wordA.trim() || !wordB.trim()) {
-      addToast("请输入两个词语", "error");
+    const a = wordA.trim();
+    const b = wordB.trim();
+    if (!a && !b) {
+      addToast("请输入至少一个词语", "error");
       return;
     }
     setSubmitting(true);
     try {
-      await sendCommand("game.submitBlankGuess", { words: [wordA.trim(), wordB.trim()] });
+      await sendCommand("game.submitBlankGuess", { words: [a, b].filter(Boolean) });
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     } finally {
@@ -129,14 +132,17 @@ function BlankGuessInput() {
 
   // 阶段倒计时归零时，若已输入内容则自动提交
   useEffect(() => {
-    const handleTimeout = () => {
-      if (!pendingReview && (wordA.trim() || wordB.trim())) {
-        void handleSubmit();
-      }
-    };
-    window.addEventListener("whoisfaker:phase-timeout", handleTimeout);
-    return () => window.removeEventListener("whoisfaker:phase-timeout", handleTimeout);
-  }, [pendingReview, wordA, wordB, handleSubmit]);
+    if (
+      phaseTimedOutEndsAt &&
+      snapshot.status.phaseTimer &&
+      phaseTimedOutEndsAt === snapshot.status.phaseTimer.endsAt &&
+      !pendingReview &&
+      (wordA.trim() || wordB.trim()) &&
+      !submitting
+    ) {
+      void handleSubmit();
+    }
+  }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, pendingReview, wordA, wordB, submitting, handleSubmit]);
 
   if (pendingReview) {
     return (
