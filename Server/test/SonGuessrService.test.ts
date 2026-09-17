@@ -586,6 +586,31 @@ describe("SonGuessrService", () => {
     }
   });
 
+  test("和声背景歌词（isBG）不会作为出题开头，也不充抵出题行数，播放时完整保留", () => {
+    const linesWithBackgroundVocals = [
+      { time: 10_000, endTime: 15_000, text: "第一句主歌词" },
+      { time: 12_000, endTime: 14_000, text: "和声小字A (Ah~)", isBG: true },
+      { time: 16_000, endTime: 20_000, text: "第二句主歌词" },
+      { time: 18_000, endTime: 19_500, text: "和声小字B (Yeah~)", isBG: true },
+      { time: 21_000, endTime: 25_000, text: "第三句主歌词" },
+    ];
+
+    // 设定取 2 行：应该取到两句完整主歌词，而不是主歌词+和声小字
+    const clip = createSongLyricClip(linesWithBackgroundVocals, 2, { nextInt: () => 0 }, 180_000);
+    // 第一行必定不是和声歌词
+    expect(clip.lines[0].text).toBe("第一句主歌词");
+    expect(clip.lines[0].isBG).toBeFalsy();
+
+    // 音频结束时间必须能覆盖到第二句主歌词（20000），而不是被第一句中间的和声（14000）提早切断
+    expect(clip.endTime).toBeGreaterThanOrEqual(19_750);
+
+    // 包含两句主歌词以及随行的和声歌词供播放时演出
+    const texts = clip.lines.map((l) => l.text);
+    expect(texts).toContain("第一句主歌词");
+    expect(texts).toContain("和声小字A (Ah~)");
+    expect(texts).toContain("第二句主歌词");
+  });
+
   test("房间在线人数不设上限", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");

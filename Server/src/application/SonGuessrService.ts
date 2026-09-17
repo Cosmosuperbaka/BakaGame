@@ -441,24 +441,41 @@ export const createSongLyricClip = (
     return true;
   };
 
-  // 从设定行数开始逐行收缩寻找窗口。
-  //
-  // 单窗口的时长上限或两句之间的长间奏会整片否决跨间奏的窗口，而**只要窗口长度足够大到必然覆盖
-  // 那个长间奏**，就再也拼不出窗口。例如在间奏前后的歌词行：设定行数大时会优先收缩取紧凑段。
+  // 1. 区分主歌词与和声/背景歌词（isBG）。
+  // 选词滑动窗口仅以主歌词为候选基准，禁止和声歌词作为出题开头或充抵出题行数，
+  // 避免和声小字过早切断主歌词音频。
+  const mainLyrics = lyrics.filter((line) => !line.isBG);
+  const candidatePool = mainLyrics.length >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount)
+    ? mainLyrics
+    : lyrics;
+
   for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
-    if (lyrics.length < count) continue;
-    const windows = Array.from({ length: lyrics.length - count + 1 }, (_, startIndex) =>
-      lyrics.slice(startIndex, startIndex + count))
+    if (candidatePool.length < count) continue;
+    const windows = Array.from({ length: candidatePool.length - count + 1 }, (_, startIndex) =>
+      candidatePool.slice(startIndex, startIndex + count))
       .filter(isContinuousWindow);
     if (windows.length === 0) continue;
 
     const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
     const candidates = padded.length > 0 ? padded : windows;
-    const lines = candidates[random.nextInt(candidates.length)];
+    const selectedMainLines = candidates[random.nextInt(candidates.length)];
+
+    const windowStartTime = selectedMainLines[0].time;
+    const windowEndTime = selectedMainLines.at(-1)!.endTime;
+
+    // 从完整歌词中提取出落在该出题区间内的所有歌词（包含和声歌词），仅用于播放时演出
+    const clipLines = lyrics.filter(
+      (line) => line.time >= windowStartTime && line.time < windowEndTime,
+    );
+    const mergedLines = clipLines.length > 0 ? clipLines : selectedMainLines;
+    mergedLines.sort((a, b) => a.time - b.time);
+
+    const maxLineEnd = Math.max(windowEndTime, ...mergedLines.map((l) => l.endTime));
+
     return {
-      startTime: lines[0].time,
-      endTime: Math.max(lines[0].time, lines.at(-1)!.endTime - 250),
-      lines,
+      startTime: windowStartTime,
+      endTime: Math.max(windowStartTime, maxLineEnd - 250),
+      lines: mergedLines,
     };
   }
 
