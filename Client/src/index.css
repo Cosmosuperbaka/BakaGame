@@ -353,6 +353,7 @@ img {
 .amll-lyric-player [class*="lyricWord"] {
   color: var(--color-foreground) !important;
   font-family: var(--font-serif) !important;
+  font-weight: 500 !important;
   text-shadow: none !important;
 }
 
@@ -371,12 +372,40 @@ img {
 .amll-lyric-player [class*="lyricSubLine"] {
   color: var(--color-foreground) !important;
   font-family: var(--font-serif) !important;
+  font-weight: 400 !important;
   opacity: 0.65 !important;
   font-size: 0.85rem !important;
   line-height: 1.4 !important;
   text-align: center !important;
   text-shadow: none !important;
   margin-top: 0.2rem !important;
+}
+
+/* 原生 AMLL 总览模式：连贯平滑缩放与全行清晰展现 */
+.baka-lyric-player {
+  transform: scale(1);
+  will-change: transform;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  transform-origin: center 5%;
+}
+
+.baka-lyric-player.baka-overview-mode {
+  transform: scale(0.92);
+}
+
+.baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"] {
+  opacity: 0.95 !important;
+  filter: none !important;
+}
+
+.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"] span {
+  opacity: 1 !important;
+  font-weight: 500 !important;
+}
+
+.baka-lyric-player.baka-overview-mode [class*="lyricSubLine"] {
+  opacity: 0.75 !important;
+  font-weight: 400 !important;
 }
 
 

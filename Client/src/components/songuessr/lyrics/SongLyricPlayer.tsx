@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { LyricPlayer } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
+import { calculateLyricContainerHeight } from "./lyricHeight";
 
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
@@ -166,11 +166,16 @@ export function SongLyricPlayer({
     };
   }, [audioRef, firstLineTime, audioPlaybackState, audioStatus]);
 
+  // 根据当前题目歌词行数、文本长度与双语翻译，自适应计算能够完整容纳所有歌词的高度，全程固定避免总览跳动或溢出
+  const containerHeight = useMemo(() => {
+    return calculateLyricContainerHeight(lines);
+  }, [lines]);
+
   if (lines.length === 0) {
     return (
       <div
         className={cn(
-          "flex h-64 sm:h-72 w-full items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
+          "flex h-48 w-full items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
           className,
         )}
         data-testid="baka-song-lyric-empty"
@@ -185,63 +190,35 @@ export function SongLyricPlayer({
   return (
     <div
       ref={containerRef}
+      style={{ height: `${containerHeight}px` }}
       className={cn(
-        "relative flex h-64 sm:h-72 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none",
+        "relative flex w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none transition-[height] duration-300",
         className,
       )}
       data-testid="baka-song-lyric-container"
     >
-      <AnimatePresence mode="wait" initial={false}>
-        {isCompleted ? (
-          <motion.div
-            key="overview"
-            initial={{ opacity: 0, scale: 1.08 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="flex h-full w-full flex-col items-center justify-center space-y-2 sm:space-y-2.5 text-center font-serif"
-            data-testid="baka-song-lyric-overview"
-          >
-            {lines.map((line, idx) => (
-              <div key={`${line.time}-${idx}`} className="space-y-0.5">
-                <p className="text-base sm:text-lg font-semibold text-foreground font-serif tracking-wide leading-relaxed">
-                  {line.text}
-                </p>
-                {line.translatedLyric ? (
-                  <p className="text-xs sm:text-sm text-muted-foreground font-serif opacity-75 leading-normal">
-                    {line.translatedLyric}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="player"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.25 }}
-            className="h-full w-full"
-            data-testid="baka-song-lyric-player"
-          >
-            <div className="sr-only">
-              {lines.map((l) => l.text).join(" ")}
-            </div>
-            <LyricPlayer
-              className="baka-lyric-player h-full w-full"
-              lyricLines={amllLines}
-              currentTime={currentTime}
-              playing={isPlaying}
-              alignAnchor="center"
-              alignPosition={0.5}
-              enableSpring
-              enableBlur
-              enableScale={false}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div
+        className="h-full w-full"
+        data-testid={isCompleted ? "baka-song-lyric-overview" : "baka-song-lyric-player"}
+      >
+        <div className="sr-only">
+          {lines.map((l) => l.text).join(" ")}
+        </div>
+        <LyricPlayer
+          className={cn(
+            "baka-lyric-player h-full w-full",
+            isCompleted && "baka-overview-mode",
+          )}
+          lyricLines={amllLines}
+          currentTime={isCompleted ? firstLineTime : currentTime}
+          playing={isCompleted ? false : isPlaying}
+          alignAnchor={isCompleted ? "top" : "center"}
+          alignPosition={isCompleted ? 0.02 : 0.5}
+          enableSpring
+          enableBlur={!isCompleted}
+          enableScale={false}
+        />
+      </div>
     </div>
   );
 }
