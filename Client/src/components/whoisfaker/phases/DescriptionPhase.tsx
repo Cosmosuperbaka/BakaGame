@@ -218,7 +218,10 @@ export function DescriptionPhase() {
       text.trim() &&
       !submitting
     ) {
-      void handleSubmit();
+      const timer = window.setTimeout(() => {
+        void handleSubmit();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, canSpeak, text, submitting, handleSubmit]);
 

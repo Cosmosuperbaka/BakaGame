@@ -140,7 +140,10 @@ function BlankGuessInput() {
       (wordA.trim() || wordB.trim()) &&
       !submitting
     ) {
-      void handleSubmit();
+      const timer = window.setTimeout(() => {
+        void handleSubmit();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, pendingReview, wordA, wordB, submitting, handleSubmit]);
 
