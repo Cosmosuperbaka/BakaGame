@@ -377,6 +377,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 }}
                 run={runCommand}
                 isPending={isPending}
+                audioRef={audioRef}
               />
             </main>
           </section>
