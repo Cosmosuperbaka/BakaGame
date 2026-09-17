@@ -211,22 +211,37 @@ BakaGame    bangumi-data.yml               北京时间 周一 05:00（兜底）
   且同时进 `metaTags` 与 `animeVAs`。人物 infobox 里虽有 `|简体中文名=`（水樹奈々 → 水树奈奈），
   但用它会对不上原版反馈。库里 `name` 与 `name_cn` 各存一列，`name_cn` 仅供 UI 展示。
 
-### 登场作品 `character_appearances`
+### 登场作品：**运行时算，不落库**（铁律）
 
-原版 `getCharacterAppearances` 的登场作品集，落库为 `(character_id, position, subject_id,
-subject_type, year, rating)`，`position` 即原版的排序位次。
+原版 `getCharacterAppearances` 的登场作品集**故意不物化**，由
+`infrastructure/CCBCharacterRepository.ts` 用一条联表查询算出来：
 
-- **只收主角/配角**：`relation_type IN (1,2)`，对应原版 `staff === '主角' || staff === '配角'`。
-- **年份无效或未上映的丢弃**：原版 `if (!details || details.year === null) return null`，
-  以及 `getSubjectDetails` 里的「未来日期 → null」。
-- **按 `rating_count` 降序**：原版 `.sort((a, b) => b.rating_count - a.rating_count)`，
-  `shared_appearances` 的「第一个共同作品」直接依赖这个顺序；同票按 `subject_id` 升序。
-  dump 没有 `rating.total`，用评分直方图 `score_details` 求和代替（已与线上 API 对过，
-  结构一致，仅因 dump 较旧而略小）。
-- **故意不收窄作品类型**（含音乐 3），也**不看 `nsfw`**：原版先按房间设置的大类过滤
-  （`gameSettings.metaTags` → `bigTypes`），**过滤后为空则回退到全部类型**，所以只有保留
-  全集才能还原两条分支；`nsfw` 在原版客户端里从未被引用。
+```sql
+SELECT r.subject_id, r.relation_type, s.type, s.date, s.raw_tags, s.meta_tags, s.score, s.rating_count
+FROM character_subject_relations r JOIN subjects s ON s.id = r.subject_id
+WHERE r.character_id = ? AND r.relation_type IN (1, 2)
+ORDER BY r.subject_id
+```
+
+规则（逐条对齐原版）：
+
+- **只收主角/配角**：`relation_type IN (1,2)`（原版 `staff === '主角' || staff === '配角'`）。
+- **先按大类过滤、为空则回退全部类型**：`resolveCCBAppearanceTypes(metaTags)`。回退保证了
+  只选「书籍/三次元」的房间也能玩，此时**音乐(3) 也会被算进来**，所以 `subjects` 必须含全部类型。
+- **丢弃年份无效与未上映的作品**：原版 `if (!details || details.year === null) return null`
+  加 `airDate > now` 提前返回。⚠️ 这一步**在标签累积之前**，所以这类作品连标签都不贡献。
+- **累积顺序 = `subject_id` 升序**（dump 文件顺序 ≈ 原版 API 的返回顺序），因为标签权重有
+  「先算 meta、再算普通标签」的累积依赖；**输出顺序**才是 `rating_count` 降序
+  （原版 `.sort((a, b) => b.rating_count - a.rating_count)`，`shared_appearances` 依赖它）。
+- **不看 `nsfw`**：原版客户端里根本没有 `nsfw` 字样。
 - **无法还原 `locked`**：原版会丢弃 `locked` 作品，dump 没有该字段 —— 已知差异。
+
+为什么不物化：它既是 `character_subject_relations × subjects` 的函数，又依赖**房间设置**
+（大类过滤），而且算标签权重必需的 `relation_type` 也不在物化表里。
+曾经物化过一版 `character_appearances`（还为此把库顶到 343 MiB），已删除。
+
+⚠️ **联表会丢掉 700 行（0.18%）**：这些关联指向 `subject.jsonlines` 里不存在的作品
+（dump 内部不一致）。原版不可能遇到 —— API 的 `/characters/{id}/subjects` 只会列出存在的作品。
 
 ### 热度 `subjects.heat`（出题排序用）
 
@@ -259,13 +274,14 @@ subject_type, year, rating)`，`position` 即原版的排序位次。
 
 ### 体积
 
-修复 + 新增表后 `bangumi-character.sqlite` 明显变大（旧 dump 实测 114 MiB → 262 MiB）：
-`summary` 列、`aliases` 让 trigram 索引显著增长，`subjects` 补齐音乐类型后 634,649 行，
-另有 `character_appearances`（374,377 行）、`subjects.heat` 与两张新表。
+修复 + 新增表后 `bangumi-character.sqlite` 为 **252.8 MiB**（114 MiB 的旧库 → 加 summary/aliases/标签/声优
+→ 补 `subjects` 全部类型与 `heat`）：`aliases` 让 trigram 索引显著增长，`subjects` 634,649 行，
+`character_subject_relations` 424,143 行（两条索引：按角色、**按作品**——出题 stage 2 要用）。
 文本本身不大（`raw_tags` 约 33 MiB / `summary` 23.6 MiB / `aliases` 3.0 MiB / 标签与声优合计约 1.1 MiB）。
 
-⚠️ 曾经把标签池 `tag_pool` / `raw_tag_pool` 也落库，库涨到 **343 MiB**（+82 MiB 纯属浪费），
-且规则本身就是错的（见上一节）。**不要重新引入这两列。**
+⚠️ 历史教训：**曾经物化过标签池（`tag_pool`/`raw_tag_pool`）与登场作品（`character_appearances`），
+两样都已被证明是错的并删除**，库一度涨到 343 MiB。判据是同一条 —— 见上一节「登场作品运行时算」
+与「标签池禁止落库」。**不要再引入任何「派生结果」列/表。**
 **不要给 `character_vas` 加 `(character_id, person_id)` 索引**——主键已是这两列，重复索引白占体积。
 
 ## 隐私与协议

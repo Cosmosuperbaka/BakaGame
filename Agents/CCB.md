@@ -166,8 +166,14 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
    `raw_tags = subjects.raw_tags`（全类型、未过滤）；
    `tags = (type ∈ {2,4}) ? raw_tags 剔除标签名含 "20" 的项 : {}`。
    标签累积的普通标签循环用 `tags`，`commonTags` 分支用 `raw_tags`（它在合并后才做 "20" 过滤）。
-3. **`rating_count` 是排序依据**，等于 dump 的 `score_details` 直方图求和（≈ API 的
-   `rating.total`）。登场作品的顺序、`shared_appearances` 的「第一个共同作品」都依赖它。
+3. **登场作品同样是「关联 × 作品」的函数，运行时联表算，不落库。** 规则、SQL 与两处顺序
+   （**累积按 `subject_id` 升序、输出按 `rating_count` 降序**）见 `BangumiApi.md §登场作品`。
+4. **`rating_count` 是输出排序依据**，等于 dump 的 `score_details` 直方图求和（≈ API 的
+   `rating.total`）；`shared_appearances` 的「第一个共同作品」依赖这个顺序。
+5. **数据访问全在 `infrastructure/CCBCharacterRepository.ts`**：`pickRandomSubject` /
+   `pickRandomCharacter`（两级采样）、`buildCharacterView`（反馈视图）、`searchCharacters`
+   （**短于 3 字必须回退 LIKE**，FTS5 trigram 对短查询必然 0 命中）。
+   实测 `buildCharacterView` 平均 **1.3 ms**（10 个代表性角色 × 20 轮），无需缓存。
 
 **已知差异（无法还原，P1 需按此口径实现）**：
 
@@ -218,7 +224,20 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 | `tagBan` / `globalPick` | 同名 | 标签全局 BP / 角色全局 BP |
 | `syncMode` + `nonstopMode`（两个布尔） | `mode: "normal" \| "sync" \| "bloodbath"` | 收敛成枚举 |
 | `useSubjectPerYear` | 同名 | 按年份均分抽样 |
+| `subjectSearch` | 同名 | 允许「先搜作品、再从作品里挑角色」的搜索模式（纯前端行为） |
 | `useIndex` / `indexId` / `addedSubjects` | **不移植**（P3 手动出题范围） | 原版的「指定作品集」入口 |
+
+**默认设置必须对齐原版 `client/src/data/presets.js` 的 `createBasePreset()`**（`DEFAULT_CCB_SETTINGS`）。
+三处最容易照直觉写错的地方，都已写成注释钉在契约里：
+
+| 字段 | 原版默认 | 常见误写 | 后果 |
+|---|---|---|---|
+| `metaTags` | `["", "", ""]` | `["动画"]` | 空串被过滤＝**不加 meta 过滤**，primary 为空走默认分支得到 `type=[2]`，即「全部动画」；写成 `["动画"]` 会把题库收窄到 meta_tags 含「动画」的 **1,428 部**（实测） |
+| `commonTags` | `true` | `false` | 默认房间走的是共同标签模式，标签池由 `raw_tags` 驱动 |
+| `timeLimitMs` | `0`（不限时） | `60_000` | 原版 `timeLimit` 在基础预设里根本没有字段，含义就是「留空即关闭」 |
+
+其余默认值：`startYear = 今年 − 10`、`endYear = 今年`、`topNSubjects = 50`、`characterNum = 6`、
+`mainCharacterOnly = true`、`characterTagNum = 4`、`subjectTagNum = 3`、`maxAttempts = 10`。
 
 ⚠️ **两处「大类 → 作品类型」的规则不同，不要合并**：
 `getCharacterAppearances` 用 `includes` + else-if 链（顺序：游戏 → 书籍 → 三次元 → 全部 → 默认 `[2]`，
@@ -259,7 +278,8 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 |---|---|---|
 | P0 | 数据地基、契约、协议与传输、房间服务、房间生命周期测试、前端大厅与三栏房间骨架、角色派生字段输入物化 | ✅ 已完成 |
 | P1a | `domain/CCBRules.ts`（标记/反馈/计分/设置派生，纯函数 + 表驱动测试）+ 设置契约按原版重写 | ✅ 已完成 |
-| P1b | 服务端出题（两级采样）与猜测、权威计时、结算广播、`shared/CCB.ts` 补齐 `ccb.game.*` Schema | 待办 |
+| P1b-1 | `infrastructure/CCBCharacterRepository.ts`（两级采样 + 反馈视图 + 检索）与真实数据冒烟 | ✅ 已完成 |
+| P1b-2 | 服务端出题与猜测闭环、权威计时、结算广播、`shared/CCB.ts` 补齐 `ccb.game.*` Schema | 待办 |
 | P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | 待办 |
 | P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
