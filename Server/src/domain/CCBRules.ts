@@ -11,7 +11,25 @@
  * 差异登记在 `Agents/CCB.md §6.5`。**改动本文件前必须先改那里的判定表。**
  */
 
-import type { CCBGameSettings, CCBGender } from "../shared/CCB";
+import type {
+  CCBCompareFeedback,
+  CCBEndResult,
+  CCBFeedback,
+  CCBGameSettings,
+  CCBGender,
+  CCBScalarFeedback,
+  CCBSharedAppearancesFeedback,
+} from "../shared/CCB";
+
+// 这些类型是**线上的形状**，真相源在共享契约（客户端要渲染反馈），这里只做转发，
+// 免得下游出现两个 import 路径。
+export type {
+  CCBCompareFeedback,
+  CCBEndResult,
+  CCBFeedback,
+  CCBSharedAppearancesFeedback,
+  CCBScalarFeedback,
+} from "../shared/CCB";
 
 // ==================== 标记体系 ====================
 //
@@ -73,8 +91,6 @@ export const stripCCBEndMarks = (marks: string): string => String(marks ?? "").r
 /** 结束标记互斥：`💀 + ✌` 这种组合会污染「本局如何结束」的判定，所以先剥离再追加。 */
 export const appendCCBEndMarkOnce = (marks: string, endMark: string): string =>
   stripCCBEndMarks(marks) + endMark;
-
-export type CCBEndResult = "teamwin" | "lose" | "surrender" | "";
 
 /** 从标记推断本局结束方式。`🏆` 优先于 `💀`，两者又优先于 `🏳️`（原版判定顺序）。 */
 export const getCCBEndResultFromMarks = (marks: string): CCBEndResult => {
@@ -196,38 +212,6 @@ export interface CCBCharacterView {
   characterTags: string[];
   /** 声优原名，保序遍历。 */
   animeVAs: string[];
-}
-
-/** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
-export type CCBCompareFeedback = "=" | "+" | "++" | "-" | "--" | "?";
-
-export interface CCBScalarFeedback {
-  /** `?` 表示该侧不可比（原版的 `-1` 哨兵）。 */
-  guess: number | "?";
-  feedback: CCBCompareFeedback;
-}
-
-export interface CCBSharedAppearancesFeedback {
-  /** 按**作品名**求交集得到的第一个共同作品（原版 `first`）。 */
-  first: string;
-  /** 按 **subject id** 求交集得到的第一个共同作品原名。 */
-  firstOriginal: string;
-  /** 同上，中文名。 */
-  firstCn: string;
-  /** 共同作品数：优先取 id 交集的大小，为空时回落到名字交集的大小。 */
-  count: number;
-}
-
-export interface CCBFeedback {
-  gender: { guess: CCBGender; feedback: "yes" | "no" };
-  popularity: CCBScalarFeedback;
-  /** 最高分（`highestRating`），**不是**平均分。 */
-  rating: CCBScalarFeedback;
-  shared_appearances: CCBSharedAppearancesFeedback;
-  appearancesCount: CCBScalarFeedback;
-  metaTags: { guess: string[]; shared: string[] };
-  latestAppearance: CCBScalarFeedback;
-  earliestAppearance: CCBScalarFeedback;
 }
 
 /** 分档比较：`equal` → `=`；偏高 → `+`/`++`；偏低 → `-`/`--`。 */
