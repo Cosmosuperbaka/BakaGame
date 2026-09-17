@@ -279,14 +279,26 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 | 布局 | `Client/src/layouts/CCBLayout.tsx`（Provider + Suspense + Outlet + `CCBToastContainer`） |
 | 路由 | `/ccb`（大厅）、`/ccb/room/:roomId`（房间）、`/ccb/*` 兜底回大厅 |
 | 页面 | `Client/src/pages/CCBPage.tsx`（大厅）、`Client/src/pages/CCBRoomPage.tsx`（三段式房间 + 三栏 + 移动端抽屉） |
-| 游戏组件 | `Client/src/components/ccb/PlayerList.tsx` |
+| 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`、`GameArea.tsx`（按阶段分派的操作区）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索） |
+| 反馈映射 | `Client/src/lib/CCBFeedback.ts`（档位→视觉档、档位→箭头；纯函数，表驱动用例在 `CCBFeedback.test.ts`） |
 
 SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` 的 `PAGE_META`（否则 `Seo` 抛错）、
 `pages/LandingPage.tsx` 的卡片 `available/path`、`public/sitemap.xml`。
 
-**房间页 UI 在 P0 只暴露真实可用的能力**：房间名/可见性/密码/旁观开关（`updateSettings`）、准备、
-测试房人机、聊天、旁观切换、踢人与转移房主。「开始游戏」按钮以 `disabled` 呈现并注明对局功能开发中——
-不在 UI 上宣称尚不可用的能力，与 `CCBPrivateState` 能力位一律 `false` 是同一条原则。
+**能力位一律读 `privateState`，前端不自己推算「能不能猜」**——那是服务端的权威判断
+（`canGuess` / `canSurrender` / `canStartRound`），前端据此决定渲染哪些按钮。同理，`GameArea` 的
+数据全部取自 store，页面只负责房间外壳（顶栏 / 玩家栏 / 聊天栏）。
+
+**反馈高亮的三个反直觉点**（`lib/CCBFeedback.test.ts` 用表驱动钉住）：
+
+1. **只有 `=` / 单档 `+`·`-` / `?` 三档有底色**，`++` / `--` 反而与普通值一样是中性 —— 原版的
+   三元表达式把双符号落在了空串分支，看着像漏写但必须照抄。
+2. **箭头与数值高低相反**：`+*` → `↓`、`-*` → `↑`。
+3. **性别只有 `yes` 高亮**，`no` 是中性（原版同理）。
+
+⚠️ `CharacterSearch` 里**所有 `setState` 都放在防抖回调里**（异步），effect 体内不同步 setState ——
+`react-hooks/set-state-in-effect` 会直接报错并放弃优化整个组件。列表的「展开」也由
+`查询词是否等于已取回结果的查询词` 派生，不额外存一个 `open` 状态。
 
 ## 8. 阶段落点
 
@@ -296,7 +308,7 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 | P1a | `domain/CCBRules.ts`（标记/反馈/计分/设置派生，纯函数 + 表驱动测试）+ 设置契约按原版重写 | ✅ 已完成 |
 | P1b-1 | `infrastructure/CCBCharacterRepository.ts`（两级采样 + 反馈视图 + 检索）与真实数据冒烟 | ✅ 已完成 |
 | P1b-2 | 服务端出题与猜测闭环、权威计时、结算广播、`shared/CCB.ts` 补齐 `ccb.game.*` Schema | ✅ 已完成 |
-| P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | 待办 |
+| P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | ✅ 已完成 |
 | P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
