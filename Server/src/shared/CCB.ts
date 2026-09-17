@@ -356,8 +356,12 @@ export interface CCBRoundRecord {
   guesses: Record<string, CCBGuessRecord[]>;
   /** 已猜对的玩家。 */
   solvedPlayerIds: string[];
-  /** 被全局 BP 屏蔽的标签。 */
+  /** 被全局 BP 屏蔽的标签（`tagBan` 生效时才会非空）。 */
   bannedTags: string[];
+  /** 每个被屏蔽标签的**有权查看者**：不在名单里的玩家会看到 `???`。 */
+  bannedTagRevealers: Record<string, string[]>;
+  /** 本局累积但**尚未生效**的屏蔽标签（原版 `tagBanStatePending`：结算时才合并）。 */
+  pendingBannedTags: Array<{ tag: string; revealer: string[] }>;
 }
 
 /**

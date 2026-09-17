@@ -158,6 +158,112 @@ export const shouldResetTimerAfterGuess = (
   isCorrect: boolean,
 ): boolean => settings.mode !== "sync" && settings.mode !== "bloodbath" && !isCorrect;
 
+// ==================== 标签全局 BP（`tagBan`） ====================
+//
+// 原版 `socket.js` 的 `tagBanState` / `tagBanStatePending`，规则：
+//
+// 1. 一次猜测若**猜中共享标签**（`feedback.metaTags.shared` 非空），这些标签以
+//    `{ tag, revealer: [自己] }` 记入「待提交」列表。**中局不生效**；已被提交过的标签跳过
+//    （原版 `tagBanSharedMetaTags` 开头就 `return`，即「谁先揭示归谁」）。
+// 2. 一局结算时把待提交列表合并进 `tagBanState`：**只收新标签**，同 tag 多条只认最早那条。
+// 3. 展示时按观众遮掩：**标签已被禁用、且自己不是揭示者** → 显示为 `???`。
+//    也就是说「别人先揭示过的共享标签你就看不到了」——这是竞速向的机制，不是 bug。
+// 4. 同步模式在结算时会把**本轮所有参战玩家**都并入 revealer（全员透视），
+//    见 `revealCCBBannedTagsToAll`；该分支等 P2b 的同步模式一起落地。
+
+/** 被禁用标签对非揭示者的展示形态。 */
+export const CCB_MASKED_TAG = "???";
+
+export interface CCBBannedTagEntry {
+  tag: string;
+  /** 有权看到该标签的玩家 id。 */
+  revealer: string[];
+}
+
+/**
+ * 把一次猜测**猜中的共享标签**整理成待提交条目（去重，同一个 tag 只留一条）。
+ *
+ * ⚠️ **已提交（`tagBanState` 里已有）的标签必须排除**：原版 `socket.js` 的
+ * `tagBanSharedMetaTags` 处理器在开头就 `if (tagBanState.find(...)) return;` ——
+ * 也就是「**谁先揭示，标签就归谁**」，后来者不会被记为揭示者。所以全局 BP 的真实效果是
+ * 「别人先揭示过的共享标签，你就只能看到 `???`」。做成并集会让这个机制完全失效。
+ */
+export const stageCCBBannedTags = (
+  sharedTags: readonly string[],
+  playerId: string,
+  alreadyCommitted: readonly string[] = [],
+): CCBBannedTagEntry[] => {
+  const committed = new Set(alreadyCommitted);
+  const unique = [...new Set(sharedTags.map((tag) => tag.trim()).filter(Boolean))];
+  return unique
+    .filter((tag) => !committed.has(tag))
+    .map((tag) => ({ tag, revealer: playerId ? [playerId] : [] }));
+};
+
+/**
+ * 结算时合并待提交条目。纯函数：返回新数组，不修改入参。
+ *
+ * **只收新标签，不并 revealer**：同一个 tag 出现多条时，只有**最早那条**算数
+ * （与「谁先揭示归谁」一致）。空 tag 直接丢弃。
+ */
+export const mergeCCBBannedTags = (
+  state: readonly CCBBannedTagEntry[],
+  pending: readonly CCBBannedTagEntry[],
+): CCBBannedTagEntry[] => {
+  const merged = state.map((entry) => ({ tag: entry.tag, revealer: [...entry.revealer] }));
+  const committed = new Set(merged.map((entry) => entry.tag));
+
+  for (const entry of pending) {
+    const tag = entry.tag?.trim();
+    if (!tag || committed.has(tag)) continue;
+    merged.push({ tag, revealer: [...entry.revealer] });
+    committed.add(tag);
+  }
+
+  return merged;
+};
+
+/**
+ * 同步模式的收尾：把本轮**所有参战玩家**并入每条标签的 revealer（全员透视）。
+ *
+ * 原版在 `gameplay.js` 的 `allCompleted` 分支里做这件事，之后这些标签才算正式提交 ——
+ * 所以同步模式下「谁先揭示」不成立，整轮结束后大家一起看见。等 P2b 接入同步模式时调用。
+ */
+export const revealCCBBannedTagsToAll = (
+  state: readonly CCBBannedTagEntry[],
+  participantIds: readonly string[],
+): CCBBannedTagEntry[] =>
+  state.map((entry) => {
+    const seen = new Set(entry.revealer);
+    for (const id of participantIds) if (id && !seen.has(id)) seen.add(id);
+    return { tag: entry.tag, revealer: [...seen] };
+  });
+
+/**
+ * 按观众遮掩反馈里的标签。
+ *
+ * 只动 `metaTags` 两个数组：`guess` 里被遮掩的替换成 `???`，
+ * `shared` 里被遮掩的直接剔除（否则交集本身会泄露标签存在）。
+ * 其余 7 个字段与 `feedback` 的其它内容原样透传。
+ */
+export const maskCCBFeedbackTags = (
+  feedback: CCBFeedback,
+  bannedTags: readonly string[],
+  entitled: ReadonlySet<string>,
+): CCBFeedback => {
+  if (bannedTags.length === 0) return feedback;
+  const banned = new Set(bannedTags);
+  const hidden = (tag: string) => banned.has(tag) && !entitled.has(tag);
+
+  return {
+    ...feedback,
+    metaTags: {
+      guess: feedback.metaTags.guess.map((tag) => (hidden(tag) ? CCB_MASKED_TAG : tag)),
+      shared: feedback.metaTags.shared.filter((tag) => !hidden(tag)),
+    },
+  };
+};
+
 // ==================== 反馈判定 ====================
 
 export interface CCBAppearanceRow {
