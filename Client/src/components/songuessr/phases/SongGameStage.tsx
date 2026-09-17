@@ -361,11 +361,7 @@ export function GameStage(props: SongGameAreaProps) {
               : <SongAutoFilterSummary snapshot={snapshot} />
           ) : null}
           {snapshot.settings.showLyrics ? (
-            <div
-              className="select-none space-y-2 rounded-md bg-background/60 p-5 text-center"
-              draggable={false}
-              onDragStart={(event) => event.preventDefault()}
-            >
+            <div className="select-none space-y-2 rounded-md bg-background/60 p-5 text-center">
               {hasLyrics ? (
                 snapshot.currentRound.lyricClip.lines.map((line) => (
                   <p key={`${line.time}-${line.text}`} className="leading-relaxed">{line.text}</p>

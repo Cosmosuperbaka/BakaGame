@@ -6,7 +6,6 @@ import {
   listContainer,
   iconTappable,
   pressable,
-  selectable,
   useOriginTracker,
 } from "@/lib/Motion";
 import { ArrowUpRight } from "lucide-react";
@@ -16,6 +15,7 @@ import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
+import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import {
@@ -221,16 +221,16 @@ function GameRow({ game }: { game: GameEntry }) {
           </div>
 
           <div className="w-full">
-            <motion.button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               aria-label={`${game.title} 开始游戏`}
               onClick={() => handleEnter(game.path)}
               animate={isEntering ? { scale: 0.98 } : { scale: 1 }}
-              {...selectable}
-              className="group flex h-8 w-full cursor-pointer items-center justify-center rounded-md border border-input bg-background px-3 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+              className="h-8 w-full text-xs sm:text-sm font-medium"
             >
-              <span>开始游戏</span>
-            </motion.button>
+              开始游戏
+            </Button>
           </div>
         </div>
       </motion.div>
@@ -289,17 +289,17 @@ function GameRow({ game }: { game: GameEntry }) {
             }
 
             return (
-              <motion.button
+              <Button
                 key={mode.id}
-                type="button"
+                variant="outline"
+                size="sm"
                 aria-label={`${game.title} ${mode.title}`}
                 onClick={() => handleEnter(mode.path)}
                 animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
-                {...selectable}
-                className="group flex h-8 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-2.5 text-xs sm:text-sm font-medium shadow-2xs transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring"
+                className="h-8 w-full px-2.5 text-xs sm:text-sm font-medium"
               >
                 <span className="truncate">{mode.title}</span>
-              </motion.button>
+              </Button>
             );
           })}
         </div>

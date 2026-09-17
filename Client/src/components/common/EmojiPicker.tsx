@@ -96,7 +96,6 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                     <img
                       src={item.path}
                       alt={item.label}
-                      draggable={false}
                       className="h-full w-full rounded-md object-contain"
                     />
                     {/* 整包都是动图时角标已挂在标签上，这里只标混装包里的动图 */}
@@ -136,7 +135,6 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                 <img
                   src={p.preview}
                   alt={p.name}
-                  draggable={false}
                   className="h-8 w-8 object-contain"
                 />
                 {p.animated && <AnimatedBadge className="right-0 top-0" />}
