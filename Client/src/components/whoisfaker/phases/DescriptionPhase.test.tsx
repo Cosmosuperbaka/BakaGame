@@ -82,12 +82,24 @@ describe("DescriptionPhase", () => {
     vi.clearAllMocks();
   });
 
-  it("当收到 whoisfaker:phase-timeout 事件且输入框有内容时，自动提交发言", async () => {
+  it("当阶段倒计时归零且输入框有内容时，自动提交发言", async () => {
     const sendCommandMock = vi.fn().mockResolvedValue({});
+    const snapshotWithTimer = {
+      ...snapshot,
+      status: {
+        ...snapshot.status,
+        phaseTimer: {
+          durationSeconds: 60,
+          endsAt: 123456789,
+          phase: "description" as const,
+        },
+      },
+    };
     useGameStore.setState({
-      snapshot,
+      snapshot: snapshotWithTimer,
       privateState,
       sendCommand: sendCommandMock,
+      phaseTimedOutEndsAt: null,
     });
 
     render(<DescriptionPhase />);
@@ -95,8 +107,8 @@ describe("DescriptionPhase", () => {
     const input = screen.getByPlaceholderText("输入你的描述...");
     fireEvent.change(input, { target: { value: "我的词语是红色的" } });
 
-    // 触发阶段超时事件
-    window.dispatchEvent(new CustomEvent("whoisfaker:phase-timeout"));
+    // 触发阶段超时动作
+    useGameStore.getState().triggerPhaseTimeout();
 
     await waitFor(() => {
       expect(sendCommandMock).toHaveBeenCalledWith("game.submitDescription", {

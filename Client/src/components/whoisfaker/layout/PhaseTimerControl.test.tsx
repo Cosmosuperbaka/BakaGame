@@ -156,28 +156,28 @@ describe("PhaseTimerControl", () => {
     });
   });
 
-  it("倒计时归零时广播 whoisfaker:phase-timeout 事件", async () => {
+  it("倒计时归零时触发 onTimeout 回调并同步 store 状态", async () => {
     const timeoutListener = vi.fn();
-    window.addEventListener("whoisfaker:phase-timeout", timeoutListener);
 
     const snapshotWithExpiredTimer = createBaseSnapshot("description");
+    const endsAt = Date.now() - 1000;
     snapshotWithExpiredTimer.status.phaseTimer = {
       durationSeconds: 60,
-      endsAt: Date.now() - 1000, // 已超时
+      endsAt,
       phase: "description",
     };
 
     useGameStore.setState({
       snapshot: snapshotWithExpiredTimer,
       privateState: createPrivateState(false, "player_2"),
+      phaseTimedOutEndsAt: null,
     });
 
-    render(<PhaseTimerControl />);
+    render(<PhaseTimerControl onTimeout={timeoutListener} />);
 
     await waitFor(() => {
       expect(timeoutListener).toHaveBeenCalled();
+      expect(useGameStore.getState().phaseTimedOutEndsAt).toBe(endsAt);
     });
-
-    window.removeEventListener("whoisfaker:phase-timeout", timeoutListener);
   });
 });

@@ -82,9 +82,8 @@ export default function WhoIsFakerRoomPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   // 延迟清除：宽度动画收回期间保持 history prop，避免 PlayerList 瞬间膨胀
   const [historyRendered, setHistoryRendered] = useState(false);
-  const [playerMarks, setPlayerMarks] = useState<PlayerMarks>({});
-  // 身份预测归属于「本局」，用 roundId 作归属标记，换局时在渲染期直接丢弃。
-  const [marksRoundId, setMarksRoundId] = useState<string | undefined>(undefined);
+  // 身份预测推理笔记按局次 (roundId) 隔离，换局自动读取新局空映射，杜绝渲染期 setState 截断
+  const [playerMarksByRound, setPlayerMarksByRound] = useState<Record<string, PlayerMarks>>({});
   // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
   const [wordRevealed, setWordRevealed] = useState(false);
   const [dockSize, setDockSize] = useState({ width: 0, height: 0 });
@@ -216,15 +215,30 @@ export default function WhoIsFakerRoomPage() {
     navigate("/whoisfaker");
   }, [leaveRoom, navigate]);
 
-  const handleMarkChange = useCallback((playerId: string, mark: PlayerMark) => {
-    setPlayerMarks((cur) => ({ ...cur, [playerId]: mark }));
-  }, []);
+  const roundId = snapshot?.status.roundId;
+  const playerMarks = useMemo<PlayerMarks>(
+    () => (roundId ? playerMarksByRound[roundId] ?? {} : {}),
+    [roundId, playerMarksByRound],
+  );
+
+  const handleMarkChange = useCallback(
+    (playerId: string, mark: PlayerMark) => {
+      if (!roundId) return;
+      setPlayerMarksByRound((cur) => ({
+        ...cur,
+        [roundId]: {
+          ...(cur[roundId] ?? {}),
+          [playerId]: mark,
+        },
+      }));
+    },
+    [roundId],
+  );
 
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
   const isSpectator = me?.membership === "spectator";
   const phase = snapshot?.status.phase ?? "waiting";
-  const roundId = snapshot?.status.roundId;
   const day = snapshot?.status.day ?? 0;
 
   // 结算后身份公开，与出题人视角合并成一张身份表交给玩家栏。
@@ -247,14 +261,6 @@ export default function WhoIsFakerRoomPage() {
   useEffect(() => {
     if (phase === "waiting") hasRevealedThisGameRef.current = false;
   }, [phase]);
-
-  // 身份预测是「本局」的推理笔记，换局必须清空，否则会跨局继承到新身份上。
-  // 以服务端下发的 roundId 为准：它在每次开局时重新生成。
-  // 在渲染期比对并重置，避免 effect 里 setState 造成的级联渲染。
-  if (marksRoundId !== roundId) {
-    setMarksRoundId(roundId);
-    setPlayerMarks({});
-  }
 
   // 仅第一天描述阶段揭示词语，且每局只触发一次
   useEffect(() => {
