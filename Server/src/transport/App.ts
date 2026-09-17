@@ -4,8 +4,9 @@ import { Elysia } from "elysia";
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
 import { CCBService } from "../application/CCBService";
+import { CCBCharacterRepository } from "../infrastructure/CCBCharacterRepository";
 import type { AppEnv } from "../config/Env";
-import { isAppError } from "../domain/Errors";
+import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
@@ -402,7 +403,61 @@ export const createApp = ({
       ),
     });
 
-  const ccbSvc = ccbService ?? new CCBService({ eventLogger: logger });
+  // CCB 的出题与反馈全部读本地只读数据集。数据集是 LFS 产物，本地未拉取时文件不存在，
+  // 此时**只关掉对局能力**、保留房间骨架，而不是让整个服务起不来；首次用到才构造连接。
+  let ccbRepository: CCBCharacterRepository | undefined;
+  let ccbRepositoryFailed = false;
+  const requireCCBRepository = (): CCBCharacterRepository => {
+    if (ccbRepository) return ccbRepository;
+    if (ccbRepositoryFailed) {
+      throw new AppError("CCB_DATA_UNAVAILABLE", "角色数据集不可用");
+    }
+    try {
+      ccbRepository = new CCBCharacterRepository({
+        characterDbPath: env.bangumiCharacterDbPath!,
+      });
+      return ccbRepository;
+    } catch (error) {
+      ccbRepositoryFailed = true;
+      console.warn("[CCB] 角色数据集打不开，对局指令将不可用:", describeError(error));
+      throw new AppError(
+        "CCB_DATA_UNAVAILABLE",
+        "角色数据集不可用，请先构建 bangumi-character.sqlite",
+      );
+    }
+  };
+
+  // 立绘回源复用猜歌那条镜像链路，但**单独持有实例并延迟构造**：注入了 sonGuessrService
+  // 的测试不该平白多起一个 Worker。
+  let ccbBangumi: FallbackBangumiProvider | undefined;
+  const resolveCCBCharacterImage = async (characterId: number) => {
+    ccbBangumi ??= new FallbackBangumiProvider(
+      new BangumiWorkerProvider({
+        songPath: env.bangumiSongDbPath!,
+        characterPath: env.bangumiCharacterDbPath!,
+        enrichmentPath: env.bangumiEnrichmentPath,
+        imageBase: env.bangumiImageUrl,
+        apiBase: env.bangumiApiUrl,
+      }),
+      new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
+    );
+    return ccbBangumi.resolveCharacterImage(characterId);
+  };
+
+  const ccbSvc =
+    ccbService ??
+    new CCBService({
+      eventLogger: logger,
+      characters: {
+        pickRandomSubject: (settings) => requireCCBRepository().pickRandomSubject(settings),
+        pickRandomCharacter: (subjectId, settings) =>
+          requireCCBRepository().pickRandomCharacter(subjectId, settings),
+        buildCharacterView: (characterId, settings) =>
+          requireCCBRepository().buildCharacterView(characterId, settings),
+        searchCharacters: (keyword, limit) => requireCCBRepository().searchCharacters(keyword, limit),
+      },
+      resolveCharacterImage: resolveCCBCharacterImage,
+    });
 
   const app = new Elysia({
     websocket: {

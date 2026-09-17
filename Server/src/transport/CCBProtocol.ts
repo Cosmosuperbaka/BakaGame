@@ -193,6 +193,31 @@ export const CCBMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
+  // P1b：对局指令。故意只挂已实现的部分 —— `ccb.game.chooseSetter` / `ccb.game.setAnswer`
+  // 属 P3 手动出题，Schema 挂上而服务端没实现，只会让客户端以为能调通。
+  "ccb.character.search": createMessageSchema(
+    "ccb.character.search",
+    t.Object(
+      {
+        keyword: t.String({ minLength: 1, maxLength: 32 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "ccb.game.start": createMessageSchema("ccb.game.start", EmptyPayloadSchema),
+  "ccb.game.guess": createMessageSchema(
+    "ccb.game.guess",
+    t.Object(
+      {
+        // 只收角色 id：反馈所需的其余字段一律由服务端从本地数据集补齐（防作弊）。
+        characterId: t.Integer({ minimum: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "ccb.game.surrender": createMessageSchema("ccb.game.surrender", EmptyPayloadSchema),
+  "ccb.game.nextRound": createMessageSchema("ccb.game.nextRound", EmptyPayloadSchema),
+  "ccb.game.finish": createMessageSchema("ccb.game.finish", EmptyPayloadSchema),
 };
 
 export const CCBClientMessageSchema = t.Union(Object.values(CCBMessageSchemas));
