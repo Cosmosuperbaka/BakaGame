@@ -1,0 +1,587 @@
+/**
+ * CCB 玩法规则的唯一真相源（纯函数，无 IO、无状态）。
+ *
+ * 逐条复刻原版 `anime-character-guessr`：
+ * - 标记体系与计数：`server/utils/gameplay.js` 顶部（`countAttemptMarks` 一族）
+ * - 反馈判定：`client/src/utils/bangumi.js` 的 `generateFeedback`
+ * - 计分：`gameplay.js` 的 `calculateWinnerScore` / `calculateSetterScore` /
+ *   `calculateNonstopSetterScore`
+ *
+ * 与 `CCBFilter` 无关 —— 那是同一份 dump 的另一个消费者，不是真相源。
+ * 差异登记在 `Agents/CCB.md §6.5`。**改动本文件前必须先改那里的判定表。**
+ */
+
+import type { CCBGameSettings, CCBGender } from "../shared/CCB";
+
+// ==================== 标记体系 ====================
+//
+// 字符一律写成码点转义，避免源码被编辑器/行尾工具改写后静默变色。
+// 对照（原版原文 → 转义）：
+//   ⏱️ = U+23F1 U+FE0F（**带变体选择符**）  💡 = U+1F4A1   ✔ = U+2714   ❌ = U+274C
+//   ✌ = U+270C   👑 = U+1F451   💀 = U+1F480   🏆 = U+1F3C6   🏳️ = U+1F3F3 U+FE0F
+//
+// ⚠️ `🏳️` 的 FE0F 被写进了「结束标记」字符类，于是 `stripCCBEndMarks` 会把它一起剥掉
+// —— 连带把 `⏱️` 变成单个码点 `⏱`。后果：**计分路径下 `⏱️` 也只算 1 次**
+// （`Array.from(clean(guesses)).length`）。这是实测结论，不要"顺手修正"。
+
+/** 尝试标记：计入次数上限。`⏱` 后接可选 FE0F，整体算一个 match。 */
+const ATTEMPT_MARK_PATTERN = /(?:\u23F1\uFE0F?|\uD83D\uDCA1|\u2714|\u274C)/g;
+
+/** 结束标记：表示该玩家/队伍本局已结束。 */
+export const CCB_END_MARKS = [
+  "\u270C", // ✌
+  "\uD83D\uDC51", // 👑
+  "\uD83D\uDC80", // 💀
+  "\uD83C\uDFC6", // 🏆
+  "\uD83C\uDFF3\uFE0F", // 🏳️
+] as const;
+
+/** 剥离结束标记用的字符类（含 FE0F，见文件头说明）。 */
+const END_MARK_PATTERN = /(?:\u270C|\uD83D\uDC51|\uD83D\uDC80|\uD83C\uDFC6|\uD83C\uDFF3\uFE0F?)/g;
+
+/** 计分路径的 «clean» 字符类：原版 `guesses.replace(/[✌👑💀🏳️🏆]/g, '')`。 */
+const SCORE_CLEAN_PATTERN = /[\u270C\uD83D\uDC51\uD83D\uDC80\uD83C\uDFF3\uFE0F\uD83C\uDFC6]/g;
+
+export const CCB_ATTEMPT_MARKS = {
+  timeout: "\u23F1\uFE0F", // ⏱️
+  partial: "\uD83D\uDCA1", // 💡
+  correct: "\u2714", // ✔
+  wrong: "\u274C", // ❌
+} as const;
+
+export const CCB_END_MARK = {
+  win: "\u270C", // ✌
+  bigWin: "\uD83D\uDC51", // 👑
+  dead: "\uD83D\uDC80", // 💀
+  teamWin: "\uD83C\uDFC6", // 🏆
+  surrender: "\uD83C\uDFF3\uFE0F", // 🏳️
+} as const;
+
+/** 已用尝试次数。**这是「次数」的唯一权威**（`guessLimit` 判定/大赢家判定都用它）。 */
+export const countCCBAttemptMarks = (marks: string): number => {
+  const matched = String(marks ?? "").match(ATTEMPT_MARK_PATTERN);
+  return matched ? matched.length : 0;
+};
+
+export const hasCCBEndMark = (marks: string): boolean => {
+  const source = String(marks ?? "");
+  return CCB_END_MARKS.some((mark) => source.includes(mark));
+};
+
+export const stripCCBEndMarks = (marks: string): string => String(marks ?? "").replace(END_MARK_PATTERN, "");
+
+/** 结束标记互斥：`💀 + ✌` 这种组合会污染「本局如何结束」的判定，所以先剥离再追加。 */
+export const appendCCBEndMarkOnce = (marks: string, endMark: string): string =>
+  stripCCBEndMarks(marks) + endMark;
+
+export type CCBEndResult = "teamwin" | "lose" | "surrender" | "";
+
+/** 从标记推断本局结束方式。`🏆` 优先于 `💀`，两者又优先于 `🏳️`（原版判定顺序）。 */
+export const getCCBEndResultFromMarks = (marks: string): CCBEndResult => {
+  const source = String(marks ?? "");
+  if (source.includes(CCB_END_MARK.teamWin)) return "teamwin";
+  if (source.includes(CCB_END_MARK.dead)) return "lose";
+  // 裸 🏳（无 FE0F）也认，与原版 `s.includes('🏳️') || s.includes('🏳')` 一致。
+  if (source.includes(CCB_END_MARK.surrender) || source.includes("\uD83C\uDFF3")) return "surrender";
+  return "";
+};
+
+// ==================== 设置派生 ====================
+
+/**
+ * `getCharacterAppearances` 里的大类过滤：**`includes` + else-if 链**，
+ * 注意它**没有 `Galgame` 分支**，也没有「动画」分支（默认即 `[2]`）。
+ * 这是原版的真实行为：只选 Galgame 的房间，登场作品先按动画过滤、为空再回退全部。
+ */
+export const resolveCCBAppearanceTypes = (metaTags: string[]): number[] => {
+  if (metaTags.includes("游戏")) return [4];
+  if (metaTags.includes("书籍")) return [1];
+  if (metaTags.includes("三次元")) return [6];
+  if (metaTags.includes("全部")) return [1, 2, 4, 6];
+  return [2];
+};
+
+/** `getRandomCharacter.buildFilter` 的类型：**只看首个元素**（primary），与上面那条不同。 */
+export const resolveCCBSubjectSearchTypes = (metaTags: string[]): number[] => {
+  switch (metaTags[0]) {
+    case "书籍":
+      return [1];
+    case "游戏":
+    case "Galgame":
+      return [4];
+    case "三次元":
+      return [6];
+    case "全部":
+      return [1, 2, 4, 6];
+    default:
+      return [2];
+  }
+};
+
+/**
+ * `buildFilter` 传给作品检索的 meta 标签过滤项。
+ * `Galgame` 是特例：primary 为它时**替换**成 `['Galgame']`；否则剔除大类字面量后原样传。
+ * 注意原版**不剔除「动画」**（它会被当成一个 meta 标签过滤项，通常无副作用）。
+ */
+export const resolveCCBSubjectSearchMetaTags = (metaTags: string[]): string[] => {
+  if (metaTags[0] === "Galgame") return ["Galgame"];
+  const categoryMarkers = ["游戏", "书籍", "三次元", "全部"];
+  return metaTags.filter((tag) => tag !== "" && !categoryMarkers.includes(tag));
+};
+
+/** 单局时限：`<= 0` 关闭；否则下限 10 秒（原版 `Math.max(10, round(sec*1000))`）。 */
+export const resolveCCBTimeLimitMs = (settings: Pick<CCBGameSettings, "timeLimitMs">): number => {
+  const value = Number(settings.timeLimitMs);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(10_000, Math.round(value));
+};
+
+/** 每次猜错后的计时策略与原版一致：普通模式重置本人计时，其余模式只补缺失的计时。 */
+export const shouldResetTimerAfterGuess = (
+  settings: Pick<CCBGameSettings, "mode">,
+  isCorrect: boolean,
+): boolean => settings.mode !== "sync" && settings.mode !== "bloodbath" && !isCorrect;
+
+// ==================== 反馈判定 ====================
+
+export interface CCBAppearanceRow {
+  subjectId: number;
+  subjectType: number;
+  year: number;
+  rating: number;
+}
+
+/**
+ * 按房间设置筛出真正参与反馈计算的登场作品（原版 `filteredAppearances`）。
+ *
+ * 顺序很关键：**先按大类过滤，过滤后为空则回退到全部类型**。因此数据层物化的是
+ * 「全部类型」的超集，这里才做收窄。
+ */
+export const resolveCCBAppearanceSubset = <TRow extends CCBAppearanceRow>(
+  rows: TRow[],
+  settings: Pick<CCBGameSettings, "metaTags">,
+): TRow[] => {
+  const types = resolveCCBAppearanceTypes(settings.metaTags);
+  const filtered = rows.filter((row) => types.includes(row.subjectType));
+  return filtered.length > 0 ? filtered : rows;
+};
+
+/**
+ * 反馈计算所需的角色视图。字段与原版 `getCharacterDetails` +
+ * `getCharacterAppearances` 的返回值一一对应。
+ */
+export interface CCBCharacterView {
+  id: number;
+  /** 原名（多为日文）。`appearances` 用的就是它。 */
+  name: string;
+  nameCn: string;
+  gender: CCBGender;
+  /** 热度 = `collects + comments`。 */
+  popularity: number;
+  /** 登场作品原名，与 `appearanceIds` 同序同长。 */
+  appearances: string[];
+  /** 登场作品中文名（缺失时回落到原名）。 */
+  appearancesCn: string[];
+  appearanceIds: number[];
+  /** 无有效作品时为 `-1`（原版哨兵值）。 */
+  latestAppearance: number;
+  earliestAppearance: number;
+  /** 无有效作品时为 `-1`；另有「一个作品关联都没有」时为 `0` 的分支。 */
+  highestRating: number;
+  /** 非 `commonTags` 模式的标签池（有序）。 */
+  metaTags: string[];
+  /** `commonTags` 模式的候选：标签 → 票数，**保序**（原版是 `Map`）。 */
+  rawTags: Array<[string, number]>;
+  /** 角色标签，保 `character_tags.position` 序。 */
+  characterTags: string[];
+  /** 声优原名，保序遍历。 */
+  animeVAs: string[];
+}
+
+/** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
+export type CCBCompareFeedback = "=" | "+" | "++" | "-" | "--" | "?";
+
+export interface CCBScalarFeedback {
+  /** `?` 表示该侧不可比（原版的 `-1` 哨兵）。 */
+  guess: number | "?";
+  feedback: CCBCompareFeedback;
+}
+
+export interface CCBSharedAppearancesFeedback {
+  /** 按**作品名**求交集得到的第一个共同作品（原版 `first`）。 */
+  first: string;
+  /** 按 **subject id** 求交集得到的第一个共同作品原名。 */
+  firstOriginal: string;
+  /** 同上，中文名。 */
+  firstCn: string;
+  /** 共同作品数：优先取 id 交集的大小，为空时回落到名字交集的大小。 */
+  count: number;
+}
+
+export interface CCBFeedback {
+  gender: { guess: CCBGender; feedback: "yes" | "no" };
+  popularity: CCBScalarFeedback;
+  /** 最高分（`highestRating`），**不是**平均分。 */
+  rating: CCBScalarFeedback;
+  shared_appearances: CCBSharedAppearancesFeedback;
+  appearancesCount: CCBScalarFeedback;
+  metaTags: { guess: string[]; shared: string[] };
+  latestAppearance: CCBScalarFeedback;
+  earliestAppearance: CCBScalarFeedback;
+}
+
+/** 分档比较：`equal` → `=`；偏高 → `+`/`++`；偏低 → `-`/`--`。 */
+const steppedFeedback = (diff: number, tolerance: number, step: number): CCBCompareFeedback => {
+  if (Math.abs(diff) <= tolerance) return "=";
+  if (diff > 0) return diff <= step ? "+" : "++";
+  return diff >= -step ? "-" : "--";
+};
+
+/** 年份类（`latestAppearance` / `earliestAppearance`）：相等 `=`，差距 ≤2 为单档。 */
+const yearFeedback = (diff: number): CCBCompareFeedback => {
+  if (diff === 0) return "=";
+  if (diff > 0) return diff <= 2 ? "+" : "++";
+  return diff >= -2 ? "-" : "--";
+};
+
+/**
+ * 年份字段的哨兵处理：任一侧为 `-1` 时不可比；
+ * **两侧都是 `-1` 反而算相等**（原版对「都没作品」给了 `=`）。
+ */
+const yearSentinelFeedback = (guessValue: number, answerValue: number): CCBScalarFeedback => {
+  if (guessValue === -1 || answerValue === -1) {
+    return {
+      guess: guessValue === -1 ? "?" : guessValue,
+      feedback: guessValue === -1 && answerValue === -1 ? "=" : "?",
+    };
+  }
+  return { guess: guessValue, feedback: yearFeedback(guessValue - answerValue) };
+};
+
+/**
+ * 生成一次猜测的完整反馈。与原版 `generateFeedback` 逐字段等价。
+ *
+ * `settings` 参与两件事：`commonTags` 决定走哪条标签分支，
+ * `subjectTagNum` / `characterTagNum` 决定标签截断。
+ */
+export const generateCCBFeedback = (
+  guess: CCBCharacterView,
+  answer: CCBCharacterView,
+  settings: Pick<CCBGameSettings, "commonTags" | "subjectTagNum" | "characterTagNum">,
+): CCBFeedback => {
+  const popularityDiff = guess.popularity - answer.popularity;
+  const fivePercent = answer.popularity * 0.05;
+  const twentyPercent = answer.popularity * 0.2;
+  let popularity: CCBCompareFeedback;
+  if (Math.abs(popularityDiff) <= fivePercent) popularity = "=";
+  else if (popularityDiff > 0) popularity = popularityDiff <= twentyPercent ? "+" : "++";
+  else popularity = popularityDiff >= -twentyPercent ? "-" : "--";
+
+  // 最高分：任一侧为 -1 即不可比；容差 0.3，单档 1 分。
+  let rating: CCBCompareFeedback;
+  if (guess.highestRating === -1 || answer.highestRating === -1) rating = "?";
+  else rating = steppedFeedback(guess.highestRating - answer.highestRating, 0.3, 1);
+
+  // 共同作品：`first` 按作品名求交集，`firstOriginal` / `firstCn` 按 subject id 求交集，
+  // `count` 优先采用 id 交集。三者口径不同是原版实现，必须照抄。
+  const sharedByName = guess.appearances.filter((name) => answer.appearances.includes(name));
+  const answerIdSet = new Set(answer.appearanceIds ?? []);
+  const sharedIndexes = (guess.appearanceIds ?? [])
+    .map((id, index) => ({ id, index }))
+    .filter((entry) => answerIdSet.has(entry.id));
+  const firstSharedIndex = sharedIndexes[0]?.index;
+  const sharedAppearances: CCBSharedAppearancesFeedback = {
+    first: sharedByName[0] ?? "",
+    firstOriginal: firstSharedIndex === undefined ? "" : guess.appearances[firstSharedIndex] ?? "",
+    firstCn:
+      firstSharedIndex === undefined
+        ? ""
+        : guess.appearancesCn?.[firstSharedIndex] ?? guess.appearances[firstSharedIndex] ?? "",
+    count: sharedIndexes.length || sharedByName.length,
+  };
+
+  const appearanceDiff = guess.appearances.length - answer.appearances.length;
+  let appearancesCount: CCBCompareFeedback;
+  if (appearanceDiff === 0) appearancesCount = "=";
+  else if (appearanceDiff > 0) appearancesCount = appearanceDiff <= 2 ? "+" : "++";
+  else appearancesCount = appearanceDiff >= -2 ? "-" : "--";
+
+  let metaTags: { guess: string[]; shared: string[] };
+  if (settings.commonTags) {
+    metaTags = buildCommonTagsFeedback(guess, answer, settings);
+  } else {
+    const answerMetaTags = new Set(answer.metaTags);
+    metaTags = {
+      guess: guess.metaTags,
+      shared: guess.metaTags.filter((tag) => answerMetaTags.has(tag)),
+    };
+  }
+
+  return {
+    gender: { guess: guess.gender, feedback: guess.gender === answer.gender ? "yes" : "no" },
+    popularity: { guess: guess.popularity, feedback: popularity },
+    rating: { guess: guess.highestRating, feedback: rating },
+    shared_appearances: sharedAppearances,
+    appearancesCount: { guess: guess.appearances.length, feedback: appearancesCount },
+    metaTags,
+    latestAppearance: yearSentinelFeedback(guess.latestAppearance, answer.latestAppearance),
+    earliestAppearance: yearSentinelFeedback(guess.earliestAppearance, answer.earliestAppearance),
+  };
+};
+
+/**
+ * `commonTags` 模式的标签反馈：作品标签与角色标签各自「先取交集、再用非交集项补足到上限」，
+ * 声优**不截断**。`shared` 只含三类的交集。
+ */
+const buildCommonTagsFeedback = (
+  guess: CCBCharacterView,
+  answer: CCBCharacterView,
+  settings: Pick<CCBGameSettings, "subjectTagNum" | "characterTagNum">,
+): { guess: string[]; shared: string[] } => {
+  const guessSubjectTags = guess.rawTags.map(([tag]) => tag);
+  const answerSubjectTags = new Set(answer.rawTags.map(([tag]) => tag));
+  const sharedSubjectTags = guessSubjectTags
+    .filter((tag) => answerSubjectTags.has(tag))
+    .slice(0, settings.subjectTagNum);
+  const subjectTags = [...sharedSubjectTags];
+  for (const tag of guessSubjectTags) {
+    if (subjectTags.length >= settings.subjectTagNum) break;
+    if (!answerSubjectTags.has(tag)) subjectTags.push(tag);
+  }
+
+  const guessCharacterTags = guess.characterTags ?? [];
+  const answerCharacterTags = new Set(answer.characterTags ?? []);
+  const sharedCharacterTags = guessCharacterTags
+    .filter((tag) => answerCharacterTags.has(tag))
+    .slice(0, settings.characterTagNum);
+  const characterTags = [...sharedCharacterTags];
+  for (const tag of guessCharacterTags) {
+    if (characterTags.length >= settings.characterTagNum) break;
+    if (!answerCharacterTags.has(tag)) characterTags.push(tag);
+  }
+
+  const guessCvTags = guess.animeVAs ?? [];
+  // 原版用 `answerCVTags.includes` 而非 Set，且不截断；行为等价但保持同序。
+  const answerCvTags = answer.animeVAs ?? [];
+  const sharedCvTags = guessCvTags.filter((tag) => answerCvTags.includes(tag));
+
+  return {
+    guess: [...new Set([...subjectTags, ...characterTags, ...guessCvTags])],
+    shared: [...new Set([...sharedSubjectTags, ...sharedCharacterTags, ...sharedCvTags])],
+  };
+};
+
+// ==================== 计分 ====================
+
+export interface CCBScoreBonuses {
+  bigWin: number;
+  quickGuess: number;
+}
+
+export interface CCBWinnerScore {
+  totalScore: number;
+  /** 计分口径的「已猜次数」，**与 `countCCBAttemptMarks` 不是同一个数**（见下）。 */
+  guessCount: number;
+  isBigWin: boolean;
+  bonuses: CCBScoreBonuses;
+}
+
+/**
+ * 胜者得分。`baseScore` 普通/同步固定 2，血战由名次动态给出。
+ *
+ * ⚠️ `guessCount` 的口径与 `countCCBAttemptMarks` **不同**：这里先按原版的字符类
+ * `/[✌👑💀🏳️🏆]/` 剥掉结束标记（该字符类含 FE0F，会顺带把 `⏱️` 变成单码点 `⏱`），
+ * 再数**码点**。实测两者对 `⏱️` 都给 1，但**空标记串会得到 0**（尝试计数也是 0）。
+ * 保留两套函数是为了逐字复刻原版，不要合并。
+ */
+export const calculateCCBWinnerScore = ({
+  guesses,
+  baseScore = 0,
+  totalRounds = 10,
+}: {
+  guesses: string;
+  baseScore?: number;
+  totalRounds?: number;
+}): CCBWinnerScore => {
+  const marks = String(guesses ?? "");
+  const isBigWin = marks.includes(CCB_END_MARK.bigWin);
+  const guessCount = Array.from(marks.replace(SCORE_CLEAN_PATTERN, "")).length;
+
+  const bonuses: CCBScoreBonuses = { bigWin: 0, quickGuess: 0 };
+  let totalScore = baseScore;
+
+  if (isBigWin) {
+    bonuses.bigWin = 12;
+    totalScore += bonuses.bigWin;
+  } else if (guessCount >= 2 && guessCount <= 3) {
+    bonuses.quickGuess = 2;
+  } else {
+    const halfRounds = Math.ceil(totalRounds / 2);
+    if (guessCount >= 4 && guessCount <= halfRounds) bonuses.quickGuess = 1;
+  }
+
+  totalScore += bonuses.quickGuess;
+  return { totalScore, guessCount, isBigWin, bonuses };
+};
+
+export interface CCBSetterScore {
+  score: number;
+  reason: string;
+}
+
+/** 出题人得分（普通/同步）。唯一可能为负的计分项。 */
+export const calculateCCBSetterScore = ({
+  winnerGuesses = "",
+  winnerGuessCount = 0,
+  bigWinnerScore = 0,
+  totalRounds = 10,
+}: {
+  winnerGuesses?: string;
+  winnerGuessCount?: number;
+  bigWinnerScore?: number;
+  totalRounds?: number;
+}): CCBSetterScore => {
+  const hasWinner = winnerGuessCount > 0;
+  const hasBigWinner = winnerGuesses.includes(CCB_END_MARK.bigWin);
+
+  if (hasBigWinner) {
+    return { score: -Math.max(1, Math.floor(bigWinnerScore / 2)), reason: "纯在送分" };
+  }
+  if (hasWinner) {
+    if (winnerGuessCount <= 3) return { score: -1, reason: "太简单了" };
+    if (winnerGuessCount > totalRounds / 2) return { score: 1, reason: "难度适中" };
+    return { score: 0, reason: "" };
+  }
+  return { score: -1, reason: "没人猜中" };
+};
+
+/** 出题人得分（血战）：按猜中率给分，并乘以 `ceil(参战人数 / 2)`。 */
+export const calculateCCBNonstopSetterScore = ({
+  hasBigWinner = false,
+  bigWinnerScore = 0,
+  winnersCount = 0,
+  totalPlayersCount = 1,
+}: {
+  hasBigWinner?: boolean;
+  bigWinnerScore?: number;
+  winnersCount?: number;
+  totalPlayersCount?: number;
+}): CCBSetterScore => {
+  const totalPlayers = Math.max(1, totalPlayersCount);
+  const playerMultiplier = Math.max(1, Math.ceil(totalPlayers / 2));
+
+  if (hasBigWinner) {
+    return { score: -Math.max(1, Math.floor(bigWinnerScore / 2)), reason: "纯在送分" };
+  }
+  if (winnersCount === 0) {
+    return { score: -2 * playerMultiplier, reason: "无人猜中" };
+  }
+
+  const winRate = winnersCount / totalPlayers;
+  if (winRate <= 0.25) return { score: 1 * playerMultiplier, reason: "难度偏高" };
+  if (winRate >= 0.75) return { score: 1 * playerMultiplier, reason: "难度偏低" };
+  return { score: 2 * playerMultiplier, reason: "难度适中" };
+};
+
+// ==================== 次数上限 ====================
+
+export interface CCBAttemptLimitVerdict {
+  /** 已用次数是否已达到上限。 */
+  exhausted: boolean;
+  /** 达到上限时是否应当追加 `💀`（最后一发猜中时不追加）。 */
+  shouldApplyDeath: boolean;
+  attemptCount: number;
+  maxAttempts: number;
+}
+
+/**
+ * 次数上限判定（`enforceAttemptLimit` 的纯函数部分；标记的写入由服务端负责）。
+ *
+ * 已结束的实体不再追加；**最后一发猜中不判死**（原版用 `isCorrect` 参数区分，
+ * 猜之前的预检固定传 `false`，因此「最后一发猜中」是安全的）。
+ */
+export const evaluateCCBAttemptLimit = ({
+  marks,
+  maxAttempts,
+  isCorrect = false,
+}: {
+  marks: string;
+  maxAttempts: number;
+  isCorrect?: boolean;
+}): CCBAttemptLimitVerdict => {
+  const attemptCount = countCCBAttemptMarks(marks);
+  const limit = Number(maxAttempts) || 10;
+  if (attemptCount < limit) {
+    return { exhausted: false, shouldApplyDeath: false, attemptCount, maxAttempts: limit };
+  }
+  if (hasCCBEndMark(marks)) {
+    return { exhausted: true, shouldApplyDeath: false, attemptCount, maxAttempts: limit };
+  }
+  if (isCorrect) {
+    return { exhausted: true, shouldApplyDeath: false, attemptCount, maxAttempts: limit };
+  }
+  return { exhausted: true, shouldApplyDeath: true, attemptCount, maxAttempts: limit };
+};
+
+// ==================== 大赢家 / 作品分 ====================
+
+/**
+ * 是否是大赢家（`👑`）：**首次猜测即猜中**，或**本命头像就是答案角色**。
+ * 不是「唯一猜对」，也不是「第一个猜对」。
+ */
+export const isCCBBigWin = ({
+  marksBeforeGuess,
+  avatarId,
+  answerId,
+}: {
+  /** 本次猜测**之前**的标记串（猜中后会再写入 `✔`）。 */
+  marksBeforeGuess: string;
+  avatarId?: number | null;
+  answerId?: number | null;
+}): boolean => {
+  if (countCCBAttemptMarks(marksBeforeGuess) === 1) return true;
+  if (answerId === undefined || answerId === null) return false;
+  return avatarId !== undefined && avatarId !== null && Number(avatarId) === Number(answerId);
+};
+
+export interface CCBPartialGuessEntry {
+  playerId: string;
+  username?: string;
+  /** 该玩家在**本局猜测历史**里的序号（原版是全局下标，只在同一玩家内比较先后）。 */
+  index: number;
+  team?: string | null;
+  isAnswerSetter?: boolean;
+  /** 猜错但猜的角色与答案有共同作品。 */
+  isPartialCorrect: boolean;
+  isCorrect: boolean;
+}
+
+/**
+ * 作品分的获奖者：**每个队伍/单人只取最早出现的那一次** `💡`，
+ * 同序号用**用户名升序**破平；出题人与旁观者排除。
+ * 注意调用方还要排除本局胜者（原版在加分处才排除）。
+ */
+export const computeCCBPartialAwardees = (entries: CCBPartialGuessEntry[]): Set<string> => {
+  const firstIndexByPlayer = new Map<string, number>();
+  for (const entry of entries) {
+    if (!entry || !entry.playerId) continue;
+    if (!entry.isPartialCorrect || entry.isCorrect) continue;
+    if (!firstIndexByPlayer.has(entry.playerId)) firstIndexByPlayer.set(entry.playerId, entry.index);
+  }
+
+  const byPlayer = new Map(entries.map((entry) => [entry.playerId, entry]));
+  const bestByGroup = new Map<string, { playerId: string; index: number; username: string }>();
+  for (const [playerId, index] of firstIndexByPlayer) {
+    const entry = byPlayer.get(playerId);
+    if (!entry) continue;
+    if (entry.isAnswerSetter) continue;
+    if (entry.team === "0") continue;
+    const groupKey = entry.team ? `team:${entry.team}` : `solo:${playerId}`;
+    const username = String(entry.username ?? "");
+    const current = bestByGroup.get(groupKey);
+    if (!current || index < current.index || (index === current.index && username.localeCompare(current.username) < 0)) {
+      bestByGroup.set(groupKey, { playerId, index, username });
+    }
+  }
+  return new Set([...bestByGroup.values()].map((value) => value.playerId));
+};
