@@ -96,7 +96,11 @@ def setup_character(db: sqlite3.Connection):
         raw_tags TEXT NOT NULL, meta_tags TEXT NOT NULL, score REAL NOT NULL,
         -- 投票人数：登场作品按它降序，`shared_appearances` 的第一个共同作品依赖该顺序。
         -- dump 没有 `rating.total`，用评分直方图 `score_details` 求和（已与线上 API 对过）。
-        rating_count INTEGER NOT NULL
+        rating_count INTEGER NOT NULL,
+        -- 热度：出题时按它降序取前 `topNSubjects` 个候选作品（原版 `POST /v0/search/subjects`
+        -- 的 `sort: "heat"`）。dump 没有热度字段，用收藏分布 `favorite` 五个桶求和近似
+        -- —— 与歌库的 `heat` 同一个口径。
+        heat INTEGER NOT NULL
       );
       CREATE TABLE character_subject_relations (
         character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
@@ -410,6 +414,7 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
         "appearance_characters": scalar("SELECT count(DISTINCT character_id) FROM character_appearances"),
         "subjects": scalar("SELECT count(*) FROM subjects"),
         "subjects_animated": scalar("SELECT count(*) FROM subjects WHERE type = 2"),
+        "animated_with_heat": scalar("SELECT count(*) FROM subjects WHERE type = 2 AND heat > 0"),
     }
     total = stats["characters"]
     print("[character db] 填充率报告")
@@ -423,12 +428,12 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
         raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
-    # CCB 派生字段为空同样是静默回归：登场作品算不出来时，对局的核心反馈就全部失真。
-    for column in ("appearances", "appearance_characters"):
+    # CCB 派生字段为空同样是静默回归：登场作品/热度算不出来时，出题与核心反馈就全部失真。
+    for column in ("appearances", "appearance_characters", "animated_with_heat"):
         if stats[column] == 0:
             raise SystemExit(
                 f"CCB 派生字段 {column} 全库为 0：dump 的 subject-characters / subject 未被正确读取，"
-                "或登场作品推导规则被改坏。"
+                "或登场作品/热度推导规则被改坏。"
             )
     return stats
 
@@ -474,7 +479,7 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
             elif item.get("type") == 3: song_sub.execute("INSERT INTO music_subjects VALUES (?,?,?,?,?)", (item["id"], item.get("name", ""), item.get("name_cn", ""), float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0)))
             # 角色库收**全部类型**的条目（含音乐 3）：原版的登场作品在「按大类过滤后为空」
             # 时会回退到全部类型，那时音乐/书籍/三次元的标签也要参与计算。
-            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count))
+            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:
