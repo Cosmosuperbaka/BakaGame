@@ -165,9 +165,10 @@ export function GuessTable({ guesses, className }: GuessTableProps) {
                     {feedback.metaTags.guess.length === 0 ? (
                       <span className="text-muted-foreground">—</span>
                     ) : (
-                      feedback.metaTags.guess.map((tag) => (
+                      feedback.metaTags.guess.map((tag, tagIndex) => (
                         <span
-                          key={tag}
+                          // 被遮掩的标签都是 `???`，必须带下标才唯一。
+                          key={`${tag}-${tagIndex}`}
                           className={cn(
                             "rounded border px-1 py-px text-[10px]",
                             sharedTags.has(tag)

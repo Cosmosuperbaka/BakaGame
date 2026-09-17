@@ -125,6 +125,9 @@ export function CCBGameArea({
           <span>剩余次数 {privateState.remainingGuesses}</span>
         ) : null}
         {isSpectator ? <span>旁观中</span> : null}
+        {snapshot.bannedTags && snapshot.bannedTags.length > 0 ? (
+          <span title="被他人揭示过的共享标签，对你是 ???">标签 BP {snapshot.bannedTags.length}</span>
+        ) : null}
       </div>
 
       {/* 正文 */}

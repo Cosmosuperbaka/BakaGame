@@ -8,7 +8,7 @@ import {
   TEST_BOT_BATCH_LIMIT,
 } from "../config/Constants";
 import { AppError } from "../domain/Errors";
-import { ensureRoomId, normalizeName, normalizeWord } from "../domain/Rules";
+import { ensureRoomId, normalizeName, normalizeWord, safeEqualToken } from "../domain/Rules";
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import {
@@ -40,7 +40,10 @@ import {
   evaluateCCBAttemptLimit,
   generateCCBFeedback,
   isCCBBigWin,
+  maskCCBFeedbackTags,
+  mergeCCBBannedTags,
   resolveCCBTimeLimitMs,
+  stageCCBBannedTags,
   type CCBCharacterView,
   type CCBPartialGuessEntry,
 } from "../domain/CCBRules";
@@ -426,7 +429,8 @@ export class CCBService {
     }
     const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
-      (candidate) => candidate.sessionToken === token && candidate.membership !== "kicked",
+      (candidate) =>
+        safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked",
     );
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
@@ -736,7 +740,10 @@ export class CCBService {
       deadlineAt: timeLimitMs > 0 ? currentTime + timeLimitMs : undefined,
       guesses: {},
       solvedPlayerIds: [],
+      // 标签 BP 每局重置（原版 `tagBanState` 挂在单局 `currentGame` 上）。
       bannedTags: [],
+      bannedTagRevealers: {},
+      pendingBannedTags: [],
     };
   }
 
@@ -766,6 +773,15 @@ export class CCBService {
 
     const isCorrect = characterId === round.answerCharacterId;
     const feedback = generateCCBFeedback(guessed, answer, room.settings);
+
+    // 标签全局 BP：猜中的共享标签先入「待提交」，**本局结算时才生效**（原版同理）。
+    // 已提交的标签要排除 —— 「谁先揭示归谁」，后来者不算揭示者。
+    if (room.settings.tagBan && feedback.metaTags.shared.length > 0) {
+      round.pendingBannedTags = [
+        ...round.pendingBannedTags,
+        ...stageCCBBannedTags(feedback.metaTags.shared, player.id, round.bannedTags),
+      ];
+    }
 
     // 标记顺序照原版：先写尝试标记（✔/❌），猜错且与答案有共同作品时再补 💡，
     // 最后才决定结束标记（✌/👑/💀）。
@@ -865,6 +881,20 @@ export class CCBService {
 
     room.phase = "settled";
     round.deadlineAt = undefined;
+
+    // 标签全局 BP 生效点：合并本局待提交条目（同 tag 合并 revealer）。
+    // 同步模式额外把本轮参战玩家全部并入 revealer（全员透视），等 P2b 一起做。
+    if (round.pendingBannedTags.length > 0) {
+      const merged = mergeCCBBannedTags(
+        round.bannedTags.map((tag) => ({ tag, revealer: round.bannedTagRevealers[tag] ?? [] })),
+        round.pendingBannedTags,
+      );
+      round.bannedTags = merged.map((entry) => entry.tag);
+      round.bannedTagRevealers = Object.fromEntries(
+        merged.map((entry) => [entry.tag, entry.revealer]),
+      );
+      round.pendingBannedTags = [];
+    }
 
     const active = this.activePlayers(room);
     const winnerIds = new Set(round.solvedPlayerIds);
@@ -1016,6 +1046,28 @@ export class CCBService {
     }
   }
 
+  /**
+   * 标签全局 BP 的展示层遮掩。
+   *
+   * **只作用于下发副本，绝不改存档**：局内结算（作品分、计分）读的仍是未遮掩的
+   * `record.feedback`，遮掩只在 `buildPrivateState` 这一层发生。
+   */
+  private maskOwnGuesses(room: CCBRoomRecord, playerId: string): CCBGuessRecord[] {
+    const round = room.currentRound;
+    const records = round?.guesses[playerId] ?? [];
+    if (!round || !room.settings.tagBan || round.bannedTags.length === 0) return records;
+
+    const entitled = new Set(
+      Object.entries(round.bannedTagRevealers)
+        .filter(([, revealers]) => revealers.includes(playerId))
+        .map(([tag]) => tag),
+    );
+    return records.map((record) => ({
+      ...record,
+      feedback: maskCCBFeedbackTags(record.feedback, round.bannedTags, entitled),
+    }));
+  }
+
   private buildRoomSummary(room: CCBRoomRecord): CCBRoomSummary {
     const players = Object.values(room.players).filter(
       (player) => player.membership !== "kicked",
@@ -1048,6 +1100,7 @@ export class CCBService {
       answerSetterPlayerId: room.answerSetterPlayerId,
       guessDeadlineAt: room.currentRound?.deadlineAt,
       answer: room.revealedAnswer,
+      bannedTags: room.currentRound?.bannedTags ?? [],
       players: Object.values(room.players)
         .filter((player) => player.membership !== "kicked")
         .sort((left, right) => left.joinedAt - right.joinedAt)
@@ -1098,7 +1151,8 @@ export class CCBService {
         player.id === room.hostPlayerId && (room.phase === "waiting" || room.phase === "settled"),
       remainingGuesses: isActive ? Math.max(0, maxAttempts - player.guessCount) : 0,
       // 只下发自己的猜测记录：反馈里含答案相关线索，不能给别人看。
-      ownGuesses: round?.guesses[player.id] ?? [],
+      // 标签全局 BP 还要按观众再遮掩一层（见 `maskOwnGuesses`）。
+      ownGuesses: this.maskOwnGuesses(room, player.id),
       hints: [],
     };
   }
