@@ -205,10 +205,22 @@ export interface SonGuessrMusicAccount {
   vipExpireTime?: number;
 }
 
+export interface SongLyricWord {
+  startTime: number;
+  endTime: number;
+  word: string;
+  romanWord?: string;
+}
+
 export interface SongLyricLine {
   time: number;
   endTime: number;
   text: string;
+  words?: SongLyricWord[];
+  translatedLyric?: string;
+  romanLyric?: string;
+  isBG?: boolean;
+  isDuet?: boolean;
 }
 
 export interface SongLyricClip {

@@ -2,6 +2,16 @@ import { AppError } from "../domain/Errors";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
+import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
+import { parseTTML as amllParseTTML } from "@applemusic-like-lyrics/ttml";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+
+if (typeof globalThis.DOMParser === "undefined") {
+  globalThis.DOMParser = DOMParser as unknown as typeof globalThis.DOMParser;
+}
+if (typeof globalThis.XMLSerializer === "undefined") {
+  globalThis.XMLSerializer = XMLSerializer as unknown as typeof globalThis.XMLSerializer;
+}
 import { describeError, type EventLogger } from "./EventLogger";
 import {
   CREDIT_ACTION_PATTERN,
@@ -37,6 +47,7 @@ export interface MusicProvider {
   getSongMetadata(songId: string, cookie?: string): Promise<SongDetails>;
   getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
   getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
+  getAmllTtmlLyrics?(songId: string): Promise<string | undefined>;
   createQrLogin?(): Promise<MusicQrLogin>;
   checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
@@ -69,6 +80,8 @@ export interface NeteaseMusicProviderOptions {
   cacheMaxBytes?: number;
   /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。 */
   enableGeneralUnblock?: boolean;
+  /** 自定义 AMLL 官方 TTML 歌词检索实现（单元测试注入用）。 */
+  fetchAmllLyrics?: (id: string) => Promise<string | undefined>;
 }
 
 export interface MusicLoginSession {
@@ -1219,6 +1232,73 @@ export const parseLrc = (raw: string): SongLyricLine[] => {
   }));
 };
 
+export const parseYrc = (raw: string): SongLyricLine[] => {
+  const amllLines = amllParseYrc(raw);
+  return amllLines
+    .map((line) => {
+      const text = (line.words && line.words.length > 0)
+        ? line.words.map((w) => w.word).join("").trim()
+        : "";
+      return {
+        time: line.startTime,
+        endTime: line.endTime,
+        text,
+        words: line.words && line.words.length > 0
+          ? line.words.map((w) => ({
+              startTime: w.startTime,
+              endTime: w.endTime,
+              word: w.word,
+              romanWord: w.romanWord || undefined,
+            }))
+          : undefined,
+        translatedLyric: line.translatedLyric || undefined,
+        romanLyric: line.romanLyric || undefined,
+        isBG: line.isBG || undefined,
+        isDuet: line.isDuet || undefined,
+      };
+    })
+    .filter((line) => line.text.length > 0);
+};
+
+export const parseTTML = (raw: string): SongLyricLine[] => {
+  let normalizedRaw = raw;
+  if (!normalizedRaw.includes("xmlns:itunes=")) {
+    normalizedRaw = normalizedRaw.replace(
+      /<tt(\s|>)/i,
+      '<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal"$1',
+    );
+  }
+  if (!normalizedRaw.includes("itunes:key=")) {
+    let lineIndex = 1;
+    normalizedRaw = normalizedRaw.replace(/<p(\s+)/gi, () => `<p itunes:key="L${lineIndex++}" `);
+  }
+  const parsed = amllParseTTML(normalizedRaw);
+  return parsed.lines
+    .map((line) => {
+      const text = (line.words && line.words.length > 0)
+        ? line.words.map((w) => w.word).join("").trim()
+        : "";
+      return {
+        time: line.startTime,
+        endTime: line.endTime,
+        text,
+        words: line.words && line.words.length > 0
+          ? line.words.map((w) => ({
+              startTime: w.startTime,
+              endTime: w.endTime,
+              word: w.word,
+              romanWord: w.romanWord || undefined,
+            }))
+          : undefined,
+        translatedLyric: line.translatedLyric || undefined,
+        romanLyric: line.romanLyric || undefined,
+        isBG: line.isBG || undefined,
+        isDuet: line.isDuet || undefined,
+      };
+    })
+    .filter((line) => line.text.length > 0);
+};
+
 /**
  * 去掉作词、作曲、编曲等署名，以及会直接暴露答案的歌名行。
  * 过滤后重新计算每句结束时间，避免被删除的元数据行造成音频切片错位。
@@ -1281,7 +1361,9 @@ export const sanitizeLyrics = (
 
   return filtered.map((line, index) => ({
     ...line,
-    endTime: filtered[index + 1]?.time ?? Math.max(line.endTime, line.time + 5_000),
+    endTime: (line.words && line.words.length > 0 && line.endTime > line.time)
+      ? line.endTime
+      : (filtered[index + 1]?.time ?? Math.max(line.endTime, line.time + 5_000)),
   }));
 };
 
@@ -1501,6 +1583,48 @@ export class NeteaseMusicProvider implements MusicProvider {
           startTime,
           ...(endTime !== undefined && endTime > startTime ? { endTime } : {}),
         };
+      },
+    );
+  }
+
+  async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
+    const id = songId.trim();
+    if (!id) return undefined;
+    return this.cached(
+      this.cacheKey("song-amll-ttml", undefined, id),
+      SONG_LYRICS_CACHE_TTL_MS,
+      async () => {
+        if (this.options.fetchAmllLyrics) {
+          return this.options.fetchAmllLyrics(id);
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3_000);
+        try {
+          const res = await fetch(
+            `https://api.amll.dev/v1/lyrics/get?ncmMusicId=${encodeURIComponent(id)}`,
+            {
+              signal: controller.signal,
+              headers: {
+                "User-Agent": "BakaGame-Songuessr/1.0",
+              },
+            },
+          );
+          if (!res.ok) return undefined;
+          const json = (await res.json()) as { status?: number; data?: { lyrics?: string } };
+          if (
+            json?.status === 200 &&
+            typeof json?.data?.lyrics === "string" &&
+            json.data.lyrics.trim().length > 0
+          ) {
+            return json.data.lyrics.trim();
+          }
+          return undefined;
+        } catch (err) {
+          this.options.logger?.warn?.(`拉取 AMLL 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+          return undefined;
+        } finally {
+          clearTimeout(timer);
+        }
       },
     );
   }
@@ -1769,8 +1893,44 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (includeResources) {
       audioUrl = urlResponse;
       const lyricBody = responseBody(lyricResponse);
-      const lrc = asRecord(lyricBody.lrc ?? lyricBody.yrc);
-      lyrics = sanitizeLyrics(parseLrc(readString(lrc.lyric) ?? ""), base);
+      const yrcRaw = readString(asRecord(lyricBody.yrc).lyric);
+      const lrcRaw = readString(asRecord(lyricBody.lrc).lyric);
+
+      // 1. 优先使用网易云官方 YRC 逐字歌词
+      if (yrcRaw) {
+        try {
+          const parsed = parseYrc(yrcRaw);
+          if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
+            lyrics = sanitizeLyrics(parsed, base);
+          }
+        } catch (err) {
+          this.options.logger?.warn?.(`解析网易云 YRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+        }
+      }
+
+      // 2. 次优先使用 AMLL 官方 TTML 歌词库
+      if (lyrics.length === 0) {
+        try {
+          const ttmlRaw = await this.getAmllTtmlLyrics(id);
+          if (ttmlRaw) {
+            const parsed = parseTTML(ttmlRaw);
+            if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
+              lyrics = sanitizeLyrics(parsed, base);
+            }
+          }
+        } catch (err) {
+          this.options.logger?.warn?.(`解析 AMLL TTML 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+        }
+      }
+
+      // 3. 兜底使用网易云普通 LRC（行级滚动高亮）
+      if (lyrics.length === 0 && lrcRaw) {
+        try {
+          lyrics = sanitizeLyrics(parseLrc(lrcRaw), base);
+        } catch (err) {
+          this.options.logger?.warn?.(`解析网易云 LRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+        }
+      }
 
       if (!audioUrl) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     }
