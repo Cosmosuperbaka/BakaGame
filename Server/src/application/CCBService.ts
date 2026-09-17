@@ -418,8 +418,13 @@ export class CCBService {
   }
 
   private reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
-    this.ensureConnectionFree(connection);
-    const room = this.getRoom(ensureRoomId(roomIdValue));
+    // 同一条连接重连它本来就在的那个房间时不能走 leaveRoom：
+    // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空。
+    const targetRoomId = ensureRoomId(roomIdValue);
+    if (!(connection.roomId === targetRoomId && connection.playerId)) {
+      this.ensureConnectionFree(connection);
+    }
+    const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
       (candidate) => candidate.sessionToken === token && candidate.membership !== "kicked",
     );
@@ -1225,10 +1230,15 @@ export class CCBService {
   }
 
   private ensureConnectionFree(connection: ConnectionRecord) {
-    if (connection.roomId || connection.playerId) {
-      connection.roomId = undefined;
-      connection.playerId = undefined;
+    if (!connection.roomId && !connection.playerId) return;
+    // 与 SonGuessr 同款：置空连接字段却不动房间里的 player 记录，会留下
+    // 「在线但没有任何连接」的幽灵玩家，房间号被耗尽后只能重启恢复。
+    if (connection.roomId && connection.playerId && this.rooms.has(connection.roomId)) {
+      this.leaveRoom(connection);
+      return;
     }
+    connection.roomId = undefined;
+    connection.playerId = undefined;
   }
 
   private ensureHost(room: CCBRoomRecord, playerId: string) {
