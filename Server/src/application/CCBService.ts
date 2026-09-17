@@ -20,21 +20,64 @@ import {
   type CCBGameSettings,
   type CCBPlayerRecord,
   type CCBPlayerView,
+  type CCBAnswerView,
+  type CCBCharacterSearchResult,
+  type CCBGuessRecord,
   type CCBPrivateState,
   type CCBRoomRecord,
   type CCBRoomSnapshot,
   type CCBRoomSummary,
+  type CCBRoundRecord,
+  type CCBSubjectPick,
 } from "../shared/Index";
+import {
+  CCB_ATTEMPT_MARKS,
+  CCB_END_MARK,
+  appendCCBEndMarkOnce,
+  calculateCCBWinnerScore,
+  computeCCBPartialAwardees,
+  countCCBAttemptMarks,
+  evaluateCCBAttemptLimit,
+  generateCCBFeedback,
+  isCCBBigWin,
+  resolveCCBTimeLimitMs,
+  type CCBCharacterView,
+  type CCBPartialGuessEntry,
+} from "../domain/CCBRules";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 
 // CCB 的服务端权威边界与另两个游戏一致：房间生命周期、成员身份、聊天与（P1 起）对局判定
 // 全部在服务端完成。原版把出题与 `isPartialCorrect` 放在客户端，本实现不予沿用。
 
+/**
+ * 出题与反馈所需的数据源。由 infrastructure 的 `CCBCharacterRepository` 实现；
+ * 在 application 层声明接口，是为了不让应用层反向依赖具体仓储实现。
+ */
+export interface CCBCharacterSource {
+  pickRandomSubject(settings: CCBGameSettings): CCBSubjectPick | undefined;
+  pickRandomCharacter(subjectId: number, settings: CCBGameSettings): number | undefined;
+  buildCharacterView(characterId: number, settings: CCBGameSettings): CCBCharacterView | undefined;
+  searchCharacters(keyword: string, limit?: number): CCBCharacterSearchResult[];
+}
+
 export interface CCBServiceOptions {
   now?: () => number;
   eventLogger?: EventLogger;
+  /** 未注入时对局指令一律报 `CCB_DATA_UNAVAILABLE`（房间骨架仍可用）。 */
+  characters?: CCBCharacterSource;
+  /** 角色立绘回源；未注入时反馈里不带图。 */
+  resolveCharacterImage?: (characterId: number) => Promise<string | undefined>;
 }
+
+/** 普通/同步模式的胜者底分（原版固定 2）。 */
+const CCB_WINNER_BASE_SCORE = 2;
+/** 作品分加成（原版固定 +1）。 */
+const CCB_PARTIAL_BONUS_SCORE = 1;
+/** 单次角色检索返回上限。 */
+const CCB_SEARCH_LIMIT = 20;
+/** 抽到「没有主角/配角」的作品时的重试上限。 */
+const ROUND_SAMPLE_ATTEMPTS = 8;
 
 const clampInt = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Math.round(value)));
@@ -89,8 +132,13 @@ export class CCBService {
 
   private idCounter = 0;
 
+  private readonly characters?: CCBCharacterSource;
+  private readonly resolveCharacterImage?: (characterId: number) => Promise<string | undefined>;
+
   constructor(private readonly options: CCBServiceOptions = {}) {
     this.now = options.now ?? (() => Date.now());
+    this.characters = options.characters;
+    this.resolveCharacterImage = options.resolveCharacterImage;
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -190,12 +238,34 @@ export class CCBService {
         return this.addBots(connection, message.payload.count);
       case "ccb.test.removeBot":
         return this.removeBots(connection, message.payload.count);
+      case "ccb.character.search":
+        return this.searchCharacters(message.payload.keyword);
+      case "ccb.game.start":
+        return this.startRound(connection);
+      case "ccb.game.guess":
+        return await this.guess(connection, message.payload.characterId);
+      case "ccb.game.surrender":
+        return this.surrender(connection);
+      case "ccb.game.nextRound":
+        return this.startRound(connection);
+      case "ccb.game.finish":
+        return this.finishGame(connection);
     }
   }
 
   async runHousekeeping(): Promise<void> {
     const currentTime = this.now();
     for (const room of [...this.rooms.values()]) {
+      // 限时到点必须排在「测试房直接跳过」之前：测试房同样要计时。
+      if (
+        room.phase === "guessing" &&
+        room.currentRound?.deadlineAt !== undefined &&
+        currentTime >= room.currentRound.deadlineAt
+      ) {
+        this.applyRoundTimeout(room);
+        continue;
+      }
+
       if (this.isTestRoom(room)) continue;
       if (this.onlineCount(room) === 0 || currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS) {
         if (this.onlineCount(room) === 0) {
@@ -571,6 +641,376 @@ export class CCBService {
     return { removed: bots.map((bot) => bot.id) };
   }
 
+  // ==================== 对局（P1b：普通模式） ====================
+  //
+  // 与原版的**根本区别**：出题与反馈判定都在服务端。原版把「选答案」与 `isPartialCorrect`
+  // 放在客户端（可作弊），本实现只接受角色 id，其余全部由 `CCBRules` 与本地数据集决定。
+  //
+  // P1b 范围：普通模式的一局闭环（出题 → 猜测 → 结算 → 下一局）。同步/血战见 P2。
+
+  private requireCharacters(): CCBCharacterSource {
+    if (!this.characters) {
+      throw new AppError("CCB_DATA_UNAVAILABLE", "角色数据集未接入，无法开局");
+    }
+    return this.characters;
+  }
+
+  /** 正式玩家（含人机）。计分时另行排除人机。 */
+  private activePlayers(room: CCBRoomRecord): CCBPlayerRecord[] {
+    return Object.values(room.players).filter((candidate) => candidate.membership === "active");
+  }
+
+  /**
+   * 两级采样：先抽作品、再从该作品的角色里抽一个。
+   * 抽到「没有主角/配角」的作品就重试 —— 原版靠 API 返回值重试，这里用固定上限兜底。
+   */
+  private sampleAnswerCharacter(room: CCBRoomRecord): number {
+    const source = this.requireCharacters();
+    for (let attempt = 0; attempt < ROUND_SAMPLE_ATTEMPTS; attempt += 1) {
+      const subject = source.pickRandomSubject(room.settings);
+      if (!subject) break;
+      const characterId = source.pickRandomCharacter(subject.id, room.settings);
+      if (characterId !== undefined) return characterId;
+    }
+    throw new AppError(
+      "NO_CHARACTER_AVAILABLE",
+      "当前设置下抽不到可出题的角色，请放宽年份或题库范围",
+    );
+  }
+
+  private startRound(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.ensureHost(room, player.id);
+    if (room.phase === "guessing" || room.phase === "answering") {
+      throw new AppError("INVALID_PHASE", "本局尚未结束");
+    }
+
+    const actives = this.activePlayers(room);
+    if (actives.length === 0) throw new AppError("NO_ACTIVE_PLAYER", "房间里没有正式玩家");
+    // 房主默认恒为已准备，所以只需检查其他玩家。
+    if (actives.some((candidate) => !candidate.isReady)) {
+      throw new AppError("PLAYER_NOT_READY", "还有玩家未准备");
+    }
+
+    const answerCharacterId = this.sampleAnswerCharacter(room);
+    this.beginRound(room, answerCharacterId);
+
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    this.log("game.round_started", room.roomId, player.id, { roundNumber: room.roundNumber });
+    return { roundNumber: room.roundNumber };
+  }
+
+  private beginRound(room: CCBRoomRecord, answerCharacterId: number) {
+    const currentTime = this.now();
+    const timeLimitMs = resolveCCBTimeLimitMs(room.settings);
+
+    room.roundNumber += 1;
+    room.phase = "guessing";
+    // 增强版由服务端出题，这里记录「若为手动出题本该是谁」——出题人分在 P3 才启用。
+    room.answerSetterPlayerId = room.hostPlayerId;
+    room.revealedAnswer = undefined;
+
+    for (const candidate of Object.values(room.players)) {
+      candidate.marks = "";
+      candidate.guessCount = 0;
+      // 三种人本局不猜测，直接算「已结束」，否则 allSettled 永远为假、整局卡死：
+      // 非正式成员、人机（P1b 限制）、以及出题人自己。
+      candidate.finished =
+        candidate.membership !== "active" ||
+        candidate.isBot ||
+        candidate.id === room.answerSetterPlayerId;
+    }
+
+    room.currentRound = {
+      roundNumber: room.roundNumber,
+      answerCharacterId,
+      answerSetterPlayerId: room.hostPlayerId,
+      startedAt: currentTime,
+      deadlineAt: timeLimitMs > 0 ? currentTime + timeLimitMs : undefined,
+      guesses: {},
+      solvedPlayerIds: [],
+      bannedTags: [],
+    };
+  }
+
+  private async guess(connection: ConnectionRecord, characterId: number) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const round = room.currentRound;
+    if (room.phase !== "guessing" || !round) {
+      throw new AppError("INVALID_PHASE", "当前不在猜测阶段");
+    }
+    if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜测");
+    if (player.finished) throw new AppError("PLAYER_FINISHED", "本局你已经结束了");
+    if (player.id === room.answerSetterPlayerId) {
+      throw new AppError("SETTER_FORBIDDEN", "出题人不能参与猜测");
+    }
+    if (this.hasGuessedCharacter(round, player.id, characterId)) {
+      throw new AppError("CHARACTER_ALREADY_PICKED", "你已经猜过这个角色了");
+    }
+    if (room.settings.globalPick && this.isPickedByOthers(round, player.id, characterId)) {
+      throw new AppError("CHARACTER_ALREADY_PICKED", "该角色已被其他玩家猜过");
+    }
+
+    const source = this.requireCharacters();
+    const answer = source.buildCharacterView(round.answerCharacterId, room.settings);
+    if (!answer) throw new AppError("CHARACTER_NOT_FOUND", "答案角色数据缺失，请重开一局");
+    const guessed = source.buildCharacterView(characterId, room.settings);
+    if (!guessed) throw new AppError("CHARACTER_NOT_FOUND", "角色不存在");
+
+    const isCorrect = characterId === round.answerCharacterId;
+    const feedback = generateCCBFeedback(guessed, answer, room.settings);
+
+    // 标记顺序照原版：先写尝试标记（✔/❌），猜错且与答案有共同作品时再补 💡，
+    // 最后才决定结束标记（✌/👑/💀）。
+    let marks = player.marks + (isCorrect ? CCB_ATTEMPT_MARKS.correct : CCB_ATTEMPT_MARKS.wrong);
+    if (!isCorrect && feedback.shared_appearances.count > 0) {
+      marks += CCB_ATTEMPT_MARKS.partial;
+    }
+
+    if (isCorrect) {
+      // 大赢家必须在「已含本次尝试标记、尚未追加结束标记」的串上判定：
+      // 该函数以尝试次数 === 1 表示「首猜即中」。增强版没有本命头像，故 avatarId 传 null。
+      const bigWin = isCCBBigWin({
+        marksBeforeGuess: marks,
+        avatarId: null,
+        answerId: round.answerCharacterId,
+      });
+      marks = appendCCBEndMarkOnce(marks, bigWin ? CCB_END_MARK.bigWin : CCB_END_MARK.win);
+      player.finished = true;
+      round.solvedPlayerIds.push(player.id);
+    } else {
+      const verdict = evaluateCCBAttemptLimit({ marks, maxAttempts: room.settings.maxAttempts });
+      if (verdict.shouldApplyDeath) {
+        marks = appendCCBEndMarkOnce(marks, CCB_END_MARK.dead);
+        player.finished = true;
+      }
+    }
+
+    player.marks = marks;
+    player.guessCount = countCCBAttemptMarks(marks);
+
+    const record: CCBGuessRecord = {
+      characterId,
+      characterName: guessed.name,
+      characterNameCn: guessed.nameCn || guessed.name,
+      imageUrl: await this.resolveImage(characterId),
+      submittedAt: this.now(),
+      correct: isCorrect,
+      feedback,
+    };
+    round.guesses[player.id] = [...(round.guesses[player.id] ?? []), record];
+
+    if (isCorrect) this.appendSystemMessage(room, `${player.name} 猜中了！`);
+
+    this.touch(room);
+    this.settleIfRoundEnds(room);
+    this.log("game.guessed", room.roomId, player.id, { correct: isCorrect });
+    return { correct: isCorrect, feedback };
+  }
+
+  private surrender(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.phase !== "guessing") throw new AppError("INVALID_PHASE", "当前不在猜测阶段");
+    if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能投降");
+    if (player.finished) throw new AppError("PLAYER_FINISHED", "本局你已经结束了");
+
+    player.marks = appendCCBEndMarkOnce(player.marks, CCB_END_MARK.surrender);
+    player.finished = true;
+    this.appendSystemMessage(room, `${player.name} 投降了`);
+    this.touch(room);
+    this.settleIfRoundEnds(room);
+    this.log("game.surrendered", room.roomId, player.id);
+    return { surrendered: true };
+  }
+
+  /**
+   * 收尾：该结算就结算，否则只广播。
+   *
+   * ⚠️ **普通模式一旦出现胜者立即结算**（`Agents/CCB.md §6.4 结束条件`），不是等全员结束；
+   * 同步/血战模式（P2）才要等本轮全员完成。这里按 `mode` 分流。
+   */
+  private settleIfRoundEnds(room: CCBRoomRecord) {
+    if (room.phase !== "guessing") {
+      this.publishRoom(room);
+      return;
+    }
+    const hasWinner = (room.currentRound?.solvedPlayerIds.length ?? 0) > 0;
+    const winnerEndsRound = room.settings.mode === "normal" && hasWinner;
+    if (winnerEndsRound || this.allSettled(room)) this.settleRound(room);
+    else this.publishRoom(room);
+  }
+
+  private allSettled(room: CCBRoomRecord): boolean {
+    if (!room.currentRound) return false;
+    return this.activePlayers(room).every((candidate) => candidate.finished);
+  }
+
+  /**
+   * 结算一局。
+   *
+   * **不结算出题人分**：增强版由服务端出题，没有任何玩家承担「出题人」这个角色，
+   * 照原版把出题人分记在房主头上属于凭空加减分。原版那套出题人计分（含血战版）留在
+   * `CCBRules` 里，等 P3 的手动出题模式恢复。已登记在 `Agents/CCB.md`。
+   */
+  private settleRound(room: CCBRoomRecord) {
+    const round = room.currentRound;
+    if (!round) return;
+
+    room.phase = "settled";
+    round.deadlineAt = undefined;
+
+    const active = this.activePlayers(room);
+    const winnerIds = new Set(round.solvedPlayerIds);
+    const scorers = active.filter((candidate) => !candidate.isBot);
+
+    for (const candidate of scorers) {
+      if (!winnerIds.has(candidate.id)) continue;
+      const result = calculateCCBWinnerScore({
+        guesses: candidate.marks,
+        baseScore: CCB_WINNER_BASE_SCORE,
+        totalRounds: room.settings.maxAttempts,
+      });
+      candidate.score += result.totalScore;
+    }
+
+    // 作品分：每队/每人只取最早那一次 💡，胜者与出题人不参与。
+    const awardees = computeCCBPartialAwardees(this.buildPartialEntries(room));
+    for (const candidate of scorers) {
+      if (!awardees.has(candidate.id) || winnerIds.has(candidate.id)) continue;
+      candidate.score += CCB_PARTIAL_BONUS_SCORE;
+    }
+
+    room.revealedAnswer = this.buildRevealedAnswer(room, round.answerCharacterId);
+    this.appendSystemMessage(room, this.buildSettleMessage(room, scorers, winnerIds));
+    this.touch(room);
+    this.publishRoom(room);
+
+    // 答案图要回源，异步补一次发布；拿不到就算了（图片只是装饰）。
+    void this.resolveImage(round.answerCharacterId).then((url) => {
+      if (!url || !room.revealedAnswer) return;
+      room.revealedAnswer = { ...room.revealedAnswer, imageUrl: url };
+      this.publishRoom(room);
+    });
+
+    this.log("game.round_settled", room.roomId, undefined, { roundNumber: round.roundNumber });
+  }
+
+  /** 按原版的判定顺序（先收藏顺序、再同序号按用户名升序）整理作品分候选。 */
+  private buildPartialEntries(room: CCBRoomRecord): CCBPartialGuessEntry[] {
+    const round = room.currentRound;
+    if (!round) return [];
+    const entries: CCBPartialGuessEntry[] = [];
+    let index = 0;
+    for (const candidate of this.activePlayers(room)) {
+      for (const record of round.guesses[candidate.id] ?? []) {
+        entries.push({
+          playerId: candidate.id,
+          username: candidate.name,
+          index,
+          team: candidate.team,
+          isAnswerSetter: candidate.id === round.answerSetterPlayerId,
+          isPartialCorrect: !record.correct && record.feedback.shared_appearances.count > 0,
+          isCorrect: record.correct,
+        });
+        index += 1;
+      }
+    }
+    return entries;
+  }
+
+  private buildRevealedAnswer(room: CCBRoomRecord, characterId: number): CCBAnswerView | undefined {
+    const view = this.requireCharacters().buildCharacterView(characterId, room.settings);
+    if (!view) return undefined;
+    return {
+      id: view.id,
+      name: view.name,
+      nameCn: view.nameCn || view.name,
+      revealed: true,
+    };
+  }
+
+  private buildSettleMessage(
+    room: CCBRoomRecord,
+    scorers: CCBPlayerRecord[],
+    winnerIds: Set<string>,
+  ): string {
+    const winners = scorers.filter((candidate) => winnerIds.has(candidate.id));
+    if (winners.length === 0) return `第 ${room.roundNumber} 局结束，无人猜中`;
+    return `第 ${room.roundNumber} 局结束，${winners.map((candidate) => candidate.name).join("、")} 猜中`;
+  }
+
+  /** 限时到点：未结束的正式玩家记一次 ⏱️ 并结束，随后统一结算。 */
+  private applyRoundTimeout(room: CCBRoomRecord) {
+    const round = room.currentRound;
+    if (!round || room.phase !== "guessing") return;
+
+    for (const candidate of this.activePlayers(room)) {
+      if (candidate.finished) continue;
+      const marks = appendCCBEndMarkOnce(
+        candidate.marks + CCB_ATTEMPT_MARKS.timeout,
+        CCB_END_MARK.dead,
+      );
+      candidate.marks = marks;
+      candidate.guessCount = countCCBAttemptMarks(marks);
+      candidate.finished = true;
+    }
+
+    this.appendSystemMessage(room, `第 ${room.roundNumber} 局时间到`);
+    this.settleIfRoundEnds(room);
+  }
+
+  private finishGame(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.ensureHost(room, player.id);
+    if (room.phase === "waiting") throw new AppError("INVALID_PHASE", "当前没有进行中的对局");
+
+    room.phase = "waiting";
+    room.currentRound = undefined;
+    room.answerSetterPlayerId = undefined;
+    room.revealedAnswer = undefined;
+    for (const candidate of Object.values(room.players)) {
+      candidate.marks = "";
+      candidate.guessCount = 0;
+      candidate.finished = false;
+      candidate.isReady = candidate.id === room.hostPlayerId;
+    }
+
+    this.touch(room);
+    this.appendSystemMessage(room, `对局结束，共进行 ${room.roundNumber} 局`);
+    this.publishRoom(room);
+    this.publishLobby();
+    this.log("game.finished", room.roomId, player.id);
+    return { finished: true };
+  }
+
+  private searchCharacters(keyword: string) {
+    const source = this.requireCharacters();
+    return { results: source.searchCharacters(keyword, CCB_SEARCH_LIMIT) };
+  }
+
+  private hasGuessedCharacter(round: CCBRoundRecord, playerId: string, characterId: number): boolean {
+    return (round.guesses[playerId] ?? []).some((record) => record.characterId === characterId);
+  }
+
+  private isPickedByOthers(round: CCBRoundRecord, playerId: string, characterId: number): boolean {
+    return Object.entries(round.guesses).some(
+      ([otherId, records]) =>
+        otherId !== playerId && records.some((record) => record.characterId === characterId),
+    );
+  }
+
+  /** 角色立绘回源。图片只是装饰，失败不该让一次合法操作整体失败。 */
+  private async resolveImage(characterId: number): Promise<string | undefined> {
+    if (!this.resolveCharacterImage) return undefined;
+    try {
+      return await this.resolveCharacterImage(characterId);
+    } catch {
+      return undefined;
+    }
+  }
+
   private buildRoomSummary(room: CCBRoomRecord): CCBRoomSummary {
     const players = Object.values(room.players).filter(
       (player) => player.membership !== "kicked",
@@ -601,6 +1041,8 @@ export class CCBService {
       phase: room.phase,
       roundNumber: room.roundNumber,
       answerSetterPlayerId: room.answerSetterPlayerId,
+      guessDeadlineAt: room.currentRound?.deadlineAt,
+      answer: room.revealedAnswer,
       players: Object.values(room.players)
         .filter((player) => player.membership !== "kicked")
         .sort((left, right) => left.joinedAt - right.joinedAt)
@@ -631,18 +1073,27 @@ export class CCBService {
     room: CCBRoomRecord,
     player: CCBPlayerRecord,
   ): CCBPrivateState {
+    const round = room.currentRound;
     const isActive = player.membership === "active";
     const maxAttempts = room.settings.maxAttempts;
+    // 出题人自己不参与猜测；只有正式且本局未结束的玩家才能猜。
+    const inPlay =
+      isActive &&
+      room.phase === "guessing" &&
+      !player.finished &&
+      player.id !== room.answerSetterPlayerId;
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
-      // 对局指令（`ccb.game.*`）随 P1 挂载，在此之前不向客户端宣称任何对局能力。
+      // 手动出题属 P3，在此之前不宣称该能力。
       canSetAnswer: false,
-      canGuess: false,
-      canSurrender: false,
-      canStartRound: false,
+      canGuess: inPlay,
+      canSurrender: inPlay,
+      canStartRound:
+        player.id === room.hostPlayerId && (room.phase === "waiting" || room.phase === "settled"),
       remainingGuesses: isActive ? Math.max(0, maxAttempts - player.guessCount) : 0,
-      ownGuesses: [],
+      // 只下发自己的猜测记录：反馈里含答案相关线索，不能给别人看。
+      ownGuesses: round?.guesses[player.id] ?? [],
       hints: [],
     };
   }
