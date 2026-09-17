@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { LyricPlayer } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
-import { BookOpen } from "lucide-react";
 import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
 
@@ -168,32 +167,25 @@ export function SongLyricPlayer({
     );
   }
 
-  // 3. 歌曲播放完毕后，自动展示全量歌词总览视图
+  // 3. 歌曲播放完毕后，自动展示全量歌词总览视图（高度自适应完整展示所有行，无滚动条，无冗余描述性文本）
   if (audioPlaybackState === "completed") {
     return (
       <div
         ref={containerRef}
         className={cn(
-          "relative flex h-44 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/70 p-3 sm:h-52 sm:p-4 select-none",
+          "relative flex min-h-[11rem] w-full flex-col items-center justify-center rounded-md border border-border/40 bg-background/70 p-4 sm:min-h-[13rem] sm:p-5 select-none",
           className,
         )}
         data-testid="baka-song-lyric-overview"
       >
-        <div className="mb-2 flex items-center justify-between border-b border-border/30 pb-1.5 text-xs text-muted-foreground font-serif">
-          <span className="flex items-center gap-1.5 font-medium text-foreground/80">
-            <BookOpen className="h-3.5 w-3.5 text-primary" />
-            题目歌词总览
-          </span>
-          <span>共 {lines.length} 句（重播可再次查看逐字播放）</span>
-        </div>
-        <div className="space-y-2 overflow-y-auto px-1 py-1 text-center font-serif scrollbar-hidden">
+        <div className="flex w-full flex-col items-center justify-center space-y-2.5 text-center font-serif">
           {lines.map((line, idx) => (
-            <div key={`${line.time}-${idx}`} className="group space-y-0.5">
+            <div key={`${line.time}-${idx}`} className="space-y-0.5">
               <p className="text-sm font-semibold text-foreground tracking-wide sm:text-base">
                 {line.text}
               </p>
               {line.translatedLyric ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground sm:text-sm font-normal">
                   {line.translatedLyric}
                 </p>
               ) : null}

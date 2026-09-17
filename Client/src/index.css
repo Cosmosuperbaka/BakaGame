@@ -367,5 +367,17 @@ img {
   background-color: var(--color-foreground) !important;
 }
 
+.baka-lyric-player [class*="lyricSubLine"],
+.amll-lyric-player [class*="lyricSubLine"] {
+  color: var(--color-foreground) !important;
+  font-family: var(--font-serif) !important;
+  opacity: 0.65 !important;
+  font-size: 0.85rem !important;
+  line-height: 1.4 !important;
+  text-align: center !important;
+  text-shadow: none !important;
+  margin-top: 0.2rem !important;
+}
+
 
 

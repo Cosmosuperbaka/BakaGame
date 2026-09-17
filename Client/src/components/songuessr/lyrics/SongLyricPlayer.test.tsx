@@ -88,7 +88,7 @@ describe("SongLyricPlayer", () => {
     expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
   });
 
-  it("音频播放完毕时自动切换为题目歌词总览视图并展示全部选中歌词", () => {
+  it("音频播放完毕时自动切换为纯净歌词总览视图（无描述性标题，展示全部选中歌词及翻译）", () => {
     const lines: SongLyricLine[] = [
       { time: 1000, endTime: 3000, text: "选中的第一句歌词", translatedLyric: "Translation 1" },
       { time: 3000, endTime: 6000, text: "选中的第二句歌词" },
@@ -101,8 +101,11 @@ describe("SongLyricPlayer", () => {
       />,
     );
 
-    expect(screen.getByTestId("baka-song-lyric-overview")).toBeInTheDocument();
-    expect(screen.getByText("题目歌词总览")).toBeInTheDocument();
+    const overview = screen.getByTestId("baka-song-lyric-overview");
+    expect(overview).toBeInTheDocument();
+    expect(overview).toHaveClass("min-h-[11rem]");
+    expect(screen.queryByText("题目歌词总览")).toBeNull();
+    expect(screen.queryByText(/重播可再次查看/)).toBeNull();
     expect(screen.getByText("选中的第一句歌词")).toBeInTheDocument();
     expect(screen.getByText("Translation 1")).toBeInTheDocument();
     expect(screen.getByText("选中的第二句歌词")).toBeInTheDocument();
