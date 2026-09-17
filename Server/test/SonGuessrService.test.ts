@@ -559,6 +559,33 @@ describe("SonGuessrService", () => {
     expect(single).toEqual({ startTime: 7_000, endTime: 37_000, lines: [] });
   });
 
+  test("跨越超过 6 秒间奏的两句歌词不会被拼入同一个出题窗口", () => {
+    // 模拟《一样的月光》：第 2 句与第 3 句之间存在 54 秒超长大间奏
+    const linesWithLongInterlude = [
+      { time: 126_620, endTime: 130_390, text: "不再殷切 需要" },
+      { time: 131_400, endTime: 136_590, text: "太多理智的世界" },
+      // 54 秒长间奏
+      { time: 190_700, endTime: 194_340, text: "其实看得我越来越心慌" },
+      { time: 194_680, endTime: 198_530, text: "怎么你留下最真实的回忆" },
+      { time: 198_700, endTime: 202_350, text: "都是提醒我失去的声音" },
+    ];
+
+    // 当设定 4 行时，由于跨间奏窗口被拒绝，算法自动收缩到 3 行并在间奏之后取连续段
+    const clip = createSongLyricClip(linesWithLongInterlude, 4, { nextInt: () => 0 }, 240_000);
+    expect(clip.lines).toHaveLength(3);
+    expect(clip.lines[0].text).toBe("其实看得我越来越心慌");
+    expect(clip.lines[1].text).toBe("怎么你留下最真实的回忆");
+    expect(clip.lines[2].text).toBe("都是提醒我失去的声音");
+
+    // 无论怎么随机挑选窗口，都绝对不会出现跨越间奏的 [太多理智的世界, 其实看得我越来越心慌] 组合
+    for (let i = 0; i < 10; i++) {
+      const randomClip = createSongLyricClip(linesWithLongInterlude, 2, { nextInt: (max) => i % max }, 240_000);
+      const texts = randomClip.lines.map((l) => l.text);
+      const hasCrossInterlude = texts.includes("太多理智的世界") && texts.includes("其实看得我越来越心慌");
+      expect(hasCrossInterlude).toBe(false);
+    }
+  });
+
   test("房间在线人数不设上限", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");

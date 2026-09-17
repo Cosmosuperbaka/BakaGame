@@ -349,6 +349,13 @@ export const scoreAnimeSongCandidate = (
 const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
 const MAX_LYRIC_LINE_DURATION_MS = 12_000;
 /**
+ * 歌词片段相邻两句之间的最大间奏间隔。
+ *
+ * 如果相邻两句歌词之间的时间跨度超过此阈值，说明歌曲进入了较长的吉他/管弦等乐器间奏（如《一样的月光》中间 54 秒间奏），
+ * 绝不能把分属两段演唱的歌词跨越长间奏拼接为一个出题窗口，否则会导致玩家在数十秒死寂中等待。
+ */
+export const MAX_LYRIC_INTERLUDE_GAP_MS = 6_000;
+/**
  * 歌词窗口收缩下限。
  *
  * 单行歌词不足以出题（相邻两句的上下文才算一个可猜片段），因此设定行数
@@ -425,18 +432,24 @@ export const createSongLyricClip = (
   const isCompactLine = (line: SongDetails["lyrics"][number]) =>
     line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS;
 
+  const isContinuousWindow = (lines: SongDetails["lyrics"]) => {
+    if (!lines.every(isCompactLine)) return false;
+    for (let i = 1; i < lines.length; i++) {
+      const gap = lines[i].time - lines[i - 1].endTime;
+      if (gap > MAX_LYRIC_INTERLUDE_GAP_MS) return false;
+    }
+    return true;
+  };
+
   // 从设定行数开始逐行收缩寻找窗口。
   //
-  // 单窗口的时长上限会整片否决含间奏的窗口，而**只要窗口长度足够大到必然覆盖
-  // 那个长行**，就再也拼不出窗口。`JANE DOE`（米津玄師 / 宇多田ヒカル）在
-  // `[00:53.04]` 之后有 15 秒间奏，该行跨度 14.81s：设定行数 ≥ 7 时任何窗口
-  // 都会包含它，旧实现直接退回 `lines: []`，让一首 12 句歌词的歌在界面上被
-  // 显示成「当前歌曲为纯音乐或无歌词」。宁可少给几行，也不能丢掉整首歌的歌词。
+  // 单窗口的时长上限或两句之间的长间奏会整片否决跨间奏的窗口，而**只要窗口长度足够大到必然覆盖
+  // 那个长间奏**，就再也拼不出窗口。例如在间奏前后的歌词行：设定行数大时会优先收缩取紧凑段。
   for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
     if (lyrics.length < count) continue;
     const windows = Array.from({ length: lyrics.length - count + 1 }, (_, startIndex) =>
       lyrics.slice(startIndex, startIndex + count))
-      .filter((lines) => lines.every(isCompactLine));
+      .filter(isContinuousWindow);
     if (windows.length === 0) continue;
 
     const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
