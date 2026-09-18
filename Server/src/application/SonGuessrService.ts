@@ -695,6 +695,14 @@ export class SonGuessrService {
       // 但仍受空闲超时约束：否则那唯一的房间记录会永久驻留，
       // 加出来的机器人也永远不会被回收，只能靠重启释放。
       if (this.isTestRoom(room) && isEmpty && !isIdleTimeout) continue;
+      // 空闲关闭前提前一分钟预警一次：客户端的 `song.room.expiring` 分支
+      // 此前是死代码（服务端从来没下发过），玩家只会突然收到「房间已关闭」。
+      const idleRemaining = ROOM_IDLE_TIMEOUT_MS - (currentTime - room.lastActivityAt);
+      if (!isEmpty && idleRemaining <= ROOM_EXPIRING_WARNING_MS && !room.expiringNotified) {
+        room.expiringNotified = true;
+        this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
+      }
+
       if (isEmpty || isIdleTimeout) {
         if (isEmpty) {
           room.emptySinceAt ??= currentTime;
@@ -771,11 +779,16 @@ export class SonGuessrService {
           const isGuessTimeout =
             state.deadlineAt !== undefined && state.deadlineAt <= currentTime;
 
+          // 音频就绪宽限期结束仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额
           if (isAudioReadyTimeout && !state.audioReady) {
             state.audioReady = true;
+            if (round.settings.showGuessTimer && state.deadlineAt === undefined) {
+              state.deadlineAt = currentTime + round.settings.guessDurationSeconds * 1_000;
+            }
+            changed = true;
           }
 
-          if (isGuessTimeout || isAudioReadyTimeout || isRoundHardExpired) {
+          if (isGuessTimeout || isRoundHardExpired) {
             this.recordTimeout(room, playerId);
             changed = true;
           }
@@ -855,7 +868,7 @@ export class SonGuessrService {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
-    this.ensurePassword(room, payload.password);
+    this.ensurePassword(room, payload.password, connection);
     const name = this.requireName(payload.userName);
     if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
       throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
@@ -916,6 +929,7 @@ export class SonGuessrService {
     this.attachConnection(room, player, connection);
     room.emptySinceAt = undefined;
     if (room.hostPlayerId === player.id) room.hostReconnectDeadlineAt = undefined;
+    this.ensureRoundPlayerState(room, player);
 
     // 网易云播放地址可能带有效期。刷新页面后重新取一次当前回合地址，
     // 只替换 URL，不改动已经固定的答案、歌词片段和回合状态。
@@ -1289,6 +1303,9 @@ export class SonGuessrService {
 
   private sendChat(connection: ConnectionRecord, rawText: string) {
     const { room, player } = this.requireRoomPlayer(connection);
+    if (!this.chatLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "发言过于频繁，请稍后再试");
+    }
     const text = normalizeWord(rawText).slice(0, 200);
     if (!text) throw new AppError("INVALID_MESSAGE", "消息不能为空");
     const message: ChatMessage = {
@@ -1301,8 +1318,17 @@ export class SonGuessrService {
     };
     room.chat = [...room.chat, message].slice(-CHAT_LIMIT);
     this.touch(room);
-    this.publishRoom(room);
+    // 只走增量事件，不再为一条聊天广播整套房间快照：
+    // N 人房间刷 M 条消息会从 O(N×M) 次全量序列化降到 O(N) 次小事件。
+    this.broadcastRoomEvent(room, "song.chat.message", { message });
     return { sent: true };
+  }
+
+  /** 向房间内所有连接下发一条非状态事件（差量同步通道之外的独立事件）。 */
+  private broadcastRoomEvent(room: SonGuessrRoomRecord, name: string, payload: unknown) {
+    for (const connection of this.connections.getRoomConnections(room.id)) {
+      connection.send(createEvent(name, payload));
+    }
   }
 
   private async createMusicQrLogin(connection: ConnectionRecord) {
@@ -1767,7 +1793,7 @@ export class SonGuessrService {
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
     const participantStates = Object.fromEntries(
-      this.activePlayers(room).filter((candidate) => candidate.online).map((candidate) => [
+      this.activePlayers(room).map((candidate) => [
         candidate.id,
         {
           audioReady: candidate.isBot,
@@ -1930,7 +1956,7 @@ export class SonGuessrService {
     }
     const round = room.currentRound;
     if (round.number !== roundNumber) return { ignored: true };
-    const state = round.players[player.id];
+    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (
       !state ||
       (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) ||
@@ -1979,9 +2005,7 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
-    // 正式成员恰好在 installRound 期间掉线、随后又重连回来时，回合里没有他的状态。
-    // 这时他是合法参与者，只是错过了状态构建 —— 补一份即可，不能按旁观者拦掉。
-    const state = round.players[player.id] ?? this.attachRoundState(room, round, player);
+    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
     }
@@ -2071,7 +2095,7 @@ export class SonGuessrService {
     if (room.settings.questionType !== "anime" || !round.anime) {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
-    const state = round.players[player.id];
+    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (!state || player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
@@ -2148,7 +2172,7 @@ export class SonGuessrService {
   private giveUp(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
-    const state = round.players[player.id];
+    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (!state || player.membership !== "active") {
       throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能执行猜歌操作");
     }
@@ -2276,24 +2300,30 @@ export class SonGuessrService {
   }
 
   /**
-   * 为「回合已经开打但没有回合状态」的正式成员补一份状态。
-   * 场景：installRound 只按当时在线的人建状态，玩家恰好在这期间掉线又重连回来。
+   * 保证处于进行中回合的正式非出题玩家持有合法的回合状态（自愈机制）。
+   * 覆盖场景：切轮瞬间短暂断线、重连或状态异步，杜绝玩家缺失回合状态被误判为操作完成。
    */
-  private attachRoundState(
+  private ensureRoundPlayerState(
     room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
     player: SonGuessrPlayerRecord,
-  ): SonGuessrRoundPlayerState {
-    const state: SonGuessrRoundPlayerState = {
-      audioReady: true,
-      guessesUsed: 0,
-      correct: false,
-      gaveUp: false,
-      deadlineAt: round.settings.showGuessTimer
-        ? this.now() + round.settings.guessDurationSeconds * 1_000
-        : undefined,
-    };
-    round.players[player.id] = state;
+  ): SonGuessrRoundPlayerState | undefined {
+    if (room.phase !== "playing" || !room.currentRound) return undefined;
+    const round = room.currentRound;
+    if (player.membership !== "active") return undefined;
+    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
+      return undefined;
+    }
+    let state = round.players[player.id];
+    if (!state) {
+      state = {
+        audioReady: false,
+        guessesUsed: 0,
+        correct: false,
+        gaveUp: false,
+        deadlineAt: undefined,
+      };
+      round.players[player.id] = state;
+    }
     return state;
   }
 
@@ -2493,6 +2523,7 @@ export class SonGuessrService {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
   ): SonGuessrPlayerView {
+    this.ensureRoundPlayerState(room, player);
     const round = room.currentRound;
     const state = round?.players[player.id];
     let roundStatus: SonGuessrPlayerView["roundStatus"] = "waiting";
@@ -2526,6 +2557,7 @@ export class SonGuessrService {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
   ): SonGuessrPrivateState {
+    this.ensureRoundPlayerState(room, player);
     const round = room.currentRound;
     const state = round?.players[player.id];
     const isSubmitter = round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
@@ -2766,8 +2798,16 @@ export class SonGuessrService {
     if (room.hostPlayerId !== playerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
 
-  private ensurePassword(room: SonGuessrRoomRecord, password?: string) {
+  private ensurePassword(
+    room: SonGuessrRoomRecord,
+    password: string | undefined,
+    connection?: ConnectionRecord,
+  ) {
     if (room.visibility === "private" && room.password !== password?.trim()) {
+      // 房间号只有 9000 个、私密房密码又没有退避，必须给尝试次数封顶。
+      if (connection && !this.joinFailureLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
+        throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
+      }
       throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
     }
   }
