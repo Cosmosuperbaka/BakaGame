@@ -2277,7 +2277,7 @@ export class SonGuessrService {
    */
   private attachRoundState(
     room: SonGuessrRoomRecord,
-    round: SonGuessrRound,
+    round: SonGuessrRoundRecord,
     player: SonGuessrPlayerRecord,
   ): SonGuessrRoundPlayerState {
     const state: SonGuessrRoundPlayerState = {
