@@ -44,6 +44,13 @@ function fakePlayer(measured: (number | null)[], live?: (number | null)[]) {
   return {
     currentLyricGroups: groups,
     lyricGroupSize,
+    overscanPx: 300,
+    getOverscanPx() {
+      return this.overscanPx;
+    },
+    setOverscanPx(px: number) {
+      this.overscanPx = px;
+    },
     setAlignAnchor: vi.fn(),
     setAlignPosition: vi.fn(),
     setCurrentTime: vi.fn(),
@@ -57,14 +64,17 @@ const playerHeightVar = () =>
   screen.getByTestId("mock-amll").style.getPropertyValue("--baka-lyric-player-height");
 
 describe("SongLyricPlayer 原生实测总览高度", () => {
-  it("总览高度取 AMLL 原生实测的 Σ 行高，并按 scale(0.92) 反向补偿外壳", async () => {
-    holder.player = fakePlayer([53, 31]);
+  it("外壳高度恒定取原生实测的 Σ 行高并按 scale(0.92) 反向补偿", async () => {
+    const player = fakePlayer([53, 31]);
+    holder.player = player;
 
     render(<SongLyricPlayer lines={LINES} audioPlaybackState="completed" />);
 
     await waitFor(() => expect(container().style.height).toBe("78px"));
-    // 播放器本体保持未缩放的自然高度，才能既不被裁切又不留留白
+    // 总览态播放器本体保持未缩放自然高度，缩放后恰好填满外壳
     expect(playerHeightVar()).toBe("84px");
+    // 全量挂载歌词行，打破「外壳矮 → 末尾行不挂载 → 测不到」死循环
+    expect(player.getOverscanPx()).toBeGreaterThanOrEqual(4000);
   });
 
   it("歌词组测量未就绪时退回解析式估算，测量到位后自动收敛到实测值", async () => {
@@ -87,22 +97,18 @@ describe("SongLyricPlayer 原生实测总览高度", () => {
     expect(playerHeightVar()).toBe("84px");
   });
 
-  it("旧测量值残留（与元素当前高度不一致）时不采信，继续使用估算值", async () => {
-    holder.player = fakePlayer([53, 31], [53, 27]);
-
-    render(<SongLyricPlayer lines={LINES} audioPlaybackState="completed" />);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-
-    expect(container().style.height).toBe("81px");
-  });
-
-  it("播放中不做缩放补偿，进入总览后按原生实测值收紧并补偿缩放", async () => {
+  it("播放与总览共用同一外壳高度，切入总览只有缩放在动，不再二次跳变", async () => {
     holder.player = fakePlayer([53, 31]);
 
     const { rerender } = render(<SongLyricPlayer lines={LINES} audioPlaybackState="playing" />);
-    expect(container().style.height).toBe("88px");
+    // 播放阶段就完成原生实测并锁定高度（首帧为估算值，数帧内收敛）
+    await waitFor(() => expect(container().style.height).toBe("78px"));
+    // 播放态本体与外壳同高（居中锚点落在可视区正中）
+    await waitFor(() => expect(playerHeightVar()).toBe("77px"));
 
     rerender(<SongLyricPlayer lines={LINES} audioPlaybackState="completed" />);
     await waitFor(() => expect(container().style.height).toBe("78px"));
+    // 只有播放器本体切换为未缩放自然高度，外壳高度零变化
+    expect(playerHeightVar()).toBe("84px");
   });
 });
