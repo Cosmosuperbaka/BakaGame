@@ -26,6 +26,7 @@ class FixtureSocket implements CCBOriginalSocket {
   listeners = new Map<string, Set<(payload?: unknown) => void>>();
   sent: Array<{ event: string; payload: unknown }> = [];
   failGuess = false;
+  atomicTags = false;
   constructor(readonly id: string, readonly room: FixtureRoom) {}
   on(event: string, listener: (payload?: unknown) => void) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
@@ -54,7 +55,8 @@ class FixtureSocket implements CCBOriginalSocket {
       isPublic: true, hints: command.hints,
     });
     else if (event === 'setAnswerSetter') this.room.broadcast('waitForAnswer', { answerSetterId: command.setterId });
-    ack?.(this.failGuess && event === 'playerGuess' ? { ok: false, message: '角色已经被猜过' } : { ok: true });
+    ack?.(this.failGuess && event === 'playerGuess' ? { ok: false, message: '角色已经被猜过' }
+      : { ok: true, ...(event === 'playerGuess' && this.atomicTags ? { tagBanApplied: true } : {}) });
   }
   connect() { this.connected = true; this.receive('connect'); }
   disconnect() { this.connected = false; this.receive('disconnect'); }
@@ -157,6 +159,11 @@ describe('原版房间适配', () => {
     await request(service, 'first', { id: 'guess', type: 'ccb.game.guess', payload: { characterId: 901 } });
     expect(socket.sent.at(-1)).toMatchObject({ event: 'tagBanSharedMetaTags', payload: { tags: ['校园', '眼镜', '声优'] } });
     expect(socket.sent.filter(item => item.event === 'playerGuess').at(-1)).toMatchObject({ payload: { guessResult: { isCorrect: false, isPartialCorrect: true } } });
+    socket.atomicTags = true;
+    const previousTagEvents = socket.sent.filter(item => item.event === 'tagBanSharedMetaTags').length;
+    await request(service, 'first', { id: 'guess-new', type: 'ccb.game.guess', payload: { characterId: 902 } });
+    expect(socket.sent.at(-1)).toMatchObject({ event: 'playerGuess', payload: { sharedMetaTags: ['校园', '眼镜', '声优'] } });
+    expect(socket.sent.filter(item => item.event === 'tagBanSharedMetaTags')).toHaveLength(previousTagEvents);
   });
 
   test('前端重连复用上游连接，超时清会话聊天，被踢立即撤权', async () => {

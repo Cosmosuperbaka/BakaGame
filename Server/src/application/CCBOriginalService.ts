@@ -244,12 +244,13 @@ export class CCBOriginalService {
     const character = await this.options.data.getCharacter(id, session.settings);
     if (session.roundKey !== roundKey || !originalPrivateState(session).canGuess) throw new AppError('CCB_ROUND_CHANGED', '本轮状态已变化，请重新操作');
     const feedback = buildCCBFeedback(character, answer, session.settings);
+    const tags = session.settings.tagBan ? feedback.tags.filter(tag => tag.matched).map(tag => tag.text) : [];
     const result = await originalRequest(session.socket, 'playerGuess', { roomId: session.roomId,
-      guessResult: { isCorrect: id === answer.id, isPartialCorrect: feedback.sharedAppearances.length > 0, guessData: toOriginalCharacter(character) } });
-    // 原版是独立事件：仅在猜测已获确认且仍是本局时提交，拒绝的猜测不能污染标签。
-    if (session.settings.tagBan && session.roundKey === roundKey && session.phase === 'guessing') {
-      const tags = feedback.tags.filter(tag => tag.matched).map(tag => tag.text);
-      if (tags.length) session.socket.emit('tagBanSharedMetaTags', { roomId: session.roomId, tags });
+      guessResult: { isCorrect: id === answer.id, isPartialCorrect: feedback.sharedAppearances.length > 0, guessData: toOriginalCharacter(character) },
+      sharedMetaTags: tags });
+    // 旧部署只有独立标签事件；新部署在猜测事务中登记并通过 ACK 确认。
+    if (result.tagBanApplied !== true && tags.length && session.roundKey === roundKey && session.phase === 'guessing') {
+      session.socket.emit('tagBanSharedMetaTags', { roomId: session.roomId, tags });
     }
     return result;
   }
