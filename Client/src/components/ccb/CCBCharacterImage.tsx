@@ -36,6 +36,6 @@ export function CCBCharacterImage({ character, className }: { character: CCBChar
     return () => { active = false; observer.disconnect(); };
   }, [character.id, character.imageUrl, image]);
   return <span ref={container} className={cn("flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground", className)}>
-    {image && !failed ? <img src={image} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => setFailed(true)} /> : <UserRound aria-hidden="true" />}
+    {image && !failed ? <img src={image} alt="" className="h-full w-full object-cover object-top" loading="lazy" onError={() => setFailed(true)} /> : <UserRound aria-hidden="true" />}
   </span>;
 }

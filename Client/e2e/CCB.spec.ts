@@ -15,7 +15,7 @@ async function useLocalCharacterImages(page: Page) {
       if (typeof message !== "string") { server.send(message); return; }
       const command = JSON.parse(message) as { type: string; id: string };
       if (command.type === "ccb.character.image") {
-        socket.send(JSON.stringify({ type: "ack", id: command.id, payload: {
+        socket.send(JSON.stringify({ type: "ack", id: command.id, requestType: command.type, payload: {
           imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
         } }));
       } else server.send(message);
@@ -145,6 +145,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(page.getByRole("table").filter({ has: page.getByText("本局得分", { exact: true }) })).toContainText("首猜 12");
     await expect(page.getByText("第 2 局", { exact: true })).toBeVisible();
     await page.evaluate(() => document.documentElement.classList.add("dark"));
+    await page.evaluate(() => Promise.allSettled(document.getAnimations().map((animation) => animation.finished)));
     await page.screenshot({ path: testInfo.outputPath("ccb-settled-dark.png") });
     await guest.getByRole("button", { name: "离开房间" }).click();
     await page.goBack();
