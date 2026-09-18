@@ -400,16 +400,17 @@ export const createApp = ({
         logger,
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
-      bangumiProvider: new FallbackBangumiProvider(
-        new BangumiWorkerProvider({
+      bangumiProvider: new FallbackBangumiProvider({
+        local: new BangumiWorkerProvider({
           songPath: env.bangumiSongDbPath!,
           characterPath: env.bangumiCharacterDbPath!,
           enrichmentPath: env.bangumiEnrichmentPath,
           imageBase: env.bangumiImageUrl,
           apiBase: env.bangumiApiUrl,
         }),
-        new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
-      ),
+        remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
+        logger,
+      }),
     });
 
   // CCB 的出题与反馈全部读本地只读数据集。数据集是 LFS 产物，本地未拉取时文件不存在，
@@ -440,16 +441,17 @@ export const createApp = ({
   // 的测试不该平白多起一个 Worker。
   let ccbBangumi: FallbackBangumiProvider | undefined;
   const resolveCCBCharacterImage = async (characterId: number) => {
-    ccbBangumi ??= new FallbackBangumiProvider(
-      new BangumiWorkerProvider({
+    ccbBangumi ??= new FallbackBangumiProvider({
+      local: new BangumiWorkerProvider({
         songPath: env.bangumiSongDbPath!,
         characterPath: env.bangumiCharacterDbPath!,
         enrichmentPath: env.bangumiEnrichmentPath,
         imageBase: env.bangumiImageUrl,
         apiBase: env.bangumiApiUrl,
       }),
-      new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
-    );
+      remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
+      logger,
+    });
     return ccbBangumi.resolveCharacterImage(characterId);
   };
 
