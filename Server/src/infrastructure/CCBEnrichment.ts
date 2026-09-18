@@ -18,7 +18,7 @@ const CharacterResponse = Type.Object({
   infobox: Type.Optional(Type.Array(Type.Object({ key: Type.String(), value: Type.Unknown() }))),
 });
 const DirectoryPage = Type.Object({
-  total: Type.Integer({ minimum: 0 }), data: Type.Array(Type.Object({ id: Type.Integer({ minimum: 1 }) })),
+  total: Type.Integer({ minimum: 0 }), data: Type.Array(Type.Object({ id: Type.Integer({ minimum: 1 }) }), { maxItems: 100 }),
 });
 
 export interface CCBCharacterSupplement {
@@ -129,6 +129,7 @@ export class CCBEnrichment {
       const raw = await this.request(`/v0/indices/${indexId}/subjects?limit=100&offset=${offset}`);
       if (!Value.Check(DirectoryPage, raw)) throw new AppError("CCB_DATA_INVALID", "目录数据格式无效");
       if (raw.total > 1000) throw new AppError("CCB_DIRECTORY_TOO_LARGE", "目录最多支持一千部作品，请拆分目录");
+      if (offset + raw.data.length > raw.total) throw new AppError("CCB_DATA_INVALID", "目录分页数量无效");
       for (const item of raw.data) ids.add(item.id);
       if (offset + raw.data.length >= raw.total) return [...ids];
       if (!raw.data.length) throw new AppError("CCB_DATA_INVALID", "目录分页数据不完整");

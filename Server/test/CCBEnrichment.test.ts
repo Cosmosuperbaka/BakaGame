@@ -11,6 +11,19 @@ function create(options: Partial<CCBDataOptions> = {}) {
 afterEach(async () => { await Promise.all(active.splice(0).map(item => item.close())); });
 
 describe('CCB 资料补全异常边界', () => {
+  test('目录拒绝超大或不完整分页，不把异常上游结果当完整快照', async () => {
+    const responses = [
+      { total: 1001, data: [] },
+      { total: 101, data: Array.from({ length: 101 }, (_, index) => ({ id: index + 1 })) },
+      { total: 0, data: [{ id: 1 }] },
+      { total: 2, data: [] },
+    ];
+    const enrichment = create({ fetcher: async () => Response.json(responses.shift()) });
+    await expect(enrichment.fetchDirectory(1)).rejects.toMatchObject({ code: 'CCB_DIRECTORY_TOO_LARGE' });
+    for (let index = 0; index < 3; index++) await expect(enrichment.fetchDirectory(1)).rejects.toMatchObject({ code: 'CCB_DATA_INVALID' });
+    expect(enrichment.getDirectory(1)).toBeUndefined();
+  });
+
   for (const absent of ['empty', 'missing'] as const) {
     test(`${absent} 图片仅内存负缓存且到期可恢复`, async () => {
       let now = 0, calls = 0;
