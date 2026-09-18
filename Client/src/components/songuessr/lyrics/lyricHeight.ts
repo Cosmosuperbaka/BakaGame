@@ -24,22 +24,54 @@ import type { SongLyricLine } from "@/types";
 /** 总览模式缩放系数，必须与 Client/src/index.css 中 `.baka-overview-mode` 的 transform 一致 */
 export const LYRIC_OVERVIEW_SCALE = 0.92;
 
-/** AMLL 盒模型常量（与 Client/src/index.css、内核 style.css 对齐，单位 px） */
-const FONT_SIZE = 18; // --amll-lp-font-size: 1.125rem
-const LINE_HEIGHT = FONT_SIZE * 1.2; // 内核 .amll-lyric-player.dom { line-height: 1.2 }
-const SUB_FONT_SIZE = 0.85 * 16; // [class*="lyricSubLine"] { font-size: .85rem }
-const SUB_LINE_HEIGHT = SUB_FONT_SIZE * 1.4; // [class*="lyricSubLine"] { line-height: 1.4 }
-const SUB_MARGIN_TOP = 0.2 * 16; // [class*="lyricSubLine"] { margin-top: .2rem }
-const BG_FONT_SIZE = Math.max(FONT_SIZE * 0.7, 10); // --amll-lp-bg-line-scale: .7，下限 10px
-const BG_LINE_HEIGHT = BG_FONT_SIZE * 1.2;
-const WRAPPER_PADDING_Y = 0.25 * FONT_SIZE * 2; // 总览模式 .lyricLineWrapper 上下 padding .25em
-const WRAPPER_PADDING_X = FONT_SIZE; // --lyric-line-padding-x: 1em
-const WRAPPER_GAP = 0.2 * FONT_SIZE; // 总览模式 .lyricLineWrapper { gap: .2em }
-/** 每行折行估算的字族容差，宁可略高也不低估 */
-const GROUP_SAFETY_MARGIN = 2;
+/** AMLL 盒模型：所有常量都由「播放器实测字号」推导，随根字号/缩放自动等比，禁止写死像素 */
+export interface LyricBoxMetrics {
+  /** 主歌词行字号（内核 `--amll-lp-font-size: 1.125rem` 的实测像素值） */
+  fontSize: number;
+  /** 主行行高：内核 `.amll-lyric-player.dom { line-height: 1.2 }` */
+  lineHeight: number;
+  /** 翻译副行字号：`0.85rem / 1.125rem × fontSize` */
+  subFontSize: number;
+  /** 副行行高：`[class*="lyricSubLine"] { line-height: 1.4 }` */
+  subLineHeight: number;
+  /** 副行上间距：`margin-top: .2rem` 折算到主行字号 */
+  subMarginTop: number;
+  /** 和声伴唱字号：`--amll-lp-bg-line-scale: .7`，下限 10px */
+  bgFontSize: number;
+  bgLineHeight: number;
+  /** 歌词组上下 padding 合计：总览/播放统一 `.25em × 2` */
+  wrapperPaddingY: number;
+  /** 歌词组左右 padding：`--lyric-line-padding-x: 1em` */
+  wrapperPaddingX: number;
+  /** 主行与和声副行之间的 `gap: .2em` */
+  groupGap: number;
+}
+
+/** 无法实测字号（jsdom、首帧）时的兜底字号：1.125rem @ 16px 根字号 */
+export const FALLBACK_BASE_FONT_SIZE = 18;
 
 /** 无法读取容器宽度（jsdom、首帧）时的兜底文本宽度 */
 export const FALLBACK_CONTENT_WIDTH = 560;
+
+/** 由主行字号推导整套装箱常量（比例全部来自 AMLL 内核与 Client/src/index.css） */
+export function resolveLyricBoxMetrics(baseFontSize: number): LyricBoxMetrics {
+  const fontSize = baseFontSize > 0 ? baseFontSize : FALLBACK_BASE_FONT_SIZE;
+  return {
+    fontSize,
+    lineHeight: fontSize * 1.2,
+    subFontSize: (fontSize * 0.85) / 1.125,
+    subLineHeight: (fontSize * 0.85) / 1.125 * 1.4,
+    subMarginTop: (fontSize * 0.2) / 1.125,
+    bgFontSize: Math.max(fontSize * 0.7, 10),
+    bgLineHeight: Math.max(fontSize * 0.7, 10) * 1.2,
+    wrapperPaddingY: fontSize * 0.5,
+    wrapperPaddingX: fontSize,
+    groupGap: fontSize * 0.2,
+  };
+}
+
+/** 每组折行估算的安全冗余，宁可略高也不低估 */
+const GROUP_SAFETY_MARGIN = 2;
 
 /** 单行歌词最小可用文本宽度，避免除零与极端窄屏 */
 const MIN_TEXT_WIDTH = 96;
@@ -50,10 +82,10 @@ export interface LyricContainerHeightOptions {
   contentWidth: number;
   /** 外壳上下 padding + border 之和（px） */
   containerPadding: number;
+  /** 主歌词行实测字号（px）；缺省用 {@link FALLBACK_BASE_FONT_SIZE} */
+  baseFontSize?: number;
   /** AMLL 原生实测的未缩放总览高度；为空时退回解析式估算 */
   measuredContentHeight?: number | null;
-  /** 是否处于总览模式：总览存在 `scale(0.92)` 缩小动效，需做反向补偿 */
-  overview?: boolean;
 }
 
 /** 读取内核原生实测的全部歌词组高度；任一未测量齐全则返回 `null` */
@@ -82,10 +114,12 @@ export function readMeasuredGroupHeights(player?: LyricPlayerBase | null): numbe
 /**
  * AMLL 原生实测的总览内容高度（未缩放）。
  *
- * 除「已测量」外还要求测量值与元素当前 `clientHeight` 一致：切入总览时内核
- * `.lyricLineWrapper` 的上下 padding 会由 `.4em` 变为 `.25em`，旧值会短暂残留，
- * 该一致性校验确保读到的永远是切到总览后的新鲜值。任一歌词组尚未进入视野
- * （内核按 `overscanPx` 挂载 DOM）时返回 `null`，由调用方下一帧重试。
+ * 只要每组都已实测且仍挂载在 DOM 上即采信：歌词组上下 padding 已在 CSS 层统一为
+ * 模式无关（见 `index.css` 的 `.baka-lyric-player [class*="lyricLineWrapper"]`），
+ * 实测值因此跨模式稳定，无需再做一致性校验；且内核 `.lyricLine` 带
+ * `content-visibility: auto`，远离视口时会用占位尺寸重排，逐帧比对 clientHeight
+ * 反而会让测量永远无法收敛。调用方必须配合调大 `overscanPx` 全量挂载，
+ * 否则会陷入「外壳太矮 → 末尾行不挂载 → 测不到 → 高度算不准」的死循环。
  */
 export function measureLyricOverviewHeight(player?: LyricPlayerBase | null): number | null {
   const heights = readMeasuredGroupHeights(player);
@@ -95,7 +129,7 @@ export function measureLyricOverviewHeight(player?: LyricPlayerBase | null): num
   const groups = source.currentLyricGroups ?? [];
   for (let i = 0; i < groups.length; i += 1) {
     const element = (groups[i] as { element?: HTMLElement }).element;
-    if (!element || !element.isConnected || element.clientHeight !== heights[i]) return null;
+    if (!element || !element.isConnected) return null;
   }
   return heights.reduce((total, height) => total + height, 0);
 }
@@ -116,29 +150,31 @@ function estimateLineCount(text: string, availableWidth: number, charWidth: numb
   return Math.max(1, Math.ceil(estimateTextWidth(trimmed, charWidth) / availableWidth));
 }
 
-/** 依据 AMLL 真实盒模型估算单个歌词组的高度（总览模式，未缩放） */
+/** 依据 AMLL 真实盒模型估算单个歌词组的高度（未缩放） */
 function estimateGroupHeight(
   line: SongLyricLine,
   backgroundLines: SongLyricLine[],
   availableWidth: number,
+  box: LyricBoxMetrics,
 ): number {
-  let height = WRAPPER_PADDING_Y;
-  height += estimateLineCount(line.text, availableWidth, FONT_SIZE) * LINE_HEIGHT;
+  let height = box.wrapperPaddingY;
+  height += estimateLineCount(line.text, availableWidth, box.fontSize) * box.lineHeight;
 
   const translation = line.translatedLyric?.trim();
   if (translation) {
     height +=
-      SUB_MARGIN_TOP + estimateLineCount(translation, availableWidth, SUB_FONT_SIZE) * SUB_LINE_HEIGHT;
+      box.subMarginTop +
+      estimateLineCount(translation, availableWidth, box.subFontSize) * box.subLineHeight;
   }
 
   for (const background of backgroundLines) {
-    height += WRAPPER_GAP;
-    height += estimateLineCount(background.text, availableWidth, BG_FONT_SIZE) * BG_LINE_HEIGHT;
+    height += box.groupGap;
+    height += estimateLineCount(background.text, availableWidth, box.bgFontSize) * box.bgLineHeight;
     const backgroundTranslation = background.translatedLyric?.trim();
     if (backgroundTranslation) {
       height +=
-        SUB_MARGIN_TOP +
-        estimateLineCount(backgroundTranslation, availableWidth, SUB_FONT_SIZE) * SUB_LINE_HEIGHT;
+        box.subMarginTop +
+        estimateLineCount(backgroundTranslation, availableWidth, box.subFontSize) * box.subLineHeight;
     }
   }
 
@@ -150,11 +186,16 @@ function estimateGroupHeight(
  *
  * 仅作兜底：真实浏览器中测量到位后由 {@link measureLyricOverviewHeight} 的原生实测值取代。
  */
-export function estimateLyricOverviewHeight(lines: SongLyricLine[], contentWidth: number): number {
+export function estimateLyricOverviewHeight(
+  lines: SongLyricLine[],
+  contentWidth: number,
+  baseFontSize: number = FALLBACK_BASE_FONT_SIZE,
+): number {
   if (!lines || lines.length === 0) return 0;
 
+  const box = resolveLyricBoxMetrics(baseFontSize);
   const width = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
-  const availableWidth = Math.max(width - WRAPPER_PADDING_X * 2, MIN_TEXT_WIDTH);
+  const availableWidth = Math.max(width - box.wrapperPaddingX * 2, MIN_TEXT_WIDTH);
 
   let total = 0;
   let pendingBackground: SongLyricLine[] = [];
@@ -163,12 +204,12 @@ export function estimateLyricOverviewHeight(lines: SongLyricLine[], contentWidth
       pendingBackground.push(line);
       continue;
     }
-    total += estimateGroupHeight(line, pendingBackground, availableWidth);
+    total += estimateGroupHeight(line, pendingBackground, availableWidth, box);
     pendingBackground = [];
   }
   // 首行即和声（无主行可挂靠）时内核会自建一组，这里同样按独立组核算
   for (const background of pendingBackground) {
-    total += estimateGroupHeight(background, [], availableWidth);
+    total += estimateGroupHeight(background, [], availableWidth, box);
   }
 
   return total;
@@ -177,20 +218,29 @@ export function estimateLyricOverviewHeight(lines: SongLyricLine[], contentWidth
 /**
  * 计算注入给 AMLL 播放器本体的高度（未缩放）。
  *
- * 总览模式外壳按 {@link LYRIC_OVERVIEW_SCALE} 反向补偿，播放器本体必须保持未缩放的
- * 歌词自然高度，才能既不被外壳裁切、又不留多余留白。
+ * 外壳高度恒定按 {@link LYRIC_OVERVIEW_SCALE} 反向补偿（播放/总览同一高度，切换零跳变），
+ * 因此总览态播放器本体必须保持未缩放的歌词自然高度，才能既不被外壳裁切、又不留多余留白；
+ * 播放态本体与外壳同高，保证居中锚点落在可视区正中。
  */
+export function resolveLyricPlayerHeight(contentHeight: number, overview: boolean): number {
+  return overview ? contentHeight : contentHeight * LYRIC_OVERVIEW_SCALE;
+}
+
 export function resolveLyricContentHeight(options: LyricContainerHeightOptions): number {
   if (options.lines.length === 0) return 0;
   if (options.measuredContentHeight && options.measuredContentHeight > 0) {
     return options.measuredContentHeight;
   }
-  return estimateLyricOverviewHeight(options.lines, options.contentWidth);
+  return estimateLyricOverviewHeight(options.lines, options.contentWidth, options.baseFontSize);
 }
 
-/** 计算歌词组件的最终外壳高度 */
+/**
+ * 计算歌词组件的外壳高度。
+ *
+ * 播放与总览共用同一高度（`SCALE × 内容自然高度 + 外壳上下内边距`）：
+ * 切换总览时外壳高度零变化，动画只剩缩放本身，杜绝两次过渡叠加造成的不连贯。
+ */
 export function calculateLyricContainerHeight(options: LyricContainerHeightOptions): number {
   const contentHeight = resolveLyricContentHeight(options);
-  const scale = options.overview ? LYRIC_OVERVIEW_SCALE : 1;
-  return Math.ceil(contentHeight * scale + options.containerPadding);
+  return Math.ceil(contentHeight * LYRIC_OVERVIEW_SCALE + options.containerPadding);
 }
