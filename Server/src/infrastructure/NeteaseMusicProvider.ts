@@ -1242,6 +1242,7 @@ export const parseYrc = (raw: string): SongLyricLine[] => {
       const text = (line.words && line.words.length > 0)
         ? line.words.map((w) => w.word).join("").trim()
         : "";
+      const hasTranslation = Boolean(line.translatedLyric);
       return {
         time: line.startTime,
         endTime: line.endTime,
@@ -1251,11 +1252,11 @@ export const parseYrc = (raw: string): SongLyricLine[] => {
               startTime: w.startTime,
               endTime: w.endTime,
               word: w.word,
-              romanWord: w.romanWord || undefined,
+              romanWord: hasTranslation ? undefined : (w.romanWord || undefined),
             }))
           : undefined,
         translatedLyric: line.translatedLyric || undefined,
-        romanLyric: line.romanLyric || undefined,
+        romanLyric: hasTranslation ? undefined : (line.romanLyric || undefined),
         isBG: line.isBG || undefined,
         isDuet: line.isDuet || undefined,
       };
@@ -1281,6 +1282,7 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
       const text = (line.words && line.words.length > 0)
         ? line.words.map((w) => w.word).join("").trim()
         : "";
+      const hasTranslation = Boolean(line.translatedLyric);
       return {
         time: line.startTime,
         endTime: line.endTime,
@@ -1290,11 +1292,11 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
               startTime: w.startTime,
               endTime: w.endTime,
               word: w.word,
-              romanWord: w.romanWord || undefined,
+              romanWord: hasTranslation ? undefined : (w.romanWord || undefined),
             }))
           : undefined,
         translatedLyric: line.translatedLyric || undefined,
-        romanLyric: line.romanLyric || undefined,
+        romanLyric: hasTranslation ? undefined : (line.romanLyric || undefined),
         isBG: line.isBG || undefined,
         isDuet: line.isDuet || undefined,
       };
@@ -1305,6 +1307,7 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
 /**
  * 将外文歌曲的翻译与音译歌词合并到主歌词行中。
  * 支持依据时间戳误差 <= 1500ms 智能就近匹配。
+ * 规范铁律：当歌词具备翻译时，彻底清空注音（romanLyric 与 words.romanWord），仅呈现翻译。
  */
 export const mergeTranslations = (
   lines: SongLyricLine[],
@@ -1356,8 +1359,19 @@ export const mergeTranslations = (
       }
     }
 
+    // 核心规范：当行存在翻译时，屏蔽注音（仅显示翻译）
+    if (translatedLyric) {
+      romanLyric = undefined;
+    }
+
+    const words = line.words?.map((w) => ({
+      ...w,
+      romanWord: translatedLyric ? undefined : w.romanWord,
+    }));
+
     return {
       ...line,
+      words: words || line.words,
       translatedLyric: translatedLyric || undefined,
       romanLyric: romanLyric || undefined,
     };
