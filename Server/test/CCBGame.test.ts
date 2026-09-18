@@ -83,6 +83,47 @@ const privateStateOf = (client: TestConnection) => lastEvent<CCBPrivateState>(cl
 const scoreOf = (client: TestConnection) =>
   snapshotOf(client).players.find((player) => player.id === client.record.playerId)!.score;
 
+/** 玩家在快照里的那一行（标记、分数、finished 都在这里）。 */
+const viewOf = (client: TestConnection) =>
+  snapshotOf(client).players.find((player) => player.id === client.record.playerId)!;
+
+/** 建房 + 全员准备，但**不开局** —— 手动出题与队伍设置都要从「等待」阶段开始。 */
+const prepareRoom = async (
+  service: CCBService,
+  host: TestConnection,
+  guests: TestConnection[],
+  settings: Partial<CCBGameSettings> = {},
+) => {
+  await execute(service, host, {
+    id: "create",
+    type: "ccb.room.create",
+    payload: {
+      roomId: "1234",
+      name: "猜角色房",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+      settings,
+    },
+  });
+  for (const [index, guest] of guests.entries()) {
+    await execute(service, guest, {
+      id: `join-${index}`,
+      type: "ccb.room.join",
+      roomId: "1234",
+      payload: { userName: `玩家${index + 1}` },
+    });
+    await execute(service, guest, {
+      id: `ready-${index}`,
+      type: "ccb.player.setReady",
+      payload: { ready: true },
+    });
+  }
+};
+
+const setTeam = (service: CCBService, client: TestConnection, team: number | null) =>
+  execute(service, client, { id: "team", type: "ccb.player.setTeam", payload: { team } });
+
 // ==================== 假数据源 ====================
 
 /**
@@ -657,38 +698,6 @@ describe("CCB 对局：同步与血战", () => {
 });
 
 describe("CCB 对局：手动出题", () => {
-  /** 建房 + 全员准备，但**不开局** —— 手动出题要从「等待」阶段开始。 */
-  const prepareRoom = async (
-    service: CCBService,
-    host: TestConnection,
-    guests: TestConnection[],
-  ) => {
-    await execute(service, host, {
-      id: "create",
-      type: "ccb.room.create",
-      payload: {
-        roomId: "1234",
-        name: "猜角色房",
-        visibility: "public",
-        allowSpectators: true,
-        userName: "房主",
-      },
-    });
-    for (const [index, guest] of guests.entries()) {
-      await execute(service, guest, {
-        id: `join-${index}`,
-        type: "ccb.room.join",
-        roomId: "1234",
-        payload: { userName: `玩家${index + 1}` },
-      });
-      await execute(service, guest, {
-        id: `ready-${index}`,
-        type: "ccb.player.setReady",
-        payload: { ready: true },
-      });
-    }
-  };
-
   test("指定出题人后进入 answering，只有出题人能提交答案", async () => {
     const { service } = createService();
     const host = connection(service, "c-host");
@@ -816,5 +825,142 @@ describe("CCB 对局：手动出题", () => {
     // 首个胜者是甲（4 次尝试 → 2 + 1 = 3）。若各算各的，乙（3 次）会拿到 4 分。
     expect(scoreOf(first)).toBe(3);
     expect(scoreOf(second)).toBe(3);
+  });
+});
+
+describe("CCB 对局：队伍、提示与观战", () => {
+  test("队伍共享标记与次数：任一成员耗尽即全队 💀", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-a");
+    const second = connection(service, "c-b");
+    await prepareRoom(service, host, [first, second], { maxAttempts: 1 });
+    await setTeam(service, first, 1);
+    await setTeam(service, second, 1);
+    await execute(service, host, { id: "start", type: "ccb.game.start", payload: {} });
+
+    // 一次「猜错且沾边」按原版口径算 2 次，maxAttempts=1 → 全队一起 💀。
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+
+    const expected = CCB_ATTEMPT_MARKS.wrong + CCB_ATTEMPT_MARKS.partial + CCB_END_MARK.dead;
+    expect(viewOf(first).marks).toBe(expected);
+    expect(viewOf(second).marks).toBe(expected);
+    expect(viewOf(second).finished).toBe(true);
+    expect(privateStateOf(second).canGuess).toBe(false);
+    expect(privateStateOf(second).remainingGuesses).toBe(0);
+  });
+
+  test("队伍猜对：队友记 🏆（teamwin），普通模式只给真正猜中的人计分", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-a");
+    const second = connection(service, "c-b");
+    await prepareRoom(service, host, [first, second]);
+    await setTeam(service, first, 1);
+    await setTeam(service, second, 1);
+    await execute(service, host, { id: "start", type: "ccb.game.start", payload: {} });
+
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+
+    expect(snapshotOf(first).phase).toBe("settled");
+    // 首猜即中 👑 → 2 + 12
+    expect(scoreOf(first)).toBe(14);
+    // 队友 **不进胜者集合**（原版 actualWinners 只装真正猜中的人）：只留下 🏆 与 0 分。
+    expect(scoreOf(second)).toBe(0);
+    expect(viewOf(second).marks).toContain(CCB_END_MARK.teamWin);
+    expect(viewOf(second).finished).toBe(true);
+  });
+
+  test("同步模式：队友一起进胜者集合并共享胜者分", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-a");
+    const second = connection(service, "c-b");
+    await prepareRoom(service, host, [first, second], { mode: "sync" });
+    await setTeam(service, first, 1);
+    await setTeam(service, second, 1);
+    await execute(service, host, { id: "start", type: "ccb.game.start", payload: {} });
+
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+
+    // 队友也被结束 → 参战玩家归零 → 结算，两人共享同一份胜者分。
+    expect(snapshotOf(first).phase).toBe("settled");
+    expect(scoreOf(first)).toBe(14);
+    expect(scoreOf(second)).toBe(14);
+  });
+
+  test("开局后不能改队伍", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await prepareRoom(service, host, [guest]);
+    await execute(service, host, { id: "start", type: "ccb.game.start", payload: {} });
+
+    await expect(setTeam(service, guest, 2)).rejects.toMatchObject({ code: "INVALID_PHASE" });
+  });
+
+  test("手动出题给的提示按剩余次数逐条解锁", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const setter = connection(service, "c-setter");
+    const guesser = connection(service, "c-guesser");
+    await prepareRoom(service, host, [setter, guesser], {
+      useHints: [2, 1],
+      maxAttempts: 3,
+    });
+    await execute(service, host, {
+      id: "pick",
+      type: "ccb.game.chooseSetter",
+      payload: { playerId: setter.record.playerId! },
+    });
+    await execute(service, setter, {
+      id: "a1",
+      type: "ccb.game.setAnswer",
+      payload: { characterId: 1, hints: ["提示甲", "提示乙"] },
+    });
+
+    // 剩余 3 次，还没到任何阈值
+    expect(privateStateOf(guesser).hints).toEqual([]);
+
+    // 猜错但沾边 = 2 次 → 剩余 1 次 → 两条阈值同时命中
+    await execute(service, guesser, {
+      id: "g1",
+      type: "ccb.game.guess",
+      payload: { characterId: 2 },
+    });
+    expect(privateStateOf(guesser).hints).toEqual([
+      { index: 1, text: "提示甲" },
+      { index: 2, text: "提示乙" },
+    ]);
+    // 提示只发给参赛玩家：出题人不猜，拿到也没意义。
+    expect(privateStateOf(setter).hints).toEqual([]);
+  });
+
+  test("观战者与出题人能看到全场猜测明细，参赛玩家只看得到自己的", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    const watcher = connection(service, "c-watcher");
+    await prepareRoom(service, host, [guest, watcher]);
+    await execute(service, watcher, {
+      id: "spec",
+      type: "ccb.player.setSpectator",
+      payload: { spectator: true },
+    });
+    await execute(service, host, { id: "start", type: "ccb.game.start", payload: {} });
+    await execute(service, guest, {
+      id: "g1",
+      type: "ccb.game.guess",
+      payload: { characterId: 2 },
+    });
+
+    const rows = privateStateOf(watcher).spectatedGuesses;
+    expect(rows?.map((row) => row.playerId)).toEqual([guest.record.playerId!]);
+    expect(rows?.[0]?.guesses).toHaveLength(1);
+    expect(rows?.[0]?.marks).toBe(CCB_ATTEMPT_MARKS.wrong + CCB_ATTEMPT_MARKS.partial);
+
+    // 出题人同样不参赛，也拿得到；参赛玩家则永远看不到别人的反馈。
+    expect(privateStateOf(host).spectatedGuesses).toBeDefined();
+    expect(privateStateOf(guest).spectatedGuesses).toBeUndefined();
   });
 });
