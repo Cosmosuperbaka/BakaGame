@@ -2,6 +2,7 @@ import { render, waitFor } from "@testing-library/react";
 import { HelmetProvider } from "react-helmet-async";
 import { describe, expect, it } from "vitest";
 import { Seo } from "./Seo";
+import { findPageMeta } from "@/data/PageMeta";
 
 // react-helmet-async 需要一个独立的 context 实例，否则同一个 Provider 在
 // 多个用例之间会复用同一份状态，断言到上一个用例残留的标签。
@@ -67,6 +68,15 @@ describe("Seo", () => {
         "https://game.baka.website/songuessr",
       );
       expect(document.head.querySelector('meta[property="og:site_name"]')?.getAttribute("content")).toBe("BakaGame");
+    });
+  });
+
+  it("未显式传描述时分享标签与页面描述共用登记文案", async () => {
+    renderSeo({ path: "/ccb" });
+    const description = findPageMeta("/ccb")!.description;
+    await waitFor(() => {
+      expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(description);
+      expect(document.head.querySelector('meta[property="og:description"]')?.getAttribute("content")).toBe(description);
     });
   });
 
