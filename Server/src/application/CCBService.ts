@@ -42,7 +42,10 @@ import {
   isCCBBigWin,
   maskCCBFeedbackTags,
   mergeCCBBannedTags,
+  resolveCCBNonstopRankScore,
+  resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
+  revealCCBBannedTagsToAll,
   stageCCBBannedTags,
   type CCBCharacterView,
   type CCBPartialGuessEntry,
@@ -744,6 +747,14 @@ export class CCBService {
       bannedTags: [],
       bannedTagRevealers: {},
       pendingBannedTags: [],
+      // 模式推进状态：原版挂在单局 `currentGame` 上，所以随每局重置。
+      syncRound: 1,
+      syncCompletedPlayerIds: [],
+      nonstopWinnerIds: [],
+      // 血战名次分的基数：开局时快照参战人数（原版 `socket.js` 的 `nonstopTotalPlayers`）。
+      // 上面刚把「本局不猜的人」置为 `finished`，所以直接数未结束者即可。
+      nonstopTotalPlayers: Object.values(room.players).filter((candidate) => !candidate.finished)
+        .length,
     };
   }
 
@@ -755,6 +766,10 @@ export class CCBService {
     }
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜测");
     if (player.finished) throw new AppError("PLAYER_FINISHED", "本局你已经结束了");
+    // 同步模式每人每轮只能猜一次：猜完要等本轮其他人完成。
+    if (room.settings.mode === "sync" && this.isSyncRoundCompleted(round, player.id)) {
+      throw new AppError("SYNC_ROUND_COMPLETED", "本轮你已经猜过了，等本轮结束");
+    }
     if (player.id === room.answerSetterPlayerId) {
       throw new AppError("SETTER_FORBIDDEN", "出题人不能参与猜测");
     }
@@ -812,6 +827,12 @@ export class CCBService {
     player.marks = marks;
     player.guessCount = countCCBAttemptMarks(marks);
 
+    // 血战：猜对当场按名次加分（原版 `settleNonstopCorrectGuess`），
+    // 所以结算阶段对血战不再重复计胜者分。
+    if (isCorrect && room.settings.mode === "bloodbath") this.registerNonstopWinner(room, player);
+    // 同步：无论猜对猜错都算「本轮完成」，猜对的人已 `finished`、会退出参战名单。
+    this.markSyncCompleted(room, player);
+
     const record: CCBGuessRecord = {
       characterId,
       characterName: guessed.name,
@@ -826,7 +847,7 @@ export class CCBService {
     if (isCorrect) this.appendSystemMessage(room, `${player.name} 猜中了！`);
 
     this.touch(room);
-    this.settleIfRoundEnds(room);
+    this.advanceOrSettle(room);
     this.log("game.guessed", room.roomId, player.id, { correct: isCorrect });
     return { correct: isCorrect, feedback };
   }
@@ -839,28 +860,121 @@ export class CCBService {
 
     player.marks = appendCCBEndMarkOnce(player.marks, CCB_END_MARK.surrender);
     player.finished = true;
+    // 同步模式：投降同样算「本轮完成」，否则残局会卡在等一个永远不会再猜的人。
+    this.markSyncCompleted(room, player);
     this.appendSystemMessage(room, `${player.name} 投降了`);
     this.touch(room);
-    this.settleIfRoundEnds(room);
+    this.advanceOrSettle(room);
     this.log("game.surrendered", room.roomId, player.id);
     return { surrendered: true };
   }
 
   /**
-   * 收尾：该结算就结算，否则只广播。
+   * 收尾：该结算就结算、该推进就推进，否则只广播。
    *
-   * ⚠️ **普通模式一旦出现胜者立即结算**（`Agents/CCB.md §6.4 结束条件`），不是等全员结束；
-   * 同步/血战模式（P2）才要等本轮全员完成。这里按 `mode` 分流。
+   * 三种模式的收尾条件完全不同（真相源 `Agents/CCB.md §6.6`）：
+   * - `normal`：**一旦出现胜者立即结算**（§6.4 结束条件），不等其他人猜完；无人猜中则等全员结束。
+   * - `sync`：胜者也要**等本轮全员完成**才结算；本轮完成但还没胜者就推进轮次。
+   * - `bloodbath`：与轮次无关，猜对不收尾，一直打到**全员结束**（原版 `remainingPlayers` 归零）。
    */
-  private settleIfRoundEnds(room: CCBRoomRecord) {
-    if (room.phase !== "guessing") {
+  private advanceOrSettle(room: CCBRoomRecord) {
+    const round = room.currentRound;
+    if (room.phase !== "guessing" || !round) {
       this.publishRoom(room);
       return;
     }
-    const hasWinner = (room.currentRound?.solvedPlayerIds.length ?? 0) > 0;
-    const winnerEndsRound = room.settings.mode === "normal" && hasWinner;
-    if (winnerEndsRound || this.allSettled(room)) this.settleRound(room);
-    else this.publishRoom(room);
+
+    const hasWinner = round.solvedPlayerIds.length > 0;
+    if (room.settings.mode !== "sync") {
+      // 普通与血战共用「全员结束」这一条，区别只在普通模式多一个「胜者立即收尾」。
+      const normalWinnerEnds = room.settings.mode === "normal" && hasWinner;
+      if (normalWinnerEnds || this.allSettled(room)) this.settleRound(room);
+      else this.publishRoom(room);
+      return;
+    }
+
+    const verdict = resolveCCBSyncVerdict({
+      participantIds: this.syncParticipants(room).map((candidate) => candidate.id),
+      completedIds: round.syncCompletedPlayerIds,
+      hasWinner,
+    });
+    if (verdict === "settle") {
+      this.settleRound(room);
+      return;
+    }
+    if (verdict === "advance") this.beginSyncRound(room);
+    this.publishRoom(room);
+  }
+
+  /** 推进到下一个同步轮次，并按设置重置本轮计时。 */
+  private beginSyncRound(room: CCBRoomRecord) {
+    const round = room.currentRound;
+    if (!round) return;
+    round.syncRound += 1;
+    round.syncCompletedPlayerIds = [];
+    // 同步模式的计时是「每轮一份」：猜错不重置（见 `shouldResetTimerAfterGuess`），换轮才重置。
+    const timeLimitMs = resolveCCBTimeLimitMs(room.settings);
+    round.deadlineAt = timeLimitMs > 0 ? this.now() + timeLimitMs : undefined;
+    this.appendSystemMessage(room, `第 ${round.syncRound} 轮开始`);
+    this.log("game.sync_round_started", room.roomId, undefined, { syncRound: round.syncRound });
+  }
+
+  /**
+   * 同步模式的参战玩家：正式、非人机、**本局尚未结束**。
+   *
+   * 「已结束」= 已带 ✌/👑/💀/🏳️ 结束标记。`beginRound` 已把非正式成员、人机与出题人
+   * 提前置为已结束，所以这里直接看 `finished` 就等价于原版的 `isEnded(p)`。
+   */
+  private syncParticipants(room: CCBRoomRecord): CCBPlayerRecord[] {
+    return this.activePlayers(room).filter((candidate) => !candidate.finished);
+  }
+
+  /**
+   * 标签 BP 的「本轮参战玩家」：正式、非人机、非出题人，**含已结束者**。
+   *
+   * ⚠️ 与 `syncParticipants` 的口径**不同、不能合并**：原版在同步收尾时给「本轮所有参战
+   * 玩家」开透视（`gameplay.js` 的 `updateSyncProgress`），当时已猜对/出局的人也在名单里。
+   */
+  private roundParticipantIds(room: CCBRoomRecord): string[] {
+    return this.activePlayers(room)
+      .filter((candidate) => !candidate.isBot && candidate.id !== room.answerSetterPlayerId)
+      .map((candidate) => candidate.id);
+  }
+
+  /**
+   * 记一次「同步本轮完成」。
+   *
+   * ⚠️ **非同步模式必须保持列表为空**：这个列表同时是「本轮已猜过」的判据，
+   * 无条件写入会把普通/血战模式的连续猜测误判成重复提交。
+   */
+  private markSyncCompleted(room: CCBRoomRecord, player: CCBPlayerRecord) {
+    const round = room.currentRound;
+    if (!round || room.settings.mode !== "sync") return;
+    if (this.isSyncRoundCompleted(round, player.id)) return;
+    round.syncCompletedPlayerIds = [...round.syncCompletedPlayerIds, player.id];
+  }
+
+  private isSyncRoundCompleted(round: CCBRoundRecord, playerId: string): boolean {
+    return round.syncCompletedPlayerIds.includes(playerId);
+  }
+
+  /**
+   * 血战：猜对当场按名次加分（原版 `settleNonstopCorrectGuess`）。
+   *
+   * 名次分 = `max(1, 参战人数 − 已胜人数)`，再叠加大赢家/快猜加成。与普通模式的 2 分底分
+   * 不同，所以**结算阶段对血战不再计胜者分**。同一人重复猜中只记一次（对应原版的
+   * `alreadySettled` 短路）。
+   */
+  private registerNonstopWinner(room: CCBRoomRecord, player: CCBPlayerRecord) {
+    const round = room.currentRound;
+    if (!round || round.nonstopWinnerIds.includes(player.id)) return;
+    const result = calculateCCBWinnerScore({
+      guesses: player.marks,
+      baseScore: resolveCCBNonstopRankScore(round.nonstopTotalPlayers, round.nonstopWinnerIds.length),
+      totalRounds: room.settings.maxAttempts,
+    });
+    player.score += result.totalScore;
+    round.nonstopWinnerIds = [...round.nonstopWinnerIds, player.id];
   }
 
   private allSettled(room: CCBRoomRecord): boolean {
@@ -882,12 +996,17 @@ export class CCBService {
     room.phase = "settled";
     round.deadlineAt = undefined;
 
-    // 标签全局 BP 生效点：合并本局待提交条目（同 tag 合并 revealer）。
-    // 同步模式额外把本轮参战玩家全部并入 revealer（全员透视），等 P2b 一起做。
+    // 标签全局 BP 生效点：合并本局待提交条目（只收新标签，后来者不算揭示者）。
+    // 同步模式额外把**本轮所有参战玩家**并入 revealer —— 同轮的猜测视为同时发生，
+    // 于是本轮冒出来的标签对整轮参与者都是透过的（原版 `updateSyncProgress`）。
     if (round.pendingBannedTags.length > 0) {
+      const pending =
+        room.settings.mode === "sync"
+          ? revealCCBBannedTagsToAll(round.pendingBannedTags, this.roundParticipantIds(room))
+          : round.pendingBannedTags;
       const merged = mergeCCBBannedTags(
         round.bannedTags.map((tag) => ({ tag, revealer: round.bannedTagRevealers[tag] ?? [] })),
-        round.pendingBannedTags,
+        pending,
       );
       round.bannedTags = merged.map((entry) => entry.tag);
       round.bannedTagRevealers = Object.fromEntries(
@@ -902,6 +1021,9 @@ export class CCBService {
 
     for (const candidate of scorers) {
       if (!winnerIds.has(candidate.id)) continue;
+      // 血战的名次分在猜对当场就发了（见 `registerNonstopWinner`），这里必须跳过，
+      // 否则同一份胜者分会被计两次。
+      if (room.settings.mode === "bloodbath") continue;
       const result = calculateCCBWinnerScore({
         guesses: candidate.marks,
         baseScore: CCB_WINNER_BASE_SCORE,
@@ -976,10 +1098,35 @@ export class CCBService {
     return `第 ${room.roundNumber} 局结束，${winners.map((candidate) => candidate.name).join("、")} 猜中`;
   }
 
-  /** 限时到点：未结束的正式玩家记一次 ⏱️ 并结束，随后统一结算。 */
+  /**
+   * 限时到点。两种口径（`Agents/CCB.md §6.6`）：
+   * - 普通 / 血战：未结束的正式玩家记一次 ⏱️ 并**结束本局**，随后统一结算；
+   * - 同步：⏱️ 只算「本轮完成」，**不结束本局** —— 记完就推进轮次继续猜
+   *   （次数真的耗尽了照样 💀）。
+   */
   private applyRoundTimeout(room: CCBRoomRecord) {
     const round = room.currentRound;
     if (!round || room.phase !== "guessing") return;
+
+    if (room.settings.mode === "sync") {
+      for (const candidate of this.syncParticipants(room)) {
+        if (this.isSyncRoundCompleted(round, candidate.id)) continue;
+        const timedOut = candidate.marks + CCB_ATTEMPT_MARKS.timeout;
+        const verdict = evaluateCCBAttemptLimit({
+          marks: timedOut,
+          maxAttempts: room.settings.maxAttempts,
+        });
+        candidate.marks = verdict.shouldApplyDeath
+          ? appendCCBEndMarkOnce(timedOut, CCB_END_MARK.dead)
+          : timedOut;
+        candidate.guessCount = countCCBAttemptMarks(candidate.marks);
+        if (verdict.shouldApplyDeath) candidate.finished = true;
+        this.markSyncCompleted(room, candidate);
+      }
+      this.appendSystemMessage(room, `第 ${round.syncRound} 轮时间到`);
+      this.advanceOrSettle(room);
+      return;
+    }
 
     for (const candidate of this.activePlayers(room)) {
       if (candidate.finished) continue;
@@ -993,7 +1140,7 @@ export class CCBService {
     }
 
     this.appendSystemMessage(room, `第 ${room.roundNumber} 局时间到`);
-    this.settleIfRoundEnds(room);
+    this.advanceOrSettle(room);
   }
 
   private finishGame(connection: ConnectionRecord) {
@@ -1101,6 +1248,18 @@ export class CCBService {
       guessDeadlineAt: room.currentRound?.deadlineAt,
       answer: room.revealedAnswer,
       bannedTags: room.currentRound?.bannedTags ?? [],
+      // 模式推进进度：只下发当前模式用得上的那份，避免给客户端塞永远为空的数组。
+      syncProgress:
+        room.settings.mode === "sync" && room.currentRound
+          ? {
+              round: room.currentRound.syncRound,
+              completedPlayerIds: room.currentRound.syncCompletedPlayerIds,
+            }
+          : undefined,
+      nonstopWinnerIds:
+        room.settings.mode === "bloodbath"
+          ? (room.currentRound?.nonstopWinnerIds ?? [])
+          : undefined,
       players: Object.values(room.players)
         .filter((player) => player.membership !== "kicked")
         .sort((left, right) => left.joinedAt - right.joinedAt)
@@ -1134,11 +1293,15 @@ export class CCBService {
     const round = room.currentRound;
     const isActive = player.membership === "active";
     const maxAttempts = room.settings.maxAttempts;
+    // 同步模式每人每轮只能猜一次：本轮猜过（或超时）的人要等轮次推进，先置灰。
+    const syncCompleted =
+      room.settings.mode === "sync" && !!round && this.isSyncRoundCompleted(round, player.id);
     // 出题人自己不参与猜测；只有正式且本局未结束的玩家才能猜。
     const inPlay =
       isActive &&
       room.phase === "guessing" &&
       !player.finished &&
+      !syncCompleted &&
       player.id !== room.answerSetterPlayerId;
     return {
       playerId: player.id,
@@ -1154,6 +1317,7 @@ export class CCBService {
       // 标签全局 BP 还要按观众再遮掩一层（见 `maskOwnGuesses`）。
       ownGuesses: this.maskOwnGuesses(room, player.id),
       hints: [],
+      syncCompleted,
     };
   }
 

@@ -107,6 +107,7 @@ const privateState = (sessionToken = "ccb_session_1"): CCBPrivateState => ({
   remainingGuesses: 10,
   ownGuesses: [],
   hints: [],
+  syncCompleted: false,
 });
 
 const emitEvent = (event: string, payload: unknown) =>

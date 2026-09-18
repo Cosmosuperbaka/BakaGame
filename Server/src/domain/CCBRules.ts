@@ -169,7 +169,7 @@ export const shouldResetTimerAfterGuess = (
 // 3. 展示时按观众遮掩：**标签已被禁用、且自己不是揭示者** → 显示为 `???`。
 //    也就是说「别人先揭示过的共享标签你就看不到了」——这是竞速向的机制，不是 bug。
 // 4. 同步模式在结算时会把**本轮所有参战玩家**都并入 revealer（全员透视），
-//    见 `revealCCBBannedTagsToAll`；该分支等 P2b 的同步模式一起落地。
+//    见 `revealCCBBannedTagsToAll`；非同步模式只有真正的揭示者能看到。
 
 /** 被禁用标签对非揭示者的展示形态。 */
 export const CCB_MASKED_TAG = "???";
@@ -227,7 +227,7 @@ export const mergeCCBBannedTags = (
  * 同步模式的收尾：把本轮**所有参战玩家**并入每条标签的 revealer（全员透视）。
  *
  * 原版在 `gameplay.js` 的 `allCompleted` 分支里做这件事，之后这些标签才算正式提交 ——
- * 所以同步模式下「谁先揭示」不成立，整轮结束后大家一起看见。等 P2b 接入同步模式时调用。
+ * 所以同步模式下「谁先揭示」不成立，整轮结束后大家一起看见。
  */
 export const revealCCBBannedTagsToAll = (
   state: readonly CCBBannedTagEntry[],
@@ -263,6 +263,56 @@ export const maskCCBFeedbackTags = (
     },
   };
 };
+
+// ==================== 模式推进（同步 / 血战） ====================
+//
+// 真相源：原版 `gameplay.js` 的 `updateSyncProgress` 与 `finalizeNonstopGame`。
+// ⚠️ **两者不是同一套推进**：
+// - `sync`：按「轮」推进，同一答案下每人的一次猜测算一轮，全员完成才进下一轮；
+// - `bloodbath`：**与轮次无关**（原版 `nonstopMode` 会覆盖 `syncMode`，见 `gameplay.js:899`
+//   的 `syncMode && !nonstopMode`），玩家自由连续猜，直到**全员结束**才收尾。
+
+/** 同步模式的推进结论。 */
+export type CCBSyncVerdict = "waiting" | "advance" | "settle";
+
+/**
+ * 同步模式的推进判定。
+ *
+ * - `participantIds` 只放**本局尚未结束**的参战玩家；
+ * - 还有人在本轮没猜完 → `waiting`；
+ * - 全员完成且本轮已出现胜者 → `settle`（原版 `syncReadyToEnd`）；
+ * - 全员完成但还没胜者 → `advance`（轮次 +1、清空完成列表）。
+ *
+ * ⚠️ **参战玩家归零时返回 `settle`**：原版此处直接 `return` 什么都不做，
+ * 于是「全员 💀 且无人猜中」的同步局会永久卡在 `guessing`。增强版改为直接收尾，
+ * 已登记为已知差异（`Agents/CCB.md §5`）。
+ */
+export const resolveCCBSyncVerdict = ({
+  participantIds,
+  completedIds,
+  hasWinner,
+}: {
+  participantIds: readonly string[];
+  completedIds: readonly string[];
+  hasWinner: boolean;
+}): CCBSyncVerdict => {
+  if (participantIds.length === 0) return "settle";
+  const completed = new Set(completedIds);
+  if (!participantIds.every((id) => completed.has(id))) return "waiting";
+  return hasWinner ? "settle" : "advance";
+};
+
+/**
+ * 血战名次分：`max(1, 参战人数 − 已胜人数)`。
+ *
+ * 第一个猜对拿满「开局参战人数」，之后依次递减，最后一名保底 1 分。
+ * 这个分数在**猜对当场**就发（原版 `settleNonstopCorrectGuess`），
+ * 所以血战的结算阶段不再重复计胜者分。
+ */
+export const resolveCCBNonstopRankScore = (
+  totalPlayers: number,
+  winnersBefore: number,
+): number => Math.max(1, Math.max(1, totalPlayers) - winnersBefore);
 
 // ==================== 反馈判定 ====================
 
