@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Lock, Plus, RefreshCw, Users } from "lucide-react";
 import type { CCBSource } from "@bakagame/shared";
@@ -34,7 +34,17 @@ export default function CCBPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const origin = useOriginTracker();
-  const enabled = connected && ready && (source === "native" || originalAvailable);
+  const [leaving, setLeaving] = useState(() => Boolean(useCCBStore.getState().roomId));
+  const releaseStarted = useRef(false);
+  useEffect(() => {
+    const store = useCCBStore.getState();
+    if (!store.roomId || releaseStarted.current) return;
+    releaseStarted.current = true;
+    void store.leaveRoom().then(() => store.subscribeLobby())
+      .catch((failure) => store.setNotice(ccbErrorMessage(failure)))
+      .finally(() => setLeaving(false));
+  }, []);
+  const enabled = connected && ready && !leaving && (source === "native" || originalAvailable);
   const visibleRooms = rooms.filter((room) => room.source === source);
 
   const goToRoom = (roomId: string) => {
@@ -51,7 +61,7 @@ export default function CCBPage() {
       const values = crypto.getRandomValues(new Uint32Array(1));
       const roomId = String(1000 + values[0] % 9000);
       await useCCBStore.getState().createRoom({ source, roomId, userName: name.trim(),
-        name: roomName.trim() || `${name.trim()}的房间`, visibility: source === "native" && privateRoom ? "private" : "public",
+        name: roomName.trim() || `${name.trim()}的房间`.slice(0, 32), visibility: source === "native" && privateRoom ? "private" : "public",
         allowSpectators: source === "original" || allowSpectators,
         ...(source === "native" && privateRoom ? { password } : {}) });
       saveUsername(name.trim());
