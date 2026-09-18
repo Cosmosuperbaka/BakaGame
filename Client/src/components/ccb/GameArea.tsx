@@ -87,6 +87,33 @@ export function CCBGameArea({
     [guesses],
   );
 
+  // 同步模式的「本轮参战玩家」口径与服务端一致：正式、非人机、非出题人。
+  // 直接数「还没完成的人」而不是「已完成 X / 共 Y」，这样中途有人出局也不会出现 X > Y。
+  const syncPending = useMemo(() => {
+    const progress = snapshot?.syncProgress;
+    if (!progress) return 0;
+    const completed = new Set(progress.completedPlayerIds);
+    return (snapshot?.players ?? []).filter(
+      (player) =>
+        player.membership === "active" &&
+        !player.isBot &&
+        player.id !== snapshot?.answerSetterPlayerId &&
+        !completed.has(player.id),
+    ).length;
+  }, [snapshot]);
+
+  const nonstopRemaining = useMemo(
+    () =>
+      (snapshot?.players ?? []).filter(
+        (player) =>
+          player.membership === "active" &&
+          !player.isBot &&
+          player.id !== snapshot?.answerSetterPlayerId &&
+          !player.finished,
+      ).length,
+    [snapshot],
+  );
+
   const handleGuess = useCallback(
     (character: CCBCharacterSearchResult) => {
       void run("ccb.game.guess", { characterId: character.id });
@@ -110,6 +137,17 @@ export function CCBGameArea({
           {PHASE_LABEL[phase]}
         </Badge>
         {inRound ? <span>第 {snapshot.roundNumber} 局</span> : null}
+        {inRound && snapshot.syncProgress ? (
+          <span>
+            第 {snapshot.syncProgress.round} 轮 ·{" "}
+            {syncPending === 0 ? "本轮已完成" : `${syncPending} 人未完成`}
+          </span>
+        ) : null}
+        {inRound && snapshot.nonstopWinnerIds ? (
+          <span>
+            已猜对 {snapshot.nonstopWinnerIds.length} 人 · 剩 {nonstopRemaining} 人
+          </span>
+        ) : null}
         {remaining !== undefined ? (
           <span
             className={cn(
