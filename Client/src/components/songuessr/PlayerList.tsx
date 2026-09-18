@@ -213,9 +213,9 @@ function SongPlayerRow({
   const content = canManage ? (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <motion.button type="button" {...tappable} aria-label={`${player.name} 操作`} className={rowClass}>
+        <Button type="button" variant="ghost" aria-label={`${player.name} 操作`} className={cn("h-auto justify-start", rowClass)}>
           {body}
-        </motion.button>
+        </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="right" align="center" sideOffset={6} collisionPadding={12} asChild>
