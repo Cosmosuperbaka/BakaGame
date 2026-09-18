@@ -277,15 +277,53 @@ export function CCBGameArea({
             </div>
           ) : null}
 
+          {/* 文本提示：服务端按 `剩余次数 <= useHints[i]` 逐条解锁后下发（见 §6.4） */}
+          {privateState && privateState.hints.length > 0 ? (
+            <div className="flex shrink-0 flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+              {privateState.hints.map((hint) => (
+                <p key={hint.index} className="text-xs">
+                  <span className="mr-1.5 text-muted-foreground">提示 {hint.index}</span>
+                  {hint.text}
+                </p>
+              ))}
+            </div>
+          ) : null}
+
           {phase === "guessing" && !isSpectator && privateState?.canGuess ? (
             <div className="shrink-0">
               <CharacterSearch pickedIds={pickedIds} disabled={pending} onSelect={handleGuess} />
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-card">
-            <GuessTable guesses={guesses} className="h-full" />
-          </div>
+          {privateState?.spectatedGuesses ? (
+            /* 观战增强视图：旁观者与出题人看**全场**的猜测明细（自己那一列没有意义） */
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+              {privateState.spectatedGuesses.length === 0 ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">还没有人猜过</p>
+              ) : (
+                privateState.spectatedGuesses.map((entry) => (
+                  <div
+                    key={entry.playerId}
+                    className="shrink-0 overflow-hidden rounded-md border bg-card"
+                  >
+                    <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+                      <span className="min-w-0 flex-1 truncate font-medium">{entry.playerName}</span>
+                      {entry.marks ? (
+                        <span className="shrink-0 font-mono text-muted-foreground">
+                          {entry.marks}
+                        </span>
+                      ) : null}
+                    </div>
+                    <GuessTable guesses={entry.guesses} />
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-card">
+              <GuessTable guesses={guesses} className="h-full" />
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-4 py-8">

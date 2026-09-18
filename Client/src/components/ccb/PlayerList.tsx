@@ -13,9 +13,22 @@ import {
   type PlayerStatusTone,
 } from "@/components/common/PlayerStatusPill";
 import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { cn } from "@/lib/Utils";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import type { CCBPhase, CCBPlayerView } from "@/types";
+
+/** 队伍号取值与原版一致（1..8；原版另用 `'0'` 表示观战，本项目不走那个值）。 */
+const TEAM_IDS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+/** Radix Select 的 value 必须是字符串，用 `none` 表示「不组队」。 */
+const NO_TEAM = "none";
 
 export interface PlayerListProps {
   players: CCBPlayerView[];
@@ -67,6 +80,17 @@ export function PlayerList({ players, myPlayerId, isHost, phase, allowSpectators
     [sendCommand, setNotice],
   );
 
+  const handleSetTeam = useCallback(
+    async (team: number | null) => {
+      try {
+        await sendCommand("ccb.player.setTeam", { team });
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
+
   const renderRow = (player: CCBPlayerView, hideSpectatorStatus: boolean) => (
     <CCBPlayerRow
       key={player.id}
@@ -98,6 +122,10 @@ export function PlayerList({ players, myPlayerId, isHost, phase, allowSpectators
 
           {canJoinPlayers ? (
             <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+          ) : null}
+
+          {phase === "waiting" && me?.membership === "active" ? (
+            <TeamPicker value={me.team ?? null} onChange={handleSetTeam} />
           ) : null}
 
           {observers.length > 0 || canJoinSpectators ? (
@@ -162,6 +190,11 @@ function CCBPlayerRow({
       {isMe ? <span className={PLAYER_ME_MARK} /> : null}
       {status ? <PlayerStatusPill label={status.label} tone={status.tone} /> : null}
       <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
+      {player.team ? (
+        <span className="shrink-0 rounded bg-muted px-1 font-sans text-[10px] font-normal text-muted-foreground">
+          {player.team} 队
+        </span>
+      ) : null}
       {player.isHost ? (
         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
       ) : null}
@@ -251,6 +284,45 @@ function resolveStatus(
   if (phase === "answering") return { label: "出题", tone: "violet" };
   if (player.finished) return { label: "完成", tone: "default" };
   return { label: "作答中", tone: "amber" };
+}
+
+/**
+ * 队伍选择（自选，原版 `updatePlayerTeam` 是玩家改自己，不是房主分配）。
+ *
+ * 只在对局未开始时出现 —— 队伍决定「谁和谁共享次数」，打到一半换队等于改规则；
+ * 服务端同样只在 `waiting` 阶段接受这条指令。
+ *
+ * 与原版的差异：原版把这个下拉塞在**自己那一行**里且要求「未准备」，本项目挪到列表底部，
+ * 于是房主（在增强版里恒为已准备）也能组队。
+ */
+function TeamPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (team: number | null) => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-2 px-2">
+      <span className="shrink-0 text-xs text-muted-foreground">队伍</span>
+      <Select
+        value={value ?? NO_TEAM}
+        onValueChange={(next) => onChange(next === NO_TEAM ? null : Number(next))}
+      >
+        <SelectTrigger className="h-8 flex-1 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NO_TEAM}>不组队</SelectItem>
+          {TEAM_IDS.map((team) => (
+            <SelectItem key={team} value={String(team)}>
+              {team} 队
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 function SpectatorToggle({
