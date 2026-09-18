@@ -276,8 +276,21 @@ export interface CCBPrivateState {
   remainingGuesses: number;
   /** 只有自己可见的猜测记录（含逐字段反馈）。落点 P1。 */
   ownGuesses: CCBGuessRecord[];
-  /** 已用过的文本提示。落点 P3。 */
-  hints: string[];
+  /**
+   * 本条**已该显示**的文本提示，按 `useHints` 的阈值逐条解锁。
+   *
+   * 判定式照原版客户端：`剩余次数 <= useHints[i]` 时显示第 i 条。
+   * 提示文本由手动出题的出题人提供（`ccb.game.setAnswer.hints`）—— 服务端抽题没有出处，
+   * 所以那种局面下恒为空数组。
+   */
+  hints: CCBRevealedHint[];
+  /**
+   * 观战增强视图：全部玩家的猜测明细（**只给旁观者与出题人**下发）。
+   *
+   * 猜测记录含答案相关线索，所以默认只给自己（`ownGuesses`）；观战者不参与竞猜，
+   * 给他们看全场，「观战」才真的有内容可看。总条数有上限，见服务端归一化。
+   */
+  spectatedGuesses?: CCBSpectatedGuesses[];
   /**
    * 同步模式：本轮是否已完成。
    *
@@ -294,9 +307,24 @@ export interface CCBPrivateState {
   setterAnswer?: CCBAnswerView;
 }
 
+/** 一条已解锁的文本提示（见 `CCBPrivateState.hints`）。 */
+export interface CCBRevealedHint {
+  /** 1 起的序号，对应设置里第几条阈值。 */
+  index: number;
+  text: string;
+}
+
+/** 观战视图里某位玩家的猜测明细（见 `CCBPrivateState.spectatedGuesses`）。 */
+export interface CCBSpectatedGuesses {
+  playerId: string;
+  playerName: string;
+  marks: string;
+  finished: boolean;
+  guesses: CCBGuessRecord[];
+}
+
 /** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
 export type CCBCompareFeedback = "=" | "+" | "++" | "-" | "--" | "?";
-
 export interface CCBScalarFeedback {
   /** `?` 表示该侧不可比（原版用 `-1` 哨兵）。 */
   guess: number | "?";
@@ -413,6 +441,20 @@ export interface CCBRoundRecord {
   nonstopWinnerIds: string[];
   /** 血战模式的名次分基数：开局时的参战人数（原版 `nonstopTotalPlayers`）。 */
   nonstopTotalPlayers: number;
+  /**
+   * 队伍模式的**共享标记串**：队伍号 → 标记。
+   *
+   * 原版 `currentGame.teamGuesses`。队伍模式下标记不记在个人身上，而是记在这里，
+   * 然后**覆盖回每个队友的 `marks`** —— 所以「一次猜测算几次」对全队是同一份账。
+   */
+  teamMarks: Record<string, string>;
+  /**
+   * 本局的提示文本，由手动出题的出题人在 `ccb.game.setAnswer` 里给出。
+   *
+   * 与设置里的 `useHints` 阈值**按序配对**：第 i 条阈值配第 i 条文本。
+   * 服务端抽题的局没有出处，恒为空数组。
+   */
+  hints: string[];
 }
 
 /**
@@ -482,6 +524,13 @@ export type CCBClientMessage =
   | ClientEnvelope<"ccb.room.transferHost", { playerId: string }>
   | ClientEnvelope<"ccb.player.setReady", { ready: boolean }>
   | ClientEnvelope<"ccb.player.setSpectator", { spectator: boolean }>
+  /**
+   * 自选队伍（`null` = 不组队，`1..8` = 队伍号）。
+   *
+   * ⚠️ 与原版的差异：原版用 `team = '0'` 表示观战，本项目**不再复用这个值** ——
+   * 观战是 `membership`，两套真相会打架。详见 `Agents/CCB.md §6.9`。
+   */
+  | ClientEnvelope<"ccb.player.setTeam", { team: number | null }>
   | ClientEnvelope<"ccb.player.setMessage", { message: string }>
   | ClientEnvelope<"ccb.chat.send", { text: string }>
   | ClientEnvelope<"ccb.test.addBot", { count?: number }>
@@ -489,7 +538,7 @@ export type CCBClientMessage =
   | ClientEnvelope<"ccb.character.search", { keyword: string }>
   | ClientEnvelope<"ccb.game.start", Record<string, never>>
   | ClientEnvelope<"ccb.game.chooseSetter", { playerId: string }>
-  | ClientEnvelope<"ccb.game.setAnswer", { characterId: number; hint?: string }>
+  | ClientEnvelope<"ccb.game.setAnswer", { characterId: number; hints?: string[] }>
   | ClientEnvelope<"ccb.game.guess", { characterId: number }>
   | ClientEnvelope<"ccb.game.surrender", Record<string, never>>
   | ClientEnvelope<"ccb.game.nextRound", Record<string, never>>

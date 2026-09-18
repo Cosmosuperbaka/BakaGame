@@ -18,6 +18,7 @@ import type {
   CCBGameMode,
   CCBGameSettings,
   CCBGender,
+  CCBRevealedHint,
   CCBScalarFeedback,
   CCBSharedAppearancesFeedback,
 } from "../shared/CCB";
@@ -263,6 +264,35 @@ export const maskCCBFeedbackTags = (
       shared: feedback.metaTags.shared.filter((tag) => !hidden(tag)),
     },
   };
+};
+
+// ==================== 提示系统 ====================
+//
+// 原版里提示是**纯客户端**行为（`GameInfo.jsx`）：出题人提供文本数组，客户端按
+// `guessesLeft <= useHints[i]` 决定显示第几条；图片提示（`useImageHint`）是把答案立绘
+// 按剩余次数做 CSS 模糊。**本项目只移植文本提示**，图片提示不移植（见 §6.9 说明）。
+
+/**
+ * 算出**本条该显示**的提示（原版 `guessesLeft <= useHints[i]`）。
+ *
+ * 返回值类型 `CCBRevealedHint` 的真相源在 `shared/CCB.ts`（客户端要渲染它，见那里的说明）。
+ *
+ * `thresholds` 与 `hints` 按序配对：第 i 条阈值配第 i 条文本。
+ * 任一侧缺失的位置直接跳过（原版 JSX 里就是这么 `&&` 起来的），
+ * 所以出题人少填一条不会让后面的提示整体错位。
+ */
+export const resolveCCBRevealedHints = (
+  hints: readonly string[],
+  thresholds: readonly number[],
+  remainingGuesses: number,
+): CCBRevealedHint[] => {
+  const revealed: CCBRevealedHint[] = [];
+  thresholds.forEach((threshold, index) => {
+    const text = hints[index];
+    if (!text || remainingGuesses > threshold) return;
+    revealed.push({ index: index + 1, text });
+  });
+  return revealed;
 };
 
 // ==================== 模式推进（同步 / 血战） ====================

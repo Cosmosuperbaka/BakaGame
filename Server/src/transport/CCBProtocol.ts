@@ -155,6 +155,16 @@ export const CCBMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
+  // 队伍号取值与原版一致（`1..8`）；本项目不接受 `0`——观战是 `membership`，不复用这个值。
+  "ccb.player.setTeam": createMessageSchema(
+    "ccb.player.setTeam",
+    t.Object(
+      {
+        team: t.Union([t.Integer({ minimum: 1, maximum: 8 }), t.Null()]),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   "ccb.player.setMessage": createMessageSchema(
     "ccb.player.setMessage",
     t.Object(
@@ -219,7 +229,8 @@ export const CCBMessageSchemas = {
     t.Object(
       {
         characterId: t.Integer({ minimum: 1 }),
-        hint: t.Optional(t.String({ maxLength: 200 })),
+        // 条数上限与设置的 `useHints` 一致（10 条阈值 → 最多 10 条提示）。
+        hints: t.Optional(t.Array(t.String({ maxLength: 200 }), { maxItems: 10 })),
       },
       { additionalProperties: false },
     ),
