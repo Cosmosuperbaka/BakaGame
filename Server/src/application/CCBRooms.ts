@@ -98,7 +98,7 @@ export class CCBRooms {
     const player = room.players.get(id); if (!player) throw new AppError('PLAYER_NOT_FOUND', '玩家不在房间中'); return player;
   }
   sendChat(room: CCBRoom, player: CCBPlayerRecord, rawText: string): void {
-    const text = rawText.trim().slice(0, 200); if (!text) throw new AppError('EMPTY_MESSAGE', '消息不能为空');
+    const text = rawText.trim().slice(0, 500); if (!text) throw new AppError('EMPTY_MESSAGE', '消息不能为空');
     room.chat.push({ id: crypto.randomUUID(), playerId: player.id, playerName: player.name, text, createdAt: this.now(), system: false });
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }

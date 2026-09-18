@@ -1,6 +1,7 @@
 import { CCBNativeService } from '../src/application/CCBNativeService';
 import { AppError } from '../src/domain/Errors';
 import type { CCBDataProvider } from '../src/infrastructure/CCBData';
+import type { CCBImageHints } from '../src/infrastructure/CCBImageHints';
 import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBCommand, type CCBPayload,
   type CCBPrivateState, type CCBRoomEnterResult, type CCBRoomSnapshot, type CCBSettings, type ConnectionRecord } from '../src/shared/Index';
 
@@ -14,7 +15,7 @@ export const character = (id: number, shared = false): CCBCharacterView => ({
 });
 type Packet = { type?: string; event?: string; payload?: unknown };
 export interface CCBTestClient { record: ConnectionRecord; sent: Packet[]; closed: Array<{ code?: number; reason?: string }>; token?: string; id?: string }
-export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}) {
+export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHints?: CCBImageHints) {
   let clock = 1_000_000;
   const getCalls: number[] = [];
   const data: CCBDataProvider = {
@@ -25,7 +26,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}) {
     chooseRandomCharacter: async () => character(1), importDirectory: async id => ({ id, subjectIds: [100], missingSubjectIds: [], importedAt: clock }),
     resolveCharacterImage: async id => `https://images.invalid/${id}.jpg`, close: () => {}, ...overrides,
   };
-  const service = new CCBNativeService({ data, now: () => clock, random: () => 0 });
+  const service = new CCBNativeService({ data, now: () => clock, random: () => 0, imageHints });
   const connect = (name: string): CCBTestClient => {
     const sent: Packet[] = [], closed: CCBTestClient['closed'] = [];
     const record: ConnectionRecord = { id: `${name}-${crypto.randomUUID()}`, lobbySubscribed: false,
