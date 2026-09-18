@@ -367,10 +367,35 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     });
     expect(screen.getByText("断线中...")).toBeInTheDocument();
 
-    // 2. 房间被服务端关闭时，页面自动重定向到 /whoisfaker 大厅
+    // 2. 房间被服务端关闭时，页面自动重定向到 /whoisfaker 大厅并清理关闭标记
     act(() => {
       useWhoIsFakerStore.setState({ roomClosedAt: Date.now() });
     });
     expect(screen.getByText("WhoIsFaker 游戏大厅")).toBeInTheDocument();
+    expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+  });
+
+  it("离开房间后再进入房间，清除历史关闭状态且绝不发生原地跳转", () => {
+    useWhoIsFakerStore.setState({
+      ...initialStoreState,
+      connected: true,
+      roomClosedAt: Date.now() - 3000,
+      roomId: "6688",
+      snapshot: createMockSnapshot({ roomId: "6688" }),
+      privateState: createMockPrivateState(),
+    });
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/whoisfaker/room/6688"]}>
+        <Routes>
+          <Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} />
+          <Route path="/whoisfaker" element={<div>WhoIsFaker 游戏大厅</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+    expect(screen.queryByText("WhoIsFaker 游戏大厅")).not.toBeInTheDocument();
+    unmount();
   });
 });

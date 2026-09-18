@@ -139,7 +139,7 @@ describe("game store integration", () => {
     await expect(useGameStore.getState().reconnectRoom("2345")).resolves.toBe(false);
     expect(getSessionToken("2345")).toBeNull();
     expect(useGameStore.getState().roomId).toBeNull();
-    expect(useGameStore.getState().roomClosedAt).not.toBeNull();
+    expect(useGameStore.getState().roomClosedAt).toBeNull();
     expect(useGameStore.getState().toasts).toContainEqual(
       expect.objectContaining({ text: "会话已失效，请重新加入", type: "error" }),
     );

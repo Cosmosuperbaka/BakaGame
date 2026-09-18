@@ -45,6 +45,7 @@ export interface WhoIsFakerGameState {
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
   markRoomClosed: () => void;
+  clearRoomClosed: () => void;
   triggerPhaseTimeout: () => void;
   setSnapshot: (snapshot: RoomSnapshot | null) => void;
   applyIncomingSnapshot: (snapshot: RoomSnapshot | null) => void;
@@ -251,9 +252,11 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
       phaseResultPresentationPending: false,
       daybreakNotice: null,
       phaseTimedOutEndsAt: null,
+      roomClosedAt: null,
     });
   },
   markRoomClosed: () => set({ roomClosedAt: Date.now() }),
+  clearRoomClosed: () => set({ roomClosedAt: null }),
   triggerPhaseTimeout: () => {
     const timer = get().snapshot?.status.phaseTimer;
     set({ phaseTimedOutEndsAt: timer?.endsAt ?? Date.now() });
@@ -420,7 +423,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
       }
       clearSessionToken(roomId);
       get().leaveRoomState();
-      get().markRoomClosed();
       const code = (error as { code?: string } | null)?.code;
       const message =
         code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
