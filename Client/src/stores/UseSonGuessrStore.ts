@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  ChatMessage,
   EventPacket,
   ServerMessage,
   SonGuessrPrivateState,
@@ -306,7 +307,13 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 };
 });
 
+/** 幂等门闩：重复调用 initSonGuessrWs 不应叠加第二条消息订阅。 */
+let sonGuessrWsInitialized = false;
+
 export function initSonGuessrWs() {
+  if (sonGuessrWsInitialized) return () => {};
+  sonGuessrWsInitialized = true;
+
   const unsubMsg = sonGuessrWs.onMessage((msg: ServerMessage) => {
     if (msg.type !== "event") return;
     const evt = msg as EventPacket;
@@ -380,6 +387,19 @@ export function initSonGuessrWs() {
       case "song.room.expiring":
         store.setNotice("房间即将因超时关闭", "error");
         break;
+      case "song.chat.message": {
+        // 聊天走增量事件：一条消息不再连带整套房间快照广播。
+        const incoming = (evt.payload as { message?: ChatMessage } | undefined)?.message;
+        const current = useSonGuessrStore.getState().snapshot;
+        if (!incoming || !current) break;
+        useSonGuessrStore.setState({
+          snapshot: {
+            ...current,
+            chat: mergeChat(current.chat, [incoming]),
+          },
+        });
+        break;
+      }
       case "song.room.closed": {
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
@@ -415,6 +435,9 @@ export function initSonGuessrWs() {
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+        // 与房间关闭/被踢一致地重置差量同步基线：
+        // 漏掉这一行会残留旧 revision，导致后续反复触发全量同步。
+        resetSonGuessrStateSync();
         useSonGuessrStore.setState({
           roomId: null,
           sessionToken: null,
@@ -485,6 +508,7 @@ export function initSonGuessrWs() {
   sonGuessrWs.connect();
 
   return () => {
+    sonGuessrWsInitialized = false;
     unsubMsg();
     unsubStatus();
   };
