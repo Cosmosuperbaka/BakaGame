@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
+import {
+  clearStoredSongMusicSession,
+  getStoredSongMusicSession,
+  saveSongMusicSession,
+} from "@/lib/SonGuessrMusicSession";
 import type { SonGuessrRoomSnapshot } from "@/types";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
@@ -51,5 +55,17 @@ describe("SongAccountSettings", () => {
     expect(screen.getByText("非会员")).toBeInTheDocument();
     expect(screen.getByText("当前账号不是会员，无法选择会员专享歌曲。")).toBeInTheDocument();
     expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，
+  // 也就没人会发现默认值被悄悄改掉。这里钉住当前行为（默认 true = 持久化）。
+  it("未存过登录状态时，记住登录开关默认为开启", () => {
+    clearStoredSongMusicSession();
+    expect(getStoredSongMusicSession()).toBeNull();
+
+    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
 });
