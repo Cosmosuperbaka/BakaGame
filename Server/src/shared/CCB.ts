@@ -1,0 +1,120 @@
+import { Type as t, type Static } from '@sinclair/typebox';
+import type { ChatMessage, RoomVisibility } from './Model';
+import type { ClientEnvelope } from './Protocol';
+
+const strict = { additionalProperties: false } as const;
+const integer = (minimum: number, maximum: number) => t.Integer({ minimum, maximum });
+export const CCBSettingsSchema = t.Object({
+  startYear: integer(1900, 2200), endYear: integer(1900, 2200),
+  topNSubjects: integer(1, 1000), useSubjectPerYear: t.Boolean(),
+  metaTags: t.Array(t.String({ maxLength: 40 }), { maxItems: 3 }),
+  useIndex: t.Boolean(), indexId: t.Union([integer(1, 2147483647), t.Null()]),
+  addedSubjects: t.Array(integer(1, 2147483647), { maxItems: 500 }),
+  mainCharacterOnly: t.Boolean(), characterNum: integer(1, 100),
+  maxAttempts: integer(1, 100), timeLimit: integer(0, 120),
+  subjectSearch: t.Boolean(), subjectTagNum: integer(0, 10), characterTagNum: integer(0, 10),
+  commonTags: t.Boolean(), useHints: t.Array(integer(0, 100), { maxItems: 3 }),
+  useImageHint: integer(0, 100), globalPick: t.Boolean(), tagBan: t.Boolean(),
+  syncMode: t.Boolean(), nonstopMode: t.Boolean(),
+}, strict);
+export type CCBSettings = Static<typeof CCBSettingsSchema>;
+export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSettings => ({
+  startYear: year - 5, endYear: year, topNSubjects: 20, useSubjectPerYear: false,
+  metaTags: ['', '', ''], useIndex: false, indexId: null, addedSubjects: [],
+  mainCharacterOnly: true, characterNum: 6, maxAttempts: 10, timeLimit: 60,
+  subjectSearch: true, subjectTagNum: 4, characterTagNum: 4, commonTags: true,
+  useHints: [], useImageHint: 0, globalPick: false, tagBan: false, syncMode: false, nonstopMode: false,
+});
+export type CCBSource = 'native' | 'original';
+export type CCBPhase = 'waiting' | 'preparing' | 'answering' | 'guessing' | 'settled';
+export interface CCBCharacterSummary { id: number; name: string; nameCn: string; imageUrl?: string }
+export interface CCBAppearance { id: number; name: string; nameCn: string; year: number; rating: number; ratingCount: number }
+export interface CCBCharacterView extends CCBCharacterSummary {
+  gender: 'male' | 'female' | '?'; popularity: number; summary: string;
+  appearances: CCBAppearance[]; highestRating: number; earliestAppearance: number; latestAppearance: number;
+  subjectTags: string[]; characterTags: string[]; voiceActors: string[]; metaTags: string[];
+}
+export interface CCBSubjectSummary { id: number; name: string; nameCn: string; type: number; year: number | null; rating: number; heat: number }
+export interface CCBDirectoryResult { id: number; subjectIds: number[]; missingSubjectIds: number[]; importedAt: number }
+export type CCBComparison = '=' | '+' | '++' | '-' | '--' | '?' | 'yes' | 'no';
+export interface CCBFeedbackValue { value: number | string; comparison: CCBComparison }
+export interface CCBFeedback {
+  gender: CCBFeedbackValue; popularity: CCBFeedbackValue; rating: CCBFeedbackValue;
+  appearancesCount: CCBFeedbackValue; earliestAppearance: CCBFeedbackValue; latestAppearance: CCBFeedbackValue;
+  sharedAppearances: CCBAppearance[];
+  tags: Array<{ text: string; matched: boolean; hidden: boolean; kind: 'subject' | 'character' | 'voice' }>;
+}
+export interface CCBGuess {
+  id: string; playerId: string; playerName: string; character: CCBCharacterSummary;
+  correct: boolean; partial: boolean; syncRound: number; createdAt: number; feedback: CCBFeedback;
+}
+export type CCBPlayerStatus = 'waiting' | 'playing' | 'solved' | 'teamWon' | 'exhausted' | 'surrendered' | 'observing';
+export interface CCBPlayer {
+  id: string; name: string; online: boolean; ready: boolean; team: number | null;
+  membership: 'active' | 'spectator'; score: number; status: CCBPlayerStatus;
+  attempts: number; marks: string; syncCompleted: boolean;
+}
+export interface CCBScoreDetail {
+  playerId: string; playerName: string; score: number; base: number; firstGuess: number;
+  quickGuess: number; partial: number; setter: number; reason: string; rank?: number;
+}
+export interface CCBRoundSummary {
+  answer: CCBCharacterView; scores: CCBScoreDetail[]; guesses: CCBGuess[];
+  winners: Array<{ playerId: string; rank: number; score: number }>;
+}
+export interface CCBRoomSnapshot {
+  roomId: string; source: CCBSource; name: string; visibility: RoomVisibility; hasPassword: boolean;
+  allowSpectators: boolean; hostPlayerId: string; phase: CCBPhase; settings: CCBSettings;
+  players: CCBPlayer[]; roundNumber: number; syncRound: number; setterPlayerId: string | null;
+  phaseDeadlineAt: number | null; chat: ChatMessage[]; roundSummary: CCBRoundSummary | null;
+  upstreamConnected: boolean;
+}
+export interface CCBPrivateState {
+  playerId: string; canGuess: boolean; canSurrender: boolean; canStart: boolean; canSetAnswer: boolean;
+  guesses: CCBGuess[]; answer: CCBCharacterView | null; hints: string[];
+  imageHintAvailable: boolean; imageHintLevel: number; deadlineAt: number | null;
+  bannedCharacterIds: number[];
+}
+export interface CCBRoomSummary {
+  roomId: string; source: CCBSource; name: string; phase: CCBPhase; playerCount: number;
+  hasPassword: boolean; allowSpectators: boolean;
+}
+export interface CCBRoomEnterResult { roomId: string; source: CCBSource; sessionToken: string; snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }
+const empty = t.Object({}, strict);
+const source = t.Union([t.Literal('native'), t.Literal('original')]);
+const name = t.String({ minLength: 1, maxLength: 32 });
+const playerId = t.String({ minLength: 1, maxLength: 128 });
+const roomId = t.String({ minLength: 1, maxLength: 32 });
+const id = integer(1, 2147483647);
+export const CCBPayloadSchemas = {
+  'ccb.lobby.subscribeRooms': empty,
+  'ccb.room.create': t.Object({ source, roomId, name, userName: name,
+    visibility: t.Union([t.Literal('public'), t.Literal('private')]),
+    password: t.Optional(t.String({ maxLength: 64 })), allowSpectators: t.Boolean() }, strict),
+  'ccb.room.join': t.Object({ source, userName: name, password: t.Optional(t.String({ maxLength: 64 })) }, strict),
+  'ccb.room.reconnect': t.Object({ source, roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) }, strict),
+  'ccb.room.leave': empty, 'ccb.room.requestSync': empty,
+  'ccb.room.update': t.Object({ name, visibility: t.Union([t.Literal('public'), t.Literal('private')]), allowSpectators: t.Boolean() }, strict),
+  'ccb.room.settings': t.Object({ settings: CCBSettingsSchema }, strict),
+  'ccb.player.ready': t.Object({ ready: t.Boolean() }, strict),
+  'ccb.player.team': t.Object({ team: t.Union([integer(1, 8), t.Null()]) }, strict),
+  'ccb.player.spectate': t.Object({ spectator: t.Boolean() }, strict),
+  'ccb.room.kick': t.Object({ playerId }, strict), 'ccb.room.transferHost': t.Object({ playerId }, strict),
+  'ccb.chat.send': t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  'ccb.character.search': t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
+  'ccb.subject.search': t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
+  'ccb.subject.characters': t.Object({ subjectId: id }, strict),
+  'ccb.directory.import': t.Object({ indexId: id }, strict),
+  'ccb.character.image': t.Object({ characterId: id }, strict),
+  'ccb.game.start': empty,
+  'ccb.game.chooseSetter': t.Object({ playerId }, strict),
+  'ccb.game.setAnswer': t.Object({ characterId: id, hints: t.Array(t.String({ maxLength: 30 }), { maxItems: 3 }) }, strict),
+  'ccb.game.cancel': empty,
+  'ccb.game.guess': t.Object({ characterId: id }, strict),
+  'ccb.game.surrender': empty, 'ccb.game.next': empty,
+  'ccb.game.imageHint': empty,
+} as const;
+export type CCBCommand = keyof typeof CCBPayloadSchemas;
+export type CCBPayload<T extends CCBCommand> = Static<(typeof CCBPayloadSchemas)[T]>;
+export type CCBClientMessage = { [K in CCBCommand]: ClientEnvelope<K, CCBPayload<K>> }[CCBCommand];
+export const CCB_STATE_EVENTS = ['ccb.room.snapshot', 'ccb.game.privateState'] as const;
