@@ -90,6 +90,7 @@ export default function WhoIsFakerRoomPage() {
   const hasRevealedThisGameRef = useRef(false);
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
+  const [mountTime] = useState(() => Date.now());
 
   // 展开：立即渲染；收起：等动画结束后再移除列，避免 PlayerList 瞬间膨胀
   useEffect(() => {
@@ -105,11 +106,22 @@ export default function WhoIsFakerRoomPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [historyOpen]);
 
+  // 挂载与卸载时清理残留的 roomClosedAt
+  useEffect(() => {
+    useWhoIsFakerStore.getState().clearRoomClosed();
+    return () => {
+      useWhoIsFakerStore.getState().clearRoomClosed();
+    };
+  }, []);
+
   // 房间被服务端关闭或席位被替换：这是一个明确的事件，无论当前是否正在加入
   // 都必须立刻退回大厅，否则加入流程中被关闭会一直停在加载态。
   useEffect(() => {
-    if (roomClosedAt) navigate("/whoisfaker", { replace: true });
-  }, [roomClosedAt, navigate]);
+    if (roomClosedAt && roomClosedAt >= mountTime) {
+      useWhoIsFakerStore.getState().clearRoomClosed();
+      navigate("/whoisfaker", { replace: true });
+    }
+  }, [mountTime, roomClosedAt, navigate]);
 
   // 主动离开等其它原因导致的脱离房间。等用户填名字的这段时间同样没有 snapshot，
   // 但那是正常状态，不能当成房间已关闭。
@@ -163,6 +175,7 @@ export default function WhoIsFakerRoomPage() {
       return;
     }
 
+    useWhoIsFakerStore.getState().clearRoomClosed();
     let cancelled = false;
     const tryEnter = async () => {
       setJoining(true);
@@ -179,9 +192,8 @@ export default function WhoIsFakerRoomPage() {
       const ok = await reconnectRoom(roomId);
       if (ok) { if (!cancelled) setJoining(false); return; }
       if (cancelled) return;
-      // 携带旧令牌访问一个已关闭房间时，store 已设置明确的关闭状态。
-      // 此时不能再按分享链接逻辑自动创建同号新房间。
-      if (useWhoIsFakerStore.getState().roomClosedAt) return;
+      const closedAt = useWhoIsFakerStore.getState().roomClosedAt;
+      if (closedAt !== null && closedAt >= mountTime) return;
 
       const name = getSavedUsername();
       if (!name) {
@@ -197,7 +209,7 @@ export default function WhoIsFakerRoomPage() {
 
     tryEnter();
     return () => { cancelled = true; };
-  }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomId, mountTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleConfirmName = useCallback(async () => {
     const name = nameDraft.trim();
