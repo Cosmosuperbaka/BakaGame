@@ -1,9 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import { LyricPlayer, type LyricPlayerRef } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
-import { calculateLyricContainerHeight } from "./lyricHeight";
+import {
+  calculateLyricContainerHeight,
+  measureLyricOverviewHeight,
+  resolveLyricContentHeight,
+} from "./lyricHeight";
 
 // 拦截 AMLL 内部开发环境输出的调试日志（“设置歌词行”、“歌词处理完成”等），保持控制台纯净
 if (
@@ -23,6 +35,9 @@ if (
   };
 }
 
+/** 总览原生实测的最大重试帧数：内核按 overscan 挂载歌词行 DOM，通常 2 ~ 4 帧即测量齐全 */
+const MAX_MEASURE_FRAMES = 60;
+
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
   audioRef?: RefObject<HTMLAudioElement | null>;
@@ -39,6 +54,7 @@ export function SongLyricPlayer({
   className,
 }: SongLyricPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const lyricPlayerRef = useRef<LyricPlayerRef>(null);
 
   // 4. 禁用滚轮滚动歌词组件：在捕获阶段截断事件，阻止进入 AMLL 内部触发重排与内部滚动
   useEffect(() => {
@@ -187,13 +203,96 @@ export function SongLyricPlayer({
     };
   }, [audioRef, firstLineTime, audioPlaybackState, audioStatus]);
 
-  // 根据当前题目歌词行数、文本长度与双语翻译，自适应计算能够完整容纳所有歌词的高度，全程固定避免总览跳动或溢出
-  const containerHeight = useMemo(() => {
-    return calculateLyricContainerHeight(lines);
-  }, [lines]);
+  // 容器真实可用宽度与上下内边距：折行行数与外壳高度补偿都依赖真实盒模型，严禁写死数值
+  const [shellMetrics, setShellMetrics] = useState({ contentWidth: 0, containerPadding: 0 });
+
+  const syncShellMetrics = useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    const styles = getComputedStyle(node);
+    const paddingX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+    const paddingY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    const borderY =
+      (parseFloat(styles.borderTopWidth) || 0) + (parseFloat(styles.borderBottomWidth) || 0);
+    const contentWidth = Math.max(node.clientWidth - paddingX, 0);
+    const containerPadding = paddingY + borderY;
+    setShellMetrics((prev) =>
+      prev.contentWidth === contentWidth && prev.containerPadding === containerPadding
+        ? prev
+        : { contentWidth, containerPadding },
+    );
+  }, []);
+
+  const attachContainer = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      syncShellMetrics(node);
+    },
+    [syncShellMetrics],
+  );
+
+  // 宽度变化会改变折行行数，必须重新核算高度（高度变化不改变宽度，不会自激）
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => syncShellMetrics(node));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [syncShellMetrics]);
 
   const isCompleted = audioPlaybackState === "completed";
-  const lyricPlayerRef = useRef<LyricPlayerRef>(null);
+
+  // 总览高度优先取 AMLL 原生实测值（Σ 各组实测行高，与容器高度无关），
+  // 测量齐全前用解析式估算兜底：估算误差只会短暂存在，不会固化为多余留白或裁切。
+  // 实测结果与「题目 + 宽度 + 模式」绑定，键不匹配即视为无效（无需在 Effect 内重置状态）。
+  const measurementKey = `${isCompleted}:${linesKey}:${shellMetrics.contentWidth}`;
+  const [measurement, setMeasurement] = useState<{ key: string; height: number } | null>(null);
+
+  useEffect(() => {
+    if (!isCompleted) return;
+
+    let rafId = 0;
+    let attempts = 0;
+
+    const poll = () => {
+      const player = lyricPlayerRef.current?.lyricPlayer;
+      const measured = measureLyricOverviewHeight(player);
+      if (measured !== null) {
+        setMeasurement({ key: measurementKey, height: measured });
+        return;
+      }
+      if (attempts < MAX_MEASURE_FRAMES) {
+        attempts += 1;
+        rafId = requestAnimationFrame(poll);
+      }
+    };
+
+    rafId = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(rafId);
+  }, [isCompleted, measurementKey]);
+
+  const measuredContentHeight =
+    measurement && measurement.key === measurementKey ? measurement.height : null;
+
+  // 根据当前题目歌词行数、文本折行与翻译副行，核算总览所需的精确高度
+  const { contentHeight, containerHeight } = useMemo(() => {
+    const options = {
+      lines,
+      contentWidth: shellMetrics.contentWidth,
+      containerPadding: shellMetrics.containerPadding,
+      measuredContentHeight,
+      overview: isCompleted,
+    };
+    return {
+      contentHeight: resolveLyricContentHeight(options),
+      containerHeight: calculateLyricContainerHeight(options),
+    };
+  }, [
+    lines,
+    shellMetrics.contentWidth,
+    shellMetrics.containerPadding,
+    measuredContentHeight,
+    isCompleted,
+  ]);
 
   // 关键：在总览模式下强制将 AMLL 顶部对齐并同步立即重排，消除顶部下沉与未触发 layout 导致的少显示歌词
   useEffect(() => {
@@ -229,10 +328,12 @@ export function SongLyricPlayer({
 
   return (
     <div
-      ref={containerRef}
+      ref={attachContainer}
       style={{ height: `${containerHeight}px` }}
       className={cn(
-        "relative flex w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none transition-[height] duration-300",
+        // 高度过渡与 AMLL 总览的 scale(0.92) 缩放同频同缓动：
+        // 若两者不同步，过渡途中外壳会瞬时矮于已缩放内容而产生裁切
+        "relative flex w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none transition-[height] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
         className,
       )}
       data-testid="baka-song-lyric-container"
@@ -246,6 +347,13 @@ export function SongLyricPlayer({
         </div>
         <LyricPlayer
           ref={lyricPlayerRef}
+          // 播放器本体锁定「未缩放的歌词自然高度」：外壳已按 0.92 反向补偿，
+          // 本体保持自然高度才能既不被裁切、也不留多余留白
+          style={
+            {
+              "--baka-lyric-player-height": `${Math.round(contentHeight)}px`,
+            } as CSSProperties
+          }
           className={cn(
             "baka-lyric-player h-full w-full",
             isCompleted && "baka-overview-mode",
