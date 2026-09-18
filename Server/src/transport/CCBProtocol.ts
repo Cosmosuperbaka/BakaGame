@@ -193,8 +193,7 @@ export const CCBMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
-  // P1b：对局指令。故意只挂已实现的部分 —— `ccb.game.chooseSetter` / `ccb.game.setAnswer`
-  // 属 P3 手动出题，Schema 挂上而服务端没实现，只会让客户端以为能调通。
+  // P1b：对局指令。故意只挂已实现的部分 —— 先挂没有实现的 Schema 只会让客户端以为能调通。
   "ccb.character.search": createMessageSchema(
     "ccb.character.search",
     t.Object(
@@ -205,6 +204,26 @@ export const CCBMessageSchemas = {
     ),
   ),
   "ccb.game.start": createMessageSchema("ccb.game.start", EmptyPayloadSchema),
+  // P3 手动出题：房主指定出题人 → 出题人提交答案（只收 characterId，其余字段由服务端补）。
+  "ccb.game.chooseSetter": createMessageSchema(
+    "ccb.game.chooseSetter",
+    t.Object(
+      {
+        playerId: t.String({ minLength: 1, maxLength: 64 }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "ccb.game.setAnswer": createMessageSchema(
+    "ccb.game.setAnswer",
+    t.Object(
+      {
+        characterId: t.Integer({ minimum: 1 }),
+        hint: t.Optional(t.String({ maxLength: 200 })),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   "ccb.game.guess": createMessageSchema(
     "ccb.game.guess",
     t.Object(

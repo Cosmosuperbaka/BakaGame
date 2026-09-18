@@ -262,7 +262,11 @@ export interface CCBSyncProgress {
 export interface CCBPrivateState {
   playerId: string;
   sessionToken: string;
-  /** 出题人可设答案（手动出题模式）。落点 P3。 */
+  /**
+   * 出题人可设答案（手动出题模式）。
+   *
+   * 仅当 `phase === "answering"` 且自己就是被房主指定的出题人时为 `true`。
+   */
   canSetAnswer: boolean;
   /** 当前是否可提交猜测。落点 P1。 */
   canGuess: boolean;
@@ -281,6 +285,13 @@ export interface CCBPrivateState {
    * 必须等本轮其他人完成、轮次推进后才能再猜。非同步模式恒为 `false`。
    */
   syncCompleted: boolean;
+  /**
+   * 手动出题：出题人在本局进行中看到的答案卡。
+   *
+   * 答案不进 `snapshot`（那里只在对局结束后公开），因为同一个快照要广播给全房；
+   * 出题人自己选的答案走私有状态下发，刷新页面也不会丢。
+   */
+  setterAnswer?: CCBAnswerView;
 }
 
 /** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
@@ -374,6 +385,14 @@ export interface CCBRoundRecord {
   roundNumber: number;
   answerCharacterId: number;
   answerSetterPlayerId: string;
+  /**
+   * 答案是否由**真人**指定（手动出题模式）。
+   *
+   * ⚠️ 这是决定「要不要结算出题人分」的唯一依据：服务端出题的房间里
+   * `answerSetterPlayerId` 只是记成房主（原版那套出题人奖惩没有对象），
+   * 照原版把分记到房主头上属于凭空加减分。
+   */
+  answerIsManual: boolean;
   startedAt: number;
   deadlineAt?: number;
   /** 已提交的猜测，按玩家分组。 */

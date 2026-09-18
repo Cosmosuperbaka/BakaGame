@@ -15,6 +15,7 @@ import type {
   CCBCompareFeedback,
   CCBEndResult,
   CCBFeedback,
+  CCBGameMode,
   CCBGameSettings,
   CCBGender,
   CCBScalarFeedback,
@@ -622,6 +623,50 @@ export const calculateCCBNonstopSetterScore = ({
   if (winRate >= 0.75) return { score: 1 * playerMultiplier, reason: "难度偏低" };
   return { score: 2 * playerMultiplier, reason: "难度适中" };
 };
+
+/**
+ * 结算时按模式挑一套出题人计分口径（原版 `finalizeStandardGame` / `finalizeNonstopGame`）。
+ *
+ * 两个口径的入参不同，所以这里做的是**选表**而不是重新算分：
+ * - 普通 / 同步只看**首个胜者**的标记与次数；
+ * - 血战看**猜中率**（胜者数 ÷ 参战人数）。
+ *
+ * ⚠️ **只在真人出题（`CCBRoundRecord.answerIsManual`）时调用**：服务端出题的房间里
+ * 没有任何玩家承担出题人，调用它等于凭空给房主加减分。
+ */
+export const resolveCCBSetterScore = ({
+  mode,
+  winnerMarks,
+  winnerGuessCount,
+  bigWinnerScore,
+  winnersCount,
+  totalPlayers,
+  totalRounds,
+}: {
+  mode: CCBGameMode;
+  /** 首个胜者的标记串；无人猜中传空串。 */
+  winnerMarks: string;
+  /** **计分口径**的已猜次数（不是 `countCCBAttemptMarks` 的那个数）。 */
+  winnerGuessCount: number;
+  /** 大赢家的实际总得分（含底分），没有大赢家传 `0`。 */
+  bigWinnerScore: number;
+  winnersCount: number;
+  totalPlayers: number;
+  totalRounds: number;
+}): CCBSetterScore =>
+  mode === "bloodbath"
+    ? calculateCCBNonstopSetterScore({
+        hasBigWinner: winnerMarks.includes(CCB_END_MARK.bigWin),
+        bigWinnerScore,
+        winnersCount,
+        totalPlayersCount: totalPlayers,
+      })
+    : calculateCCBSetterScore({
+        winnerGuesses: winnerMarks,
+        winnerGuessCount,
+        bigWinnerScore,
+        totalRounds,
+      });
 
 // ==================== 次数上限 ====================
 
