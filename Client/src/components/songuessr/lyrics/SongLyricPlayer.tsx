@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { LyricPlayer } from "@applemusic-like-lyrics/react";
+import { LyricPlayer, type LyricPlayerRef } from "@applemusic-like-lyrics/react";
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
@@ -26,7 +26,7 @@ if (
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
   audioRef?: RefObject<HTMLAudioElement | null>;
-  audioPlaybackState?: "idle" | "playing" | "completed";
+  audioPlaybackState?: "idle" | "playing" | "paused" | "completed";
   audioStatus?: "loading" | "ready" | "error";
   className?: string;
 }
@@ -68,12 +68,15 @@ export function SongLyricPlayer({
   const amllLines = useMemo<LyricLine[]>(() => {
     return lines.map((line) => {
       const hasWords = Array.isArray(line.words) && line.words.length > 0;
+      const hasTranslation = Boolean(line.translatedLyric?.trim());
+
+      // 规范铁律：有些歌词同时有翻译和注音，请只显示翻译
       const words: LyricWord[] = hasWords
         ? line.words!.map((w) => ({
             startTime: w.startTime,
             endTime: w.endTime,
             word: w.word,
-            romanWord: w.romanWord ?? "",
+            romanWord: hasTranslation ? "" : (w.romanWord ?? ""),
           }))
         : [
             {
@@ -87,7 +90,7 @@ export function SongLyricPlayer({
       return {
         words,
         translatedLyric: line.translatedLyric ?? "",
-        romanLyric: line.romanLyric ?? "",
+        romanLyric: hasTranslation ? "" : (line.romanLyric ?? ""),
         startTime: line.time,
         endTime: line.endTime,
         isBG: Boolean(line.isBG),
@@ -189,6 +192,27 @@ export function SongLyricPlayer({
     return calculateLyricContainerHeight(lines);
   }, [lines]);
 
+  const isCompleted = audioPlaybackState === "completed";
+  const lyricPlayerRef = useRef<LyricPlayerRef>(null);
+
+  // 关键：在总览模式下强制将 AMLL 顶部对齐并同步立即重排，消除顶部下沉与未触发 layout 导致的少显示歌词
+  useEffect(() => {
+    const player = lyricPlayerRef.current?.lyricPlayer;
+    if (!player) return;
+
+    if (isCompleted) {
+      player.setAlignAnchor("top");
+      player.setAlignPosition(0);
+      player.setCurrentTime(firstLineTime, true);
+      player.resetScroll();
+      player.calcLayout(true, true);
+    } else {
+      player.setAlignAnchor("center");
+      player.setAlignPosition(0.5);
+      player.calcLayout(true, false);
+    }
+  }, [isCompleted, firstLineTime]);
+
   if (lines.length === 0) {
     return (
       <div
@@ -202,8 +226,6 @@ export function SongLyricPlayer({
       </div>
     );
   }
-
-  const isCompleted = audioPlaybackState === "completed";
 
   return (
     <div
@@ -220,9 +242,10 @@ export function SongLyricPlayer({
         data-testid={isCompleted ? "baka-song-lyric-overview" : "baka-song-lyric-player"}
       >
         <div className="sr-only">
-          {lines.map((l) => l.text).join(" ")}
+          {lines.map((l) => [l.text, l.translatedLyric].filter(Boolean).join(" ")).join(" ")}
         </div>
         <LyricPlayer
+          ref={lyricPlayerRef}
           className={cn(
             "baka-lyric-player h-full w-full",
             isCompleted && "baka-overview-mode",
@@ -231,7 +254,8 @@ export function SongLyricPlayer({
           currentTime={isCompleted ? firstLineTime : currentTime}
           playing={isCompleted ? false : isPlaying}
           alignAnchor={isCompleted ? "top" : "center"}
-          alignPosition={isCompleted ? 0.02 : 0.5}
+          alignPosition={isCompleted ? 0 : 0.5}
+          isSeeking={isCompleted}
           enableSpring
           enableBlur={!isCompleted}
           enableScale={false}

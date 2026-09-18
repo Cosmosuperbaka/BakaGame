@@ -7,7 +7,22 @@ export function calculateLyricContainerHeight(lines: SongLyricLine[]): number {
 
   const hasAnyTranslation = lines.some((l) => Boolean(l.translatedLyric?.trim()));
 
-  // 精确区分主歌词、和声伴唱小字（isBG）、双语翻译行及潜在折行的真实高度预算
+  // 严格依据 AMLL 真实渲染 DOM 盒模型进行物理高度核算：
+  // 1. 主歌词行：字号 1.125rem (18px)，line-height 1.8 (32.4px)，wrapper 上下 padding 0.4em (14.4px)
+  //    - 单行（<= 15 字）：48px
+  //    - 2 行折行（16 ~ 26 字）：80px
+  //    - 3 行折行（> 26 字）：112px
+  // 2. 翻译副行：字号 0.85rem (13.6px)，line-height 1.4 (19px)，margin-top 3.2px，wrapper gap 5.4px
+  //    - 单行（<= 15 字）：28px
+  //    - 2 行折行（16 ~ 28 字）：48px
+  //    - 3 行折行（> 28 字）：68px
+  // 3. 和声伴唱小字（isBG: true，字号 0.7em）：
+  //    - 单行主词：30px（长词 48px）
+  //    - 单行翻译：22px（长词 38px）
+  // 4. 真实物理间距与容器内边距：
+  //    - 行间自然间距：8px
+  //    - 容器上下内边距：p-3 (24px) ~ sm:p-4 (32px) + 上下自然呼吸留白 (20px) = 52px
+  //    - 每行单字度量冗余容差：每行额外提供 4px 安全缓冲，彻底杜绝字体字族差异导致的总览截断溢出
   let totalContentHeight = 0;
   for (const line of lines) {
     const mainLength = line.text ? line.text.trim().length : 0;
@@ -16,49 +31,47 @@ export function calculateLyricContainerHeight(lines: SongLyricLine[]): number {
     const isBackground = Boolean(line.isBG);
 
     if (isBackground) {
-      // 和声伴唱小字在 AMLL 中字号为 0.7em（约 12~14px），行高紧凑
-      let bgHeight = 22;
+      let bgHeight = 30;
       if (mainLength > 24) {
-        bgHeight = 38;
+        bgHeight = 48;
       }
       let bgTransHeight = 0;
       if (hasTranslation) {
-        bgTransHeight = transLength > 24 ? 30 : 18;
+        bgTransHeight = transLength > 24 ? 38 : 22;
       }
-      const bgSpacing = hasTranslation ? 12 : 8;
+      const bgSpacing = hasTranslation ? 10 : 8;
       totalContentHeight += bgHeight + bgTransHeight + bgSpacing;
     } else {
-      // 主歌词行（字号 1.125rem，单行高度约 32px）
-      let mainHeight = 32;
-      if (mainLength > 24) {
-        mainHeight = 54;
-      } else if (mainLength > 16) {
-        mainHeight = 42;
+      let mainHeight = 48;
+      if (mainLength > 26) {
+        mainHeight = 112;
+      } else if (mainLength > 15) {
+        mainHeight = 80;
       }
 
-      // 翻译副文本行（字号 0.85rem，单行高度约 20px）
       let translationHeight = 0;
       if (hasTranslation) {
-        if (transLength > 30) {
-          translationHeight = 44;
-        } else if (transLength > 18) {
-          translationHeight = 32;
+        if (transLength > 28) {
+          translationHeight = 68;
+        } else if (transLength > 15) {
+          translationHeight = 48;
         } else {
-          translationHeight = 22;
+          translationHeight = 28;
         }
       }
 
-      // 仅在存在翻译时留出副行间距，无翻译时采用紧凑主行间距
-      const spacing = hasTranslation ? 14 : 10;
+      const spacing = hasTranslation ? 12 : 8;
       totalContentHeight += mainHeight + translationHeight + spacing;
     }
   }
 
-  // 容器上下内边距 (p-3/sm:p-4 约 24~32px) + 顶部对齐起始偏移与呼吸留白
-  const basePadding = hasAnyTranslation ? 44 : 32;
-  const calculatedHeight = Math.ceil(totalContentHeight + basePadding);
+  // 容器上下内边距 (p-3/sm:p-4 约 24~32px) + 上下呼吸留白与每行 4px 安全冗余
+  const basePadding = 52;
+  const lineHeadroom = lines.length * 4;
+  const calculatedHeight = Math.ceil(totalContentHeight + basePadding + lineHeadroom);
 
-  // 无翻译时最小高度紧凑（110px 即可容纳 1~2 句），有翻译时保证适度呼吸感（140px）
-  const minHeight = hasAnyTranslation ? 140 : 110;
+  // 兜底最小高度
+  const minHeight = hasAnyTranslation ? 160 : 120;
   return Math.max(minHeight, calculatedHeight);
 }
+
