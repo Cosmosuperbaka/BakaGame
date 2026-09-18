@@ -160,4 +160,28 @@ describe('CCB 原生完整玩法', () => {
     expect(h.privateState(host).guesses[0].feedback.tags.every(tag => !tag.hidden)).toBe(true);
     expect(h.privateState(guest).guesses[0].feedback.tags.every(tag => !tag.hidden)).toBe(true);
   });
+
+  test('血战出题奖励仅按开局猜题人数计算，不把出题人队友算进分母', async () => {
+    const h = harness(); const setter = await h.create(); const mate = await h.join('出题人队友');
+    const winner = await h.join('猜中者'); const loser = await h.join('未猜中者');
+    await h.configure(setter, { nonstopMode: true });
+    await h.send(setter, 'ccb.player.team', { team: 1 }); await h.send(mate, 'ccb.player.team', { team: 1 });
+    await h.send(setter, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    await h.guess(winner, 3); await h.guess(winner, 1); await h.send(loser, 'ccb.game.surrender', {});
+    expect(h.snapshot(setter).roundSummary!.scores.find(score => score.playerId === setter.id)).toMatchObject({ setter: 2, reason: '难度适中' });
+    expect(h.snapshot(setter).players.find(player => player.id === mate.id)?.score).toBe(0);
+  });
+
+  test('血战猜题者离线清理不会缩小出题奖励的开局分母', async () => {
+    const h = harness(); const setter = await h.create(); const winner = await h.join('猜中者');
+    const loser = await h.join('未猜中者'); const offline = await h.join('离线者');
+    await h.configure(setter, { nonstopMode: true });
+    await h.send(setter, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    await h.guess(winner, 3); await h.guess(winner, 1);
+    h.service.unregisterConnection(offline.record.id);
+    await h.send(loser, 'ccb.game.surrender', {}); h.advance(180_001);
+    expect(h.snapshot(setter).roundSummary!.scores.find(score => score.playerId === setter.id)).toMatchObject({ setter: 4, reason: '难度适中' });
+  });
 });
