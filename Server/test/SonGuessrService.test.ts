@@ -3634,6 +3634,130 @@ describe("上线前 P0 修复回归", () => {
     expect(AUTO_ANIME_CANDIDATE_LIMIT).toBeGreaterThan(0);
     expect(AUTO_SONG_CANDIDATE_LIMIT).toBeGreaterThan(0);
   });
+
+  test("音频准备超时仅强制置为就绪并启动答题计时，绝不当作答题超时盗扣猜测配额", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-audiowait");
+    const guest = connection(service, "guest-audiowait");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "等待音频玩家");
+    await startRound(service, host, guest, hostState.playerId);
+
+    const initialSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(initialSnapshot.phase).toBe("playing");
+
+    const guestInitialPrivate = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(guestInitialPrivate.canGuess).toBe(false);
+    expect(guestInitialPrivate.canGiveUp).toBe(true);
+    expect(guestInitialPrivate.remainingGuesses).toBe(3);
+
+    // 时间前移 16 秒（超过 15 秒的 audioReadyDeadlineAt）
+    mockTime += 16_000;
+    await service.runHousekeeping();
+
+    // 巡检后音频就绪宽限期结束：强制置为可答题状态并启动倒计时，但绝不扣除猜测机会
+    const guestUpdatedPrivate = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(guestUpdatedPrivate.canGuess).toBe(true);
+    expect(guestUpdatedPrivate.remainingGuesses).toBe(3);
+    expect(guestUpdatedPrivate.visibleAttempts).toHaveLength(0);
+    expect(guestUpdatedPrivate.guessDeadlineAt).toBe(mockTime + 60_000);
+
+    const currentSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(currentSnapshot.phase).toBe("playing");
+    const guestPlayerView = currentSnapshot.players.find((p) => p.name === "等待音频玩家");
+    expect(guestPlayerView?.roundStatus).toBe("guessing");
+    expect(guestPlayerView?.guessesUsed).toBe(0);
+  });
+
+  test("活跃玩家切轮断线重连后通过 ensureRoundPlayerState 自动恢复回合状态且可正常答题", async () => {
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "host-reconnect-test");
+    const guest = connection(service, "guest-reconnect-test");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "重连玩家");
+    const guestToken = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").sessionToken;
+
+    // 玩家先设为准备
+    await execute(service, guest, {
+      id: "guest-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+
+    // 模拟重连玩家临时掉线
+    service.unregisterConnection(guest.id);
+
+    // 房主开局（回合安装时该玩家离线）
+    await execute(service, host, {
+      id: "ready-1",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "start-game",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "choose-self",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "submit-song",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+
+    const playingSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(playingSnapshot.phase).toBe("playing");
+
+    // 玩家重新连入房间
+    const guestReconnected = connection(service, "guest-reconnected");
+    const reconnectResult = (await execute(service, guestReconnected, {
+      id: "guest-reconnect",
+      type: "song.room.reconnect",
+      payload: { roomId: "1234", sessionToken: guestToken },
+    })) as any;
+
+    expect(reconnectResult.privateState).toBeDefined();
+    expect(reconnectResult.privateState.remainingGuesses).toBe(3);
+    expect(reconnectResult.privateState.canGiveUp).toBe(true);
+
+    // 上报音频就绪后即可正常答题
+    await execute(service, guestReconnected, {
+      id: "audio-ready",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    const readyPrivateState = lastEvent<SonGuessrPrivateState>(guestReconnected, "song.game.privateState");
+    expect(readyPrivateState.canGuess).toBe(true);
+
+    // 提交猜测成功
+    const guessResult = (await execute(service, guestReconnected, {
+      id: "guess-song",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    })) as any;
+    expect(guessResult.attempt.result).toBe("correct");
+  });
 });
 
 

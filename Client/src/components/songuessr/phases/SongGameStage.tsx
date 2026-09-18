@@ -390,7 +390,11 @@ export function GameStage(props: SongGameAreaProps) {
                 <Button className="flex-1 gap-2" onClick={() => openSearch("guess")}>
                   <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "番剧猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
                 </Button>
-              ) : null}
+              ) : (
+                <p className="flex-1 py-2 text-center text-sm text-muted-foreground">
+                  音频准备中，请稍候...
+                </p>
+              )}
               {privateState.canGiveUp ? (
                 <Button
                   variant="outline"
@@ -414,7 +418,11 @@ export function GameStage(props: SongGameAreaProps) {
               {snapshot.solo ? "你已放弃本回合" : "你已放弃本回合，等待其他玩家"}
             </p>
           ) : !privateState.isSubmitter ? (
-            <p className="text-center text-sm text-muted-foreground">本轮操作已完成</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {privateState.remainingGuesses > 0 && me?.roundStatus !== "finished" && me?.roundStatus !== "correct"
+                ? "音频准备中，请稍候..."
+                : "本轮操作已完成"}
+            </p>
           ) : null}
         </section>
         <AttemptList
