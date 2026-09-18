@@ -102,7 +102,8 @@ describe("SongLyricPlayer", () => {
     );
 
     const container = screen.getByTestId("baka-song-lyric-container");
-    expect(container.style.height).toBe("220px");
+    const height = parseInt(container.style.height, 10);
+    expect(height).toBe(154);
 
     const overview = screen.getByTestId("baka-song-lyric-overview");
     expect(overview).toBeInTheDocument();
@@ -111,6 +112,13 @@ describe("SongLyricPlayer", () => {
     expect(screen.queryByText(/重播可再次查看/)).toBeNull();
 
     expect(screen.getByText(/选中的第一句歌词/)).toBeInTheDocument();
+  });
+
+  it("无歌词或空数组时显示紧凑型纯音乐提示", () => {
+    render(<SongLyricPlayer lines={[]} />);
+    const emptyEl = screen.getByTestId("baka-song-lyric-empty");
+    expect(emptyEl).toBeInTheDocument();
+    expect(emptyEl).toHaveClass("h-24");
   });
 
   it("歌词组件拦截并阻止滚轮事件向下冒泡，避免组件内部错位滚动", () => {
@@ -155,7 +163,21 @@ describe("SongLyricPlayer", () => {
     render(<SongLyricPlayer lines={lines} audioPlaybackState="completed" />);
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    expect(height).toBeGreaterThanOrEqual(400);
+    expect(height).toBeGreaterThanOrEqual(300);
+  });
+
+  it("当包含和声伴唱歌词（isBG）时精确核算其高度预算", () => {
+    const linesWithBG: SongLyricLine[] = [
+      { time: 1000, endTime: 3000, text: "主歌词第一行" },
+      { time: 1500, endTime: 2500, text: "和声伴唱小字 (Yeah~)", isBG: true },
+      { time: 3000, endTime: 5000, text: "主歌词第二行" },
+    ];
+
+    render(<SongLyricPlayer lines={linesWithBG} audioPlaybackState="completed" />);
+    const container = screen.getByTestId("baka-song-lyric-container");
+    const height = parseInt(container.style.height, 10);
+    // 2句主歌词(42*2=84) + 1句和声(30) + 基础内边距(32) = 146
+    expect(height).toBe(146);
   });
 });
 
