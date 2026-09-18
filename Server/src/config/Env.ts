@@ -23,12 +23,6 @@ export interface AppEnv {
   bangumiCharacterDbPath?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
-  /**
-   * 原版 CCB 服务器地址：兼容房间与角色使用率上报都用它。
-   * `readEnv()` 恒返回字符串（未配置时为空串＝相关能力停用）；声明可选是因为
-   * 大量测试夹具直接手写 `AppEnv` 字面量，消费端用 `?? ""` 兜底。
-   */
-  ccbOriginalServerUrl?: string;
   enableGeneralUnblock?: boolean;
 }
 
@@ -174,9 +168,6 @@ export const readEnv = (): AppEnv => {
     bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
     bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
-    // 原版 CCB 服务器地址只从环境变量注入：仓库里不写默认地址，
-    // 未配置（空字符串）即停用兼容房间与角色使用率上报。
-    ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? "").replace(/\/+$/, ""),
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
       : true,

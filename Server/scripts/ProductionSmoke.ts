@@ -103,16 +103,7 @@ try {
     throw new Error("SonGuessr 订阅 ACK 类型异常");
   }
 
-  const ccb = await openSocket("/api/ccb/ws");
-  sockets.push(ccb);
-  const ccbAckPromise = waitForAck(ccb, "smoke-ccb");
-  ccb.send(JSON.stringify({ id: "smoke-ccb", type: "ccb.lobby.subscribeRooms", payload: {} }));
-  const ccbAck = await ccbAckPromise;
-  if (ccbAck.requestType !== "ccb.lobby.subscribeRooms") {
-    throw new Error("CCB 订阅 ACK 类型异常");
-  }
-
-  console.log("生产服务冒烟通过: /health /livez /readyz 与三个 WebSocket 订阅");
+  console.log("生产服务冒烟通过: /health /livez /readyz 与两个 WebSocket 订阅");
 } finally {
   for (const socket of sockets) socket.close();
   server.kill("SIGTERM");
