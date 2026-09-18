@@ -219,13 +219,28 @@ test("CCB 协议拒绝脏字段、非法载荷与未挂载指令", () => {
     expect.objectContaining({ code: "INVALID_MESSAGE" }),
   );
 
-  // 对局指令已在 P1b 挂载；P3 的手动出题指令仍未挂载，此刻应明确报未知类型。
+  // 对局指令已在 P1b 挂载，P3 的手动出题指令随之挂上；两者此刻都应被接受。
   expect(parseCCBMessage({ id: "start", type: "ccb.game.start", payload: {} })).toMatchObject({
     type: "ccb.game.start",
   });
+  expect(
+    parseCCBMessage({
+      id: "choose-setter",
+      type: "ccb.game.chooseSetter",
+      payload: { playerId: "p1" },
+    }),
+  ).toMatchObject({ type: "ccb.game.chooseSetter" });
+  expect(
+    parseCCBMessage({
+      id: "set-answer",
+      type: "ccb.game.setAnswer",
+      payload: { characterId: 1 },
+    }),
+  ).toMatchObject({ type: "ccb.game.setAnswer" });
+  // 但载荷仍要严格校验：`characterId` 必填。
   expect(() =>
     parseCCBMessage({ id: "set-answer", type: "ccb.game.setAnswer", payload: {} }),
-  ).toThrow(expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" }));
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
 
 test("CCB 协议接受 JSON 字符串输入", () => {
