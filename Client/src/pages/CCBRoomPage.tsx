@@ -19,18 +19,17 @@ import {
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
-import { Switch } from "@/components/ui/Switch";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { Seo } from "@/components/common/Seo";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { CCBGameArea } from "@/components/ccb/GameArea";
 import { PlayerList } from "@/components/ccb/PlayerList";
+import { CCBSettingsDialog } from "@/components/ccb/CCBSettingsDialog";
 import { backdrop, duration, ease, spring } from "@/lib/Motion";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import { CCBWs } from "@/lib/CCBWs";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
-import type { CCBRoomSnapshot } from "@/types";
+import type { CCBRoomSnapshot, CCBGameSettings } from "@/types";
 
 type MobilePanel = "none" | "players" | "chat";
 
@@ -218,6 +217,18 @@ export default function CCBRoomPage() {
     setNeedsPassword(false);
     await enterWithName(pendingJoinName, passwordDraft);
   }, [enterWithName, passwordDraft, pendingJoinName, setNeedsPassword]);
+
+  const handleApplySettings = useCallback(
+    async (settings: CCBGameSettings) => {
+      try {
+        await sendCommand("ccb.room.updateSettings", { settings });
+        setNotice("设置已更新", "success");
+      } catch (error) {
+        setNotice((error as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, setNotice],
+  );
 
   if (!snapshot || !privateState) {
     return (
@@ -436,68 +447,15 @@ export default function CCBRoomPage() {
         </DialogContent>
       </Dialog>
 
-      <RoomSettingsDialog
+      <CCBSettingsDialog
         open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        snapshot={snapshot}
+        settings={snapshot.settings}
+        isMultiplayer={true}
+        onClose={() => setSettingsOpen(false)}
+        onApply={handleApplySettings}
       />
     </>
   );
-}
-
-function RoomSettingsDialog({
-  open,
-  onOpenChange,
-  snapshot,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  snapshot: CCBRoomSnapshot;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <RoomSettingsForm snapshot={snapshot} onClose={() => onOpenChange(false)} />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/**
- * 表单草稿挂在 Dialog 内容内部：Radix 关闭时会卸载内容，因此每次打开都从当前快照重新初始化，
- * 不需要用 effect 把 props 同步进 state。
- */
-function RoomSettingsForm({
-  snapshot,
-  onClose,
-}: {
-  snapshot: CCBRoomSnapshot;
-  onClose: () => void;
-}) {
-  const updateSettings = useCCBStore((state) => state.updateSettings);
-  const setNotice = useCCBStore((state) => state.setNotice);
-  const [name, setName] = useState(snapshot.name);
-  const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
-  const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
-  const [pending, setPending] = useState(false);
-
-  const dirty =
-    name.trim() !== snapshot.name ||
-    isPrivate !== (snapshot.visibility === "private") ||
-    allowSpectators !== snapshot.allowSpectators ||
-    password.trim().length > 0;
-
-  const handleSave = async () => {
-    setPending(true);
-    try {
-      await updateSettings({
-        name: name.trim() || snapshot.name,
-        visibility: isPrivate ? "private" : "public",
-        ...(isPrivate && password.trim() ? { password: password.trim() } : {}),
-        allowSpectators,
-      });
-      onClose();
     } catch (error) {
       setNotice((error as { message: string }).message, "error");
     } finally {
