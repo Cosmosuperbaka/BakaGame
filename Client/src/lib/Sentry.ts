@@ -29,7 +29,6 @@ export interface SentryOptions {
   tracesSampleRate?: number;
   replaysSessionSampleRate?: number;
   replaysOnErrorSampleRate?: number;
-  profilesSampleRate?: number;
 }
 
 /**
@@ -70,12 +69,10 @@ export const initClientSentry = (
     tracesSampleRate: options?.tracesSampleRate ?? 0.1,
     replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,
     replaysOnErrorSampleRate: options?.replaysOnErrorSampleRate ?? 1,
-    profilesSampleRate: options?.profilesSampleRate ?? 0.1,
     enableLogs: true,
     integrations: [
       Sentry.browserTracingIntegration(),
       Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
-      Sentry.browserProfilingIntegration(),
       Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
     ],
     ignoreErrors: [
