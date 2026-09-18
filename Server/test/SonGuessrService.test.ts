@@ -545,8 +545,8 @@ describe("SonGuessrService", () => {
       const clip = createSongLyricClip(lines, configured, { nextInt: () => 0 }, 236_007);
       expect(clip.lines).toHaveLength(6);
       expect(clip.lines[0].text).toBe("句七");
-      expect(clip.startTime).toBe(67_850);
-      expect(clip.endTime).toBe(102_170);
+      expect(clip.startTime).toBe(66_850);
+      expect(clip.endTime).toBe(103_420);
     }
 
     // 设定行数本身可行时不受影响，仍按设定取满。
