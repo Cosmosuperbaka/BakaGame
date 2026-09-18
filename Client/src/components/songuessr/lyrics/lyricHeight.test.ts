@@ -5,6 +5,7 @@ import {
   estimateLyricOverviewHeight,
   measureLyricOverviewHeight,
   readMeasuredGroupHeights,
+  resolveLyricPlayerHeight,
 } from "./lyricHeight";
 import type { SongLyricLine } from "@/types";
 
@@ -77,18 +78,11 @@ describe("estimateLyricOverviewHeight", () => {
 describe("calculateLyricContainerHeight", () => {
   const lines = [line("选中的第一句歌词", { translatedLyric: "Translation 1" })];
 
-  it("总览模式按 scale(0.92) 反向补偿，并叠加外壳真实上下内边距", () => {
-    const content = estimateLyricOverviewHeight(lines, 560);
-    expect(
-      calculateLyricContainerHeight({ lines, contentWidth: 560, containerPadding: 34, overview: true }),
-    ).toBe(Math.ceil(content * LYRIC_OVERVIEW_SCALE + 34));
-  });
-
-  it("非总览模式不做缩放补偿", () => {
+  it("外壳高度恒定按 scale(0.92) 反向补偿，并叠加外壳真实上下内边距", () => {
     const content = estimateLyricOverviewHeight(lines, 560);
     expect(
       calculateLyricContainerHeight({ lines, contentWidth: 560, containerPadding: 34 }),
-    ).toBe(Math.ceil(content + 34));
+    ).toBe(Math.ceil(content * LYRIC_OVERVIEW_SCALE + 34));
   });
 
   it("原生实测值优先于解析式估算", () => {
@@ -98,15 +92,30 @@ describe("calculateLyricContainerHeight", () => {
         contentWidth: 560,
         containerPadding: 34,
         measuredContentHeight: 200,
-        overview: true,
       }),
     ).toBe(Math.ceil(200 * LYRIC_OVERVIEW_SCALE) + 34);
   });
 
   it("内容宽度不足时退回兜底宽度，不会算出 0 高", () => {
     expect(
-      calculateLyricContainerHeight({ lines, contentWidth: 0, containerPadding: 34, overview: true }),
+      calculateLyricContainerHeight({ lines, contentWidth: 0, containerPadding: 34 }),
     ).toBeGreaterThan(34);
+  });
+
+  it("装箱常量随实测字号等比缩放，根字号不是 16px 时不再整体偏差", () => {
+    const base = 21.6; // 根字号 19.2px 时的 1.125rem 实测值
+    const ratio =
+      estimateLyricOverviewHeight([line("第一句普通歌词")], 672, base) /
+      estimateLyricOverviewHeight([line("第一句普通歌词")], 560, 18);
+    // 固定 2px 安全冗余不随字号缩放，允许 0.05 内的偏差
+    expect(ratio).toBeCloseTo(base / 18, 1);
+  });
+});
+
+describe("resolveLyricPlayerHeight", () => {
+  it("总览态注入未缩放自然高度，播放态与外壳同高", () => {
+    expect(resolveLyricPlayerHeight(544, true)).toBe(544);
+    expect(resolveLyricPlayerHeight(544, false)).toBeCloseTo(544 * LYRIC_OVERVIEW_SCALE, 5);
   });
 });
 
@@ -122,17 +131,13 @@ describe("measureLyricOverviewHeight", () => {
     expect(measureLyricOverviewHeight(fakePlayer([53, null]))).toBeNull();
   });
 
-  it("测量值与元素当前 clientHeight 不一致（旧值残留）时返回 null", () => {
-    expect(measureLyricOverviewHeight(fakePlayer([53, 31], [53, 27]))).toBeNull();
-  });
-
   it("歌词组元素未挂载到 DOM（未进入视野）时返回 null", () => {
     const player = fakePlayer([53]) as unknown as { currentLyricGroups: FakeGroup[] };
     player.currentLyricGroups[0].element.isConnected = false;
     expect(measureLyricOverviewHeight(player as never)).toBeNull();
   });
 
-  it("测量齐全且与元素一致时返回各组实测高度之和", () => {
+  it("测量齐全且全部挂载时返回各组实测高度之和", () => {
     const player = fakePlayer([53, 31]);
     expect(readMeasuredGroupHeights(player)).toEqual([53, 31]);
     expect(measureLyricOverviewHeight(player)).toBe(84);
