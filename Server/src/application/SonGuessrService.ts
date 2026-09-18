@@ -568,8 +568,7 @@ export class SonGuessrService {
     player.online = false;
     player.connectionId = undefined;
     player.lastSeenAt = this.now();
-    connection.roomId = undefined;
-    connection.playerId = undefined;
+    this.connections.detach(connection);
 
     if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
       room.emptySinceAt ??= this.now();
@@ -985,8 +984,7 @@ export class SonGuessrService {
     const { room, player } = this.requireRoomPlayer(connection);
     if (!keepMusicSession) this.clearMusicSession(room, player.id);
     delete room.players[player.id];
-    connection.roomId = undefined;
-    connection.playerId = undefined;
+    this.connections.detach(connection);
 
     if (Object.keys(room.players).length === 0 && !this.isTestRoom(room)) {
       this.closeRoom(room, "empty");
@@ -1269,8 +1267,7 @@ export class SonGuessrService {
       (targetConnection.sendPacket ?? targetConnection.send)(
         createEvent("song.room.kicked", { roomId: room.id }),
       );
-      targetConnection.roomId = undefined;
-      targetConnection.playerId = undefined;
+      this.connections.detach(targetConnection);
       targetConnection.close(4003, "kicked");
     }
 
@@ -2662,8 +2659,7 @@ export class SonGuessrService {
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
     this.connections.broadcastToRoom(room.id, createEvent("song.room.closed", { roomId: room.id, reason }));
     for (const connection of this.connections.getRoomConnections(room.id)) {
-      connection.roomId = undefined;
-      connection.playerId = undefined;
+      this.connections.detach(connection);
     }
     room.musicSession = undefined;
     this.rooms.delete(room.id);
@@ -2677,17 +2673,16 @@ export class SonGuessrService {
   ) {
     const previous = this.connections.findConnectionByPlayer(room.id, player.id);
     if (previous && previous.id !== connection.id) {
-      (previous.sendPacket ?? previous.send)(createEvent("session.replaced", { roomId: room.id }));
-      previous.roomId = undefined;
-      previous.playerId = undefined;
+      // 统一带上 song. 前缀；客户端保留对裸名的兼容分支，避免旧客户端收不到。
+      (previous.sendPacket ?? previous.send)(createEvent("song.session.replaced", { roomId: room.id }));
+      this.connections.detach(previous);
       previous.close(4001, "session_replaced");
     }
     player.online = true;
     player.connectionId = connection.id;
     player.lastSeenAt = this.now();
     connection.resetStateSync?.();
-    connection.roomId = room.id;
-    connection.playerId = player.id;
+    this.connections.attach(connection, room.id, player.id);
   }
 
   private appendSystemMessage(room: SonGuessrRoomRecord, text: string) {
@@ -2790,8 +2785,7 @@ export class SonGuessrService {
     }
     // 房间已经不存在（或只有一半字段有值）时，requireRoomPlayer 会抛 ROOM_NOT_FOUND
     // 并把正常的 create / join / reconnect 一起打断；这种残余状态退回原来的置空即可。
-    connection.roomId = undefined;
-    connection.playerId = undefined;
+    this.connections.detach(connection);
   }
 
   private ensureHost(room: SonGuessrRoomRecord, playerId: string) {
