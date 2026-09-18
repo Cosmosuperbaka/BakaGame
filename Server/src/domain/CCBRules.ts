@@ -16,8 +16,8 @@ function compareNumber(value: number, answer: number, equal: number, near: numbe
   return { value, comparison };
 }
 export function buildCCBFeedback(guess: CCBCharacterView, answer: CCBCharacterView, settings: CCBSettings): CCBFeedback {
-  const answerIds = new Set(answer.appearances.map(item => item.id));
-  const byId = guess.appearances.filter(item => answerIds.has(item.id));
+  const answerIds = new Set(answer.appearances.filter(item => item.id > 0).map(item => item.id));
+  const byId = guess.appearances.filter(item => item.id > 0 && answerIds.has(item.id));
   const answerNames = new Set(answer.appearances.map(item => item.name));
   const sharedAppearances = byId.length ? byId : guess.appearances.filter(item => answerNames.has(item.name));
   const tags: CCBFeedback['tags'] = [];
