@@ -9,6 +9,9 @@ const schemas = Object.fromEntries(Object.entries(CCBPayloadSchemas).map(([type,
     sessionToken: t.Optional(t.String({ maxLength: 128 })), payload }, { additionalProperties: false }),
 ]));
 export function parseCCBMessage(input: unknown): CCBClientMessage {
+  if (typeof input === 'string') {
+    try { input = JSON.parse(input); } catch { throw new AppError('INVALID_MESSAGE', '消息必须为合法 JSON 字符串'); }
+  }
   const type = (input as { type?: CCBCommand } | null)?.type;
   if (!type || !Object.hasOwn(schemas, type)) throw new AppError('UNKNOWN_MESSAGE_TYPE', '未知的角色游戏指令');
   if (!Value.Check(schemas[type]!, input)) throw new AppError('INVALID_MESSAGE', '指令参数不合法');

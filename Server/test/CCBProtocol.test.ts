@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { parseCCBMessage } from '../src/transport/CCBProtocol';
-import { createDefaultCCBSettings } from '../src/shared/CCB';
+import { createDefaultCCBSettings, parseCCBSettings } from '../src/shared/CCB';
 
 describe('CCB 协议边界', () => {
+  test('设置文件与网络消息共用严格契约，原始字符串解析不接受损坏数据', () => {
+    const settings = createDefaultCCBSettings(2026);
+    expect(parseCCBSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    expect(() => parseCCBSettings({ ...settings, timeLimit: '60' })).toThrow('设置文件格式不正确');
+    expect(() => parseCCBSettings({ ...settings, avatar: 1 })).toThrow('设置文件格式不正确');
+    const message = { id: 'read-1', type: 'ccb.character.search', payload: { keyword: '助手' } };
+    expect(parseCCBMessage(JSON.stringify(message))).toEqual(message);
+    expect(() => parseCCBMessage('{')).toThrow('消息必须为合法 JSON 字符串');
+  });
   test('猜测仅接受角色标识，拒绝客户端判中与旧留言', () => {
     const message = { id: 'guess-1', type: 'ccb.game.guess' as const, payload: { characterId: 42 } };
     expect(parseCCBMessage(message)).toEqual(message);

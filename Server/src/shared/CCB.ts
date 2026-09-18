@@ -1,4 +1,5 @@
 import { Type as t, type Static } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
 import type { ChatMessage, RoomVisibility } from './Model';
 import type { ClientEnvelope } from './Protocol';
 
@@ -18,6 +19,10 @@ export const CCBSettingsSchema = t.Object({
   syncMode: t.Boolean(), nonstopMode: t.Boolean(),
 }, strict);
 export type CCBSettings = Static<typeof CCBSettingsSchema>;
+export function parseCCBSettings(value: unknown): CCBSettings {
+  if (!Value.Check(CCBSettingsSchema, value)) throw new Error('设置文件格式不正确');
+  return value;
+}
 export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSettings => ({
   startYear: year - 5, endYear: year, topNSubjects: 20, useSubjectPerYear: false,
   metaTags: ['', '', ''], useIndex: false, indexId: null, addedSubjects: [],
