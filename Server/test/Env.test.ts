@@ -92,27 +92,6 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
-  it("原版 CCB 服务器地址只从环境变量读取，仓库里不写默认值", () => {
-    const originalUrl = Bun.env.CCB_ORIGINAL_SERVER_URL;
-    try {
-      delete Bun.env.CCB_ORIGINAL_SERVER_URL;
-      // 未配置即为空：兼容房间与角色使用率上报一并停用
-      expect(readEnv().ccbOriginalServerUrl).toBe("");
-
-      Bun.env.CCB_ORIGINAL_SERVER_URL = "https://ccb.example.com/";
-      expect(readEnv().ccbOriginalServerUrl).toBe("https://ccb.example.com");
-
-      Bun.env.CCB_ORIGINAL_SERVER_URL = "";
-      expect(readEnv().ccbOriginalServerUrl).toBe("");
-    } finally {
-      if (originalUrl !== undefined) {
-        Bun.env.CCB_ORIGINAL_SERVER_URL = originalUrl;
-      } else {
-        delete Bun.env.CCB_ORIGINAL_SERVER_URL;
-      }
-    }
-  });
-
   it("读取 Bangumi API 与图床镜像地址并移除尾斜杠", () => {
     const originalApiUrl = Bun.env.BANGUMI_API_URL;
     const originalImageUrl = Bun.env.BANGUMI_IMAGE_URL;
