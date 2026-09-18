@@ -15,6 +15,7 @@ import {
   calculateLyricContainerHeight,
   measureLyricOverviewHeight,
   resolveLyricContentHeight,
+  resolveLyricPlayerHeight,
 } from "./lyricHeight";
 
 // 拦截 AMLL 内部开发环境输出的调试日志（“设置歌词行”、“歌词处理完成”等），保持控制台纯净
@@ -35,8 +36,16 @@ if (
   };
 }
 
-/** 总览原生实测的最大重试帧数：内核按 overscan 挂载歌词行 DOM，通常 2 ~ 4 帧即测量齐全 */
-const MAX_MEASURE_FRAMES = 60;
+/** 原生实测的最大重试帧数：全量挂载后通常 2 ~ 4 帧即测量齐全 */
+const MAX_MEASURE_FRAMES = 600;
+/** 测量值需连续稳定这么多帧才采信，过滤字体加载与占位尺寸造成的瞬态 */
+const MEASURE_STABLE_FRAMES = 8;
+/**
+ * 视野缓冲距离调大到全量级别：内核只挂载「进入视野」的歌词行，若按默认 300px，
+ * 外壳偏矮时末尾行永远不会挂载 → 永远测不到 → 高度永远算不准（死循环）。
+ * 题目歌词最多十来行，全量挂载毫无性能压力。
+ */
+const LYRIC_OVERSCAN_PX = 4000;
 
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
@@ -203,8 +212,14 @@ export function SongLyricPlayer({
     };
   }, [audioRef, firstLineTime, audioPlaybackState, audioStatus]);
 
-  // 容器真实可用宽度与上下内边距：折行行数与外壳高度补偿都依赖真实盒模型，严禁写死数值
-  const [shellMetrics, setShellMetrics] = useState({ contentWidth: 0, containerPadding: 0 });
+  // 容器真实可用宽度、上下内边距与播放器实测字号：
+  // 折行行数、装箱常量与外壳高度补偿都依赖真实盒模型，严禁写死数值
+  // （根字号并非固定 16px，`rem` 相关常量必须实测，否则整体偏差可达 20%）
+  const [shellMetrics, setShellMetrics] = useState({
+    contentWidth: 0,
+    containerPadding: 0,
+    baseFontSize: 0,
+  });
 
   const syncShellMetrics = useCallback((node: HTMLElement | null) => {
     if (!node) return;
@@ -213,12 +228,16 @@ export function SongLyricPlayer({
     const paddingY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
     const borderY =
       (parseFloat(styles.borderTopWidth) || 0) + (parseFloat(styles.borderBottomWidth) || 0);
+    const playerEl = node.querySelector(".amll-lyric-player");
+    const baseFontSize = playerEl ? parseFloat(getComputedStyle(playerEl).fontSize) || 0 : 0;
     const contentWidth = Math.max(node.clientWidth - paddingX, 0);
     const containerPadding = paddingY + borderY;
     setShellMetrics((prev) =>
-      prev.contentWidth === contentWidth && prev.containerPadding === containerPadding
+      prev.contentWidth === contentWidth &&
+      prev.containerPadding === containerPadding &&
+      prev.baseFontSize === baseFontSize
         ? prev
-        : { contentWidth, containerPadding },
+        : { contentWidth, containerPadding, baseFontSize },
     );
   }, []);
 
@@ -241,46 +260,60 @@ export function SongLyricPlayer({
 
   const isCompleted = audioPlaybackState === "completed";
 
-  // 总览高度优先取 AMLL 原生实测值（Σ 各组实测行高，与容器高度无关），
-  // 测量齐全前用解析式估算兜底：估算误差只会短暂存在，不会固化为多余留白或裁切。
-  // 实测结果与「题目 + 宽度 + 模式」绑定，键不匹配即视为无效（无需在 Effect 内重置状态）。
-  const measurementKey = `${isCompleted}:${linesKey}:${shellMetrics.contentWidth}`;
+  // 高度优先取 AMLL 原生实测值（Σ 各组实测行高，与容器高度、播放/总览模式均无关），
+  // 播放阶段即完成测量并锁定：切入总览时外壳高度零变化，动画只剩缩放本身。
+  // 测量齐全前用解析式估算兜底（常量随实测字号等比推导，误差通常 < 3%）。
+  // 实测结果与「题目 + 宽度 + 字号」绑定，键不匹配即视为无效（避免在 Effect 内同步 setState）。
+  const measurementKey = `${linesKey}:${shellMetrics.contentWidth}:${shellMetrics.baseFontSize}`;
   const [measurement, setMeasurement] = useState<{ key: string; height: number } | null>(null);
 
   useEffect(() => {
-    if (!isCompleted) return;
-
     let rafId = 0;
-    let attempts = 0;
+    let frames = 0;
+    let candidate: number | null = null;
+    let stableFrames = 0;
 
     const poll = () => {
       const player = lyricPlayerRef.current?.lyricPlayer;
+      if (player && player.getOverscanPx() < LYRIC_OVERSCAN_PX) {
+        player.setOverscanPx(LYRIC_OVERSCAN_PX);
+      }
       const measured = measureLyricOverviewHeight(player);
       if (measured !== null) {
-        setMeasurement({ key: measurementKey, height: measured });
-        return;
+        // 首帧测量常落在字体加载 / content-visibility 占位等瞬态上（实测可偏差 3%），
+        // 必须等数值连续多帧稳定后才采信，否则会把瞬态值固化为外壳高度
+        if (candidate !== null && Math.abs(candidate - measured) < 1) {
+          stableFrames += 1;
+        } else {
+          candidate = measured;
+          stableFrames = 0;
+        }
+        if (stableFrames >= MEASURE_STABLE_FRAMES && measured > 0) {
+          setMeasurement({ key: measurementKey, height: measured });
+          return;
+        }
       }
-      if (attempts < MAX_MEASURE_FRAMES) {
-        attempts += 1;
+      frames += 1;
+      if (frames < MAX_MEASURE_FRAMES) {
         rafId = requestAnimationFrame(poll);
       }
     };
 
     rafId = requestAnimationFrame(poll);
     return () => cancelAnimationFrame(rafId);
-  }, [isCompleted, measurementKey]);
+  }, [measurementKey]);
 
   const measuredContentHeight =
     measurement && measurement.key === measurementKey ? measurement.height : null;
 
-  // 根据当前题目歌词行数、文本折行与翻译副行，核算总览所需的精确高度
+  // 外壳高度恒定（播放/总览同一高度）：切入总览时只有缩放在动，过渡天然连贯
   const { contentHeight, containerHeight } = useMemo(() => {
     const options = {
       lines,
       contentWidth: shellMetrics.contentWidth,
       containerPadding: shellMetrics.containerPadding,
+      baseFontSize: shellMetrics.baseFontSize,
       measuredContentHeight,
-      overview: isCompleted,
     };
     return {
       contentHeight: resolveLyricContentHeight(options),
@@ -290,8 +323,8 @@ export function SongLyricPlayer({
     lines,
     shellMetrics.contentWidth,
     shellMetrics.containerPadding,
+    shellMetrics.baseFontSize,
     measuredContentHeight,
-    isCompleted,
   ]);
 
   // 关键：在总览模式下强制将 AMLL 顶部对齐并同步立即重排，消除顶部下沉与未触发 layout 导致的少显示歌词
@@ -331,8 +364,7 @@ export function SongLyricPlayer({
       ref={attachContainer}
       style={{ height: `${containerHeight}px` }}
       className={cn(
-        // 高度过渡与 AMLL 总览的 scale(0.92) 缩放同频同缓动：
-        // 若两者不同步，过渡途中外壳会瞬时矮于已缩放内容而产生裁切
+        // 高度全程恒定，过渡仅是保险；总览缩放为 500ms / cubic-bezier(0.16,1,0.3,1)
         "relative flex w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none transition-[height] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
         className,
       )}
@@ -347,11 +379,11 @@ export function SongLyricPlayer({
         </div>
         <LyricPlayer
           ref={lyricPlayerRef}
-          // 播放器本体锁定「未缩放的歌词自然高度」：外壳已按 0.92 反向补偿，
-          // 本体保持自然高度才能既不被裁切、也不留多余留白
+          // 播放态本体与外壳同高（保证居中锚点落在可视区正中）；
+          // 总览态本体保持未缩放的歌词自然高度，缩放后恰好填满外壳，既不裁切也不留白
           style={
             {
-              "--baka-lyric-player-height": `${Math.round(contentHeight)}px`,
+              "--baka-lyric-player-height": `${Math.round(resolveLyricPlayerHeight(contentHeight, isCompleted))}px`,
             } as CSSProperties
           }
           className={cn(

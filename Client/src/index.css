@@ -333,6 +333,11 @@ img {
 .baka-lyric-player [class*="lyricLineWrapper"] {
   align-items: center !important;
   text-align: center !important;
+  /* 歌词组上下 padding 与 gap 播放/总览统一为 .25em / .2em（覆盖内核默认 .4em）：
+     两组模式盒模型完全一致，原生实测的高度才能跨模式复用，切换总览时高度零跳变 */
+  padding-top: 0.25em !important;
+  padding-bottom: 0.25em !important;
+  gap: 0.2em !important;
 }
 
 .baka-lyric-player [class*="lyricLine"] {
@@ -416,10 +421,14 @@ img {
   text-shadow: none !important;
 }
 
-.baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"] {
-  padding-top: 0.25em !important;
-  padding-bottom: 0.25em !important;
-  gap: 0.2em !important;
+/* 逐字遮罩是「已唱/未唱」的卡拉OK渐变：总览态没有进度推进，未唱词会被
+   --dark-mask-alpha(0.4) 压到 40% 不透明度导致整段发灰，且 opacity/color 覆盖救不了 mask。
+   总览态要求纯黑展示，直接摘除遮罩。 */
+.baka-lyric-player.baka-overview-mode span {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: 1 !important;
 }
 
 .baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"],
