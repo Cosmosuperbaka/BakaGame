@@ -135,6 +135,7 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - `createSongLyricClip` 必须保证选取的歌词窗口具备演唱连续性，相邻两句之间的间隔必须满足 `lines[i].time - lines[i - 1].endTime <= MAX_LYRIC_INTERLUDE_GAP_MS`（6 秒）。
 - 严禁将跨越数十秒超长乐器间奏（如《一样的月光》中间 54 秒间奏）的两段唱词强行拼接为一个出题窗口。当设定行数大于间奏前后的连续段长度时，算法必须主动收缩行数选择紧凑连续段，保证题目片段节奏连贯。
 - **和声歌词出题屏蔽与仅在播放演出**：选词滑动窗口必须过滤排除和声歌词（`line.isBG`），仅以主歌词作为候选基准。**严禁以和声歌词作为题目开头，严禁和声歌词充抵题目行数**（避免小字歌词导致题目还没唱完音频就被过早截断）。音频时长严格覆盖主歌词时间窗口；同时落在该出题区间内的所有和声歌词完整保留在 `clip.lines` 中，供播放时作为背景小字自然演出。
+- **选区前后延展与音频渐入渐出**：题目音频选区起点前置 1 秒（`Math.max(0, windowStartTime - 1000)`）、终点后延 1 秒（`min(duration, maxLineEnd + 1000)`）。客户端通过 `useAudioClipPlayer` 在首个 1 秒内执行音量由 0 到 1 的平滑渐入，在终点前最后 1 秒内执行由 1 到 0 的平滑渐出，彻底消除音频启停爆音与突然掐断感。
 
 **逐字时间轴保护规范**：
 - 对于带有 `words` 逐字信息的歌词行，`sanitizeLyrics` 必须严格保留其原本精确的 `line.endTime`，严禁被下一行的起始时间粗暴覆盖，以保证歌唱停顿、长间奏和逐字动画停靠精确；
@@ -144,14 +145,15 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - 默认 AMLL 采用深色荧光风格（`mix-blend-mode: plus-lighter` 与白色字体），在项目浅色纸质背景上会导致文字不可见或反白破损；
 - 必须在 `Client/src/index.css` 强制覆写 `.baka-lyric-player.amll-lyric-player`：`mix-blend-mode: normal !important`、`color: var(--color-foreground) !important`、`font-family: var(--font-serif) !important`、`text-shadow: none !important`；
 - 时间轴驱动：`SongLyricPlayer` 接收 `audioRef`，监听 `play/pause/timeupdate/seeked`，并在播放期间通过 `requestAnimationFrame` 驱动 60fps/120fps 流畅逐字渐变渲染；同时在测试容器内部挂载 `sr-only` 隐藏全文本节点，保障屏幕阅读器无障碍与集成测试断言稳定性。
+- 控制台调试日志净化：`SongLyricPlayer` 在浏览器环境中静默拦截 AMLL 内部输出的开发期调试日志（“设置歌词行”、“歌词处理完成”等），保证前端控制台极度纯净无冗余输出。
 
 **外文歌词翻译与原生 AMLL 总览展示规范**：
 - **服务端四级融合翻译**：在获取歌词四级链路中统一接入 `mergeTranslations`。自动提取网易云官方 `ytlrc` 与 `tlyric`（以及 `yromalrc` 与 `romalrc`），以 `<= 1500ms` 时间戳容差智能对齐，为每行歌词注入 `translatedLyric`。清洗算法保留翻译完整性，确保日文、英文等外文歌曲拥有中文翻译。
 - **逐字动态播放副行渲染**：客户端在 `index.css` 中显式针对 `[class*="lyricSubLine"]` 配置衬线字体、`opacity: 0.65`、`font-size: 0.85rem` 与居中排版，使 AMLL 播放器在歌词点亮时同步展示副文本翻译。
 - **歌词引用稳定防二次重刷**：`SongLyricPlayer` 必须基于歌词文本、起止时间与逐字数据生成稳定摘要键（`linesKey`）进行 memoization，严禁以快照数组引用作为依赖，杜绝音频就绪广播（`audioReadyPlayers` 改变）触发 AMLL DOM 销毁重建与入场渐入动画重播。
 - **原生 AMLL 单实例总览与平滑缩放动效**：音频播放完成后（`audioPlaybackState === "completed"`），严禁自行手写外部 DOM 列表替代。统一使用原生 AMLL 单实例进行全量总览渲染，动态切换 `.baka-overview-mode` 类名并配置 `alignAnchor="top"`, `alignPosition=0.02`, `enableBlur={false}`, `currentTime=firstLineTime`；
-- **字重与缩放动效对齐**：主歌词行无论播放还是总览模式均统一锁定 `font-weight: 500 !important;`，副歌词翻译行统一为 `font-weight: 400 !important;`，彻底杜绝总览字体加粗突兀的问题；容器通过 CSS `transform: scale(0.92)` 配合 `transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)` 实现连贯平滑的缩小拉远动效。
-- **双语自适应固定高度杜绝溢出**：基于题目歌词行数、双语翻译行及潜在多行折行物理高度预算（`calculateLyricContainerHeight`），在出题时即一次性锁定容器高度，整轮竞猜中高度稳定不跳变；总览模式完整容纳所有歌词与翻译，禁止产生滚动条或截断溢出。
+- **字重与总览纯黑字色**：主歌词行无论播放还是总览模式均统一锁定 `font-weight: 500 !important;`，副歌词翻译行统一为 `font-weight: 400 !important;`。在总览模式下强制设置 `--amll-lp-inactive-opacity: 1 !important` 与全量子元素 `opacity: 1 !important; color: var(--color-foreground) !important;`，彻底根除总览歌词灰黑混杂或淡化问题；容器通过 CSS `transform: scale(0.92)` 配合 `transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)` 实现连贯平滑的缩小拉远动效。
+- **双语与和声高度精确预算**：`calculateLyricContainerHeight` 精确区分纯音乐（紧凑 `h-24 sm:h-28` 96px）、无翻译纯主歌词、带翻译歌词及和声伴唱小字（`isBG`）的真实高度预算。无翻译歌曲杜绝冗余留白，有翻译歌曲自适应扩容，整轮竞猜中高度稳定不跳变；总览模式完整容纳所有歌词与翻译，禁止产生滚动条或截断溢出。
 
 ### 歌词清洗
 
