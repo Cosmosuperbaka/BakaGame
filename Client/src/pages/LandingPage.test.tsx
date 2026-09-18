@@ -47,16 +47,18 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
-  it("renders animecharguessr with its multiplayer entry open", () => {
+  it("renders animecharguessr with coming-soon badge and disabled state", () => {
     renderLandingPage();
 
     const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
     const songEntry = screen.getByTestId("game-entry-songuessr");
     expect(ccbEntry).toBeInTheDocument();
-    // 多人模式已开放，不再是整体禁用卡片，可作为交互 button 进入
-    expect(within(ccbEntry).getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
-    // 尚未实现的子模式仍逐个标注即将上线（排位赛与锦标赛）
-    expect(within(ccbEntry).getAllByText("即将上线")).toHaveLength(2);
+    expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
+    expect(within(ccbEntry).getByText("即将上线")).toBeInTheDocument();
+
+    // CCB 增强版整体标记即将上线，子按钮均不可作为交互 button
+    expect(within(ccbEntry).queryByRole("button", { name: /多人模式/ })).not.toBeInTheDocument();
+    expect(within(ccbEntry).getByText("多人模式")).toBeInTheDocument();
     expect(within(ccbEntry).getByText("排位赛")).toBeInTheDocument();
     expect(within(ccbEntry).getByText("锦标赛")).toBeInTheDocument();
 
