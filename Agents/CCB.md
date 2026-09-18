@@ -299,6 +299,49 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
    - 房主**重新指定**另一个人 → `chooseSetter` 在 `answering` 阶段是合法换人（原版也只拒绝「游戏中」）；
    - 房主点「开始游戏」→ 放弃手动出题、改由服务端抽题（`startRound` 在 `answering` 阶段被允许）。
 
+### 6.9 队伍模式 / 提示系统 / 观战增强（P3b 已落地）
+
+#### 队伍模式
+
+原版 `updatePlayerTeam`：**玩家改自己的队伍**（不是房主分配），`team ∈ '1'..'8'`。
+
+| 规则 | 原版 | 本项目 |
+|---|---|---|
+| 谁能改 | 自己；UI 只在「未准备且未开局」露出下拉 | 自己；**`phase === "waiting"`** 即可（房主恒为已准备，按原版口径永远组不了队） |
+| 观战 | `team === '0'` | **不复用该值** —— 观战是 `membership`，两套真相会打架；`teamOf()` 把残留的 `'0'` 当无队伍 |
+| 标记账本 | `currentGame.teamGuesses[team]`，再覆盖回每个队友的 `guesses` | `round.teamMarks[team]`，再覆盖回每个队友的 `marks`（同名同义） |
+| 次数上限 | 按队伍串判定 → 任一成员耗尽即全队 `💀` | 同左（共享串天然如此） |
+| 猜对 | 猜中者记 `✌`/`👑`；队友记 `🏆`（`teamwin`） | 同左 |
+| 队友能否再猜 | 不能（原版置 `_tempObserver`） | 不能 —— 直接置 `finished`。**两者效果一致**（都不能猜、都算「本局已结束」），少一个要到处判的标记位 |
+| 队友得分 | 普通/血战 `0`；**同步模式共享胜者分** | 同左：同步模式队友一起进 `solvedPlayerIds`，靠 §6.6 的「共享胜者分」拿到同一份 |
+| 投降 | —— | **整队结束本局**。队伍共用一份计数，只结束一个人会立刻产生「共享串里有 `🏳️`、队友还在猜」的矛盾状态 |
+
+#### 提示系统
+
+原版是**纯客户端**行为（`GameInfo.jsx`），本项目把判定搬到服务端（提示文本本来就在服务端）：
+
+- 文本提示由**手动出题的出题人**在 `ccb.game.setAnswer.hints` 里给出，**条数被 `useHints` 的阈值条数截断** ——
+  多写的提示永远显示不出来，属于死数据。
+- 揭示式照原版：`剩余次数 <= useHints[i]` 时显示第 i 条；`thresholds` 与 `hints` **按序配对**，
+  任一侧缺失的位置直接跳过，不会让后面的提示整体错位（纯函数 `resolveCCBRevealedHints`）。
+- 剩余次数 = `maxAttempts − player.guessCount`；队伍模式下 `guessCount` 是共享串的计数，正好是原版口径。
+- 提示只发给**正式玩家**：出题人与旁观者拿到也没有意义。
+
+> ⚠️ **`useImageHint`（图片提示）不移植**。原版把**答案立绘**发到客户端再按剩余次数做 CSS 模糊 ——
+> 在服务端权威模型下，这等于把答案原图发给所有人：所谓「模糊」只是展示层的，任何人打开
+> 开发者工具就能拿到未模糊的原图。模糊不是安全边界。要做得安全就得在服务端先做有损降采样，
+> 代价与收益不成比例。**登记为已知差异**（与 §5 编号不共用）。
+
+#### 观战增强视图
+
+`CCBPrivateState.spectatedGuesses`：**全部玩家**的猜测明细，只下发给**旁观者与出题人**
+（参赛玩家看别人的逐字段反馈等于白拿答案线索）。
+
+- 条数上限 `SPECTATED_GUESS_LIMIT = 60`，从最新往回取 —— 私有状态每帧都走，
+  长局的猜测记录会线性增长（`maxAttempts` 上限 100 × 16 人）。
+- 标签 BP 的遮掩照旧生效：观战者不是揭示者，所以被 `tagBan` 禁掉的标签对他仍是 `???`。
+- 前端据此把「自己那一列」换成「按玩家分组的全场明细」（自己那一列对观战者没有意义）。
+
 **默认设置必须对齐原版 `client/src/data/presets.js` 的 `createBasePreset()`**（`DEFAULT_CCB_SETTINGS`）。
 三处最容易照直觉写错的地方，都已写成注释钉在契约里：
 
@@ -335,7 +378,7 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 | 布局 | `Client/src/layouts/CCBLayout.tsx`（Provider + Suspense + Outlet + `CCBToastContainer`） |
 | 路由 | `/ccb`（大厅）、`/ccb/room/:roomId`（房间）、`/ccb/*` 兜底回大厅 |
 | 页面 | `Client/src/pages/CCBPage.tsx`（大厅）、`Client/src/pages/CCBRoomPage.tsx`（三段式房间 + 三栏 + 移动端抽屉） |
-| 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`、`GameArea.tsx`（按阶段分派的操作区 + `CCBSetterPicker`）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索）、`SetterPanel.tsx`（手动出题：出题人两步选答案） |
+| 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`（含自选队伍的下拉）、`GameArea.tsx`（按阶段分派的操作区 + `CCBSetterPicker` + 提示区 + 观战明细）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索）、`SetterPanel.tsx`（手动出题：两步选答案 + 填提示） |
 | 反馈映射 | `Client/src/lib/CCBFeedback.ts`（档位→视觉档、档位→箭头；纯函数，表驱动用例在 `CCBFeedback.test.ts`） |
 | 模式进度 | 取自 `snapshot.syncProgress` / `snapshot.nonstopWinnerIds`；`GameArea` 顶栏显示「第 N 轮 · X 人未完成」与「已猜对 X 人 · 剩 Y 人」 |
 
@@ -369,7 +412,7 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 | P2a | 角色全局 BP（`globalPick`）、标签全局 BP（`tagBan`，含「谁先揭示归谁」与同步全员透视） | ✅ 已完成 |
 | P2b | 同步模式（按轮推进 / 每轮一次 / 超时视为本轮完成）、血战模式（名次分当场结算、打到全员结束） | ✅ 已完成 |
 | P3a | 手动出题（`chooseSetter` + `setAnswer`、出题人计分、三条「卡住」退出口）与前端出题面板 | ✅ 已完成 |
-| P3b | 队伍模式、提示系统、观战增强视图 | 待办 |
+| P3b | 队伍模式（自选队伍 + 共享标记/次数 + 队友 `🏆`）、提示系统（文本提示按阈值解锁）、观战增强视图（全场猜测明细） | ✅ 已完成 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
 
 对局类指令（`ccb.character.search` 与 `ccb.game.*`）的 wire 格式已在 `shared/CCB.ts` 固化，
