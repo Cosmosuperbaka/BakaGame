@@ -63,6 +63,9 @@ const createFixture = (path: string): void => {
   character.run(3, 1, "ガンマ", "伽马", "", "[]", "", 0, 10);
   character.run(4, 1, "デルタ", "德尔塔", "female", "[]", "", 0, 5);
   character.run(5, 1, "イプシロン", "伊普西龙", "male", "[]", "", 0, 1);
+  // 角色 6：**唯一**关联是 nsfw 作品。登场作品会被过滤成空，但原始关联仍在，
+  // 于是 highestRating 落到「有关联但被过滤光」的 -1 哨兵 —— 不是 0。
+  character.run(6, 1, "nsfwのみ", "仅成人向", "male", "[]", "", 0, 0);
 
   const subject = db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)");
   // 1000：2010 年动画，热度最高
@@ -77,6 +80,9 @@ const createFixture = (path: string): void => {
   subject.run(1004, 2, "日付なし", "无日期", "", 0, '{"治愈":20}', '["治愈"]', 5.0, 20, 50);
   // 1005：未上映
   subject.run(1005, 2, "未来作", "未来作", "2999-01-01", 0, "{}", "[]", 5.0, 1, 20);
+  // 1006：nsfw 动画，2014 年（独占这个年份窗口）且**热度最高**（999）——
+  // 剔除逻辑一旦失效，第一级抽样必然抽到它、登场作品里也必然出现它。
+  subject.run(1006, 2, "nsfw作品", "成人向作品", "2014-05-01", 1, '{"成人":70}', '["原创"]', 7.5, 300, 999);
 
   const relation = db.query("INSERT INTO character_subject_relations VALUES (?,?,?,?)");
   relation.run(1, 1000, 1, 0);
@@ -90,6 +96,9 @@ const createFixture = (path: string): void => {
   relation.run(4, 1004, 1, 0);
   // 角色 5：配角、order 3，用于验证 characterNum 截断
   relation.run(5, 1000, 2, 3);
+  // nsfw 关联：角色 1 多一条（不得改变它既有的登场作品断言），角色 6 只有这一条。
+  relation.run(1, 1006, 1, 0);
+  relation.run(6, 1006, 1, 0);
 
   const tag = db.query("INSERT INTO character_tags VALUES (?,?,?)");
   tag.run(1, 0, "紫瞳");
@@ -259,5 +268,28 @@ describe("CCBCharacterRepository 角色检索", () => {
 
   test("空查询返回空数组", () => {
     expect(repository.searchCharacters("   ")).toEqual([]);
+  });
+});
+
+describe("CCBCharacterRepository nsfw 剔除", () => {
+  test("nsfw 作品不进登场作品（哪怕它是热度最高的那部）", () => {
+    const view = repository.buildCharacterView(1, settings())!;
+    expect(view.appearances).not.toContain("nsfw作品");
+    expect(view.appearanceIds).not.toContain(1006);
+  });
+
+  test("nsfw 作品不参与第一级抽样", () => {
+    // 1006 独占 2014 这个窗口且热度最高；过滤失效时这里抽到的就是它。
+    expect(
+      repository.pickRandomSubject(settings({ metaTags: [""], startYear: 2014, endYear: 2014 })),
+    ).toBeUndefined();
+  });
+
+  test("只有 nsfw 关联的角色：登场作品为空，highestRating 仍是 -1", () => {
+    const view = repository.buildCharacterView(6, settings())!;
+    expect(view.appearances).toEqual([]);
+    // ⚠️ 这里刻意**不**把 nsfw 过滤伸进 `hasAnyRelation`：那个哨兵的语义本来就是
+    // 「有原始关联、但过滤后为空 → 不可比」，nsfw 过滤正好落在它设计好的分支里。
+    expect(view.highestRating).toBe(-1);
   });
 });
