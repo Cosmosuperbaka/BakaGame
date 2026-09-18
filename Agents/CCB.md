@@ -157,10 +157,11 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 
 **P1b 落地时的四处取舍（增强版特有，务必先看这里再改代码）**：
 
-1. **不结算出题人分**。原版有玩家承担「出题人」（选答案），所以有那套惩罚/奖励；增强版由**服务端出题**，
-   没有任何玩家出题，把分记到房主头上属于凭空加减分。`CCBRules` 里的
-   `calculateCCBSetterScore` / `calculateCCBNonstopSetterScore` 原样保留，等 **P3 手动出题模式**恢复。
-   ⇒ 与「兼容原版房间」对局时不可用（那边必须照原版算）。这是**逐项登记在 §5 之外**的一处
+1. **出题人分只在「真人出题」时结算**（P3a 起）。判定依据是 `CCBRoundRecord.answerIsManual`：
+   服务端抽题的房间里 `answerSetterPlayerId` 只是**记成房主**，原版那套惩罚/奖励没有对象，
+   照抄等于凭空给房主加减分；手动出题才是真出题人。两套口径由 `resolveCCBSetterScore`
+   按模式**选表**（普通/同步看首个胜者的标记与次数，血战看猜中率），它本身不算分。
+   ⇒ 与「兼容原版房间」对局时那边必须照原版算 —— 这是**逐项登记在 §5 之外**的一处
    已知差异，不与 §5 的编号共用。
 2. **人机不参与猜测**（P1b 限制）。`beginRound` 把人机直接置为 `finished`，否则 `allSettled` 永远为假、
    整局卡死。人机仍占正式席位与被计分玩家列表，只是不猜。
@@ -235,6 +236,7 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 | 超时 | 重置本人计时 | 视为本轮完成 | 同普通 |
 | 结算触发 | 出现胜者 或 全员结束 | 本轮全员完成且已有胜者 | `remainingPlayers` 归零 |
 | 胜者分底分 | `2` | `2` | `max(1, 参战人数 − 已胜人数)` |
+| 胜者分是否共享 | 唯一胜者，无此问题 | **所有胜者共享首个胜者的分数** —— 原版用首个胜者的标记串算一次，再 `forEach` 广播给全体胜者 | 各自按名次算 |
 | 胜者分发放时机 | 结算时 | 结算时 | **猜对当场** —— 结算阶段必须跳过，否则双倍计分 |
 
 **同步模式的推进判定**（真相源 `gameplay.js:updateSyncProgress`，落地 `resolveCCBSyncVerdict`）：
@@ -270,6 +272,32 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 | `useSubjectPerYear` | 同名 | 按年份均分抽样 |
 | `subjectSearch` | 同名 | 允许「先搜作品、再从作品里挑角色」的搜索模式（纯前端行为） |
 | `useIndex` / `indexId` / `addedSubjects` | **不移植**（P3 手动出题范围） | 原版的「指定作品集」入口 |
+
+### 6.8 手动出题（P3a 已落地）
+
+**它不是设置项，而是一对指令** —— 原版同样如此（`setAnswerSetter` + `setAnswer`）：
+
+| 步骤 | 指令 | 谁可以发 | 前置 |
+|---|---|---|---|
+| 1 | `ccb.game.chooseSetter { playerId }` | **房主** | 不在 `guessing`；全员已准备 |
+| 2 | `ccb.game.setAnswer { characterId, hint? }` | **被指定的出题人** | `phase === "answering"` |
+
+阶段流转：`waiting` →（chooseSetter）→ `answering` →（setAnswer）→ `guessing`。
+开局的实现入口仍是 `CCBService.beginRound`，用一个 `{ manualSetterId }` 参数区分两条路：
+不传＝服务端抽题（`answerIsManual: false`，出题人记成房主但不计分），
+传了＝手动出题（`answerIsManual: true`，`answerSetterPlayerId` 就是这位真人）。
+
+三条**必须记住**的落地决定：
+
+1. **`setAnswer` 只收 `characterId`**，其余字段由服务端从本地数据集补齐。原版是把客户端加密过的
+   整个角色对象丢给服务端，这里换成「只报 id、服务端自己查」，防作弊面更小（§1 服务端权威边界）。
+2. **出题人不能猜，但要看得见答案**。答案**不进 `snapshot`** —— 那份快照是全房广播的同一份对象，
+   放进去等于把答案发给所有人。改走私有状态：`CCBPrivateState.setterAnswer`（`revealed: false`）。
+   好处是刷新页面不丢（原版把答案留在客户端，一刷新就没了）。
+3. **三种「出题人卡住」的退出口**，缺一个房间就会永久停在 `answering`（那一步只有一个人能推进）：
+   - 出题人被踢 / 掉线 → `clearPendingSetter` 退回 `waiting`（原版 `waitForAnswerCanceled`）；
+   - 房主**重新指定**另一个人 → `chooseSetter` 在 `answering` 阶段是合法换人（原版也只拒绝「游戏中」）；
+   - 房主点「开始游戏」→ 放弃手动出题、改由服务端抽题（`startRound` 在 `answering` 阶段被允许）。
 
 **默认设置必须对齐原版 `client/src/data/presets.js` 的 `createBasePreset()`**（`DEFAULT_CCB_SETTINGS`）。
 三处最容易照直觉写错的地方，都已写成注释钉在契约里：
@@ -307,7 +335,7 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 | 布局 | `Client/src/layouts/CCBLayout.tsx`（Provider + Suspense + Outlet + `CCBToastContainer`） |
 | 路由 | `/ccb`（大厅）、`/ccb/room/:roomId`（房间）、`/ccb/*` 兜底回大厅 |
 | 页面 | `Client/src/pages/CCBPage.tsx`（大厅）、`Client/src/pages/CCBRoomPage.tsx`（三段式房间 + 三栏 + 移动端抽屉） |
-| 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`、`GameArea.tsx`（按阶段分派的操作区）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索） |
+| 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`、`GameArea.tsx`（按阶段分派的操作区 + `CCBSetterPicker`）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索）、`SetterPanel.tsx`（手动出题：出题人两步选答案） |
 | 反馈映射 | `Client/src/lib/CCBFeedback.ts`（档位→视觉档、档位→箭头；纯函数，表驱动用例在 `CCBFeedback.test.ts`） |
 | 模式进度 | 取自 `snapshot.syncProgress` / `snapshot.nonstopWinnerIds`；`GameArea` 顶栏显示「第 N 轮 · X 人未完成」与「已猜对 X 人 · 剩 Y 人」 |
 
@@ -340,7 +368,8 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 | P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | ✅ 已完成 |
 | P2a | 角色全局 BP（`globalPick`）、标签全局 BP（`tagBan`，含「谁先揭示归谁」与同步全员透视） | ✅ 已完成 |
 | P2b | 同步模式（按轮推进 / 每轮一次 / 超时视为本轮完成）、血战模式（名次分当场结算、打到全员结束） | ✅ 已完成 |
-| P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
+| P3a | 手动出题（`chooseSetter` + `setAnswer`、出题人计分、三条「卡住」退出口）与前端出题面板 | ✅ 已完成 |
+| P3b | 队伍模式、提示系统、观战增强视图 | 待办 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
 
 对局类指令（`ccb.character.search` 与 `ccb.game.*`）的 wire 格式已在 `shared/CCB.ts` 固化，
