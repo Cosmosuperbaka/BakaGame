@@ -240,6 +240,23 @@ export interface CCBRoomSnapshot {
   answer?: CCBAnswerView;
   /** 被全局 BP 屏蔽的标签（`tagBan` 生效时会以 `???` 展示）。落点 P2。 */
   bannedTags?: string[];
+  /** 同步模式的本轮进度；非同步模式不下发。落点 P2。 */
+  syncProgress?: CCBSyncProgress;
+  /** 血战模式按猜对顺序累积的胜者；非血战模式不下发。落点 P2。 */
+  nonstopWinnerIds?: string[];
+}
+
+/**
+ * 同步模式的本轮进度（原版 `currentGame.syncRound` + `syncPlayersCompleted`）。
+ *
+ * 同步模式把「同一答案下每人的一次猜测」当作一轮：本轮全员完成才推进轮次，
+ * 出现胜者后也要等本轮结束才结算。
+ */
+export interface CCBSyncProgress {
+  /** 当前轮次，从 1 开始，每局重置。 */
+  round: number;
+  /** 本轮已完成的玩家 id（猜过、超时或投降都算完成）。 */
+  completedPlayerIds: string[];
 }
 
 export interface CCBPrivateState {
@@ -257,6 +274,13 @@ export interface CCBPrivateState {
   ownGuesses: CCBGuessRecord[];
   /** 已用过的文本提示。落点 P3。 */
   hints: string[];
+  /**
+   * 同步模式：本轮是否已完成。
+   *
+   * 与 `canGuess` 是一对：同步模式每人每轮只能猜一次，猜完（或超时）后
+   * 必须等本轮其他人完成、轮次推进后才能再猜。非同步模式恒为 `false`。
+   */
+  syncCompleted: boolean;
 }
 
 /** 比较类反馈。`=` 相等 / `+`·`++` 偏高 / `-`·`--` 偏低 / `?` 不可比。 */
@@ -362,6 +386,14 @@ export interface CCBRoundRecord {
   bannedTagRevealers: Record<string, string[]>;
   /** 本局累积但**尚未生效**的屏蔽标签（原版 `tagBanStatePending`：结算时才合并）。 */
   pendingBannedTags: Array<{ tag: string; revealer: string[] }>;
+  /** 同步模式的当前轮次（从 1 开始，每局重置）。非同步模式恒为 1。 */
+  syncRound: number;
+  /** 同步模式本轮已完成的玩家 id（猜过、超时或投降即完成）。 */
+  syncCompletedPlayerIds: string[];
+  /** 血战模式按猜对顺序累积的胜者 id（下标 + 1 即名次）。 */
+  nonstopWinnerIds: string[];
+  /** 血战模式的名次分基数：开局时的参战人数（原版 `nonstopTotalPlayers`）。 */
+  nonstopTotalPlayers: number;
 }
 
 /**
