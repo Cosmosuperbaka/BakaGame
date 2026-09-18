@@ -16,11 +16,15 @@ import {
   getCCBEndResultFromMarks,
   hasCCBEndMark,
   isCCBBigWin,
+  maskCCBFeedbackTags,
+  mergeCCBBannedTags,
   resolveCCBAppearanceSubset,
   resolveCCBAppearanceTypes,
   resolveCCBSubjectSearchMetaTags,
   resolveCCBSubjectSearchTypes,
   resolveCCBTimeLimitMs,
+  revealCCBBannedTagsToAll,
+  stageCCBBannedTags,
   stripCCBEndMarks,
   type CCBCharacterView,
   type CCBCompareFeedback,
@@ -459,5 +463,73 @@ describe("设置派生", () => {
     expect(resolveCCBTimeLimitMs({ timeLimitMs: -1 })).toBe(0);
     expect(resolveCCBTimeLimitMs({ timeLimitMs: 5000 })).toBe(10_000);
     expect(resolveCCBTimeLimitMs({ timeLimitMs: 60_000 })).toBe(60_000);
+  });
+});
+
+describe("标签全局 BP（tagBan）", () => {
+  test("暂存：同一个 tag 只留一条，去空白、丢空串", () => {
+    expect(stageCCBBannedTags(["紫瞳", "紫瞳", " 黑发 ", ""], "p1")).toEqual([
+      { tag: "紫瞳", revealer: ["p1"] },
+      { tag: "黑发", revealer: ["p1"] },
+    ]);
+    expect(stageCCBBannedTags([], "p1")).toEqual([]);
+  });
+
+  test("暂存：已提交的标签跳过（谁先揭示归谁）", () => {
+    expect(stageCCBBannedTags(["紫瞳", "黑发"], "p2", ["紫瞳"])).toEqual([
+      { tag: "黑发", revealer: ["p2"] },
+    ]);
+  });
+
+  test("合并：只收新标签，已提交标签的后来者不算揭示者", () => {
+    const state = [{ tag: "紫瞳", revealer: ["p1"] }];
+    const pending = [
+      { tag: "紫瞳", revealer: ["p2"] },
+      { tag: "腹黑", revealer: ["p2"] },
+    ];
+    const merged = mergeCCBBannedTags(state, pending);
+
+    // ⚠️ 这是「全局 BP 有效」的关键：若第一次就把 revealer 并起来，机制完全失效。
+    expect(merged).toEqual([
+      { tag: "紫瞳", revealer: ["p1"] },
+      { tag: "腹黑", revealer: ["p2"] },
+    ]);
+    // 纯函数：两个入参都不能被改。
+    expect(state).toEqual([{ tag: "紫瞳", revealer: ["p1"] }]);
+    expect(pending[0]!.revealer).toEqual(["p2"]);
+  });
+
+  test("合并：空 tag 直接丢弃", () => {
+    expect(mergeCCBBannedTags([], [{ tag: "  ", revealer: ["p1"] }])).toEqual([]);
+  });
+
+  test("同步模式收尾：本轮参战玩家全部并入 revealer", () => {
+    expect(
+      revealCCBBannedTagsToAll([{ tag: "紫瞳", revealer: ["p1"] }], ["p1", "p2", "p3"]),
+    ).toEqual([{ tag: "紫瞳", revealer: ["p1", "p2", "p3"] }]);
+    // 纯函数：不改入参。
+    expect(revealCCBBannedTagsToAll([{ tag: "紫瞳", revealer: ["p1"] }], [])).toEqual([
+      { tag: "紫瞳", revealer: ["p1"] },
+    ]);
+  });
+
+  test("遮掩：非揭示者看到 ???，揭示者照常看到；shared 里的被剔除", () => {
+    const feedback = generateCCBFeedback(
+      character({ metaTags: ["a", "b", "c"] }),
+      character({ metaTags: ["b", "c"] }),
+      defaultSettings,
+    );
+    expect(feedback.metaTags).toEqual({ guess: ["a", "b", "c"], shared: ["b", "c"] });
+
+    // 只有 b 被屏蔽，且自己不是 b 的揭示者：guess 里换成 ???，shared 里直接剔除。
+    expect(maskCCBFeedbackTags(feedback, ["b"], new Set<string>())).toMatchObject({
+      metaTags: { guess: ["a", "???", "c"], shared: ["c"] },
+    });
+    // 自己是 b 的揭示者：原样可见。
+    expect(maskCCBFeedbackTags(feedback, ["b"], new Set<string>(["b"]))).toMatchObject({
+      metaTags: { guess: ["a", "b", "c"], shared: ["b", "c"] },
+    });
+    // 没有屏蔽项时直接短路返回同一个引用。
+    expect(maskCCBFeedbackTags(feedback, [], new Set<string>())).toBe(feedback);
   });
 });

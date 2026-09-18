@@ -2,11 +2,17 @@ import { describe, expect, test } from "bun:test";
 
 import { CCBService, type CCBCharacterSource } from "../src/application/CCBService";
 import type { ConnectionRecord } from "../src/domain/Model";
-import { CCB_ATTEMPT_MARKS, CCB_END_MARK, type CCBCharacterView } from "../src/domain/CCBRules";
+import {
+  CCB_ATTEMPT_MARKS,
+  CCB_END_MARK,
+  CCB_MASKED_TAG,
+  type CCBCharacterView,
+} from "../src/domain/CCBRules";
 import type {
   CCBAnswerView,
   CCBClientMessage,
   CCBFeedback,
+  CCBGameSettings,
   CCBPrivateState,
   CCBRoomSnapshot,
 } from "../src/shared/Index";
@@ -119,7 +125,12 @@ const feedbackOf = (client: TestConnection): CCBFeedback => {
 
 // ==================== 用例 ====================
 
-const startGame = async (service: CCBService, host: TestConnection, guests: TestConnection[]) => {
+const startGame = async (
+  service: CCBService,
+  host: TestConnection,
+  guests: TestConnection[],
+  settings: Partial<CCBGameSettings> = {},
+) => {
   await execute(service, host, {
     id: "create",
     type: "ccb.room.create",
@@ -129,7 +140,7 @@ const startGame = async (service: CCBService, host: TestConnection, guests: Test
       visibility: "public",
       allowSpectators: true,
       userName: "房主",
-      settings: { maxAttempts: 5 },
+      settings: { maxAttempts: 5, ...settings },
     },
   });
   for (const [index, guest] of guests.entries()) {
@@ -424,5 +435,60 @@ describe("CCB 对局：结算与推进", () => {
     expect(snapshot.phase).toBe("waiting");
     expect(snapshot.answer).toBeUndefined();
     expect(snapshot.players.every((player) => player.marks === "" && player.guessCount === 0)).toBe(true);
+  });
+});
+
+describe("CCB 对局：全局 BP", () => {
+  test("角色全局 BP：别人猜过的角色自己不能再猜", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { globalPick: true });
+
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    await expect(
+      execute(service, second, { id: "g2", type: "ccb.game.guess", payload: { characterId: 2 } }),
+    ).rejects.toMatchObject({ code: "CHARACTER_ALREADY_PICKED" });
+
+    // 换一个没被猜过的角色就放行，猜中即结算。
+    const result = (await execute(service, second, {
+      id: "g3",
+      type: "ccb.game.guess",
+      payload: { characterId: 1 },
+    })) as { correct: boolean };
+    expect(result.correct).toBe(true);
+  });
+
+  test("标签全局 BP：揭示的共享标签对非揭示者显示 ???，揭示者自己可见", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { tagBan: true });
+
+    // 甲猜 2 号：猜错但与答案共享「紫瞳」，该标签进入本局待提交 —— 结算前不生效。
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(snapshotOf(first).bannedTags).toEqual([]);
+    expect(feedbackOf(first).metaTags).toEqual({ guess: ["紫瞳"], shared: ["紫瞳"] });
+
+    // 乙首猜即中：普通模式立即结算，待提交在此刻才合并生效。
+    await execute(service, second, { id: "g2", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(first).bannedTags).toEqual(["紫瞳"]);
+
+    // 「谁先揭示归谁」：甲是先揭示者，照常可见；乙只能说 ???（shared 直接被剔除）。
+    expect(feedbackOf(first).metaTags).toEqual({ guess: ["紫瞳"], shared: ["紫瞳"] });
+    expect(feedbackOf(second).metaTags).toEqual({ guess: [CCB_MASKED_TAG], shared: [] });
+  });
+
+  test("标签全局 BP 关闭时既不屏蔽也不遮掩", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest]);
+
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(guest).bannedTags).toEqual([]);
+    expect(feedbackOf(guest).metaTags).toEqual({ guess: ["紫瞳"], shared: ["紫瞳"] });
   });
 });
