@@ -359,6 +359,7 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
         ),
         "relations": scalar("SELECT count(*) FROM character_subject_relations"),
         "subjects": scalar("SELECT count(*) FROM subjects"),
+        "subjects_nsfw": scalar("SELECT count(*) FROM subjects WHERE nsfw = 1"),
         "subjects_animated": scalar("SELECT count(*) FROM subjects WHERE type = 2"),
         "animated_with_heat": scalar("SELECT count(*) FROM subjects WHERE type = 2 AND heat > 0"),
     }
@@ -374,6 +375,11 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
         raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
+    # nsfw 必须一个不留（合规硬要求）：这条一旦回归，成人向作品标题就会重新出现在反馈里。
+    if stats["subjects_nsfw"] != 0:
+        raise SystemExit(
+            f"角色库仍有 {stats['subjects_nsfw']} 部 nsfw 作品：nsfw 剔除逻辑被改坏了（见 Agents/CCB.md §6.5）。"
+        )
     # 出题与反馈全都要靠「关系 × 作品」联表算，这两项任一为 0 就说明 dump 没读对。
     for column in ("relations", "animated_characters", "animated_with_heat"):
         if stats[column] == 0:
@@ -387,8 +393,16 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
 def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
     out.mkdir(parents=True, exist_ok=True)
     subjects: dict[int, dict] = {}
+    # NSFW 作品 id：**只从角色库剔除**（合规要求，见 `Agents/CCB.md §6.5`）。
+    # 原版从不看 `nsfw`，成人向作品标题会直接出现在反馈里 —— 这是本项目对原版的刻意偏离。
+    # 歌曲库保持全集：那边的 `subjects` 只存动画(type 2)，而「NSFW 动画进不进歌曲题库」
+    # 是另一个产品决定，不在本次范围内，硬塞进来会连带改动 Songuessr 的题库。
+    nsfw_subject_ids: set[int] = set()
     for item in lines(dump / "subject.jsonlines"):
         subjects[item["id"]] = item
+        if item.get("nsfw"):
+            nsfw_subject_ids.add(item["id"])
+    print(f"[character db] dump 内 nsfw 作品 {len(nsfw_subject_ids)} 部，只从角色库剔除")
 
     character_tags = load_character_tags(tags_source)
     print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_source}")
@@ -425,6 +439,9 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
             elif item.get("type") == 3: song_sub.execute("INSERT INTO music_subjects VALUES (?,?,?,?,?)", (item["id"], item.get("name", ""), item.get("name_cn", ""), float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0)))
             # 角色库收**全部类型**的条目（含音乐 3）：原版的登场作品在「按大类过滤后为空」
             # 时会回退到全部类型，那时音乐/书籍/三次元的标签也要参与计算。
+            # 但 **nsfw 一律不进角色库** —— 进了就会出现在反馈的登场作品里。
+            if item["id"] in nsfw_subject_ids:
+                continue
             char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
@@ -443,6 +460,9 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
         # ---- CCB 角色 ↔ 作品关联（登场作品与标签池都由运行时联表算）----
         # 主键 (character_id, subject_id) + INSERT OR IGNORE 已经去重，无需在内存里再判一次。
         for rel in lines(dump / "subject-characters.jsonlines"):
+            # 已剔除的 nsfw 作品连关联一起丢：留着就是指向不存在作品的悬空行。
+            if rel["subject_id"] in nsfw_subject_ids:
+                continue
             char_sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
 
         # ---- CCB 声优（person-characters + person） ----

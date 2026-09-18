@@ -163,6 +163,10 @@ def make_dump(root: Path) -> None:
             # type=1（书籍）用于验证声优过滤：这条关联必须被排除
             {"id": 999, "type": 1, "name": "小説版", "name_cn": "小说版", "date": "2007-01-01", "score": 7.0, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {}},
             {"id": 77, "type": 3, "name": "COLORS", "name_cn": "COLORS", "score": 9.0, "rank": 1},
+            # nsfw 作品**只从角色库剔除**，歌曲库保持全集（范围决定见 build 里的注释）。
+            # 一条动画、一条游戏 —— 后者正是「成人向游戏标题进反馈」那条合规问题的来源。
+            {"id": 556, "type": 2, "name": "nsfwアニメ", "name_cn": "成人向动画", "date": "2016-01-01", "score": 7.1, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {"done": 5}, "nsfw": True},
+            {"id": 557, "type": 4, "name": "nsfwゲーム", "name_cn": "成人向游戏", "date": "2016-02-01", "score": 7.2, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {}, "nsfw": True},
         ],
     )
     write_jsonlines(root / "subject-relations.jsonlines", [])
@@ -179,6 +183,9 @@ def make_dump(root: Path) -> None:
             {"character_id": 1, "subject_id": 8, "type": 1, "order": 0},
             {"character_id": 1, "subject_id": 999, "type": 1, "order": 0},
             {"character_id": 2, "subject_id": 8, "type": 2, "order": 1},
+            # nsfw 作品的关联必须一起丢掉，否则库里会留下指向不存在作品的悬空行。
+            {"character_id": 1, "subject_id": 556, "type": 1, "order": 0},
+            {"character_id": 1, "subject_id": 557, "type": 1, "order": 0},
         ],
     )
     write_jsonlines(
@@ -280,6 +287,25 @@ def test_build_end_to_end() -> None:
             ["id", "role", "name", "name_cn", "gender", "aliases", "summary", "comments", "collects"],
         )
 
+        # nsfw 作品**一个都不能进角色库**（合规硬要求，见 Agents/CCB.md §6.5）。
+        check(
+            "nsfw 作品不进角色库",
+            char.execute("SELECT count(*) FROM subjects WHERE id IN (556, 557)").fetchone()[0],
+            0,
+        )
+        check(
+            "nsfw 作品的关联一并剔除（不留悬空行）",
+            char.execute(
+                "SELECT count(*) FROM character_subject_relations WHERE subject_id IN (556, 557)"
+            ).fetchone()[0],
+            0,
+        )
+        check(
+            "角色库 nsfw 计数为 0",
+            char.execute("SELECT count(*) FROM subjects WHERE nsfw = 1").fetchone()[0],
+            0,
+        )
+
         vas = char.execute("SELECT character_id, position, person_id, name, name_cn FROM character_vas ORDER BY character_id").fetchall()
         check("声优只保留动画/游戏作品", vas, [(1, 0, 1, "水樹奈々", "水树奈奈")])
 
@@ -289,7 +315,9 @@ def test_build_end_to_end() -> None:
         char.close()
 
         song = sqlite3.connect(out / "bangumi-song.sqlite")
-        check("song 表未受影响", song.execute("SELECT count(*) FROM subjects").fetchone()[0], 1)
+        # 歌曲库**不剔除 nsfw**：那边的 `subjects` 只存动画，「NSFW 动画进不进歌曲题库」
+        # 是另一个产品决定，不在本次范围内。所以这里是 2（8 与 nsfw 的 556）而不是 1。
+        check("song 表未受影响（含 nsfw 动画）", song.execute("SELECT count(*) FROM subjects").fetchone()[0], 2)
         check("music 表未受影响", song.execute("SELECT count(*) FROM music_subjects").fetchone()[0], 1)
         song.close()
 
