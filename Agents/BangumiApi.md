@@ -233,7 +233,10 @@ ORDER BY r.subject_id
 - **累积顺序 = `subject_id` 升序**（dump 文件顺序 ≈ 原版 API 的返回顺序），因为标签权重有
   「先算 meta、再算普通标签」的累积依赖；**输出顺序**才是 `rating_count` 降序
   （原版 `.sort((a, b) => b.rating_count - a.rating_count)`，`shared_appearances` 依赖它）。
-- **不看 `nsfw`**：原版客户端里根本没有 `nsfw` 字样。
+- **剔除 `nsfw`**：原版客户端里根本没有 `nsfw` 字样，但**本项目一律剔除**（2026-09-18 的合规决定，
+  见 `Agents/CCB.md §6.5`）：构建期 nsfw 作品不进角色库（关联一并丢弃，且 `subjects_nsfw != 0`
+  会让构建失败），运行期 `CCBCharacterRepository` 的抽样与登场作品查询也各带 `nsfw = 0`。
+  **注意只剔角色库**：歌曲库保留全集的动画元数据。
 - **无法还原 `locked`**：原版会丢弃 `locked` 作品，dump 没有该字段 —— 已知差异。
 
 为什么不物化：它既是 `character_subject_relations × subjects` 的函数，又依赖**房间设置**
