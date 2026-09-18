@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, MessageSquare, Users, X } from "lucide-react";
+import { ArrowLeft, MessageSquare, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
@@ -9,10 +8,10 @@ import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { Seo } from "@/components/common/Seo";
 import { CCBPlayerList } from "@/components/ccb/CCBPlayerList";
 import { CCBGameArea } from "@/components/ccb/CCBGameArea";
+import { CCBRoomPanel } from "@/components/ccb/CCBRoomPanel";
 import { useCCBRoomLifecycle } from "@/hooks/UseCCBRoomLifecycle";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { CCB_SOURCE_LABELS, ccbRoomPath } from "@/lib/CCBSession";
-import { spring, backdrop, duration, ease } from "@/lib/Motion";
 
 export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
@@ -33,7 +32,7 @@ export default function CCBRoomPage() {
       <aside className="hidden min-h-0 shrink-0 overflow-hidden rounded-md border bg-panel md:block" style={{ width: PLAYER_COLUMN_WIDTH }}><CCBPlayerList snapshot={snapshot} privateState={privateState} /></aside>
       <main className="isolate min-h-0 min-w-0 flex-1 overflow-y-auto rounded-md border bg-panel"><CCBGameArea snapshot={snapshot} privateState={privateState} /></main>
       <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">{snapshot.source === "original" ? <p className="border-b px-3 py-2 text-xs text-muted-foreground">增强版聊天</p> : null}<ChatPanel messages={snapshot.chat} players={snapshot.players} myPlayerId={privateState.playerId} onSendMessage={sendChat} onError={showError} maxLength={500} /></aside>
-      <AnimatePresence>{panel ? <><motion.div variants={backdrop} initial="initial" animate="animate" exit="exit" className="absolute inset-0 z-overlay bg-foreground/20 lg:hidden" onClick={() => setPanel(null)} /><motion.aside initial={{ x: panel === "players" ? "-100%" : "100%" }} animate={{ x: 0, transition: spring.swift }} exit={{ x: panel === "players" ? "-100%" : "100%", transition: { duration: duration.quick, ease: ease.inOut } }} className={`absolute inset-y-0 z-modal flex max-w-full flex-col border bg-panel shadow-xl lg:hidden ${panel === "players" ? "left-0 w-72" : "right-0 w-80"}`} role="dialog" aria-label={panel === "players" ? "玩家列表面板" : "聊天面板"}><div className="flex items-center justify-between border-b px-3 py-1"><span className="text-sm">{panel === "players" ? "玩家" : snapshot.source === "original" ? "增强版聊天" : "聊天"}</span><Button variant="ghost" size="icon" aria-label="关闭面板" onClick={() => setPanel(null)}><X /></Button></div><div className="min-h-0 flex-1">{panel === "players" ? <CCBPlayerList snapshot={snapshot} privateState={privateState} /> : <ChatPanel messages={snapshot.chat} players={snapshot.players} myPlayerId={privateState.playerId} onSendMessage={sendChat} onError={showError} maxLength={500} />}</div></motion.aside></> : null}</AnimatePresence>
+      <CCBRoomPanel panel={panel} title={panel === "players" ? "玩家" : snapshot.source === "original" ? "增强版聊天" : "聊天"} onClose={() => setPanel(null)}>{panel === "players" ? <CCBPlayerList snapshot={snapshot} privateState={privateState} /> : <ChatPanel messages={snapshot.chat} players={snapshot.players} myPlayerId={privateState.playerId} onSendMessage={sendChat} onError={showError} maxLength={500} />}</CCBRoomPanel>
     </div> : <div role="status" className="m-auto p-6 text-sm text-muted-foreground">{lifecycle.joining ? "正在连接房间…" : "请加入房间"}</div>}
     <Dialog open={lifecycle.needsJoin} onOpenChange={(open) => { if (!open) void lifecycle.leave(); }}><DialogContent><DialogHeader><DialogTitle>加入房间 #{lifecycle.roomId}</DialogTitle><DialogDescription>填写用户名后加入{lifecycle.source ? CCB_SOURCE_LABELS[lifecycle.source] : "房间"}。</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void lifecycle.join(); }}><Input aria-label="用户名" placeholder="用户名" maxLength={32} value={lifecycle.name} onChange={(event) => lifecycle.setName(event.target.value)} />{lifecycle.source === "native" ? <Input aria-label="房间密码" type="password" placeholder="私密房间密码（如有）" value={lifecycle.password} onChange={(event) => lifecycle.setPassword(event.target.value)} /> : null}{lifecycle.error ? <p role="alert" className="text-sm text-destructive">{lifecycle.error}</p> : null}<DialogFooter><Button type="button" variant="outline" onClick={() => void lifecycle.leave()}>返回大厅</Button><Button type="submit" loading={lifecycle.joining} disabled={!lifecycle.connected || !lifecycle.name.trim()}>加入房间</Button></DialogFooter></form></DialogContent></Dialog>
   </div>;
