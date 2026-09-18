@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 
 import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
+import type { CCBService } from "../../application/CCBService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 
@@ -49,6 +50,7 @@ export const isPrivateLanHost = (rawHost: string): boolean => {
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
+  ccbService?: CCBService;
   logger?: EventLogger;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
@@ -59,6 +61,7 @@ export interface SystemRoutesDependencies {
 export const systemRoutes = ({
   whoIsFakerService,
   sonGuessrService,
+  ccbService,
   logger,
   isShuttingDown,
   onTriggerShutdown,
@@ -240,13 +243,14 @@ export const systemRoutes = ({
           onlinePlayerCount: 0,
         };
 
+        const ccbHealth = ccbService?.getHealthSnapshot() ?? { roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 };
         return {
           status: "ok" as const,
-          roomCount: fakerHealth.roomCount + sonHealth.roomCount,
+          roomCount: fakerHealth.roomCount + sonHealth.roomCount + ccbHealth.roomCount,
           connectionCount:
-            fakerHealth.connectionCount + sonHealth.connectionCount,
+            fakerHealth.connectionCount + sonHealth.connectionCount + ccbHealth.connectionCount,
           onlinePlayerCount:
-            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount,
+            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ccbHealth.onlinePlayerCount,
         };
       },
       {
@@ -285,6 +289,7 @@ export const systemRoutes = ({
 
         fakerService?.notifyShutdown();
         songService?.notifyShutdown();
+        ccbService?.notifyShutdown();
 
         if (onTriggerShutdown) {
           await onTriggerShutdown();

@@ -24,6 +24,8 @@ export interface AppEnv {
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
+  ccbOriginalServerUrl?: string;
+  ccbOriginalAesSecret?: string;
 }
 
 // ==================== 环境变量解析 ====================
@@ -168,6 +170,8 @@ export const readEnv = (): AppEnv => {
     bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
     bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
+    ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
+    ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
       : true,

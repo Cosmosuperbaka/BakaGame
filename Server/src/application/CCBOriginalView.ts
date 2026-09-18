@@ -33,7 +33,8 @@ export function originalPrivateState(session: CCBOriginalSession): CCBPrivateSta
       && session.players.every(player => player.isHost || player.ready || !player.online),
     canSetAnswer: session.phase === 'answering' && session.setterId === playerId,
     guesses, answer: watching || ended ? session.answer : null,
-    hints: session.hints.filter((_, index) => watching || ended || remaining <= session.settings.useHints[index]),
+    hints: session.hints.filter((_, index) => session.settings.useHints[index] > 0
+      && (watching || ended || remaining <= session.settings.useHints[index])),
     imageHintAvailable: !!session.answer && session.settings.useImageHint > 0 && remaining <= session.settings.useImageHint,
     imageHintLevel: remaining,
     deadlineAt: canGuess ? session.deadlineAt : null, bannedCharacterIds,

@@ -3,6 +3,8 @@ import { Elysia } from "elysia";
 
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
+import { CCBService } from "../application/CCBService";
+import { CCBCharacterWorkerProvider } from "../infrastructure/CCBCharacterWorkerProvider";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
@@ -17,6 +19,7 @@ import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "./SonGuessrProtocol";
+import { parseCCBMessage } from "./CCBProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
@@ -26,6 +29,7 @@ export interface AppDependencies {
   whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
   sonGuessrService?: SonGuessrService;
+  ccbService?: CCBService;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
 }
@@ -395,6 +399,7 @@ export const createApp = ({
   whoIsFakerService,
   logger,
   sonGuessrService,
+  ccbService,
   isShuttingDown,
   onTriggerShutdown,
 }: AppDependencies) => {
@@ -403,6 +408,10 @@ export const createApp = ({
   if (!fakerService) {
     throw new Error("WhoIsFakerService dependency is required");
   }
+  const localBangumi = sonGuessrService ? undefined : new BangumiWorkerProvider({
+    songPath: env.bangumiSongDbPath!, characterPath: env.bangumiCharacterDbPath!,
+    enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl,
+  });
   const songService =
     sonGuessrService ??
     new SonGuessrService({
@@ -412,18 +421,18 @@ export const createApp = ({
         enableGeneralUnblock: env.enableGeneralUnblock,
       }),
       bangumiProvider: new FallbackBangumiProvider({
-        local: new BangumiWorkerProvider({
-          songPath: env.bangumiSongDbPath!,
-          characterPath: env.bangumiCharacterDbPath!,
-          enrichmentPath: env.bangumiEnrichmentPath,
-          imageBase: env.bangumiImageUrl,
-          apiBase: env.bangumiApiUrl,
-        }),
+        local: localBangumi!,
         remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
         logger,
       }),
     });
 
+  const characterService = ccbService ?? new CCBService({
+    data: new CCBCharacterWorkerProvider({
+      characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath,
+      apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl,
+    }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret,
+  });
   const app = new Elysia({
     websocket: {
       // 部分 iOS WebKit 版本会在 permessage-deflate 协商后立即断开连接。
@@ -433,6 +442,7 @@ export const createApp = ({
       maxPayloadLength: 256 * 1024,
     },
   })
+    .onStop(async () => { await characterService.close(); await localBangumi?.close(); })
     // ==================== 原生插件与全局中间件 ====================
     .use(
       cors({
@@ -537,6 +547,7 @@ export const createApp = ({
       systemRoutes({
         whoIsFakerService: fakerService,
         sonGuessrService: songService,
+        ccbService: characterService,
         logger,
         isShuttingDown,
         onTriggerShutdown,
@@ -562,6 +573,15 @@ export const createApp = ({
       close: (ws) =>
         closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId)),
     })
+    .ws("/api/ccb/ws", {
+      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
+      message: (ws, incoming) => handleGameMessage(ws, incoming, decoder, logger, {
+        serviceName: 'CCB', parse: parseCCBMessage,
+        execute: (connectionId, message) => characterService.execute(connectionId, message),
+      }),
+      close: (ws) => closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId)),
+    })
     .ws("/api/songuessr/ws", {
       upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
       open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
@@ -579,5 +599,6 @@ export const createApp = ({
     app,
     whoIsFakerService: fakerService,
     sonGuessrService: songService,
+    ccbService: characterService,
   };
 };

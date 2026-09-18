@@ -1,74 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { CCBOriginalService } from '../src/application/CCBOriginalService';
 import type { ConnectionRecord } from '../src/domain/Model';
-import type { CCBDataProvider, CCBRawCharacter } from '../src/infrastructure/CCBData';
-import type { CCBOriginalSocket } from '../src/infrastructure/CCBOriginalSocket';
 import { encodeOriginalCharacter } from '../src/infrastructure/CCBOriginalProtocol';
-import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBRoomEnterResult } from '../src/shared/CCB';
+import { createDefaultCCBSettings, type CCBClientMessage, type CCBRoomEnterResult } from '../src/shared/CCB';
 
-const character = (id = 900): CCBCharacterView => ({
-  id, name: `角色${id}`, nameCn: `中文${id}`, imageUrl: `https://images.example/${id}.jpg`,
-  gender: 'female', popularity: 120, summary: '第一条线索。第二条线索。第三条线索。',
-  appearances: [{ id: 10, name: '作品', nameCn: '作品', year: 2020, rating: 9, ratingCount: 100 }],
-  highestRating: 9, earliestAppearance: 2020, latestAppearance: 2020,
-  subjectTags: ['校园'], characterTags: ['眼镜'], voiceActors: ['声优'], metaTags: ['校园', '眼镜', '声优'],
-});
-const data: CCBDataProvider = {
-  async getCharacter(id) { return character(id); }, async chooseRandomCharacter() { return character(); },
-  async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...character(id), aliases: [], appearances: [] }; },
-  async searchCharacters() { return [character()]; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return [character()]; },
-  async importDirectory(id) { return { id, subjectIds: [10], missingSubjectIds: [], importedAt: 1 }; },
-  async resolveCharacterImage(id) { return `https://images.example/${id}.jpg`; }, close() {},
-};
-
-class FixtureSocket implements CCBOriginalSocket {
-  connected = false;
-  listeners = new Map<string, Set<(payload?: unknown) => void>>();
-  sent: Array<{ event: string; payload: unknown }> = [];
-  failGuess = false;
-  atomicTags = false;
-  constructor(readonly id: string, readonly room: FixtureRoom) {}
-  on(event: string, listener: (payload?: unknown) => void) {
-    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
-    this.listeners.get(event)!.add(listener);
-  }
-  off(event: string, listener: (payload?: unknown) => void) { this.listeners.get(event)?.delete(listener); }
-  receive(event: string, payload?: unknown) { for (const listener of [...this.listeners.get(event) || []]) listener(payload); }
-  emit(event: string, payload: unknown, ack?: (payload: unknown) => void) {
-    this.sent.push({ event, payload });
-    const command = payload as Record<string, unknown>;
-    if (event === 'createRoom' || event === 'joinRoom') {
-      this.room.players.push({ id: this.id, username: command.username, ready: true, isHost: event === 'createRoom',
-        team: null, guesses: '', score: 0 });
-      this.room.broadcast('updatePlayers', { players: this.room.players, isPublic: true });
-      this.receive('roomNameUpdated', { roomName: '' });
-    } else if (event === 'updateGameSettings') this.receive('updateGameSettings', { settings: command.settings });
-    else if (event === 'requestGameSettings') this.receive('updateGameSettings', { settings: createDefaultCCBSettings() });
-    else if (event === 'updateRoomName') this.receive('roomNameUpdated', { roomName: command.roomName });
-    else if (event === 'toggleRoomVisibility') this.receive('updatePlayers', { players: this.room.players, isPublic: false });
-    else if (event === 'toggleReady') {
-      const player = this.room.players.find(player => player.id === this.id)!;
-      player.ready = !player.ready;
-      this.room.broadcast('updatePlayers', { players: this.room.players, isPublic: true });
-    } else if (event === 'gameStart' || event === 'setAnswer') this.room.broadcast('gameStart', {
-      character: command.character, settings: command.settings || createDefaultCCBSettings(), players: this.room.players,
-      isPublic: true, hints: command.hints,
-    });
-    else if (event === 'setAnswerSetter') this.room.broadcast('waitForAnswer', { answerSetterId: command.setterId });
-    ack?.(this.failGuess && event === 'playerGuess' ? { ok: false, message: '角色已经被猜过' }
-      : { ok: true, ...(event === 'playerGuess' && this.atomicTags ? { tagBanApplied: true } : {}) });
-  }
-  connect() { this.connected = true; this.receive('connect'); }
-  disconnect() { this.connected = false; this.receive('disconnect'); }
-  removeAllListeners() { this.listeners.clear(); }
-}
-
-class FixtureRoom {
-  sockets: FixtureSocket[] = [];
-  players: Array<Record<string, unknown>> = [];
-  factory = () => { const socket = new FixtureSocket(`original-${this.sockets.length}`, this); this.sockets.push(socket); return socket; };
-  broadcast(event: string, payload: unknown) { this.sockets.forEach(socket => socket.receive(event, payload)); }
-}
+import { originalCharacter as character, originalData as data, FixtureRoom } from './CCBOriginalFixtures';
 
 const services: CCBOriginalService[] = [];
 afterEach(() => services.splice(0).forEach(service => service.close()));
@@ -118,6 +54,32 @@ describe('原版房间适配', () => {
     const { service, upstream } = setup({ fetcher: async () => Response.json([]) });
     await expect(request(service, 'first', { id: 'join', type: 'ccb.room.join', roomId: '5678', payload: { source: 'original', userName: '甲' } })).rejects.toMatchObject({ code: 'ROOM_NOT_FOUND' });
     expect(upstream.sockets).toHaveLength(0);
+  });
+
+  test('原版私密房可按房号加入，但不展示在大厅列表', async () => {
+    const { service, upstream } = setup({ fetcher: async () => Response.json([{ id: '1234', isPublic: false, playerCount: 1 }]) });
+    expect(await service.listRooms()).toEqual([]);
+    const entered = await request(service, 'first', { id: 'private-join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '甲' } }) as CCBRoomEnterResult;
+    expect(entered.roomId).toBe('1234');
+    expect(upstream.sockets[0].sent[0]).toMatchObject({ event: 'joinRoom' });
+  });
+
+  test('关闭作品搜索时猜题者不能绕过查询限制，零阈值提示对观战者也不显示', async () => {
+    const { service, upstream } = setup();
+    await create(service);
+    upstream.broadcast('gameStart', { character: encodeOriginalCharacter(character(), 'fixture-key'),
+      settings: { ...createDefaultCCBSettings(), subjectSearch: false, useHints: [0, 3] },
+      players: upstream.players, hints: ['禁用提示', '允许提示'] });
+    for (const command of [
+      { type: 'ccb.subject.search', payload: { keyword: '作品' } },
+      { type: 'ccb.subject.characters', payload: { subjectId: 10 } },
+    ] as const) await expect(request(service, 'first', { id: crypto.randomUUID(), ...command })).rejects.toMatchObject({ code: 'SUBJECT_SEARCH_DISABLED' });
+    upstream.players[0].team = '0';
+    upstream.broadcast('updatePlayers', { players: upstream.players });
+    expect((await sync(service)).privateState.hints).toEqual(['允许提示']);
+    expect(await request(service, 'first', { id: 'observer-search', type: 'ccb.subject.search', payload: { keyword: '作品' } })).toEqual({ results: [] });
+    upstream.broadcast('gameEnded', { guesses: [], scoreDetails: [] });
+    expect((await sync(service)).privateState.hints).toEqual(['允许提示']);
   });
 
   test('每位玩家独立上游会话，仅确认加入的增强玩家共享聊天，离开即撤权', async () => {

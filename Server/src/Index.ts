@@ -40,7 +40,7 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, sonGuessrService } = createApp({
+const { app, sonGuessrService, ccbService } = createApp({
   env,
   whoIsFakerService,
   logger,
@@ -62,6 +62,9 @@ const intervalId = setInterval(() => {
   void sonGuessrService.runHousekeeping().catch((error: unknown) => {
     logger.error("SonGuessr 房间清理任务执行失败", describeError(error));
   });
+  void ccbService.runHousekeeping().catch((error: unknown) => {
+    logger.error('CCB 房间清理任务执行失败', describeError(error));
+  });
 }, 10_000);
 
 // 心跳上报间隔必须落在 Cron Monitor 的判定裕度内，防止窗口间隙造成误报。
@@ -76,17 +79,18 @@ sentryRuntimeMetricsIntervalId.unref();
 function reportRuntimeMetrics(): void {
   const faker = whoIsFakerService.getHealthSnapshot();
   const songuessr = sonGuessrService.getHealthSnapshot();
+  const ccb = ccbService.getHealthSnapshot();
   gaugeServerMetric(
     "bakagame.players.online",
-    faker.onlinePlayerCount + songuessr.onlinePlayerCount,
+    faker.onlinePlayerCount + songuessr.onlinePlayerCount + ccb.onlinePlayerCount,
   );
   gaugeServerMetric(
     "bakagame.rooms.active",
-    faker.roomCount + songuessr.roomCount,
+    faker.roomCount + songuessr.roomCount + ccb.roomCount,
   );
   gaugeServerMetric(
     "bakagame.connections.active",
-    faker.connectionCount + songuessr.connectionCount,
+    faker.connectionCount + songuessr.connectionCount + ccb.connectionCount,
   );
 }
 
@@ -123,6 +127,7 @@ const shutdown = async (signal?: string) => {
   // 2. 向 WhoIsFaker 与 SonGuessr 所有在线玩家广播停机通知
   whoIsFakerService.notifyShutdown();
   sonGuessrService.notifyShutdown();
+  ccbService.notifyShutdown();
 
   // 3. 预留 3 秒摘流与客户端接收停机协议窗口，使反向代理 / K8s Ingress 切换节点
   await Bun.sleep(3000);

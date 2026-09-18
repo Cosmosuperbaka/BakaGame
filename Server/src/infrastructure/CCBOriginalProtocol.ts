@@ -83,7 +83,7 @@ export function originalSettings(value: unknown): CCBSettings {
   result.metaTags = Array.isArray(raw.metaTags) ? originalStrings(raw.metaTags) : defaults.metaTags;
   result.indexId = originalNumber(raw.indexId) || null;
   result.addedSubjects = originalArray(raw.addedSubjects).map(item => originalNumber(typeof item === 'object' && item ? originalObject(item).id : item)).filter(id => id > 0);
-  result.useHints = originalArray(raw.useHints).map(value => originalNumber(value)).filter(value => value > 0);
+  result.useHints = originalArray(raw.useHints).map(value => Math.max(0, originalNumber(value)));
   return result;
 }
 

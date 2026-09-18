@@ -66,7 +66,10 @@ export class CCBOriginalService {
     return { configured: this.configured, available: this.configured, sourceKey: this.sourceKey,
       reason: this.configured ? '' : '原版服务器兼容配置尚未完成' };
   }
-  getHealthSnapshot() { return { configured: this.configured, sessions: this.sessions.size, rooms: this.chats.size }; }
+  getHealthSnapshot() {
+    return { configured: this.configured, sessions: this.sessions.size, rooms: this.chats.size,
+      onlineSessions: [...this.sessions.values()].filter(session => session.confirmed && session.connectionId && session.socket.connected).length };
+  }
 
   async listRooms(): Promise<CCBRoomSummary[]> {
     if (!this.configured) return [];
@@ -107,10 +110,14 @@ export class CCBOriginalService {
     const send = (event: string, payload: Record<string, unknown> = {}) => originalRequest(session.socket, event, { roomId: session.roomId, ...payload });
     switch (message.type) {
       case 'ccb.room.leave': this.revoke(session, '已离开房间', false); return {};
-      case 'ccb.room.requestSync': this.publish(session); return this.enterResult(session);
+      case 'ccb.room.requestSync':
+        if (session.connectionId) this.connections.get(session.connectionId)?.resetStateSync?.();
+        this.publish(session); return this.enterResult(session);
       case 'ccb.character.search': return { results: await data.searchCharacters(message.payload.keyword) };
-      case 'ccb.subject.search': return { results: await data.searchSubjects(message.payload.keyword) };
-      case 'ccb.subject.characters': return { results: await data.getSubjectCharacters(message.payload.subjectId) };
+      case 'ccb.subject.search':
+        this.requireSubjectSearch(session); return { results: await data.searchSubjects(message.payload.keyword) };
+      case 'ccb.subject.characters':
+        this.requireSubjectSearch(session); return { results: await data.getSubjectCharacters(message.payload.subjectId) };
       case 'ccb.directory.import': return data.importDirectory(message.payload.indexId);
       case 'ccb.character.image': return { imageUrl: await data.resolveCharacterImage(message.payload.characterId) };
       case 'ccb.game.imageHint': return this.imageHint(session);
@@ -171,6 +178,7 @@ export class CCBOriginalService {
       if (!this.connections.has(connection.id)) throw new AppError('CONNECTION_NOT_FOUND', '加入期间连接已断开');
       session.confirmed = true;
       if (!this.chats.has(roomId)) this.chats.set(roomId, { generation: randomUUID(), chat: [], roundHints: new Map() });
+      connection.resetStateSync?.();
       connection.roomId = `original:${roomId}`;
       connection.playerId = socket.id;
       if (create) {
@@ -313,6 +321,11 @@ export class CCBOriginalService {
   }
   private requireHost(session: CCBOriginalSession): void {
     if (!this.me(session).isHost) throw new AppError('HOST_ONLY', '只有房主可以操作');
+  }
+  private requireSubjectSearch(session: CCBOriginalSession): void {
+    if (session.phase === 'guessing' && !session.settings.subjectSearch && !originalPrivateState(session).answer) {
+      throw new AppError('SUBJECT_SEARCH_DISABLED', '本局关闭了作品搜索');
+    }
   }
   private unsupported(message: string): never { throw new AppError('CCB_ORIGINAL_UNSUPPORTED', message); }
   private enterResult(session: CCBOriginalSession): CCBRoomEnterResult {
