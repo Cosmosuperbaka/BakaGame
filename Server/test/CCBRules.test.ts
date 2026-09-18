@@ -22,6 +22,8 @@ import {
   resolveCCBAppearanceTypes,
   resolveCCBSubjectSearchMetaTags,
   resolveCCBSubjectSearchTypes,
+  resolveCCBNonstopRankScore,
+  resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
   revealCCBBannedTagsToAll,
   stageCCBBannedTags,
@@ -531,5 +533,54 @@ describe("标签全局 BP（tagBan）", () => {
     });
     // 没有屏蔽项时直接短路返回同一个引用。
     expect(maskCCBFeedbackTags(feedback, [], new Set<string>())).toBe(feedback);
+  });
+});
+
+describe("模式推进（同步 / 血战）", () => {
+  test("同步判定：还有人没轮完就 waiting", () => {
+    expect(
+      resolveCCBSyncVerdict({
+        participantIds: ["p1", "p2"],
+        completedIds: ["p1"],
+        hasWinner: false,
+      }),
+    ).toBe("waiting");
+  });
+
+  test("同步判定：全员完成且已有胜者才 settle", () => {
+    expect(
+      resolveCCBSyncVerdict({
+        participantIds: ["p1", "p2"],
+        completedIds: ["p1", "p2"],
+        hasWinner: true,
+      }),
+    ).toBe("settle");
+  });
+
+  test("同步判定：全员完成但还没胜者就 advance", () => {
+    // 完成列表的顺序无关紧要，判据只看「在不在里面」。
+    expect(
+      resolveCCBSyncVerdict({
+        participantIds: ["p1", "p2"],
+        completedIds: ["p2", "p1"],
+        hasWinner: false,
+      }),
+    ).toBe("advance");
+  });
+
+  test("同步判定：参战玩家归零直接收尾（原版此处会永久卡住）", () => {
+    expect(
+      resolveCCBSyncVerdict({ participantIds: [], completedIds: [], hasWinner: false }),
+    ).toBe("settle");
+  });
+
+  test("血战名次分依次递减，最低保底 1", () => {
+    expect(resolveCCBNonstopRankScore(3, 0)).toBe(3);
+    expect(resolveCCBNonstopRankScore(3, 1)).toBe(2);
+    expect(resolveCCBNonstopRankScore(3, 2)).toBe(1);
+    // 已胜人数追平或超过参战人数时也不能给 0 分或负分。
+    expect(resolveCCBNonstopRankScore(3, 3)).toBe(1);
+    expect(resolveCCBNonstopRankScore(3, 5)).toBe(1);
+    expect(resolveCCBNonstopRankScore(0, 0)).toBe(1);
   });
 });
