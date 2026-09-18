@@ -4,7 +4,7 @@ import { CCBCharacterWorkerProvider } from "../src/infrastructure/CCBCharacterWo
 import { createDefaultCCBSettings } from "../src/shared/CCB";
 import { createCCBCharacterFixture } from "./CCBCharacterFixtures";
 
-// Bun 1.3.14 的 rejects 匹配器会阻塞已初始化 Worker 的异步错误回包；先原生 await 再断言。
+// Windows Bun 1.3.14 的 rejects 匹配器会阻塞 Worker 的异步错误回包；先原生 await 再断言。
 const rejectionOf = (request: Promise<unknown>) => request.then(() => null, (error: unknown) => error);
 
 test("角色工作线程并发查询隔离对象且关闭后拒绝请求", async () => {
