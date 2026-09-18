@@ -380,6 +380,27 @@ P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。�
 - 标签 BP 的遮掩照旧生效：观战者不是揭示者，所以被 `tagBan` 禁掉的标签对他仍是 `???`。
 - 前端据此把「自己那一列」换成「按玩家分组的全场明细」（自己那一列对观战者没有意义）。
 
+### 6.10 角色使用率上报（旁路统计）
+
+原版有两个统计端点，契约相同（`POST /api/{answer,guess}-character-count`，
+body `{ characterId, characterName }`）—— 原版的 `/api/character-usage/:id` 与角色排行榜读的就是这两张表。
+
+本项目把**增强版玩家**的对局也报进去（统计的是角色而不是房间，所以纯增强版房间同样上报）：
+
+| 位置 | 行为 |
+|---|---|
+| `infrastructure/CCBOriginalReporter.ts` | 端点映射与 `fetch`；**任何失败只记日志、绝不抛出** |
+| `application/CCBService.ts` | 只声明 `CCBStatsReporter` 接口并注入；`beginRound` 报一次 `answer`，每次**被接受**的猜测报一次 `guess` |
+| `transport/App.ts` | 用环境变量 `CCB_ORIGINAL_SERVER_URL` 装配 `CCBOriginalReporter` |
+
+三条约束：
+
+1. **服务器地址一律不进仓库**（用户明确要求）：未配置即空串，`CCBOriginalReporter` 整体停用、
+   不白发请求 —— 本地与 CI 都没有出站依赖。
+2. **纯旁路**：`reportUsage` 用 `void … .catch(() => undefined)` 兜住，实现方内部再吞一层；
+   上报挂掉绝不影响房间状态与结算（有用例钉住）。
+3. **被拒的猜测不上报**：上报发生在构造 `record` 之后，早退路径（重复角色、非猜测阶段等）不计。
+
 **默认设置必须对齐原版 `client/src/data/presets.js` 的 `createBasePreset()`**（`DEFAULT_CCB_SETTINGS`）。
 三处最容易照直觉写错的地方，都已写成注释钉在契约里：
 
