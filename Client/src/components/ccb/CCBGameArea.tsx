@@ -11,6 +11,7 @@ import { CCBSearch } from "./CCBSearch";
 import { CCBAnswerCard } from "./CCBAnswerCard";
 import { CCBFeedbackTable } from "./CCBFeedbackTable";
 import { CCBWaiting } from "./CCBWaiting";
+import { CCBSetterPicker } from "./CCBSetterPicker";
 
 function Countdown({ deadline }: { deadline: number | null }) {
   const [now, setNow] = useState(Date.now);
@@ -21,7 +22,7 @@ function Countdown({ deadline }: { deadline: number | null }) {
 
 export function CCBGameArea({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   if (snapshot.phase === "waiting") return <CCBWaiting key={`${snapshot.source}:${snapshot.roomId}:${snapshot.roundNumber}`} snapshot={snapshot} privateState={privateState} />;
-  if (snapshot.phase === "settled" && snapshot.roundSummary) return <CCBSettlement snapshot={snapshot} isHost={snapshot.hostPlayerId === privateState.playerId} />;
+  if (snapshot.phase === "settled" && snapshot.roundSummary) return <CCBSettlement snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "answering") return <CCBSetter key={snapshot.roundNumber} snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "preparing") return <div className="m-auto space-y-4 p-6 text-center"><PhaseHeader icon={Loader2} title="正在准备题目" /><p className="text-sm text-muted-foreground">题目就绪后会自动开始</p><Countdown deadline={snapshot.phaseDeadlineAt} /><CancelRound snapshot={snapshot} playerId={privateState.playerId} /></div>;
   return <CCBGuessing key={snapshot.roundNumber} snapshot={snapshot} privateState={privateState} />;
@@ -29,7 +30,7 @@ export function CCBGameArea({ snapshot, privateState }: { snapshot: CCBRoomSnaps
 
 function CancelRound({ snapshot, playerId }: { snapshot: CCBRoomSnapshot; playerId: string }) {
   const { run, busy } = useCCBAction();
-  if (snapshot.source !== "native" || snapshot.hostPlayerId !== playerId) return null;
+  if (snapshot.source !== "native" || snapshot.hostPlayerId !== playerId || !["preparing", "answering"].includes(snapshot.phase)) return null;
   return <Button variant="outline" disabled={busy} onClick={() => void run("ccb.game.cancel", {})}>取消本局</Button>;
 }
 
@@ -66,12 +67,14 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
   </div>;
 }
 
-function CCBSettlement({ snapshot, isHost }: { snapshot: CCBRoomSnapshot; isHost: boolean }) {
+function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const summary = snapshot.roundSummary!;
+  const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, busy } = useCCBAction();
   return <div className="space-y-5 p-4 md:p-6"><h2 className="text-xl font-semibold">本局揭晓</h2><CCBAnswerCard answer={summary.answer} />
     <div className="overflow-x-auto"><table className="w-full text-sm"><caption className="pb-3 text-left font-medium">本局得分</caption><thead><tr className="border-b text-muted-foreground"><th className="py-2 text-left">玩家</th><th className="px-3 text-right">名次</th><th className="px-3 text-right">得分</th><th className="py-2 text-left">得分明细</th></tr></thead><tbody>{summary.scores.map((score) => <tr key={score.playerId} className="border-b"><th className="py-3 text-left font-normal">{score.playerName}</th><td className="px-3 text-right tabular-nums">{score.rank ?? "—"}</td><td className="px-3 text-right tabular-nums">{score.score > 0 ? "+" : ""}{score.score}</td><td className="py-3 text-xs text-muted-foreground">{score.reason}<span className="block">基础 {score.base} · 首猜 {score.firstGuess} · 快速 {score.quickGuess} · 作品 {score.partial} · 出题 {score.setter}</span></td></tr>)}</tbody></table></div>
     <CCBFeedbackTable guesses={summary.guesses} />
+    {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
   </div>;
 }

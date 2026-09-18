@@ -81,6 +81,7 @@ export interface CCBRoomSnapshot {
 }
 export interface CCBPrivateState {
   playerId: string; canGuess: boolean; canSurrender: boolean; canStart: boolean; canSetAnswer: boolean;
+  setterCandidateIds: string[];
   guesses: CCBGuess[]; answer: CCBCharacterView | null; hints: string[];
   imageHintAvailable: boolean; imageHintLevel: number; deadlineAt: number | null;
   bannedCharacterIds: number[];

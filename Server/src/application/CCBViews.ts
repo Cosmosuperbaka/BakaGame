@@ -44,6 +44,8 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
     canStart: room.phase === 'waiting' && player.id === room.hostPlayerId && participants.length > 0 &&
       participants.every(member => member.id === room.hostPlayerId || member.ready),
     canSetAnswer: room.phase === 'answering' && player.id === room.setterPlayerId,
+    setterCandidateIds: room.phase === 'waiting' && player.id === room.hostPlayerId
+      ? [...room.players.values()].filter(candidate => candidate.online && ccbParticipants(room, candidate.id).length > 0).map(candidate => candidate.id) : [],
     guesses: visibleGuesses(room, player, observing),
     answer: round && observing ? round.answer : null,
     hints: round && inGame ? round.hints.filter((_, index) => round.settings.useHints[index]! > 0 && remaining <= round.settings.useHints[index]!) : [],

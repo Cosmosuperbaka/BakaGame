@@ -83,8 +83,8 @@ export class CCBNativeService {
         this.state.requireHost(room, player); this.state.requireWaiting(room);
         const setter = this.state.member(room, message.payload.playerId);
         if (!setter.online) throw new AppError('PLAYER_OFFLINE', '出题人已离线');
+        if (!ccbParticipants(room, setter.id).length) throw new AppError('NO_PARTICIPANTS', '出题人及其队友不能参与猜测，请保留其他猜题者');
         room.setterPlayerId = setter.id;
-        if (!ccbParticipants(room).length) { room.setterPlayerId = null; throw new AppError('NO_PARTICIPANTS', '出题人及其队友不能参与猜测，请保留其他猜题者'); }
         room.phase = 'answering'; room.preparationId = crypto.randomUUID(); room.phaseDeadlineAt = this.now() + 120000; break;
       }
       case 'ccb.game.setAnswer': await this.setAnswer(room, player, message.payload.characterId, message.payload.hints); break;

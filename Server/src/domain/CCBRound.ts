@@ -3,8 +3,8 @@ import { AppError } from './Errors';
 import { ccbUnitId, type CCBPlayerRecord, type CCBRoom, type CCBRound, type CCBUnit } from './CCBModel';
 import { buildCCBFeedback, calculateCCBSetterScore, calculateCCBWinnerScore, createCCBHints } from './CCBRules';
 
-export function ccbParticipants(room: CCBRoom): CCBPlayerRecord[] {
-  const setter = room.setterPlayerId ? room.players.get(room.setterPlayerId) : undefined;
+export function ccbParticipants(room: CCBRoom, setterId = room.setterPlayerId): CCBPlayerRecord[] {
+  const setter = setterId ? room.players.get(setterId) : undefined;
   return [...room.players.values()].filter(player => player.online && player.membership === 'active' && player.id !== setter?.id &&
     !(setter?.team !== null && setter?.team !== undefined && player.team === setter.team));
 }

@@ -9,6 +9,22 @@ const keep = (h: ReturnType<typeof ccbTestHarness>) => { active.push(h); return 
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 房间与提示边界', () => {
+  test('未准备的出题人可以被选择，候选权限独立于随机开局并排除无法留下猜题者的队伍', async () => {
+    const h = keep(ccbTestHarness()); const host = await h.create(); const setter = await h.join('尚未准备');
+    expect(h.privateState(host).canStart).toBe(false);
+    expect(h.privateState(host).setterCandidateIds).toContain(setter.id!);
+    expect(h.privateState(setter).setterCandidateIds).toEqual([]);
+    await h.send(host, 'ccb.player.team', { team: 1 }); await h.send(setter, 'ccb.player.team', { team: 1 });
+    expect(h.privateState(host).setterCandidateIds).toEqual([]);
+    await expect(h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! })).rejects.toMatchObject({ code: 'NO_PARTICIPANTS' });
+    expect(h.snapshot(host).setterPlayerId).toBeNull();
+    await h.send(host, 'ccb.player.team', { team: null });
+    await h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    expect(h.privateState(host).setterCandidateIds).toEqual([]); expect(h.privateState(setter).canSetAnswer).toBe(true);
+    await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    expect(h.privateState(host).canGuess).toBe(true); expect(h.privateState(setter).canGuess).toBe(false);
+  });
+
   test('额外游戏作品命中获得作品分，外部标签反馈不泄漏答案未命中标签', async () => {
     const game = { id: 284157, name: 'Genshin', nameCn: '原神' };
     const answer = { ...character(1), comparisonAppearances: [...character(1).comparisonAppearances, game],

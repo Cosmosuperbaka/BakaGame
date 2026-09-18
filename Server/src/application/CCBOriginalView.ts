@@ -32,6 +32,8 @@ export function originalPrivateState(session: CCBOriginalSession): CCBPrivateSta
     canStart: !!me?.isHost && ['waiting', 'settled'].includes(session.phase)
       && session.players.every(player => player.isHost || player.ready || !player.online),
     canSetAnswer: session.phase === 'answering' && session.setterId === playerId,
+    setterCandidateIds: session.confirmed && session.socket.connected && me?.isHost && ['waiting', 'settled'].includes(session.phase)
+      ? session.players.filter(player => player.online).map(player => player.id) : [],
     guesses, answer: watching || ended ? session.answer : null,
     hints: session.hints.filter((_, index) => session.settings.useHints[index] > 0
       && (watching || ended || remaining <= session.settings.useHints[index])),

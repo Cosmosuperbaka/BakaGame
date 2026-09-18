@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Play, Check, PenLine, Copy } from "lucide-react";
+import { Settings, Play, Check, Copy } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -11,7 +11,7 @@ import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { CCBSettingsForm } from "./CCBSettingsForm";
-import { CCBSelect } from "./CCBSelect";
+import { CCBSetterPicker } from "./CCBSetterPicker";
 
 export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const isHost = snapshot.hostPlayerId === privateState.playerId;
@@ -20,7 +20,6 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
   const [name, setName] = useState(snapshot.name);
   const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
   const [visibility, setVisibility] = useState(snapshot.visibility);
-  const [setter, setSetter] = useState(privateState.playerId);
   const origin = useOriginTracker();
   const { run, busy } = useCCBAction();
   const copy = async () => {
@@ -37,8 +36,8 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
       {isHost ? <Button disabled={busy || !privateState.canStart} loading={busy} onClick={() => void run("ccb.game.start", {})}><Play />随机出题</Button> : null}
     </div>
     {isHost ? <div className="space-y-4 border-t pt-5">
-      <div className="flex flex-wrap gap-2"><div className="min-w-40 flex-1"><CCBSelect label="指定出题人" value={setter} options={snapshot.players.filter((player) => player.online).map((player) => ({ value: player.id, label: player.name }))} disabled={busy} onChange={setSetter} /></div><Button variant="outline" disabled={busy || !privateState.canStart} onClick={() => void run("ccb.game.chooseSetter", { playerId: setter })}><PenLine />手动出题</Button></div>
-      <details><summary className="cursor-pointer text-sm text-muted-foreground">房间设置</summary><div className="mt-3 space-y-3"><Label className="block space-y-2">房间名称<Input value={name} maxLength={snapshot.source === "original" ? 15 : 32} onChange={(event) => setName(event.target.value)} /></Label><Label className="flex items-center justify-between">公开显示在大厅<Switch checked={visibility === "public"} onCheckedChange={(value) => setVisibility(value ? "public" : "private")} /></Label>{snapshot.source === "native" ? <Label className="flex items-center justify-between">允许旁观<Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} /></Label> : null}<Button variant="outline" disabled={busy || !name.trim()} onClick={() => void run("ccb.room.update", { name: name.trim(), visibility, allowSpectators })}>保存房间设置</Button></div></details>
+      <CCBSetterPicker snapshot={snapshot} privateState={privateState} />
+      <details><summary className="cursor-pointer text-sm text-muted-foreground">房间设置</summary><div className="mt-3 space-y-3"><Label className="block space-y-2">房间名称<Input value={name} maxLength={snapshot.source === "original" ? 30 : 32} onChange={(event) => setName(event.target.value)} /></Label><Label className="flex items-center justify-between">公开显示在大厅<Switch checked={visibility === "public"} onCheckedChange={(value) => setVisibility(value ? "public" : "private")} /></Label>{snapshot.source === "native" ? <Label className="flex items-center justify-between">允许旁观<Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} /></Label> : null}<Button variant="outline" disabled={busy || !name.trim()} onClick={() => void run("ccb.room.update", { name: name.trim(), visibility, allowSpectators })}>保存房间设置</Button></div></details>
     </div> : <p className="text-center text-xs text-muted-foreground">准备完成后由房主开始</p>}
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen} origin={origin.origin}><DialogContent className="max-h-[85dvh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>题目设置</DialogTitle><DialogDescription>设置在开局后固定，仅对下一局生效。</DialogDescription></DialogHeader><CCBSettingsForm key={settingsOpen ? "open" : "closed"} settings={snapshot.settings} editable={isHost && snapshot.phase === "waiting"} onSaved={() => setSettingsOpen(false)} /></DialogContent></Dialog>
   </div>;
