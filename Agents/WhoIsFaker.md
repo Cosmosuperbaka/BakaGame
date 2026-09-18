@@ -104,6 +104,12 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 - **白板胜 (`blank`)**：白板玩家在猜词阶段正确猜中平民词与卧底词。
 - **流局 (`aborted`)**：出题人被踢出、重连超时或房主主动解散。
 
+### 4.4 房间设置与身份揭露规则 (`revealRoleOnDeath`)
+- **死亡身份揭露 (`revealRoleOnDeath`)**：布尔值，默认 `true`。
+  - **开启时**：玩家在对局中死亡/被放逐出局时，其真实角色（`revealedRole`）即刻写入公共快照，全房存活普通玩家均可知晓其阵营。
+  - **关闭时**：死亡玩家在对局中的角色在公共快照中严格保持 `undefined` 保密，存活普通玩家无法从公共快照探知其死前真实身份；仅出题人、旁观者或待最终 `gameOver` 阶段时方予揭露。
+  - **交互与同步**：房主可在等待大厅（`WaitingPhase`）随时切换，配置变更通过 `room.settings_changed` 实时同步；非房主玩家在设置预览区展示“死亡揭露身份”/“死亡隐藏身份”状态胶囊。
+
 ---
 
 ## 5. 发言与补充发言记录机制 (Description Records)
@@ -131,7 +137,12 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 1. **触发入口 (`BlankGuessButton`)**：白板玩家在存活期间（或残局触发）可见，点击弹窗二次确认后发送 `game.enterBlankGuess`。每局有且仅有 1 次尝试机会。
 2. **倒计时打断与暂存还原 (`interruptedRemainingTimerMs`)**：白板发起猜词打断发言阶段时，服务端计算并暂存当前阶段剩余毫秒数。若后续裁定未通过或超时切回原阶段，系统精准恢复该剩余倒计时，杜绝倒计时丢失或被重置为初始全长。
 3. **实时草稿广播 (`blankGuessDraft`)**：白板输入时，前端以约 220ms 节流发送 `game.updateBlankGuessDraft`，服务端实时广播草稿给全房玩家围观其推演过程。
-4. **掉线兜底防死锁**：若白板在猜词阻塞期间意外断线，出题人选择“继续等待”时，服务端强制挂载 60 秒倒计时兜底；若到期白板未重连提交，超时机制自动判定猜词失败并切回原阶段，杜绝房间陷入不可推进的死锁。
+4. **掉线兜底与平票自愈防死锁 (Tie-Break Disconnect Self-Healing & Deadlock Prevention)**：
+   - 若白板在猜词阻塞期间意外断线，出题人选择“继续等待”时，服务端强制挂载 60 秒倒计时兜底；若到期白板未重连提交，超时机制自动判定猜词失败并切回原阶段，杜绝死锁。
+   - 若白板在平票投票（`tieBreak`）中被投出触发白板猜词，期间白板离场（掉线淘汰或被踢出）：
+     - 必须保护暂存上下文（`preservedTieBreak` / `preservedVotes`），避免内部流转阶段意外冲刷。
+     - 若扣除离场白板后平票候选人剩余 $\le 1$ 人，平票竞争已无意义，系统自动收束平票状态并平滑推进至夜晚（`"night"`），避免卡在平票态。
+     - 在推进阶段（`handleAdvancePhase`）中增加自愈防御：若处于 `tieBreak` 但平票上下文丢失或候选人不足，自动降级安全转入夜晚，杜绝抛出阻断性的 `TIE_BREAK_MISSING` 致命异常。
 5. **出题人复核裁定 (`pendingReview`)**：
    - 真实词对仅通过 `privateState.globalWords` 下发出题人，公共快照严格保密。
    - 为避免因错别字或同义词（如“香焦”与“香蕉”）误杀，若自动精确比对未完全匹配，服务端**不直接宣告失败**，而是挂起至 `pendingReview` 阻塞等待出题人人工裁定。
