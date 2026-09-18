@@ -1,18 +1,23 @@
 import sharp from 'sharp';
 import { LRUCache } from 'lru-cache';
 import { AppError } from '../domain/Errors';
+type ImageFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export class CCBImageHints {
   private readonly cache = new LRUCache<string, string>({ max: 128, ttl: 60 * 60 * 1000 });
   private readonly inFlight = new Map<string, Promise<string>>();
-  private readonly fetcher: typeof fetch;
-  constructor(options: { fetcher?: typeof fetch } = {}) { this.fetcher = options.fetcher ?? fetch; }
+  private readonly fetcher: ImageFetcher;
+  constructor(options: { fetcher?: ImageFetcher } = {}) { this.fetcher = options.fetcher ?? fetch; }
   async render(imageUrl: string, level: number): Promise<string> {
     const normalized = Math.max(0, Math.min(100, Math.floor(level)));
     const key = `${imageUrl}:${normalized}`;
     const cached = this.cache.get(key); if (cached) return cached;
     const pending = this.inFlight.get(key); if (pending) return pending;
     const result = this.create(imageUrl, normalized).then(value => { this.cache.set(key, value); return value; })
+      .catch((error: unknown) => {
+        if (error instanceof AppError) throw error;
+        throw new AppError('IMAGE_UNAVAILABLE', '暂时无法生成图片提示');
+      })
       .finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, result); return result;
   }
