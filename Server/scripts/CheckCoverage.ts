@@ -12,7 +12,7 @@ const thresholds = {
   lines: 95.45,
 };
 
-const parseLcov = (text: string): CoverageTotals => {
+export const parseLcov = (text: string): CoverageTotals => {
   const totals: CoverageTotals = {
     functionsFound: 0,
     functionsHit: 0,
@@ -26,15 +26,13 @@ const parseLcov = (text: string): CoverageTotals => {
       if (separator < 0) continue;
 
       const key = line.slice(0, separator);
-      const values = line.slice(separator + 1).split(",");
-      const found = Number(values[0]);
-      const hit = Number(values[1]);
-      if (!Number.isFinite(found) || !Number.isFinite(hit)) continue;
+      const found = Number(line.slice(separator + 1));
+      if (!Number.isFinite(found)) continue;
 
       if (key === "FNF") totals.functionsFound += found;
-      if (key === "FNH") totals.functionsHit += hit;
+      if (key === "FNH") totals.functionsHit += found;
       if (key === "LF") totals.linesFound += found;
-      if (key === "LH") totals.linesHit += hit;
+      if (key === "LH") totals.linesHit += found;
     }
   }
 
@@ -44,6 +42,7 @@ const parseLcov = (text: string): CoverageTotals => {
 const percentage = (hit: number, found: number): number =>
   found === 0 ? 100 : (hit / found) * 100;
 
+if (import.meta.main) {
 const coveragePath = resolve(import.meta.dir, "../coverage/lcov.info");
 const lcov = Bun.file(coveragePath);
 if (!(await lcov.exists())) {
@@ -51,6 +50,7 @@ if (!(await lcov.exists())) {
 }
 
 const totals = parseLcov(await lcov.text());
+if (!totals.functionsFound || !totals.linesFound) throw new Error('覆盖率报告缺少有效的函数或行计数');
 const actual = {
   functions: percentage(totals.functionsHit, totals.functionsFound),
   lines: percentage(totals.linesHit, totals.linesFound),
@@ -63,4 +63,5 @@ console.log(
 const failures = Object.entries(thresholds).filter(([metric, threshold]) => actual[metric as keyof typeof actual] < threshold);
 if (failures.length > 0) {
   throw new Error(`覆盖率低于门槛: ${failures.map(([metric, threshold]) => `${metric}=${actual[metric as keyof typeof actual].toFixed(2)}% < ${threshold.toFixed(2)}%`).join(", ")}`);
+}
 }

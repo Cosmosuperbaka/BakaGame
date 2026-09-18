@@ -93,6 +93,7 @@ npx playwright test e2e/App.spec.ts
 - **覆盖率必须进 CI**：`Server` 执行 `bun run test:coverage`，`Client` 执行 `npm run test:coverage`；覆盖率用于阻止回退，核心模块的主要分支不得以全局平均值掩盖。
 - **开发服务器不代表生产**：Playwright 的资源冒烟使用 `npm run build` 后的 `vite preview`；真实房间 E2E 可以使用开发服务器，但必须另有生产构建冒烟。
 - **覆盖率阈值必须可追溯**：修改阈值时必须同时说明基线、覆盖空白和回退风险；禁止为通过 CI 临时降低阈值。服务端阈值由 `Server/scripts/CheckCoverage.ts` 检查，客户端阈值由 `Client/vitest.config.ts` 检查。
+- **覆盖率报告解析必须实测**：LCOV 的 `FNF/FNH/LF/LH` 是单值记录，不能按 `DA` 的双值结构读取；报告缺少有效计数必须失败，禁止把空报告视为百分之百。真实角色 E2E 的检出步骤必须拉取 LFS 数据实体。
 - **生产冒烟必须隔离上游**：冒烟脚本只能验证本地服务、协议握手和关键 ACK；网易云、Bangumi 等真实第三方调用必须使用 Mock 或单独的凭据隔离集成任务。
 - **E2E 质量监听必须可解释**：监听到的 `pageerror`、控制台 error 或 HTTP 4xx/5xx 必须能关联到当前用户流程；确属预期的状态码要在测试中显式白名单并写明原因。
 
