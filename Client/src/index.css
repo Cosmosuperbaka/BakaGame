@@ -381,7 +381,7 @@ img {
   margin-top: 0.2rem !important;
 }
 
-/* 原生 AMLL 总览模式：连贯平滑缩放与全行清晰展现 */
+/* 原生 AMLL 总览模式：连贯平滑缩放与全行纯黑清晰展现 */
 .baka-lyric-player {
   transform: scale(1);
   will-change: transform;
@@ -390,21 +390,36 @@ img {
 }
 
 .baka-lyric-player.baka-overview-mode {
+  --amll-lp-inactive-opacity: 1 !important;
+  --amll-lp-color: var(--color-foreground) !important;
   transform: scale(0.92);
 }
 
-.baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"] {
-  opacity: 0.95 !important;
+.baka-lyric-player.baka-overview-mode,
+.baka-lyric-player.baka-overview-mode * {
+  color: var(--color-foreground) !important;
+  text-shadow: none !important;
+}
+
+.baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"],
+.baka-lyric-player.baka-overview-mode [class*="lyricLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"] span,
+.baka-lyric-player.baka-overview-mode [class*="lyricWord"],
+.baka-lyric-player.baka-overview-mode [class*="lyricBgLine"],
+.baka-lyric-player.baka-overview-mode [class*="bgWrapper"] {
+  opacity: 1 !important;
   filter: none !important;
+  color: var(--color-foreground) !important;
 }
 
 .baka-lyric-player.baka-overview-mode [class*="lyricMainLine"] span {
-  opacity: 1 !important;
   font-weight: 500 !important;
 }
 
 .baka-lyric-player.baka-overview-mode [class*="lyricSubLine"] {
-  opacity: 0.75 !important;
+  opacity: 1 !important;
+  color: var(--color-foreground) !important;
   font-weight: 400 !important;
 }
 

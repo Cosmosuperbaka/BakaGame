@@ -91,19 +91,62 @@ export function useAudioClipPlayer({
     const startSeconds = currentClipStartTime / 1_000;
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
 
-    const moveToStart = () => {
+    const computeFadeFactor = (currentTime: number): number => {
+      if (endSeconds === undefined) return 1;
+      const clipDuration = Math.max(0.1, endSeconds - startSeconds);
+      const fadeDuration = Math.min(1.0, clipDuration / 2);
+
+      const elapsed = currentTime - startSeconds;
+      const remaining = endSeconds - currentTime;
+
+      if (elapsed <= 0 || remaining <= 0) return 0;
+
+      const fadeIn = Math.max(0, Math.min(1, elapsed / fadeDuration));
+      const fadeOut = Math.max(0, Math.min(1, remaining / fadeDuration));
+
+      return Math.min(fadeIn, fadeOut);
+    };
+
+    let fadeRafId: number | null = null;
+    const updateAudioFade = () => {
+      if (!audio.paused && !audio.ended) {
+        const factor = computeFadeFactor(audio.currentTime);
+        audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
+        fadeRafId = requestAnimationFrame(updateAudioFade);
+      }
+    };
+
+    const startFadeLoop = () => {
+      if (fadeRafId !== null) cancelAnimationFrame(fadeRafId);
+      const factor = computeFadeFactor(audio.currentTime);
+      audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
+      fadeRafId = requestAnimationFrame(updateAudioFade);
+    };
+
+    const stopFadeLoop = () => {
+      if (fadeRafId !== null) {
+        cancelAnimationFrame(fadeRafId);
+        fadeRafId = null;
+      }
       audio.volume = volumeRef.current;
+    };
+
+    const moveToStart = () => {
       if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
+      audio.volume = Math.max(0, Math.min(1, volumeRef.current * computeFadeFactor(startSeconds)));
     };
     const stopAtEnd = () => {
       if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
+        stopFadeLoop();
         audio.pause();
         audio.currentTime = startSeconds;
         setAudioPlaybackState("completed");
+      } else if (endSeconds !== undefined) {
+        const factor = computeFadeFactor(audio.currentTime);
+        audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
       }
     };
     const keepPlaybackInClip = () => {
-      audio.volume = volumeRef.current;
       if (
         audio.currentTime < startSeconds - 0.25 ||
         (endSeconds !== undefined && audio.currentTime >= endSeconds)
@@ -115,7 +158,6 @@ export function useAudioClipPlayer({
     let disposed = false;
     const ready = () => {
       if (disposed) return;
-      audio.volume = volumeRef.current;
       moveToStart();
       readyState = true;
       setAudioStatus("ready");
@@ -141,7 +183,6 @@ export function useAudioClipPlayer({
       // 加载完成后自动播放；浏览器禁止自动播放时保留小型播放按钮作为后备。
       if (audioAutoPlayKey.current !== loadKey) {
         audioAutoPlayKey.current = loadKey;
-        audio.volume = volumeRef.current;
         moveToStart();
         void Promise.resolve(audio.play()).catch(() => {
           if (!disposed) setAudioPlaybackState("idle");
@@ -150,6 +191,7 @@ export function useAudioClipPlayer({
     };
     const failed = () => {
       if (disposed || readyState) return;
+      stopFadeLoop();
       setAudioPlaybackState("idle");
       setAudioStatus("error");
       if (audioFailureKey.current !== loadKey && isPlayingPhase && currentPhaseRoundNumber !== undefined) {
@@ -160,10 +202,11 @@ export function useAudioClipPlayer({
       }
     };
     const playing = () => {
-      audio.volume = volumeRef.current;
+      startFadeLoop();
       setAudioPlaybackState("playing");
     };
     const completed = () => {
+      stopFadeLoop();
       audio.currentTime = startSeconds;
       setAudioPlaybackState("completed");
     };
@@ -172,6 +215,7 @@ export function useAudioClipPlayer({
     audio.addEventListener("timeupdate", stopAtEnd);
     audio.addEventListener("play", keepPlaybackInClip);
     audio.addEventListener("play", playing);
+    audio.addEventListener("pause", stopFadeLoop);
     audio.addEventListener("ended", completed);
     audio.addEventListener("canplay", ready);
     audio.addEventListener("canplaythrough", ready);
@@ -192,11 +236,13 @@ export function useAudioClipPlayer({
     return () => {
       disposed = true;
       window.clearTimeout(loadTimeout);
+      stopFadeLoop();
       audio.pause();
       audio.removeEventListener("loadedmetadata", moveToStart);
       audio.removeEventListener("timeupdate", stopAtEnd);
       audio.removeEventListener("play", keepPlaybackInClip);
       audio.removeEventListener("play", playing);
+      audio.removeEventListener("pause", stopFadeLoop);
       audio.removeEventListener("ended", completed);
       audio.removeEventListener("canplay", ready);
       audio.removeEventListener("canplaythrough", ready);
@@ -247,7 +293,11 @@ export function useAudioClipPlayer({
     ) {
       audio.currentTime = startSeconds;
     }
-    audio.volume = volumeRef.current;
+    if (Math.abs(audio.currentTime - startSeconds) < 0.15) {
+      audio.volume = 0;
+    } else {
+      audio.volume = volumeRef.current;
+    }
     try {
       await audio.play();
     } catch {

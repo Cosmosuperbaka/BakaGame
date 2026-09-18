@@ -5,6 +5,24 @@ import type { SongLyricLine } from "@/types";
 import { cn } from "@/lib/Utils";
 import { calculateLyricContainerHeight } from "./lyricHeight";
 
+// 拦截 AMLL 内部开发环境输出的调试日志（“设置歌词行”、“歌词处理完成”等），保持控制台纯净
+if (
+  typeof window !== "undefined" &&
+  !(window as unknown as { __BAKA_AMLL_LOG_FILTERED__?: boolean }).__BAKA_AMLL_LOG_FILTERED__
+) {
+  (window as unknown as { __BAKA_AMLL_LOG_FILTERED__?: boolean }).__BAKA_AMLL_LOG_FILTERED__ = true;
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    if (
+      typeof args[0] === "string" &&
+      (args[0].startsWith("设置歌词行") || args[0].startsWith("歌词处理完成"))
+    ) {
+      return;
+    }
+    originalLog(...args);
+  };
+}
+
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
   audioRef?: RefObject<HTMLAudioElement | null>;
@@ -175,7 +193,7 @@ export function SongLyricPlayer({
     return (
       <div
         className={cn(
-          "flex h-48 w-full items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
+          "flex h-24 sm:h-28 w-full items-center justify-center rounded-md border border-border/40 bg-background/60 p-4 text-center text-sm text-muted-foreground select-none",
           className,
         )}
         data-testid="baka-song-lyric-empty"
