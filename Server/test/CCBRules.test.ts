@@ -23,6 +23,7 @@ import {
   resolveCCBSubjectSearchMetaTags,
   resolveCCBSubjectSearchTypes,
   resolveCCBNonstopRankScore,
+  resolveCCBSetterScore,
   resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
   revealCCBBannedTagsToAll,
@@ -582,5 +583,90 @@ describe("模式推进（同步 / 血战）", () => {
     expect(resolveCCBNonstopRankScore(3, 3)).toBe(1);
     expect(resolveCCBNonstopRankScore(3, 5)).toBe(1);
     expect(resolveCCBNonstopRankScore(0, 0)).toBe(1);
+  });
+});
+
+describe("出题人计分（按模式选表）", () => {
+  test("普通/同步：大赢家 → 扣其得分的一半（向下取整、至少 1）", () => {
+    expect(
+      resolveCCBSetterScore({
+        mode: "normal",
+        winnerMarks: "✔👑",
+        winnerGuessCount: 1,
+        bigWinnerScore: 14,
+        winnersCount: 1,
+        totalPlayers: 3,
+        totalRounds: 10,
+      }),
+    ).toEqual({ score: -7, reason: "纯在送分" });
+  });
+
+  test("普通/同步：按首猜次数分档，无人猜中扣 1", () => {
+    const base = {
+      mode: "sync" as const,
+      bigWinnerScore: 0,
+      winnersCount: 1,
+      totalPlayers: 3,
+      totalRounds: 10,
+    };
+    expect(
+      resolveCCBSetterScore({ ...base, winnerMarks: "❌💡✔✌", winnerGuessCount: 3 }),
+    ).toEqual({ score: -1, reason: "太简单了" });
+    // totalRounds = 10，半数正好是 5：5 次不算「超过一半」，落在不加不减那一档。
+    expect(
+      resolveCCBSetterScore({ ...base, winnerMarks: "❌❌❌❌✔✌", winnerGuessCount: 5 }),
+    ).toEqual({ score: 0, reason: "" });
+    expect(
+      resolveCCBSetterScore({ ...base, winnerMarks: "❌❌❌❌❌❌✔✌", winnerGuessCount: 7 }),
+    ).toEqual({ score: 1, reason: "难度适中" });
+    expect(
+      resolveCCBSetterScore({
+        ...base,
+        winnerMarks: "",
+        winnerGuessCount: 0,
+        winnersCount: 0,
+      }),
+    ).toEqual({ score: -1, reason: "没人猜中" });
+  });
+
+  test("血战：按猜中率给分，乘数 = ceil(参战人数 / 2)", () => {
+    const base = {
+      mode: "bloodbath" as const,
+      winnerMarks: "",
+      winnerGuessCount: 0,
+      bigWinnerScore: 0,
+      totalRounds: 10,
+    };
+    // 4 人参战，乘数 2：25% → 偏高 ×1、50% → 适中 ×2、75% → 偏低 ×1、无人 → −2。
+    expect(resolveCCBSetterScore({ ...base, winnersCount: 1, totalPlayers: 4 })).toEqual({
+      score: 2,
+      reason: "难度偏高",
+    });
+    expect(resolveCCBSetterScore({ ...base, winnersCount: 2, totalPlayers: 4 })).toEqual({
+      score: 4,
+      reason: "难度适中",
+    });
+    expect(resolveCCBSetterScore({ ...base, winnersCount: 3, totalPlayers: 4 })).toEqual({
+      score: 2,
+      reason: "难度偏低",
+    });
+    expect(resolveCCBSetterScore({ ...base, winnersCount: 0, totalPlayers: 4 })).toEqual({
+      score: -4,
+      reason: "无人猜中",
+    });
+  });
+
+  test("血战：大赢家照样优先扣分", () => {
+    expect(
+      resolveCCBSetterScore({
+        mode: "bloodbath",
+        winnerMarks: "✔👑",
+        winnerGuessCount: 1,
+        bigWinnerScore: 15,
+        winnersCount: 1,
+        totalPlayers: 3,
+        totalRounds: 10,
+      }),
+    ).toEqual({ score: -7, reason: "纯在送分" });
   });
 });

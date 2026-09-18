@@ -80,6 +80,9 @@ const lastEvent = <T>(client: TestConnection, event: string): T => eventsOf<T>(c
 const snapshotOf = (client: TestConnection) => lastEvent<CCBRoomSnapshot>(client, "ccb.room.snapshot");
 const privateStateOf = (client: TestConnection) => lastEvent<CCBPrivateState>(client, "ccb.game.privateState");
 
+const scoreOf = (client: TestConnection) =>
+  snapshotOf(client).players.find((player) => player.id === client.record.playerId)!.score;
+
 // ==================== 假数据源 ====================
 
 /**
@@ -109,6 +112,26 @@ const view = (overrides: Partial<CCBCharacterView> & { id: number }): CCBCharact
 const characters: Record<number, CCBCharacterView> = {
   1: view({ id: 1 }),
   2: view({ id: 2, popularity: 200, highestRating: 9, appearanceIds: [10, 20], latestAppearance: 2011 }),
+  // 3、4 号与答案**没有共同作品**（连作品名都不一样，否则会回落到名字交集），
+  // 于是猜它们只记 ❌、不记 💡 —— 「猜一次到底算几次」的用例需要这种干扰项。
+  3: view({
+    id: 3,
+    appearanceIds: [30],
+    appearances: ["作品B"],
+    appearancesCn: ["作品乙"],
+    popularity: 50,
+    latestAppearance: 2015,
+    earliestAppearance: 2014,
+  }),
+  4: view({
+    id: 4,
+    appearanceIds: [40],
+    appearances: ["作品C"],
+    appearancesCn: ["作品丙"],
+    popularity: 60,
+    latestAppearance: 2016,
+    earliestAppearance: 2015,
+  }),
 };
 
 const characterSource: CCBCharacterSource = {
@@ -494,9 +517,6 @@ describe("CCB 对局：全局 BP", () => {
 });
 
 describe("CCB 对局：同步与血战", () => {
-  const scoreOf = (client: TestConnection) =>
-    snapshotOf(client).players.find((player) => player.id === client.record.playerId)!.score;
-
   test("同步模式：每人每轮只能猜一次，全员完成才推进轮次", async () => {
     const { service } = createService();
     const host = connection(service, "c-host");
@@ -633,5 +653,168 @@ describe("CCB 对局：同步与血战", () => {
     expect(scoreOf(second)).toBe(14);
     // 丙没猜中但有共同作品 → 结算时拿 1 分作品分
     expect(scoreOf(third)).toBe(1);
+  });
+});
+
+describe("CCB 对局：手动出题", () => {
+  /** 建房 + 全员准备，但**不开局** —— 手动出题要从「等待」阶段开始。 */
+  const prepareRoom = async (
+    service: CCBService,
+    host: TestConnection,
+    guests: TestConnection[],
+  ) => {
+    await execute(service, host, {
+      id: "create",
+      type: "ccb.room.create",
+      payload: {
+        roomId: "1234",
+        name: "猜角色房",
+        visibility: "public",
+        allowSpectators: true,
+        userName: "房主",
+      },
+    });
+    for (const [index, guest] of guests.entries()) {
+      await execute(service, guest, {
+        id: `join-${index}`,
+        type: "ccb.room.join",
+        roomId: "1234",
+        payload: { userName: `玩家${index + 1}` },
+      });
+      await execute(service, guest, {
+        id: `ready-${index}`,
+        type: "ccb.player.setReady",
+        payload: { ready: true },
+      });
+    }
+  };
+
+  test("指定出题人后进入 answering，只有出题人能提交答案", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    const other = connection(service, "c-other");
+    await prepareRoom(service, host, [guest, other]);
+
+    await execute(service, host, {
+      id: "pick",
+      type: "ccb.game.chooseSetter",
+      payload: { playerId: guest.record.playerId! },
+    });
+    expect(snapshotOf(host).phase).toBe("answering");
+    expect(snapshotOf(host).answerSetterPlayerId).toBe(guest.record.playerId);
+    expect(privateStateOf(guest).canSetAnswer).toBe(true);
+    // 房主与旁观者都不行 —— 能力位是服务端的权威判断。
+    expect(privateStateOf(host).canSetAnswer).toBe(false);
+    expect(privateStateOf(other).canSetAnswer).toBe(false);
+
+    await expect(
+      execute(service, other, { id: "a0", type: "ccb.game.setAnswer", payload: { characterId: 1 } }),
+    ).rejects.toMatchObject({ code: "SETTER_FORBIDDEN" });
+
+    // 出题人提交答案 → 直接开局
+    await execute(service, guest, {
+      id: "a1",
+      type: "ccb.game.setAnswer",
+      payload: { characterId: 2 },
+    });
+    expect(snapshotOf(host).phase).toBe("guessing");
+    expect(privateStateOf(guest).canSetAnswer).toBe(false);
+    // 出题人自己不能猜，但能看到自己选的答案；答案不进全房快照。
+    expect(privateStateOf(guest).canGuess).toBe(false);
+    expect(privateStateOf(guest).setterAnswer).toMatchObject({ id: 2, revealed: false });
+    expect(privateStateOf(host).setterAnswer).toBeUndefined();
+    expect(snapshotOf(host).answer).toBeUndefined();
+
+    // 答案就是 2 号
+    await execute(service, other, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(snapshotOf(host).phase).toBe("settled");
+  });
+
+  test("手动出题结算出题人分：首猜即中 → 扣大赢家得分的一半", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const setter = connection(service, "c-setter");
+    const guesser = connection(service, "c-guesser");
+    await prepareRoom(service, host, [setter, guesser]);
+
+    await execute(service, host, {
+      id: "pick",
+      type: "ccb.game.chooseSetter",
+      payload: { playerId: setter.record.playerId! },
+    });
+    await execute(service, setter, {
+      id: "a1",
+      type: "ccb.game.setAnswer",
+      payload: { characterId: 1 },
+    });
+    // 唯一参战者首猜即中 → 大赢家 2 + 12 = 14，出题人被扣 floor(14 / 2) = 7。
+    await execute(service, guesser, {
+      id: "g1",
+      type: "ccb.game.guess",
+      payload: { characterId: 1 },
+    });
+
+    expect(scoreOf(guesser)).toBe(14);
+    expect(scoreOf(setter)).toBe(-7);
+    // 房主既没出题也没猜，一分不动。
+    expect(scoreOf(host)).toBe(0);
+  });
+
+  test("服务端出题不结算出题人分（房主不被凭空扣分）", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest]);
+
+    // 首猜即中会触发「纯在送分」那档扣分，但本局是服务端抽的题，房主不该被扣。
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(scoreOf(guest)).toBe(14);
+    expect(scoreOf(host)).toBe(0);
+  });
+
+  test("出题人被踢出后房间退回等待，不会卡在出题阶段", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const setter = connection(service, "c-setter");
+    const other = connection(service, "c-other");
+    await prepareRoom(service, host, [setter, other]);
+
+    await execute(service, host, {
+      id: "pick",
+      type: "ccb.game.chooseSetter",
+      payload: { playerId: setter.record.playerId! },
+    });
+    await execute(service, host, {
+      id: "kick",
+      type: "ccb.room.kick",
+      payload: { playerId: setter.record.playerId! },
+    });
+
+    expect(snapshotOf(host).phase).toBe("waiting");
+    expect(snapshotOf(host).answerSetterPlayerId).toBeUndefined();
+    // 退回等待后房主可以重新开局
+    expect(privateStateOf(host).canStartRound).toBe(true);
+  });
+
+  test("同步模式：本轮所有胜者共享首个胜者的分数", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync", maxAttempts: 10 });
+
+    // 甲三次尝试（❌💡 / ❌ / ✔）、乙两次（❌ / ❌ / ✔）—— 同一轮内两人都猜中。
+    await execute(service, first, { id: "a1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    await execute(service, second, { id: "b1", type: "ccb.game.guess", payload: { characterId: 3 } });
+    await execute(service, first, { id: "a2", type: "ccb.game.guess", payload: { characterId: 4 } });
+    await execute(service, second, { id: "b2", type: "ccb.game.guess", payload: { characterId: 4 } });
+    await execute(service, first, { id: "a3", type: "ccb.game.guess", payload: { characterId: 1 } });
+    await execute(service, second, { id: "b3", type: "ccb.game.guess", payload: { characterId: 1 } });
+
+    expect(snapshotOf(first).phase).toBe("settled");
+    // 首个胜者是甲（4 次尝试 → 2 + 1 = 3）。若各算各的，乙（3 次）会拿到 4 分。
+    expect(scoreOf(first)).toBe(3);
+    expect(scoreOf(second)).toBe(3);
   });
 });
