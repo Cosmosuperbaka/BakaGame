@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Flag, Play, RotateCcw, Settings, Square, Timer } from "lucide-react";
+import { Bot, Flag, PenLine, Play, RotateCcw, Settings, Square, Timer } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CharacterSearch } from "@/components/ccb/CharacterSearch";
 import { GuessTable } from "@/components/ccb/GuessTable";
+import { CCBSetterPanel } from "@/components/ccb/SetterPanel";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { cn } from "@/lib/Utils";
-import type { CCBCharacterSearchResult, CCBPhase } from "@/types";
+import type { CCBCharacterSearchResult, CCBPhase, CCBPlayerView } from "@/types";
 
 /** 长任务（出题要跑两级采样）用无限超时，靠 `requestSync` 之外的状态广播兜底。 */
 const LONG_TASK_TIMEOUT = 0;
@@ -31,6 +32,41 @@ interface CCBGameAreaProps {
   onToggleReady: () => Promise<void>;
   onBots: (add: boolean) => Promise<void>;
   onOpenSettings: () => void;
+}
+
+/**
+ * 房主指定出题人（`waiting` 与 `answering` 两处共用）。
+ *
+ * 用一排按钮而不是下拉：一个房间里本来就没几个人，多一层交互反而绕。
+ * 人机不参与猜测，所以不能出题（服务端也会拒），这里直接不列出来。
+ */
+function CCBSetterPicker({
+  candidates,
+  disabled,
+  onPick,
+}: {
+  candidates: CCBPlayerView[];
+  disabled: boolean;
+  onPick: (playerId: string) => void;
+}) {
+  if (candidates.length === 0) return null;
+  return (
+    <div className="flex flex-wrap justify-center gap-2">
+      {candidates.map((candidate) => (
+        <Button
+          key={candidate.id}
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={disabled}
+          onClick={() => onPick(candidate.id)}
+        >
+          <PenLine className="h-3.5 w-3.5" />
+          {candidate.name}
+        </Button>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -114,6 +150,20 @@ export function CCBGameArea({
     [snapshot],
   );
 
+  // 手动出题：谁在出题 / 能指定谁。人机不能出题（服务端也会拒），先从候选里剔掉。
+  const setterName = useMemo(() => {
+    const setterId = snapshot?.answerSetterPlayerId;
+    if (!setterId) return undefined;
+    return snapshot?.players.find((player) => player.id === setterId)?.name;
+  }, [snapshot]);
+  const setterCandidates = useMemo(
+    () =>
+      (snapshot?.players ?? []).filter(
+        (player) => player.membership === "active" && !player.isBot,
+      ),
+    [snapshot],
+  );
+
   const handleGuess = useCallback(
     (character: CCBCharacterSearchResult) => {
       void run("ccb.game.guess", { characterId: character.id });
@@ -169,7 +219,31 @@ export function CCBGameArea({
       </div>
 
       {/* 正文 */}
-      {inRound ? (
+      {phase === "answering" ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+          {privateState?.canSetAnswer ? (
+            <CCBSetterPanel />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+              <span className="text-sm text-muted-foreground">
+                {setterName ? `等待 ${setterName} 出题` : "等待出题人出题"}
+              </span>
+              {me?.isHost ? (
+                <>
+                  <span className="max-w-sm text-xs text-muted-foreground">
+                    想换人出题就点下面的名字；想改回自己抽题，点「开始游戏」。
+                  </span>
+                  <CCBSetterPicker
+                    candidates={setterCandidates}
+                    disabled={pending}
+                    onPick={(playerId) => void run("ccb.game.chooseSetter", { playerId })}
+                  />
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : inRound ? (
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
           {phase === "settled" && snapshot.answer ? (
             <div className="flex shrink-0 items-center gap-3 rounded-md border bg-card px-3 py-2">
@@ -187,6 +261,19 @@ export function CCBGameArea({
                 </p>
                 <p className="truncate text-xs text-muted-foreground">{snapshot.answer.name}</p>
               </div>
+            </div>
+          ) : null}
+
+          {/* 手动出题的出题人：自己不能猜，但要随时知道自己出了什么题 */}
+          {phase === "guessing" && privateState?.setterAnswer ? (
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">你是出题人 · 本局答案</p>
+                <p className="truncate font-medium">
+                  {privateState.setterAnswer.nameCn || privateState.setterAnswer.name}
+                </p>
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">等待其他人猜中</span>
             </div>
           ) : null}
 
@@ -222,6 +309,16 @@ export function CCBGameArea({
               {me?.isReady ? "取消准备" : "准备"}
             </Button>
           )}
+          {me?.isHost && !isSpectator ? (
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-xs text-muted-foreground">指定出题人（可选）</span>
+              <CCBSetterPicker
+                candidates={setterCandidates}
+                disabled={pending}
+                onPick={(playerId) => void run("ccb.game.chooseSetter", { playerId })}
+              />
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -295,7 +392,7 @@ export function CCBGameArea({
           </>
         ) : null}
 
-        {phase === "waiting" && privateState?.canStartRound ? (
+        {(phase === "waiting" || phase === "answering") && privateState?.canStartRound ? (
           <Button
             size="sm"
             className="gap-1.5"
@@ -303,7 +400,7 @@ export function CCBGameArea({
             onClick={() => void run("ccb.game.start", undefined, LONG_TASK_TIMEOUT)}
           >
             <Play className="h-3.5 w-3.5" />
-            开始游戏
+            {phase === "answering" ? "改由系统出题" : "开始游戏"}
           </Button>
         ) : null}
 
