@@ -1,77 +1,196 @@
+import type { LyricPlayerBase } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
 
-export function calculateLyricContainerHeight(lines: SongLyricLine[]): number {
-  if (!lines || lines.length === 0) {
-    return 96;
+/**
+ * 歌词组件高度核算。
+ *
+ * 官方文档（改动歌词组件前必读）：https://amll.dev/
+ *
+ * AMLL 内核（`@applemusic-like-lyrics/core`）暴露了原生实测接口：
+ * - `player.currentLyricGroups`：当前全部歌词组（主行 + 可能的和声副行）实例；
+ * - `player.lyricGroupSize`：`WeakMap<歌词组, [宽, 高]>`，由内核 `ResizeObserver`
+ *   对每组的 `.lyricLineWrapper` 实测 `clientWidth/clientHeight` 写入。
+ *
+ * 内核 `calcLayout()` 的排布算法为「自顶向下按已测行高累加」（`alignAnchor=top`
+ * 且 `alignPosition=0` 时首行贴顶、组间无额外间距），因此
+ *
+ *     Σ lyricGroupSize.get(group)[1]
+ *
+ * 就是总览所需的精确内容高度，且与容器高度无关（已实测验证：容器 200 / 400 /
+ * 800 / 3000px 下累加值完全一致）。真实浏览器中一旦测量齐全即以该值为准；
+ * 解析式估算仅用于测量到位前的首帧与无布局环境（jsdom / 预渲染）兜底。
+ */
+
+/** 总览模式缩放系数，必须与 Client/src/index.css 中 `.baka-overview-mode` 的 transform 一致 */
+export const LYRIC_OVERVIEW_SCALE = 0.92;
+
+/** AMLL 盒模型常量（与 Client/src/index.css、内核 style.css 对齐，单位 px） */
+const FONT_SIZE = 18; // --amll-lp-font-size: 1.125rem
+const LINE_HEIGHT = FONT_SIZE * 1.2; // 内核 .amll-lyric-player.dom { line-height: 1.2 }
+const SUB_FONT_SIZE = 0.85 * 16; // [class*="lyricSubLine"] { font-size: .85rem }
+const SUB_LINE_HEIGHT = SUB_FONT_SIZE * 1.4; // [class*="lyricSubLine"] { line-height: 1.4 }
+const SUB_MARGIN_TOP = 0.2 * 16; // [class*="lyricSubLine"] { margin-top: .2rem }
+const BG_FONT_SIZE = Math.max(FONT_SIZE * 0.7, 10); // --amll-lp-bg-line-scale: .7，下限 10px
+const BG_LINE_HEIGHT = BG_FONT_SIZE * 1.2;
+const WRAPPER_PADDING_Y = 0.25 * FONT_SIZE * 2; // 总览模式 .lyricLineWrapper 上下 padding .25em
+const WRAPPER_PADDING_X = FONT_SIZE; // --lyric-line-padding-x: 1em
+const WRAPPER_GAP = 0.2 * FONT_SIZE; // 总览模式 .lyricLineWrapper { gap: .2em }
+/** 每行折行估算的字族容差，宁可略高也不低估 */
+const GROUP_SAFETY_MARGIN = 2;
+
+/** 无法读取容器宽度（jsdom、首帧）时的兜底文本宽度 */
+export const FALLBACK_CONTENT_WIDTH = 560;
+
+/** 单行歌词最小可用文本宽度，避免除零与极端窄屏 */
+const MIN_TEXT_WIDTH = 96;
+
+export interface LyricContainerHeightOptions {
+  lines: SongLyricLine[];
+  /** 歌词行实际可用的文本宽度（px），≤0 时按 {@link FALLBACK_CONTENT_WIDTH} 处理 */
+  contentWidth: number;
+  /** 外壳上下 padding + border 之和（px） */
+  containerPadding: number;
+  /** AMLL 原生实测的未缩放总览高度；为空时退回解析式估算 */
+  measuredContentHeight?: number | null;
+  /** 是否处于总览模式：总览存在 `scale(0.92)` 缩小动效，需做反向补偿 */
+  overview?: boolean;
+}
+
+/** 读取内核原生实测的全部歌词组高度；任一未测量齐全则返回 `null` */
+export function readMeasuredGroupHeights(player?: LyricPlayerBase | null): number[] | null {
+  if (!player) return null;
+
+  // `currentLyricGroups` / `lyricGroupSize` 是内核公开字段，但未收敛进 React 绑定的
+  // `LyricPlayerRef` 类型，这里做一次受控的结构化读取。
+  const source = player as unknown as {
+    currentLyricGroups?: readonly unknown[];
+    lyricGroupSize?: WeakMap<object, [number, number]>;
+  };
+  const groups = source.currentLyricGroups;
+  const sizeMap = source.lyricGroupSize;
+  if (!groups || groups.length === 0 || !sizeMap) return null;
+
+  const heights: number[] = [];
+  for (const group of groups) {
+    const size = sizeMap.get(group as object);
+    if (!size || !(size[1] > 0)) return null;
+    heights.push(size[1]);
+  }
+  return heights;
+}
+
+/**
+ * AMLL 原生实测的总览内容高度（未缩放）。
+ *
+ * 除「已测量」外还要求测量值与元素当前 `clientHeight` 一致：切入总览时内核
+ * `.lyricLineWrapper` 的上下 padding 会由 `.4em` 变为 `.25em`，旧值会短暂残留，
+ * 该一致性校验确保读到的永远是切到总览后的新鲜值。任一歌词组尚未进入视野
+ * （内核按 `overscanPx` 挂载 DOM）时返回 `null`，由调用方下一帧重试。
+ */
+export function measureLyricOverviewHeight(player?: LyricPlayerBase | null): number | null {
+  const heights = readMeasuredGroupHeights(player);
+  if (!heights) return null;
+
+  const source = player as unknown as { currentLyricGroups?: readonly unknown[] };
+  const groups = source.currentLyricGroups ?? [];
+  for (let i = 0; i < groups.length; i += 1) {
+    const element = (groups[i] as { element?: HTMLElement }).element;
+    if (!element || !element.isConnected || element.clientHeight !== heights[i]) return null;
+  }
+  return heights.reduce((total, height) => total + height, 0);
+}
+
+/** 统计文本在当前字号下的显示宽度（全角字符按 1em，拉丁字符按 0.5em 估算） */
+function estimateTextWidth(text: string, charWidth: number): number {
+  let width = 0;
+  for (const char of text) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    width += codePoint <= 0xff ? charWidth * 0.5 : charWidth;
+  }
+  return width;
+}
+
+function estimateLineCount(text: string, availableWidth: number, charWidth: number): number {
+  const trimmed = text?.trim() ?? "";
+  if (!trimmed) return 0;
+  return Math.max(1, Math.ceil(estimateTextWidth(trimmed, charWidth) / availableWidth));
+}
+
+/** 依据 AMLL 真实盒模型估算单个歌词组的高度（总览模式，未缩放） */
+function estimateGroupHeight(
+  line: SongLyricLine,
+  backgroundLines: SongLyricLine[],
+  availableWidth: number,
+): number {
+  let height = WRAPPER_PADDING_Y;
+  height += estimateLineCount(line.text, availableWidth, FONT_SIZE) * LINE_HEIGHT;
+
+  const translation = line.translatedLyric?.trim();
+  if (translation) {
+    height +=
+      SUB_MARGIN_TOP + estimateLineCount(translation, availableWidth, SUB_FONT_SIZE) * SUB_LINE_HEIGHT;
   }
 
-  const hasAnyTranslation = lines.some((l) => Boolean(l.translatedLyric?.trim()));
-
-  // 严格依据 AMLL 真实渲染 DOM 盒模型进行物理高度核算：
-  // 1. 主歌词行：字号 1.125rem (18px)，line-height 1.8 (32.4px)，wrapper 上下 padding 0.4em (14.4px)
-  //    - 单行（<= 15 字）：48px
-  //    - 2 行折行（16 ~ 26 字）：80px
-  //    - 3 行折行（> 26 字）：112px
-  // 2. 翻译副行：字号 0.85rem (13.6px)，line-height 1.4 (19px)，margin-top 3.2px，wrapper gap 5.4px
-  //    - 单行（<= 15 字）：28px
-  //    - 2 行折行（16 ~ 28 字）：48px
-  //    - 3 行折行（> 28 字）：68px
-  // 3. 和声伴唱小字（isBG: true，字号 0.7em）：
-  //    - 单行主词：30px（长词 48px）
-  //    - 单行翻译：22px（长词 38px）
-  // 4. 真实物理间距与容器内边距：
-  //    - 行间自然间距：8px
-  //    - 容器上下内边距：p-3 (24px) ~ sm:p-4 (32px) + 上下自然呼吸留白 (20px) = 52px
-  //    - 每行单字度量冗余容差：每行额外提供 4px 安全缓冲，彻底杜绝字体字族差异导致的总览截断溢出
-  let totalContentHeight = 0;
-  for (const line of lines) {
-    const mainLength = line.text ? line.text.trim().length : 0;
-    const transLength = line.translatedLyric ? line.translatedLyric.trim().length : 0;
-    const hasTranslation = transLength > 0;
-    const isBackground = Boolean(line.isBG);
-
-    if (isBackground) {
-      let bgHeight = 30;
-      if (mainLength > 24) {
-        bgHeight = 48;
-      }
-      let bgTransHeight = 0;
-      if (hasTranslation) {
-        bgTransHeight = transLength > 24 ? 38 : 22;
-      }
-      const bgSpacing = hasTranslation ? 10 : 8;
-      totalContentHeight += bgHeight + bgTransHeight + bgSpacing;
-    } else {
-      let mainHeight = 48;
-      if (mainLength > 26) {
-        mainHeight = 112;
-      } else if (mainLength > 15) {
-        mainHeight = 80;
-      }
-
-      let translationHeight = 0;
-      if (hasTranslation) {
-        if (transLength > 28) {
-          translationHeight = 68;
-        } else if (transLength > 15) {
-          translationHeight = 48;
-        } else {
-          translationHeight = 28;
-        }
-      }
-
-      const spacing = hasTranslation ? 12 : 8;
-      totalContentHeight += mainHeight + translationHeight + spacing;
+  for (const background of backgroundLines) {
+    height += WRAPPER_GAP;
+    height += estimateLineCount(background.text, availableWidth, BG_FONT_SIZE) * BG_LINE_HEIGHT;
+    const backgroundTranslation = background.translatedLyric?.trim();
+    if (backgroundTranslation) {
+      height +=
+        SUB_MARGIN_TOP +
+        estimateLineCount(backgroundTranslation, availableWidth, SUB_FONT_SIZE) * SUB_LINE_HEIGHT;
     }
   }
 
-  // 容器上下内边距 (p-3/sm:p-4 约 24~32px) + 上下呼吸留白与每行 4px 安全冗余
-  const basePadding = 52;
-  const lineHeadroom = lines.length * 4;
-  const calculatedHeight = Math.ceil(totalContentHeight + basePadding + lineHeadroom);
-
-  // 兜底最小高度
-  const minHeight = hasAnyTranslation ? 160 : 120;
-  return Math.max(minHeight, calculatedHeight);
+  return height + GROUP_SAFETY_MARGIN;
 }
 
+/**
+ * 解析式估算总览内容高度（未缩放）。
+ *
+ * 仅作兜底：真实浏览器中测量到位后由 {@link measureLyricOverviewHeight} 的原生实测值取代。
+ */
+export function estimateLyricOverviewHeight(lines: SongLyricLine[], contentWidth: number): number {
+  if (!lines || lines.length === 0) return 0;
+
+  const width = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
+  const availableWidth = Math.max(width - WRAPPER_PADDING_X * 2, MIN_TEXT_WIDTH);
+
+  let total = 0;
+  let pendingBackground: SongLyricLine[] = [];
+  for (const line of lines) {
+    if (line.isBG) {
+      pendingBackground.push(line);
+      continue;
+    }
+    total += estimateGroupHeight(line, pendingBackground, availableWidth);
+    pendingBackground = [];
+  }
+  // 首行即和声（无主行可挂靠）时内核会自建一组，这里同样按独立组核算
+  for (const background of pendingBackground) {
+    total += estimateGroupHeight(background, [], availableWidth);
+  }
+
+  return total;
+}
+
+/**
+ * 计算注入给 AMLL 播放器本体的高度（未缩放）。
+ *
+ * 总览模式外壳按 {@link LYRIC_OVERVIEW_SCALE} 反向补偿，播放器本体必须保持未缩放的
+ * 歌词自然高度，才能既不被外壳裁切、又不留多余留白。
+ */
+export function resolveLyricContentHeight(options: LyricContainerHeightOptions): number {
+  if (options.lines.length === 0) return 0;
+  if (options.measuredContentHeight && options.measuredContentHeight > 0) {
+    return options.measuredContentHeight;
+  }
+  return estimateLyricOverviewHeight(options.lines, options.contentWidth);
+}
+
+/** 计算歌词组件的最终外壳高度 */
+export function calculateLyricContainerHeight(options: LyricContainerHeightOptions): number {
+  const contentHeight = resolveLyricContentHeight(options);
+  const scale = options.overview ? LYRIC_OVERVIEW_SCALE : 1;
+  return Math.ceil(contentHeight * scale + options.containerPadding);
+}

@@ -298,7 +298,11 @@ img {
 /* AMLL 逐字歌词 Vintage-Paper 复古纸质主题深度适配 */
 .baka-lyric-player {
   width: 100% !important;
-  height: 100% !important;
+  /* 高度由 SongLyricPlayer 注入的「未缩放歌词自然高度」驱动（见 lyricHeight.ts）：
+     总览模式存在 scale(0.92) 缩小动效，外壳高度已按 0.92 反向补偿，
+     播放器本体必须保持自然高度，才能在既不裁切歌词又不留多余留白之间取到精确解。
+     未注入时（首帧 / 无布局环境）退回 100%。 */
+  height: var(--baka-lyric-player-height, 100%) !important;
   position: relative !important;
   overflow: hidden !important;
 }
