@@ -6,6 +6,7 @@ import { useCCBStore } from "@/stores/UseCCBStore";
 import { ccbWs } from "@/lib/CCBWs";
 import { CCBGameArea } from "./CCBGameArea";
 import { CCBSettingsForm } from "./CCBSettingsForm";
+import { CCBPlayerList } from "./CCBPlayerList";
 
 const room = (changes: Partial<CCBRoomSnapshot> = {}): CCBRoomSnapshot => ({
   roomId: "1234", source: "native", name: "角色房", visibility: "public", hasPassword: false, allowSpectators: true,
@@ -20,6 +21,29 @@ const privateState = (changes: Partial<CCBPrivateState> = {}): CCBPrivateState =
 afterEach(() => { useCCBStore.getState().resetRoom(); vi.restoreAllMocks(); });
 
 describe("CCB 操作区", () => {
+  it("公开玩家栏保留次数、同步提交与完整进度信息", () => {
+    const snapshot = room({ phase: "guessing" });
+    snapshot.settings.syncMode = true;
+    snapshot.players[0] = { ...snapshot.players[0], status: "playing", attempts: 3, syncCompleted: true, marks: "❌❌✅" };
+    render(<CCBPlayerList snapshot={snapshot} privateState={privateState()} />);
+    expect(screen.getByText("3/10 次 · 已提交")).toBeInTheDocument();
+    expect(screen.getByLabelText("房主 猜测进度：❌❌✅")).toHaveAttribute("title", "❌❌✅");
+  });
+
+  it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "original", roomId: "1234", sessionToken: "token" });
+    render(<CCBGameArea snapshot={room({ source: "original" })} privateState={privateState()} />);
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    await user.clear(screen.getByRole("textbox", { name: "房间名称" }));
+    await user.type(screen.getByRole("textbox", { name: "房间名称" }), "新房间");
+    await user.click(screen.getByRole("switch", { name: "公开显示在大厅" }));
+    expect(screen.queryByRole("switch", { name: "允许旁观" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存房间设置" }));
+    expect(send).toHaveBeenCalledWith("ccb.room.update", { name: "新房间", visibility: "private", allowSpectators: true }, expect.any(Object));
+  });
+
   it("准备与随机出题使用真实命令", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
