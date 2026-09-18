@@ -492,3 +492,146 @@ describe("CCB 对局：全局 BP", () => {
     expect(feedbackOf(guest).metaTags).toEqual({ guess: ["紫瞳"], shared: ["紫瞳"] });
   });
 });
+
+describe("CCB 对局：同步与血战", () => {
+  const scoreOf = (client: TestConnection) =>
+    snapshotOf(client).players.find((player) => player.id === client.record.playerId)!.score;
+
+  test("同步模式：每人每轮只能猜一次，全员完成才推进轮次", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync" });
+
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    // 甲本轮完成，但乙还没猜 → 轮次不推进
+    expect(snapshotOf(first).syncProgress).toEqual({
+      round: 1,
+      completedPlayerIds: [first.record.playerId!],
+    });
+    expect(privateStateOf(first).syncCompleted).toBe(true);
+    expect(privateStateOf(first).canGuess).toBe(false);
+
+    // 同一轮不能猜第二次
+    await expect(
+      execute(service, first, { id: "g2", type: "ccb.game.guess", payload: { characterId: 1 } }),
+    ).rejects.toMatchObject({ code: "SYNC_ROUND_COMPLETED" });
+
+    // 乙也完成本轮 → 无胜者 → 推进到第 2 轮，两人重新可猜
+    await execute(service, second, { id: "g3", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(snapshotOf(first).syncProgress).toEqual({ round: 2, completedPlayerIds: [] });
+    expect(privateStateOf(first).syncCompleted).toBe(false);
+    expect(privateStateOf(first).canGuess).toBe(true);
+    expect(snapshotOf(first).phase).toBe("guessing");
+  });
+
+  test("同步模式：出现胜者要等本轮结束才结算", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync" });
+
+    // 甲首猜即中，但乙本轮还没猜 → 不结算，答案也不公开
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(first).phase).toBe("guessing");
+    expect(snapshotOf(first).answer).toBeUndefined();
+
+    // 乙完成本轮 → 全员完成且有胜者 → 立即结算
+    await execute(service, second, { id: "g2", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(snapshotOf(first).phase).toBe("settled");
+    expect(snapshotOf(first).answer).toMatchObject({ id: 1, revealed: true });
+  });
+
+  test("同步模式：投降也算本轮完成（否则残局会卡死）", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync" });
+
+    await execute(service, first, { id: "s", type: "ccb.game.surrender", payload: {} });
+    expect(snapshotOf(first).syncProgress).toEqual({
+      round: 1,
+      completedPlayerIds: [first.record.playerId!],
+    });
+  });
+
+  test("同步模式：全员出局且无人猜中也要收尾", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest], { mode: "sync", maxAttempts: 1 });
+
+    // 一次「猜错且沾边」按原版口径算 2 次，所以 maxAttempts=1 直接 💀。
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(snapshotOf(guest).phase).toBe("settled");
+  });
+
+  test("同步模式：限时到点只算本轮完成，不结束本局", async () => {
+    const { service, now, advanceTime } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync", timeLimitMs: 60_000 });
+
+    const deadline = snapshotOf(first).guessDeadlineAt;
+    expect(typeof deadline).toBe("number");
+    advanceTime(deadline! - now() + 1);
+    await service.runHousekeeping();
+
+    // 本局继续：两人各记一次 ⏱️ 并进入第 2 轮，计时重置
+    expect(snapshotOf(first).phase).toBe("guessing");
+    expect(snapshotOf(first).syncProgress).toEqual({ round: 2, completedPlayerIds: [] });
+    const me = snapshotOf(first).players.find((player) => player.id === first.record.playerId)!;
+    expect(me.marks).toBe(CCB_ATTEMPT_MARKS.timeout);
+    expect(me.finished).toBe(false);
+    expect(snapshotOf(first).guessDeadlineAt).toBeGreaterThan(now());
+  });
+
+  test("同步模式：标签 BP 对本轮参战玩家全员透视", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    await startGame(service, host, [first, second], { mode: "sync", tagBan: true });
+
+    // 甲猜错但与答案共享「紫瞳」→ 进入本局待提交；乙首猜即中 → 本轮俩人完成 → 结算。
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    await execute(service, second, { id: "g2", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(first).bannedTags).toEqual(["紫瞳"]);
+
+    // 对照普通模式：乙不是揭示者，但同步模式下同轮猜测视为同时发生，所以乙照样看得见。
+    expect(feedbackOf(second).metaTags).toEqual({ guess: ["紫瞳"], shared: ["紫瞳"] });
+  });
+
+  test("血战：猜对不收尾，名次分依次递减，全员结束才结算", async () => {
+    const { service } = createService();
+    const host = connection(service, "c-host");
+    const first = connection(service, "c-first");
+    const second = connection(service, "c-second");
+    const third = connection(service, "c-third");
+    await startGame(service, host, [first, second, third], { mode: "bloodbath" });
+
+    // 甲首猜即中：名次 1，底分 max(1, 3 − 0) = 3，加大赢家 12 → 15。有胜者但不收尾。
+    await execute(service, first, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(first).phase).toBe("guessing");
+    expect(snapshotOf(first).nonstopWinnerIds).toEqual([first.record.playerId!]);
+    expect(scoreOf(first)).toBe(15);
+
+    // 乙也首猜即中：名次 2，底分 max(1, 3 − 1) = 2 → 14。丙还在，仍不收尾。
+    await execute(service, second, { id: "g2", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(first).phase).toBe("guessing");
+    expect(scoreOf(second)).toBe(14);
+
+    // 丙猜错后投降 → 全员结束 → 结算；胜者分已在猜对时发过，不能重复计。
+    await execute(service, third, { id: "g3", type: "ccb.game.guess", payload: { characterId: 2 } });
+    await execute(service, third, { id: "s", type: "ccb.game.surrender", payload: {} });
+    expect(snapshotOf(first).phase).toBe("settled");
+    expect(scoreOf(first)).toBe(15);
+    expect(scoreOf(second)).toBe(14);
+    // 丙没猜中但有共同作品 → 结算时拿 1 分作品分
+    expect(scoreOf(third)).toBe(1);
+  });
+});
