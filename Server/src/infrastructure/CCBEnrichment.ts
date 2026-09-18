@@ -84,40 +84,42 @@ export class CCBEnrichment {
   }
 
   private async loadCharacter(id: number): Promise<string | undefined> {
+    let raw: unknown;
     try {
-      const raw = await this.request(`/v0/characters/${id}`);
-      if (!Value.Check(CharacterResponse, raw)) throw new AppError("CCB_DATA_INVALID", "角色补充资料格式无效");
-      const next: CCBCharacterSupplement = { ...this.readCharacter(id) };
-      if (raw.name?.trim()) next.name = raw.name.trim();
-      if (raw.summary?.trim()) next.summary = raw.summary;
-      if (raw.gender === "male" || raw.gender === "female") next.gender = raw.gender;
-      if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined) next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
-      for (const entry of raw.infobox ?? []) {
-        if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim()) next.nameCn = entry.value.trim();
-        if (entry.key === "别名" && Array.isArray(entry.value)) {
-          const aliases = entry.value.flatMap((value: unknown) => {
-            if (typeof value === "string") return value.trim() ? [value.trim()] : [];
-            if (value && typeof value === "object" && "v" in value && typeof value.v === "string") return value.v.trim() ? [value.v.trim()] : [];
-            return [];
-          });
-          if (aliases.length) next.aliases = [...new Set(aliases)];
-        }
-      }
-      const images = raw.images ?? {};
-      const image = [images.medium, images.large, images.common, images.grid].find((candidate) => {
-        if (!candidate) return false;
-        try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
-      });
-      this.db.transaction(() => {
-        if (Object.keys(next).length) this.db.query("INSERT INTO ccb_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at").run(id, JSON.stringify(next), this.now());
-        if (image) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
-      })();
-      if (!image) this.misses.set(id, this.now() + 300_000);
-      return image ? rewriteBangumiImageUrl(image, this.imageBase) : undefined;
-    } catch {
+      raw = await this.request(`/v0/characters/${id}`);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== "CCB_DATA_NOT_FOUND") throw error;
       this.misses.set(id, this.now() + 300_000);
       return undefined;
     }
+    if (!Value.Check(CharacterResponse, raw)) throw new AppError("CCB_DATA_INVALID", "角色补充资料格式无效");
+    const next: CCBCharacterSupplement = { ...this.readCharacter(id) };
+    if (raw.name?.trim()) next.name = raw.name.trim();
+    if (raw.summary?.trim()) next.summary = raw.summary;
+    if (raw.gender === "male" || raw.gender === "female") next.gender = raw.gender;
+    if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined) next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
+    for (const entry of raw.infobox ?? []) {
+      if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim()) next.nameCn = entry.value.trim();
+      if (entry.key === "别名" && Array.isArray(entry.value)) {
+        const aliases = entry.value.flatMap((value: unknown) => {
+          if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+          if (value && typeof value === "object" && "v" in value && typeof value.v === "string") return value.v.trim() ? [value.v.trim()] : [];
+          return [];
+        });
+        if (aliases.length) next.aliases = [...new Set(aliases)];
+      }
+    }
+    const images = raw.images ?? {};
+    const image = [images.medium, images.large, images.common, images.grid].find((candidate) => {
+      if (!candidate) return false;
+      try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
+    });
+    this.db.transaction(() => {
+      if (Object.keys(next).length) this.db.query("INSERT INTO ccb_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at").run(id, JSON.stringify(next), this.now());
+      if (image) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
+    })();
+    if (!image) this.misses.set(id, this.now() + 300_000);
+    return image ? rewriteBangumiImageUrl(image, this.imageBase) : undefined;
   }
 
   async fetchDirectory(indexId: number): Promise<number[]> {
@@ -149,13 +151,20 @@ export class CCBEnrichment {
     if (this.queue.size >= 6 || this.cooldownUntil > this.now()) throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
     return this.queue.add(async () => {
       if (this.cooldownUntil > this.now()) throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
-      const response = await this.fetcher(`${this.apiBase}${path}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+      let response: Response;
+      try {
+        response = await this.fetcher(`${this.apiBase}${path}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+      } catch {
+        throw new AppError("CCB_UPSTREAM_UNAVAILABLE", "暂时无法连接 Bangumi 资料服务");
+      }
       if (response.status === 429) {
         this.cooldownUntil = this.now() + 5000;
         throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
       }
+      if (response.status === 404) throw new AppError("CCB_DATA_NOT_FOUND", "Bangumi 资料不存在");
       if (!response.ok) throw new AppError("CCB_IMPORT_FAILED", "读取 Bangumi 资料失败");
-      return response.json();
+      try { return await response.json(); }
+      catch { throw new AppError("CCB_DATA_INVALID", "Bangumi 资料格式无效"); }
     });
   }
 

@@ -121,19 +121,15 @@ describe("CCB 本地角色资料", () => {
     finally { await reopened.close(); }
   });
 
-  test("失败只做可过期内存负缓存，不污染持久层，目录失败保留上一完整快照", async () => {
-    let clock = now, failing = false, calls = 0;
-    const { repository } = create({ apiBase: "https://bgm.invalid", now: () => clock, fetcher: async (input) => {
-      calls++;
-      if (failing || String(input).includes("characters")) return new Response("失败", { status: 503 });
+  test("目录回源失败保留上一完整快照，不污染已有本地资料", async () => {
+    let failing = false;
+    const { repository } = create({ apiBase: "https://bgm.invalid", fetcher: async () => {
+      if (failing) return new Response("失败", { status: 503 });
       return Response.json({ total: 1, data: [{ id: 11 }] });
     } });
     await repository.importDirectory(1); failing = true;
     await expect(repository.importDirectory(1)).rejects.toMatchObject({ code: "CCB_IMPORT_FAILED" });
     expect((await repository.chooseRandomCharacter({ ...settings(), useIndex: true, indexId: 1 }, () => 0)).id).toBe(3);
-    await repository.resolveCharacterImage(1); const first = calls;
-    await repository.resolveCharacterImage(1); expect(calls).toBe(first);
-    clock += 300_001; await repository.resolveCharacterImage(1); expect(calls).toBe(first + 1);
     expect((await repository.getCharacter(1, settings())).name).toBe("Makise");
   });
 });
