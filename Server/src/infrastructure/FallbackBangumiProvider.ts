@@ -59,10 +59,7 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
   }
 
   async close(): Promise<void> {
-    await Promise.all([
-      typeof (this.local as unknown as { close?: () => unknown }).close === "function" ? (this.local as unknown as { close: () => unknown }).close() : undefined,
-      typeof (this.remote as unknown as { close?: () => unknown }).close === "function" ? (this.remote as unknown as { close: () => unknown }).close() : undefined,
-    ]);
+    await Promise.all([this.local.close?.(), this.remote.close?.()]);
   }
 
   private async run<T>(localCall: () => Promise<T>, remoteCall: () => Promise<T>): Promise<T> {
