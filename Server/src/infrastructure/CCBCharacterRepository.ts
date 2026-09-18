@@ -176,6 +176,7 @@ export class CCBCharacterRepository {
       .query(
         `SELECT id, name, name_cn FROM subjects
          WHERE type IN (${typePlaceholders}) AND date >= ? AND date < ? ${metaClauses}
+           AND nsfw = 0
          ORDER BY heat DESC, id ASC LIMIT ?`,
       )
       .all(...(params as never[])) as Array<{ id: number; name: string; name_cn: string }>;
@@ -336,6 +337,13 @@ export class CCBCharacterRepository {
    *
    * 顺序保持 dump 的 `subject_id` 升序 —— 这正是原版累积标签时依赖的顺序
    * （登场作品输出时的 `rating_count` 降序是另一回事，在调用处再排）。
+   *
+   * ⚠️ **`nsfw = 0` 是本项目对原版的刻意偏离**：原版从不看 `nsfw`，成人向作品标题会
+   * 直接进反馈（见 `Agents/CCB.md §6.5`）。这条过滤必须与 `pickRandomSubject` 同时存在 ——
+   * 只过滤抽样会让答案作品的标题照样出现在反馈里。
+   *
+   * 注意**不要**因此去改 `hasAnyRelation`：那个哨兵的语义本来就是「有原始关联、但过滤后为空
+   * → `highestRating: -1`（不可比）」，nsfw 过滤正好落在它设计好的分支里。
    */
   private loadAppearances(characterId: number, settings: CCBGameSettings): ValidAppearance[] {
     const rows = this.character
@@ -343,7 +351,7 @@ export class CCBCharacterRepository {
         `SELECT r.subject_id, r.relation_type, s.type AS subject_type, s.name, s.name_cn, s.date,
                 s.raw_tags, s.meta_tags, s.score AS rating, s.rating_count
          FROM character_subject_relations r JOIN subjects s ON s.id = r.subject_id
-         WHERE r.character_id = ? AND r.relation_type IN (?, ?)
+         WHERE r.character_id = ? AND r.relation_type IN (?, ?) AND s.nsfw = 0
          ORDER BY r.subject_id`,
       )
       .all(characterId, MAIN_ROLE_TYPE, SUPPORT_ROLE_TYPE) as AppearanceQueryRow[];
