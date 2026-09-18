@@ -28,6 +28,8 @@ import {
   type CCBRoomSnapshot,
   type CCBRoomSummary,
   type CCBRoundRecord,
+  type CCBRevealedHint,
+  type CCBSpectatedGuesses,
   type CCBSubjectPick,
 } from "../shared/Index";
 import {
@@ -43,6 +45,7 @@ import {
   maskCCBFeedbackTags,
   mergeCCBBannedTags,
   resolveCCBNonstopRankScore,
+  resolveCCBRevealedHints,
   resolveCCBSetterScore,
   resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
@@ -83,6 +86,14 @@ const CCB_WINNER_BASE_SCORE = 2;
 const CCB_PARTIAL_BONUS_SCORE = 1;
 /** 单次角色检索返回上限。 */
 const CCB_SEARCH_LIMIT = 20;
+
+/**
+ * 观战视图最多下发多少条猜测记录。
+ *
+ * 私有状态每帧都走，长局的猜测记录会线性增长（`maxAttempts` 上限 100 × 16 人）。
+ * 观战要的是「刚刚发生了什么」，所以从最新往回取，取满即停。
+ */
+const SPECTATED_GUESS_LIMIT = 60;
 /** 抽到「没有主角/配角」的作品时的重试上限。 */
 const ROUND_SAMPLE_ATTEMPTS = 8;
 
@@ -240,6 +251,8 @@ export class CCBService {
         return this.setReady(connection, message.payload.ready);
       case "ccb.player.setSpectator":
         return this.setSpectator(connection, message.payload.spectator);
+      case "ccb.player.setTeam":
+        return this.setPlayerTeam(connection, message.payload.team);
       case "ccb.player.setMessage":
         return this.setMessage(connection, message.payload.message);
       case "ccb.chat.send":
@@ -255,7 +268,7 @@ export class CCBService {
       case "ccb.game.chooseSetter":
         return this.chooseSetter(connection, message.payload.playerId);
       case "ccb.game.setAnswer":
-        return this.setAnswer(connection, message.payload.characterId);
+        return this.setAnswer(connection, message.payload.characterId, message.payload.hints);
       case "ccb.game.guess":
         return await this.guess(connection, message.payload.characterId);
       case "ccb.game.surrender":
@@ -505,6 +518,29 @@ export class CCBService {
     return { ready: player.isReady };
   }
 
+  /**
+   * 自选队伍（原版 `updatePlayerTeam`：**自己改自己的**，不是房主分配）。
+   *
+   * 只在等待阶段允许 —— 原版拒绝「游戏进行中」，而队伍会改变「谁和谁共享次数」，
+   * 打到一半换队等于改规则。前端也只在未准备时暴露这个下拉（原版 `PlayerList` 同理）。
+   */
+  private setPlayerTeam(connection: ConnectionRecord, team: number | null) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.phase !== "waiting") {
+      throw new AppError("INVALID_PHASE", "只有等待阶段可以改队伍");
+    }
+    if (player.membership !== "active") {
+      throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不参与组队");
+    }
+    const next = team === null ? null : String(team);
+    if (player.team === next) return { team: next, changed: false };
+    player.team = next;
+    this.touch(room);
+    this.publishRoom(room);
+    this.log("player.team_changed", room.roomId, player.id, { team: next });
+    return { team: next, changed: true };
+  }
+
   private setSpectator(connection: ConnectionRecord, spectator: boolean) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "waiting") {
@@ -516,6 +552,8 @@ export class CCBService {
       if (!room.allowSpectators) throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
       player.membership = "spectator";
       player.isReady = false;
+      // 观战者不属于任何队伍：不参赛的人留在队里会让「同队共享次数」凭空多一个成员。
+      player.team = null;
     } else {
       player.membership = "active";
       player.isReady = player.id === room.hostPlayerId;
@@ -787,7 +825,7 @@ export class CCBService {
    * 只收 `characterId`：反馈所需的其余字段一律由服务端从本地数据集补齐。原版是把客户端
    * 加密过的整个角色对象丢给服务端，这里换成「只报 id、服务端自己查」，防作弊面更小。
    */
-  private setAnswer(connection: ConnectionRecord, characterId: number) {
+  private setAnswer(connection: ConnectionRecord, characterId: number, hints: string[] = []) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "answering") throw new AppError("INVALID_PHASE", "当前不在出题阶段");
     if (player.id !== room.answerSetterPlayerId) {
@@ -799,7 +837,13 @@ export class CCBService {
     // 出题人停在出题阶段期间，其他人可能取消了准备 —— 开局前必须重新校验一次。
     this.ensureCanStartRound(room);
 
-    this.beginRound(room, characterId, { manualSetterId: player.id });
+    // 提示只保留到 `useHints` 的阈值条数：多余的写了也永远显示不出来（展示上限）。
+    const hintTexts = hints
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .slice(0, room.settings.useHints.length);
+
+    this.beginRound(room, characterId, { manualSetterId: player.id, hints: hintTexts });
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -810,7 +854,7 @@ export class CCBService {
   private beginRound(
     room: CCBRoomRecord,
     answerCharacterId: number,
-    { manualSetterId }: { manualSetterId?: string } = {},
+    { manualSetterId, hints = [] }: { manualSetterId?: string; hints?: string[] } = {},
   ) {
     const currentTime = this.now();
     const timeLimitMs = resolveCCBTimeLimitMs(room.settings);
@@ -856,6 +900,9 @@ export class CCBService {
       // 上面刚把「本局不猜的人」置为 `finished`，所以直接数未结束者即可。
       nonstopTotalPlayers: Object.values(room.players).filter((candidate) => !candidate.finished)
         .length,
+      // 队伍共享标记串与提示文本：原版 `teamGuesses` / 出题人给的 `hints`。
+      teamMarks: {},
+      hints: [...hints],
     };
   }
 
@@ -901,11 +948,18 @@ export class CCBService {
 
     // 标记顺序照原版：先写尝试标记（✔/❌），猜错且与答案有共同作品时再补 💡，
     // 最后才决定结束标记（✌/👑/💀）。
-    let marks = player.marks + (isCorrect ? CCB_ATTEMPT_MARKS.correct : CCB_ATTEMPT_MARKS.wrong);
+    //
+    // 队伍模式（原版 `teamGuesses`）：标记记在**队伍共享串**上，再覆盖回每个队友的 `marks` ——
+    // 所以「一次猜测算几次」对全队是同一份账，任一成员耗尽即全队 💀。
+    const team = this.teamOf(player);
+    const baseMarks = team ? (round.teamMarks[team] ?? "") : player.marks;
+
+    let marks = baseMarks + (isCorrect ? CCB_ATTEMPT_MARKS.correct : CCB_ATTEMPT_MARKS.wrong);
     if (!isCorrect && feedback.shared_appearances.count > 0) {
       marks += CCB_ATTEMPT_MARKS.partial;
     }
 
+    let endMark: string | null = null;
     if (isCorrect) {
       // 大赢家必须在「已含本次尝试标记、尚未追加结束标记」的串上判定：
       // 该函数以尝试次数 === 1 表示「首猜即中」。增强版没有本命头像，故 avatarId 传 null。
@@ -914,19 +968,43 @@ export class CCBService {
         avatarId: null,
         answerId: round.answerCharacterId,
       });
-      marks = appendCCBEndMarkOnce(marks, bigWin ? CCB_END_MARK.bigWin : CCB_END_MARK.win);
-      player.finished = true;
-      round.solvedPlayerIds.push(player.id);
+      endMark = bigWin ? CCB_END_MARK.bigWin : CCB_END_MARK.win;
     } else {
       const verdict = evaluateCCBAttemptLimit({ marks, maxAttempts: room.settings.maxAttempts });
-      if (verdict.shouldApplyDeath) {
-        marks = appendCCBEndMarkOnce(marks, CCB_END_MARK.dead);
-        player.finished = true;
-      }
+      if (verdict.shouldApplyDeath) endMark = CCB_END_MARK.dead;
     }
+    if (endMark) marks = appendCCBEndMarkOnce(marks, endMark);
 
+    if (team) round.teamMarks[team] = marks;
     player.marks = marks;
     player.guessCount = countCCBAttemptMarks(marks);
+    const ended = isCorrect || endMark === CCB_END_MARK.dead;
+    if (ended) player.finished = true;
+
+    // 队友跟随共享串。猜对时队友额外记 🏆（原版 `markTeamVictory`）并结束本局 ——
+    // 原版用 `_tempObserver` 表示「队友赢了，你也别再猜了」，本项目直接置 `finished`：
+    // 两者对「能不能猜」「算不算本轮已结束」的效果一致，少一个需要到处判的标记位。
+    const teammates = team ? this.teammatesOf(room, player, team) : [];
+    // 队友的「同队获胜」标记：共享串 + 🏆。在循环外算一次，避免在循环里对 `team` 反复收窄。
+    const teamWinMarks = team
+      ? appendCCBEndMarkOnce(round.teamMarks[team] ?? "", CCB_END_MARK.teamWin)
+      : "";
+    for (const teammate of teammates) {
+      teammate.marks = isCorrect ? teamWinMarks : marks;
+      teammate.guessCount = countCCBAttemptMarks(teammate.marks);
+      if (ended) teammate.finished = true;
+      if (isCorrect) this.markSyncCompleted(room, teammate);
+    }
+
+    if (isCorrect) {
+      round.solvedPlayerIds.push(player.id);
+      // 同步模式队友一起进胜者集合 —— 原版 `syncTeamGuesses` 把队友标记串也覆盖成含 ✌，
+      // 于是全队命中 `actualWinners` 并共享同一份胜者分。
+      // **普通/血战不共享**：原版那边 `actualWinners = [actualWinner]`，队友记 🏆、拿 0 分。
+      if (team && room.settings.mode === "sync") {
+        for (const teammate of teammates) round.solvedPlayerIds.push(teammate.id);
+      }
+    }
 
     // 血战：猜对当场按名次加分（原版 `settleNonstopCorrectGuess`），
     // 所以结算阶段对血战不再重复计胜者分。
@@ -955,13 +1033,30 @@ export class CCBService {
 
   private surrender(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
-    if (room.phase !== "guessing") throw new AppError("INVALID_PHASE", "当前不在猜测阶段");
+    const round = room.currentRound;
+    if (room.phase !== "guessing" || !round) throw new AppError("INVALID_PHASE", "当前不在猜测阶段");
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能投降");
     if (player.finished) throw new AppError("PLAYER_FINISHED", "本局你已经结束了");
 
-    player.marks = appendCCBEndMarkOnce(player.marks, CCB_END_MARK.surrender);
+    // 队伍共享账：投降写进共享串并**整队结束本局**。队伍共用一份次数，若只结束一个人，
+    // 立刻会出现「共享标记里有 🏳️、队友却还在猜」的自相矛盾状态。
+    const team = this.teamOf(player);
+    const marks = appendCCBEndMarkOnce(
+      team ? (round.teamMarks[team] ?? "") : player.marks,
+      CCB_END_MARK.surrender,
+    );
+    if (team) round.teamMarks[team] = marks;
+    player.marks = marks;
+    player.guessCount = countCCBAttemptMarks(marks);
     player.finished = true;
-    // 同步模式：投降同样算「本轮完成」，否则残局会卡在等一个永远不会再猜的人。
+
+    for (const teammate of team ? this.teammatesOf(room, player, team) : []) {
+      teammate.marks = marks;
+      teammate.guessCount = countCCBAttemptMarks(marks);
+      teammate.finished = true;
+      // 同步模式：投降同样算「本轮完成」，否则残局会卡在等一个永远不会再猜的人。
+      this.markSyncCompleted(room, teammate);
+    }
     this.markSyncCompleted(room, player);
     this.appendSystemMessage(room, `${player.name} 投降了`);
     this.touch(room);
@@ -1018,6 +1113,32 @@ export class CCBService {
     round.deadlineAt = timeLimitMs > 0 ? this.now() + timeLimitMs : undefined;
     this.appendSystemMessage(room, `第 ${round.syncRound} 轮开始`);
     this.log("game.sync_round_started", room.roomId, undefined, { syncRound: round.syncRound });
+  }
+
+  /**
+   * 归一化队伍号：`null` / 空串 / `"0"` 都算「没有队伍」。
+   *
+   * 原版用 `team === '0'` 表示观战，本项目把观战收进 `membership`，所以这里
+   * 把残留的 `"0"` 一并当作无队伍 —— 免得历史数据把观战者错当成一支队伍。
+   */
+  private teamOf(player: CCBPlayerRecord): string | null {
+    const team = player.team;
+    return team && team !== "0" ? team : null;
+  }
+
+  /** 同队队友：正式、非人机、非出题人，并排除自己（原版 `getActiveTeamMembers`）。 */
+  private teammatesOf(
+    room: CCBRoomRecord,
+    player: CCBPlayerRecord,
+    team: string,
+  ): CCBPlayerRecord[] {
+    return this.activePlayers(room).filter(
+      (candidate) =>
+        candidate.id !== player.id &&
+        candidate.team === team &&
+        !candidate.isBot &&
+        candidate.id !== room.answerSetterPlayerId,
+    );
   }
 
   /**
@@ -1155,9 +1276,8 @@ export class CCBService {
   /**
    * 结算一局。
    *
-   * **不结算出题人分**：增强版由服务端出题，没有任何玩家承担「出题人」这个角色，
-   * 照原版把出题人分记在房主头上属于凭空加减分。原版那套出题人计分（含血战版）留在
-   * `CCBRules` 里，等 P3 的手动出题模式恢复。已登记在 `Agents/CCB.md`。
+   * 计分口径全部在 `Agents/CCB.md §6.4 / §6.6`：胜者分（同步共享 / 血战当场已发）、
+   * 作品分（首个 💡）、以及**只在真人出题时**才有的出题人分。
    */
   private settleRound(room: CCBRoomRecord) {
     const round = room.currentRound;
@@ -1291,17 +1411,7 @@ export class CCBService {
     if (room.settings.mode === "sync") {
       for (const candidate of this.syncParticipants(room)) {
         if (this.isSyncRoundCompleted(round, candidate.id)) continue;
-        const timedOut = candidate.marks + CCB_ATTEMPT_MARKS.timeout;
-        const verdict = evaluateCCBAttemptLimit({
-          marks: timedOut,
-          maxAttempts: room.settings.maxAttempts,
-        });
-        candidate.marks = verdict.shouldApplyDeath
-          ? appendCCBEndMarkOnce(timedOut, CCB_END_MARK.dead)
-          : timedOut;
-        candidate.guessCount = countCCBAttemptMarks(candidate.marks);
-        if (verdict.shouldApplyDeath) candidate.finished = true;
-        this.markSyncCompleted(room, candidate);
+        this.applyTimeoutMarks(room, candidate, false);
       }
       this.appendSystemMessage(room, `第 ${round.syncRound} 轮时间到`);
       this.advanceOrSettle(room);
@@ -1310,17 +1420,51 @@ export class CCBService {
 
     for (const candidate of this.activePlayers(room)) {
       if (candidate.finished) continue;
-      const marks = appendCCBEndMarkOnce(
-        candidate.marks + CCB_ATTEMPT_MARKS.timeout,
-        CCB_END_MARK.dead,
-      );
-      candidate.marks = marks;
-      candidate.guessCount = countCCBAttemptMarks(marks);
-      candidate.finished = true;
+      // 普通/血战的「本局时间到」= 整局结束，所以无条件补 💀（不限次数是否用尽）。
+      this.applyTimeoutMarks(room, candidate, true);
     }
 
     this.appendSystemMessage(room, `第 ${room.roundNumber} 局时间到`);
     this.advanceOrSettle(room);
+  }
+
+  /**
+   * 给一位玩家记一次超时（队伍模式下写共享串并覆盖全队）。
+   *
+   * `alwaysDie` 为真时无条件补 💀（普通/血战的「本局时间到」就是整局结束），
+   * 为假时只按次数上限判定 —— 同步模式的超时只算「本轮完成」，次数真用完才 💀。
+   */
+  private applyTimeoutMarks(
+    room: CCBRoomRecord,
+    player: CCBPlayerRecord,
+    alwaysDie: boolean,
+  ) {
+    const round = room.currentRound;
+    if (!round) return;
+    const team = this.teamOf(player);
+    const timedOut =
+      (team ? (round.teamMarks[team] ?? "") : player.marks) + CCB_ATTEMPT_MARKS.timeout;
+    const verdict = evaluateCCBAttemptLimit({
+      marks: timedOut,
+      maxAttempts: room.settings.maxAttempts,
+    });
+    const died = alwaysDie || verdict.shouldApplyDeath;
+    const marks = died ? appendCCBEndMarkOnce(timedOut, CCB_END_MARK.dead) : timedOut;
+
+    if (team) round.teamMarks[team] = marks;
+    player.marks = marks;
+    player.guessCount = countCCBAttemptMarks(marks);
+    player.finished = died;
+    // 同步模式：超时算「本轮完成」（`markSyncCompleted` 在非同步模式下是空操作）。
+    this.markSyncCompleted(room, player);
+
+    // 队友跟随共享串：⏱️ 已经记在共享串上了，不能再各记一次（那会把全队次数翻倍）。
+    for (const teammate of team ? this.teammatesOf(room, player, team) : []) {
+      teammate.marks = marks;
+      teammate.guessCount = countCCBAttemptMarks(marks);
+      teammate.finished = died;
+      this.markSyncCompleted(room, teammate);
+    }
   }
 
   private finishGame(connection: ConnectionRecord) {
@@ -1380,8 +1524,21 @@ export class CCBService {
    * `record.feedback`，遮掩只在 `buildPrivateState` 这一层发生。
    */
   private maskOwnGuesses(room: CCBRoomRecord, playerId: string): CCBGuessRecord[] {
+    return this.maskGuesses(room, playerId, room.currentRound?.guesses[playerId] ?? []);
+  }
+
+  /**
+   * 按观众遮掩一组猜测记录（标签全局 BP 的展示层）。
+   *
+   * **只作用于下发副本，绝不改存档**：局内结算（作品分、计分）读的仍是未遮掩的
+   * `record.feedback`，遮掩只在 `buildPrivateState` 这一层发生。
+   */
+  private maskGuesses(
+    room: CCBRoomRecord,
+    playerId: string,
+    records: CCBGuessRecord[],
+  ): CCBGuessRecord[] {
     const round = room.currentRound;
-    const records = round?.guesses[playerId] ?? [];
     if (!round || !room.settings.tagBan || round.bannedTags.length === 0) return records;
 
     const entitled = new Set(
@@ -1495,10 +1652,60 @@ export class CCBService {
       // 只下发自己的猜测记录：反馈里含答案相关线索，不能给别人看。
       // 标签全局 BP 还要按观众再遮掩一层（见 `maskOwnGuesses`）。
       ownGuesses: this.maskOwnGuesses(room, player.id),
-      hints: [],
+      hints: this.buildRevealedHints(room, player),
       syncCompleted,
       setterAnswer: this.buildSetterAnswer(room, player),
+      spectatedGuesses: this.buildSpectatedGuesses(room, player),
     };
+  }
+
+  /**
+   * 本条该显示的文本提示。
+   *
+   * 原版把判定放在客户端（`GameInfo.jsx` 的 `guessesLeft <= useHints[i]`），本项目搬到服务端 ——
+   * 提示文本本来就在服务端，没必要先发下去再让客户端决定藏不藏。
+   */
+  private buildRevealedHints(room: CCBRoomRecord, player: CCBPlayerRecord): CCBRevealedHint[] {
+    const round = room.currentRound;
+    if (!round || round.hints.length === 0 || player.membership !== "active") return [];
+    // 队伍模式下 `guessCount` 已被同步成共享串的计数，正好就是原版 `guessesLeft` 的口径。
+    const remaining = Math.max(0, room.settings.maxAttempts - player.guessCount);
+    return resolveCCBRevealedHints(round.hints, room.settings.useHints, remaining);
+  }
+
+  /**
+   * 观战增强视图：**全部玩家**的猜测明细。
+   *
+   * 只给旁观者与出题人 —— 参赛玩家看别人的逐字段反馈等于白拿答案线索。
+   * 条数有上限（`SPECTATED_GUESS_LIMIT`）：这是每帧都要走的私有状态，不能让一场长局把它撑爆。
+   */
+  private buildSpectatedGuesses(
+    room: CCBRoomRecord,
+    player: CCBPlayerRecord,
+  ): CCBSpectatedGuesses[] | undefined {
+    const round = room.currentRound;
+    if (!round) return undefined;
+    const isObserver = player.membership !== "active" || player.id === room.answerSetterPlayerId;
+    if (!isObserver) return undefined;
+
+    const rows: CCBSpectatedGuesses[] = [];
+    let budget = SPECTATED_GUESS_LIMIT;
+    for (const candidate of this.activePlayers(room)) {
+      if (budget <= 0) break;
+      const records = round.guesses[candidate.id] ?? [];
+      if (records.length === 0) continue;
+      // 从最新的往回取：观战最关心的是刚发生了什么。
+      const taken = records.slice(Math.max(0, records.length - budget));
+      budget -= taken.length;
+      rows.push({
+        playerId: candidate.id,
+        playerName: candidate.name,
+        marks: candidate.marks,
+        finished: candidate.finished,
+        guesses: this.maskGuesses(room, player.id, taken),
+      });
+    }
+    return rows;
   }
 
   /**
