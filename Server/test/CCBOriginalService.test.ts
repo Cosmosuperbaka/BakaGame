@@ -64,6 +64,20 @@ describe('原版房间适配', () => {
     expect(upstream.sockets[0].sent[0]).toMatchObject({ event: 'joinRoom' });
   });
 
+  test('创建和更新长房名按原版三十字限制确认，不误报已成功的操作超时', async () => {
+    const { service } = setup();
+    const name = '很长的角色猜测房间名称'.repeat(3).slice(0, 32);
+    const entered = await request(service, 'first', { id: 'long-create', type: 'ccb.room.create', payload: {
+      source: 'original', roomId: '1234', name, userName: '甲', visibility: 'public', allowSpectators: true,
+    } }) as CCBRoomEnterResult;
+    expect(entered.snapshot.name).toBe(name.slice(0, 30));
+    const updated = '另一间用于多人猜测的角色房间名称';
+    await request(service, 'first', { id: 'long-update', type: 'ccb.room.update', payload: {
+      name: updated, visibility: 'public', allowSpectators: true,
+    } });
+    expect((await sync(service)).snapshot.name).toBe(updated);
+  });
+
   test('关闭作品搜索时猜题者不能绕过查询限制，零阈值提示对观战者也不显示', async () => {
     const { service, upstream } = setup();
     await create(service);

@@ -39,7 +39,7 @@ export class FixtureSocket implements CCBOriginalSocket {
       this.receive('roomNameUpdated', { roomName: '' });
     } else if (event === 'updateGameSettings') this.receive('updateGameSettings', { settings: command.settings });
     else if (event === 'requestGameSettings') this.receive('updateGameSettings', { settings: createDefaultCCBSettings() });
-    else if (event === 'updateRoomName') this.receive('roomNameUpdated', { roomName: command.roomName });
+    else if (event === 'updateRoomName') this.receive('roomNameUpdated', { roomName: String(command.roomName).trim().slice(0, 30) });
     else if (event === 'toggleRoomVisibility') this.receive('updatePlayers', { players: this.room.players, isPublic: false });
     else if (event === 'toggleReady') {
       const player = this.room.players.find(player => player.id === this.id)!;
@@ -64,4 +64,3 @@ export class FixtureRoom {
   factory = () => { const socket = new FixtureSocket(`original-${this.sockets.length}`, this); this.sockets.push(socket); return socket; };
   broadcast(event: string, payload: unknown) { this.sockets.forEach(socket => socket.receive(event, payload)); }
 }
-

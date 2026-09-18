@@ -226,7 +226,7 @@ export class CCBOriginalService {
 
   private async updateRoom(session: CCBOriginalSession, name: string, isPublic: boolean): Promise<void> {
     if (name !== session.roomName) await originalConfirmedEvent(session.socket, 'roomNameUpdated',
-      payload => originalString(originalObject(payload).roomName) === name.trim().slice(0, 15),
+      payload => originalString(originalObject(payload).roomName) === name.trim().slice(0, 30),
       () => session.socket.emit('updateRoomName', { roomId: session.roomId, roomName: name }));
     if (isPublic !== session.isPublic) await originalConfirmedEvent(session.socket, 'updatePlayers', () => session.isPublic === isPublic,
       () => session.socket.emit('toggleRoomVisibility', { roomId: session.roomId }));
