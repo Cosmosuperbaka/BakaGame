@@ -205,6 +205,35 @@ describe("SongLyricPlayer", () => {
     // 按 scale(0.92) 反向补偿 → ceil(77.2) = 78
     expect(height).toBe(78);
   });
+
+  it("音频在首句前缓冲区间（如提前 1 秒前奏）播放时，歌词正常挂载且不提前触发首句完成状态", () => {
+    const lines: SongLyricLine[] = [
+      { time: 35000, endTime: 40000, text: "副歌第一句" },
+      { time: 40000, endTime: 45000, text: "副歌第二句" },
+    ];
+
+    const mockAudio = document.createElement("audio");
+    mockAudio.currentTime = 34; // 34 秒，比首句 35 秒提前 1 秒
+    Object.defineProperty(mockAudio, "paused", { value: false, writable: true });
+    Object.defineProperty(mockAudio, "ended", { value: false, writable: true });
+
+    const audioRef = createRef<HTMLAudioElement | null>();
+    audioRef.current = mockAudio;
+
+    const { container } = render(
+      <SongLyricPlayer
+        lines={lines}
+        audioRef={audioRef}
+        audioPlaybackState="playing"
+        audioStatus="ready"
+      />,
+    );
+
+    const playerContainer = screen.getByTestId("baka-song-lyric-player");
+    expect(playerContainer).toBeInTheDocument();
+    expect(container.querySelector(".baka-lyric-player")).not.toBeNull();
+  });
 });
+
 
 

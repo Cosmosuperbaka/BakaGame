@@ -137,7 +137,9 @@ export function SongLyricPlayer({
 
     const resolveCurrentMs = () => {
       const audioMs = Math.floor(audio.currentTime * 1000);
-      if (audio.paused || audioMs < firstLineTime) {
+      // 未播放或音频时间严重异常（如切歌时短暂滞留在 0 秒）时，安全锚定在首句
+      const minPlausibleMs = Math.max(0, firstLineTime - 3_000);
+      if (audio.paused || audioMs < minPlausibleMs) {
         return firstLineTime;
       }
       return audioMs;
