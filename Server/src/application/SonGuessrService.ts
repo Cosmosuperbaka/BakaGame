@@ -471,10 +471,14 @@ export const createSongLyricClip = (
     mergedLines.sort((a, b) => a.time - b.time);
 
     const maxLineEnd = Math.max(windowEndTime, ...mergedLines.map((l) => l.endTime));
+    // 选区前后各预留 1 秒缓冲空间供音频平滑渐入渐出演出
+    const clipStartTime = Math.max(0, windowStartTime - 1_000);
+    const maxAllowedEnd = durationMs !== undefined ? durationMs : (maxLineEnd + 1_000);
+    const clipEndTime = Math.min(maxAllowedEnd, maxLineEnd + 1_000);
 
     return {
-      startTime: windowStartTime,
-      endTime: Math.max(windowStartTime, maxLineEnd - 250),
+      startTime: clipStartTime,
+      endTime: clipEndTime,
       lines: mergedLines,
     };
   }
