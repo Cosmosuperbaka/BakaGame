@@ -98,6 +98,7 @@ describe('CCB 原生完整玩法', () => {
     await h.guess(host, 3); await h.guess(guest, 4);
     expect(h.privateState(host).guesses.map(item => item.playerId)).toEqual([host.id!]);
     expect(h.privateState(guest).guesses[0].feedback.tags.every(tag => tag.hidden)).toBe(true);
+    expect(h.privateState(guest).guesses[0].feedback.tags.every(tag => tag.text === '???' && !tag.matched)).toBe(true);
     expect(h.privateState(spectator).guesses).toHaveLength(2);
     expect(h.privateState(spectator).guesses.flatMap(item => item.feedback.tags).every(tag => !tag.hidden)).toBe(true);
     expect(h.snapshot(host).roundSummary).toBeNull();
@@ -113,5 +114,28 @@ describe('CCB 原生完整玩法', () => {
     await h.send(host, 'ccb.game.surrender', {}); await h.guess(opponent, 1);
     expect(h.snapshot(opponent).roundSummary!.scores.find(item => item.playerId === host.id)?.partial).toBe(1);
     expect(h.snapshot(opponent).roundSummary!.scores.find(item => item.playerId === mate.id)?.partial).toBe(0);
+  });
+
+  test('提示按剩余次数解锁，图片尚未解锁时不能请求答案图', async () => {
+    const h = harness(); const host = await h.create();
+    await h.configure(host, { maxAttempts: 5, useHints: [3,0,1], useImageHint: 1 }); await h.send(host, 'ccb.game.start', {});
+    expect(h.privateState(host).hints).toEqual([]); expect(h.privateState(host).imageHintAvailable).toBe(false);
+    await expect(h.send(host, 'ccb.game.imageHint', {})).rejects.toMatchObject({ code: 'HINT_LOCKED' });
+    await h.guess(host, 3); await h.guess(host, 4);
+    expect(h.privateState(host).hints).toHaveLength(1); expect(h.privateState(host).imageHintAvailable).toBe(false);
+    await h.guess(host, 5); await h.guess(host, 6);
+    expect(h.privateState(host).hints).toHaveLength(2); expect(h.privateState(host).imageHintAvailable).toBe(true);
+    expect(h.privateState(host).answer).toBeNull();
+  });
+
+  test('同步标签禁选同轮暂不遮蔽，轮结束后仍向共同发现者公开', async () => {
+    const h = harness(); const host = await h.create(); const guest = await h.join('玩家');
+    await h.configure(host, { syncMode: true, nonstopMode: true, tagBan: true }); await h.ready(guest); await h.send(host, 'ccb.game.start', {});
+    await h.guess(host, 3);
+    expect(h.privateState(host).guesses[0].feedback.tags.every(tag => !tag.hidden)).toBe(true);
+    await h.guess(guest, 4);
+    expect(h.snapshot(host).syncRound).toBe(2);
+    expect(h.privateState(host).guesses[0].feedback.tags.every(tag => !tag.hidden)).toBe(true);
+    expect(h.privateState(guest).guesses[0].feedback.tags.every(tag => !tag.hidden)).toBe(true);
   });
 });

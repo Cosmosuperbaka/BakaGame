@@ -25,7 +25,7 @@ function visibleGuesses(room: CCBRoom, player: CCBPlayerRecord, observing: boole
     ...guess, feedback: { ...guess.feedback, tags: guess.feedback.tags.map(tag => {
       const owners = round.tagOwners.get(tag.text);
       const hidden = !observing && room.phase !== 'settled' && Boolean(owners && !owners.has(player.id));
-      return hidden ? { text: '???', matched: tag.matched, hidden: true, kind: tag.kind } : tag;
+      return hidden ? { text: '???', matched: false, hidden: true, kind: tag.kind } : tag;
     }) },
   }));
 }
@@ -46,7 +46,7 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
     canSetAnswer: room.phase === 'answering' && player.id === room.setterPlayerId,
     guesses: visibleGuesses(room, player, observing),
     answer: round && observing ? round.answer : null,
-    hints: round && inGame ? round.hints.filter((_, index) => remaining <= round.settings.useHints[index]!) : [],
+    hints: round && inGame ? round.hints.filter((_, index) => round.settings.useHints[index]! > 0 && remaining <= round.settings.useHints[index]!) : [],
     imageHintAvailable: Boolean(round && inGame && round.settings.useImageHint > 0 && remaining <= round.settings.useImageHint),
     imageHintLevel: remaining,
     deadlineAt: canGuess ? unit!.deadlineAt : null,

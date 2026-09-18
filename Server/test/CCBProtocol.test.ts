@@ -8,7 +8,7 @@ describe('CCB 协议边界', () => {
     expect(parseCCBSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
     expect(() => parseCCBSettings({ ...settings, timeLimit: '60' })).toThrow('设置文件格式不正确');
     expect(() => parseCCBSettings({ ...settings, avatar: 1 })).toThrow('设置文件格式不正确');
-    const message = { id: 'read-1', type: 'ccb.character.search', payload: { keyword: '助手' } };
+    const message = { id: 'read-1', type: 'ccb.character.search' as const, payload: { keyword: '助手' } };
     expect(parseCCBMessage(JSON.stringify(message))).toEqual(message);
     expect(() => parseCCBMessage('{')).toThrow('消息必须为合法 JSON 字符串');
   });
