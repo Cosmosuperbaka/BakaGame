@@ -54,7 +54,7 @@ export class WebSocketClient {
   private requestCounter = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private connectResolvers: Array<() => void> = [];
+  private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> = [];
   private readonly path: string;
 
   constructor(path: string) {
@@ -85,9 +85,9 @@ export class WebSocketClient {
       captureClientLog("WebSocket 已连接", "info", { path: this.path });
       countClientMetric("bakagame.websocket.connections", 1, { path: this.path });
       this.statusHandlers.forEach((handler) => handler(true));
-      const resolvers = this.connectResolvers;
-      this.connectResolvers = [];
-      resolvers.forEach((resolve) => resolve());
+      const waiters = this.connectWaiters;
+      this.connectWaiters = [];
+      waiters.forEach((waiter) => waiter.resolve());
     };
 
     this.socket.onmessage = (event) => {
@@ -129,20 +129,43 @@ export class WebSocketClient {
     };
   }
 
+  /** 主动离开游戏页面：终止连接与待处理请求，不再自动重连。 */
+  disconnect(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+    }
+    for (const pending of this.pendingRequests.values()) {
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
+    }
+    this.pendingRequests.clear();
+    for (const waiter of this.connectWaiters) waiter.reject({ code: "DISCONNECTED", message: "连接已断开" });
+    this.connectWaiters = [];
+    this.statusHandlers.forEach((handler) => handler(false));
+  }
+
   waitForConnection(timeoutMs = CONNECT_WAIT_TIMEOUT_MS): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
-      const wrappedResolve = () => {
-        clearTimeout(timer);
-        resolve();
+      const waiter = {
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (error: ProtocolError) => { clearTimeout(timer); reject(error); },
       };
       const timer = setTimeout(() => {
-        this.connectResolvers = this.connectResolvers.filter(
-          (candidate) => candidate !== wrappedResolve,
+        this.connectWaiters = this.connectWaiters.filter(
+          (candidate) => candidate !== waiter,
         );
         reject({ code: "CONNECT_TIMEOUT", message: "连接服务器超时" });
       }, timeoutMs);
-      this.connectResolvers.push(wrappedResolve);
+      this.connectWaiters.push(waiter);
     });
   }
 

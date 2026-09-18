@@ -26,7 +26,11 @@ let rawSnapshot: CCBRoomSnapshot | null = null;
 let rawPrivate: CCBPrivateState | null = null;
 let syncPending = false;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-const permanentErrors = new Set(["ROOM_NOT_FOUND", "SESSION_NOT_FOUND", "SESSION_INVALID", "PLAYER_KICKED", "CCB_SESSION_INVALID"]);
+let connectionGeneration = 0;
+const permanentErrors = new Set(["ROOM_NOT_FOUND", "SESSION_NOT_FOUND", "SESSION_INVALID", "SESSION_EXPIRED", "PLAYER_KICKED", "CCB_SESSION_INVALID"]);
+const serverTimedCommands = new Set<CCBCommand>([
+  "ccb.game.start", "ccb.game.next", "ccb.game.setAnswer", "ccb.game.imageHint", "ccb.character.image", "ccb.directory.import",
+]);
 
 export function resetCCBStateSync() {
   snapshotRevision = undefined; privateRevision = undefined;
@@ -54,7 +58,9 @@ export const useCCBStore = create<CCBStore>((set, get) => {
       noticeTimer = setTimeout(() => set({ notice: null }), 5000);
     },
     subscribeLobby: async () => {
+      const generation = connectionGeneration;
       const result = await sendCCB("ccb.lobby.subscribeRooms", {});
+      if (generation !== connectionGeneration) return;
       set({ lobbyReady: true, originalAvailable: result.originalAvailable, originalServerKey: result.sourceKey });
     },
     createRoom: async (payload) => {
@@ -95,7 +101,7 @@ export const useCCBStore = create<CCBStore>((set, get) => {
     sendCommand: (command, payload) => {
       const { roomId, sessionToken } = get();
       return sendCCB(command, payload, { roomId: roomId ?? undefined, sessionToken: sessionToken ?? undefined,
-        timeout: command === "ccb.game.start" || command === "ccb.directory.import" ? 0 : undefined });
+        timeout: serverTimedCommands.has(command) ? 0 : undefined });
     },
   };
 });
@@ -137,16 +143,22 @@ export function initCCBWs() {
   initialized = true;
   const unsubscribeMessage = ccbWs.onMessage(handleCCBMessage);
   const unsubscribeStatus = ccbWs.onStatus((connected) => {
-    useCCBStore.setState({ connected });
+    connectionGeneration++;
+    resetCCBStateSync();
+    useCCBStore.setState({ connected, lobbyReady: false, snapshot: null, privateState: null });
     if (!connected) return;
     const store = useCCBStore.getState();
-    void store.subscribeLobby().then(async () => {
-      if (store.source && store.roomId && store.sessionToken) {
-        const restored = await store.reconnectRoom(store.source, store.roomId);
-        if (!restored) store.resetRoom(true);
-      }
-    }).catch((error: unknown) => store.setNotice(ccbErrorMessage(error)));
+    const generation = connectionGeneration;
+    // URL 房间会话仅由 useCCBRoomLifecycle 恢复，避免订阅 ACK 与页面 effect 争抢重连。
+    void store.subscribeLobby().catch((error: unknown) => {
+      if (initialized && generation === connectionGeneration && useCCBStore.getState().connected) store.setNotice(ccbErrorMessage(error));
+    });
   });
   ccbWs.connect();
-  return () => { initialized = false; unsubscribeMessage(); unsubscribeStatus(); };
+  return () => {
+    initialized = false;
+    ccbWs.disconnect();
+    unsubscribeMessage(); unsubscribeStatus();
+    useCCBStore.getState().resetRoom();
+  };
 }
