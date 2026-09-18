@@ -3,9 +3,6 @@ import { Elysia } from "elysia";
 
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
-import { CCBService } from "../application/CCBService";
-import { CCBCharacterRepository } from "../infrastructure/CCBCharacterRepository";
-import { CCBOriginalReporter } from "../infrastructure/CCBOriginalReporter";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
@@ -20,7 +17,6 @@ import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "./SonGuessrProtocol";
-import { parseCCBMessage } from "./CCBProtocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
@@ -30,7 +26,6 @@ export interface AppDependencies {
   whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
   sonGuessrService?: SonGuessrService;
-  ccbService?: CCBService;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
 }
@@ -383,7 +378,6 @@ export const createApp = ({
   whoIsFakerService,
   logger,
   sonGuessrService,
-  ccbService,
   isShuttingDown,
   onTriggerShutdown,
 }: AppDependencies) => {
@@ -409,69 +403,6 @@ export const createApp = ({
           apiBase: env.bangumiApiUrl,
         }),
         remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
-        logger,
-      }),
-    });
-
-  // CCB 的出题与反馈全部读本地只读数据集。数据集是 LFS 产物，本地未拉取时文件不存在，
-  // 此时**只关掉对局能力**、保留房间骨架，而不是让整个服务起不来；首次用到才构造连接。
-  let ccbRepository: CCBCharacterRepository | undefined;
-  let ccbRepositoryFailed = false;
-  const requireCCBRepository = (): CCBCharacterRepository => {
-    if (ccbRepository) return ccbRepository;
-    if (ccbRepositoryFailed) {
-      throw new AppError("CCB_DATA_UNAVAILABLE", "角色数据集不可用");
-    }
-    try {
-      ccbRepository = new CCBCharacterRepository({
-        characterDbPath: env.bangumiCharacterDbPath!,
-      });
-      return ccbRepository;
-    } catch (error) {
-      ccbRepositoryFailed = true;
-      console.warn("[CCB] 角色数据集打不开，对局指令将不可用:", describeError(error));
-      throw new AppError(
-        "CCB_DATA_UNAVAILABLE",
-        "角色数据集不可用，请先构建 bangumi-character.sqlite",
-      );
-    }
-  };
-
-  // 立绘回源复用猜歌那条镜像链路，但**单独持有实例并延迟构造**：注入了 sonGuessrService
-  // 的测试不该平白多起一个 Worker。
-  let ccbBangumi: FallbackBangumiProvider | undefined;
-  const resolveCCBCharacterImage = async (characterId: number) => {
-    ccbBangumi ??= new FallbackBangumiProvider({
-      local: new BangumiWorkerProvider({
-        songPath: env.bangumiSongDbPath!,
-        characterPath: env.bangumiCharacterDbPath!,
-        enrichmentPath: env.bangumiEnrichmentPath,
-        imageBase: env.bangumiImageUrl,
-        apiBase: env.bangumiApiUrl,
-      }),
-      remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
-      logger,
-    });
-    return ccbBangumi.resolveCharacterImage(characterId);
-  };
-
-  const ccbSvc =
-    ccbService ??
-    new CCBService({
-      eventLogger: logger,
-      characters: {
-        pickRandomSubject: (settings) => requireCCBRepository().pickRandomSubject(settings),
-        pickRandomCharacter: (subjectId, settings) =>
-          requireCCBRepository().pickRandomCharacter(subjectId, settings),
-        buildCharacterView: (characterId, settings) =>
-          requireCCBRepository().buildCharacterView(characterId, settings),
-        searchCharacters: (keyword, limit) => requireCCBRepository().searchCharacters(keyword, limit),
-      },
-      resolveCharacterImage: resolveCCBCharacterImage,
-      // 原版角色使用率上报（旁路统计）。未配置 `CCB_ORIGINAL_SERVER_URL` 时
-      // `CCBOriginalReporter` 自己整体停用，不会白发请求。
-      stats: new CCBOriginalReporter({
-        serverUrl: env.ccbOriginalServerUrl ?? "",
         logger,
       }),
     });
@@ -589,7 +520,6 @@ export const createApp = ({
       systemRoutes({
         whoIsFakerService: fakerService,
         sonGuessrService: songService,
-        ccbService: ccbSvc,
         logger,
         isShuttingDown,
         onTriggerShutdown,
@@ -626,24 +556,11 @@ export const createApp = ({
         }),
       close: (ws) =>
         closeGameConnection(ws, (connectionId) => songService.unregisterConnection(connectionId)),
-    })
-    .ws("/api/ccb/ws", {
-      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
-      open: (ws) => openGameConnection(ws, (connection) => ccbSvc.registerConnection(connection)),
-      message: (ws, incoming) =>
-        handleGameMessage(ws, incoming, decoder, logger, {
-          serviceName: "CCB",
-          parse: parseCCBMessage,
-          execute: (connectionId, message) => ccbSvc.execute(connectionId, message),
-        }),
-      close: (ws) =>
-        closeGameConnection(ws, (connectionId) => ccbSvc.unregisterConnection(connectionId)),
     });
 
   return {
     app,
     whoIsFakerService: fakerService,
     sonGuessrService: songService,
-    ccbService: ccbSvc,
   };
 };
