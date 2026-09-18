@@ -6,6 +6,7 @@ import {
 } from "../src/config/Constants";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
+import type { PlayerRole } from "../src/shared/WhoIsFaker";
 
 import { createConnection, createTestContext, execute, getEventPayloads, getLastEventPayload } from "./Helpers";
 
@@ -2956,4 +2957,161 @@ test("白板猜词期间白板掉线且出题人选择等待时，系统强制�
   // 房间自动结束猜词阶段并切回原阶段继续，杜绝永久死锁
   snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("description");
+});
+
+test("平票阶段白板猜词掉线并被出题人淘汰时自动流转至夜晚且无状态异常", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  const [player] = await joinPlayers(service, "Oblivionis", 1, "真人白板");
+
+  await execute(service, host, {
+    id: "add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
+
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+
+  await execute(service, host, {
+    id: "submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 设置 player 为白板，并确保其他机器人有卧底和平民存活（1卧底 + 2平民）
+  await execute(service, player.connection, {
+    id: "set-blank",
+    type: "test.setMyRole",
+    payload: { role: "blank" },
+  });
+
+  const room = (service as unknown as { rooms: Map<string, { round: { assignments: Record<string, { role: string; side: string; alive: boolean }>; tieBreak: { candidateIds: string[] } } }> }).rooms.get("Oblivionis")!;
+  const botIds = Object.keys(room.round.assignments).filter((id) => id !== player.joinResult.playerId);
+  room.round.assignments[botIds[0]].role = "undercover";
+  room.round.assignments[botIds[0]].side = "undercover";
+  room.round.assignments[botIds[0]].alive = true;
+  room.round.assignments[botIds[1]].role = "civilian";
+  room.round.assignments[botIds[1]].side = "good";
+  room.round.assignments[botIds[1]].alive = true;
+  room.round.assignments[botIds[2]].role = "civilian";
+  room.round.assignments[botIds[2]].side = "good";
+  room.round.assignments[botIds[2]].alive = true;
+
+  // 跳转到 tieBreak 阶段（平票 PK）
+  await execute(service, host, {
+    id: "jump-to-tie-break",
+    type: "test.jumpToPhase",
+    payload: { phase: "tieBreak" },
+  });
+
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("tieBreak");
+
+  // 让平票候选人强制包含 player 与另一个存活玩家
+  const otherCandidateId = room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+  room.round.tieBreak.candidateIds = [player.joinResult.playerId, otherCandidateId];
+
+  // 白板在平票阶段主动进入猜词
+  await execute(service, player.connection, {
+    id: "enter-blank-guess",
+    type: "game.enterBlankGuess",
+    payload: {},
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("blankGuess");
+
+  // 白板掉线
+  await service.unregisterConnection(player.connection.record.id);
+
+  // 出题人选择淘汰掉线的白板
+  await execute(service, host, {
+    id: "resolve-disconnect-eliminate",
+    type: "game.resolveDisconnect",
+    payload: { playerId: player.joinResult.playerId, resolution: "eliminate" },
+  });
+
+  // 由于候选人从2人减至1人，平票PK无法成立，系统自动自愈流转至夜晚
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("night");
+
+  // 出题人推进阶段不会抛出 TIE_BREAK_MISSING 平票状态异常
+  const advanceResult = await execute(service, host, {
+    id: "advance-phase",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  expect(advanceResult).toBeDefined();
+});
+
+test("revealRoleOnDeath 开关控制死亡玩家身份是否在对局中公开", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+
+  // 默认开启 revealRoleOnDeath
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.settings.revealRoleOnDeath).toBe(true);
+
+  // 修改设置为关闭
+  await execute(service, host, {
+    id: "update-settings",
+    type: "room.updateSettings",
+    payload: { revealRoleOnDeath: false },
+  });
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.settings.revealRoleOnDeath).toBe(false);
+
+  const [p1] = await joinPlayers(service, "Oblivionis", 1, "普通玩家");
+
+  await execute(service, host, {
+    id: "add-bots",
+    type: "test.addBot",
+    payload: { count: 3 },
+  });
+
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+
+  await execute(service, host, {
+    id: "submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+
+  // 淘汰一名玩家（如 bot_1）
+  const room = (service as unknown as { rooms: Map<string, { round: { assignments: Record<string, { alive: boolean; role: PlayerRole }> } }> }).rooms.get("Oblivionis")!;
+  const victimId = Object.keys(room.round.assignments).find((id) => id !== p1.joinResult.playerId && id !== host.record.playerId!)!;
+  room.round.assignments[victimId].alive = false;
+
+  // 触发状态下发
+  await execute(service, host, {
+    id: "touch-chat",
+    type: "chat.send",
+    payload: { text: "测试" },
+  });
+
+  // 普通玩家收到的公共快照中，死者身份应当为 undefined（隐藏）
+  const p1Snapshot = getLastEventPayload<RoomSnapshot>(p1.connection, "room.snapshot");
+  const victimView = p1Snapshot?.players.find((p) => p.id === victimId);
+  expect(victimView?.roundStatus).toBe("dead");
+  expect(victimView?.revealedRole).toBeUndefined();
+
+  // 游戏结束时（gameOver），应当统一公开
+  await execute(service, host, {
+    id: "jump-game-over",
+    type: "test.jumpToPhase",
+    payload: { phase: "gameOver" },
+  });
+
+  const gameOverSnapshot = getLastEventPayload<RoomSnapshot>(p1.connection, "room.snapshot");
+  const finalVictimView = gameOverSnapshot?.players.find((p) => p.id === victimId);
+  expect(finalVictimView?.revealedRole).toBe(room.round.assignments[victimId].role);
 });

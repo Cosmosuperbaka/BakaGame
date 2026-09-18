@@ -135,6 +135,7 @@ export const WhoIsFakerMessageSchemas = {
         password: t.Optional(t.String({ maxLength: 64 })),
         allowSpectators: t.Optional(t.Boolean()),
         roleConfig: t.Optional(RoleConfigSchema),
+        revealRoleOnDeath: t.Optional(t.Boolean()),
       },
       { additionalProperties: false },
     ),

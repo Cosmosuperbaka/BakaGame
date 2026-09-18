@@ -350,6 +350,7 @@ export class WhoIsFakerService {
             : undefined,
         allowSpectators: message.payload.allowSpectators,
         roleConfig: createDefaultRoleConfig(),
+        revealRoleOnDeath: true,
       },
       hostPlayerId: "",
       createdAt: this.now(),
@@ -532,6 +533,10 @@ export class WhoIsFakerService {
 
     if (room.settings.visibility === "private" && !room.settings.password) {
       throw new AppError("PASSWORD_REQUIRED", "私密房间必须设置密码");
+    }
+
+    if (payload.revealRoleOnDeath != null) {
+      room.settings.revealRoleOnDeath = payload.revealRoleOnDeath;
     }
 
     if (payload.roleConfig) {
@@ -796,8 +801,9 @@ export class WhoIsFakerService {
         await this.resolveVoting(room, false);
         break;
       case "tieBreak":
-        if (!round.tieBreak) {
-          throw new AppError("TIE_BREAK_MISSING", "平票状态异常");
+        if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
+          await this.applyEliminationAndMove(room, [], "平票候选不足，直接进入夜晚", "night");
+          break;
         }
 
         if (round.tieBreak.stage === "description") {
@@ -1296,6 +1302,13 @@ export class WhoIsFakerService {
       const remainingTimerMs = round.blankGuessContext.interruptedRemainingTimerMs;
       round.phase = resumePhase;
       round.blankGuessContext = undefined;
+      if (resumePhase === "description") {
+        round.speechMode = "normal";
+      } else if (resumePhase === "tieBreak") {
+        round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
+      } else {
+        round.speechMode = undefined;
+      }
       this.appendSystemMessage(room, "白板猜词未通过，游戏继续");
       if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
         this.restoreInterruptedTimer(room, remainingTimerMs);
@@ -1303,6 +1316,7 @@ export class WhoIsFakerService {
     }
 
     this.touchRoom(room);
+    this.requeuePendingDisconnects(room);
     this.broadcastPhaseAndPublish(room);
     await this.runBots(room);
 
@@ -1656,6 +1670,13 @@ export class WhoIsFakerService {
             const remainingTimerMs = ctx.interruptedRemainingTimerMs;
             round.phase = resumePhase;
             round.blankGuessContext = undefined;
+            if (resumePhase === "description") {
+              round.speechMode = "normal";
+            } else if (resumePhase === "tieBreak") {
+              round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
+            } else {
+              round.speechMode = undefined;
+            }
             this.appendSystemMessage(room, "白板猜词裁定超时未通过，游戏继续");
             if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
               this.restoreInterruptedTimer(room, remainingTimerMs);
@@ -1690,6 +1711,13 @@ export class WhoIsFakerService {
             const remainingTimerMs = ctx.interruptedRemainingTimerMs;
             round.phase = resumePhase;
             round.blankGuessContext = undefined;
+            if (resumePhase === "description") {
+              round.speechMode = "normal";
+            } else if (resumePhase === "tieBreak") {
+              round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
+            } else {
+              round.speechMode = undefined;
+            }
             this.appendSystemMessage(room, "白板猜词超时失败，游戏继续");
             if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
               this.restoreInterruptedTimer(room, remainingTimerMs);
@@ -1697,6 +1725,7 @@ export class WhoIsFakerService {
           }
         }
         this.touchRoom(room);
+        this.requeuePendingDisconnects(room);
         this.broadcastPhaseAndPublish(room);
         await this.runBots(room);
       }
@@ -2674,28 +2703,77 @@ export class WhoIsFakerService {
     }
 
     if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
-      const previousPhase = room.round.phase;
-      const resumePhase =
-        previousPhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
-          ? "night"
-          : this.getResumePhaseAfterForcedRemoval(previousPhase);
-      await this.applyEliminationAndMove(room, [player.id], reason, resumePhase);
+      const isGuesser =
+        room.round.phase === "blankGuess" &&
+        room.round.blankGuessContext?.playerId === player.id;
 
-      if (!room.round.summary) {
-        if (resumePhase === "voting" || supplementStillActive) {
-          room.round.votes = preservedVotes ?? [];
+      if (isGuesser) {
+        const { deferredWinner, resumePhase } = room.round.blankGuessContext!;
+        room.round.blankGuessContext = undefined;
+        this.clearPhaseTimer(room);
+
+        if (deferredWinner) {
+          await this.finishRound(room, deferredWinner, "白板已离场，系统按残局条件结算");
+          return;
         }
-        if (resumePhase === "night") {
-          room.round.nightActions = preservedNightActions ?? [];
+
+        const effectivePhase = resumePhase ?? "gameOver";
+        const targetNextPhase =
+          effectivePhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
+            ? "night"
+            : effectivePhase;
+
+        await this.applyEliminationAndMove(room, [player.id], reason, targetNextPhase);
+
+        if (!room.round.summary) {
+          if (targetNextPhase === "voting" || supplementStillActive) {
+            room.round.votes = preservedVotes ?? [];
+          }
+          if (targetNextPhase === "night") {
+            room.round.nightActions = preservedNightActions ?? [];
+            room.round.tieBreak = undefined;
+            room.round.speechMode = undefined;
+          }
+          if (targetNextPhase === "tieBreak" && preservedTieBreak) {
+            room.round.tieBreak = preservedTieBreak;
+            room.round.speechMode =
+              preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
+          }
+          if (supplementStillActive) {
+            room.round.phase = "description";
+            room.round.speechMode = "supplement";
+          }
         }
-        if (resumePhase === "tieBreak" && preservedTieBreak) {
-          room.round.tieBreak = preservedTieBreak;
-          room.round.speechMode =
-            preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
-        }
-        if (supplementStillActive) {
-          room.round.phase = "description";
-          room.round.speechMode = "supplement";
+        this.appendSystemMessage(room, "白板已离场，本次猜词作废，游戏继续");
+      } else {
+        const previousPhase = room.round.phase;
+        const resumePhase =
+          previousPhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
+            ? "night"
+            : this.getResumePhaseAfterForcedRemoval(previousPhase);
+        await this.applyEliminationAndMove(room, [player.id], reason, resumePhase);
+
+        if (!room.round.summary) {
+          if (resumePhase === "voting" || supplementStillActive) {
+            room.round.votes = preservedVotes ?? [];
+          }
+          if (resumePhase === "night") {
+            room.round.nightActions = preservedNightActions ?? [];
+          }
+          if (resumePhase === "tieBreak" && preservedTieBreak) {
+            room.round.tieBreak = preservedTieBreak;
+            room.round.speechMode =
+              preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
+          }
+          if (resumePhase === "blankGuess") {
+            if (preservedTieBreak) room.round.tieBreak = preservedTieBreak;
+            if (preservedVotes) room.round.votes = preservedVotes;
+            if (preservedNightActions) room.round.nightActions = preservedNightActions;
+          }
+          if (supplementStillActive) {
+            room.round.phase = "description";
+            room.round.speechMode = "supplement";
+          }
         }
       }
     }
@@ -2867,6 +2945,7 @@ export class WhoIsFakerService {
       roleLimits: getRoomRoleLimits(this.getConfigurableParticipantCount(room)),
       settings: {
         roleConfig: room.settings.roleConfig,
+        revealRoleOnDeath: room.settings.revealRoleOnDeath ?? true,
       },
       status: {
         phase: room.round?.phase ?? "waiting",
@@ -2941,7 +3020,9 @@ export class WhoIsFakerService {
           roundStatus,
           eliminatedAt: roundState && !roundState.alive ? roundState.eliminatedAt : undefined,
           revealedRole:
-            roundState && (!roundState.alive || room.round?.phase === "gameOver")
+            roundState &&
+            ((!roundState.alive && (room.settings.revealRoleOnDeath ?? true)) ||
+              room.round?.phase === "gameOver")
               ? roundState.role
               : undefined,
         };
@@ -3627,14 +3708,27 @@ export class WhoIsFakerService {
 
     const { deferredWinner, resumePhase } = round.blankGuessContext;
     round.blankGuessContext = undefined;
+    this.clearPhaseTimer(room);
 
     if (deferredWinner) {
       await this.finishRound(room, deferredWinner, "白板已离场，系统按残局条件结算");
       return;
     }
 
-    round.phase = resumePhase ?? "gameOver";
-    round.speechMode = round.phase === "description" ? "normal" : undefined;
+    if (resumePhase === "tieBreak") {
+      if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
+        round.phase = "night";
+        round.speechMode = undefined;
+        round.tieBreak = undefined;
+      } else {
+        round.phase = "tieBreak";
+        round.speechMode = round.tieBreak.stage === "description" ? "tieBreak" : undefined;
+      }
+    } else {
+      round.phase = resumePhase ?? "gameOver";
+      round.speechMode = round.phase === "description" ? "normal" : undefined;
+    }
+
     this.appendSystemMessage(room, "白板已离场，本次猜词作废，游戏继续");
   }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check, X, Gamepad2, Copy, Link, ChevronDown, Settings,
-  Lock, Globe, Users, Minus, Plus,
+  Lock, Globe, Users, Minus, Plus, Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -339,16 +339,17 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
+  const [revealRoleOnDeath, setRevealRoleOnDeath] = useState(snapshot.settings.revealRoleOnDeath ?? true);
   const [undercoverCount, setUndercoverCount] = useState(snapshot.settings.roleConfig.undercoverCount);
   const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
-
 
   const draft = {
     name: name || undefined,
     visibility: isPrivate ? "private" : "public",
     password: isPrivate ? password || undefined : "",
     allowSpectators,
+    revealRoleOnDeath,
     roleConfig: {
       undercoverCount: Math.max(1, Math.min(undercoverCount, limits.maxUndercoverCount)),
       hasAngel: limits.canEnableAngel && hasAngel,
@@ -373,7 +374,7 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
           {isPrivate ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
           <Label className="text-xs">私密房间</Label>
         </div>
-        <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
+        <Switch checked={isPrivate} onCheckedChange={setIsPrivate} aria-label="私密房间" />
       </div>
       <AnimatePresence initial={false}>
         {isPrivate && (
@@ -390,7 +391,14 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
           <Users className="h-3.5 w-3.5 text-muted-foreground" />
           <Label className="text-xs">允许旁观</Label>
         </div>
-        <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
+        <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} aria-label="允许旁观" />
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+          <Label className="text-xs">死亡时揭露身份</Label>
+        </div>
+        <Switch checked={revealRoleOnDeath} onCheckedChange={setRevealRoleOnDeath} aria-label="死亡时揭露身份" />
       </div>
       <div className="flex items-center justify-between">
         <Label className="text-xs">卧底人数</Label>
@@ -434,6 +442,7 @@ function SettingsPreview({ snapshot }: { snapshot: RoomSnapshot }) {
   const items = [
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
+    (snapshot.settings.revealRoleOnDeath ?? true) ? "死亡揭露身份" : "死亡隐藏身份",
     `${effectiveUndercover} 名卧底`,
     ...(effectiveAngel ? ["1 名天使"] : []),
     ...(effectiveBlank ? ["1 名白板"] : []),

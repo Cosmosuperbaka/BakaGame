@@ -78,6 +78,7 @@ export interface RoomSettings {
   password?: string;
   allowSpectators: boolean;
   roleConfig: RoleConfig;
+  revealRoleOnDeath: boolean;
 }
 
 export interface WhoIsFakerPlayerRecord {
@@ -341,6 +342,7 @@ export interface WhoIsFakerRoomSnapshot {
   roleLimits: RoleLimits;
   settings: {
     roleConfig: RoleConfig;
+    revealRoleOnDeath?: boolean;
   };
   status: {
     phase: GamePhase;
@@ -468,6 +470,7 @@ export type WhoIsFakerClientMessage =
         password?: string;
         allowSpectators?: boolean;
         roleConfig?: RoleConfig;
+        revealRoleOnDeath?: boolean;
       }
     >
   | ClientEnvelope<"room.kick", { playerId: string }>
