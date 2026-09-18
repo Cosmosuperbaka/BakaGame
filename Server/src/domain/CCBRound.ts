@@ -63,10 +63,10 @@ function finishUnit(room: CCBRoom, unit: CCBUnit, status: 'exhausted' | 'surrend
 export function applyCCBGuess(room: CCBRoom, player: CCBPlayerRecord, character: CCBCharacterView, now: number): CCBGuess {
   const { round, unit } = requireCCBAction(room, player);
   const correct = character.id === round.answer.id;
-  const previouslyUsed = round.guesses.some(guess => guess.character.id === character.id && unit.memberIds.includes(guess.playerId));
+  const previouslyUsed = round.guesses.some(guess => guess.character.id === character.id && guess.playerId === player.id);
   if (round.settings.globalPick && !previouslyUsed && !(correct && (round.settings.syncMode || round.settings.nonstopMode))) {
     const used = round.guesses.some(guess => guess.character.id === character.id &&
-      !unit.memberIds.includes(guess.playerId) && (!round.settings.syncMode || guess.syncRound < round.syncRound));
+      guess.playerId !== player.id && (!round.settings.syncMode || guess.syncRound < round.syncRound));
     if (used) throw new AppError('CHARACTER_BANNED', '该角色已被其他玩家猜过');
   }
   const feedback = buildCCBFeedback(character, round.answer, round.settings);
@@ -159,12 +159,11 @@ export function settleCCBRound(room: CCBRoom): void {
     if (player && !round.settings.nonstopMode) player.score += winner.detail.score;
   }
   for (const unit of round.units.values()) {
-    if (round.winners.some(winner => winner.unitId === unit.id)) continue;
     const hits = unit.memberIds.map(id => ({ id, position: round.guesses.filter(guess => guess.playerId === id).findIndex(guess => guess.partial) }))
       .filter(hit => hit.position >= 0 && room.players.has(hit.id))
       .sort((a, b) => a.position - b.position || room.players.get(a.id)!.name.localeCompare(room.players.get(b.id)!.name));
     const winner = hits[0];
-    if (winner) {
+    if (winner && !round.winners.some(correct => correct.playerId === winner.id)) {
       room.players.get(winner.id)!.score++;
       const detail = scores.get(winner.id)!; detail.score++; detail.partial = 1; detail.reason = '猜中共同作品';
     }

@@ -128,6 +128,28 @@ describe('CCB 原生完整玩法', () => {
     expect(h.privateState(host).answer).toBeNull();
   });
 
+  for (const syncMode of [false, true]) test(`角色禁选仅本人重复豁免，同队共享机会不共享豁免（同步${syncMode}）`, async () => {
+    const h = harness(); const host = await h.create(); const mate = await h.join('队友');
+    await h.configure(host, { globalPick: true, syncMode });
+    await h.send(host, 'ccb.player.team', { team: 1 }); await h.send(mate, 'ccb.player.team', { team: 1 });
+    await h.ready(mate); await h.send(host, 'ccb.game.start', {}); await h.guess(host, 3);
+    expect(h.privateState(mate).bannedCharacterIds).toContain(3);
+    expect(h.privateState(host).bannedCharacterIds).not.toContain(3);
+    await expect(h.guess(mate, 3)).rejects.toMatchObject({ code: 'CHARACTER_BANNED' });
+    await h.guess(host, 3);
+    expect(h.snapshot(host).players.find(player => player.id === host.id)?.attempts).toBe(2);
+  });
+
+  for (const nonstopMode of [false, true]) test(`队友猜中角色时保留先前作品命中者的一分（血战${nonstopMode}）`, async () => {
+    const h = harness(); const host = await h.create(); const mate = await h.join('队友');
+    await h.configure(host, { nonstopMode });
+    await h.send(host, 'ccb.player.team', { team: 1 }); await h.send(mate, 'ccb.player.team', { team: 1 });
+    await h.ready(mate); await h.send(host, 'ccb.game.start', {}); await h.guess(host, 2); await h.guess(mate, 1);
+    const scores = h.snapshot(host).roundSummary!.scores;
+    expect(scores.find(score => score.playerId === host.id)).toMatchObject({ partial: 1, score: 1 });
+    expect(scores.find(score => score.playerId === mate.id)).toMatchObject({ partial: 0, quickGuess: 2 });
+  });
+
   test('同步标签禁选同轮暂不遮蔽，轮结束后仍向共同发现者公开', async () => {
     const h = harness(); const host = await h.create(); const guest = await h.join('玩家');
     await h.configure(host, { syncMode: true, nonstopMode: true, tagBan: true }); await h.ready(guest); await h.send(host, 'ccb.game.start', {});

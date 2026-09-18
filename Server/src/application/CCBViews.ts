@@ -37,7 +37,7 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
   const inGame = room.phase === 'guessing' && Boolean(unit) && player.status === 'playing';
   const canGuess = inGame && Boolean(!unit!.ended && (!round!.settings.syncMode || !unit!.completed));
   const participants = ccbParticipants(room);
-  const usedCharacterIds = new Set(round?.guesses.filter(guess => unit?.memberIds.includes(guess.playerId)).map(guess => guess.character.id));
+  const usedCharacterIds = new Set(round?.guesses.filter(guess => guess.playerId === player.id).map(guess => guess.character.id));
   return {
     playerId: player.id, canGuess,
     canSurrender: inGame && !unit!.ended,
@@ -51,7 +51,7 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
     imageHintLevel: remaining,
     deadlineAt: canGuess ? unit!.deadlineAt : null,
     bannedCharacterIds: round?.settings.globalPick ? [...new Set(round.guesses.filter(guess =>
-      !usedCharacterIds.has(guess.character.id) && !unit?.memberIds.includes(guess.playerId) && (!round.settings.syncMode || guess.syncRound < round.syncRound) &&
+      !usedCharacterIds.has(guess.character.id) && guess.playerId !== player.id && (!round.settings.syncMode || guess.syncRound < round.syncRound) &&
       !(guess.correct && (round.settings.syncMode || round.settings.nonstopMode)),
     ).map(guess => guess.character.id))] : [],
   };
