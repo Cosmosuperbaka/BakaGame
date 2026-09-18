@@ -93,6 +93,7 @@ export class CCBOriginalService {
     }
     if (message.type === 'ccb.room.reconnect') return this.reconnect(connection, message.payload.roomId, message.payload.sessionToken);
     const session = this.requireSession(connectionId);
+    if (message.sessionToken !== session.token) throw new AppError('SESSION_INVALID', '原版会话凭据无效，请重新加入');
     if (message.roomId && message.roomId !== session.roomId) throw new AppError('ROOM_NOT_FOUND', '房间与当前会话不一致');
     const task = session.queue.then(() => this.executeInRoom(session, message));
     session.queue = task.catch(() => undefined);

@@ -84,7 +84,13 @@ function setup(options: Partial<ConstructorParameters<typeof CCBOriginalService>
   const first = connection('first'); service.registerConnection(first);
   return { service, upstream, packets, first, connection };
 }
-const request = (service: CCBOriginalService, id: string, message: CCBClientMessage) => service.execute(id, message);
+const tokens = new WeakMap<CCBOriginalService, Map<string, string>>();
+const request = async (service: CCBOriginalService, id: string, message: CCBClientMessage): Promise<unknown> => {
+  if (!tokens.has(service)) tokens.set(service, new Map());
+  const result = await service.execute(id, { ...message, sessionToken: message.sessionToken ?? tokens.get(service)!.get(id) });
+  if (result && typeof result === 'object' && 'sessionToken' in result && typeof result.sessionToken === 'string') tokens.get(service)!.set(id, result.sessionToken);
+  return result;
+};
 const create = (service: CCBOriginalService, id = 'first', name = '甲') => request(service, id, {
   id: 'create', type: 'ccb.room.create', payload: { source: 'original', roomId: '1234', name: '测试房间', userName: name, visibility: 'public', allowSpectators: true },
 }) as Promise<CCBRoomEnterResult>;
@@ -108,6 +114,7 @@ describe('原版房间适配', () => {
     const second = connection('second'); service.registerConnection(second);
     await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '乙' } });
     expect(upstream.sockets).toHaveLength(2);
+    await expect(request(service, 'first', { id: 'invalid', type: 'ccb.chat.send', sessionToken: 'wrong-token', payload: { text: '冒名消息' } })).rejects.toMatchObject({ code: 'SESSION_INVALID' });
     await request(service, 'first', { id: 'chat', type: 'ccb.chat.send', payload: { text: '你好' } });
     expect((await sync(service, 'second')).snapshot.chat[0].text).toBe('你好');
     expect(upstream.sockets.every(socket => socket.sent.every(item => item.event !== 'updatePlayerMessage'))).toBe(true);
