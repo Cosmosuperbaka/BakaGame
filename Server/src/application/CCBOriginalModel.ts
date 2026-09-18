@@ -3,13 +3,15 @@ import type { CCBCharacterView, CCBGuess, CCBPhase, CCBRoundSummary, CCBSettings
 import type { CCBOriginalPlayer } from '../infrastructure/CCBOriginalProtocol';
 import type { CCBOriginalSocket } from '../infrastructure/CCBOriginalSocket';
 import type { CCBOriginalRoundData } from './CCBOriginalRoundData';
+import type { LRUCache } from 'lru-cache';
 
 export interface CCBOriginalChatRoom {
   generation: string;
   chat: ChatMessage[];
-  /** 同一上游局的自动提示只生成一次，不因增强玩家加入顺序变化。 */
-  roundHints: Map<string, string[]>;
-  roundData?: { key: string; data: CCBOriginalRoundData };
+  seenRoundKeys: LRUCache<string, number>;
+  /** 首个结束/开局事件推进代数，其余上游连接绑定同一局。 */
+  round?: { id: string; number: number; characterKey: string; phase: 'guessing' | 'settled';
+    hints: string[]; data: CCBOriginalRoundData };
 }
 
 export interface CCBOriginalSession {
