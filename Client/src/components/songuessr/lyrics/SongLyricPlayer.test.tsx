@@ -103,7 +103,7 @@ describe("SongLyricPlayer", () => {
 
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    expect(height).toBe(154);
+    expect(height).toBe(204);
 
     const overview = screen.getByTestId("baka-song-lyric-overview");
     expect(overview).toBeInTheDocument();
@@ -112,6 +112,28 @@ describe("SongLyricPlayer", () => {
     expect(screen.queryByText(/重播可再次查看/)).toBeNull();
 
     expect(screen.getByText(/选中的第一句歌词/)).toBeInTheDocument();
+  });
+
+  it("当歌词同时有翻译和注音时，注音被屏蔽只保留翻译", () => {
+    const lines: SongLyricLine[] = [
+      {
+        time: 1000,
+        endTime: 3000,
+        text: "何も言わないで",
+        translatedLyric: "缄默不言",
+        romanLyric: "na ni mo i wa na i de",
+        words: [
+          { startTime: 1000, endTime: 2000, word: "何も", romanWord: "na ni mo" },
+          { startTime: 2000, endTime: 3000, word: "言わないで", romanWord: "i wa na i de" },
+        ],
+      },
+    ];
+
+    render(<SongLyricPlayer lines={lines} audioPlaybackState="playing" />);
+    // 界面上可见翻译
+    expect(screen.getByText(/缄默不言/)).toBeInTheDocument();
+    // 注音文本不显示
+    expect(screen.queryByText(/na ni mo/)).toBeNull();
   });
 
   it("无歌词或空数组时显示紧凑型纯音乐提示", () => {
@@ -163,7 +185,7 @@ describe("SongLyricPlayer", () => {
     render(<SongLyricPlayer lines={lines} audioPlaybackState="completed" />);
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    expect(height).toBeGreaterThanOrEqual(300);
+    expect(height).toBeGreaterThanOrEqual(350);
   });
 
   it("当包含和声伴唱歌词（isBG）时精确核算其高度预算", () => {
@@ -176,8 +198,8 @@ describe("SongLyricPlayer", () => {
     render(<SongLyricPlayer lines={linesWithBG} audioPlaybackState="completed" />);
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    // 2句主歌词(42*2=84) + 1句和声(30) + 基础内边距(32) = 146
-    expect(height).toBe(146);
+    // 2句主歌词(56*2=112) + 1句和声(38) + 基础内边距与冗余(52+12=64) = 214
+    expect(height).toBe(214);
   });
 });
 
