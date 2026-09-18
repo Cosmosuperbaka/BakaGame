@@ -121,6 +121,30 @@ describe('CCB 会话与异步边界', () => {
     await h.configure(host, {}); await h.send(host, 'ccb.game.start', {}); expect(h.snapshot(host).phase).toBe('guessing');
   });
 
+  test('唯一猜题人刷新不会判负，恢复后继续同局并可猜中', async () => {
+    const h = harness(); const host = await h.create(); const guest = await h.join('猜题人');
+    await h.configure(host, {});
+    await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    await h.guess(guest, 3);
+    h.service.unregisterConnection(guest.record.id);
+    expect(h.snapshot(host).phase).toBe('guessing'); expect(h.snapshot(host).roundSummary).toBeNull();
+    const restored = h.connect('恢复连接');
+    await h.send(restored, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: guest.token! });
+    expect(h.privateState(restored).guesses).toHaveLength(1);
+    await h.guess(restored, 1);
+    expect(h.snapshot(host).roundSummary!.winners[0].playerId).toBe(guest.id!);
+    expect(h.snapshot(host).roundNumber).toBe(1);
+  });
+
+  test('最后一个离线猜题人过期清除后结束对局', async () => {
+    const h = harness(); const host = await h.create(); const guest = await h.join('猜题人');
+    await h.configure(host, {}); await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    h.service.unregisterConnection(guest.record.id); h.advance(180_000);
+    expect(h.snapshot(host).phase).toBe('settled'); expect(h.snapshot(host).roundSummary!.winners).toEqual([]);
+  });
+
   test('取消后同一时刻重开，不接受之前自动出题任务的迟到答案', async () => {
     const first = deferred<CCBCharacterView>(), second = deferred<CCBCharacterView>(); let calls = 0;
     const h = harness({ chooseRandomCharacter: async () => ++calls === 1 ? first.promise : second.promise });

@@ -124,11 +124,14 @@ export function tickCCBRound(room: CCBRoom, now: number): void {
 export function advanceCCBRound(room: CCBRoom, now: number): void {
   const round = room.round;
   if (room.phase !== 'guessing' || !round) return;
-  const active = [...round.units.values()].filter(unit => !unit.ended && unit.memberIds.some(id => room.players.get(id)?.online));
+  const unfinished = [...round.units.values()].filter(unit => !unit.ended);
+  const active = unfinished.filter(unit => unit.memberIds.some(id => room.players.get(id)?.online));
   const syncComplete = active.every(unit => unit.completed);
-  if (!active.length || (!round.settings.nonstopMode && round.winners.length && (!round.settings.syncMode || syncComplete))) {
+  if (!unfinished.length || (!round.settings.nonstopMode && round.winners.length && (!round.settings.syncMode || syncComplete))) {
     settleCCBRound(room); return;
   }
+  // 临时断线保留未结束席位，等待重连或房间离线清理；刷新页面不能直接判负。
+  if (!active.length) return;
   if (!round.settings.syncMode || !syncComplete) return;
   for (const [tag, owners] of round.pendingTagOwners) {
     for (const unit of active) unit.memberIds.forEach(id => owners.add(id));
