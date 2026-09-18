@@ -110,6 +110,11 @@ fetch(url, { credentials: "include" });
 
 ### 歌词多级回退与 AMLL 逐字播放
 
+> **改动 `SongLyricPlayer` 或任何 AMLL 渲染行为前，必须先查阅官方文档：<https://amll.dev/>。**
+> 组件内核为 `@applemusic-like-lyrics/core` / `react`，其盒模型、`calcLayout` 排布算法、
+> `lyricGroupSize` 原生测量与 CSS 变量均以官方文档与已安装版本的类型声明为准，
+> 严禁凭印象推测 DOM 结构或字号行高。
+
 Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平滑滚动居中与精确时间轴同步。歌词数据获取遵循严格的四级回退策略：
 
 1. **优先级 1（首选）：网易云官方 `yrc` 逐字歌词**
@@ -153,7 +158,11 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - **歌词引用稳定防二次重刷**：`SongLyricPlayer` 必须基于歌词文本、起止时间与逐字数据生成稳定摘要键（`linesKey`）进行 memoization，严禁以快照数组引用作为依赖，杜绝音频就绪广播（`audioReadyPlayers` 改变）触发 AMLL DOM 销毁重建与入场渐入动画重播。
 - **原生 AMLL 单实例总览与命令式立即重排**：音频播放完成后（`audioPlaybackState === "completed"`），严禁自行手写外部 DOM 列表替代。统一使用原生 AMLL 单实例进行全量总览渲染。为消除 AMLL 默认居中留出的巨大“上界”与状态切换后未主动重排导致的歌词推出视口（“少显示一句”），组件必须通过 `<LyricPlayer ref={lyricPlayerRef}>` 暴露的底层实例，在切换为总览的瞬间立即命令式执行：`player.setAlignAnchor("top")`、`player.setAlignPosition(0)`、`player.setCurrentTime(firstLineTime, true)`、`player.resetScroll()` 并同步调用 `player.calcLayout(true, true)`，迫使第一行紧贴顶部物理原点自顶向下排布。
 - **字重与总览纯黑字色**：主歌词行无论播放还是总览模式均统一锁定 `font-weight: 500 !important;`，副歌词翻译行统一为 `font-weight: 400 !important;`。在总览模式下强制设置 `--amll-lp-inactive-opacity: 1 !important` 与全量子元素 `opacity: 1 !important; color: var(--color-foreground) !important;`，彻底根除总览歌词灰黑混杂或淡化问题；容器通过 CSS `transform: scale(0.92)` 配合 `transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)` 实现连贯平滑的缩小拉远动效。
-- **真实盒模型自适应高度精确预算**：`calculateLyricContainerHeight` 严格依据 AMLL 真实渲染 DOM 盒模型进行物理高度核算（主歌词行单行 48px/两行 80px/三行 112px，副行翻译单行 28px/两行 48px/三行 68px，和声伴唱小字 30px/22px，基础内边距 52px，每行额外 4px 字族容差缓冲；无翻译最低 120px，有翻译最低 160px，纯音乐紧凑 96px）。高度在出题时锁定，整轮竞猜零跳变，总览模式完整展示所有选区歌词与翻译，彻底杜绝被截断或产生滚动条。
+- **优先采信 AMLL 原生实测高度，严禁魔数推算**：歌词组件高度必须以内核原生测量结果为唯一真源。AMLL 内核公开 `player.currentLyricGroups`（当前全部歌词组）与 `player.lyricGroupSize`（`WeakMap<歌词组, [宽, 高]>`，由内核 `ResizeObserver` 对每组 `.lyricLineWrapper` 实测 `clientWidth/clientHeight` 写入）；内核 `calcLayout()` 在 `alignAnchor=top` / `alignPosition=0` 下「自顶向下按已测行高累加、组间无额外间距」，因此 **Σ `lyricGroupSize.get(group)[1]` 即总览所需的精确内容高度，且与容器高度无关**（实测：容器 200 / 400 / 800 / 3000px 下累加值完全一致）。
+  实现落点：`SongLyricPlayer` 进入总览后逐帧轮询 `measureLyricOverviewHeight(player)`，要求「每组均已测量」且「测量值与元素当前 `clientHeight` 一致」（切入总览时内核 `.lyricLineWrapper` 上下 `padding` 由 `.4em` 变为 `.25em`，旧值会短暂残留，一致性校验用于剔除陈旧值），通常 2 ~ 4 帧即可收敛，随后锁定高度。
+- **解析式估算仅作兜底**：测量到位前的首帧及无布局环境（jsdom / 预渲染快照）使用 `estimateLyricOverviewHeight`，严格对齐 AMLL 真实盒模型：主行字号 `1.125rem` 与内核 `line-height: 1.2` → 每行 21.6px；翻译副行 `.85rem` × 1.4 → 19.04px 并叠加 `margin-top .2rem`；和声伴唱 `0.7em`（下限 10px）并入前一句主歌词组并计入 `gap .2em`；每组上下内边距 `0.25em × 2 = 9px`；折行行数按容器真实可用宽度（`getComputedStyle` 实测 padding，禁止写死 `p-3/sm:p-4`）折算。**兜底值只允许短暂存在，测量齐全后必须收敛到实测值**。
+- **总览缩放必须反向补偿**：总览模式存在 `transform: scale(0.92)` 缩小动效，因此外壳高度按 `0.92 × 内容自然高度 + 外壳上下内边距/边框` 计算，同时把**未缩放的自然高度**通过 CSS 变量 `--baka-lyric-player-height` 注入 AMLL 播放器本体（`Client/src/index.css` 中 `.baka-lyric-player` 的高度读取该变量，缺省退回 `100%`）。这样缩放后内容恰好填满外壳，既不裁切最后一行，也不残留底部留白。高度过渡必须与缩放**同频同缓动**（500ms / `cubic-bezier(0.16,1,0.3,1)`），否则过渡途中外壳会瞬时矮于已缩放内容而被裁切。
+- 纯音乐无歌词时保持紧凑提示（`h-24 sm:h-28`），不参与上述高度核算。
 
 ### 歌词清洗
 
