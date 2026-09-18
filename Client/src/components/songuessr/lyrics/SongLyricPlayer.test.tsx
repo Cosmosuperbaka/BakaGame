@@ -103,7 +103,9 @@ describe("SongLyricPlayer", () => {
 
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    expect(height).toBe(204);
+    // 无布局环境（jsdom）下退回解析式估算：主行 21.6 + 副行 22.24 + 组上下内边距 9 + 容差 2
+    // 两句内容高 87.44，总览按 scale(0.92) 反向补偿 → ceil(80.44) = 81
+    expect(height).toBe(81);
 
     const overview = screen.getByTestId("baka-song-lyric-overview");
     expect(overview).toBeInTheDocument();
@@ -174,7 +176,7 @@ describe("SongLyricPlayer", () => {
     expect(screen.getByTestId("baka-song-lyric-player")).toBeInTheDocument();
   });
 
-  it("当包含多行双语翻译歌词时自适应扩展容器高度，避免总览溢出", () => {
+  it("当包含多行双语翻译歌词时按真实盒模型精确扩展容器高度，杜绝总览溢出或无效留白", () => {
     const lines: SongLyricLine[] = [
       { time: 1000, endTime: 3000, text: "夜空に浮かぶ星たち", translatedLyric: "浮现在夜空中的群星点点" },
       { time: 3000, endTime: 6000, text: "静寂を切り裂いていく", translatedLyric: "将这无尽的寂静一点点撕裂开来" },
@@ -185,7 +187,8 @@ describe("SongLyricPlayer", () => {
     render(<SongLyricPlayer lines={lines} audioPlaybackState="completed" />);
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    expect(height).toBeGreaterThanOrEqual(350);
+    // 4 组「主行 + 翻译」各 54.84 → 219.36，按 scale(0.92) 反向补偿 → ceil(201.8) = 202
+    expect(height).toBe(202);
   });
 
   it("当包含和声伴唱歌词（isBG）时精确核算其高度预算", () => {
@@ -198,8 +201,9 @@ describe("SongLyricPlayer", () => {
     render(<SongLyricPlayer lines={linesWithBG} audioPlaybackState="completed" />);
     const container = screen.getByTestId("baka-song-lyric-container");
     const height = parseInt(container.style.height, 10);
-    // 2句主歌词(56*2=112) + 1句和声(38) + 基础内边距与冗余(52+12=64) = 214
-    expect(height).toBe(214);
+    // 主行组 32.6 + 主行挂载和声组(32.6 + 组内间距 3.6 + 和声小字 15.12) = 83.92，
+    // 按 scale(0.92) 反向补偿 → ceil(77.2) = 78
+    expect(height).toBe(78);
   });
 });
 
