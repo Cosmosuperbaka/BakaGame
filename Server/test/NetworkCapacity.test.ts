@@ -4,7 +4,7 @@ import type { ConnectionRecord } from "../src/shared/Index";
 import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
-import { ccbTestHarness } from "./CCBNativeFixtures";
+import { ccbTestHarness, character } from "./CCBNativeFixtures";
 
 const TARGET_PLAYERS = 150;
 const MUTATIONS_PER_SECOND = 12;
@@ -101,7 +101,11 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => 
 }, 30_000);
 
 test("6Mbps 可以承载 150 人 CCB 的高频状态与私有猜测同步", async () => {
-  const h = ccbTestHarness();
+  // 原版2382份外部标签记录最多21项，容量预算覆盖该实际最大值。
+  const withExtraTags = (id: number) => ({ ...character(id), extraTags: Array.from({ length: 3 }, (_, section) => ({
+    section: `标签分区${section}`, tags: Array.from({ length: 7 }, (_, tag) => `游戏角色属性${section}-${tag}`),
+  })) });
+  const h = ccbTestHarness({ chooseRandomCharacter: async () => withExtraTags(1), getCharacter: async id => withExtraTags(id) });
   let networkNow = 0, measuredBytes = 0, patchCount = 0, fullCount = 0;
   const meter = (client: ReturnType<typeof h.connect>) => {
     const encoder = new StateSyncEncoder({ now: () => networkNow });

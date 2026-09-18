@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createDefaultCCBSettings } from '../src/shared/CCB';
 import { decodeOriginalCharacter, encodeOriginalCharacter, originalPlayers, originalScores,
-  originalSettings, toOriginalSettings } from '../src/infrastructure/CCBOriginalProtocol';
+  originalSettings, toOriginalSettings, toOriginalCharacter } from '../src/infrastructure/CCBOriginalProtocol';
 
 describe('原版协议转换', () => {
   test('保留远端答案资料和标签顺序，并在服务端完成加解密', () => {
@@ -31,6 +31,18 @@ describe('原版协议转换', () => {
     expect(settings.indexId).toBe(7);
     expect(settings.topNSubjects).toBe(20);
     expect(originalSettings(toOriginalSettings(createDefaultCCBSettings()))).toEqual(createDefaultCCBSettings());
+  });
+
+  test('原版附加游戏作品编号不改变可见作品数量，增强字段跨客户端保留', () => {
+    const view = decodeOriginalCharacter({ id: 12, name: '角色', appearances: ['可见作品'], appearanceIds: [44, 225022] }, 'fixture-key');
+    expect(view.appearances).toHaveLength(1);
+    expect(view.comparisonAppearances).toEqual([{ id: 44, name: '可见作品', nameCn: '可见作品' }, { id: 225022, name: '', nameCn: '' }]);
+    view.comparisonAppearances[1] = { id: 225022, name: '附加游戏', nameCn: '附加游戏' };
+    view.extraTags = [{ section: '阵营', tags: ['测试阵营'] }];
+    const wire = toOriginalCharacter(view);
+    expect(wire.appearanceIds).toEqual([44, 225022]);
+    expect(wire.appearances).toEqual(['可见作品']);
+    expect(decodeOriginalCharacter(wire, 'fixture-key')).toEqual(view);
   });
 
   test('保留并列名次、队员实际积分，不向统一玩家视图传播头像和留言', () => {

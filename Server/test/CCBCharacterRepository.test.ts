@@ -5,6 +5,7 @@ import { CCBCharacterRepository } from "../src/infrastructure/CCBCharacterReposi
 import { createDefaultCCBSettings } from "../src/shared/CCB";
 import { createCCBCharacterFixture } from "./CCBCharacterFixtures";
 import type { CCBDataOptions } from "../src/infrastructure/CCBData";
+import { selectCCBExtraTags } from "../src/infrastructure/CCBCharacterDerivation";
 
 const cleanup: Array<() => Promise<void>> = [];
 const now = Date.UTC(2026, 0, 1);
@@ -18,6 +19,34 @@ function create(options: Partial<CCBDataOptions> = {}) {
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose(); });
 
 describe("CCB 本地角色资料", () => {
+  test("额外游戏作品保留独立判定关系和外部标签，不混入动画数量及标签池", async () => {
+    const { repository, characterPath } = create();
+    const fixture = new Database(characterPath);
+    fixture.query("INSERT INTO subjects VALUES (?,4,?,?,?,0,?,?,9,500,500)").run(284157, "Genshin", "原神", "2020-09-28", '{}', '[]');
+    fixture.query("INSERT INTO character_subject_relations VALUES (?,284157,1,0)").run(1);
+    fixture.query("INSERT INTO character_extra_tags VALUES (1,284157,0,0,?,?)").run('属性', '风');
+    fixture.query("INSERT INTO character_extra_tags VALUES (1,284157,1,0,?,?)").run('武器', '单手剑');
+    fixture.close();
+    const view = await repository.getCharacter(1, settings());
+    expect(view.appearances.map(item => item.id)).toEqual([10]);
+    expect(view.comparisonAppearances.map(item => item.id)).toEqual([10,284157]);
+    expect(view.highestRating).toBe(8); expect(view.earliestAppearance).toBe(2020);
+    expect(view.extraTags).toEqual([{ section: '属性', tags: ['风'] }, { section: '武器', tags: ['单手剑'] }]);
+    expect(view.subjectTags).not.toContain('风');
+    expect((await repository.getRawCharacter(1)).extraTagsBySubject[284157]).toEqual(view.extraTags);
+    view.extraTags[0].tags.push('篡改');
+    expect((await repository.getCharacter(1, settings())).extraTags[0].tags).toEqual(['风']);
+    const game = await repository.getCharacter(1, { ...settings(), metaTags: ['游戏'] });
+    expect(game.comparisonAppearances.filter(item => item.id === 284157)).toHaveLength(1);
+  });
+
+  test("外部标签按首个支持作品选取，不越过无标签作品也不泄漏原始引用", () => {
+    const available = { 284157: [{ section: '属性', tags: ['风'] }] };
+    expect(selectCCBExtraTags([{ id: 109378, name: '', nameCn: '' }, { id: 284157, name: '', nameCn: '' }], available)).toEqual([]);
+    const chosen = selectCCBExtraTags([{ id: 284157, name: '', nameCn: '' }], available);
+    chosen[0].tags.push('变化'); expect(available[284157][0].tags).toEqual(['风']);
+  });
+
   test("短中文、短别名和长别名均可检索，通配符作为普通字符且结果有界", async () => {
     const { repository } = create();
     expect((await repository.searchCharacters("牧濑")).map((row) => row.id)).toEqual([1]);

@@ -5,12 +5,13 @@ export const originalCharacter = (id = 900): CCBCharacterView => ({
   id, name: `角色${id}`, nameCn: `中文${id}`, imageUrl: `https://images.example/${id}.jpg`,
   gender: 'female', popularity: 120, summary: '第一条线索。第二条线索。第三条线索。',
   appearances: [{ id: 10, name: '作品', nameCn: '作品', year: 2020, rating: 9, ratingCount: 100 }],
+  comparisonAppearances: [{ id: 10, name: '作品', nameCn: '作品' }], extraTags: [],
   highestRating: 9, earliestAppearance: 2020, latestAppearance: 2020,
   subjectTags: ['校园'], characterTags: ['眼镜'], voiceActors: ['声优'], metaTags: ['校园', '眼镜', '声优'],
 });
 export const originalData: CCBDataProvider = {
   async getCharacter(id) { return originalCharacter(id); }, async chooseRandomCharacter() { return originalCharacter(); },
-  async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...originalCharacter(id), aliases: [], appearances: [] }; },
+  async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...originalCharacter(id), aliases: [], appearances: [], extraTagsBySubject: {} }; },
   async searchCharacters() { return [originalCharacter()]; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return [originalCharacter()]; },
   async importDirectory(id) { return { id, subjectIds: [10], missingSubjectIds: [], importedAt: 1 }; },
   async resolveCharacterImage(id) { return `https://images.example/${id}.jpg`; }, close() {},

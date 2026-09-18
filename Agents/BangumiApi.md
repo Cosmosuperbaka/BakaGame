@@ -133,14 +133,14 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 ## 本地数据集构建
 
 `Server/data/` 下两个只读 SQLite 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
-每周一 03:30 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**角色关系、作品、标签与声优的
+每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**角色关系、作品、标签与声优的
 运行时判定仅使用这些本地数据**；普通角色查询不得在缺失时回源补查。角色头像及其同次 API 返回的
 基础资料、用户明确导入的目录成员使用下述独立补全层，不能写入只读 LFS 产物。
 
 | 文件 | 内容 | 使用方 |
 |---|---|---|
 | `bangumi-song.sqlite` | `subjects`（动画）/ `music_subjects` / `subject_music_relations` | Songuessr |
-| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_vas` | CCB |
+| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_extra_tags` / `character_vas` | CCB |
 
 ### 角色中文名与性别只能从 infobox 解析（铁律）
 
@@ -286,6 +286,14 @@ ORDER BY r.subject_id
 - 随机出题先按年份、大类、元标签及热度选作品，再按作品关系顺序选主角或前 N 个主配角。
   年榜先选择年份；额外作品保留独立抽样入口；目录模式只读取已导入的成员快照。
   无候选、缺角色、未导入目录分别返回业务错误，不把设置替换成另一套筛选范围。
+- `CCBExtraSubjects.json` 登记原版支持外部标签的作品，构建器与运行时共用此唯一列表。
+  `character_extra_tags` 仅保存原始作品、角色、分区及标签键的有序关系；不保存 HTML 或房间派生状态。
+  构建器默认从原版仓库读取各作品的 JSON，`--extra-tags` 可指定 URL 目录或离线目录；
+  文件缺失、分组损坏或全库空标签必须令构建失败。空键表示原版未录入属性，不作为线索导入。
+  可见 `appearances` 决定作品数量、评分和年份；`comparisonAppearances` 额外保留登记游戏的主配角
+  关系，仅用于共同作品判定。不得把额外关系塞进可见数组，导致跨类型作品计数与评分变化。
+  外部标签按判定数组中首个登记作品取值，并沿用同分区、同标签键命中规则；无数据时为空，
+  不跳到第二个作品。它们不参与普通标签 BP；仅下发猜测标签及命中结果，不泄漏答案完整标签。
 - 图片复用 `enrichment(entity='character', id, payload, fetched_at)` 格式，保存原始 URL，读取时镜像重写。
   `CCBEnrichment` 使用并发 3 的有界队列与相同角色请求合并；429 冷却 5 秒，只有有效响应确实
   无图片或角色 404 才进入 5 分钟内存负缓存。网络、限流、服务端失败与无效响应必须返回明确

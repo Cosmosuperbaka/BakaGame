@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { CCBOriginalService } from '../src/application/CCBOriginalService';
 import type { ConnectionRecord } from '../src/domain/Model';
+import { AppError } from '../src/domain/Errors';
 import { encodeOriginalCharacter } from '../src/infrastructure/CCBOriginalProtocol';
-import { createDefaultCCBSettings, type CCBClientMessage, type CCBRoomEnterResult } from '../src/shared/CCB';
+import { createDefaultCCBSettings, type CCBClientMessage, type CCBPrivateState, type CCBRoomEnterResult } from '../src/shared/CCB';
 
 import { originalCharacter as character, originalData as data, FixtureRoom } from './CCBOriginalFixtures';
+import { deferred } from './CCBNativeFixtures';
+import type { CCBCharacterView } from '../src/shared/CCB';
 
 const services: CCBOriginalService[] = [];
 afterEach(() => services.splice(0).forEach(service => service.close()));
@@ -193,5 +196,128 @@ describe('原版房间适配', () => {
     const next = await sync(service);
     expect(next.snapshot.phase).toBe('guessing'); expect(next.snapshot.roundNumber).toBe(2);
     expect(next.snapshot.roundSummary).toBeNull(); expect(next.privateState.guesses).toEqual([]);
+  });
+
+  test('同房增强玩家共享局内角色冻结，附加标签补全保留原版答案数值且不公开答案标签', async () => {
+    let version = '初始'; let guessesLoaded = 0; const rawCalls: number[] = [];
+    const { service, upstream, connection, packets } = setup({ data: { ...data,
+      async getCharacter(id) { return { ...character(id), popularity: ++guessesLoaded === 1 ? 7 : 999 }; },
+      async getRawCharacter(id) {
+        rawCalls.push(id);
+        return { ...await data.getRawCharacter(id), popularity: 99999, extraTagsBySubject: {
+          225878: [{ section: '阵营', tags: [version, '答案专有隐藏标签'] }],
+        } };
+      },
+    } });
+    await create(service); service.registerConnection(connection('second'));
+    await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '乙' } });
+    const remote = { id: 900, name: '原版答案', popularity: 123, highestRating: 9.5, earliestAppearance: 1999,
+      appearances: ['原版动画'], appearanceIds: [10,225878] };
+    upstream.broadcast('gameStart', { character: remote, settings: createDefaultCCBSettings(), players: upstream.players });
+    await request(service, 'first', { id: 'guess-first', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    version = '更新';
+    await request(service, 'second', { id: 'guess-second', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    expect(guessesLoaded).toBe(1);
+    expect(rawCalls.filter(id => id === 900)).toHaveLength(1);
+    for (const socket of upstream.sockets) {
+      expect(socket.sent.find(item => item.event === 'playerGuess')?.payload).toMatchObject({ guessResult: { guessData: { popularity: 7 } } });
+    }
+    expect(JSON.stringify(packets)).not.toContain('答案专有隐藏标签');
+    upstream.players[0].team = '0'; upstream.broadcast('updatePlayers', { players: upstream.players });
+    const answer = (await sync(service)).privateState.answer!;
+    expect(answer).toMatchObject({ name: '原版答案', popularity: 123, highestRating: 9.5, earliestAppearance: 1999,
+      extraTags: [{ section: '阵营', tags: ['初始', '答案专有隐藏标签'] }] });
+    expect(answer.appearances.map(item => item.name)).toEqual(['原版动画']);
+    upstream.broadcast('gameEnded', { guesses: [], scoreDetails: [] });
+    upstream.players[0].team = null;
+    upstream.broadcast('gameStart', { character: { ...remote, summary: '下一局' }, settings: createDefaultCCBSettings(), players: upstream.players });
+    await request(service, 'first', { id: 'next-guess', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    expect(guessesLoaded).toBe(2);
+    expect(rawCalls.filter(id => id === 900)).toHaveLength(2);
+  });
+
+  test('原版客户端猜测可补SQLite附加标签，仅展示猜测标签与交集并冻结已给出的反馈', async () => {
+    let version = '共同标签';
+    const { service, upstream, first, packets } = setup({ data: { ...data,
+      async getRawCharacter(id) { return { ...await data.getRawCharacter(id), extraTagsBySubject: {
+        225878: [{ section: '阵营', tags: id === 900 ? ['共同标签', '答案秘密'] : [version, '错误标签'] }],
+      } }; },
+    } });
+    await create(service);
+    upstream.broadcast('gameStart', { character: { id: 900, name: '答案', appearances: ['动画'], appearanceIds: [10,225878] },
+      settings: createDefaultCCBSettings(), players: upstream.players });
+    const completed = new Promise<CCBPrivateState>(resolve => {
+      first.send = payload => {
+        packets.push(payload);
+        const event = payload as { event?: string; payload?: CCBPrivateState };
+        if (event.event === 'ccb.game.privateState' && event.payload?.guesses[0]?.feedback.extraTags.length) resolve(event.payload);
+      };
+    });
+    const history = [{ username: '甲', guesses: [{ playerId: upstream.sockets[0].id, isCorrect: false, isPartialCorrect: true,
+      guessData: { id: 901, name: '猜测', popularity: 7, appearances: ['动画'], appearanceIds: [10,225878] } }] }];
+    upstream.broadcast('guessHistoryUpdate', { guesses: history });
+    const state = await completed;
+    expect(state.guesses[0].feedback.extraTags).toEqual([{ section: '阵营', tags: [
+      { text: '共同标签', matched: true }, { text: '错误标签', matched: false },
+    ] }]);
+    expect(state.answer).toBeNull(); expect(JSON.stringify(packets)).not.toContain('答案秘密');
+    version = '更新后的标签'; history[0].guesses[0].guessData.popularity = 999;
+    upstream.broadcast('guessHistoryUpdate', { guesses: history });
+    const replay = await sync(service);
+    expect(replay.privateState.guesses[0].feedback.popularity.value).toBe(7);
+    expect(replay.privateState.guesses[0].feedback.extraTags).toEqual(state.guesses[0].feedback.extraTags);
+  });
+
+  test('普通上游答案不查询专属标签，专属角色本地缺失也不阻塞正常猜测', async () => {
+    let rawCalls = 0;
+    const { service, upstream } = setup({ data: { ...data,
+      async getRawCharacter() { rawCalls++; throw new AppError('CCB_CHARACTER_NOT_FOUND', '本地没有该角色'); },
+    } });
+    await create(service);
+    const start = (appearanceIds: number[]) => upstream.broadcast('gameStart', { character: { id: 900, name: '原版新增角色',
+      appearances: ['上游作品'], appearanceIds }, settings: createDefaultCCBSettings(), players: upstream.players });
+    start([10]);
+    await request(service, 'first', { id: 'ordinary', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    expect(rawCalls).toBe(0);
+    start([10,225878]);
+    await request(service, 'first', { id: 'missing-extra', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    expect(rawCalls).toBe(1);
+    expect(upstream.sockets[0].sent.filter(item => item.event === 'playerGuess')).toHaveLength(2);
+    upstream.players[0].team = '0'; upstream.broadcast('updatePlayers', { players: upstream.players });
+    expect((await sync(service)).privateState.answer?.extraTags).toEqual([]);
+  });
+
+  test('专属标签数据库故障不能伪装成无标签，恢复后可重新读取并继续猜测', async () => {
+    let broken = true;
+    const { service, upstream } = setup({ data: { ...data,
+      async getRawCharacter(id) {
+        if (broken) throw new AppError('CCB_DATA_UNAVAILABLE', '数据库暂时不可用');
+        return data.getRawCharacter(id);
+      },
+    } });
+    await create(service);
+    upstream.broadcast('gameStart', { character: { id: 900, name: '答案', appearances: ['作品'], appearanceIds: [225878] },
+      settings: createDefaultCCBSettings(), players: upstream.players });
+    await expect(request(service, 'first', { id: 'broken', type: 'ccb.game.guess', payload: { characterId: 901 } })).rejects.toMatchObject({ code: 'CCB_DATA_UNAVAILABLE' });
+    expect(upstream.sockets[0].sent.some(item => item.event === 'playerGuess')).toBe(false);
+    broken = false;
+    await request(service, 'first', { id: 'retry', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    expect(upstream.sockets[0].sent.filter(item => item.event === 'playerGuess')).toHaveLength(1);
+  });
+
+  test('原版同步轮查询跨过超时换轮后拒绝旧猜测，不能消耗下一轮机会', async () => {
+    const loading = deferred<CCBCharacterView>();
+    const { service, upstream } = setup({ data: { ...data, async getCharacter() { return loading.promise; } } });
+    await create(service);
+    upstream.broadcast('gameStart', { character: encodeOriginalCharacter(character(), 'fixture-key'),
+      settings: { ...createDefaultCCBSettings(), syncMode: true }, players: upstream.players });
+    const pending = request(service, 'first', { id: 'late', type: 'ccb.game.guess', payload: { characterId: 901 } });
+    await Promise.resolve();
+    upstream.players[0].guesses = '⏱️'; upstream.broadcast('updatePlayers', { players: upstream.players });
+    upstream.broadcast('syncRoundStart', { round: 2 });
+    loading.resolve(character(901));
+    await expect(pending).rejects.toMatchObject({ code: 'CCB_ROUND_CHANGED' });
+    expect(upstream.sockets[0].sent.some(item => item.event === 'playerGuess')).toBe(false);
+    expect((await sync(service)).snapshot.syncRound).toBe(2);
   });
 });

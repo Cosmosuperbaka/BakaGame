@@ -15,6 +15,8 @@ from pathlib import Path
 # CCB 角色标签的权威来源：CCB-TagsCI 每周一 04:00（北京时间）把合并了用户反馈的
 # id_tags.js 推到这个路径。**不要**在仓库里存快照——它每周都会变，存下来必然过期。
 DEFAULT_TAGS_URL = "https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js"
+DEFAULT_EXTRA_TAGS_SOURCE = "https://raw.githubusercontent.com/Cosmosuperbaka/anime-character-guessr/main/client/public/data/extra_tags"
+EXTRA_SUBJECTS_PATH = Path(__file__).resolve().parents[1] / "Server/src/shared/CCBExtraSubjects.json"
 
 # 角色 infobox 里「中文名」与「性别」的候选键。归档 dump 的 infobox 是 wiki 模板原文，
 # 键形如 ``|简体中文名= 鲁路修·兰佩路基``；角色表本身**没有** name_cn / gender 列，
@@ -129,6 +131,18 @@ def setup_character(db: sqlite3.Connection):
       -- 注意：不要给 character_vas 再加 (character_id, person_id) 索引，
       -- 主键已经就是这两列，重复索引只会白占体积。
       CREATE VIRTUAL TABLE character_search USING fts5(name, name_cn, aliases, content='characters', content_rowid='id', tokenize='trigram');
+    """)
+    setup_character_extra_tags(db)
+
+
+def setup_character_extra_tags(db: sqlite3.Connection):
+    db.execute("""
+      CREATE TABLE character_extra_tags (
+        character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
+        section_position INTEGER NOT NULL, tag_position INTEGER NOT NULL,
+        section TEXT NOT NULL, tag TEXT NOT NULL,
+        PRIMARY KEY(character_id, subject_id, section_position, tag_position)
+      )
     """)
 
 
@@ -317,6 +331,35 @@ def load_character_tags(source: str) -> dict[int, list[str]]:
     return result
 
 
+def load_character_extra_tags(source: str) -> list[tuple[int, int, int, int, str, str]]:
+    """保留原版游戏专属标签的分组、顺序与键；展示 HTML 不进入数据集。"""
+    rows = []
+    for subject_id in json.loads(EXTRA_SUBJECTS_PATH.read_text(encoding="utf-8")):
+        if source.startswith(("http://", "https://")):
+            with urllib.request.urlopen(f"{source.rstrip('/')}/{subject_id}.json", timeout=120) as response:
+                raw = json.load(response)
+        else:
+            raw = json.loads((Path(source) / f"{subject_id}.json").read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"游戏 {subject_id} 的专属标签必须是角色对象")
+        for character_id, sections in raw.items():
+            if not str(character_id).isdigit() or int(character_id) <= 0 or not isinstance(sections, dict):
+                raise ValueError(f"游戏 {subject_id} 的角色标签格式无效")
+            for section_position, (section, tags) in enumerate(sections.items()):
+                if section == "_name":
+                    continue
+                if not section or not isinstance(tags, dict):
+                    raise ValueError(f"游戏 {subject_id} 的标签分组格式无效")
+                for tag_position, tag in enumerate(tags):
+                    if not tag:
+                        # 原版用空键/空内容表示未录入属性，不作为可展示的匹配线索。
+                        continue
+                    rows.append((int(character_id), subject_id, section_position, tag_position, section, tag))
+    if not rows:
+        raise ValueError("游戏专属标签为空")
+    return rows
+
+
 CHARACTER_FLOOR_MESSAGE = (
     "角色字段填充率异常：{column} 全库为 0。归档 dump 的 name_cn / gender 只能从 "
     "infobox 解析，键前带 '|' 前缀，解析失败即全空 —— 历史上正是这个原因导致 "
@@ -351,6 +394,7 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
         "aliases": scalar("SELECT count(*) FROM characters WHERE aliases NOT IN ('', '[]')"),
         "tags": scalar("SELECT count(*) FROM character_tags"),
         "tagged_characters": scalar("SELECT count(DISTINCT character_id) FROM character_tags"),
+        "extra_tags": scalar("SELECT count(*) FROM character_extra_tags"),
         "vas": scalar("SELECT count(*) FROM character_vas"),
         "va_characters": scalar("SELECT count(DISTINCT character_id) FROM character_vas"),
         "animated_characters": scalar(
@@ -375,6 +419,8 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
             raise SystemExit(CHARACTER_FLOOR_MESSAGE.format(column=column))
     if stats["tags"] == 0:
         raise SystemExit("character_tags 为空：上游 id_tags 未被正确读取（检查 --tags 地址或网络）。")
+    if stats["extra_tags"] == 0:
+        raise SystemExit("character_extra_tags 为空：游戏专属标签未被正确读取。")
     # nsfw 必须一个不留（合规硬要求）：这条一旦回归，成人向作品标题就会重新出现在反馈里。
     if stats["subjects_nsfw"] != 0:
         raise SystemExit(
@@ -390,7 +436,8 @@ def report_character_stats(db: sqlite3.Connection) -> dict[str, int]:
     return stats
 
 
-def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
+def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
+          extra_tags_source: str = DEFAULT_EXTRA_TAGS_SOURCE):
     out.mkdir(parents=True, exist_ok=True)
     subjects: dict[int, dict] = {}
     # NSFW 作品 id：**只从角色库剔除**（合规要求，见 `Agents/CCB.md §6.5`）。
@@ -406,6 +453,8 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
 
     character_tags = load_character_tags(tags_source)
     print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_source}")
+    extra_tags = load_character_extra_tags(extra_tags_source)
+    print(f"[character db] 游戏专属标签 {len(extra_tags)} 条，来自 {extra_tags_source}")
 
     # 产物先写进同盘临时目录，再原子替换到目标路径，中途失败不留半成品。
     # 两个坑都要防：① 连接必须在 replace 之前关闭（Windows 不允许重命名仍被打开的
@@ -521,6 +570,7 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL):
                 "INSERT OR IGNORE INTO character_tags VALUES (?,?,?)",
                 ((character_id, position, tag) for position, tag in enumerate(tags)),
             )
+        char_sub.executemany("INSERT INTO character_extra_tags VALUES (?,?,?,?,?,?)", extra_tags)
 
         song.executescript("INSERT INTO subject_search(rowid,name,name_cn) SELECT id,name,name_cn FROM subjects; INSERT INTO music_search(rowid,name,name_cn) SELECT id,name,name_cn FROM music_subjects;")
         char.execute("INSERT INTO character_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM characters;")
@@ -545,5 +595,7 @@ if __name__ == "__main__":
         default=DEFAULT_TAGS_URL,
         help="上游 id_tags.js 的 URL 或本地路径（默认取 CCB-TagsCI 每周产出的文件）",
     )
+    parser.add_argument("--extra-tags", default=DEFAULT_EXTRA_TAGS_SOURCE,
+                        help="原版游戏专属标签 JSON 的 URL 目录或本地目录")
     args = parser.parse_args()
-    build(args.dump, args.out, args.tags)
+    build(args.dump, args.out, args.tags, args.extra_tags)

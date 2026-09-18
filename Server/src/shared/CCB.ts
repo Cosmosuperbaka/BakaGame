@@ -34,10 +34,14 @@ export type CCBSource = 'native' | 'original';
 export type CCBPhase = 'waiting' | 'preparing' | 'answering' | 'guessing' | 'settled';
 export interface CCBCharacterSummary { id: number; name: string; nameCn: string; imageUrl?: string }
 export interface CCBAppearance { id: number; name: string; nameCn: string; year: number; rating: number; ratingCount: number }
+export type CCBComparisonAppearance = Pick<CCBAppearance, 'id' | 'name' | 'nameCn'>;
+export interface CCBExtraTagSection { section: string; tags: string[] }
 export interface CCBCharacterView extends CCBCharacterSummary {
   gender: 'male' | 'female' | '?'; popularity: number; summary: string;
   appearances: CCBAppearance[]; highestRating: number; earliestAppearance: number; latestAppearance: number;
   subjectTags: string[]; characterTags: string[]; voiceActors: string[]; metaTags: string[];
+  comparisonAppearances: CCBComparisonAppearance[];
+  extraTags: CCBExtraTagSection[];
 }
 export interface CCBSubjectSummary { id: number; name: string; nameCn: string; type: number; year: number | null; rating: number; heat: number }
 export interface CCBDirectoryResult { id: number; subjectIds: number[]; missingSubjectIds: number[]; importedAt: number }
@@ -46,8 +50,9 @@ export interface CCBFeedbackValue { value: number | string; comparison: CCBCompa
 export interface CCBFeedback {
   gender: CCBFeedbackValue; popularity: CCBFeedbackValue; rating: CCBFeedbackValue;
   appearancesCount: CCBFeedbackValue; earliestAppearance: CCBFeedbackValue; latestAppearance: CCBFeedbackValue;
-  sharedAppearances: CCBAppearance[];
+  sharedAppearances: CCBComparisonAppearance[];
   tags: Array<{ text: string; matched: boolean; hidden: boolean; kind: 'subject' | 'character' | 'voice' }>;
+  extraTags: Array<{ section: string; tags: Array<{ text: string; matched: boolean }> }>;
 }
 export interface CCBGuess {
   id: string; playerId: string; playerName: string; character: CCBCharacterSummary;

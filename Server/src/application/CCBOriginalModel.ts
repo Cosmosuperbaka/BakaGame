@@ -2,12 +2,14 @@ import type { ChatMessage } from '../shared/Model';
 import type { CCBCharacterView, CCBGuess, CCBPhase, CCBRoundSummary, CCBSettings } from '../shared/CCB';
 import type { CCBOriginalPlayer } from '../infrastructure/CCBOriginalProtocol';
 import type { CCBOriginalSocket } from '../infrastructure/CCBOriginalSocket';
+import type { CCBOriginalRoundData } from './CCBOriginalRoundData';
 
 export interface CCBOriginalChatRoom {
   generation: string;
   chat: ChatMessage[];
   /** 同一上游局的自动提示只生成一次，不因增强玩家加入顺序变化。 */
   roundHints: Map<string, string[]>;
+  roundData?: { key: string; data: CCBOriginalRoundData };
 }
 
 export interface CCBOriginalSession {

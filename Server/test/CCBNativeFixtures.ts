@@ -12,6 +12,8 @@ export const character = (id: number, shared = false): CCBCharacterView => ({
     nameCn: shared || id === 1 ? '共同作品' : `作品${id}`, year: 2020, rating: 8, ratingCount: 100 }],
   highestRating: 8, earliestAppearance: 2020, latestAppearance: 2020,
   subjectTags: ['校园'], characterTags: ['蓝发'], voiceActors: ['声优甲'], metaTags: ['校园','蓝发','声优甲'],
+  comparisonAppearances: [{ id: shared || id === 1 ? 100 : 100 + id, name: shared || id === 1 ? '共同作品' : `作品${id}`, nameCn: shared || id === 1 ? '共同作品' : `作品${id}` }],
+  extraTags: [],
 });
 type Packet = { type?: string; event?: string; payload?: unknown };
 export interface CCBTestClient { record: ConnectionRecord; sent: Packet[]; closed: Array<{ code?: number; reason?: string }>; token?: string; id?: string }

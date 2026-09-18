@@ -16,8 +16,8 @@ function compareNumber(value: number, answer: number, equal: number, near: numbe
   return { value, comparison };
 }
 export function buildCCBFeedback(guess: CCBCharacterView, answer: CCBCharacterView, settings: CCBSettings): CCBFeedback {
-  const answerIds = new Set(answer.appearances.filter(item => item.id > 0).map(item => item.id));
-  const byId = guess.appearances.filter(item => item.id > 0 && answerIds.has(item.id));
+  const answerIds = new Set(answer.comparisonAppearances.filter(item => item.id > 0).map(item => item.id));
+  const byId = guess.comparisonAppearances.filter(item => item.id > 0 && answerIds.has(item.id));
   const answerNames = new Set(answer.appearances.map(item => item.name));
   const sharedAppearances = byId.length ? byId : guess.appearances.filter(item => answerNames.has(item.name));
   const tags: CCBFeedback['tags'] = [];
@@ -42,6 +42,10 @@ export function buildCCBFeedback(guess: CCBCharacterView, answer: CCBCharacterVi
     earliestAppearance: compareNumber(guess.earliestAppearance, answer.earliestAppearance, 0, 2, true),
     latestAppearance: compareNumber(guess.latestAppearance, answer.latestAppearance, 0, 2, true),
     sharedAppearances, tags,
+    extraTags: guess.extraTags.map(({ section, tags }) => {
+      const matched = new Set(answer.extraTags.find(item => item.section === section)?.tags);
+      return { section, tags: tags.map(text => ({ text, matched: matched.has(text) })) };
+    }),
   };
 }
 export function calculateCCBWinnerScore(attempts: number, maxAttempts: number, base: number, personalFavorite = false) {

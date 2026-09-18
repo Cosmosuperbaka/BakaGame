@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { AppError } from "../domain/Errors";
-import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
 import { CCBEnrichment } from "./CCBEnrichment";
 import { deriveCCBCharacter, resolveCCBSubjectTypes } from "./CCBCharacterDerivation";
@@ -101,6 +101,15 @@ export class CCBCharacterRepository implements CCBDataProvider {
     if (appearances.length > 2000) throw new AppError("CCB_CHARACTER_TOO_LARGE", "角色登场作品过多，无法用于本局");
     const tags = this.db.query<{ tag: string }, [number]>("SELECT tag FROM character_tags WHERE character_id=? ORDER BY position").all(id);
     const voices = this.db.query<{ name: string }, [number]>("SELECT name FROM character_vas WHERE character_id=? ORDER BY position").all(id);
+    const extraRows = this.db.query<{ subject_id: number; section: string; tag: string }, [number]>(
+      "SELECT subject_id,section,tag FROM character_extra_tags WHERE character_id=? ORDER BY subject_id,section_position,tag_position").all(id);
+    const extraTagsBySubject: Record<number, CCBExtraTagSection[]> = {};
+    for (const row of extraRows) {
+      const sections = extraTagsBySubject[row.subject_id] ??= [];
+      let section = sections.at(-1);
+      if (!section || section.section !== row.section) { section = { section: row.section, tags: [] }; sections.push(section); }
+      section.tags.push(row.tag);
+    }
     return {
       ...this.toSummary(row), aliases: supplement.aliases ?? JSON.parse(row.aliases) as string[],
       gender: supplement.gender ?? (row.gender === "male" || row.gender === "female" ? row.gender : "?"),
@@ -110,7 +119,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
         relationType: item.relation_type!, rating: item.score, ratingCount: item.rating_count, heat: item.heat,
         rawTags: JSON.parse(item.raw_tags) as Record<string, number>, metaTags: JSON.parse(item.meta_tags) as string[],
       })),
-      characterTags: tags.map((item) => item.tag), voiceActors: [...new Set(voices.map((item) => item.name))],
+      characterTags: tags.map((item) => item.tag), voiceActors: [...new Set(voices.map((item) => item.name))], extraTagsBySubject,
     };
   }
 

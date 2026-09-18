@@ -1,4 +1,4 @@
-import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
 export interface CCBRawAppearance {
@@ -23,6 +23,7 @@ export interface CCBRawCharacter extends CCBCharacterSummary {
   appearances: CCBRawAppearance[];
   characterTags: string[];
   voiceActors: string[];
+  extraTagsBySubject: Record<number, CCBExtraTagSection[]>;
 }
 
 export interface CCBDataProvider {

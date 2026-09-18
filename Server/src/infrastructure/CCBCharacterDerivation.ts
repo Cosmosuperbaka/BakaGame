@@ -1,5 +1,6 @@
-import type { CCBCharacterView, CCBSettings } from "../shared/CCB";
+import type { CCBCharacterView, CCBComparisonAppearance, CCBExtraTagSection, CCBSettings } from "../shared/CCB";
 import type { CCBRawCharacter } from "./CCBData";
+import extraSubjectIds from "../shared/CCBExtraSubjects.json";
 
 const SOURCE_NAMES = new Map([
   ["GAL改", "游戏改"], ["轻小说改", "小说改"], ["轻改", "小说改"], ["原创动画", "原创"],
@@ -8,8 +9,14 @@ const SOURCE_NAMES = new Map([
 const SOURCES = new Set(["原创", "游戏改", "小说改", "漫画改"]);
 const REGIONS = new Set(["日本", "欧美", "美国", "中国", "法国", "韩国", "英国", "俄罗斯", "中国香港", "苏联", "捷克", "中国台湾", "马来西亚"]);
 const EXPANDED_CHARACTERS = new Set([56822, 56823, 17529, 10956]);
+const EXTRA_SUBJECTS = new Set(extraSubjectIds);
 const weighted = (values: Map<string, number>) => [...values].sort((a, b) => b[1] - a[1]);
 const add = (values: Map<string, number>, key: string, value: number) => values.set(key, (values.get(key) ?? 0) + value);
+
+export function selectCCBExtraTags(appearances: CCBComparisonAppearance[], bySubject: Record<number, CCBExtraTagSection[]>): CCBExtraTagSection[] {
+  const subject = appearances.find(item => EXTRA_SUBJECTS.has(item.id));
+  return (subject ? bySubject[subject.id] ?? [] : []).map(section => ({ section: section.section, tags: [...section.tags] }));
+}
 
 /** 出题筛选按第一项，登场作品筛选按原版 includes 的先后顺序。 */
 export function resolveCCBSubjectTypes(tags: string[], forPicking = false): number[] {
@@ -78,6 +85,12 @@ export function deriveCCBCharacter(raw: CCBRawCharacter, settings: CCBSettings, 
     id: item.id, name: item.name, nameCn: item.nameCn, year: Number(item.date.slice(0, 4)),
     rating: item.rating, ratingCount: item.ratingCount,
   })).sort((a, b) => b.ratingCount - a.ratingCount);
+  const comparisonAppearances = appearances.map(({ id, name, nameCn }) => ({ id, name, nameCn }));
+  const comparisonIds = new Set(comparisonAppearances.map(item => item.id));
+  for (const item of raw.appearances) {
+    if (!EXTRA_SUBJECTS.has(item.id) || comparisonIds.has(item.id)) continue;
+    comparisonAppearances.push({ id: item.id, name: item.name, nameCn: item.nameCn }); comparisonIds.add(item.id);
+  }
   return {
     id: raw.id, name: raw.name, nameCn: raw.nameCn, imageUrl: raw.imageUrl,
     gender: raw.gender, popularity: raw.popularity, summary: raw.summary, appearances,
@@ -85,5 +98,6 @@ export function deriveCCBCharacter(raw: CCBRawCharacter, settings: CCBSettings, 
     earliestAppearance: appearances.length ? Math.min(...appearances.map((item) => item.year)) : -1,
     latestAppearance: appearances.length ? Math.max(...appearances.map((item) => item.year)) : -1,
     subjectTags, characterTags: [...raw.characterTags], voiceActors: [...voiceActors], metaTags: [...metaTags],
+    comparisonAppearances, extraTags: selectCCBExtraTags(comparisonAppearances, raw.extraTagsBySubject),
   };
 }

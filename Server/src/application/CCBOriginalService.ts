@@ -10,11 +10,12 @@ import { createCCBOriginalSocket, originalConfirmedEvent, originalRequest, type 
 import { decodeOriginalCharacter, encodeOriginalCharacter, originalArray, originalCharacter, originalNumber,
   originalObject, originalPlayers, originalScores, originalSettings, originalString, originalStrings,
   toOriginalCharacter, toOriginalSettings } from '../infrastructure/CCBOriginalProtocol';
-import { createDefaultCCBSettings, type CCBClientMessage, type CCBGuess, type CCBRoomEnterResult,
+import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBGuess, type CCBRoomEnterResult,
   type CCBRoomSummary, type CCBSettings } from '../shared/CCB';
 import { createEvent } from '../transport/Packets';
 import type { CCBOriginalChatRoom, CCBOriginalSession } from './CCBOriginalModel';
 import { originalPrivateState, originalSnapshot } from './CCBOriginalView';
+import { CCBOriginalRoundData } from './CCBOriginalRoundData';
 
 interface CCBOriginalOptions {
   data: CCBDataProvider;
@@ -259,9 +260,12 @@ export class CCBOriginalService {
   private async guess(session: CCBOriginalSession, id: number): Promise<unknown> {
     if (!originalPrivateState(session).canGuess || !session.answer) throw new AppError('CCB_CANNOT_GUESS', '当前不能猜测');
     const roundKey = session.roundKey;
-    const answer = session.answer;
-    const character = await this.options.data.getCharacter(id, session.settings);
-    if (session.roundKey !== roundKey || !originalPrivateState(session).canGuess) throw new AppError('CCB_ROUND_CHANGED', '本轮状态已变化，请重新操作');
+    const syncRound = session.syncRound; const attempts = this.me(session).attempts;
+    const [answer, character] = await Promise.all([
+      this.supplementAnswer(session), this.roundData(session).getCharacter(id, session.settings),
+    ]);
+    if (session.roundKey !== roundKey || session.syncRound !== syncRound || this.me(session).attempts !== attempts
+      || !originalPrivateState(session).canGuess) throw new AppError('CCB_ROUND_CHANGED', '本轮状态已变化，请重新操作');
     const feedback = buildCCBFeedback(character, answer, session.settings);
     const tags = session.settings.tagBan ? feedback.tags.filter(tag => tag.matched).map(tag => tag.text) : [];
     const result = await originalRequest(session.socket, 'playerGuess', { roomId: session.roomId,
@@ -272,6 +276,23 @@ export class CCBOriginalService {
       session.socket.emit('tagBanSharedMetaTags', { roomId: session.roomId, tags });
     }
     return result;
+  }
+
+  private roundData(session: CCBOriginalSession): CCBOriginalRoundData {
+    const room = this.chats.get(session.roomId);
+    if (!room || !session.roundKey) throw new AppError('CCB_ROUND_CHANGED', '本局状态已变化');
+    if (room.roundData?.key !== session.roundKey) room.roundData = { key: session.roundKey, data: new CCBOriginalRoundData(this.options.data) };
+    return room.roundData.data;
+  }
+
+  private async supplementAnswer(session: CCBOriginalSession): Promise<CCBCharacterView> {
+    const key = session.roundKey;
+    if (!session.answer) throw new AppError('CCB_ROUND_CHANGED', '本局状态已变化');
+    const answer = await this.roundData(session).supplement(session.answer);
+    if (session.revoked || session.roundKey !== key) throw new AppError('CCB_ROUND_CHANGED', '本局状态已变化');
+    session.answer = answer;
+    if (session.roundSummary) session.roundSummary.answer = answer;
+    return answer;
   }
 
   private async imageHint(session: CCBOriginalSession): Promise<{ dataUrl: string }> {
@@ -446,6 +467,9 @@ export class CCBOriginalService {
       }
       session.hints = chat?.roundHints.get(key) || createCCBHints(session.answer.summary, session.settings.useHints.length, Math.random);
     }
+    void this.supplementAnswer(session).then(() => this.publish(session)).catch(() => {
+      if (!session.revoked && session.roundKey === key) this.options.logger?.warn('原版答案附加标签读取失败', { roomId: session.roomId });
+    });
   }
 
   private updateHistory(session: CCBOriginalSession, value: unknown): void {
@@ -457,12 +481,24 @@ export class CCBOriginalService {
         const raw = originalObject(value);
         const playerId = originalString(raw.playerId) || session.players.find(player => player.name === history.username)?.id || '';
         const id = `${session.roundNumber}:${playerId}:${index}`;
+        const existing = previous.get(id);
+        if (existing) return existing;
         const character = originalCharacter(raw.guessData);
-        return { id, playerId, playerName: originalString(raw.playerName) || originalString(history.username),
+        const guess: CCBGuess = { id, playerId, playerName: originalString(raw.playerName) || originalString(history.username),
           character: { id: character.id, name: character.name, nameCn: character.nameCn, imageUrl: character.imageUrl },
           correct: raw.isCorrect === true, partial: raw.isPartialCorrect === true,
           syncRound: originalNumber(raw.round, session.syncRound), createdAt: previous.get(id)?.createdAt || this.now(),
           feedback: buildCCBFeedback(character, session.answer!, session.settings) };
+        const key = session.roundKey;
+        void Promise.all([this.roundData(session).supplement(character), this.supplementAnswer(session)]).then(([supplemented, answer]) => {
+          if (session.revoked || session.roundKey !== key || !session.guesses.includes(guess)) return;
+          const feedback = buildCCBFeedback(supplemented, answer, session.settings);
+          guess.feedback = { ...guess.feedback, extraTags: feedback.extraTags, sharedAppearances: feedback.sharedAppearances };
+          this.publish(session);
+        }).catch(() => {
+          if (!session.revoked && session.roundKey === key) this.options.logger?.warn('原版猜测附加标签读取失败', { roomId: session.roomId });
+        });
+        return guess;
       });
     });
   }

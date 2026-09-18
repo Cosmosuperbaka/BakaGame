@@ -5,8 +5,27 @@ const character = (id: number): CCBCharacterView => ({ id, name: `角色${id}`, 
   gender: 'female', popularity: 100, summary: '', appearances: [{ id: 1, name: '作品', nameCn: '作品', year: 2020, rating: 8, ratingCount: 100 }],
   highestRating: 8, earliestAppearance: 2020, latestAppearance: 2020,
   subjectTags: ['校园', '奇幻'], characterTags: ['黑发'], voiceActors: ['声优甲'], metaTags: ['校园'],
+  comparisonAppearances: [{ id: 1, name: '作品', nameCn: '作品' }], extraTags: [],
 });
 describe('CCB 玩法规则', () => {
+  test('额外游戏关系计入作品命中但不改变可见作品数量与评分，外部标签只按同分区比较', () => {
+    const answer = { ...character(1), comparisonAppearances: [{ id: 10, name: '动画甲', nameCn: '动画甲' }, { id: 284157, name: '原神', nameCn: '原神' }],
+      extraTags: [{ section: '属性', tags: ['风'] }, { section: '武器', tags: ['单手剑'] }] };
+    const guess = { ...character(2), appearances: [{ id: 11, name: '动画乙', nameCn: '动画乙', year: 2021, rating: 7, ratingCount: 30 }],
+      comparisonAppearances: [{ id: 11, name: '动画乙', nameCn: '动画乙' }, { id: 284157, name: '原神', nameCn: '原神' }],
+      extraTags: [{ section: '属性', tags: ['风', '水'] }, { section: '武器', tags: ['弓'] }, { section: '所属', tags: ['单手剑'] }] };
+    const feedback = buildCCBFeedback(guess, answer, createDefaultCCBSettings());
+    expect(feedback.sharedAppearances).toEqual([{ id: 284157, name: '原神', nameCn: '原神' }]);
+    expect(feedback.appearancesCount).toEqual({ value: 1, comparison: '=' });
+    expect(feedback.rating.value).toBe(8);
+    expect(feedback.extraTags).toEqual([
+      { section: '属性', tags: [{ text: '风', matched: true }, { text: '水', matched: false }] },
+      { section: '武器', tags: [{ text: '弓', matched: false }] },
+      { section: '所属', tags: [{ text: '单手剑', matched: false }] },
+    ]);
+    expect(feedback.tags.some(tag => tag.text === '风')).toBe(false);
+  });
+
   test('数值反馈保留原版近似档和箭头所需方向', () => {
     const guess = { ...character(2), popularity: 120, highestRating: 9, earliestAppearance: 2017 };
     const feedback = buildCCBFeedback(guess, character(1), createDefaultCCBSettings());

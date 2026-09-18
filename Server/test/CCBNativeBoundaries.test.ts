@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import sharp from 'sharp';
 import { CCBImageHints } from '../src/infrastructure/CCBImageHints';
-import { ccbTestHarness, deferred } from './CCBNativeFixtures';
+import { ccbTestHarness, character, deferred } from './CCBNativeFixtures';
 import { ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from '../src/config/Constants';
 
 const active: ReturnType<typeof ccbTestHarness>[] = [];
@@ -9,6 +9,26 @@ const keep = (h: ReturnType<typeof ccbTestHarness>) => { active.push(h); return 
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 房间与提示边界', () => {
+  test('额外游戏作品命中获得作品分，外部标签反馈不泄漏答案未命中标签', async () => {
+    const game = { id: 284157, name: 'Genshin', nameCn: '原神' };
+    const answer = { ...character(1), comparisonAppearances: [...character(1).comparisonAppearances, game],
+      extraTags: [{ section: '属性', tags: ['风', '答案独有属性'] }] };
+    const guess = { ...character(2), comparisonAppearances: [...character(2).comparisonAppearances, game],
+      extraTags: [{ section: '属性', tags: ['风', '水'] }] };
+    const h = keep(ccbTestHarness({ chooseRandomCharacter: async () => answer, getCharacter: async id => id === 1 ? answer : guess }));
+    const host = await h.create(); const guest = await h.join('另一位玩家');
+    await h.configure(host, { tagBan: true }); await h.ready(guest); await h.send(host, 'ccb.game.start', {});
+    await h.guess(host, 2);
+    const state = h.privateState(host);
+    expect(state.answer).toBeNull(); expect(JSON.stringify(state)).not.toContain('答案独有属性');
+    expect(state.guesses[0].partial).toBe(true);
+    expect(state.guesses[0].feedback.sharedAppearances).toEqual([game]);
+    expect(state.guesses[0].feedback.appearancesCount.value).toBe(1);
+    expect(state.guesses[0].feedback.extraTags).toEqual([{ section: '属性', tags: [{ text: '风', matched: true }, { text: '水', matched: false }] }]);
+    await h.guess(guest, 1);
+    expect(h.snapshot(host).roundSummary!.scores.find(score => score.playerId === host.id)?.partial).toBe(1);
+  });
+
   test('解锁图片由服务端处理，返回WebP字节而公开及私有快照仍不公开答案', async () => {
     const png = await sharp({ create: { width: 80, height: 80, channels: 3, background: '#ee99aa' } }).png().toBuffer();
     const hints = new CCBImageHints({ fetcher: async () => new Response(png) });

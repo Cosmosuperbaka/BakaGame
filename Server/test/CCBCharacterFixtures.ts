@@ -16,6 +16,7 @@ export function createCCBCharacterFixture() {
     CREATE INDEX csr_subject ON character_subject_relations(subject_id,relation_order);
     CREATE TABLE character_tags(character_id INTEGER,position INTEGER,tag TEXT,PRIMARY KEY(character_id,tag));
     CREATE TABLE character_vas(character_id INTEGER,position INTEGER,person_id INTEGER,name TEXT,name_cn TEXT,PRIMARY KEY(character_id,person_id));
+    CREATE TABLE character_extra_tags(character_id INTEGER,subject_id INTEGER,section_position INTEGER,tag_position INTEGER,section TEXT,tag TEXT,PRIMARY KEY(character_id,subject_id,section_position,tag_position));
     CREATE VIRTUAL TABLE character_search USING fts5(name,name_cn,aliases,content='characters',content_rowid='id',tokenize='trigram');`);
   const characters = [
     [1, "Makise", "牧濑红莉栖", "female", ["助手", "Christina"], 7, 100],

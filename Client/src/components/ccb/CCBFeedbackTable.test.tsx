@@ -11,11 +11,29 @@ const guess: CCBGuess = {
     gender: { value: "female", comparison: "yes" }, popularity: { value: 200, comparison: "+" },
     rating: { value: -1, comparison: "?" }, appearancesCount: { value: 10, comparison: "++" },
     earliestAppearance: { value: 2010, comparison: "-" }, latestAppearance: { value: 2012, comparison: "--" },
-    sharedAppearances: [], tags: [],
+    sharedAppearances: [], tags: [], extraTags: [],
   },
 };
 
 describe("角色反馈", () => {
+  it("原版仅提供作品编号时仍显示可辨认的作品信息", () => {
+    render(<CCBFeedbackTable guesses={[{ ...guess, feedback: { ...guess.feedback, sharedAppearances: [{ id: 120, name: "", nameCn: "" }] } }]} />);
+    expect(screen.getByText("作品 120")).toBeInTheDocument();
+  });
+
+  it("游戏专属标签按分区展示匹配情况并将上游内容作为安全文本", () => {
+    const payload = '<img src="x" onerror="alert(1)">';
+    const enriched: CCBGuess = { ...guess, feedback: { ...guess.feedback, extraTags: [
+      { section: "角色能力", tags: [{ text: "吉他", matched: true }, { text: payload, matched: false }] },
+    ] } };
+    render(<CCBFeedbackTable guesses={[enriched]} />);
+    expect(screen.getByText("游戏专属标签")).toBeInTheDocument();
+    expect(screen.getByText("角色能力")).toBeInTheDocument();
+    expect(screen.getByText(payload)).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: payload })).not.toBeInTheDocument();
+    expect(screen.getByText("吉他").querySelector('[aria-label="匹配"]')).toBeInTheDocument();
+  });
+
   it("以答案方向解释猜测与答案的数值差，并隐藏未知评分哨兵", () => {
     render(<CCBFeedbackTable guesses={[guess]} />);
     const cells = screen.getAllByRole("cell");

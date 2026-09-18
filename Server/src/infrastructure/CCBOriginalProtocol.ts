@@ -35,6 +35,10 @@ export function originalCharacter(value: unknown): CCBCharacterView {
   const names = originalStrings(raw.appearances);
   const namesCn = originalStrings(raw.appearancesCn);
   const ids = originalArray(raw.appearanceIds);
+  const comparisonNames = new Map(originalArray(raw.comparisonAppearances).map(value => {
+    const item = originalObject(value);
+    return [originalNumber(item.id), { name: originalString(item.name), nameCn: originalString(item.nameCn) }];
+  }));
   const subjectTags = originalArray(raw.rawTags).flatMap(entry => Array.isArray(entry) && typeof entry[0] === 'string' ? [entry[0]] : []);
   const voiceActors = originalStrings(raw.animeVAs);
   const metaTags = originalStrings(raw.metaTags);
@@ -50,6 +54,14 @@ export function originalCharacter(value: unknown): CCBCharacterView {
       id: originalNumber(ids[index]), name, nameCn: namesCn[index] || name,
       year: -1, rating: -1, ratingCount: 0,
     })),
+    comparisonAppearances: Array.from({ length: Math.max(names.length, ids.length) }, (_, index) => {
+      const id = originalNumber(ids[index]); const extra = comparisonNames.get(id);
+      const name = names[index] || extra?.name || '';
+      return { id, name, nameCn: namesCn[index] || extra?.nameCn || name };
+    }),
+    extraTags: originalArray(raw.extraTags).map(value => {
+      const section = originalObject(value); return { section: originalString(section.section), tags: originalStrings(section.tags) };
+    }),
     highestRating: originalNumber(raw.highestRating, -1), earliestAppearance: originalNumber(raw.earliestAppearance, -1),
     latestAppearance: originalNumber(raw.latestAppearance, -1), subjectTags, characterTags, voiceActors, metaTags,
   };
@@ -60,7 +72,8 @@ export function toOriginalCharacter(character: CCBCharacterView): Record<string,
     id: character.id, name: character.name, nameCn: character.nameCn, gender: character.gender,
     image: character.imageUrl, summary: character.summary, popularity: character.popularity,
     appearances: character.appearances.map(item => item.name), appearancesCn: character.appearances.map(item => item.nameCn),
-    appearanceIds: character.appearances.map(item => item.id), highestRating: character.highestRating,
+    appearanceIds: character.comparisonAppearances.map(item => item.id), highestRating: character.highestRating,
+    comparisonAppearances: character.comparisonAppearances, extraTags: character.extraTags,
     earliestAppearance: character.earliestAppearance, latestAppearance: character.latestAppearance,
     rawTags: character.subjectTags.map(tag => [tag, 1]), characterTags: character.characterTags,
     animeVAs: character.voiceActors, metaTags: character.metaTags,

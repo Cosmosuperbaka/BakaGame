@@ -13,12 +13,12 @@ const originalRoot = resolve(import.meta.dir, '../../../anime-character-guessr/s
 const sourceAvailable = existsSync(resolve(originalRoot, 'utils/socket.js'));
 const character = (id: number): CCBCharacterView => ({
   id, name: `角色${id}`, nameCn: '', gender: '?', popularity: 1, summary: '本地联调题目',
-  appearances: [], highestRating: -1, earliestAppearance: -1, latestAppearance: -1,
+  appearances: [], comparisonAppearances: [], extraTags: [], highestRating: -1, earliestAppearance: -1, latestAppearance: -1,
   subjectTags: ['校园'], characterTags: [], voiceActors: [], metaTags: ['校园'],
 });
 const data: CCBDataProvider = {
   async getCharacter(id) { return character(id); }, async chooseRandomCharacter() { return character(900); },
-  async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...character(id), aliases: [], appearances: [] }; },
+  async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...character(id), aliases: [], appearances: [], extraTagsBySubject: {} }; },
   async searchCharacters() { return []; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return []; },
   async importDirectory(id) { return { id, subjectIds: [], missingSubjectIds: [], importedAt: 0 }; },
   async resolveCharacterImage() { return undefined; }, close() {},
