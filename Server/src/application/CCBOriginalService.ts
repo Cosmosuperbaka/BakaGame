@@ -31,6 +31,7 @@ export class CCBOriginalService {
   private readonly connections = new Map<string, ConnectionRecord>();
   private readonly sessions = new Map<string, CCBOriginalSession>();
   private readonly byConnection = new Map<string, CCBOriginalSession>();
+  private readonly entering = new Set<string>();
   private readonly chats = new Map<string, CCBOriginalChatRoom>();
   private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10_000, maxRequests: 8 });
   private readonly now: () => number;
@@ -60,7 +61,7 @@ export class CCBOriginalService {
     this.byConnection.delete(id);
     if (session) { session.connectionId = undefined; session.detachedAt = this.now(); }
   }
-  hasSession(id: string): boolean { return this.byConnection.has(id); }
+  hasSession(id: string): boolean { return this.byConnection.has(id) || this.entering.has(id); }
   getAvailability() {
     return { configured: this.configured, available: this.configured, sourceKey: this.sourceKey,
       reason: this.configured ? '' : '原版服务器兼容配置尚未完成' };
@@ -84,12 +85,12 @@ export class CCBOriginalService {
     if (!this.configured) throw new AppError('CCB_ORIGINAL_UNAVAILABLE', '原版服务器兼容配置尚未完成');
     if (message.type === 'ccb.room.create') {
       if (message.payload.password || !message.payload.allowSpectators) this.unsupported('原版房间不支持密码或禁止观战');
-      return this.enter(connection, message.payload.roomId, message.payload.userName, message.payload);
+      return this.enterOnce(connection, message.payload.roomId, message.payload.userName, message.payload);
     }
     if (message.type === 'ccb.room.join') {
       if (!message.roomId) throw new AppError('ROOM_NOT_FOUND', '请输入原版房间号');
       if (message.payload.password) this.unsupported('原版房间不支持密码');
-      return this.enter(connection, message.roomId, message.payload.userName);
+      return this.enterOnce(connection, message.roomId, message.payload.userName);
     }
     if (message.type === 'ccb.room.reconnect') return this.reconnect(connection, message.payload.roomId, message.payload.sessionToken);
     const session = this.requireSession(connectionId);
@@ -151,6 +152,7 @@ export class CCBOriginalService {
     create?: { name: string; visibility: 'public' | 'private' }): Promise<CCBRoomEnterResult> {
     if (connection.roomId || this.byConnection.has(connection.id)) throw new AppError('ALREADY_IN_ROOM', '请先离开当前房间');
     if (!create && !(await this.fetchRooms()).some(room => room.id === roomId)) throw new AppError('ROOM_NOT_FOUND', '原版房间不存在');
+    if (!this.connections.has(connection.id)) throw new AppError('CONNECTION_NOT_FOUND', '加入期间连接已断开');
     const socket = (this.options.socketFactory || createCCBOriginalSocket)(this.options.serverUrl!);
     const session: CCBOriginalSession = {
       token: `ccb_original_${this.sourceKey}_${randomUUID()}`, connectionId: connection.id, roomId, name, socket,
@@ -181,6 +183,14 @@ export class CCBOriginalService {
       this.revoke(session, '无法加入原版房间', false);
       throw error;
     }
+  }
+
+  private async enterOnce(connection: ConnectionRecord, roomId: string, name: string,
+    create?: { name: string; visibility: 'public' | 'private' }): Promise<CCBRoomEnterResult> {
+    if (this.entering.has(connection.id)) throw new AppError('CCB_JOIN_PENDING', '正在加入原版房间，请稍候');
+    this.entering.add(connection.id);
+    try { return await this.enter(connection, roomId, name, create); }
+    finally { this.entering.delete(connection.id); }
   }
 
   private reconnect(connection: ConnectionRecord, roomId: string, token: string): CCBRoomEnterResult {
@@ -409,6 +419,10 @@ export class CCBOriginalService {
     if (isNew) {
       session.roundNumber += 1; session.syncRound = 1; session.roundKey = key;
       session.guesses = []; session.bannedTags.clear(); session.winners = []; session.roundSummary = null; session.deadlineAt = null;
+    }
+    // 上游加入快照可能紧随确认包到达，先建立本房缓存，保证首位与后来者共享自动提示。
+    if (!this.chats.has(session.roomId) && session.players.some(player => player.id === session.socket.id)) {
+      this.chats.set(session.roomId, { generation: randomUUID(), chat: [], roundHints: new Map() });
     }
     const chat = this.chats.get(session.roomId);
     if (Array.isArray(payload.hints)) session.hints = originalStrings(payload.hints);

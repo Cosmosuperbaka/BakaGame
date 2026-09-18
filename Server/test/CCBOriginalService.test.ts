@@ -97,6 +97,20 @@ const create = (service: CCBOriginalService, id = 'first', name = '甲') => requ
 const sync = (service: CCBOriginalService, id = 'first') => request(service, id, { id: 'sync', type: 'ccb.room.requestSync', payload: {} }) as Promise<CCBRoomEnterResult>;
 
 describe('原版房间适配', () => {
+  test('加入检查尚未完成时拒绝重复加入，客户端断线后不创建上游会话', async () => {
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    const { service, upstream } = setup({ fetcher: () => pending });
+    const join = { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '甲' } } as const;
+    const first = request(service, 'first', join);
+    expect(service.hasSession('first')).toBe(true);
+    await expect(request(service, 'first', { ...join, id: 'duplicate' })).rejects.toMatchObject({ code: 'CCB_JOIN_PENDING' });
+    service.unregisterConnection('first');
+    release(Response.json([{ id: '1234' }]));
+    await expect(first).rejects.toMatchObject({ code: 'CONNECTION_NOT_FOUND' });
+    expect(upstream.sockets).toHaveLength(0);
+  });
+
   test('配置缺失明确不可用，陌生房号不发送会意外建房的加入事件', async () => {
     const missing = setup({ serverUrl: undefined, aesSecret: undefined });
     await expect(create(missing.service)).rejects.toMatchObject({ code: 'CCB_ORIGINAL_UNAVAILABLE' });
