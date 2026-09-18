@@ -1852,9 +1852,16 @@ describe("NeteaseMusicProvider", () => {
 
     const merged = mergeTranslations(lines, transRaw, romanRaw);
     expect(merged[0].translatedLyric).toBe("缄默不言");
-    expect(merged[0].romanLyric).toBe("na ni mo i wa na i de");
+    // 规范：同时有翻译和注音时，只显示翻译，注音被屏蔽
+    expect(merged[0].romanLyric).toBeUndefined();
     expect(merged[1].translatedLyric).toBe("紧紧盯着");
-    expect(merged[1].romanLyric).toBe("ka i da n wo mi tsu me te");
+    expect(merged[1].romanLyric).toBeUndefined();
+
+    // 仅有注音无翻译时，注音被正常保留
+    const romanOnlyMerged = mergeTranslations(lines, undefined, romanRaw);
+    expect(romanOnlyMerged[0].translatedLyric).toBeUndefined();
+    expect(romanOnlyMerged[0].romanLyric).toBe("na ni mo i wa na i de");
+    expect(romanOnlyMerged[1].romanLyric).toBe("ka i da n wo mi tsu me te");
   });
 
   test("getSong 提取网易云 ytlrc 与 tlyric 时自动为歌词赋予对应翻译", () => {
