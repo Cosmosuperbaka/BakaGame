@@ -43,6 +43,7 @@ import {
   maskCCBFeedbackTags,
   mergeCCBBannedTags,
   resolveCCBNonstopRankScore,
+  resolveCCBSetterScore,
   resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
   revealCCBBannedTagsToAll,
@@ -202,6 +203,9 @@ export class CCBService {
       room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
     }
 
+    // 正在出题的人掉线 → 房间退回等待，否则会一直停在 `answering` 等一个不在的人。
+    this.clearPendingSetter(room, player.id);
+
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -248,6 +252,10 @@ export class CCBService {
         return this.searchCharacters(message.payload.keyword);
       case "ccb.game.start":
         return this.startRound(connection);
+      case "ccb.game.chooseSetter":
+        return this.chooseSetter(connection, message.payload.playerId);
+      case "ccb.game.setAnswer":
+        return this.setAnswer(connection, message.payload.characterId);
       case "ccb.game.guess":
         return await this.guess(connection, message.payload.characterId);
       case "ccb.game.surrender":
@@ -567,6 +575,9 @@ export class CCBService {
 
     target.membership = "kicked";
     target.online = false;
+    // 被踢的正好是正在出题的出题人：退回等待阶段，否则房间会永久停在 `answering`
+    //（原版的 `waitForAnswerCanceled` 就是干这件事的）。
+    this.clearPendingSetter(room, target.id);
     const targetConnection = this.connections.findConnectionByPlayer(room.roomId, target.id);
     if (targetConnection) {
       (targetConnection.sendPacket ?? targetConnection.send)(
@@ -690,19 +701,43 @@ export class CCBService {
     );
   }
 
+  /**
+   * 开局前的共通校验：至少一个正式玩家、且全部已准备（房主默认恒为已准备）。
+   *
+   * `startRound` / `chooseSetter` / `setAnswer` 三处入口共用 —— 手动出题会跨越
+   * 「指定出题人 → 出题人提交答案」两次请求，所以这一步必须能重复执行。
+   */
+  private ensureCanStartRound(room: CCBRoomRecord) {
+    if (this.activePlayers(room).length === 0) {
+      throw new AppError("NO_ACTIVE_PLAYER", "房间里没有正式玩家");
+    }
+    if (this.activePlayers(room).some((candidate) => !candidate.isReady)) {
+      throw new AppError("PLAYER_NOT_READY", "还有玩家未准备");
+    }
+  }
+
+  /**
+   * 撤销「等待出题」：出题人被踢或掉线时把房间退回 `waiting`。
+   *
+   * 不这么做房间会**永久停在 `answering`** —— 答案只有那一个人能交，而他已经不在了。
+   * 返回是否真的撤销过（调用方据此决定要不要广播）。原版对应 `waitForAnswerCanceled`。
+   */
+  private clearPendingSetter(room: CCBRoomRecord, playerId: string): boolean {
+    if (room.phase !== "answering" || room.answerSetterPlayerId !== playerId) return false;
+    room.phase = "waiting";
+    room.answerSetterPlayerId = undefined;
+    room.currentRound = undefined;
+    this.appendSystemMessage(room, "出题已取消，等待房主重新指定出题人");
+    return true;
+  }
+
   private startRound(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    if (room.phase === "guessing" || room.phase === "answering") {
-      throw new AppError("INVALID_PHASE", "本局尚未结束");
-    }
-
-    const actives = this.activePlayers(room);
-    if (actives.length === 0) throw new AppError("NO_ACTIVE_PLAYER", "房间里没有正式玩家");
-    // 房主默认恒为已准备，所以只需检查其他玩家。
-    if (actives.some((candidate) => !candidate.isReady)) {
-      throw new AppError("PLAYER_NOT_READY", "还有玩家未准备");
-    }
+    // 停在 `answering` 时再次「开始游戏」= 放弃手动出题、改由服务端抽题 —— 这是房主
+    // 在「指定的出题人迟迟不交答案（但还连着）」时的退出口，`beginRound` 会覆盖掉出题人。
+    if (room.phase === "guessing") throw new AppError("INVALID_PHASE", "本局尚未结束");
+    this.ensureCanStartRound(room);
 
     const answerCharacterId = this.sampleAnswerCharacter(room);
     this.beginRound(room, answerCharacterId);
@@ -714,14 +749,79 @@ export class CCBService {
     return { roundNumber: room.roundNumber };
   }
 
-  private beginRound(room: CCBRoomRecord, answerCharacterId: number) {
+  /**
+   * 房主指定出题人 —— 手动出题的第一步（原版 `setAnswerSetter` → `waitForAnswer`）。
+   *
+   * 允许在 `waiting` / `settled` 指定，也允许在 `answering` **改指定**：原版只拒绝
+   * 「游戏进行中」，反复调用是一次合法的换人，本项目沿用它作为「出题人卡住」的恢复手段。
+   * 之后必须由被指定的人提交答案，房间才会离开 `answering`。
+   */
+  private chooseSetter(connection: ConnectionRecord, playerId: string) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    this.ensureHost(room, player.id);
+    if (room.phase === "guessing") throw new AppError("INVALID_PHASE", "本局尚未结束");
+
+    const target = room.players[playerId];
+    if (!target || target.membership !== "active") {
+      throw new AppError("PLAYER_NOT_FOUND", "找不到选中的玩家");
+    }
+    // 人机不参与猜测（P1b 限制），更不能出题 —— 否则这一局必然无人能猜。
+    if (target.isBot) throw new AppError("SETTER_FORBIDDEN", "人机不能出题");
+    this.ensureCanStartRound(room);
+
+    room.phase = "answering";
+    room.answerSetterPlayerId = target.id;
+    room.currentRound = undefined;
+    room.revealedAnswer = undefined;
+    this.appendSystemMessage(room, `等待 ${target.name} 出题`);
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    this.log("game.setter_chosen", room.roomId, target.id);
+    return { setterPlayerId: target.id };
+  }
+
+  /**
+   * 出题人提交答案 —— 手动出题的第二步，提交后直接开局（原版 `setAnswer`）。
+   *
+   * 只收 `characterId`：反馈所需的其余字段一律由服务端从本地数据集补齐。原版是把客户端
+   * 加密过的整个角色对象丢给服务端，这里换成「只报 id、服务端自己查」，防作弊面更小。
+   */
+  private setAnswer(connection: ConnectionRecord, characterId: number) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.phase !== "answering") throw new AppError("INVALID_PHASE", "当前不在出题阶段");
+    if (player.id !== room.answerSetterPlayerId) {
+      throw new AppError("SETTER_FORBIDDEN", "你不是本局出题人");
+    }
+    if (!this.requireCharacters().buildCharacterView(characterId, room.settings)) {
+      throw new AppError("CHARACTER_NOT_FOUND", "角色不存在");
+    }
+    // 出题人停在出题阶段期间，其他人可能取消了准备 —— 开局前必须重新校验一次。
+    this.ensureCanStartRound(room);
+
+    this.beginRound(room, characterId, { manualSetterId: player.id });
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    this.log("game.answer_set", room.roomId, player.id, { characterId });
+    return { roundNumber: room.roundNumber };
+  }
+
+  private beginRound(
+    room: CCBRoomRecord,
+    answerCharacterId: number,
+    { manualSetterId }: { manualSetterId?: string } = {},
+  ) {
     const currentTime = this.now();
     const timeLimitMs = resolveCCBTimeLimitMs(room.settings);
+    const isManual = manualSetterId !== undefined;
+    // 服务端出题**只是把出题人记成房主**（原版那套出题人奖惩没有对象，靠 `answerIsManual` 拦住）；
+    // 手动出题则沿用房主已经指定的那位。
+    const setterId = manualSetterId ?? room.hostPlayerId;
 
     room.roundNumber += 1;
     room.phase = "guessing";
-    // 增强版由服务端出题，这里记录「若为手动出题本该是谁」——出题人分在 P3 才启用。
-    room.answerSetterPlayerId = room.hostPlayerId;
+    room.answerSetterPlayerId = setterId;
     room.revealedAnswer = undefined;
 
     for (const candidate of Object.values(room.players)) {
@@ -738,7 +838,8 @@ export class CCBService {
     room.currentRound = {
       roundNumber: room.roundNumber,
       answerCharacterId,
-      answerSetterPlayerId: room.hostPlayerId,
+      answerSetterPlayerId: setterId,
+      answerIsManual: isManual,
       startedAt: currentTime,
       deadlineAt: timeLimitMs > 0 ? currentTime + timeLimitMs : undefined,
       guesses: {},
@@ -977,6 +1078,75 @@ export class CCBService {
     round.nonstopWinnerIds = [...round.nonstopWinnerIds, player.id];
   }
 
+  /**
+   * 结算真人出题人的分（原版 `finalizeStandardGame` / `finalizeNonstopGame`）。
+   *
+   * ⚠️ **只在 `round.answerIsManual` 时调用**：服务端出题的房间没有任何玩家承担出题人，
+   * 照原版把这套奖惩记到房主头上属于凭空加减分（这条差异在 P1 起就登记着，P3 手动出题
+   * 恢复后才真正启用）。
+   *
+   * 它是全局**唯一可能为负**的计分项：大赢家 → 扣大赢家得分的一半；太简单 → −1；
+   * 没人猜中 → −1（血战按参战人数加倍）。规则本身在 `resolveCCBSetterScore`。
+   */
+  private applySetterScore(
+    room: CCBRoomRecord,
+    round: CCBRoundRecord,
+    primaryWinner: CCBPlayerRecord | undefined,
+    scorers: CCBPlayerRecord[],
+    winnerIds: ReadonlySet<string>,
+  ) {
+    const setter = room.players[round.answerSetterPlayerId];
+    if (!setter || setter.isBot) return;
+
+    const winners = scorers.filter((candidate) => winnerIds.has(candidate.id));
+    // 大赢家得分要拿**实际总得分**（含底分与加成），原版两条分支都按 base 2 重算取最大。
+    const bigWinnerScore = winners
+      .filter((candidate) => candidate.marks.includes(CCB_END_MARK.bigWin))
+      .reduce(
+        (highest, candidate) =>
+          Math.max(
+            highest,
+            calculateCCBWinnerScore({
+              guesses: candidate.marks,
+              baseScore: CCB_WINNER_BASE_SCORE,
+              totalRounds: room.settings.maxAttempts,
+            }).totalScore,
+          ),
+        0,
+      );
+
+    const result = resolveCCBSetterScore({
+      mode: room.settings.mode,
+      winnerMarks: primaryWinner?.marks ?? "",
+      // ⚠️ 这里要的是**计分口径**的已猜次数，不是 `countCCBAttemptMarks` —— 原版正是用
+      // `baseScore: 0` 的那份结果取 `guessCount`。
+      winnerGuessCount: primaryWinner
+        ? calculateCCBWinnerScore({
+            guesses: primaryWinner.marks,
+            baseScore: 0,
+            totalRounds: room.settings.maxAttempts,
+          }).guessCount
+        : 0,
+      bigWinnerScore,
+      winnersCount: winners.length,
+      totalPlayers: round.nonstopTotalPlayers,
+      totalRounds: room.settings.maxAttempts,
+    });
+
+    setter.score += result.score;
+    const signed = result.score > 0 ? `+${result.score}` : `${result.score}`;
+    this.appendSystemMessage(
+      room,
+      result.reason
+        ? `出题人 ${setter.name} ${signed} · ${result.reason}`
+        : `出题人 ${setter.name} ${signed}`,
+    );
+    this.log("game.setter_scored", room.roomId, setter.id, {
+      score: result.score,
+      reason: result.reason,
+    });
+  }
+
   private allSettled(room: CCBRoomRecord): boolean {
     if (!room.currentRound) return false;
     return this.activePlayers(room).every((candidate) => candidate.finished);
@@ -1018,6 +1188,11 @@ export class CCBService {
     const active = this.activePlayers(room);
     const winnerIds = new Set(round.solvedPlayerIds);
     const scorers = active.filter((candidate) => !candidate.isBot);
+    // 首个胜者（原版 `firstWinner`）：同步模式的所有胜者都按他的标记串算同一份分数。
+    const primaryWinner = scorers.find((candidate) => candidate.id === round.solvedPlayerIds[0]);
+    // ⚠️ 同步模式**共享胜者分**：原版用首个胜者的标记算一次，再 `forEach` 给每个胜者加同一个数；
+    // 其余模式各算各的。普通模式只有一个胜者，两者等价，但同步模式差别很大，别合并。
+    const sharedMarks = room.settings.mode === "sync" ? primaryWinner?.marks : undefined;
 
     for (const candidate of scorers) {
       if (!winnerIds.has(candidate.id)) continue;
@@ -1025,7 +1200,7 @@ export class CCBService {
       // 否则同一份胜者分会被计两次。
       if (room.settings.mode === "bloodbath") continue;
       const result = calculateCCBWinnerScore({
-        guesses: candidate.marks,
+        guesses: sharedMarks ?? candidate.marks,
         baseScore: CCB_WINNER_BASE_SCORE,
         totalRounds: room.settings.maxAttempts,
       });
@@ -1037,6 +1212,11 @@ export class CCBService {
     for (const candidate of scorers) {
       if (!awardees.has(candidate.id) || winnerIds.has(candidate.id)) continue;
       candidate.score += CCB_PARTIAL_BONUS_SCORE;
+    }
+
+    // 出题人分：**只在真人出题时结算**（见 `CCBRoundRecord.answerIsManual`）。
+    if (round.answerIsManual) {
+      this.applySetterScore(room, round, primaryWinner, scorers, winnerIds);
     }
 
     room.revealedAnswer = this.buildRevealedAnswer(room, round.answerCharacterId);
@@ -1306,18 +1486,43 @@ export class CCBService {
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
-      // 手动出题属 P3，在此之前不宣称该能力。
-      canSetAnswer: false,
+      // 手动出题：只有被房主指定、且还停在出题阶段的那个人能提交答案。
+      canSetAnswer: room.phase === "answering" && player.id === room.answerSetterPlayerId,
       canGuess: inPlay,
       canSurrender: inPlay,
-      canStartRound:
-        player.id === room.hostPlayerId && (room.phase === "waiting" || room.phase === "settled"),
+      canStartRound: player.id === room.hostPlayerId && room.phase !== "guessing",
       remainingGuesses: isActive ? Math.max(0, maxAttempts - player.guessCount) : 0,
       // 只下发自己的猜测记录：反馈里含答案相关线索，不能给别人看。
       // 标签全局 BP 还要按观众再遮掩一层（见 `maskOwnGuesses`）。
       ownGuesses: this.maskOwnGuesses(room, player.id),
       hints: [],
       syncCompleted,
+      setterAnswer: this.buildSetterAnswer(room, player),
+    };
+  }
+
+  /**
+   * 出题人在本局进行中看到的答案卡。
+   *
+   * 答案不能进 `snapshot`：那份快照是全房广播的同一份对象，放进去等于把答案发给所有人。
+   * 手动出题时出题人自己就是「知道答案的人」，所以走私有状态单独下发，
+   * 刷新页面也不会丢（原版是客户端本地留着，一刷新就没了）。
+   */
+  private buildSetterAnswer(
+    room: CCBRoomRecord,
+    player: CCBPlayerRecord,
+  ): CCBAnswerView | undefined {
+    const round = room.currentRound;
+    if (!round?.answerIsManual || round.answerSetterPlayerId !== player.id) return undefined;
+    if (room.phase !== "guessing" && room.phase !== "settled") return undefined;
+    // `revealed: false` = 还没有对其他人公开（对局结束后 `snapshot.answer` 才是公开的那份）。
+    const view = this.requireCharacters().buildCharacterView(round.answerCharacterId, room.settings);
+    if (!view) return undefined;
+    return {
+      id: view.id,
+      name: view.name,
+      nameCn: view.nameCn || view.name,
+      revealed: false,
     };
   }
 
