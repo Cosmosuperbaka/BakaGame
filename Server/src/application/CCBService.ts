@@ -11,6 +11,7 @@ import { AppError } from "../domain/Errors";
 import { ensureRoomId, normalizeName, normalizeWord, safeEqualToken } from "../domain/Rules";
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
 import type { EventLogger } from "../infrastructure/EventLogger";
+import type { CCBStatsKind } from "../infrastructure/CCBOriginalReporter";
 import {
   CCB_PLAYER_MESSAGE_LIMIT,
   DEFAULT_CCB_SETTINGS,
@@ -78,6 +79,18 @@ export interface CCBServiceOptions {
   characters?: CCBCharacterSource;
   /** 角色立绘回源；未注入时反馈里不带图。 */
   resolveCharacterImage?: (characterId: number) => Promise<string | undefined>;
+  /** 原版角色使用率上报（旁路统计）；未注入即不上报。 */
+  stats?: CCBStatsReporter;
+}
+
+/**
+ * 角色使用率上报接口。
+ *
+ * 由 infrastructure 的 `CCBOriginalReporter` 实现；在 application 层声明接口，
+ * 是为了不让应用层反向依赖具体实现（与 `CCBCharacterSource` 同一范式）。
+ */
+export interface CCBStatsReporter {
+  report(kind: CCBStatsKind, character: { id: number; name: string }): Promise<void>;
 }
 
 /** 普通/同步模式的胜者底分（原版固定 2）。 */
@@ -152,11 +165,24 @@ export class CCBService {
 
   private readonly characters?: CCBCharacterSource;
   private readonly resolveCharacterImage?: (characterId: number) => Promise<string | undefined>;
+  private readonly stats?: CCBStatsReporter;
 
   constructor(private readonly options: CCBServiceOptions = {}) {
     this.now = options.now ?? (() => Date.now());
     this.characters = options.characters;
     this.resolveCharacterImage = options.resolveCharacterImage;
+    this.stats = options.stats;
+  }
+
+  /**
+   * 旁路上报角色使用率（原版 `/api/{answer,guess}-character-count`）。
+   *
+   * **绝不阻塞、绝不抛出**：统计失败不能影响对局。实现方内部已经吞了异常，这里再兜一层
+   * 是因为它是 `async` —— 不 `catch` 会变成 unhandled rejection。
+   */
+  private reportUsage(kind: CCBStatsKind, characterId: number, name: string) {
+    if (!this.stats) return;
+    void this.stats.report(kind, { id: characterId, name }).catch(() => undefined);
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -904,6 +930,11 @@ export class CCBService {
       teamMarks: {},
       hints: [...hints],
     };
+
+    // 旁路统计：这一局的答案是哪个角色。**纯增强版房间同样上报** —— 统计的是角色使用率，
+    // 与房间建在哪一侧无关（见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5.6`）。
+    const answerView = this.requireCharacters().buildCharacterView(answerCharacterId, room.settings);
+    if (answerView) this.reportUsage("answer", answerView.id, answerView.nameCn || answerView.name);
   }
 
   private async guess(connection: ConnectionRecord, characterId: number) {
@@ -1022,6 +1053,9 @@ export class CCBService {
       feedback,
     };
     round.guesses[player.id] = [...(round.guesses[player.id] ?? []), record];
+
+    // 旁路统计：谁被猜了。只统计**被接受**的猜测（早期被拒的不算），与出题那条同一口径。
+    this.reportUsage("guess", guessed.id, guessed.nameCn || guessed.name);
 
     if (isCorrect) this.appendSystemMessage(room, `${player.name} 猜中了！`);
 

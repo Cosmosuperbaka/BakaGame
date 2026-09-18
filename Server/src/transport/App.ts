@@ -5,6 +5,7 @@ import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
 import { CCBService } from "../application/CCBService";
 import { CCBCharacterRepository } from "../infrastructure/CCBCharacterRepository";
+import { CCBOriginalReporter } from "../infrastructure/CCBOriginalReporter";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
@@ -465,6 +466,12 @@ export const createApp = ({
         searchCharacters: (keyword, limit) => requireCCBRepository().searchCharacters(keyword, limit),
       },
       resolveCharacterImage: resolveCCBCharacterImage,
+      // 原版角色使用率上报（旁路统计）。未配置 `CCB_ORIGINAL_SERVER_URL` 时
+      // `CCBOriginalReporter` 自己整体停用，不会白发请求。
+      stats: new CCBOriginalReporter({
+        serverUrl: env.ccbOriginalServerUrl ?? "",
+        logger,
+      }),
     });
 
   const app = new Elysia({
