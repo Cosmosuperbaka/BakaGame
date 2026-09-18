@@ -148,12 +148,12 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - 控制台调试日志净化：`SongLyricPlayer` 在浏览器环境中静默拦截 AMLL 内部输出的开发期调试日志（“设置歌词行”、“歌词处理完成”等），保证前端控制台极度纯净无冗余输出。
 
 **外文歌词翻译与原生 AMLL 总览展示规范**：
-- **服务端四级融合翻译**：在获取歌词四级链路中统一接入 `mergeTranslations`。自动提取网易云官方 `ytlrc` 与 `tlyric`（以及 `yromalrc` 与 `romalrc`），以 `<= 1500ms` 时间戳容差智能对齐，为每行歌词注入 `translatedLyric`。清洗算法保留翻译完整性，确保日文、英文等外文歌曲拥有中文翻译。
+- **双语翻译与注音排他规范**：在服务端四级融合链路（`mergeTranslations`、`parseTTML`）与客户端数据映射层，确立「有翻译时彻底屏蔽注音」的排他原则。日文等外文歌曲若同时具备中文翻译与罗马音/注音（`romanLyric`/`words[].romanWord`），系统必须在数据源解析、前端映射以及 CSS `:empty` 样式层三层联动清空并隐藏注音，禁止注音与翻译双副行并发导致排版拥挤与高度超标；仅在歌词存在注音但完全无翻译时才保留注音展示。
 - **逐字动态播放副行渲染**：客户端在 `index.css` 中显式针对 `[class*="lyricSubLine"]` 配置衬线字体、`opacity: 0.65`、`font-size: 0.85rem` 与居中排版，使 AMLL 播放器在歌词点亮时同步展示副文本翻译。
 - **歌词引用稳定防二次重刷**：`SongLyricPlayer` 必须基于歌词文本、起止时间与逐字数据生成稳定摘要键（`linesKey`）进行 memoization，严禁以快照数组引用作为依赖，杜绝音频就绪广播（`audioReadyPlayers` 改变）触发 AMLL DOM 销毁重建与入场渐入动画重播。
-- **原生 AMLL 单实例总览与平滑缩放动效**：音频播放完成后（`audioPlaybackState === "completed"`），严禁自行手写外部 DOM 列表替代。统一使用原生 AMLL 单实例进行全量总览渲染，动态切换 `.baka-overview-mode` 类名并配置 `alignAnchor="top"`, `alignPosition=0.02`, `enableBlur={false}`, `currentTime=firstLineTime`；
+- **原生 AMLL 单实例总览与命令式立即重排**：音频播放完成后（`audioPlaybackState === "completed"`），严禁自行手写外部 DOM 列表替代。统一使用原生 AMLL 单实例进行全量总览渲染。为消除 AMLL 默认居中留出的巨大“上界”与状态切换后未主动重排导致的歌词推出视口（“少显示一句”），组件必须通过 `<LyricPlayer ref={lyricPlayerRef}>` 暴露的底层实例，在切换为总览的瞬间立即命令式执行：`player.setAlignAnchor("top")`、`player.setAlignPosition(0)`、`player.setCurrentTime(firstLineTime, true)`、`player.resetScroll()` 并同步调用 `player.calcLayout(true, true)`，迫使第一行紧贴顶部物理原点自顶向下排布。
 - **字重与总览纯黑字色**：主歌词行无论播放还是总览模式均统一锁定 `font-weight: 500 !important;`，副歌词翻译行统一为 `font-weight: 400 !important;`。在总览模式下强制设置 `--amll-lp-inactive-opacity: 1 !important` 与全量子元素 `opacity: 1 !important; color: var(--color-foreground) !important;`，彻底根除总览歌词灰黑混杂或淡化问题；容器通过 CSS `transform: scale(0.92)` 配合 `transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)` 实现连贯平滑的缩小拉远动效。
-- **双语与和声高度精确预算**：`calculateLyricContainerHeight` 精确区分纯音乐（紧凑 `h-24 sm:h-28` 96px）、无翻译纯主歌词、带翻译歌词及和声伴唱小字（`isBG`）的真实高度预算。无翻译歌曲杜绝冗余留白，有翻译歌曲自适应扩容，整轮竞猜中高度稳定不跳变；总览模式完整容纳所有歌词与翻译，禁止产生滚动条或截断溢出。
+- **真实盒模型自适应高度精确预算**：`calculateLyricContainerHeight` 严格依据 AMLL 真实渲染 DOM 盒模型进行物理高度核算（主歌词行单行 48px/两行 80px/三行 112px，副行翻译单行 28px/两行 48px/三行 68px，和声伴唱小字 30px/22px，基础内边距 52px，每行额外 4px 字族容差缓冲；无翻译最低 120px，有翻译最低 160px，纯音乐紧凑 96px）。高度在出题时锁定，整轮竞猜零跳变，总览模式完整展示所有选区歌词与翻译，彻底杜绝被截断或产生滚动条。
 
 ### 歌词清洗
 
