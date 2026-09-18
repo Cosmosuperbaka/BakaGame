@@ -165,4 +165,25 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     expect(mockWithScope).toHaveBeenCalledTimes(2);
     expect(mockCaptureMessage).toHaveBeenCalledWith("手动上报告警", "warning");
   });
+
+  it("严格禁止注册性能剖析集成与采样率，避免触发浏览器策略违规", () => {
+    const mockInit = vi.fn();
+    const mockDriver: SentrySdkDriver = {
+      init: mockInit,
+      captureException: vi.fn(),
+      captureMessage: vi.fn(),
+      withScope: vi.fn(),
+    };
+
+    initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
+
+    const initOptions = mockInit.mock.calls[0]?.[0] as {
+      profilesSampleRate?: number;
+      integrations?: Array<{ name?: string }>;
+    };
+    expect(initOptions.profilesSampleRate).toBeUndefined();
+    const integrationNames = (initOptions.integrations ?? []).map((i) => i.name ?? "");
+    expect(integrationNames).not.toContain("BrowserProfiling");
+    expect(integrationNames.some((name) => name.toLowerCase().includes("profil"))).toBe(false);
+  });
 });
