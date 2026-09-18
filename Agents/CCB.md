@@ -68,17 +68,18 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 - 每个原版规则落地前，先写进本文件对应的判定表，再写测试，最后才是实现——判定表是唯一真相源，
   防止「看着像就改了」。
 
-## 5. 原版缺陷修复登记（7 项，逐项必须在本文件留痕）
+## 5. 原版缺陷修复登记（8 项，逐项必须在本文件留痕）
 
 | # | 原版缺陷 | 本项目处置 | 状态 |
 |---|---|---|---|
 | 1 | 客户端抽题 + AES 密钥下发 + `/api/room-info` 泄露答案密文 | 服务端出题，答案不出服务端 | 待 P1 |
 | 2 | `isPartialCorrect` 由客户端上报并被信任 | 服务端依据本地数据判定 | 待 P1 |
 | 3 | ~~`⏱️` 是双码点（`U+23F1 U+FE0F`）导致 `guessCount` 虚高、`quickGuess` 加成偏差~~ —— **实测不成立，原判断有误**：`calculateWinnerScore` 的 strip 字符类 `/[✌👑💀🏳️🏆]/` 里含 FE0F，会把 `⏱️` 一并剥成单码点 `⏱`，**两条路径都按 1 次计** | 仍保留两套计数函数（次数上限用正则、加分档位用码点），并各写回归用例钉死行为；`⏱️` 与 `🏳️` 的 FE0F 必须照抄进字符类，**擅自去掉 FE0F 会真的把两条路径改成不一致** | ✅ 已核实 |
-| 4 | `syncPlayersCompleted` / `globalPickState` 用 `Map`/`Set` 只在内存，重启即失 | 改为可序列化派生结构，保留原版「从猜测历史重建」的自愈思路 | 待 P2 |
+| 4 | `syncPlayersCompleted` / `globalPickState` 用 `Map`/`Set` 只在内存，重启即失 | 改为可序列化派生结构：`round.syncCompletedPlayerIds: string[]`（P2）、`globalPick` 改从猜测历史重建「谁猜过哪个角色」 | ✅ 已落地 |
 | 5 | 无任何服务端限流（`createRoom`、`playerGuess`、`tagBanSharedMetaTags` 尤甚） | 在服务端补事件限流 | 待 P1 |
 | 6 | `startAutoClean` 被调用两次（两组 interval 重复注册）；`/api/quick-join` 注释说排除进行中房间但代码没过滤 | 不移植这两个实现，本项目的清理只由 `runHousekeeping` 单一入口驱动 | ✅ 天然规避 |
 | 7 | 无硬超时兜底（只有软计时） | 每个阶段都带 `hardDeadlineAt`，由 `runHousekeeping` 强制推进（`Spec.md §9.2`） | 待 P1 |
+| 8 | **同步模式会永久卡死**：`updateSyncProgress` 开头 `if (syncPlayers.length === 0) return;`，于是「全员 `💀` 且无人猜中」时没人再触发推进，`phase` 永远停在 `guessing` | `resolveCCBSyncVerdict` 把「参战玩家归零」判为 `settle` 直接收尾，见 §6.6 | ✅ 已修复 |
 
 ## 6. 玩法规格（P1 起落地的判定真相源）
 
@@ -151,12 +152,16 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 普通模式**一旦出现胜者立即结算**；同步模式要等本轮全员完成（`syncReadyToEnd`）；
 血战要等 `remainingPlayers` 归零。投降后**留在房间观战**（`_tempObserver`）。
 
+这三条分流在服务端**只由一个入口**判定：`CCBService.advanceOrSettle`（原来叫 `settleIfRoundEnds`，
+P2b 起改名，因为同步模式在这里除了结算还会推进轮次）。判定表见 §6.6。
+
 **P1b 落地时的四处取舍（增强版特有，务必先看这里再改代码）**：
 
 1. **不结算出题人分**。原版有玩家承担「出题人」（选答案），所以有那套惩罚/奖励；增强版由**服务端出题**，
    没有任何玩家出题，把分记到房主头上属于凭空加减分。`CCBRules` 里的
    `calculateCCBSetterScore` / `calculateCCBNonstopSetterScore` 原样保留，等 **P3 手动出题模式**恢复。
-   ⇒ 与「兼容原版房间」对局时不可用（那边必须照原版算），这是 §5 之外的第 8 项已知差异。
+   ⇒ 与「兼容原版房间」对局时不可用（那边必须照原版算）。这是**逐项登记在 §5 之外**的一处
+   已知差异，不与 §5 的编号共用。
 2. **人机不参与猜测**（P1b 限制）。`beginRound` 把人机直接置为 `finished`，否则 `allSettled` 永远为假、
    整局卡死。人机仍占正式席位与被计分玩家列表，只是不猜。
 3. **出题人自己也算「本局已结束」**。同一原因：出题人不猜，若不计入 `finished`，普通模式以外的
@@ -218,13 +223,36 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 
 ### 6.6 三种模式的差异
 
-| | 普通 | 同步 | 血战 |
+原版用 `syncMode` + `nonstopMode` 两个布尔，**且 `nonstopMode` 会覆盖 `syncMode`**
+（`gameplay.js:899` 写的是 `syncMode && !nonstopMode`）；本项目收敛成 `mode` 枚举，与三者一一对应。
+
+| | 普通 `normal` | 同步 `sync` | 血战 `bloodbath` |
 |---|---|---|---|
 | 推进单位 | 无轮次，出胜者即结算 | `syncRound` 递增，**全员完成才进下一轮** | 进度制（`remainingCount`），与轮次无关 |
-| 胜者集合 | 单个（`👑` 优先于 `✌`） | 本轮所有 `✌`/`👑` | `nonstopWinners` 按猜对顺序累积，**每次结算都加分** |
+| 胜者集合 | 单个（`👑` 优先于 `✌`） | 本轮所有 `✌`/`👑` | `nonstopWinners` 按猜对顺序累积，**每猜中一个就加一次分** |
 | 队友得分 | `0`（`result: 'teamwin'`） | **共享胜者分数**（队友字符串被 `syncTeamGuesses` 覆盖成含 `✌`，于是全队进胜者集合） | `0`（`result: 'teamwin'`） |
+| 每人猜测次数 | 无限制（猜到 `💀` 为止） | **每轮 1 次**，猜完要等下一轮 | 无限制（猜到 `💀` 为止） |
 | 超时 | 重置本人计时 | 视为本轮完成 | 同普通 |
 | 结算触发 | 出现胜者 或 全员结束 | 本轮全员完成且已有胜者 | `remainingPlayers` 归零 |
+| 胜者分底分 | `2` | `2` | `max(1, 参战人数 − 已胜人数)` |
+| 胜者分发放时机 | 结算时 | 结算时 | **猜对当场** —— 结算阶段必须跳过，否则双倍计分 |
+
+**同步模式的推进判定**（真相源 `gameplay.js:updateSyncProgress`，落地 `resolveCCBSyncVerdict`）：
+
+| 参战玩家（= 本局尚未结束者） | 判定 | 服务端动作 |
+|---|---|---|
+| 还有人在本轮没完成 | `waiting` | 只广播 |
+| 全员完成 + 本轮已有胜者 | `settle` | 结算 |
+| 全员完成 + 还没胜者 | `advance` | `syncRound + 1`、清空完成列表、**重置本轮计时** |
+| **归零**（全员 `💀`/`🏳️`） | `settle` | 结算 —— 原版此处 `return` 会永久卡死，见 §5 #8 |
+
+两条容易踩的落地细节（都在 `Server/src/application/CCBService.ts`）：
+
+1. **`syncCompletedPlayerIds` 只有同步模式写**。它同时是「本轮已猜过」的判据，无条件写入会把
+   普通/血战模式的连续猜测误判成重复提交（报 `SYNC_ROUND_COMPLETED`）。
+2. **两个「参战玩家」口径不同、不能合并成一个函数**：推进只看「本局未结束者」（原版 `isEnded`），
+   而开标签透视时要把**已猜对/已出局的人也算进去**（原版 `updateSyncProgress` 的名单不过滤 `isEnded`）。
+   服务端因此拆成 `syncParticipants()` 与 `roundParticipantIds()` 两个方法。
 
 ### 6.7 设置字段对照（原版 → 本项目）
 
@@ -281,6 +309,7 @@ CCB 是平台第三个游戏，与 WhoIsFaker、Songuessr 架构地位完全对�
 | 页面 | `Client/src/pages/CCBPage.tsx`（大厅）、`Client/src/pages/CCBRoomPage.tsx`（三段式房间 + 三栏 + 移动端抽屉） |
 | 游戏组件 | `Client/src/components/ccb/`：`PlayerList.tsx`、`GameArea.tsx`（按阶段分派的操作区）、`GuessTable.tsx`（猜测表）、`CharacterSearch.tsx`（角色搜索） |
 | 反馈映射 | `Client/src/lib/CCBFeedback.ts`（档位→视觉档、档位→箭头；纯函数，表驱动用例在 `CCBFeedback.test.ts`） |
+| 模式进度 | 取自 `snapshot.syncProgress` / `snapshot.nonstopWinnerIds`；`GameArea` 顶栏显示「第 N 轮 · X 人未完成」与「已猜对 X 人 · 剩 Y 人」 |
 
 SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` 的 `PAGE_META`（否则 `Seo` 抛错）、
 `pages/LandingPage.tsx` 的卡片 `available/path`、`public/sitemap.xml`。
@@ -309,7 +338,8 @@ SEO 登记点是四处，缺一不可：`App.tsx` 路由、`data/PageMeta.ts` �
 | P1b-1 | `infrastructure/CCBCharacterRepository.ts`（两级采样 + 反馈视图 + 检索）与真实数据冒烟 | ✅ 已完成 |
 | P1b-2 | 服务端出题与猜测闭环、权威计时、结算广播、`shared/CCB.ts` 补齐 `ccb.game.*` Schema | ✅ 已完成 |
 | P1c | 前端搜索栏与猜测表（绿/黄高亮 + ↑↓）、操作区、结算面板 | ✅ 已完成 |
-| P2 | 同步模式、血战模式、标签全局 BP、角色全局 BP | 待办 |
+| P2a | 角色全局 BP（`globalPick`）、标签全局 BP（`tagBan`，含「谁先揭示归谁」与同步全员透视） | ✅ 已完成 |
+| P2b | 同步模式（按轮推进 / 每轮一次 / 超时视为本轮完成）、血战模式（名次分当场结算、打到全员结束） | ✅ 已完成 |
 | P3 | 手动出题、队伍模式、提示系统、观战增强视图 | 待办 |
 | P4 | 兼容原版房间（服务端桥接） | 待办，方案见 `tasks/ccb-enhanced-multiplayer-migration-plan.md §5` |
 
