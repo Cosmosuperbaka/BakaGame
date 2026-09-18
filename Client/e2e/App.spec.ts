@@ -418,28 +418,32 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
     // 提交不限座位顺序（服务端只查存活与去重），但其他玩家的提交会触发快照
     // 广播与输入区重渲染，单次「输入→点击」可能恰好落在重渲染窗口里丢失。
     // 因此用轮询整段重试，直到该玩家输入区消失（提交成功）为止。
+    // 另外首日描述阶段会自动揭词（居中背板 + 全屏 blur，约数秒后收回），
+    // click 若恰好撞进背板动画窗口会长期不满足 stable/enabled——必须给每个
+    // 操作设短超时，让 poll 能进入下一轮；否则单次 click 会把整个 predicate 挂死。
     for (const [index, playerPage] of playerPages.entries()) {
       await expect(playerPage.getByRole("heading", { name: "描述阶段" })).toBeVisible();
       await expect.poll(async () => {
         try {
           const descInput = playerPage.getByPlaceholder("输入你的描述...");
           if ((await descInput.count()) === 0) return true;
-          await descInput.fill(`描述${index + 1}`);
+          await descInput.fill(`描述${index + 1}`, { timeout: 2_500 });
           const send = playerPage.getByRole("button", { name: "发送", exact: true });
           if (!(await send.isEnabled())) return false;
-          await send.click();
+          await send.click({ timeout: 2_500 });
           return (await descInput.count()) === 0;
         } catch {
           return false;
         }
-      }, { timeout: 60_000 }).toBe(true);
+      }, { timeout: 60_000, intervals: [500] }).toBe(true);
     }
 
     await page.getByRole("button", { name: "进入投票阶段" }).click();
     await expect(page.getByRole("heading", { name: "投票阶段", exact: true })).toBeVisible();
 
     // 投票同为互不依赖的独立操作，真实场景即同时进行；投票界面的快照更新
-    // 同样可能打断单次点击，轮询到「已完成投票」出现为止。
+    // 同样可能打断单次点击，轮询到「已完成投票」出现为止。click 同样必须
+    // 设短超时防止单次 action 把整个 predicate 挂死（与描述段同理）。
     await Promise.all(playerPages.map(async (playerPage, index) => {
       const targetName = index === 0 ? playerNames[1]! : playerNames[0]!;
       await expect.poll(async () => {
@@ -448,12 +452,12 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
           if ((await done.count()) > 0) return true;
           const target = playerPage.getByRole("button", { name: targetName, exact: true });
           if ((await target.count()) === 0) return false;
-          await target.click();
+          await target.click({ timeout: 2_500 });
           return (await done.count()) > 0;
         } catch {
           return false;
         }
-      }, { timeout: 60_000 }).toBe(true);
+      }, { timeout: 60_000, intervals: [500] }).toBe(true);
     }));
 
     await page.getByRole("button", { name: "结算投票" }).click();
