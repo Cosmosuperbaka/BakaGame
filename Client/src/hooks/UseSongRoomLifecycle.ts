@@ -61,6 +61,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   const sendCommandRef = useRef(sendCommand);
   const leavingRef = useRef(false);
+  const [mountTime] = useState(() => Date.now());
   const mountedMusicSessionRef = useRef<string | null>(null);
   const inFlightCommandsRef = useRef<Set<string>>(new Set());
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
@@ -163,6 +164,13 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   );
 
   useEffect(() => {
+    useSonGuessrStore.getState().clearRoomClosed();
+    return () => {
+      useSonGuessrStore.getState().clearRoomClosed();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!roomId || alreadyInRoom) return;
     if (!isValidRoomId(roomId)) {
       setNotice("房间号无效，请检查链接", "error");
@@ -170,6 +178,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       return;
     }
 
+    useSonGuessrStore.getState().clearRoomClosed();
     let cancelled = false;
     const tryEnter = async () => {
       setJoining(true);
@@ -187,7 +196,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         if (!cancelled) setJoining(false);
         return;
       }
-      if (cancelled || useSonGuessrStore.getState().roomClosedAt) return;
+      const closedAt = useSonGuessrStore.getState().roomClosedAt;
+      if (cancelled || (closedAt !== null && closedAt >= mountTime)) return;
       if (solo) {
         await enterSoloRoom(roomId);
         return;
@@ -208,10 +218,11 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!roomClosedAt || leavingRef.current) return;
+    if (!roomClosedAt || roomClosedAt < mountTime || leavingRef.current) return;
+    useSonGuessrStore.getState().clearRoomClosed();
     if (solo) clearSongSoloRoomId();
     navigate(exitPath, { replace: true });
-  }, [exitPath, navigate, roomClosedAt, solo]);
+  }, [exitPath, mountTime, navigate, roomClosedAt, solo]);
 
   useEffect(() => {
     const handleSessionChanged = () => setMusicSessionRevision((revision) => revision + 1);

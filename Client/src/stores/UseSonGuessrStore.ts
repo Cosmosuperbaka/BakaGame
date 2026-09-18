@@ -41,6 +41,8 @@ export interface SonGuessrStore {
   }) => Promise<void>;
   joinRoom: (roomId: string, userName: string, password?: string) => Promise<void>;
   reconnectRoom: (roomId: string) => Promise<boolean>;
+  clearRoomClosed: () => void;
+  resetRoomState: () => void;
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
   searchBangumi: (keyword: string) => Promise<BangumiSubjectSearchResult[]>;
@@ -221,7 +223,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             sessionToken: null,
             snapshot: null,
             privateState: null,
-            roomClosedAt: Date.now(),
+            roomClosedAt: null,
           });
           const code = (error as { code?: string } | null)?.code;
           const message =
@@ -233,7 +235,19 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
           get().setNotice(message, "error");
           return false;
         }
+      },
 
+      clearRoomClosed: () => set({ roomClosedAt: null }),
+
+      resetRoomState: () => {
+        resetSonGuessrStateSync();
+        set({
+          roomId: null,
+          sessionToken: null,
+          snapshot: null,
+          privateState: null,
+          roomClosedAt: null,
+        });
       },
 
   leaveRoom: async () => {

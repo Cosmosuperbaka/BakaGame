@@ -892,4 +892,50 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     expect(within(nextRoundButton).queryByTestId("button-spinner")).not.toBeInTheDocument();
   });
+
+  it("退出房间后再次进入房间，清除历史关闭状态且绝不发生原地跳转", async () => {
+    useSonGuessrStore.setState({
+      ...initialStoreState,
+      connected: true,
+      roomClosedAt: Date.now() - 1000,
+      roomId: "6688",
+      snapshot: createMockSnapshot({ roomId: "6688" }),
+      privateState: createMockPrivateState(),
+    });
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/songuessr/room/1234"]}>
+        <Routes>
+          <Route path="/songuessr/room/:roomId" element={<SonGuessrRoomPage />} />
+          <Route path="/songuessr" element={<div>Songuessr 游戏大厅</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+    expect(screen.queryByText("Songuessr 游戏大厅")).not.toBeInTheDocument();
+    unmount();
+  });
+
+  it("单人模式退出房间后再次进入，清空旧房间号并顺利初始化新单人对局", async () => {
+    useSonGuessrStore.setState({
+      ...initialStoreState,
+      roomClosedAt: Date.now() - 2000,
+      roomId: null,
+      snapshot: null,
+      privateState: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/songuessr/solo"]}>
+        <Routes>
+          <Route path="/songuessr/solo" element={<SonGuessrRoomPage solo />} />
+          <Route path="/" element={<div>游戏首页</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("游戏首页")).not.toBeInTheDocument();
+    expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+  });
 });

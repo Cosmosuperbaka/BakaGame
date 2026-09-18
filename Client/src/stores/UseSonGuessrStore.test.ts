@@ -228,7 +228,7 @@ describe("Songuessr store integration", () => {
 
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
-    expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
+    expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
     expect(useSonGuessrStore.getState().notice).toEqual({ text: "会话已失效，请重新加入", type: "error" });
   });
 
