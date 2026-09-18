@@ -3695,8 +3695,19 @@ describe("上线前 P0 修复回归", () => {
       payload: { ready: true },
     });
 
+    // 第三名玩家保底在线数：installRound 要求下一轮至少两名在线正式玩家，
+    // 否则两人房在 guest 掉线后开局会被 NOT_ENOUGH_PLAYERS 拒绝。
+    const third = connection(service, "third-reconnect-test");
+    await joinRoom(service, third, "陪玩玩家");
+    await execute(service, third, {
+      id: "third-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+
     // 模拟重连玩家临时掉线
-    service.unregisterConnection(guest.id);
+    service.unregisterConnection(guest.record.id);
 
     // 房主开局（回合安装时该玩家离线）
     await execute(service, host, {
