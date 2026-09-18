@@ -38,7 +38,24 @@ type InFlightOutcome =
   | { success: true; payload: unknown }
   | { success: false; error: unknown };
 
+/**
+ * 飞行中请求的去重表，按 `${connectionId}:${messageId}` 记。
+ *
+ * 必须封顶：大量连接持续发新 ID 时，无上限的 Map 会一直堆积，
+ * 挤占正常条目所属的堆内存，也让"还在飞"的判定失去意义。
+ * 超过上限时丢弃最旧的条目——它要么已完成（早已被 delete），
+ * 要么属于长时间卡住的连接，此时不再为其提供去重反而是更安全的行为。
+ */
+const MAX_IN_FLIGHT_OPERATIONS = 4096;
 const inFlightOperations = new Map<string, Promise<InFlightOutcome>>();
+
+const rememberInFlight = (key: string, promise: Promise<InFlightOutcome>) => {
+  if (inFlightOperations.size >= MAX_IN_FLIGHT_OPERATIONS) {
+    const oldest = inFlightOperations.keys().next().value;
+    if (oldest !== undefined) inFlightOperations.delete(oldest);
+  }
+  inFlightOperations.set(key, promise);
+};
 
 const sendPacket = (
   ws: { send: (data: string) => unknown },
@@ -129,7 +146,7 @@ const executeWithDeduplication = async ({
     }
   })();
 
-  inFlightOperations.set(dedupKey, executePromise);
+  rememberInFlight(dedupKey, executePromise);
   let outcome: InFlightOutcome;
   try {
     outcome = await executePromise;
