@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PenLine } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { CharacterSearch } from "@/components/ccb/CharacterSearch";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { cn } from "@/lib/Utils";
@@ -25,16 +26,31 @@ const NO_PICKED_IDS: Set<number> = new Set();
 export function CCBSetterPanel({ className }: { className?: string }) {
   const sendCommand = useCCBStore((state) => state.sendCommand);
   const setNotice = useCCBStore((state) => state.setNotice);
+  const snapshot = useCCBStore((state) => state.snapshot);
   const [picked, setPicked] = useState<CCBCharacterSearchResult | null>(null);
+  const [hints, setHints] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
+  // 提示槽位数由设置的 `useHints` 阈值条数决定 —— 多写的提示永远显示不出来。
+  const hintSlots = snapshot?.settings.useHints.length ?? 0;
+
+  const setHintAt = (index: number, text: string) =>
+    setHints((prev) => {
+      const next = [...prev];
+      next[index] = text;
+      return next;
+    });
 
   const confirm = async () => {
     if (!picked || pending) return;
     setPending(true);
     try {
+      // 空槽位不发：服务端只按 `useHints` 的条数截断，没必要带上空串。
+      const hintTexts = Array.from({ length: hintSlots }, (_, index) => hints[index] ?? "").filter(
+        Boolean,
+      );
       await sendCommand(
         "ccb.game.setAnswer",
-        { characterId: picked.id },
+        { characterId: picked.id, hints: hintTexts },
         { timeout: LONG_TASK_TIMEOUT },
       );
     } catch (error) {
@@ -54,6 +70,23 @@ export function CCBSetterPanel({ className }: { className?: string }) {
         disabled={pending}
         onSelect={(character) => setPicked(character)}
       />
+      {hintSlots > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            文本提示（可选，共 {hintSlots} 条；别人剩余次数降到设置阈值时依次显示）
+          </p>
+          {Array.from({ length: hintSlots }, (_, index) => (
+            <Input
+              key={index}
+              value={hints[index] ?? ""}
+              maxLength={200}
+              disabled={pending}
+              placeholder={`提示 ${index + 1}`}
+              onChange={(event) => setHintAt(index, event.target.value)}
+            />
+          ))}
+        </div>
+      ) : null}
       {picked ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="min-w-0 truncate text-sm">
