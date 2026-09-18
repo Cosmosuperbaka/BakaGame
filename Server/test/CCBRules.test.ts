@@ -23,6 +23,7 @@ import {
   resolveCCBSubjectSearchMetaTags,
   resolveCCBSubjectSearchTypes,
   resolveCCBNonstopRankScore,
+  resolveCCBRevealedHints,
   resolveCCBSetterScore,
   resolveCCBSyncVerdict,
   resolveCCBTimeLimitMs,
@@ -668,5 +669,28 @@ describe("出题人计分（按模式选表）", () => {
         totalRounds: 10,
       }),
     ).toEqual({ score: -7, reason: "纯在送分" });
+  });
+});
+
+describe("提示系统", () => {
+  test("按阈值逐条解锁：剩余次数 <= 阈值才显示", () => {
+    const hints = ["甲", "乙"];
+    const thresholds = [5, 3];
+    expect(resolveCCBRevealedHints(hints, thresholds, 6)).toEqual([]);
+    expect(resolveCCBRevealedHints(hints, thresholds, 5)).toEqual([{ index: 1, text: "甲" }]);
+    expect(resolveCCBRevealedHints(hints, thresholds, 3)).toEqual([
+      { index: 1, text: "甲" },
+      { index: 2, text: "乙" },
+    ]);
+    // 剩余次数归零时已解锁的全部保留。
+    expect(resolveCCBRevealedHints(hints, thresholds, 0)).toHaveLength(2);
+  });
+
+  test("任一侧缺失的位置直接跳过，后面的提示不会错位", () => {
+    // 第 2 条没写文本：阈值命中但文本为空 → 跳过，第 1 条照常显示。
+    expect(resolveCCBRevealedHints(["甲"], [5, 3], 3)).toEqual([{ index: 1, text: "甲" }]);
+    // 阈值比文本多：多出来的阈值没有对应文本，同样跳过。
+    expect(resolveCCBRevealedHints(["甲", "乙"], [9], 0)).toEqual([{ index: 1, text: "甲" }]);
+    expect(resolveCCBRevealedHints([], [5, 3], 0)).toEqual([]);
   });
 });
