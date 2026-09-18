@@ -964,3 +964,64 @@ describe("CCB 对局：队伍、提示与观战", () => {
     expect(privateStateOf(guest).spectatedGuesses).toBeUndefined();
   });
 });
+
+describe("CCB 对局：角色使用率旁路上报", () => {
+  const createServiceWithStats = (options: { failing?: boolean } = {}) => {
+    const calls: Array<{ kind: string; id: number; name: string }> = [];
+    let currentTime = Date.UTC(2026, 8, 17, 0, 0, 0);
+    const service = new CCBService({
+      now: () => currentTime,
+      characters: characterSource,
+      stats: {
+        report: (kind, character) => {
+          if (options.failing) return Promise.reject(new Error("原版服务器挂了"));
+          calls.push({ kind, id: character.id, name: character.name });
+          return Promise.resolve();
+        },
+      },
+    });
+    return { service, calls };
+  };
+
+  test("开局上报出题角色，每次被接受的猜测上报一次", async () => {
+    const { service, calls } = createServiceWithStats();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest]);
+
+    // 两级采样固定抽到 1 号角色（夹具的 pickRandomCharacter 返回 1）
+    expect(calls).toEqual([{ kind: "answer", id: 1, name: "中文-1" }]);
+
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    expect(calls).toEqual([
+      { kind: "answer", id: 1, name: "中文-1" },
+      { kind: "guess", id: 2, name: "中文-2" },
+    ]);
+  });
+
+  test("被拒的猜测不上报", async () => {
+    const { service, calls } = createServiceWithStats();
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest]);
+
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 2 } });
+    // 同一个角色再猜一次会被拒 —— 拒绝发生在构造 record 之前，所以不该多出一条上报。
+    await expect(
+      execute(service, guest, { id: "g2", type: "ccb.game.guess", payload: { characterId: 2 } }),
+    ).rejects.toMatchObject({ code: "CHARACTER_ALREADY_PICKED" });
+
+    expect(calls.filter((call) => call.kind === "guess")).toHaveLength(1);
+  });
+
+  test("上报抛异常不影响对局推进", async () => {
+    const { service } = createServiceWithStats({ failing: true });
+    const host = connection(service, "c-host");
+    const guest = connection(service, "c-guest");
+    await startGame(service, host, [guest]);
+
+    await execute(service, guest, { id: "g1", type: "ccb.game.guess", payload: { characterId: 1 } });
+    expect(snapshotOf(guest).phase).toBe("settled");
+    expect(scoreOf(guest)).toBe(14);
+  });
+});
