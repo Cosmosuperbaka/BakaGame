@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import type { SonGuessrPlayerView } from "@/types";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { PlayerList } from "./PlayerList";
 
 const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGuessrPlayerView => ({
@@ -101,5 +103,35 @@ describe("SonGuessr PlayerList", () => {
 
     expect(screen.getByText("88")).toBeInTheDocument();
     expect(screen.getByText("分")).toBeInTheDocument();
+  });
+
+  it("长昵称仍可完整识别并通过键盘打开管理操作", async () => {
+    const user = userEvent.setup();
+    const name = "这是一个需要截断展示的很长玩家昵称";
+    const sendCommand = vi.fn().mockResolvedValue({});
+    const originalSendCommand = useSonGuessrStore.getState().sendCommand;
+    useSonGuessrStore.setState({ sendCommand });
+
+    try {
+      render(
+        <PlayerList
+          players={[createMockPlayer({ name, score: 12345 })]}
+          myPlayerId="host"
+          isHost
+          phase="waiting"
+          allowSpectators={false}
+        />,
+      );
+
+      expect(screen.getByTitle(name)).toHaveTextContent(name);
+      expect(screen.getByLabelText("12345 分")).toBeInTheDocument();
+      await user.tab();
+      expect(screen.getByRole("button", { name: `${name} 操作` })).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await user.click(await screen.findByRole("button", { name: "转移房主" }));
+      expect(sendCommand).toHaveBeenCalledWith("song.room.transferHost", { playerId: "player-1" });
+    } finally {
+      useSonGuessrStore.setState({ sendCommand: originalSendCommand });
+    }
   });
 });

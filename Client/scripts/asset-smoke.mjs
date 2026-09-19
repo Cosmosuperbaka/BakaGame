@@ -73,7 +73,8 @@ try {
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
 
-  for (const route of ["/", "/whoisfaker", "/songuessr", "/unknown-route"]) {
+  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/ccb", "/unknown-route"];
+  for (const route of spaRoutes) {
     const response = await fetch(`${baseUrl}${route}`);
     if (!response.ok) throw new Error(`${route} 返回 HTTP ${response.status}`);
     const html = await response.text();
@@ -88,6 +89,7 @@ try {
     { route: "/", text: "免下载的网页版派对游戏站", canonical: "https://game.baka.website/" },
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
     { route: "/songuessr", text: "听歌猜歌", canonical: "https://game.baka.website/songuessr" },
+    { route: "/ccb", text: "在线猜动漫角色", canonical: "https://game.baka.website/ccb" },
   ];
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
@@ -118,7 +120,7 @@ try {
     throw new Error("JavaScript bundle 仍引用未转换的图片资源");
   }
 
-  console.log(`资源冒烟通过：${required.length} 个固定资源、${stickerFiles.length} 个贴纸、4 个 SPA 路由、${shellChecks.length} 个静态外壳`);
+  console.log(`资源冒烟通过：${required.length} 个固定资源、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、${shellChecks.length} 个静态外壳`);
 } finally {
   preview.kill();
   await stat(distDir);

@@ -14,7 +14,7 @@ import {
 } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
-import { createApp } from "../src/transport/App";
+import { createTestApp as createApp } from './AppFixtures';
 
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================

@@ -47,17 +47,16 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
-  it("renders animecharguessr with coming-soon badge and disabled state", () => {
+  it("开放猜角色多人模式并保留排位与锦标赛未上线状态", () => {
     renderLandingPage();
 
     const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
     const songEntry = screen.getByTestId("game-entry-songuessr");
     expect(ccbEntry).toBeInTheDocument();
     expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
-    expect(within(ccbEntry).getByText("即将上线")).toBeInTheDocument();
+    expect(within(ccbEntry).getAllByText("即将上线")).toHaveLength(2);
 
-    // CCB 增强版整体标记即将上线，子按钮均不可作为交互 button
-    expect(within(ccbEntry).queryByRole("button", { name: /多人模式/ })).not.toBeInTheDocument();
+    expect(within(ccbEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
     expect(within(ccbEntry).getByText("多人模式")).toBeInTheDocument();
     expect(within(ccbEntry).getByText("排位赛")).toBeInTheDocument();
     expect(within(ccbEntry).getByText("锦标赛")).toBeInTheDocument();

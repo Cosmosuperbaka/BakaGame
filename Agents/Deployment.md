@@ -86,6 +86,9 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - **文案单一真相源**：`PageMeta.ts` 同时被页面组件的 `Seo`（运行时写 head）与插件（构建期写 HTML）
   消费，改了描述两处一起变。页面侧调用因此简化为 `<Seo path="/" />`；未登记的路径（房间页、
   单人页）必须显式传 `description`，否则组件当场抛错。
+- 新增开放大厅须同步 `PageMeta`、主页游戏介绍与链接、站点地图、资源冒烟和 SEO E2E；运行时
+  `description` 与 `og:description` 必须读取同一份解析后的文案。房间页保持 `noindex`，并在
+  `robots.txt` 排除对应房间路径，CCB 的增强房与原版房共用 `/ccb/room/` 规则。
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
@@ -110,8 +113,8 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 生产构建命令：平台的 Makers 项目是 GitHub 集成型，构建在平台侧发生，`npm run build` 即可
   （静态外壳已在 build 内完成）。仓库保留了 `build:seo` 作为指向 build 的兼容别名，等控制台
   改回 `npm run build` 后可以删掉。
-- 上线验收：用 `curl`（不带 JS）访问三个路由，正文应含对应文案且 canonical 指向自身。
-  若平台把 `/whoisfaker`、`/songuessr` 回退成了首页外壳，说明静态文件未被解析，
+- 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/ccb` 四个路由，正文应含对应文案且 canonical 指向自身。
+  若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
   需在 `Client/middleware.js` 里补路径 rewrite——这是本方案唯一依赖平台行为的一环。
 
 ## 应用职责

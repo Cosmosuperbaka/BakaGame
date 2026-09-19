@@ -7,12 +7,14 @@ import {
   Crown,
   Eye,
   EyeOff,
+  MoreHorizontal,
   Skull,
   UserX,
   WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
@@ -495,72 +497,65 @@ export function PlayerRow(props: PlayerRowProps) {
   const eliminated = player.roundStatus === "dead";
   const status = resolveStatus(player, waitingPhase, hideSpectatorStatus);
 
+  const rowClass = cn(
+    PLAYER_ROW_BASE,
+    PLAYER_ROW_HEIGHT,
+    isMe && "bg-primary/10",
+    !isMe && "transition-colors hover:bg-accent/50",
+    !player.online && !player.isBot && "opacity-60",
+    interactive && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+  );
   const body = (
-    <div
-      className={cn(
-        PLAYER_ROW_BASE,
-        PLAYER_ROW_HEIGHT,
-        isMe && "bg-primary/10",
-        !isMe && "transition-colors hover:bg-accent/50",
-        // 机器人没有连接，但不是「掉线」，不该被压暗
-        !player.online && !player.isBot && "opacity-60",
-        interactive && "cursor-pointer",
-      )}
-    >
+    <>
       {isMe ? (
         <span className={PLAYER_ME_MARK} />
       ) : null}
-      {/* 身份与状态全部落在名字之前：已知身份优先，其次自己的预测 */}
-      {actualRole ? (
-        <RoleBadge role={actualRole} />
-      ) : mark !== "unknown" ? (
-        <RoleBadge role={mark} predicted />
-      ) : null}
-      {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate font-medium",
-          eliminated && "text-muted-foreground line-through decoration-muted-foreground/60",
-        )}
-      >
-        {player.name}
+      <PlayerAvatar />
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <span
+            className={cn(
+              "min-w-0 truncate font-medium",
+              eliminated && "text-muted-foreground line-through decoration-muted-foreground/60",
+            )}
+            title={player.name}
+          >
+            {player.name}
+          </span>
+          {player.isHost ? (
+            <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
+          ) : null}
+        </span>
+        <span className="flex min-h-4 items-center gap-1">
+          {actualRole ? (
+            <RoleBadge role={actualRole} />
+          ) : mark !== "unknown" ? (
+            <RoleBadge role={mark} predicted />
+          ) : null}
+          {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
+          {eliminated ? (
+            <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+          ) : null}
+          {player.isBot ? (
+            <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
+          ) : !player.online ? (
+            <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
+          ) : null}
+        </span>
       </span>
-      {/* 出局与房主、掉线同属玩家标记，共用名字之后这一处图标位 */}
-      {eliminated ? (
-        <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
-      ) : null}
-      {player.isHost ? (
-        <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
-      ) : null}
-      {/* 机器人标注为人机，而不是复用断线图标 */}
-      {player.isBot ? (
-        <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
-      ) : !player.online ? (
-        <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-      ) : null}
-      {/* 得分居右 */}
-      <span className="shrink-0 font-sans text-xs font-normal tabular-nums text-muted-foreground">
+      <span aria-label={`${player.score} 分`} className="shrink-0 whitespace-nowrap font-sans text-xs font-normal tabular-nums text-muted-foreground">
         {player.score}<span className="ml-0.5 text-[10px]">分</span>
       </span>
-    </div>
+      {interactive ? <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
+    </>
   );
 
-  const content = embedded ? (
-    body
-  ) : (
-    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position">
-      {body}
-    </motion.div>
-  );
-
-  if (!interactive) return content;
-
-  return (
+  const content = interactive ? (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <div role="button" tabIndex={0} aria-label={`${player.name} 操作`}>
-          {content}
-        </div>
+        <Button type="button" variant="ghost" aria-label={`${player.name} 操作`} className={cn("h-auto justify-start", rowClass)}>
+          {body}
+        </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -611,6 +606,12 @@ export function PlayerRow(props: PlayerRowProps) {
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  ) : <div className={rowClass}>{body}</div>;
+
+  return embedded ? content : (
+    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" className="min-w-0">
+      {content}
+    </motion.div>
   );
 }
 
@@ -694,7 +695,7 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
   );
 }
 
-/** 主持、出局、旁观与准备状态。与身份徽章同尺寸同实底，行首一致。 */
+/** 主持、旁观与准备状态，与身份徽章共用次行。 */
 function StatusPill({ label, tone }: StatusInfo) {
   return <PlayerStatusPill label={label} tone={tone} />;
 }

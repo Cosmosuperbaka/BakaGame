@@ -68,7 +68,7 @@ export function Seo({ path, description, indexable = true, structuredData }: Seo
       <meta property="og:type" content="website" />
       <meta property="og:site_name" content={SITE_NAME} />
       <meta property="og:title" content={SITE_NAME} />
-      <meta property="og:description" content={description} />
+      <meta property="og:description" content={resolvedDescription} />
       <meta property="og:url" content={canonical} />
     </Helmet>
   );

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { OtlpExporter, toUnixNanoString, type OtlpFetcher } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { createApp } from "../src/transport/App";
+import { createTestApp as createApp } from './AppFixtures';
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { AppEnv } from "../src/config/Env";

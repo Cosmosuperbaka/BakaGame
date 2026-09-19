@@ -93,6 +93,7 @@ npx playwright test e2e/App.spec.ts
 - **覆盖率必须进 CI**：`Server` 执行 `bun run test:coverage`，`Client` 执行 `npm run test:coverage`；覆盖率用于阻止回退，核心模块的主要分支不得以全局平均值掩盖。
 - **开发服务器不代表生产**：Playwright 的资源冒烟使用 `npm run build` 后的 `vite preview`；真实房间 E2E 可以使用开发服务器，但必须另有生产构建冒烟。
 - **覆盖率阈值必须可追溯**：修改阈值时必须同时说明基线、覆盖空白和回退风险；禁止为通过 CI 临时降低阈值。服务端阈值由 `Server/scripts/CheckCoverage.ts` 检查，客户端阈值由 `Client/vitest.config.ts` 检查。
+- **覆盖率报告解析必须实测**：LCOV 的 `FNF/FNH/LF/LH` 是单值记录，不能按 `DA` 的双值结构读取；报告缺少有效计数必须失败，禁止把空报告视为百分之百。真实角色 E2E 的检出步骤必须拉取 LFS 数据实体。
 - **生产冒烟必须隔离上游**：冒烟脚本只能验证本地服务、协议握手和关键 ACK；网易云、Bangumi 等真实第三方调用必须使用 Mock 或单独的凭据隔离集成任务。
 - **E2E 质量监听必须可解释**：监听到的 `pageerror`、控制台 error 或 HTTP 4xx/5xx 必须能关联到当前用户流程；确属预期的状态码要在测试中显式白名单并写明原因。
 
@@ -108,6 +109,12 @@ npx playwright test e2e/App.spec.ts
 - 新增生产资源必须加入构建后 preview 冒烟，验证 HTTP 200、MIME、非空内容和可解码性；仅测试插件函数不合格。
 - 覆盖率用于发现空白和防止回退；核心逻辑须覆盖主要分支，不得用低价值断言堆高全局百分比。真实第三方集成测试单独运行、凭据脱敏，不进入常规 CI。
 - 生产服务冒烟应保持单进程、可重复和无外部网络依赖；端口、临时目录、WebSocket 和子进程必须在 `finally` 中释放，超时后应主动终止子进程。
+- CCB 网络容量使用真实原生服务与生产 `StateSyncEncoder`，以 150 名玩家、每秒 12 次猜测、持续
+  60 秒以及公共/私有两通道的全量校准计量，连同请求、ACK、WebSocket 帧及 15% 余量不超过
+  6 Mbps。必须断言实际产生补丁，不能只检查事件登记或跳过未变化的校准流量。
+- CCB 图片提示用生成的栅格图片经过真实 sharp 解码、缩放、模糊及 WebP 编码，校验像素尺寸和
+  模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
+  留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
 - E2E 选择器优先使用 ARIA 角色、可见语义文本和稳定 `data-testid`。只有当元素本身就是业务契约时才增加 `data-testid`，不得把样式类名或 DOM 深度变成测试接口。
 
 ## CI 推荐顺序
@@ -127,3 +134,8 @@ npm run verify
 
 网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。
+
+## Worker 异步错误断言
+
+- Windows 的 Bun 1.3.14 中，对已初始化 Worker 的异步错误回包直接使用 `expect(promise).rejects` 会阻塞消息分发。
+  相关集成测试必须先通过原生 Promise 捕获结果，再同步断言明确业务错误码；禁止延长超时掩盖挂起。

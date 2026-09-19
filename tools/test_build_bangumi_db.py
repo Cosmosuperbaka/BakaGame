@@ -154,6 +154,44 @@ def write_jsonlines(path: Path, records: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
 
 
+def make_extra_tags(root: Path) -> Path:
+    directory = root / "extra_tags"
+    directory.mkdir()
+    for subject_id in json.loads(subject.EXTRA_SUBJECTS_PATH.read_text(encoding="utf-8")):
+        (directory / f"{subject_id}.json").write_text("{}", encoding="utf-8")
+    (directory / "18011.json").write_text(json.dumps({
+        "1": {"_name": "角色名", "位置": {"打野": "<img src='/icon.png'>打野", "上路": "上路"},
+              "难度": {"2": "<script>不应进入数据库</script>", "": ""}},
+    }, ensure_ascii=False), encoding="utf-8")
+    return directory
+
+
+def test_load_extra_tags() -> None:
+    print("游戏专属标签（保留文字键与顺序，拒绝缺失或损坏文件）")
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = make_extra_tags(Path(tmp))
+        rows = subject.load_character_extra_tags(str(directory))
+        check("分组与标签完整保序", rows, [
+            (1, 18011, 1, 0, "位置", "打野"), (1, 18011, 1, 1, "位置", "上路"),
+            (1, 18011, 2, 0, "难度", "2"),
+        ])
+        path = directory / "18011.json"
+        path.write_text('{"1":{"位置":[]}}', encoding="utf-8")
+        try:
+            subject.load_character_extra_tags(str(directory))
+        except ValueError as error:
+            check_true("损坏分组拒绝构建", "标签分组格式无效" in str(error))
+        else:
+            FAILURES.append("损坏分组被接受")
+        path.unlink()
+        try:
+            subject.load_character_extra_tags(str(directory))
+        except FileNotFoundError:
+            pass
+        else:
+            FAILURES.append("缺失专属标签文件被接受")
+
+
 def make_dump(root: Path) -> None:
     write_jsonlines(
         root / "subject.jsonlines",
@@ -233,7 +271,7 @@ def test_build_end_to_end() -> None:
         tags = root / "id_tags.js"
         tags.write_text('export const idToTags = {\n1:["紫瞳","腹黑"],\n}\n', encoding="utf-8")
 
-        subject.build(dump, out, str(tags))
+        subject.build(dump, out, str(tags), str(make_extra_tags(root)))
 
         import sqlite3
 
@@ -251,6 +289,9 @@ def test_build_end_to_end() -> None:
         check("空性别归一为 '?'", gender, "?")
 
         check("character_tags 行数", char.execute("SELECT count(*) FROM character_tags").fetchone()[0], 2)
+        check("专属标签落库且没有展示代码", char.execute(
+            "SELECT section, tag FROM character_extra_tags ORDER BY section_position, tag_position"
+        ).fetchall(), [("位置", "打野"), ("位置", "上路"), ("难度", "2")])
         # 注意：SQLite 的 TEXT 排序是 BINARY，中文按码点/UTF-8 字节序，不是拼音。
         check("character_tags 内容", char.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY tag").fetchall(), [("紫瞳",), ("腹黑",)])
         # position 必须保持 id_tags 的数组序：原版按 `slice(0, characterTagNum)` 取前若干个。
@@ -338,7 +379,7 @@ def test_build_guard() -> None:
         tags = root / "id_tags.js"
         tags.write_text('export const idToTags = {\n1:["紫瞳"],\n}\n', encoding="utf-8")
         try:
-            subject.build(dump, out, str(tags))
+            subject.build(dump, out, str(tags), str(make_extra_tags(root)))
         except SystemExit as error:
             check_true("name_cn 为 0 时构建失败", "name_cn" in str(error))
         else:
@@ -349,6 +390,7 @@ def test_build_guard() -> None:
 def main() -> int:
     test_parse_character_infobox()
     test_load_character_tags()
+    test_load_extra_tags()
     test_build_end_to_end()
     test_build_guard()
     print()

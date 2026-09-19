@@ -170,6 +170,44 @@ describe("WebSocketClient", () => {
     vi.unstubAllGlobals();
   });
 
+  it("主动离开会拒绝未完成请求、取消重连且允许随后重新连接", async () => {
+    vi.useFakeTimers();
+    try {
+      const MockWebSocket = createMockSocketClass();
+      vi.stubGlobal("WebSocket", MockWebSocket);
+      const client = new WebSocketClient("/api/ccb/ws");
+      client.connect();
+      const socket = MockWebSocket.instances[0];
+      const pending = client.send("ccb.game.next", {}, { timeout: 0 });
+      const rejection = expect(pending).rejects.toMatchObject({ code: "DISCONNECTED" });
+      client.disconnect();
+      await rejection;
+      expect(socket.onclose).toBeNull();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      client.connect();
+      expect(MockWebSocket.instances).toHaveLength(2);
+      MockWebSocket.instances[1].onclose!();
+      client.disconnect();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(MockWebSocket.instances).toHaveLength(2);
+    } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+  });
+
+  it("主动断开取消正在等待的首次连接", async () => {
+    const MockWebSocket = createMockSocketClass();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    try {
+      const client = new WebSocketClient("/api/ccb/ws");
+      client.connect();
+      MockWebSocket.instances[0].readyState = MockWebSocket.CONNECTING;
+      const pending = client.send("ccb.room.reconnect");
+      const rejection = expect(pending).rejects.toMatchObject({ code: "DISCONNECTED" });
+      client.disconnect();
+      await rejection;
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("timeout 为 0 时不设请求超时，越过默认超时后迟到的 ACK 依然能完成请求", async () => {
     vi.useFakeTimers();
     try {

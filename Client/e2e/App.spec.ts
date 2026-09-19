@@ -56,14 +56,15 @@ async function removeAllTestBots(page: Page) {
   await expect(bots).toHaveCount(0);
 }
 
-test("landing page exposes both playable games and keeps placeholders disabled", async ({ page }) => {
+test("landing page exposes three playable games and keeps placeholders disabled", async ({ page }) => {
   const assertPageQuality = installPageQualityGuards(page);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Who is Faker/ })).toBeVisible();
   await expect(page.getByText("Songuessr")).toBeVisible();
-  await expect(page.getByRole("button", { name: /多人模式/ })).toBeVisible();
+  await expect(page.getByTestId("game-entry-songuessr").getByRole("button", { name: /多人模式/ })).toBeVisible();
+  await expect(page.getByTestId("game-entry-animecharguessr").getByRole("button", { name: /多人模式/ })).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
   await page.getByRole("button", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
@@ -145,7 +146,7 @@ test("removed and unknown routes fall back to a live page", async ({ page }) => 
 
 test("Songuessr is reachable from the landing page", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /多人模式/ }).click();
+  await page.getByTestId("game-entry-songuessr").getByRole("button", { name: /多人模式/ }).click();
 
   await expect(page).toHaveURL(/\/songuessr$/);
   await expect(page.getByRole("heading", { name: "Songuessr" })).toBeVisible();
@@ -168,6 +169,31 @@ test("Songuessr lobby and Who is Faker share the unified application shell struc
 
   await page.goto("/songuessr");
   await verifyShellContract();
+});
+
+test("长玩家名不会挤出两款游戏玩家栏中的分数", async ({ page }, testInfo) => {
+  const name = "默认头像与长名称排列验收玩家";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const game of ["whoisfaker", "songuessr"]) {
+    await page.goto(`/${game}`);
+    await page.getByPlaceholder("用户名").fill(name);
+    await page.getByRole("button", { name: "创建房间", exact: true }).click();
+    await page.getByPlaceholder("输入房间名称").fill("玩家栏验收");
+    await page.getByRole("button", { name: "创建", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${game}/room/\\d{4}$`));
+    const score = page.getByLabel("0 分", { exact: true });
+    await expect(score).toBeInViewport();
+    const visible = await score.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const x = rect.x + rect.width / 2;
+      const y = rect.y + rect.height / 2;
+      return element.contains(document.elementFromPoint(x, y));
+    });
+    expect(visible).toBe(true);
+    await expect(page.getByTitle(name)).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${game}-default-avatar.png`) });
+  }
 });
 
 test("landing and lobby stay within a mobile viewport", async ({ page }) => {
@@ -314,6 +340,7 @@ test("empty description history keeps the player pane width after a direct votin
   await page.getByRole("button", { name: "进入房间" }).click();
 
   const addBot = page.getByRole("button", { name: "添加一个测试人机" });
+  await page.getByRole("button", { name: "等待中", exact: true }).click();
   await removeAllTestBots(page);
   for (let index = 0; index < 4; index += 1) await addBot.click();
 

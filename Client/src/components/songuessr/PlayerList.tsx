@@ -1,9 +1,10 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, UserX, WifiOff } from "lucide-react";
+import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, MoreHorizontal, UserX, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import {
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
@@ -172,57 +173,49 @@ function SongPlayerRow({
   const canTransfer = canManage && player.membership === "active" && player.online && !player.isBot;
   const status = resolveSongStatus(player, phase, hideSpectatorStatus);
 
+  const rowClass = cn(
+    PLAYER_ROW_BASE,
+    PLAYER_ROW_HEIGHT,
+    isMe && "bg-primary/10",
+    !isMe && "transition-colors hover:bg-accent/50",
+    !player.online && !player.isBot && "opacity-60",
+    canManage && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+  );
   const body = (
-    <div
-      className={cn(
-        PLAYER_ROW_BASE,
-        PLAYER_ROW_HEIGHT,
-        isMe && "bg-primary/10",
-        !isMe && "transition-colors hover:bg-accent/50",
-        !player.online && !player.isBot && "opacity-60",
-        canManage && "cursor-pointer",
-      )}
-    >
+    <>
       {isMe ? (
         <span className={PLAYER_ME_MARK} />
       ) : null}
-      {status ? <StatusPill {...status} /> : null}
-      <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
-      {player.isHost ? (
-        <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
-      ) : null}
-      {player.isBot ? (
-        <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
-      ) : !player.online ? (
-        <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-      ) : null}
-      <span className="shrink-0 font-sans text-xs font-normal tabular-nums text-muted-foreground">
+      <PlayerAvatar />
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 truncate font-medium" title={player.name}>{player.name}</span>
+          {player.isHost ? (
+            <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
+          ) : null}
+        </span>
+        <span className="flex min-h-4 items-center gap-1">
+          {status ? <StatusPill {...status} /> : null}
+          {player.isBot ? (
+            <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
+          ) : !player.online ? (
+            <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
+          ) : null}
+        </span>
+      </span>
+      <span aria-label={`${player.score} 分`} className="shrink-0 whitespace-nowrap font-sans text-xs font-normal tabular-nums text-muted-foreground">
         {player.score}<span className="ml-0.5 text-[10px]">分</span>
       </span>
-    </div>
+      {canManage ? <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
+    </>
   );
 
-  const content = (
-    <motion.div
-      variants={listItem}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      layout="position"
-      className="w-full min-w-0"
-    >
-      {body}
-    </motion.div>
-  );
-
-  if (!canManage) return content;
-
-  return (
+  const content = canManage ? (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <div role="button" tabIndex={0} aria-label={`${player.name} 操作`} className="w-full min-w-0">
-          {content}
-        </div>
+        <Button type="button" variant="ghost" aria-label={`${player.name} 操作`} className={cn("h-auto justify-start", rowClass)}>
+          {body}
+        </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="right" align="center" sideOffset={6} collisionPadding={12} asChild>
@@ -251,6 +244,19 @@ function SongPlayerRow({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  ) : <div className={rowClass}>{body}</div>;
+
+  return (
+    <motion.div
+      variants={listItem}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      layout="position"
+      className="w-full min-w-0"
+    >
+      {content}
+    </motion.div>
   );
 }
 

@@ -4,7 +4,7 @@ import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
-import { createApp } from "../src/transport/App";
+import { createTestApp as createApp } from './AppFixtures';
 import { createAck, createErrorPacket, createEvent } from "../src/transport/Packets";
 import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
 

@@ -133,13 +133,14 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 ## 本地数据集构建
 
 `Server/data/` 下两个只读 SQLite 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
-每周一 03:30 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**它们是运行时唯一的数据源，
-服务端不做在线爬取**。
+每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**角色关系、作品、标签与声优的
+运行时判定仅使用这些本地数据**；普通角色查询不得在缺失时回源补查。角色头像及其同次 API 返回的
+基础资料、用户明确导入的目录成员使用下述独立补全层，不能写入只读 LFS 产物。
 
 | 文件 | 内容 | 使用方 |
 |---|---|---|
 | `bangumi-song.sqlite` | `subjects`（动画）/ `music_subjects` / `subject_music_relations` | Songuessr |
-| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_vas` | CCB |
+| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_extra_tags` / `character_vas` | CCB |
 
 ### 角色中文名与性别只能从 infobox 解析（铁律）
 
@@ -262,8 +263,8 @@ ORDER BY r.subject_id
 `commonTags` / `subjectTagNum` / `characterTagNum`。**同一个角色在不同设置下标签池不同。**
 
 因此构建脚本只物化**输入**：`subjects.raw_tags`（全类型未过滤的 `{标签: 票数}`）+
-`subjects.meta_tags` + `character_appearances` + `character_tags` + `character_vas`，
-标签累积一律由运行时的 `domain/CCBRules.ts` 计算（规则见 `Agents/CCB.md §6.5`）。
+`subjects.meta_tags` + `character_subject_relations` + `character_tags` + `character_vas`，
+标签累积由运行时的 `infrastructure/CCBCharacterDerivation.ts` 计算，再交给领域反馈判定。
 **物化任何一份标签池都是错的**——那会把某一种房间设置写死。
 
 推论：`subjects` 必须包含**全部类型**（含音乐 3），否则「回退到全部类型」那条分支拿不到标签。
@@ -274,6 +275,39 @@ ORDER BY r.subject_id
 （实测 `牧濑*` 无命中，`牧濑红莉栖*` 命中）。角色名检索必须对 <3 字符的查询回退到
 `name / name_cn / aliases` 的 `LIKE` 兜底，否则「牧濑」「LL」这类常见简称搜不到。
 注意 `LIKE` 是不区分大小写的子串匹配，会命中 JSON 别名串里的英文片段，需要配合排序/截断。
+
+### CCB 运行时资料与补全边界
+
+- `CCBCharacterWorkerProvider` 是生产查询入口；`CCBCharacterRepository` 的同步 SQLite 查询仅在
+  独立 Worker 内执行。最多 64 个在途请求，普通查询最多返回 50 条，作品角色列表最多 100 条；
+  单角色关系、全主角采样读取 2001 条用于检查 2000 条硬上限，超限明确失败而不静默截断规则。
+- <3 字符使用参数化 `LIKE`，转义 `%`、`_` 与反斜线；较长文本使用带引号的 FTS5 短语。
+  别名与 API 补充后的名字参与检索。作品检索覆盖书籍、动画、游戏、三次元，不复用仅动画的歌曲查询。
+- 随机出题先按年份、大类、元标签及热度选作品，再按作品关系顺序选主角或前 N 个主配角。
+  年榜先选择年份；额外作品保留独立抽样入口；目录模式只读取已导入的成员快照。
+  无候选、缺角色、未导入目录分别返回业务错误，不把设置替换成另一套筛选范围。
+- `CCBExtraSubjects.json` 登记原版支持外部标签的作品，构建器与运行时共用此唯一列表。
+  `character_extra_tags` 仅保存原始作品、角色、分区及标签键的有序关系；不保存 HTML 或房间派生状态。
+  构建器默认从原版仓库读取各作品的 JSON，`--extra-tags` 可指定 URL 目录或离线目录；
+  文件缺失、分组损坏或全库空标签必须令构建失败。空键表示原版未录入属性，不作为线索导入。
+  可见 `appearances` 决定作品数量、评分和年份；`comparisonAppearances` 额外保留登记游戏的主配角
+  关系，仅用于共同作品判定。不得把额外关系塞进可见数组，导致跨类型作品计数与评分变化。
+  外部标签按判定数组中首个登记作品取值，并沿用同分区、同标签键命中规则；无数据时为空，
+  不跳到第二个作品。它们不参与普通标签 BP；仅下发猜测标签及命中结果，不泄漏答案完整标签。
+- 图片复用 `enrichment(entity='character', id, payload, fetched_at)` 格式，保存原始 URL，读取时镜像重写。
+  `CCBEnrichment` 使用并发 3 的有界队列与相同角色请求合并；429 冷却 5 秒，只有有效响应确实
+  无图片或角色 404 才进入 5 分钟内存负缓存。网络、限流、服务端失败与无效响应必须返回明确
+  业务错误且可重试；不得用图片降级捕获本地 JSON 损坏或 SQLite 持久化失败。队列闭包也检查
+  冷却，避免已入队请求在 429 后继续突发。
+- 同次角色头像响应的有效字段存入 `ccb_character_enrichment(id, schema_version, payload, fetched_at)`：
+  只接受名字、中文名、别名、简介、有效性别及收藏数与评论数之和，不以缺失或空字段覆盖已有资料。
+  这些字段只在后续读取时覆盖基础库；已返回的角色对象不被异步修改。每局角色资料仍由游戏服务
+  冻结，不能因头像加载完成改变本局答案、历史猜测或分数。API 不替代本地作品、角色关系、标签或声优。
+- 目录仅在用户执行导入时读取 `/v0/indices/{id}/subjects`，每页最多 100 条，总数最多 1000；
+  收齐并校验全部分页后原子保存 `ccb_directories`。缺失或受限作品返回 `missingSubjectIds`，
+  不为它们联网补抓；分页失败保留之前完整导入结果，禁止保存部分目录。抽题路径绝不请求目录 API。
+- 关闭前排空资料请求及持久化任务，再关闭 SQLite；测试使用隔离临时库与注入的网络响应和时钟，
+  普通测试及真实本地库小查询不得访问上游。
 
 ### 体积
 

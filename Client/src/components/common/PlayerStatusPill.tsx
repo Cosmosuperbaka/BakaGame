@@ -3,7 +3,7 @@ import { cn } from "@/lib/Utils";
 export type PlayerStatusTone = "default" | "emerald" | "violet" | "red" | "amber";
 
 /** 玩家行统一行高，保证各面板对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-10";
+export const PLAYER_ROW_HEIGHT = "min-h-14";
 
 /**
  * 玩家列宽度（16rem）。同时用于面板、网格首列与分界线定位。
@@ -16,11 +16,11 @@ export const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
 /** 玩家栏统一使用的浅底状态徽章基底类名；各游戏共用 */
 export const PLAYER_BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center rounded bg-muted px-1.5 py-0.5 font-sans text-[11px] font-normal leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 font-sans text-[11px] font-normal leading-none tracking-normal";
 
 /** 玩家栏共用的行布局基底；游戏房间在此基础上追加自身状态 */
 export const PLAYER_ROW_BASE =
-  "relative flex w-full items-center gap-1 rounded-md py-1 pl-2.5 pr-2 text-left text-sm";
+  "relative flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pl-2.5 pr-2 text-left text-sm";
 
 /** 本人标识指示条 */
 export const PLAYER_ME_MARK =
