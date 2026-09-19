@@ -148,3 +148,25 @@ test("减弱动效直接落位且纯音乐后能载入歌词", async ({ page }) 
   await expectOverviewFits(page);
   expect(await page.locator(".baka-lyric-player").evaluate((element) => element.getAnimations().length)).toBe(0);
 });
+
+test("和声活动切换不改变外壳高度，也不接管页面滚动", async ({ page }) => {
+  const source = lines.flatMap((line) => [line, {
+    ...line, time: line.time + 200, endTime: line.endTime - 200, text: "伴唱", isBG: true,
+  }]);
+  await render(page, { lines: source, audioPlaybackState: "playing" });
+  const result = await page.evaluate(async () => {
+    const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
+    const heights = [host.clientHeight];
+    for (const time of [35500, 39500, 55500, 62000]) {
+      window.lyricsFixture.time(time, true);
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      heights.push(host.clientHeight);
+    }
+    const background = [...host.querySelectorAll<HTMLElement>("[class*=bgWrapper]")];
+    return { heights, pointerEvents: background.map((element) => getComputedStyle(element).pointerEvents) };
+  });
+  expect(new Set(result.heights).size).toBe(1);
+  expect(result.pointerEvents.length).toBeGreaterThan(0);
+  expect(result.pointerEvents.every((value) => value === "none")).toBe(true);
+});

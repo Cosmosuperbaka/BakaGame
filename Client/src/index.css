@@ -323,6 +323,7 @@ img {
 }
 
 .baka-lyric-player * {
+  pointer-events: none !important;
   mix-blend-mode: normal !important;
   text-shadow: none !important;
 }
