@@ -117,6 +117,58 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
   需在 `Client/middleware.js` 里补路径 rewrite——这是本方案唯一依赖平台行为的一环。
 
+## 边缘缓存策略 (edgeone.json)
+
+`Client/edgeone.json` 是前端响应头与边缘缓存的**唯一真相源**。它是纯数据文件：写错了没有
+类型检查、没有构建报错，只会在线上表现为「发版后老用户拿到旧页面」或「静态资源反复回源」。
+`Client/src/lib/EdgeCacheConfig.test.ts` 把下面的约定固化成了断言，改错当场失败。
+
+### 分档原则：有没有内容哈希
+
+**缓存时长的唯一判据是「这个文件名会不会随内容变化」，不是「它是什么类型的文件」。**
+Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文件名就变，缓存一年也安全；
+而 `public/` 下的图片经 `prepare-public-webp.mjs` 转码后**保留原名**，只有 5 个：
+`CCB.webp` `Faker.webp` `favicon.webp` `logo.webp` `SongGuessr.webp`。给后者发
+`immutable` 等于把换图能力锁死——文件名不变，浏览器与边缘都不会再回源。
+
+| 路径 | Cache-Control | 边缘 TTL | 理由 |
+|---|---|---|---|
+| `/api/*` | `no-store` | 0 | 实时接口，缓存即错 |
+| `/assets/*.{js,css,woff2,woff,ttf}` | `max-age=31536000, immutable` | 1 年 | 内容哈希，永不复用旧名 |
+| `/stickers/*` | `max-age=31536000, immutable` | 1 年 | 文件名即内容摘要（见 `stickerAssetUrl`） |
+| `/emojis/*` | `max-age=86400` | 1 天 | 保留原名的兼容路径，无哈希 |
+| `/assets/*.{webp,png,jpg,jpeg,gif,svg}` | `max-age=604800` | 7 天 | 含 5 个无哈希固定名图片，**不得 immutable** |
+| `/sitemap.xml`、`/robots.txt` | `max-age=3600` | 1 小时 | 内容稳定但需可更新 |
+| 其余（含全部 HTML 外壳） | `max-age=0, must-revalidate` | — | SPA 外壳不带哈希，长缓存会卡住发版 |
+
+### 规则顺序：具体在前，兜底垫底
+
+平台的 `headers` 与 `caches` **按书写顺序取首个命中，不按精确度排序**。
+`/*` 必须排在**最后**：它一旦前置就会吞掉后面所有具体规则，而 JSON 依然合法、平台也照常
+接受，故障是静默的（改动时实测踩过——`/api/*` 的 `no-store` 被 `/*` 完全屏蔽）。
+测试里用「探测路径必须拿到自己那档策略」锁死了这一点。
+
+### headers 与 caches 必须同档
+
+`Cache-Control` 的 `max-age` 与 `caches[].cacheTtl` 描述同一个保鲜期：前者约束浏览器，
+后者约束边缘。只改一处会让两侧对同一资源的判断分裂，排查时极难定位，必须成对修改
+（测试逐条比对两者相等）。
+
+### 与中间件的关系
+
+同源化反代（`/api/*` → 后端域名）在 Makers **控制台**配置，不在本仓库的 `middleware.js`
+里（该文件曾被 Revert，当前仓库不存在）。`edgeone.json` 的 `/api/*` 规则只负责声明
+「API 不得被缓存」，不参与路由。
+
+### 上线验收
+
+```bash
+curl -sI https://game.baka.website/assets/index-<hash>.js   # 期望 max-age=31536000, immutable
+curl -sI https://game.baka.website/assets/logo.webp         # 期望 max-age=604800（不得 immutable）
+curl -sI https://game.baka.website/                          # 期望 max-age=0, must-revalidate
+curl -sI https://game.baka.website/api/game/status           # 期望 no-store，且带 x-trace-id
+```
+
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
