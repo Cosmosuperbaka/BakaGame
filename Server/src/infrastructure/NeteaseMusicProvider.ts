@@ -1,5 +1,7 @@
 import { AppError } from "../domain/Errors";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
@@ -111,6 +113,18 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
+// 对象键序无关的稳定序列化：用于把 cookie 对象映射成稳定的 IP scope，
+// 避免 JSON.stringify 受插入顺序影响导致同一登录态算出不同 IP。
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+  return `{${entries.join(",")}}`;
+};
+
 const readString = (value: unknown): string | undefined => {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -120,14 +134,73 @@ const readString = (value: unknown): string | undefined => {
 const readNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
-const randomChineseIp = (random?: { nextFloat?: () => number }) => {
+type ChinaIpRange = { start: number; end: number; count: number };
+
+// 中国 IP 段真相源复用 Enhanced API 包内 `data/china_ip_ranges.txt`（4147 条 CIDR）。
+// 早前自写的 `116.25-94.x.x` 随机拼接并不保证落在真实 CN 网段，网易云按出口 IP
+// 绑定登录态时会因此判定为异地登录，是「设备还在但凭证失效」的根因之一。
+// 这里刻意绕开包内 `util/index.js`，因为它会在模块加载时连带引入其 `logger`，
+// 每次生成都会向 stdout 打印带 ANSI 色的 [INFO] 行，污染本项目的结构化日志。
+const CHINA_IP_CIDR_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
+
+const chinaIpRangeFile = (): string =>
+  resolve(import.meta.dir, "../../node_modules/@neteasecloudmusicapienhanced/api/data/china_ip_ranges.txt");
+
+export const parseChinaIpRanges = (content: string): ChinaIpRange[] => {
+  const ranges: ChinaIpRange[] = [];
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const matched = CHINA_IP_CIDR_PATTERN.exec(line);
+    if (!matched) continue;
+    const octets = matched.slice(1, 5).map(Number);
+    if (octets.some((octet) => octet > 255)) continue;
+    const prefix = Number(matched[5]);
+    if (prefix > 32) continue;
+    const base = octets.reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    const start = (base & mask) >>> 0;
+    const end = (start | (~mask >>> 0)) >>> 0;
+    ranges.push({ start, end, count: end - start + 1 });
+  }
+  return ranges;
+};
+
+const intToIp = (value: number): string =>
+  [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff].join(".");
+
+export const readChinaIpRanges = (): ChinaIpRange[] => {
+  try {
+    const path = chinaIpRangeFile();
+    return existsSync(path) ? parseChinaIpRanges(readFileSync(path, "utf8")) : [];
+  } catch {
+    return [];
+  }
+};
+
+// 兜底：仅在 CN IP 段数据缺失/损坏时生效，保证不至于完全无法出网。
+const FALLBACK_CHINA_IP_RANGES: ChinaIpRange[] = [
+  { start: 0x74000000, end: 0x74ffffff, count: 0x1000000 }, // 116.0.0.0/8
+];
+
+// 生成落在真实 CN 网段内的随机 IP；random 可注入以便确定性测试。
+export const randomChineseIp = (
+  ranges: readonly ChinaIpRange[],
+  random?: { nextFloat?: () => number },
+): string => {
   const rand = random?.nextFloat ?? Math.random;
-  return [
-    116,
-    25 + Math.floor(rand() * 70),
-    Math.floor(rand() * 256),
-    Math.floor(rand() * 256),
-  ].join(".");
+  const usable = ranges.length > 0 ? ranges : FALLBACK_CHINA_IP_RANGES;
+  const total = usable.reduce((sum, range) => sum + range.count, 0);
+  let offset = Math.floor(rand() * total);
+  let chosen = usable[usable.length - 1];
+  for (const range of usable) {
+    if (offset < range.count) {
+      chosen = range;
+      break;
+    }
+    offset -= range.count;
+  }
+  return intToIp((chosen.start + Math.floor(rand() * chosen.count)) >>> 0);
 };
 
 const SEARCH_CACHE_TTL_MS = 6 * 60 * 60_000;
@@ -1496,6 +1569,10 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly refreshers = new Map<string, { ttlMs: number; loader: () => Promise<unknown> }>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
+  private readonly chinaIpRanges = readChinaIpRanges();
+  // 扫码登录是一次多条请求的会话：二维码创建、轮询、设备上报、状态校验必须共用同一个出口 IP。
+  // 网易云把登录凭证绑定在登录时的客户端 IP 上，会话中途换 IP 会直接导致刚拿到的 MUSIC_U 失效。
+  private qrLoginScope?: string;
   private readonly queue: PQueue;
   private readonly pendingRejections = new Map<number, (error: unknown) => void>();
   private requestIdCounter = 0;
@@ -1867,6 +1944,9 @@ export class NeteaseMusicProvider implements MusicProvider {
   async createQrLogin(): Promise<MusicQrLogin> {
     const loginCookie = this.loginCookie();
     const loginUa = this.loginUserAgent();
+    // 每次扫码开启一个新的登录会话，并在会话内固定同一个 CN 出口 IP。
+    // 沿用上一轮会话的旧 IP 会让「同设备同 IP」的设备指纹失去意义。
+    this.qrLoginScope = `qr-login:${randomUUID()}`;
     const keyResponse = await this.call(
       ["login_qr_key"],
       { ua: loginUa },
@@ -1920,7 +2000,20 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录 Cookie");
     await this.uploadDeviceInfo(cookie, this.deviceName);
     const session = await this.getLoginStatus(cookie);
+    // 会话结束：把本会话使用的 IP 永久绑定到这份登录凭证上，
+    // 使该凭证后续所有请求（歌曲、歌单、状态校验）继续复用登录时的同一个出口 IP。
+    this.bindSessionIp(cookie);
+    this.qrLoginScope = undefined;
     return { status: "authorized", message, session };
+  }
+
+  // 将当前登录会话的 IP 固化到登录后凭证的 scope 上，随后同一凭证稳定复用该 IP。
+  private bindSessionIp(cookieValue: string) {
+    const scope = this.qrLoginScope;
+    if (!scope) return;
+    const ip = this.ipByScope.get(scope);
+    const cookie = cookieValue.trim();
+    if (ip && cookie) this.ipByScope.set(this.cookieScope(cookie), ip);
   }
 
   async uploadDeviceInfo(
@@ -1935,19 +2028,28 @@ export class NeteaseMusicProvider implements MusicProvider {
         ["deviceinfo_center_upload"],
         { deviceName: name },
         `${cookie}; os=pc`,
+        this.randomCNIP,
+        false,
       );
       if (response) return true;
       if (this.options.loadApi) {
         return false;
       }
-      const requestModule = await import("@neteasecloudmusicapienhanced/api/util/request");
+      const requestModule = await import("@neteasecloudmusicapienhanced/api/util/request.js");
       const request = (requestModule.default ?? requestModule) as (...args: unknown[]) => Promise<unknown>;
-      const createOptionModule = await import("@neteasecloudmusicapienhanced/api/util/option");
+      const createOptionModule = await import("@neteasecloudmusicapienhanced/api/util/option.js");
       const createOption = (createOptionModule.default ?? createOptionModule) as (...args: unknown[]) => unknown;
       await request(
         "/api/deviceinfo/center/upload",
         { deviceName: name },
-        createOption({ cookie: `${cookie}; os=pc` }, "eapi"),
+        createOption(
+          {
+            cookie: `${cookie}; os=pc`,
+            ...(this.randomCNIP ? { realIP: this.ipForCookie(cookie) } : {}),
+            randomCNIP: this.randomCNIP,
+          },
+          "eapi",
+        ),
       );
       return true;
     } catch (error) {
@@ -1959,7 +2061,9 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
-    const response = await this.call(["login_status"], {}, cookie, false, true, false);
+    // 该校验请求必须携带与登录同源的 IP：历史实现显式关闭 randomCNIP 导致校验请求无 realIP，
+    // 网易云按出口 IP 比对后判定为异地调用，正是「设备还在但凭证反复失效」的直接触发点。
+    const response = await this.call(["login_status"], {}, cookie, this.randomCNIP, true, false);
     const body = responseBody(response);
     const data = asRecord(body.data);
     const profile = asRecord(body.profile ?? data.profile);
@@ -2272,9 +2376,11 @@ export class NeteaseMusicProvider implements MusicProvider {
     names: string[],
     params: Record<string, unknown>,
     cookie?: string | Record<string, unknown>,
+    randomCNIP = this.randomCNIP,
+    includeAnonymousCookie = true,
   ): Promise<ApiResponse | undefined> {
     try {
-      return await this.call(names, params, cookie);
+      return await this.call(names, params, cookie, randomCNIP, false, includeAnonymousCookie);
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
       if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") throw error;
@@ -2523,13 +2629,30 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private ipForCookie(cookie?: string | Record<string, unknown>) {
-    const cookieStr = typeof cookie === "string" ? cookie : JSON.stringify(cookie ?? "");
-    const scope = cookieStr?.trim()
-      ? createHash("sha256").update(cookieStr.trim()).digest("hex").slice(0, 16)
+    // 登录会话优先：会话建立后 cookie 从「设备字典」换成「MUSIC_U=...」，
+    // 若继续按 cookie 内容做 scope，登录前后会落到两个不同 IP，登录态一建立就漂移。
+    if (this.qrLoginScope) return this.ensureScopeIp(this.qrLoginScope);
+    const scope = this.cookieScope(cookie);
+    return this.ensureScopeIp(scope);
+  }
+
+  // 同一份 cookie 原文必须映射到同一个 IP：Enhanced API 会把 cookie 对象补上随机的
+  // _ntes_nuid / NMTID，因此这里对字符串做哈希、对对象做稳定序列化，避免逐请求漂移。
+  private cookieScope(cookie?: string | Record<string, unknown>) {
+    const cookieStr = typeof cookie === "string"
+      ? cookie.trim()
+      : typeof cookie === "object" && cookie !== null
+        ? stableStringify(cookie)
+        : "";
+    return cookieStr
+      ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
       : "anonymous";
+  }
+
+  private ensureScopeIp(scope: string) {
     const existing = this.ipByScope.get(scope);
     if (existing) return existing;
-    const ip = randomChineseIp(this.random);
+    const ip = randomChineseIp(this.chinaIpRanges, this.random);
     this.ipByScope.set(scope, ip);
     if (this.ipByScope.size > 128) {
       const oldest = this.ipByScope.keys().next().value;

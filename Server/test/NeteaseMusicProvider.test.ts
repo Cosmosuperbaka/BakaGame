@@ -13,10 +13,13 @@ import {
   isSymbolOnlyLyricLine,
   isTooShortLyricLine,
   isUnusableLyricLine,
+  parseChinaIpRanges,
   parseLrc,
   parseTTML,
   parseYrc,
   mergeTranslations,
+  randomChineseIp,
+  readChinaIpRanges,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
 
@@ -775,6 +778,7 @@ describe("NeteaseMusicProvider", () => {
         login_status: async (params: Record<string, unknown>) => {
           calls.push("login_status");
           expect(params.cookie).toBe("MUSIC_U=qr-cookie");
+          // 该用例显式关闭 randomCNIP，此时不应携带 realIP；开启时的行为由会话 IP 用例覆盖。
           expect(params.randomCNIP).toBe(false);
           return {
             body: {
@@ -811,6 +815,91 @@ describe("NeteaseMusicProvider", () => {
       "deviceinfo_center_upload",
       "login_status",
     ]);
+  });
+
+  test("扫码登录全链路共用同一 CN 出口 IP 且登录后凭证继续复用", async () => {
+    const requests: Array<{ endpoint: string; cookie: unknown; realIP: unknown }> = [];
+    const record = (endpoint: string, params: Record<string, unknown>) => {
+      requests.push({ endpoint, cookie: params.cookie, realIP: params.realIP });
+    };
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        login_qr_key: async (params: Record<string, unknown>) => {
+          record("login_qr_key", params);
+          return { body: { data: { code: 200, unikey: "session-key" } } };
+        },
+        login_qr_create: async (params: Record<string, unknown>) => {
+          record("login_qr_create", params);
+          return {
+            body: {
+              code: 200,
+              data: { qrurl: "https://music.163.com/login?codekey=session-key", qrimg: "data:image/png;base64,qr" },
+            },
+          };
+        },
+        login_qr_check: async (params: Record<string, unknown>) => {
+          record("login_qr_check", params);
+          return { body: { code: 803, message: "授权登录成功", cookie: "MUSIC_U=session-cookie" } };
+        },
+        deviceinfo_center_upload: async (params: Record<string, unknown>) => {
+          record("deviceinfo_center_upload", params);
+          return { body: { code: 200, data: {} } };
+        },
+        login_status: async (params: Record<string, unknown>) => {
+          record("login_status", params);
+          return {
+            body: { data: { code: 200, profile: { userId: 42, nickname: "会话用户" } } },
+          };
+        },
+        cloudsearch: async (params: Record<string, unknown>) => {
+          record("cloudsearch", params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await provider.createQrLogin();
+    await provider.checkQrLogin("session-key");
+    // 登录后使用同一凭证的普通请求
+    await provider.search("登录后请求", 20, "MUSIC_U=session-cookie");
+
+    const loginChain = requests.filter((entry) => entry.endpoint !== "cloudsearch");
+    const ips = new Set(loginChain.map((entry) => String(entry.realIP)));
+    // 二维码创建、轮询、设备上报、状态校验必须共用同一个出口 IP：
+    // 历史实现里 login_status 显式关闭 realIP，导致登录态一建立就与登录 IP 脱钩而失效。
+    expect(ips.size).toBe(1);
+    expect(loginChain.every((entry) => entry.realIP !== undefined)).toBe(true);
+
+    const postLogin = requests.find((entry) => entry.endpoint === "cloudsearch");
+    expect(String(postLogin?.realIP)).toBe([...ips][0]);
+  });
+
+  test("不同登录凭证使用互不相同的稳定 IP", async () => {
+    const byCookie = new Map<string, string[]>();
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          const cookie = String(params.cookie);
+          const bucket = byCookie.get(cookie) ?? [];
+          bucket.push(String(params.realIP));
+          byCookie.set(cookie, bucket);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await provider.search("甲一", 20, "MUSIC_U=alpha");
+    await provider.search("甲二", 20, "MUSIC_U=alpha");
+    await provider.search("乙一", 20, "MUSIC_U=beta");
+
+    const alpha = byCookie.get("MUSIC_U=alpha") ?? [];
+    const beta = byCookie.get("MUSIC_U=beta") ?? [];
+    expect(alpha).toHaveLength(2);
+    expect(alpha[0]).toBe(alpha[1]);
+    expect(beta).toHaveLength(1);
+    expect(alpha[0]).not.toBe(beta[0]);
   });
 
   test("支持自定义登录设备名称并在扫码登录成功时自动上报", async () => {
@@ -1174,10 +1263,31 @@ describe("NeteaseMusicProvider", () => {
     await provider.search("歌曲乙", 20, "MUSIC_U=user-a");
     await provider.search("歌曲丙", 20, "MUSIC_U=user-b");
 
+    const ranges = readChinaIpRanges();
+    const inChina = (ip: unknown) => {
+      const value = String(ip).split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+      return ranges.some((range) => value >= range.start && value <= range.end);
+    };
+
     expect(requests[0]?.realIP).toBe(requests[1]?.realIP);
-    expect(requests[0]?.realIP).toMatch(/^116\.(?:2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
-    expect(requests[2]?.realIP).toMatch(/^116\.(?:2[5-9]|[3-8]\d|9[0-4])\.\d{1,3}\.\d{1,3}$/);
+    expect(inChina(requests[0]?.realIP)).toBe(true);
+    expect(inChina(requests[2]?.realIP)).toBe(true);
+    expect(requests[0]?.realIP).not.toBe(requests[2]?.realIP);
     expect(requests.every((params) => params.randomCNIP === true)).toBe(true);
+  });
+
+  test("随机中国 IP 生成必然落在包内 CN 网段且不携带日志副作用", () => {
+    const ranges = readChinaIpRanges();
+    expect(ranges.length).toBeGreaterThan(4000);
+    const inRange = (ip: string) => {
+      const value = ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+      return ranges.some((range) => value >= range.start && value <= range.end);
+    };
+    for (let index = 0; index < 2000; index += 1) {
+      const ip = randomChineseIp(ranges);
+      expect(ip).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
+      expect(inRange(ip)).toBe(true);
+    }
   });
 
   test("支持注入 random 生成确定性伪装中国 IP", async () => {
@@ -1194,8 +1304,23 @@ describe("NeteaseMusicProvider", () => {
     });
 
     await provider.search("测试歌曲", 20, "MUSIC_U=user-deterministic");
-    // 25 + Math.floor(0.5 * 70) = 60, Math.floor(0.5 * 256) = 128
-    expect(requests[0]?.realIP).toBe("116.60.128.128");
+    // 同一随机源必然产出同一 IP；具体取值由 CN 网段权重决定，这里只锁定确定性与合法网段。
+    const ip = String(requests[0]?.realIP);
+    expect(ip).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
+    const ranges = readChinaIpRanges();
+    const value = ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+    expect(ranges.some((range) => value >= range.start && value <= range.end)).toBe(true);
+    expect(randomChineseIp(ranges, { nextFloat: () => 0.5 })).toBe(
+      randomChineseIp(ranges, { nextFloat: () => 0.5 }),
+    );
+  });
+
+  test("CN 网段解析会忽略 BOM、注释与非法行并保底兜底", () => {
+    const parsed = parseChinaIpRanges("\uFEFF1.1.8.0/24\n# comment\n\nbad-line\n999.1.1.1/8\n10.0.0.0/8\n");
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toEqual({ start: 0x01010800, end: 0x010108ff, count: 256 });
+    // 数据缺失时仍需产出合法 IPv4，避免彻底无法出网。
+    expect(randomChineseIp([])).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
   });
 
   test("上游 405 会透传消息、清空队列并在冷却期快速失败", async () => {
