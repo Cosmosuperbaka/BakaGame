@@ -2749,6 +2749,15 @@ describe("SonGuessrService", () => {
     const initialSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(initialSnapshot.phase).toBe("playing");
 
+    // 硬截止锚定在「首名玩家真正具备答题条件」的时刻：没人就绪的房间不该凭空倒计时。
+    // 注意必须由猜歌玩家（guest）上报就绪 —— 出题人（host）本就不能参与猜歌。
+    await execute(service, guest, {
+      id: "guest-stall-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
     // 时间前移 85 秒（超过 80 秒的回合全局硬超时 hardDeadlineAt）
     mockTime += 85_000;
     await service.runHousekeeping();
@@ -3644,9 +3653,19 @@ describe("上线前 P0 修复回归", () => {
     });
     const host = connection(service, "host-audiowait");
     const guest = connection(service, "guest-audiowait");
+    // 第三名玩家用于锚定本回合的计时窗口，guest 则始终不上报音频就绪。
+    const idle = connection(service, "idle-audiowait");
     await createRoom(service, host);
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "等待音频玩家");
+    // 必须在回合安装前入座并准备，否则它既拿不到本回合的玩家状态，也会卡住开局检查。
+    await joinRoom(service, idle, "已就绪玩家");
+    await execute(service, idle, {
+      id: "idle-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
     await startRound(service, host, guest, hostState.playerId);
 
     const initialSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
@@ -3657,6 +3676,14 @@ describe("上线前 P0 修复回归", () => {
     expect(guestInitialPrivate.canGiveUp).toBe(true);
     expect(guestInitialPrivate.remainingGuesses).toBe(3);
 
+    // 宽限期同样锚定在「首名玩家真正具备答题条件」的时刻：无人就绪就不该开始倒计时。
+    await execute(service, idle, {
+      id: "idle-audiowait-ready",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
     // 时间前移 16 秒（超过 15 秒的 audioReadyDeadlineAt）
     mockTime += 16_000;
     await service.runHousekeeping();
@@ -3666,6 +3693,10 @@ describe("上线前 P0 修复回归", () => {
     expect(guestUpdatedPrivate.canGuess).toBe(true);
     expect(guestUpdatedPrivate.remainingGuesses).toBe(3);
     expect(guestUpdatedPrivate.visibleAttempts).toHaveLength(0);
+    // 补偿出来的倒计时必须从「补偿那一刻」起算（mockTime = 锚点 + 16s），
+    // 绝不能沿用已经耗尽的宽限期锚点 —— 那会立刻得到一个已过期的截止时刻，
+    // 下一轮巡检就把补偿出来的答题时间又当成超时收走。
+    // 此处 60s < 硬截止剩余（锚点 + 80s），故不受硬截止封顶。
     expect(guestUpdatedPrivate.guessDeadlineAt).toBe(mockTime + 60_000);
 
     const currentSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
@@ -3673,6 +3704,80 @@ describe("上线前 P0 修复回归", () => {
     const guestPlayerView = currentSnapshot.players.find((p) => p.name === "等待音频玩家");
     expect(guestPlayerView?.roundStatus).toBe("guessing");
     expect(guestPlayerView?.guessesUsed).toBe(0);
+  });
+
+  test("迟到就绪的玩家从就绪那一刻起算完整倒计时，回合不会在倒计时尚余数十秒时被强制结算", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-late-ready");
+    const guest = connection(service, "guest-late-ready");
+    const anchor = connection(service, "anchor-late-ready");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "迟到玩家");
+    await joinRoom(service, anchor, "先就绪玩家");
+    await execute(service, anchor, {
+      id: "anchor-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    // 每次猜测只有一次机会、且单次答题时长放宽到 120s：
+    // 放大倒计时窗口，好让「锚点是否前移」这个差异清晰可辨（硬截止 = 锚点 + 140s）。
+    await execute(service, host, {
+      id: "late-ready-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { maxGuessesPerRound: 1, guessDurationSeconds: 120 },
+    });
+    await startRound(service, host, guest, hostState.playerId);
+
+    // 回合安装后 30s，首个玩家才真正就绪 —— 计时窗口必须从这一刻锚定，
+    // 而不是从 installRound 那一刻（100_000）起算。硬截止 = 130_000 + 140s = 270_000。
+    mockTime += 30_000;
+    await execute(service, anchor, {
+      id: "anchor-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
+    // 锚定玩家随即离场：本回合只剩「迟到玩家」一个有效猜题人，结算条件不再被它拖住。
+    service.unregisterConnection(anchor.record.id);
+
+    // 自动选曲 / 音频加载再耗时 40s 后才真正就绪
+    mockTime += 40_000;
+    await execute(service, guest, {
+      id: "guest-late-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    const latePrivate = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(latePrivate.canGuess).toBe(true);
+    // 倒计时必须从「当前时刻」起算（170_000 + 120s = 290_000），并被硬截止 270_000 封顶。
+    // 旧实现沿用回合计时窗口锚点（130_000 + 120s = 250_000），玩家会凭空少掉 20 秒可答时间。
+    expect(latePrivate.guessDeadlineAt).toBe(270_000);
+
+    // 界面上倒计时还剩 30 秒（240_000）时推进一轮巡检：回合绝不能被结算。
+    // 这正是线上观测到的「第二次时间还剩三十秒就直接结算了」。
+    mockTime = 240_000;
+    await service.runHousekeeping();
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(
+      lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").remainingGuesses,
+    ).toBe(1);
+
+    // 可见倒计时归零后，超时才如实生效
+    mockTime = 271_000;
+    await service.runHousekeeping();
+    const settled = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(settled.phase).toBe("roundResult");
+    expect(settled.roundSummary?.attempts[0]).toMatchObject({ result: "timeout" });
   });
 
   test("活跃玩家切轮断线重连后通过 ensureRoundPlayerState 自动恢复回合状态且可正常答题", async () => {

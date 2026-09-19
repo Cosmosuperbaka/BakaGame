@@ -131,6 +131,11 @@ interface SonGuessrRoundRecord {
   players: Record<string, SonGuessrRoundPlayerState>;
   settings: SonGuessrSettings;
   audioReadyDeadlineAt?: number;
+  /**
+   * 回合硬截止。全程锚定「首名玩家真正具备答题条件的时刻」，
+   * 因此绝不能在建回合时按「建回合时刻 + N 秒」预设：自动模式的选曲会跨多次上游请求，
+   * 本字段若在玩家能答题之前就耗尽，房间会在倒计时还剩几十秒时直接结算。
+   */
   hardDeadlineAt?: number;
 }
 
@@ -396,6 +401,11 @@ const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
 
 /** 房间因空闲被关闭前的预警提前量。 */
 const ROOM_EXPIRING_WARNING_MS = 60_000;
+
+/** 音频就绪宽限期：超时仅强制置为可答题并启动倒计时，绝不扣减猜测配额。 */
+const AUDIO_READY_GRACE_MS = 15_000;
+/** 回合硬截止相对单次答题时长的裕量，用于兜住卡死的上游请求。 */
+const ROUND_HARD_TIMEOUT_MARGIN_S = 20;
 /**
  * 单次番剧歌曲解析允许发起的上游搜索次数（一次搜索只对应一个上游请求，成本最低）。
  */
@@ -781,9 +791,10 @@ export class SonGuessrService {
           // 音频就绪宽限期结束仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额
           if (isAudioReadyTimeout && !state.audioReady) {
             state.audioReady = true;
-            if (round.settings.showGuessTimer && state.deadlineAt === undefined) {
-              state.deadlineAt = currentTime + round.settings.guessDurationSeconds * 1_000;
-            }
+            // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
+            // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
+            // 下一轮巡检就把补偿出来的答题时间又当成超时收走。
+            this.restartGuessDeadline(room, state);
             changed = true;
           }
 
@@ -1813,8 +1824,8 @@ export class SonGuessrService {
       startScores: Object.fromEntries(Object.values(room.players).map((candidate) => [candidate.id, candidate.score])),
       players: participantStates,
       settings: roundSettings,
-      audioReadyDeadlineAt: this.now() + 15_000,
-      hardDeadlineAt: this.now() + (roundSettings.guessDurationSeconds + 20) * 1_000,
+      audioReadyDeadlineAt: undefined,
+      hardDeadlineAt: undefined,
     };
     room.pendingSubmitterPlayerId = undefined;
     room.roundSummary = undefined;
@@ -1944,6 +1955,18 @@ export class SonGuessrService {
     return enriched.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
   }
 
+  /**
+   * 首名玩家真正具备答题条件时，才锚定本回合的「音频就绪宽限期」与「硬截止」。
+   * 幂等：同一回合只锚定一次，后续玩家就绪不会顺延其他玩家的倒计时。
+   */
+  private armRoundDeadlines(room: SonGuessrRoomRecord) {
+    const round = room.currentRound;
+    if (!round || round.hardDeadlineAt !== undefined) return;
+    const now = this.now();
+    round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
+    round.hardDeadlineAt = now + (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) * 1_000;
+  }
+
   private audioReady(connection: ConnectionRecord, roundNumber: number) {
     const { room, player } = this.requireRoomPlayer(connection);
     // 页面切后台/重连时可能补发旧回合的 ready；状态过渡期间应幂等忽略，
@@ -1967,10 +1990,13 @@ export class SonGuessrService {
       !state.gaveUp &&
       state.guessesUsed < round.settings.maxGuessesPerRound
     ) {
+      // 首个就绪的玩家定义本回合的倒计时起点；此时才锚定硬截止。
+      this.armRoundDeadlines(room);
       state.audioReady = true;
-      state.deadlineAt = round.settings.showGuessTimer
-        ? this.now() + round.settings.guessDurationSeconds * 1_000
-        : undefined;
+      // 必须用「当前时刻」起算，不能复用本回合统一的 audioReadyDeadlineAt：
+      // 自动选曲会占用数秒到数十秒，用旧锚点会得到一个可能已过期的截止时刻，
+      // 巡检随即把它当成答题超时，玩家还没数到 0 就被判超时。
+      this.restartGuessDeadline(room, state);
     }
     this.touch(room);
     this.publishPrivateState(room, player);
@@ -2067,12 +2093,8 @@ export class SonGuessrService {
         ? formalPlayerCount - round.correctPlayerIds.length
         : SCORING.correct;
       round.correctPlayerIds.push(player.id);
-    } else if (state.guessesUsed < round.settings.maxGuessesPerRound) {
-      state.deadlineAt = round.settings.showGuessTimer
-        ? this.now() + round.settings.guessDurationSeconds * 1_000
-        : undefined;
     } else {
-      state.deadlineAt = undefined;
+      this.restartGuessDeadline(room, state);
     }
 
     if (this.isRoundComplete(room)) {
@@ -2150,12 +2172,8 @@ export class SonGuessrService {
         ? formalPlayerCount - round.correctPlayerIds.length
         : SCORING.correct;
       round.correctPlayerIds.push(player.id);
-    } else if (state.guessesUsed < round.settings.maxGuessesPerRound) {
-      state.deadlineAt = round.settings.showGuessTimer
-        ? this.now() + round.settings.guessDurationSeconds * 1_000
-        : undefined;
     } else {
-      state.deadlineAt = undefined;
+      this.restartGuessDeadline(room, state);
     }
     if (this.isRoundComplete(room)) this.finishRound(room);
     this.touch(room);
@@ -2341,9 +2359,32 @@ export class SonGuessrService {
       createdAt: this.now(),
       result: "timeout",
     });
-    state.deadlineAt = state.guessesUsed < round.settings.maxGuessesPerRound && round.settings.showGuessTimer
-      ? this.now() + round.settings.guessDurationSeconds * 1_000
-      : undefined;
+    this.restartGuessDeadline(room, state);
+  }
+
+  /**
+   * 重开一次猜测倒计时。倒计时的锚点必须永远取「当前时刻」，且不得超过回合硬截止：
+   * 用旧锚点（如本回合统一的 audioReadyDeadlineAt）续期，会得到一个可能已经过期的时刻，
+   * 巡检随即把它当成一次「答题超时」——玩家的倒计时还没归零就被判超时，
+   * 或者归零后要等下一轮 10 秒巡检才真正结算。
+   */
+  private restartGuessDeadline(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
+    const round = room.currentRound;
+    if (
+      !round ||
+      !round.settings.showGuessTimer ||
+      state.correct ||
+      state.gaveUp ||
+      state.guessesUsed >= round.settings.maxGuessesPerRound
+    ) {
+      state.deadlineAt = undefined;
+      return;
+    }
+    const deadlineAt = this.now() + round.settings.guessDurationSeconds * 1_000;
+    // 单次猜测的倒计时绝不能越过回合硬截止，否则玩家的可见倒计时会长于真实剩余时间：
+    // 界面显示还剩数十秒，房间却已经强制结算。
+    state.deadlineAt =
+      round.hardDeadlineAt === undefined ? deadlineAt : Math.min(deadlineAt, round.hardDeadlineAt);
   }
 
   /**
