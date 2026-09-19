@@ -395,6 +395,41 @@ test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并�
   }
 });
 
+/**
+ * 解析失败时必须回一条**客户端能匹配**的错误包，并把原始载荷形态写进日志。
+ *
+ * 否则链路是：`parse` 抛错 → 错误包 id 退化成占位值 → 客户端 `pendingRequests`
+ * 查不到该 id 就静默丢弃 → 进入房间类请求用 `timeout: 0` 永不超时，
+ * 页面永远卡在「正在连接房间…」且毫无提示，事后日志只剩 `WS raw` 无法定位命令。
+ */
+test("解析失败时保留信封身份并记录原始载荷形态", async () => {
+  const { port, stop } = startTestServer();
+  const socket = await openSocket(port);
+  const collector = createSocketCollector(socket);
+
+  try {
+    // 命令类型合法、载荷非法：解析阶段抛错，但 id/type 都可从原始载荷抢救出来。
+    socket.send(
+      JSON.stringify({
+        id: "req-salvage-1",
+        traceId: "trace-salvage",
+        type: "lobby.subscribeRooms",
+        payload: { 非法字段: true },
+      }),
+    );
+
+    const errorPacket = (await collector(
+      (payload) => (payload as { type?: string }).type === "error",
+    )) as { type: string; id: string; error?: { code?: string } };
+
+    expect(errorPacket.id).toBe("req-salvage-1");
+    expect(errorPacket.error?.code).toBe("INVALID_MESSAGE");
+  } finally {
+    socket.close();
+    await stop();
+  }
+});
+
 test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态", async () => {
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",

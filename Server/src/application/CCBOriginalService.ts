@@ -97,7 +97,12 @@ export class CCBOriginalService {
       if (message.payload.password) this.unsupported('原版房间不支持密码');
       return this.enterOnce(connection, message.roomId, message.payload.userName);
     }
-    if (message.type === 'ccb.room.reconnect') return this.reconnect(connection, message.payload.roomId, message.payload.sessionToken);
+    if (message.type === 'ccb.room.reconnect') {
+      // 载荷里的凭据允许为空/缺席（解析层不拦可恢复状态），这里给出明确的失效语义。
+      const token = message.payload.sessionToken;
+      if (!token) throw new AppError('SESSION_EXPIRED', '原版会话已失效，请重新加入房间');
+      return this.reconnect(connection, message.payload.roomId, token);
+    }
     const session = this.requireSession(connectionId);
     if (message.sessionToken !== session.token) throw new AppError('SESSION_INVALID', '原版会话凭据无效，请重新加入');
     if (message.roomId && message.roomId !== session.roomId) throw new AppError('ROOM_NOT_FOUND', '房间与当前会话不一致');

@@ -102,6 +102,16 @@ const name = t.String({ minLength: 1, maxLength: 32 });
  * 这类合法请求会被判成 `INVALID_MESSAGE` 并返回 400。
  */
 const optionalPassword = t.Optional(t.Union([t.String({ maxLength: 64 }), t.Null()]));
+/**
+ * 会话凭据在「已失效」与「尚未取得」之间是可恢复状态，不能用 schema 直接拒绝。
+ *
+ * 前端 `reconnectRoom` 会把 sessionStorage 里的凭据原样放进载荷；凭据为空串
+ * （存储被清、写入竞态、跨标签页竞争）或字段缺失时，若 schema 要求
+ * `minLength: 1`，请求在**解析阶段**就被判非法——表现为 400 且日志只剩 `WS raw`，
+ * 连是哪个命令都看不出来，客户端还会因错误包 id 不匹配而完全静默。
+ * 这里放开为空/缺席，交由业务层用 `SESSION_EXPIRED` 明确拒绝，错误可归因。
+ */
+const recoverySessionToken = t.Optional(t.Union([t.String({ maxLength: 128 }), t.Null()]));
 const playerId = t.String({ minLength: 1, maxLength: 128 });
 const roomId = t.String({ minLength: 1, maxLength: 32 });
 const id = integer(1, 2147483647);
@@ -111,7 +121,7 @@ export const CCBPayloadSchemas = {
     visibility: t.Union([t.Literal('public'), t.Literal('private')]),
     password: optionalPassword, allowSpectators: t.Boolean() }, strict),
   'ccb.room.join': t.Object({ source, userName: name, password: optionalPassword }, strict),
-  'ccb.room.reconnect': t.Object({ source, roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) }, strict),
+  'ccb.room.reconnect': t.Object({ source, roomId, sessionToken: recoverySessionToken }, strict),
   'ccb.room.leave': empty, 'ccb.room.requestSync': empty,
   'ccb.room.update': t.Object({ name, visibility: t.Union([t.Literal('public'), t.Literal('private')]), allowSpectators: t.Boolean() }, strict),
   'ccb.room.settings': t.Object({ settings: CCBSettingsSchema }, strict),

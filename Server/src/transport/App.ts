@@ -8,7 +8,7 @@ import { CCBCharacterWorkerProvider } from "../infrastructure/CCBCharacterWorker
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
-import { describeError, EventLogger } from "../infrastructure/EventLogger";
+import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { BangumiWorkerProvider } from "../infrastructure/BangumiWorkerProvider";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
@@ -301,6 +301,56 @@ const openGameConnection = (
   });
 };
 
+/**
+ * 解析阶段失败的诊断摘要。
+ *
+ * 解析失败时 `parsedType` / `parsedId` 都还是初值，日志只剩 `WS raw`，事后无从判断是哪个命令、
+ * 哪条字段不合法——而这类故障恰好只会「静默」发生（客户端拿不到可匹配的 ack/error 包，
+ * 请求因 `timeout: 0` 永不超时，页面只表现为卡住）。因此这里在解析失败路径上补一份
+ * 裁剪后的原始载荷，让日志自带定位信息。
+ *
+ * 只保留键名与键数、以及字符串值的截断样本，避免把敏感内容写进日志。
+ */
+const describeRawMessage = (raw: unknown): Record<string, unknown> => {
+  if (typeof raw === "string") {
+    return { rawKind: "string", length: raw.length, sample: sanitizeLogText(raw, 300) };
+  }
+  if (raw === null || typeof raw !== "object") return { rawKind: typeof raw };
+  if (raw instanceof ArrayBuffer) return { rawKind: "ArrayBuffer", byteLength: raw.byteLength };
+  if (ArrayBuffer.isView(raw)) return { rawKind: raw.constructor.name, byteLength: raw.byteLength };
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record);
+  return {
+    rawKind: "object",
+    keys: keys.slice(0, 24),
+    ...(keys.length > 24 ? { truncatedKeys: keys.length - 24 } : {}),
+  };
+};
+
+/**
+ * 从**校验失败**的原始载荷里抢救出信封身份字段（三个游戏共用）。
+ *
+ * 这不是为了放行非法消息，而是为了让失败可诊断、可回显：解析失败时若拿不到 `id`，
+ * 网关只能用占位的 `"unknown"` 回错误包，客户端在 `pendingRequests` 里匹配不到该 id
+ * 就会**静默丢弃**——请求因 `timeout: 0` 永不超时，页面只表现为一直卡住、前端无任何提示。
+ * 抢救出 `id` 后，客户端至少能收到一条可归因的错误提示而不是无限等待。
+ *
+ * 返回值仅供错误回包与日志使用，绝不参与业务执行。
+ */
+const salvageMessageIdentity = (input: unknown): { id: string; type?: string; traceId?: string } | undefined => {
+  let candidate = input;
+  if (typeof candidate === "string") {
+    try { candidate = JSON.parse(candidate); } catch { return undefined; }
+  }
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const record = candidate as Record<string, unknown>;
+  const id = record.id;
+  if (typeof id !== "string" || !id.length) return undefined;
+  const type = typeof record.type === "string" ? record.type.slice(0, 64) : undefined;
+  const traceId = typeof record.traceId === "string" ? record.traceId.slice(0, 128) : undefined;
+  return { id: id.slice(0, 128), ...(type ? { type } : {}), ...(traceId ? { traceId } : {}) };
+};
+
 /** Bun/Elysia 可能给字符串、二进制或已解析对象，这里统一归一化。 */
 const decodeIncoming = (incoming: unknown, decoder: TextDecoder): unknown =>
   typeof incoming === "string"
@@ -332,7 +382,29 @@ const handleGameMessage = async <TMessage extends { id: string; type: string; tr
   let parsedType = "raw";
   let traceId: string | undefined;
   try {
-    const parsed = parse(decodeIncoming(incoming, decoder));
+    const decoded = decodeIncoming(incoming, decoder);
+    let parsed: TMessage;
+    try {
+      parsed = parse(decoded);
+    } catch (parseError) {
+      // 解析失败时抢救信封身份，让错误包带上客户端能匹配的 id。
+      // 否则客户端在 pendingRequests 里查不到该 id，会静默丢弃这条错误，
+      // 请求因 `timeout: 0` 永不超时——页面只表现为一直卡住、前端无任何提示。
+      const identity = salvageMessageIdentity(decoded);
+      if (identity) {
+        parsedId = identity.id;
+        if (identity.type) parsedType = identity.type;
+        traceId = identity.traceId;
+      }
+      logger.warn(`${serviceName} WS 消息解析失败`, {
+        ...describeError(parseError),
+        ...describeRawMessage(decoded),
+        connectionId,
+        rescuedId: identity?.id,
+        rescuedType: identity?.type,
+      });
+      throw parseError;
+    }
     parsedId = parsed.id;
     parsedType = parsed.type;
     traceId = parsed.traceId;
@@ -352,7 +424,7 @@ const handleGameMessage = async <TMessage extends { id: string; type: string; tr
         status: 400,
         durationMs: performance.now() - startedAt,
         identifier: connectionId,
-        action: `WS ${parsedType}`,
+        action: `WS ${parsedType} [${error.code}] ${sanitizeLogText(error.message, 120)}`,
         level: "WARN",
         traceId,
       });

@@ -75,4 +75,38 @@ describe("CCB 状态同步", () => {
     expect(send).toHaveBeenCalledWith("ccb.room.requestSync", {}, expect.any(Object));
     expect(useCCBStore.getState().snapshot?.name).toBe("测试");
   });
+
+  /**
+   * 服务端建立会话后会**先推快照事件、再回进入房间的 ACK**。若在此期间抢发全量同步，
+   * 信封不带凭据，原版会话校验必然判 `SESSION_INVALID`——该错误又会被当成永久错误，
+   * 把刚建立的原版会话清掉，表现为「加入原版房间失败」。
+   */
+  it("进入原版房间期间不抢发同步，凭据写回后补一次全量", async () => {
+    useCCBStore.setState({ originalServerKey: "remote" });
+    const calls: Array<{ command: string; options?: { sessionToken?: string } }> = [];
+    vi.spyOn(ccbWs, "send").mockImplementation((command: string, _payload?: unknown, options?: { sessionToken?: string }) => {
+      calls.push({ command, options });
+      if (command === "ccb.room.join") {
+        // 复刻服务端顺序：快照先到（此时凭据尚未写回），ACK 后到。
+        handleCCBMessage({ type: "event", event: "ccb.room.snapshot", payload: {
+          mode: "patch", revision: 5, baseRevision: 4, operations: [{ op: "replace", path: "/name", value: "新名" }],
+        } });
+        handleCCBMessage({ type: "event", event: "ccb.game.privateState", payload: {
+          mode: "patch", revision: 5, baseRevision: 4, operations: [{ op: "replace", path: "/playerId", value: "p9" }],
+        } });
+        return Promise.resolve({ roomId: "1234", source: "original", sessionToken: "tok-original",
+          snapshot: { ...snapshot, source: "original" }, privateState: { playerId: "p1" } });
+      }
+      return Promise.resolve({});
+    });
+
+    await useCCBStore.getState().joinRoom("original", "1234", "甲");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const duringJoin = calls.filter((call) => call.command === "ccb.room.requestSync" && !call.options?.sessionToken);
+    expect(duringJoin).toEqual([]);
+    const deferred = calls.filter((call) => call.command === "ccb.room.requestSync");
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]!.options?.sessionToken).toBe("tok-original");
+  });
 });
