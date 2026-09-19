@@ -58,4 +58,15 @@ describe('原版协议转换', () => {
     expect(scores.map(score => score.score)).toEqual([15, 0]);
     expect(scores[0]).toMatchObject({ rank: 1, base: 3, firstGuess: 12 });
   });
+
+  /**
+   * 上游 `updatePlayers` 的玩家 id 可能是数字。加入房间的确认谓词要拿它跟 socket.id 比对，
+   * 一旦被 `originalString` 静默转成空串，玩家就永远匹配不上、加入只能等 8s 超时失败。
+   */
+  test('玩家编号兼容数字形态，缺失或非标量才退化为空串', () => {
+    expect(originalPlayers([{ id: 0, username: '甲' }], 'waiting', 1)[0]!.id).toBe('0');
+    expect(originalPlayers([{ id: 1, username: '甲' }], 'waiting', 1)[0]!.id).toBe('1');
+    expect(originalPlayers([{ id: 'abc', username: '甲' }], 'waiting', 1)[0]!.id).toBe('abc');
+    expect(originalPlayers([{ username: '甲' }], 'waiting', 1)[0]!.id).toBe('');
+  });
 });

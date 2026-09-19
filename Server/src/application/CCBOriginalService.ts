@@ -175,8 +175,11 @@ export class CCBOriginalService {
     this.listen(session);
     try {
       await originalConfirmedEvent(socket, 'connect', () => true, () => socket.connect());
-      await originalConfirmedEvent(socket, 'updatePlayers', () => session.players.some(player => player.id === socket.id && player.name === name),
-        () => socket.emit(create ? 'createRoom' : 'joinRoom', { roomId, username: name }));
+      // 原版会自行裁剪/规范化用户名，谓词不能做全等比对，否则加入确认要等到 8s 超时才失败。
+      const expected = name.trim();
+      await originalConfirmedEvent(socket, 'updatePlayers',
+        () => session.players.some(player => player.id === socket.id && player.name.trim() === expected),
+        () => socket.emit(create ? 'createRoom' : 'joinRoom', { roomId, username: name.trim() }));
       if (!this.connections.has(connection.id)) throw new AppError('CONNECTION_NOT_FOUND', '加入期间连接已断开');
       session.confirmed = true;
       if (!this.chats.has(roomId)) this.chats.set(roomId, { generation: randomUUID(), chat: [], seenRoundKeys: new LRUCache({ max: 256 }) });

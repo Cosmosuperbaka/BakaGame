@@ -10,6 +10,16 @@ export const originalObject = (value: unknown): Record<string, unknown> => {
 };
 export const originalArray = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 export const originalString = (value: unknown, fallback = ''): string => typeof value === 'string' ? value : fallback;
+/**
+ * 原版玩家 id 归一化。
+ *
+ * 上游 `updatePlayers` 里的 `id` 可能是字符串、也可能是数字；而本项目三处依赖它做身份比对
+ * （`session.socket.id` 相等、`chat.playerId` 引用、踢人/转移房主的 `playerId` 参数），
+ * 一律要求字符串。只用 `originalString` 会把数字 id 静默变成空串，造成「玩家永远匹配不上、
+ * 加入房间的确认事件永不命中」这类难查的失败，所以这里显式把数字也转成字符串。
+ */
+export const originalId = (value: unknown): string =>
+  typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
 export const originalNumber = (value: unknown, fallback = 0): number => {
   const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
   return Number.isFinite(number) ? number : fallback;
@@ -122,7 +132,7 @@ export function originalPlayers(value: unknown, phase: string, syncRound: number
       : marks.includes('💀') ? 'exhausted' : marks.includes('🏳') ? 'surrendered'
         : team === 0 || temporaryObserver || isSetter ? 'observing' : phase === 'guessing' ? 'playing' : 'waiting';
     return {
-      id: originalString(raw.id), name: originalString(raw.username), online: raw.disconnected !== true,
+      id: originalId(raw.id), name: originalString(raw.username), online: raw.disconnected !== true,
       ready: raw.ready === true, team: team === 0 ? null : team, membership: team === 0 ? 'spectator' : 'active',
       score: originalNumber(raw.score), status, attempts: (marks.match(/(?:⏱️?|💡|✔|❌)/gu) || []).length,
       marks, syncCompleted: originalNumber(raw.syncCompletedRound) === syncRound,

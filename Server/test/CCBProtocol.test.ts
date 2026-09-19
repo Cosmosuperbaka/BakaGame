@@ -25,4 +25,26 @@ describe('CCB 协议边界', () => {
     expect(() => parseCCBMessage({ id: 'team-1', type: 'ccb.player.team', payload: { team: 0 } })).toThrow('指令参数不合法');
     expect(() => parseCCBMessage({ id: 'guess-2', type: 'ccb.game.guess', payload: { characterId: -1 } })).toThrow('指令参数不合法');
   });
+  /**
+   * 前端 zustand store 用 `null` 表示「尚未加入房间」，`JSON.stringify` 会原样保留 null，
+   * 而 `t.Optional()` 只接受字段缺席。这里必须锁死「显式 null」与「字段省略」等价，
+   * 否则加入原版房间会在解析阶段就 400（微秒级返回，页面只显示通用失败）。
+   */
+  test('信封与载荷的可选字段同时接受缺席与显式 null', () => {
+    const join = { id: 'join-1', type: 'ccb.room.join' as const, roomId: '1234', payload: { source: 'original' as const, userName: '甲' } };
+    expect(parseCCBMessage(join).type).toBe('ccb.room.join');
+    expect(parseCCBMessage({ ...join, sessionToken: null }).type).toBe('ccb.room.join');
+    expect(parseCCBMessage({ ...join, traceId: null, roomId: null }).type).toBe('ccb.room.join');
+    expect(parseCCBMessage({ ...join, payload: { ...join.payload, password: null } }).type).toBe('ccb.room.join');
+    expect(parseCCBMessage({ id: 'create-1', type: 'ccb.room.create', payload: {
+      source: 'original', roomId: '1234', name: '房', userName: '甲', visibility: 'public', allowSpectators: true, password: null,
+    } }).type).toBe('ccb.room.create');
+  });
+  test('可选字段放开 null 但不放松取值约束', () => {
+    const join = { id: 'join-2', type: 'ccb.room.join' as const, roomId: '1234', payload: { source: 'original' as const, userName: '甲' } };
+    expect(() => parseCCBMessage({ ...join, sessionToken: 42 })).toThrow('指令参数不合法');
+    expect(() => parseCCBMessage({ ...join, roomId: 1234 })).toThrow('指令参数不合法');
+    expect(() => parseCCBMessage({ ...join, payload: { ...join.payload, userName: 12 } })).toThrow('指令参数不合法');
+    expect(() => parseCCBMessage({ ...join, payload: { ...join.payload, roomId: '1234' } })).toThrow('指令参数不合法');
+  });
 });

@@ -116,6 +116,19 @@ describe('原版房间适配', () => {
     expect(first.roomId).toBeUndefined();
   });
 
+  /**
+   * 原版会自行裁剪用户名。若确认谓词做全等比对，带空格的用户名会让加入一直等到 8s 超时，
+   * 表现为「加入原版房间失败」而没有任何上游错误。
+   */
+  test('加入时按裁剪后的用户名确认，玩家编号为数字也能命中', async () => {
+    const { service, upstream, first } = setup();
+    const entered = await request(service, 'first', { id: 'join', type: 'ccb.room.join', roomId: '1234',
+      payload: { source: 'original', userName: '  甲  ' } }) as CCBRoomEnterResult;
+    expect(entered.source).toBe('original');
+    expect(upstream.sockets[0].sent[0].payload).toEqual({ roomId: '1234', username: '甲' });
+    expect(first.roomId).toBe('original:1234');
+  });
+
   test('裁剪敌方历史、答案及被禁标签，解锁后仅返回加工后的图片', async () => {
     const { service, upstream, packets } = setup();
     await create(service);

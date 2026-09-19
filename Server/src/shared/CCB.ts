@@ -94,6 +94,14 @@ export interface CCBRoomEnterResult { roomId: string; source: CCBSource; session
 const empty = t.Object({}, strict);
 const source = t.Union([t.Literal('native'), t.Literal('original')]);
 const name = t.String({ minLength: 1, maxLength: 32 });
+/**
+ * 可选载荷字段必须显式接纳 `null`。
+ *
+ * 前端把「没有密码」「没有会话凭据」表示为 `null` 而非省略字段，`JSON.stringify`
+ * 会原样保留 `null`，而 `t.Optional()` 只接受字段缺席。若只写 `t.Optional`，
+ * 这类合法请求会被判成 `INVALID_MESSAGE` 并返回 400。
+ */
+const optionalPassword = t.Optional(t.Union([t.String({ maxLength: 64 }), t.Null()]));
 const playerId = t.String({ minLength: 1, maxLength: 128 });
 const roomId = t.String({ minLength: 1, maxLength: 32 });
 const id = integer(1, 2147483647);
@@ -101,8 +109,8 @@ export const CCBPayloadSchemas = {
   'ccb.lobby.subscribeRooms': empty,
   'ccb.room.create': t.Object({ source, roomId, name, userName: name,
     visibility: t.Union([t.Literal('public'), t.Literal('private')]),
-    password: t.Optional(t.String({ maxLength: 64 })), allowSpectators: t.Boolean() }, strict),
-  'ccb.room.join': t.Object({ source, userName: name, password: t.Optional(t.String({ maxLength: 64 })) }, strict),
+    password: optionalPassword, allowSpectators: t.Boolean() }, strict),
+  'ccb.room.join': t.Object({ source, userName: name, password: optionalPassword }, strict),
   'ccb.room.reconnect': t.Object({ source, roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) }, strict),
   'ccb.room.leave': empty, 'ccb.room.requestSync': empty,
   'ccb.room.update': t.Object({ name, visibility: t.Union([t.Literal('public'), t.Literal('private')]), allowSpectators: t.Boolean() }, strict),
