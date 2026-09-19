@@ -36,6 +36,31 @@ Songuessr 音乐请求时，必须先阅读本文档。
 - 反复调用部分接口可能触发网易云的频率控制，返回 `503 Service Unavailable` 或类似“IP 高频错误”。生产环境应依靠反向代理、合理缓存和请求合并解决；不要通过无限重试放大请求。
 - 某些海外网络或部分云服务器可能返回 `460 cheating`。可使用受信任的境内出口或代理池解决网络可达性，但不得用代理池规避账号、版权或频率限制。
 
+### 凭证与出口 IP 必须绑定（凭证失效头号根因）
+
+网易云把登录凭证 `MUSIC_U` **绑定在登录当时使用的客户端 IP 上**。出口 IP 在凭证生命周期内漂移，
+上游会按异地登录判定，直接返回 `301` / `MUSIC_SESSION_INVALID` —— 表现为「设备还在登录列表里，
+但凭证反复失效」。历史上的三重缺陷已全部修复，改动登录链路时**三条都不得回退**：
+
+1. **scope 必须跟随登录会话，而非 cookie 内容**。旧实现按 cookie 字符串哈希取 scope：登录前用的是
+   PC 设备字典，登录后变成 `MUSIC_U=...`，两串哈希不同 → 拿到两个不同 IP，**登录态一建立就漂移**。
+   现由 `qrLoginScope` 在 `createQrLogin` 时一次性生成并贯穿整条链路。
+2. **`login_status` 必须携带 `realIP`**。旧实现在 `getLoginStatus` 里显式传 `randomCNIP=false`，
+   完全不发 `realIP`，等于用一个「无 IP」的请求去校验一个「有 IP」的登录态。现改用配置值。
+3. **会话结束后必须固化绑定**。`bindSessionIp` 把本会话 IP 写入登录后凭证的 scope，
+   使该凭证后续所有请求（搜索、歌曲、歌单、状态校验）继续复用同一个登录 IP。
+
+配套约束：
+
+- `callOptional` 必须与 `call` 一样透传 `randomCNIP` / `includeAnonymousCookie`；历史上它不透传，
+  导致设备上报（`uploadDeviceInfo`）脱离登录 IP。
+- 设备上报的兜底 EAPI 路径（`createOption` 直调）同样要带 `realIP` 与 `randomCNIP`。
+- cookie 对象做 scope 时必须用**键序无关**的稳定序列化（`stableStringify`）；Enhanced API 会给
+  cookie 对象补上随机的 `_ntes_nuid` / `NMTID`，用 `JSON.stringify` 会因键序/取值变化算出不同 scope。
+- 匿名会话（`register_anonimous`）与公共请求的 IP 独立于登录会话，不得与登录凭证共用 scope。
+- **合规边界**：`realIP` 仅用于规避 `460` 出口兼容性问题，不得用于伪造用户来源或绕过风控、
+  账号限制、版权限制。生成 IP 必须落在真实 CN 网段内，不得指向具体真实用户的可定位地址。
+
 ## Cookie、请求头与客户端
 
 直接调用 HTTP API 时，若接口需要登录态，按文档把 Cookie 放在请求参数或 Cookie 请求头中，并确保浏览器跨域请求显式携带凭据：
@@ -56,8 +81,8 @@ fetch(url, { credentials: "include" });
 
 | 参数 | 作用 | 使用约束 |
 | --- | --- | --- |
-| `realIP` | 指定服务端识别的客户端 IP，解决部分境外/云出口的 `460` 兼容性问题 | 只能使用受信任且经过授权的出口地址，不得伪造用户来源或绕过风控 |
-| `randomCNIP=true` | API Enhanced 新版本提供的随机中国 IP 兼容选项 | 仅在文档明确支持的接口和网络兼容场景使用，不得用于规避限流 |
+| `realIP` | 指定服务端识别的客户端 IP，解决部分境外/云出口的 `460` 兼容性问题；请求层据此写入 `X-Real-IP` 与 `X-Forwarded-For` | 只能使用受信任且经过授权的出口地址，不得伪造用户来源或绕过风控。取值必须来自包内 CN 网段库（见下节），不得手工拼接 |
+| `randomCNIP=true` | API Enhanced 新版本提供的随机中国 IP 兼容选项 | 仅在文档明确支持的接口和网络兼容场景使用，不得用于规避限流。**它本身不生成 IP**，必须与 `realIP` 同时提供才真正生效 |
 | `noCookie=true` | 明确告诉接口本次请求不携带 Cookie | 只有不需要登录态的公开请求使用；登录、账号状态和房主授权请求不得添加 |
 | `ua=...` | 指定请求 User-Agent | 只在接口或兼容性确实要求时设置，保持值可审计，不得伪装成任意第三方客户端 |
 
@@ -68,6 +93,19 @@ fetch(url, { credentials: "include" });
 /api/song/detail?id=...&noCookie=true
 /api/song/detail?id=...&ua=Mozilla/5.0
 ```
+
+### CN 出口 IP 生成：唯一真相源是包内网段库
+
+`randomCNIP` 只是开关，真正的伪装出口 IP 由我们自己生成并通过 `realIP` 下发。**禁止再手工拼接 IP 段**
+（历史实现按 `116.25–94.x.x` 随机拼接，并不保证落在真实 CN 网段，会被上游判定为异常来源）：
+
+- 真相源为依赖包自带的 `node_modules/@neteasecloudmusicapienhanced/api/data/china_ip_ranges.txt`
+  （4147 条真实 CIDR），由 `parseChinaIpRanges` 解析、`randomChineseIp` 按区间权重抽段后段内随机。
+- **刻意不 import 包内 `util/index.js`**：该模块顶层 `require('./logger')`，每次生成都会向 stdout 打印
+  带 ANSI 色的 `[INFO] Generated Random Chinese IP: ...`，污染本项目结构化日志；读取数据文件是零副作用的等价实现。
+  这与「禁止为屏蔽第三方开发日志而改写全局 `console.log`」是同一条约束的两面。
+- 数据文件缺失或损坏时必须回退到内置兜底网段，**不得抛错导致完全无法出网**。
+- 校验方式：`readChinaIpRanges()` + `randomChineseIp()` 已导出，测试需断言生成结果 100% 落在网段内（当前回归取 2000 次采样）。
 
 ### 图片缩放
 
@@ -86,7 +124,7 @@ fetch(url, { credentials: "include" });
 - 搜索：`cloudsearch`/`search`。
 - 出题歌曲详情：`song_detail`、时间轴歌词、播放地址、可选歌曲百科以及副歌时间（`song_chorus`）。
 - 猜测歌曲：只读取元数据，不请求歌词或音频。
-- 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。创建二维码与扫码轮询采用官方 PC 客户端契约（`os: "pc"`, `channel: "netease"`, `appver: "3.1.29.205117"`, `User-Agent: NeteaseMusicDesktop/...`），并携带自定义 `deviceName`（默认 `BakaGame`）。
+- 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。创建二维码与扫码轮询采用官方 PC 客户端契约（`os: "pc"`, `channel: "netease"`, `appver: "3.1.29.205117"`, `User-Agent: NeteaseMusicDesktop/...`），并携带自定义 `deviceName`（默认 `BakaGame`）。**整条链路（`login_qr_key` → `login_qr_create` → `login_qr_check` → `deviceinfo_center_upload` → `login_status`）必须共用同一个出口 IP**，详见上文「凭证与出口 IP 必须绑定」。
 - 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
