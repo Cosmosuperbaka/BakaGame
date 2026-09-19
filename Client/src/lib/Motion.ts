@@ -44,6 +44,15 @@ export const duration = {
   hold: 2.2,
 } as const;
 
+/** 歌词播放与总览：同一批文字同时移动和缩小，原生布局负责两端位置。 */
+export const lyricOverview = {
+  scale: 0.92,
+  timing: {
+    duration: duration.slow * 1000,
+    easing: `cubic-bezier(${ease.emphasized.join(",")})`,
+  },
+} as const;
+
 /**
  * 持续旋转的加载指示。匀速且无限循环，
  * 表达“正在进行”而非一次状态迁移，因此不使用弹性过渡。

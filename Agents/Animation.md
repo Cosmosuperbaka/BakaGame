@@ -177,6 +177,7 @@
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
 | `sharedTransfer` | 跨区域共享元素位移 |
+| `lyricOverview` | 原生歌词同节点位移与整体缩放共用时间轴 |
 | `spinner` | 匀速持续旋转的加载指示 |
 
 ## 6. 状态反馈的边界

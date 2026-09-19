@@ -53,6 +53,7 @@ npm test
 npm run test:watch
 npm run test:coverage
 npm run test:e2e
+npm run test:lyrics   # 原生歌词布局、字体、翻译注音、和声及连续动画浏览器回归
 npm run verify
 ```
 
@@ -116,6 +117,7 @@ npx playwright test e2e/App.spec.ts
   模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
   留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
 - E2E 选择器优先使用 ARIA 角色、可见语义文本和稳定 `data-testid`。只有当元素本身就是业务契约时才增加 `data-testid`，不得把样式类名或 DOM 深度变成测试接口。
+- 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 单独启动 Vite（5177），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
 
 ## CI 推荐顺序
 

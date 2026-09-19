@@ -2,6 +2,15 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// 页面测试验证房间状态与无障碍歌词文本；真实排版与媒体演出由歌词浏览器回归覆盖。
+vi.mock("@/components/songuessr/lyrics/SongLyricScene", () => ({
+  SongLyricScene: class {
+    setSource() {}
+    setPlayback() {}
+    dispose() {}
+  },
+}));
+
 vi.mock("framer-motion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("framer-motion")>();
   return {
@@ -272,7 +281,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
 
     expect(screen.getByRole("heading", { name: "听歌猜曲" })).toBeInTheDocument();
-    expect(screen.getByTestId("baka-song-lyric-player")).toHaveTextContent("夜空中最亮的星");
+    expect(screen.getByTestId("baka-song-lyric-container")).toHaveTextContent("夜空中最亮的星");
     expect(screen.getByRole("button", { name: /提交猜测（剩余 4 次）/ })).toBeInTheDocument();
 
     // 3. 流转至答案揭晓结算阶段 (roundResult)
@@ -691,7 +700,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
 
     expect(screen.getByRole("heading", { name: "歌词片段" })).toBeInTheDocument();
-    expect(screen.getByTestId("baka-song-lyric-player")).toHaveTextContent("夜空中最亮的星");
+    expect(screen.getByTestId("baka-song-lyric-container")).toHaveTextContent("夜空中最亮的星");
 
     // 2. 开启歌词但无歌词/纯音乐：展示“音乐片段”与“当前歌曲为纯音乐或无歌词”
     act(() => {

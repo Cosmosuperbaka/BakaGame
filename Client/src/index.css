@@ -295,135 +295,105 @@ img {
   user-drag: none;
 }
 
-/* AMLL 逐字歌词 Vintage-Paper 复古纸质主题深度适配 */
-.baka-lyric-player {
-  width: 100% !important;
-  /* 高度由 SongLyricPlayer 注入的「未缩放歌词自然高度」驱动（见 lyricHeight.ts）：
-     总览模式存在 scale(0.92) 缩小动效，外壳高度已按 0.92 反向补偿，
-     播放器本体必须保持自然高度，才能在既不裁切歌词又不留多余留白之间取到精确解。
-     未注入时（首帧 / 无布局环境）退回 100%。 */
-  height: var(--baka-lyric-player-height, 100%) !important;
-  position: relative !important;
-  overflow: hidden !important;
+/* 歌词的测量与演出共用同一套盒模型。 */
+.baka-lyric-host {
+  position: relative;
+  width: 100%;
 }
 
-.baka-lyric-player .amll-lyric-player,
-.amll-lyric-player {
-  width: 100% !important;
-  height: 100% !important;
-  mix-blend-mode: normal !important;
-  color: var(--color-foreground) !important;
-  font-family: var(--font-serif) !important;
-  --amll-lp-color: var(--color-foreground);
-  --amll-lp-inactive-opacity: 0.45;
-  --amll-lp-active-scale: 1.04;
-  --amll-lp-font-size: 1.125rem;
-  --amll-lp-line-height: 1.8;
-  --amll-lp-font-weight: 600;
-  overflow: hidden !important;
+.baka-lyric-host:not([data-ready]) {
+  visibility: hidden;
+}
+
+.baka-lyric-player.amll-lyric-player {
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
   user-select: none;
+  transform-origin: center top;
+  mix-blend-mode: normal;
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  --amll-lp-color: var(--color-foreground);
+  --amll-lp-font-size: 1.125rem;
+  --amll-lp-font-weight: 500;
 }
 
-.baka-lyric-player *,
-.amll-lyric-player * {
+.baka-lyric-player * {
   mix-blend-mode: normal !important;
+  text-shadow: none !important;
 }
 
-/* 居中排版与消除右侧死留白 */
 .baka-lyric-player [class*="lyricLineWrapper"] {
   align-items: center !important;
-  text-align: center !important;
-  /* 歌词组上下 padding 与 gap 播放/总览统一为 .25em / .2em（覆盖内核默认 .4em）：
-     两组模式盒模型完全一致，原生实测的高度才能跨模式复用，切换总览时高度零跳变 */
-  padding-top: 0.25em !important;
-  padding-bottom: 0.25em !important;
-  gap: 0.2em !important;
+  text-align: center;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  gap: 0.2em;
 }
 
 .baka-lyric-player [class*="lyricLine"] {
   text-align: center !important;
   transform-origin: center center !important;
+  /* 视口外也必须排版，不能拿内核 40px 占位高度当真实歌词高度。 */
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  font-weight: 500;
 }
 
 .baka-lyric-player [class*="lyricMainLine"] {
-  justify-content: center !important;
-  text-align: center !important;
+  justify-content: center;
+  text-align: center;
 }
 
-.baka-lyric-player [class*="lyricMainLine"] span {
-  text-align: center !important;
+.baka-lyric-player [class*="lyricSubLine"] {
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  font-weight: 400;
+  opacity: 0.65;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+  margin-top: 0.2rem;
 }
 
-.baka-lyric-player [class*="lyricLine"],
-.amll-lyric-player [class*="lyricLine"],
-.baka-lyric-player [class*="lyricMainLine"],
-.amll-lyric-player [class*="lyricMainLine"],
-.baka-lyric-player [class*="lyricWord"],
-.amll-lyric-player [class*="lyricWord"] {
-  color: var(--color-foreground) !important;
-  font-family: var(--font-serif) !important;
-  font-weight: 500 !important;
-  text-shadow: none !important;
+.baka-lyric-player [class*="lyricSubLine"]:empty,
+.baka-lyric-player [class*="romanWord"]:empty {
+  display: none;
 }
 
-.baka-lyric-player [class*="interludeDots"],
-.amll-lyric-player [class*="interludeDots"] {
+/* 和声始终占据其真实高度；仅改变明暗，避免活动行切换改变整个片段的高度。 */
+.baka-lyric-player [class*="bgWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  margin-top: 0 !important;
+  transform: none !important;
+  visibility: visible !important;
+}
+
+.baka-lyric-player [class*="interludeDots"] {
   left: 50% !important;
   transform: translateX(-50%) !important;
 }
 
-.baka-lyric-player [class*="interludeDots"] > *,
-.amll-lyric-player [class*="interludeDots"] > * {
-  background-color: var(--color-foreground) !important;
+.baka-lyric-player [class*="interludeDots"] > * {
+  background-color: var(--color-foreground);
 }
 
-.baka-lyric-player [class*="lyricSubLine"],
-.amll-lyric-player [class*="lyricSubLine"] {
-  color: var(--color-foreground) !important;
-  font-family: var(--font-serif) !important;
-  font-weight: 400 !important;
-  opacity: 0.65 !important;
-  font-size: 0.85rem !important;
-  line-height: 1.4 !important;
-  text-align: center !important;
-  text-shadow: none !important;
-  margin-top: 0.2rem !important;
+.baka-lyric-player.baka-overview-mode [class*="lyricLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricSubLine"],
+.baka-lyric-player.baka-overview-mode [class*="bgWrapper"] {
+  opacity: 1 !important;
+  filter: none !important;
 }
 
-/* 彻底隐藏空副行与空注音，不占任何垂直高度与 DOM 布局空间 */
-.baka-lyric-player [class*="lyricSubLine"]:empty,
-.amll-lyric-player [class*="lyricSubLine"]:empty,
-.baka-lyric-player [class*="romanWord"]:empty,
-.amll-lyric-player [class*="romanWord"]:empty {
-  display: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  height: 0 !important;
-}
-
-/* 原生 AMLL 总览模式：连贯平滑缩放与全行纯黑清晰展现 */
-.baka-lyric-player {
-  transform: scale(1);
-  will-change: transform;
-  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-  transform-origin: center top !important;
-}
-
-.baka-lyric-player.baka-overview-mode {
-  --amll-lp-inactive-opacity: 1 !important;
-  --amll-lp-color: var(--color-foreground) !important;
-  transform: scale(0.92);
-}
-
-.baka-lyric-player.baka-overview-mode,
-.baka-lyric-player.baka-overview-mode * {
-  color: var(--color-foreground) !important;
-  text-shadow: none !important;
-}
-
-/* 逐字遮罩是「已唱/未唱」的卡拉OK渐变：总览态没有进度推进，未唱词会被
-   --dark-mask-alpha(0.4) 压到 40% 不透明度导致整段发灰，且 opacity/color 覆盖救不了 mask。
-   总览态要求纯黑展示，直接摘除遮罩。 */
 .baka-lyric-player.baka-overview-mode span {
   -webkit-mask-image: none !important;
   mask-image: none !important;
@@ -431,28 +401,9 @@ img {
   --dark-mask-alpha: 1 !important;
 }
 
-.baka-lyric-player.baka-overview-mode [class*="lyricLineWrapper"],
-.baka-lyric-player.baka-overview-mode [class*="lyricLine"],
-.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"],
-.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"] span,
-.baka-lyric-player.baka-overview-mode [class*="lyricWord"],
-.baka-lyric-player.baka-overview-mode [class*="lyricBgLine"],
-.baka-lyric-player.baka-overview-mode [class*="bgWrapper"] {
-  opacity: 1 !important;
-  filter: none !important;
-  color: var(--color-foreground) !important;
+@media (prefers-reduced-motion: reduce) {
+  .baka-lyric-player * {
+    transition: none !important;
+  }
 }
-
-.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"] span {
-  font-weight: 500 !important;
-}
-
-.baka-lyric-player.baka-overview-mode [class*="lyricSubLine"] {
-  opacity: 1 !important;
-  color: var(--color-foreground) !important;
-  font-weight: 400 !important;
-}
-
-
-
 

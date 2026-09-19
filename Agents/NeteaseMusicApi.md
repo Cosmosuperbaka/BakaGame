@@ -146,26 +146,22 @@ Songuessr 引入类苹果歌词播放（AMLL），实现逐字渐变点亮、平
 - 对于带有 `words` 逐字信息的歌词行，`sanitizeLyrics` 必须严格保留其原本精确的 `line.endTime`，严禁被下一行的起始时间粗暴覆盖，以保证歌唱停顿、长间奏和逐字动画停靠精确；
 - 对于无 `words` 的普通 LRC 兜底行，保持使用下一行起始时间或 `+5000ms` 兜底，使纯行级高亮在间奏期间自然驻留并居中滚动。
 
-**客户端 Vintage-Paper 复古纸质规范**：
-- 默认 AMLL 采用深色荧光风格（`mix-blend-mode: plus-lighter` 与白色字体），在项目浅色纸质背景上会导致文字不可见或反白破损；
-- 必须在 `Client/src/index.css` 强制覆写 `.baka-lyric-player.amll-lyric-player`：`mix-blend-mode: normal !important`、`color: var(--color-foreground) !important`、`font-family: var(--font-serif) !important`、`text-shadow: none !important`；
-- 时间轴驱动：`SongLyricPlayer` 接收 `audioRef`，监听 `play/pause/timeupdate/seeked`，并在播放期间通过 `requestAnimationFrame` 驱动 60fps/120fps 流畅逐字渐变渲染；同时在测试容器内部挂载 `sr-only` 隐藏全文本节点，保障屏幕阅读器无障碍与集成测试断言稳定性。
-- 控制台调试日志净化：`SongLyricPlayer` 在浏览器环境中静默拦截 AMLL 内部输出的开发期调试日志（“设置歌词行”、“歌词处理完成”等），保证前端控制台极度纯净无冗余输出。
+**客户端歌词生命周期与布局规范**：
 
-**外文歌词翻译与原生 AMLL 总览展示规范**：
-- **双语翻译与注音排他规范**：在服务端四级融合链路（`mergeTranslations`、`parseTTML`）与客户端数据映射层，确立「有翻译时彻底屏蔽注音」的排他原则。日文等外文歌曲若同时具备中文翻译与罗马音/注音（`romanLyric`/`words[].romanWord`），系统必须在数据源解析、前端映射以及 CSS `:empty` 样式层三层联动清空并隐藏注音，禁止注音与翻译双副行并发导致排版拥挤与高度超标；仅在歌词存在注音但完全无翻译时才保留注音展示。
-- **逐字动态播放副行渲染**：客户端在 `index.css` 中显式针对 `[class*="lyricSubLine"]` 配置衬线字体、`opacity: 0.65`、`font-size: 0.85rem` 与居中排版，使 AMLL 播放器在歌词点亮时同步展示副文本翻译。
-- **歌词引用稳定防二次重刷**：`SongLyricPlayer` 必须基于歌词文本、起止时间与逐字数据生成稳定摘要键（`linesKey`）进行 memoization，严禁以快照数组引用作为依赖，杜绝音频就绪广播（`audioReadyPlayers` 改变）触发 AMLL DOM 销毁重建与入场渐入动画重播。
-- **原生 AMLL 单实例总览与命令式立即重排**：音频播放完成后（`audioPlaybackState === "completed"`），严禁自行手写外部 DOM 列表替代。统一使用原生 AMLL 单实例进行全量总览渲染。为消除 AMLL 默认居中留出的巨大“上界”与状态切换后未主动重排导致的歌词推出视口（“少显示一句”），组件必须通过 `<LyricPlayer ref={lyricPlayerRef}>` 暴露的底层实例，在切换为总览的瞬间立即命令式执行：`player.setAlignAnchor("top")`、`player.setAlignPosition(0)`、`player.setCurrentTime(firstLineTime, true)`、`player.resetScroll()` 并同步调用 `player.calcLayout(true, true)`，迫使第一行紧贴顶部物理原点自顶向下排布。
-- **字重与总览纯黑字色**：主歌词行无论播放还是总览模式均统一锁定 `font-weight: 500 !important;`，副歌词翻译行统一为 `font-weight: 400 !important;`。在总览模式下强制设置 `--amll-lp-inactive-opacity: 1 !important` 与全量子元素 `opacity: 1 !important; color: var(--color-foreground) !important;`，彻底根除总览歌词灰黑混杂或淡化问题；容器通过 CSS `transform: scale(0.92)` 配合 `transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)` 实现连贯平滑的缩小拉远动效。
-- **优先采信 AMLL 原生实测高度，严禁魔数推算**：歌词组件高度必须以内核原生测量结果为唯一真源。AMLL 内核公开 `player.currentLyricGroups`（当前全部歌词组）与 `player.lyricGroupSize`（`WeakMap<歌词组, [宽, 高]>`，由内核 `ResizeObserver` 对每组 `.lyricLineWrapper` 实测 `clientWidth/clientHeight` 写入）；内核 `calcLayout()` 在 `alignAnchor=top` / `alignPosition=0` 下「自顶向下按已测行高累加、组间无额外间距」，因此 **Σ `lyricGroupSize.get(group)[1]` 即总览所需的精确内容高度，且与容器高度、播放/总览模式均无关**（实测：容器 200 / 400 / 800 / 3000px 下累加值完全一致）。
-  实现落点：`SongLyricPlayer` 用 `requestAnimationFrame` 轮询 `measureLyricOverviewHeight(player)`，并把 `player.setOverscanPx()` 调大到全量级别 —— **必须全量挂载**，否则会死循环：「外壳偏矮 → 末尾歌词行在视野外被内核 `hide()` 不挂载 → 永远测不到 → 高度永远算不准」（用户实测「10 行只显示约 8 行」即此因）。
-  采信前还要求测量值**连续多帧稳定**：首帧测量常落在字体加载与内核 `.lyricLine` 的 `content-visibility: auto` 占位尺寸等瞬态上（实测可偏差 3%，560 vs 544），直接采信会把瞬态值固化。
-- **盒模型常量一律由「播放器实测字号」等比推导，严禁写死像素**：根字号并非固定 16px（本项目实测 19.2px），`--amll-lp-font-size: 1.125rem` 实测为 21.6px，按 18px 推导会让整体高度偏差约 14%~20%。正确姿势是 `getComputedStyle(playerEl).fontSize` 实测后按内核比例推导（主行行高 ×1.2、翻译副行 `0.85/1.125` 字号 ×1.4 行高再叠 `0.2rem` 上间距、和声 `0.7em`、歌词组上下 `.25em×2`、组内 `gap .2em`、外壳 padding 取 `getComputedStyle` 实测值）。解析式估算只作测量到位前的首帧与无布局环境（jsdom / 预渲染）兜底。
-- **歌词组上下 padding 与 gap 播放/总览必须统一**（`index.css` 在 `.baka-lyric-player [class*="lyricLineWrapper"]` 层统一为 `.25em` / `.2em`，覆盖内核默认 `.4em`）：盒模型跨模式一致，原生实测值才能在播放阶段就锁定并复用到总览。
-- **外壳高度播放/总览恒定，切入总览只允许缩放在动**：外壳高度恒为 `SCALE × 内容自然高度 + 上下内边距/边框`，切换瞬间高度零变化；若高度也在过渡（旧实现 507→541），会与 `scale(0.92)` 的 500ms 缩放叠加成两次过渡，肉眼可见不连贯。总览态通过 CSS 变量 `--baka-lyric-player-height` 给播放器本体注入**未缩放自然高度**（缩放后恰好填满外壳，既不裁切也不留白），播放态本体与外壳同高（居中锚点落在可视区正中）。
-- **总览态必须摘除逐字遮罩**：内核给每个词元挂 `mask-image: linear-gradient(rgba(0,0,0,var(--bright-mask-alpha)) …, rgba(0,0,0,var(--dark-mask-alpha)) …)`，未唱词被 `--dark-mask-alpha: 0.4` 压到 40% 不透明度，整段总览发灰；`opacity/color` 的 `!important` 覆盖救不了 mask。总览态没有进度推进，遮罩毫无意义，必须 `mask-image: none !important`（配合 `--bright/dark-mask-alpha: 1 !important` 双保险），才能真正纯黑。
-- 纯音乐无歌词时保持紧凑提示（`h-24 sm:h-28`），不参与上述高度核算。
+- 改动前阅读官方[生命周期](https://amll.dev/guides/component/sequence)与[进度对齐](https://amll.dev/guides/component/seeking)，同时核对锁定版本源码。`SongLyricPlayer` 负责 React 容器，`SongLyricScene` 通过原生 Core 单实例统一管理数据、媒体、测量和动画；不得同时用 React 绑定与命令式方法重复驱动同一状态。
+- 歌词引用按完整内容深比较，必须包含逐字文本、逐字时间、行级和逐字注音、翻译、和声及对唱标记。禁止只比较文本与词数的摘要键：相同词数也可能有实际内容更新。快照复制不得重建歌词节点。
+- 翻译非空时屏蔽行级与逐字注音；无翻译时完整保留注音。通过原生 AMLL 排版测量所有可显示的副行，禁止只计算翻译而漏算注音。
+- 题目片段全量挂载，并覆盖内核 `content-visibility: auto` 为 `visible`。挂载不等于排版完成，不能把视口外的固有占位高度当真实行高。
+- 高度唯一来源为原生歌词组的 `clientHeight`，与 AMLL 的 `lyricGroupSize` 使用相同口径。持续用 `ResizeObserver` 监听歌词组、宿主及播放器；字体、宽度、字号变化必须重新计算。禁止按字数估算、固定最大高度、轮询若干帧后永久锁定，或用人为延迟掩盖测量竞态。
+- 和声容器在播放/暂停/总览始终按真实尺寸占位，统一 `position: relative`、零负间距与无几何变换；活动状态只改变明暗。否则原生和声展开会改变组高，播放时的测量不能复用于总览。
+- 播放器本体始终维持未缩放的自然高度，宿主高度为 `ceil(自然高度 × lyricOverview.scale)`；外壳由正常盒模型叠加 padding 和边框。播放锚点为 `scale / 2`，总览为顶部零点。模式切换不得修改字体、行高、播放器高度或外壳高度。
+- 初始化先挂载歌词并触发实际排版，再等待本段文字的 `document.fonts.ready` 和内核实测尺寸一致，最后强制对齐并显示。禁止先显示从屏幕外飞入的临时位置；新曲不能沿用上一曲的测量或等待回调。
+- `requestAnimationFrame` 同时驱动真实媒体时间与 `player.update(delta)`，不触发 React 每帧渲染。暂停和结束事件只暂停演出，不能先倒回首句；只有完成状态切换才进入总览。前奏必须使用实际媒体毫秒，不能提前点亮首句。
+- 总览必须保持同一播放器和同一批歌词节点。切换先读取当前屏幕的变换，再计算目标布局，在同一次同步更新中以 Web Animations 从旧位置移动到新位置，同时缩放播放器；两者共用 `Motion.ts` 的 `lyricOverview` 时长与曲线。裸调用 `calcLayout(true, true)` 会瞬移，只能用于隐藏中的首次落位或已捕获起点且立即建立连续动画的目标布局。
+- 快速重播必须从尚未结束的当前变换接续；动画结束取消填充状态，播放端清除整体缩放。减弱动效直接落位。卸载须释放播放器、媒体监听、字体监听、ResizeObserver 与动画帧。
+- 文字使用现有前景色和衬线字体，主行字重 500、副行 400，禁用深色叠加混合与文字辉光。总览的主行、副行和和声均为完整不透明度，并去除逐字遮罩；仅覆盖 opacity 不能去除遮罩造成的灰字。
+- 禁止为屏蔽第三方开发日志而改写全局 `console.log`；生产环境由依赖本身的构建条件移除调试日志。
+- 无歌词时保持紧凑提示（`h-24 sm:h-28`）。浏览器回归见 `Client/e2e/SongLyrics.spec.ts`，用 `npm run test:lyrics` 验证真实 AMLL、字体、布局与动画中间帧；jsdom 中的模拟高度不能证明真实排版正确。
 
 ### 歌词清洗
 
