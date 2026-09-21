@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Eye,
   History,
   Menu,
   MessageSquare,
@@ -259,13 +260,18 @@ export default function WhoIsFakerRoomPage() {
     return roles.size > 0 ? roles : undefined;
   }, [snapshot?.status.phase, snapshot?.summary?.revealedRoles]);
 
+  // 本人本局的词语 / 提示，顶栏停靠位与居中揭示共用同一份文案。
+  // 出题人与旁观者没有「自己的词」，但在场者与旁观者本该看到本局词对，
+  // 因此在这里用同样的形式给出，不再靠额外标签单独展示。
   const assignedWordText =
     !isSpectator && !privateState?.isQuestioner
       ? privateState?.word ??
         (privateState?.angelWordOptions
           ? `天使：${privateState.angelWordOptions[0]}/${privateState.angelWordOptions[1]}`
           : privateState?.blankHint ? `白板提示：${privateState.blankHint}` : undefined)
-      : undefined;
+      : privateState?.globalWords
+        ? `平民 ${privateState.globalWords.civilianWord} / 卧底 ${privateState.globalWords.undercoverWord}`
+        : undefined;
 
   // 重置揭词标记——新局开始时（phase 回到 waiting）清除
   useEffect(() => {
@@ -401,6 +407,7 @@ export default function WhoIsFakerRoomPage() {
 
   const roleConfig = snapshot.settings.roleConfig;
   const showHistoryToggle = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
 
   return (
@@ -422,14 +429,32 @@ export default function WhoIsFakerRoomPage() {
           <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
         </div>
 
-        {/* 顶栏中部只保留两个信息：本人身份标签与本人的词语。
-            身份标签固定占位（非主持人时留空），词语锚点因此始终待在
-            同一水平位置，停靠时不会因标签增减而左右跳动。 */}
-        <div className="flex min-w-0 items-center justify-center gap-2 md:gap-3">
+        {/* 顶栏中部：天数、本人身份标签与本人的词语。
+            身份标签固定占位（无身份时留空结构），词语锚点因此始终待在
+            同一水平位置，停靠时不会因标签增减而左右跳动。
+            加 data-testid 是因为「旁观」同时是玩家列表的分组标题，
+            测试必须能把断言限定在顶栏内部。 */}
+        <div
+          data-testid="room-header-center"
+          className="flex min-w-0 items-center justify-center gap-2 md:gap-3"
+        >
+          {dayVisible && day > 0 && (
+            <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
+              第 {day} 天
+            </span>
+          )}
+          {/* 主持人统一叫「主持人」，旁观显示「旁观」。两者互斥渲染，
+              不会同时出现两枚身份标签。
+              标签文案刻意取短：「第 x 天」+ 身份标签 + 词语要一起挤在
+              顶栏中段，写成「主持人视角」「旁观视角」会把这一行顶到换行。 */}
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
             {privateState?.isQuestioner ? (
               <>
                 <ShieldCheck className="h-3.5 w-3.5" />主持人
+              </>
+            ) : isSpectator ? (
+              <>
+                <Eye className="h-3.5 w-3.5" />旁观
               </>
             ) : null}
           </span>

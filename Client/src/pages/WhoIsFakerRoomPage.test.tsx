@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -211,10 +211,10 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
       });
     });
 
-    // 顶栏已收敛为「身份标签 + 词语」两项，天数与全局词对不再单独占位。
-    expect(screen.queryByText("第 1 天")).not.toBeInTheDocument();
+    // 顶栏保留天数与身份标签；词语已并入顶栏停靠位，不再有「主持人视角」
+    // 这类冗长的视角标签。
+    expect(screen.getByText("第 1 天")).toBeInTheDocument();
     expect(screen.queryByText("主持人视角")).not.toBeInTheDocument();
-    expect(screen.queryByText("旁观视角")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "描述阶段" })).toBeInTheDocument();
     expect(screen.getByText("这个东西是圆形的")).toBeInTheDocument();
 
@@ -277,6 +277,101 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     fireEvent.click(voteButton);
 
     expect(sendCommandSpy).toHaveBeenCalledWith("game.submitVote", { targetId: "player-2" });
+  });
+
+  it("主持人出题阶段顶栏同时给出天数、主持人标签与本局词对", () => {
+    // 没有「全局词语」标签之后，出题人与旁观者必须能在顶栏停靠位读到词对，
+    // 否则这两类身份会完全看不到本局词语。
+    renderRoomPage();
+
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: createMockSnapshot({
+          status: {
+            phase: "description",
+            roundId: "round-200",
+            started: true,
+            day: 2,
+            questionerPlayerId: "player-1",
+          },
+          players: [
+            {
+              id: "player-1",
+              name: "房主小明",
+              score: 0,
+              membership: "active",
+              online: true,
+              isReady: true,
+              isBot: false,
+              isHost: true,
+              roundStatus: "questioner",
+            },
+          ],
+        }),
+        privateState: createMockPrivateState({
+          isQuestioner: true,
+          globalWords: {
+            civilianWord: "西瓜",
+            undercoverWord: "冬瓜",
+          },
+        }),
+      });
+    });
+
+    // 「旁观」也是玩家列表的分组标题，断言必须限定在顶栏内部。
+    const header = screen.getByTestId("room-header-center");
+    expect(within(header).getByText("第 2 天")).toBeInTheDocument();
+    expect(within(header).getByText("主持人")).toBeInTheDocument();
+    expect(within(header).queryByText("旁观")).not.toBeInTheDocument();
+    expect(
+      within(header).getByLabelText("你的词语 平民 西瓜 / 卧底 冬瓜"),
+    ).toBeInTheDocument();
+  });
+
+  it("旁观者顶栏显示旁观标签且能看到本局词对", () => {
+    renderRoomPage();
+
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: createMockSnapshot({
+          status: {
+            phase: "description",
+            roundId: "round-201",
+            started: true,
+            day: 1,
+          },
+          players: [
+            {
+              id: "player-9",
+              name: "旁观的小红",
+              score: 0,
+              membership: "spectator",
+              online: true,
+              isReady: false,
+              isBot: false,
+              isHost: false,
+              roundStatus: "spectator",
+            },
+          ],
+        }),
+        privateState: createMockPrivateState({
+          playerId: "player-9",
+          isQuestioner: false,
+          globalWords: {
+            civilianWord: "西瓜",
+            undercoverWord: "冬瓜",
+            blankHint: "水果",
+          },
+        }),
+      });
+    });
+
+    const header = screen.getByTestId("room-header-center");
+    expect(within(header).getByText("旁观")).toBeInTheDocument();
+    expect(within(header).queryByText("主持人")).not.toBeInTheDocument();
+    expect(
+      within(header).getByLabelText("你的词语 平民 西瓜 / 卧底 冬瓜"),
+    ).toBeInTheDocument();
   });
 
   it("结算弹框展示：卧底胜利、词语揭秘全景与胜负原因", () => {
