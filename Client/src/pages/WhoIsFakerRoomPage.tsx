@@ -294,7 +294,7 @@ export default function WhoIsFakerRoomPage() {
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo<PlayerListHistory>(() => {
     const descriptions = snapshot?.descriptions ?? [];
-    const { columns, byPlayer } = buildDescriptionColumns(descriptions, speechStatus);
+    const { columns, byPlayer, playerOrder } = buildDescriptionColumns(descriptions, speechStatus);
     const present = new Set((snapshot?.players ?? []).map((player) => player.id));
     const departed = new Map<string, PublicPlayerView>();
     for (const record of descriptions) {
@@ -317,6 +317,7 @@ export default function WhoIsFakerRoomPage() {
     return {
       columns,
       byPlayer,
+      playerOrder,
       departedPlayers: [...departed.values()],
       submittedColumnKey: active?.key,
       submittedPlayerIds: new Set(speechStatus?.submittedSpeechPlayerIds ?? []),
@@ -404,8 +405,8 @@ export default function WhoIsFakerRoomPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {seoNode}
       {/* ── 顶栏 ── */}
-      <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-1 bg-background px-2 md:gap-2 md:px-4 lg:px-6">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -419,34 +420,39 @@ export default function WhoIsFakerRoomPage() {
           <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
         </div>
 
-        <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-1 sm:gap-1.5 md:gap-2">
           {dayVisible && day > 0 && (
             <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
               第 {day} 天
             </span>
           )}
-          {privateState?.isQuestioner && (
+          {privateState?.isQuestioner ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />主持人视角
+              <ShieldCheck className="h-3.5 w-3.5" />主持人
             </span>
-          )}
-          {isSpectator && (
+          ) : isSpectator ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-              <Eye className="h-3.5 w-3.5" />旁观视角
+              <Eye className="h-3.5 w-3.5" />旁观
             </span>
-          )}
+          ) : null}
           {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
           {globalWords && (
             <>
-              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-                <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">
+              <span
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
+                title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="whitespace-normal break-words sm:whitespace-nowrap">
                   平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
                 </span>
               </span>
               {globalWords.blankHint && (
-                <span className="hidden min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex">
-                  <span className="truncate">白板：{globalWords.blankHint}</span>
+                <span
+                  className="hidden max-w-full items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex"
+                  title={`白板：${globalWords.blankHint}`}
+                >
+                  <span className="whitespace-normal break-words sm:whitespace-nowrap">白板：{globalWords.blankHint}</span>
                 </span>
               )}
             </>
@@ -463,7 +469,7 @@ export default function WhoIsFakerRoomPage() {
           ) : null}
         </div>
 
-        <div className="flex items-center justify-end gap-0 md:gap-1">
+        <div className="flex shrink-0 items-center justify-end gap-0 md:gap-1">
           {!connected && (
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           )}

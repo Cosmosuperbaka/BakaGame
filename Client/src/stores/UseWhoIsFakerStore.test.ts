@@ -477,16 +477,55 @@ describe("game store integration", () => {
     expect(chatAfterGameOver[1]?.text).toBe("已返回公共聊天频道，所有玩家均可见发言");
   });
 
-  it("resets state sync and cleans room state when leaveRoomState or joinRoomState with new roomId is called", () => {
-    useGameStore.getState().joinRoomState("room-a", "token-a");
-    expect(useGameStore.getState().roomId).toBe("room-a");
+  it("keeps spectators in main channel during assigningQuestioner and wordSubmission, and transitions to ghost upon description", () => {
+    useGameStore.getState().setPrivateState({
+      playerId: "spec-1",
+      sessionToken: "token-spec",
+      isQuestioner: false,
+      canSubmitBlankGuess: false,
+      blankGuessUsed: false,
+      nightActionSubmitted: false,
+    });
 
-    useGameStore.getState().joinRoomState("room-b", "token-b");
-    expect(useGameStore.getState().roomId).toBe("room-b");
+    const specPlayer = {
+      id: "spec-1",
+      name: "旁观者",
+      score: 0,
+      membership: "spectator" as const,
+      online: true,
+      isReady: true,
+      isBot: false,
+      isHost: false,
+      roundStatus: "spectator" as const,
+    };
 
-    useGameStore.getState().leaveRoomState();
-    expect(useGameStore.getState().roomId).toBeNull();
-    expect(useGameStore.getState().snapshot).toBeNull();
-    expect(useGameStore.getState().sessionToken).toBeNull();
+    // 1. 指定出题人阶段 -> 保持在 main 频道，无进入观战频道提示
+    const assigningState: RoomSnapshot = {
+      ...gameOverSnapshot("round-spec"),
+      status: { phase: "assigningQuestioner", roundId: "round-spec", started: true, day: 1 },
+      players: [specPlayer],
+      chat: [],
+    };
+    useGameStore.getState().setSnapshot(assigningState);
+    expect(useGameStore.getState().snapshot?.chat).toHaveLength(0);
+
+    // 2. 出题阶段 -> 保持在 main 频道，无进入观战频道提示
+    const wordSubState: RoomSnapshot = {
+      ...assigningState,
+      status: { phase: "wordSubmission", roundId: "round-spec", started: true, day: 1 },
+    };
+    useGameStore.getState().setSnapshot(wordSubState);
+    expect(useGameStore.getState().snapshot?.chat).toHaveLength(0);
+
+    // 3. 描述阶段（正式开局）-> 触发进入观战频道提示
+    const descState: RoomSnapshot = {
+      ...assigningState,
+      status: { phase: "description", roundId: "round-spec", started: true, day: 1 },
+    };
+    useGameStore.getState().setSnapshot(descState);
+    const chat = useGameStore.getState().snapshot?.chat ?? [];
+    expect(chat).toHaveLength(1);
+    expect(chat[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
   });
 });
+

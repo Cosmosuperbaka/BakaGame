@@ -148,8 +148,7 @@ const computePlayerChannel = (
   if (!snapshot || !playerId) return "main";
   const isIngame = Boolean(
     snapshot.status.started &&
-    snapshot.status.phase !== "waiting" &&
-    snapshot.status.phase !== "gameOver",
+    ["description", "voting", "tieBreak", "night", "blankGuess"].includes(snapshot.status.phase),
   );
   if (!isIngame) return "main";
   const isQuestioner = snapshot.status.questionerPlayerId === playerId;

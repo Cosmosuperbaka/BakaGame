@@ -114,7 +114,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const guessDeadlineAt = privateState?.guessDeadlineAt;
   useEffect(() => {
     if (!guessDeadlineAt) return;
-    setClock(Date.now());
     const timer = window.setInterval(() => setClock(Date.now()), 200);
     return () => window.clearInterval(timer);
   }, [guessDeadlineAt]);

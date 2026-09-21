@@ -126,7 +126,10 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 - **触发时机**：常规发言完毕（`isDescriptionComplete`）后至投票结算前，出题人可指定任意 1~N 名玩家进行补充发言。
 - **状态切换**：房间切入 `description + supplement` 模式，全房客户端离开投票视图回到发言视图。
 - **投票保护**：已经投出的选票完整保留，但在此期间禁止新投票、禁止撤销投票、禁止阶段强制推进。
-- **自动恢复**：待所有被点名玩家完成补充发言后，服务端自动清除补充态并无缝切回 `resumePhase`（通常为 `voting`）。
+### 5.3 发言顺位序号与跨轮动态索引 (Speech Order Indexing)
+- **发言序号注入**：`DescriptionRecord.order` 在发言提交（`handleSubmitDescription`、超时自动提交或机器人发言）时计算并固化为 1-based 整数序号。
+- **跨轮独立动态**：每轮发言顺位（`order`）由该轮首位发言玩家起按顺时针真实递增计算。即使后续轮次重新洗牌或重排，各轮历史记录依然忠实保留该轮的准确发言序号。
+- **UI 呈现**：描述历史表格与侧栏发言单元格以 `#{order}` 形式前置展示序号，未发言玩家则展示其预期顺位。
 
 ---
 
@@ -167,7 +170,27 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 
 ---
 
-## 9. 专用测试模式 (Test Mode - "Oblivionis")
+## 9. 阶段播报、聊天频道与顶栏规范 (Phase Announcements, Chat & Topbar Specs)
+
+### 9.1 阶段播报规范与单一真相源
+- 系统阶段播报统一收敛为：
+  - `"已返回房间中"`（返回大厅/准备阶段）
+  - `"第 ${room.roundCount} 轮游戏已开始"`（开启选人）
+  - `"${questioner.name}正在出题"`（出题中）
+  - `"第 ${day} 天${speechMode}阶段"`（对局进行中）
+- 严禁在应用层指令处理函数中零散插入 `appendSystemMessage`，所有阶段通知统一由 `publishRoomState` 中的 `describePhaseChange` 单一出口广播。
+
+### 9.2 观战频道流转时机
+- 旁观者在等待大厅、指定出题人（`assigningQuestioner`）及出题中（`wordSubmission`）阶段，统一保持在公共主聊天频道（`"main"`），确保选人与备战阶段全员沟通通畅。
+- 仅在出题完毕正式进入对局活跃期（`["description", "voting", "tieBreak", "night", "blankGuess"]`）后，旁观者才流转至观战专属频道（`"ghost"`）。
+
+### 9.3 顶栏视觉与词语自适应
+- 顶部导航仅展示角色徽章（如“主持人”/“旁观”）与词语展示，杜绝“主持人视角”“旁观视角”等冗余标签。
+- 词语容器采用自适应弹性排布，移除强制 `truncate`，并挂载完整 `title` 属性确保长词完整可读。
+
+---
+
+## 10. 专用测试模式 (Test Mode - "Oblivionis")
 
 - 房间号为 `"Oblivionis"` 时自动启用测试模式。
 - 允许客户端 `TestController` 发送调试指令：

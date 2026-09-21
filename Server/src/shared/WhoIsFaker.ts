@@ -109,6 +109,8 @@ export interface DescriptionRecord {
   tieBreakIndex?: number;
   /** 补充发言轮次编号（kind=supplement 时存在），1-based。 */
   supplementIndex?: number;
+  /** 本轮发言顺位序号，1-based。 */
+  order?: number;
   createdAt: number;
 }
 
@@ -289,6 +291,8 @@ export interface WhoIsFakerRoomRecord {
   players: Record<string, PlayerRecord>;
   chat: ChatMessage[];
   round?: GameRound;
+  /** 房间内已开启的对局总轮数，1-based 计数。 */
+  roundCount?: number;
 }
 
 export type RoomRecord = WhoIsFakerRoomRecord;

@@ -88,9 +88,9 @@ describe("LandingPage", () => {
     const fixBadges = screen.getAllByText("fix");
     expect(fixBadges.length).toBeGreaterThan(0);
 
-    // 未填写的类型（如 chore、docs）在更新日志中不渲染
-    expect(screen.queryByText("chore")).not.toBeInTheDocument();
+    // 未填写的类型（如 docs、revert）在更新日志中不渲染
     expect(screen.queryByText("docs")).not.toBeInTheDocument();
+    expect(screen.queryByText("revert")).not.toBeInTheDocument();
   });
 
   it("formats relative time correctly using Intl.RelativeTimeFormat", () => {

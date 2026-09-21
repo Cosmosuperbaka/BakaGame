@@ -1,4 +1,4 @@
-﻿/* eslint-disable react-refresh/only-export-components -- 历史表测试共享纯数据辅助函数。 */
+/* eslint-disable react-refresh/only-export-components -- 历史表测试共享纯数据辅助函数。 */
 import { History } from "lucide-react";
 import { cn } from "@/lib/Utils";
 import {
@@ -64,7 +64,7 @@ export function DescriptionTable({
   playerRowContext,
   compact = false,
 }: DescriptionTableProps) {
-  const { columns, byPlayer } = buildDescriptionColumns(descriptions);
+  const { columns, byPlayer, playerOrder } = buildDescriptionColumns(descriptions);
   const rows = collectDescriptionRows(players, descriptions);
 
   if (rows.length === 0) {
@@ -139,23 +139,40 @@ export function DescriptionTable({
                   </span>
                 )}
               </td>
-              {headColumns.map((column) => (
-                <td
-                  key={column.key}
-                  className={cn(
-                    "whitespace-nowrap border-r text-sm leading-relaxed",
-                    cellPad,
-                    DESCRIPTION_TONES[column.tone],
-                    descriptionCellShadeForPlayer(player, rowIndex, column.index),
-                  )}
-                >
-                  {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
-                  {byPlayer.get(player.id)?.get(column.key)?.text ??
-                    (column.expectedPlayerIds.has(player.id) ? (
-                      <span className="text-muted-foreground/40">—</span>
-                    ) : null)}
-                </td>
-              ))}
+              {headColumns.map((column) => {
+                const desc = byPlayer.get(player.id)?.get(column.key);
+                const order = playerOrder.get(player.id)?.get(column.key) ?? desc?.order;
+                return (
+                  <td
+                    key={column.key}
+                    className={cn(
+                      "whitespace-nowrap border-r text-sm leading-relaxed",
+                      cellPad,
+                      DESCRIPTION_TONES[column.tone],
+                      descriptionCellShadeForPlayer(player, rowIndex, column.index),
+                    )}
+                  >
+                    {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
+                    {desc ? (
+                      <span className="flex items-center gap-1.5 whitespace-nowrap">
+                        {order !== undefined ? (
+                          <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+                        ) : null}
+                        <span>{desc.text}</span>
+                      </span>
+                    ) : (
+                      column.expectedPlayerIds.has(player.id) ? (
+                        <span className="flex items-center gap-1 text-muted-foreground/40">
+                          {order !== undefined ? (
+                            <span className="font-mono text-xs font-medium">#{order}</span>
+                          ) : null}
+                          <span>—</span>
+                        </span>
+                      ) : null
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

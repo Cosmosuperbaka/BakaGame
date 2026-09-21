@@ -372,7 +372,7 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   });
 
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
-    "已进入第 1 天描述阶段",
+    "第 1 天描述阶段",
   );
 
   for (const connection of [host, joined[0].connection, joined[1].connection, joined[2].connection]) {
@@ -391,7 +391,7 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     payload: {},
   });
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
-    "已进入投票阶段",
+    "第 1 天投票阶段",
   );
 
   await execute(service, host, {
@@ -3115,3 +3115,127 @@ test("revealRoleOnDeath 开关控制死亡玩家身份是否在对局中公开",
   const finalVictimView = gameOverSnapshot?.players.find((p) => p.id === victimId);
   expect(finalVictimView?.revealedRole).toBe(room.round.assignments[victimId].role);
 });
+
+test("阶段精简播报、观战频道流转时机与发言顺序序号验证", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "3333");
+
+  const p1Connection = createConnection(service, "p1");
+  const p1 = (await execute(service, p1Connection, {
+    id: "join-p1",
+    type: "room.join",
+    roomId: "3333",
+    payload: { userName: "玩家1" },
+  })) as { playerId: string };
+
+  const p2Connection = createConnection(service, "p2");
+  const p2 = (await execute(service, p2Connection, {
+    id: "join-p2",
+    type: "room.join",
+    roomId: "3333",
+    payload: { userName: "玩家2" },
+  })) as { playerId: string };
+
+  const p3Connection = createConnection(service, "p3");
+  const p3 = (await execute(service, p3Connection, {
+    id: "join-p3",
+    type: "room.join",
+    roomId: "3333",
+    payload: { userName: "玩家3" },
+  })) as { playerId: string };
+
+  const specConnection = createConnection(service, "spec");
+  await execute(service, specConnection, {
+    id: "join-spec",
+    type: "room.join",
+    roomId: "3333",
+    payload: { userName: "旁观者" },
+  });
+  await execute(service, specConnection, {
+    id: "set-spec",
+    type: "player.setSpectator",
+    payload: { spectator: true },
+  });
+
+  for (const conn of [host, p1Connection, p2Connection, p3Connection]) {
+    await execute(service, conn, {
+      id: `ready-${conn.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+
+  // 1. 开局 -> 第 1 轮游戏已开始
+  await execute(service, host, {
+    id: "start",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  let snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.chat.at(-1)?.text).toBe("第 1 轮游戏已开始");
+
+  // 选人和出题阶段：旁观者发言应在 main 频道
+  await execute(service, specConnection, {
+    id: "spec-chat-1",
+    type: "chat.send",
+    payload: { text: "选人阶段发言" },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.chat.at(-1)?.channel).toBe("main");
+
+  // 2. 指定出题人 -> xxx正在出题
+  await execute(service, host, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: p3.playerId },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.chat.at(-1)?.text).toBe("玩家3正在出题");
+
+  // 出题阶段：旁观者发言依然在 main 频道
+  await execute(service, specConnection, {
+    id: "spec-chat-2",
+    type: "chat.send",
+    payload: { text: "出题阶段发言" },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.chat.at(-1)?.channel).toBe("main");
+
+  // 3. 提交词语 -> 第 1 天描述阶段
+  await execute(service, p3Connection, {
+    id: "submit-words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.chat.at(-1)?.text).toBe("第 1 天描述阶段");
+
+  // 正式对局中：旁观者发言进入 ghost 频道
+  await execute(service, specConnection, {
+    id: "spec-chat-3",
+    type: "chat.send",
+    payload: { text: "游戏对局中发言" },
+  });
+  const specSnapshot = getLastEventPayload<RoomSnapshot>(specConnection, "room.snapshot")!;
+  expect(specSnapshot.chat.at(-1)?.channel).toBe("ghost");
+
+  // 4. 提交描述并断言发言顺位 order 字段
+  const order = snapshot.status.descriptionOrder!;
+  expect(order.length).toBe(3);
+
+  for (const conn of [host, p1Connection, p2Connection]) {
+    await execute(service, conn, {
+      id: `desc-${conn.record.id}`,
+      type: "game.submitDescription",
+      payload: { text: `${conn.record.id}的发言` },
+    });
+  }
+
+  snapshot = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")!;
+  expect(snapshot.descriptions.length).toBe(3);
+  for (const record of snapshot.descriptions) {
+    const expectedOrder = order.indexOf(record.playerId) + 1;
+    expect(record.order).toBe(expectedOrder);
+  }
+});
+

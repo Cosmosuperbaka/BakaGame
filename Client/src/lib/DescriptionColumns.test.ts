@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { DescriptionRecord, PublicPlayerView } from "@/types";
 
@@ -110,4 +110,37 @@ describe("description column model", () => {
 
     expect(buildDescriptionColumns([], status).columns).toEqual([]);
   });
+
+  it("extracts and assigns speech order sequence across multiple rounds", () => {
+    const records: DescriptionRecord[] = [
+      {
+        ...description("desc-1-p2", "p2", "description"),
+        cycle: 1,
+        order: 1,
+      },
+      {
+        ...description("desc-1-p1", "p1", "description"),
+        cycle: 1,
+        order: 2,
+      },
+    ];
+
+    const status: SpeechStatus = {
+      phase: "description",
+      started: true,
+      day: 2,
+      speechOrder: ["p1", "p2"],
+    };
+
+    const model = buildDescriptionColumns(records, status);
+
+    // 第 1 轮：p2 为 1，p1 为 2
+    expect(model.playerOrder.get("p2")?.get("cycle-1")).toBe(1);
+    expect(model.playerOrder.get("p1")?.get("cycle-1")).toBe(2);
+
+    // 第 2 轮（进行中）：根据 speechOrder，p1 为 1，p2 为 2
+    expect(model.playerOrder.get("p1")?.get("cycle-2")).toBe(1);
+    expect(model.playerOrder.get("p2")?.get("cycle-2")).toBe(2);
+  });
 });
+

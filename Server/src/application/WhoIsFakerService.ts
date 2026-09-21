@@ -634,12 +634,6 @@ export class WhoIsFakerService {
     round.phase = "wordSubmission";
     round.speechMode = undefined;
     this.touchRoom(room);
-    this.appendSystemMessage(
-      room,
-      target.membership === "spectator"
-        ? `${target.name}（旁观）被指定为出题人`
-        : `${target.name} 被指定为出题人`,
-    );
 
     await this.log({
       type: "game.questioner_assigned",
@@ -872,9 +866,11 @@ export class WhoIsFakerService {
         throw new AppError("ACTION_FORBIDDEN", "当前玩家不能补充发言");
       }
       round.supplement.donePlayers.push(player.id);
+      const order = (round.supplement.requestedPlayerIds ?? []).indexOf(player.id) + 1;
       round.descriptions.push(
         this.createDescription(player, normalized, "supplement", round.descriptionCycle, {
           supplementIndex: round.supplement.index,
+          order: order > 0 ? order : undefined,
         }),
       );
       if (round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length) {
@@ -892,8 +888,11 @@ export class WhoIsFakerService {
         throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
       }
       round.descriptionSubmittedBy.push(player.id);
+      const order = (round.descriptionOrder ?? []).indexOf(player.id) + 1;
       round.descriptions.push(
-        this.createDescription(player, normalized, "description", round.descriptionCycle),
+        this.createDescription(player, normalized, "description", round.descriptionCycle, {
+          order: order > 0 ? order : undefined,
+        }),
       );
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
       round.speechMode = "tieBreak";
@@ -906,9 +905,11 @@ export class WhoIsFakerService {
       }
 
       round.tieBreak.descriptionsDone.push(player.id);
+      const order = (round.tieBreak.candidateIds ?? []).indexOf(player.id) + 1;
       round.descriptions.push(
         this.createDescription(player, normalized, "tieBreak", round.descriptionCycle, {
           tieBreakIndex: round.tieBreakCount,
+          order: order > 0 ? order : undefined,
         }),
       );
     } else {
@@ -1523,13 +1524,17 @@ export class WhoIsFakerService {
           if (!round.supplement.donePlayers.includes(playerId)) {
             const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
             round.supplement.donePlayers.push(playerId);
+            const order = round.supplement.requestedPlayerIds.indexOf(playerId) + 1;
             round.descriptions.push(
               this.createDescription(
                 player,
                 "（超时未发言）",
                 "supplement",
                 round.descriptionCycle,
-                { supplementIndex: round.supplement.index },
+                {
+                  supplementIndex: round.supplement.index,
+                  order: order > 0 ? order : undefined,
+                },
               ),
             );
           }
@@ -1543,12 +1548,14 @@ export class WhoIsFakerService {
           if (!round.descriptionSubmittedBy.includes(playerId)) {
             const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
             round.descriptionSubmittedBy.push(playerId);
+            const order = round.descriptionOrder.indexOf(playerId) + 1;
             round.descriptions.push(
               this.createDescription(
                 player,
                 "（超时未发言）",
                 "description",
                 round.descriptionCycle,
+                { order: order > 0 ? order : undefined },
               ),
             );
           }
@@ -1597,13 +1604,17 @@ export class WhoIsFakerService {
           if (!round.tieBreak.descriptionsDone.includes(candidateId)) {
             const player = room.players[candidateId] ?? ({ id: candidateId, name: "超时玩家" } as PlayerRecord);
             round.tieBreak.descriptionsDone.push(candidateId);
+            const order = round.tieBreak.candidateIds.indexOf(candidateId) + 1;
             round.descriptions.push(
               this.createDescription(
                 player,
                 "（超时未发言）",
                 "tieBreak",
                 round.descriptionCycle,
-                { tieBreakIndex: round.tieBreakCount },
+                {
+                  tieBreakIndex: round.tieBreakCount,
+                  order: order > 0 ? order : undefined,
+                },
               ),
             );
           }
@@ -1747,8 +1758,7 @@ export class WhoIsFakerService {
 
     const isIngame = Boolean(
       room.round &&
-      room.round.phase !== "waiting" &&
-      room.round.phase !== "gameOver",
+      ["description", "voting", "tieBreak", "night", "blankGuess"].includes(room.round.phase),
     );
 
     if (isIngame) {
@@ -2184,6 +2194,7 @@ export class WhoIsFakerService {
 
   private async startRound(room: RoomRecord) {
     this.clearPhaseTimer(room);
+    room.roundCount = (room.roundCount ?? 0) + 1;
     // 每次开局都创建全新的 round 对象，避免上一局残留状态污染新局。
     room.round = {
       id: this.createId("round"),
@@ -2204,7 +2215,6 @@ export class WhoIsFakerService {
     };
 
     this.touchRoom(room);
-    this.appendSystemMessage(room, "新一局游戏已开始，请房主指定出题人");
 
     await this.log({
       type: "game.started",
@@ -3108,7 +3118,10 @@ export class WhoIsFakerService {
   }
 
   private canViewerAccessGhostChat(room: RoomRecord, player?: PlayerRecord): boolean {
-    if (!room.round || room.round.phase === "waiting" || room.round.phase === "gameOver") {
+    if (
+      !room.round ||
+      !["description", "voting", "tieBreak", "night", "blankGuess"].includes(room.round.phase)
+    ) {
       return true;
     }
     if (!player) return false;
@@ -3141,7 +3154,7 @@ export class WhoIsFakerService {
       const phaseKey = this.getPhaseNoticeKey(snapshot);
       const previousPhaseKey = this.publishedPhaseKeyByRoomId.get(room.id);
       if (previousPhaseKey !== undefined && previousPhaseKey !== phaseKey) {
-        this.appendSystemMessage(room, this.describePhaseChange(snapshot));
+        this.appendSystemMessage(room, this.describePhaseChange(snapshot, room));
         snapshot.chat = room.chat;
       }
       this.publishedPhaseKeyByRoomId.set(room.id, phaseKey);
@@ -3466,7 +3479,7 @@ export class WhoIsFakerService {
     text: string,
     kind: DescriptionRecord["kind"],
     cycle: number,
-    extra?: { tieBreakIndex?: number; supplementIndex?: number },
+    extra?: { tieBreakIndex?: number; supplementIndex?: number; order?: number },
   ): DescriptionRecord {
     return {
       id: this.createId("description"),
@@ -3477,6 +3490,7 @@ export class WhoIsFakerService {
       cycle,
       tieBreakIndex: extra?.tieBreakIndex,
       supplementIndex: extra?.supplementIndex,
+      order: extra?.order,
       createdAt: this.now(),
     };
   }
@@ -3506,23 +3520,40 @@ export class WhoIsFakerService {
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
 
-  private describePhaseChange(snapshot: RoomSnapshot) {
-    const phaseText: Record<GamePhase, string> = {
-      waiting: "等待阶段",
-      assigningQuestioner: "指定出题人阶段",
-      wordSubmission: "出题阶段",
-      description:
-        snapshot.status.speechMode === "supplement"
-          ? "补充描述阶段"
-          : `第 ${snapshot.status.day} 天描述阶段`,
-      voting: "投票阶段",
-      tieBreak:
-        snapshot.status.tieBreakStage === "vote" ? "平票投票阶段" : "平票描述阶段",
-      night: "夜晚阶段",
-      blankGuess: "白板猜词阶段",
-      gameOver: "游戏结算阶段",
-    };
-    return `已进入${phaseText[snapshot.status.phase]}`;
+  private describePhaseChange(snapshot: RoomSnapshot, room: RoomRecord): string {
+    const phase = snapshot.status.phase;
+    if (phase === "waiting") {
+      return "已返回房间中";
+    }
+    if (phase === "assigningQuestioner") {
+      return `第 ${room.roundCount ?? 1} 轮游戏已开始`;
+    }
+    if (phase === "wordSubmission") {
+      const questioner = snapshot.status.questionerPlayerId
+        ? room.players[snapshot.status.questionerPlayerId]
+        : undefined;
+      return `${questioner?.name ?? "出题人"}正在出题`;
+    }
+    const day = snapshot.status.day;
+    if (phase === "description") {
+      return `第 ${day} 天${snapshot.status.speechMode === "supplement" ? "补充描述" : "描述"}阶段`;
+    }
+    if (phase === "voting") {
+      return `第 ${day} 天投票阶段`;
+    }
+    if (phase === "tieBreak") {
+      return `第 ${day} 天${snapshot.status.tieBreakStage === "vote" ? "平票投票" : "平票描述"}阶段`;
+    }
+    if (phase === "night") {
+      return `第 ${day} 天夜晚阶段`;
+    }
+    if (phase === "blankGuess") {
+      return `第 ${day} 天白板猜词阶段`;
+    }
+    if (phase === "gameOver") {
+      return `第 ${day} 天游戏结算阶段`;
+    }
+    return `已进入${phase}`;
   }
 
   private getPhaseNoticeKey(snapshot: RoomSnapshot) {
@@ -3991,9 +4022,11 @@ export class WhoIsFakerService {
         !round.supplement.donePlayers.includes(bot.id)
       ) {
         round.supplement.donePlayers.push(bot.id);
+        const order = (round.supplement.requestedPlayerIds ?? []).indexOf(bot.id) + 1;
         round.descriptions.push(
           this.createDescription(bot, this.pickBotDescription(round, bot.id), "supplement", round.descriptionCycle, {
             supplementIndex: round.supplement.index,
+            order: order > 0 ? order : undefined,
           }),
         );
         changed = true;
@@ -4006,8 +4039,11 @@ export class WhoIsFakerService {
         !round.descriptionSubmittedBy.includes(bot.id)
       ) {
         round.descriptionSubmittedBy.push(bot.id);
+        const order = (round.descriptionOrder ?? []).indexOf(bot.id) + 1;
         round.descriptions.push(
-          this.createDescription(bot, this.pickBotDescription(round, bot.id), "description", round.descriptionCycle),
+          this.createDescription(bot, this.pickBotDescription(round, bot.id), "description", round.descriptionCycle, {
+            order: order > 0 ? order : undefined,
+          }),
         );
         changed = true;
         continue;
@@ -4019,9 +4055,11 @@ export class WhoIsFakerService {
           !round.tieBreak.descriptionsDone.includes(bot.id)
         ) {
           round.tieBreak.descriptionsDone.push(bot.id);
+          const order = (round.tieBreak.candidateIds ?? []).indexOf(bot.id) + 1;
           round.descriptions.push(
             this.createDescription(bot, this.pickBotDescription(round, bot.id), "tieBreak", round.descriptionCycle, {
               tieBreakIndex: round.tieBreakCount,
+              order: order > 0 ? order : undefined,
             }),
           );
           changed = true;

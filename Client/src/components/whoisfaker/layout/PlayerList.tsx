@@ -121,6 +121,8 @@ export interface PlayerListProps {
 export interface PlayerListHistory {
   columns: DescriptionColumn[];
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
+  /** playerId → columnKey → 1-based 发言顺位序号 */
+  playerOrder?: Map<string, Map<string, number>>;
   /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
   departedPlayers: PublicPlayerView[];
   /**
@@ -258,6 +260,10 @@ export function PlayerList(props: PlayerListProps) {
             key={column.key}
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
+            order={
+              history.playerOrder?.get(player.id)?.get(column.key) ??
+              history.byPlayer.get(player.id)?.get(column.key)?.order
+            }
             expected={column.expectedPlayerIds.has(player.id)}
             submitted={
               column.key === history.submittedColumnKey &&
@@ -406,12 +412,14 @@ function SpeechCell({
   description,
   tone,
   expected,
+  order,
   submitted,
   shade,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
   expected: boolean;
+  order?: number;
   /** 已提交但顺序未到，内容仍折起 */
   submitted?: boolean;
   /** 棋盘格底色，由所在行列的奇偶决定 */
@@ -427,11 +435,26 @@ function SpeechCell({
     >
       {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
-        <span className="whitespace-nowrap">{description.text}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          {order !== undefined ? (
+            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+          ) : null}
+          <span>{description.text}</span>
+        </span>
       ) : submitted ? (
-        <SubmittedSpeech />
+        <div className="flex items-center gap-1.5">
+          {order !== undefined ? (
+            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+          ) : null}
+          <SubmittedSpeech />
+        </div>
       ) : expected ? (
-        <PendingSpeech />
+        <div className="flex items-center gap-1.5">
+          {order !== undefined ? (
+            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+          ) : null}
+          <PendingSpeech />
+        </div>
       ) : null}
     </div>
   );

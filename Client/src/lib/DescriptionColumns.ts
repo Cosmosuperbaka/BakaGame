@@ -19,6 +19,8 @@ export interface DescriptionColumnModel {
   columns: DescriptionColumn[];
   /** playerId → columnKey → 发言记录 */
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
+  /** playerId → columnKey → 1-based 发言顺位序号 */
+  playerOrder: Map<string, Map<string, number>>;
 }
 
 /** 计算应发言名单所需的快照状态字段 */
@@ -59,7 +61,7 @@ export function pendingColumn(status: SpeechStatus): { key: string; playerIds: s
 
 /**
  * 按“正常轮次 → 平票 PK → 补充发言”的顺序展开列，
- * 并建立 玩家 × 列 的发言索引，供表格与玩家栏共用。
+ * 并建立 玩家 × 列 的发言索引与顺位索引，供表格与玩家栏共用。
  *
  * 传入 `status` 时，当前进行中的那一列会补上尚未提交的应发言玩家；
  * 已结束的列只把实际发言过的人算作应发言，因此不会给出题人、
@@ -127,13 +129,39 @@ export function buildDescriptionColumns(
   ].map((column, index) => ({ ...column, index }));
 
   const byPlayer = new Map<string, Map<string, DescriptionRecord>>();
+  const playerOrder = new Map<string, Map<string, number>>();
+
+  const setOrder = (playerId: string, colKey: string, order: number) => {
+    let row = playerOrder.get(playerId);
+    if (!row) {
+      row = new Map<string, number>();
+      playerOrder.set(playerId, row);
+    }
+    row.set(colKey, order);
+  };
+
   for (const record of descriptions) {
+    const colKey = columnKeyOf(record);
     const row = byPlayer.get(record.playerId) ?? new Map<string, DescriptionRecord>();
-    row.set(columnKeyOf(record), record);
+    row.set(colKey, record);
     byPlayer.set(record.playerId, row);
+
+    if (record.order !== undefined) {
+      setOrder(record.playerId, colKey, record.order);
+    }
   }
 
-  return { columns, byPlayer };
+  // 补齐进行中那一列的应发言玩家的预期发言顺位
+  if (status) {
+    const pending = pendingColumn(status);
+    if (pending) {
+      pending.playerIds.forEach((playerId, index) => {
+        setOrder(playerId, pending.key, index + 1);
+      });
+    }
+  }
+
+  return { columns, byPlayer, playerOrder };
 }
 
 /**
