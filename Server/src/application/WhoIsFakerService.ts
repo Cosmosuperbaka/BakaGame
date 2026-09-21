@@ -1752,10 +1752,7 @@ export class WhoIsFakerService {
     );
 
     if (isIngame) {
-      const isSpectator =
-        player.membership === "spectator" &&
-        room.round?.questionerPlayerId !== player.id &&
-        this.isGhostChannelOpen(room.round);
+      const isSpectator = player.membership === "spectator" && room.round?.questionerPlayerId !== player.id;
       const isDead = room.round?.assignments[player.id]?.alive === false;
       if (isSpectator || isDead) {
         channel = "ghost";
@@ -2188,12 +2185,8 @@ export class WhoIsFakerService {
   private async startRound(room: RoomRecord) {
     this.clearPhaseTimer(room);
     // 每次开局都创建全新的 round 对象，避免上一局残留状态污染新局。
-    // 局序号在本房间内跨局累加，不随 round 对象重建而丢失。
-    const roundIndex = (room.lastRoundIndex ?? 0) + 1;
-    room.lastRoundIndex = roundIndex;
     room.round = {
       id: this.createId("round"),
-      index: roundIndex,
       phase: "assigningQuestioner",
       day: 1,
       assignments: {},
@@ -2211,6 +2204,7 @@ export class WhoIsFakerService {
     };
 
     this.touchRoom(room);
+    this.appendSystemMessage(room, "新一局游戏已开始，请房主指定出题人");
 
     await this.log({
       type: "game.started",
@@ -2956,7 +2950,6 @@ export class WhoIsFakerService {
       status: {
         phase: room.round?.phase ?? "waiting",
         roundId: room.round?.id,
-        roundIndex: room.round?.index,
         speechMode: room.round?.speechMode,
         speechResumePhase: room.round?.supplement?.resumePhase,
         supplementIndex: room.round?.supplement?.index,
@@ -3114,26 +3107,13 @@ export class WhoIsFakerService {
     };
   }
 
-  /**
-   * 观战频道是否已经开放。
-   * 出题阶段（含指定出题人与等待出题人提交词语）属于「开局准备」，
-   * 此时局面还没有任何只有观战者能看的机密（词面尚未产生或尚未公开），
-   * 旁观者留在公共频道更便于沟通。等出题人提交词语、正式进入描述阶段，
-   * 观战频道才开放，避免旁观者过早被隔离而看不到开局过程。
-   */
-  private isGhostChannelOpen(round: GameRound | undefined): boolean {
-    if (!round) return false;
-    if (round.phase === "waiting" || round.phase === "gameOver") return true;
-    return round.phase !== "assigningQuestioner" && round.phase !== "wordSubmission";
-  }
-
   private canViewerAccessGhostChat(room: RoomRecord, player?: PlayerRecord): boolean {
     if (!room.round || room.round.phase === "waiting" || room.round.phase === "gameOver") {
       return true;
     }
     if (!player) return false;
     if (player.membership === "spectator" && room.round.questionerPlayerId !== player.id) {
-      return this.isGhostChannelOpen(room.round);
+      return true;
     }
     const assignment = room.round.assignments[player.id];
     if (assignment && !assignment.alive) {
@@ -3527,39 +3507,27 @@ export class WhoIsFakerService {
   }
 
   private describePhaseChange(snapshot: RoomSnapshot) {
-    const { phase, day, speechMode, tieBreakStage } = snapshot.status;
-
-    if (phase === "waiting") return "已返回房间中";
-
-    if (phase === "assigningQuestioner") {
-      return `第 ${snapshot.status.roundIndex ?? 1} 轮游戏已开始，请房主指定出题人`;
-    }
-
-    if (phase === "wordSubmission") {
-      const questionerName =
-        snapshot.players.find((player) => player.id === snapshot.status.questionerPlayerId)
-          ?.name ?? "出题人";
-      return `${questionerName} 正在出题`;
-    }
-
-    // 其余阶段统一收敛成「第 x 天 xx 阶段」。
-    // 平票 PK 与补充发言仍落在同一天内，天数是唯一的时间坐标。
-    const stageText = {
-      description: speechMode === "supplement" ? "补充描述" : "描述",
-      voting: "投票",
-      tieBreak: tieBreakStage === "vote" ? "平票投票" : "平票描述",
-      night: "夜晚",
-      blankGuess: "白板猜词",
-      gameOver: "游戏结算",
-    }[phase];
-
-    return `第 ${day} 天${stageText}阶段`;
+    const phaseText: Record<GamePhase, string> = {
+      waiting: "等待阶段",
+      assigningQuestioner: "指定出题人阶段",
+      wordSubmission: "出题阶段",
+      description:
+        snapshot.status.speechMode === "supplement"
+          ? "补充描述阶段"
+          : `第 ${snapshot.status.day} 天描述阶段`,
+      voting: "投票阶段",
+      tieBreak:
+        snapshot.status.tieBreakStage === "vote" ? "平票投票阶段" : "平票描述阶段",
+      night: "夜晚阶段",
+      blankGuess: "白板猜词阶段",
+      gameOver: "游戏结算阶段",
+    };
+    return `已进入${phaseText[snapshot.status.phase]}`;
   }
 
   private getPhaseNoticeKey(snapshot: RoomSnapshot) {
-    const { phase, day, speechMode, tieBreakStage, supplementIndex, roundIndex } =
-      snapshot.status;
-    return [phase, day, speechMode, tieBreakStage, supplementIndex, roundIndex].join(":");
+    const { phase, day, speechMode, tieBreakStage, supplementIndex } = snapshot.status;
+    return [phase, day, speechMode, tieBreakStage, supplementIndex].join(":");
   }
 
   private async restorePlayerConnection(

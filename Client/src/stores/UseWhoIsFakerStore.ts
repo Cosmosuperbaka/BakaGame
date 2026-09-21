@@ -146,14 +146,12 @@ const computePlayerChannel = (
   playerId: string | null | undefined,
 ): "main" | "ghost" => {
   if (!snapshot || !playerId) return "main";
-  const { phase } = snapshot.status;
   const isIngame = Boolean(
-    snapshot.status.started && phase !== "waiting" && phase !== "gameOver",
+    snapshot.status.started &&
+    snapshot.status.phase !== "waiting" &&
+    snapshot.status.phase !== "gameOver",
   );
   if (!isIngame) return "main";
-  // 出题阶段属于开局准备，服务端此时也未开放观战频道（见 isGhostChannelOpen）。
-  // 客户端必须用同一条件，否则会提前播报「已进入观战频道」而后又退回公共频道。
-  if (phase === "assigningQuestioner" || phase === "wordSubmission") return "main";
   const isQuestioner = snapshot.status.questionerPlayerId === playerId;
   if (isQuestioner) return "main";
   const me = snapshot.players.find((p) => p.id === playerId);

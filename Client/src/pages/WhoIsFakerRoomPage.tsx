@@ -5,10 +5,12 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  BookOpen,
   History,
   Menu,
   MessageSquare,
   ShieldCheck,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -39,7 +41,7 @@ import {
   type PlayerMark,
   type PlayerMarks,
 } from "@/components/whoisfaker/layout/PlayerList";
-import { buildDescriptionColumns, pendingColumn, speechOrdersByColumn } from "@/lib/DescriptionColumns";
+import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { AssignedWord } from "@/components/whoisfaker/layout/AssignedWord";
 import { GameArea } from "@/components/whoisfaker/layout/GameArea";
 import { ChatPanel } from "@/components/common/ChatPanel";
@@ -292,13 +294,7 @@ export default function WhoIsFakerRoomPage() {
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo<PlayerListHistory>(() => {
     const descriptions = snapshot?.descriptions ?? [];
-    // 服务端只下发「当前」子阶段的完整顺序，历史列靠记录时间兜底排序。
-    const columnOrders = speechOrdersByColumn(speechStatus);
-    const { columns, byPlayer, orderByColumn } = buildDescriptionColumns(
-      descriptions,
-      speechStatus,
-      columnOrders,
-    );
+    const { columns, byPlayer } = buildDescriptionColumns(descriptions, speechStatus);
     const present = new Set((snapshot?.players ?? []).map((player) => player.id));
     const departed = new Map<string, PublicPlayerView>();
     for (const record of descriptions) {
@@ -321,7 +317,6 @@ export default function WhoIsFakerRoomPage() {
     return {
       columns,
       byPlayer,
-      orderByColumn,
       departedPlayers: [...departed.values()],
       submittedColumnKey: active?.key,
       submittedPlayerIds: new Set(speechStatus?.submittedSpeechPlayerIds ?? []),
@@ -401,7 +396,9 @@ export default function WhoIsFakerRoomPage() {
 
   const roleConfig = snapshot.settings.roleConfig;
   const showHistoryToggle = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
@@ -422,23 +419,45 @@ export default function WhoIsFakerRoomPage() {
           <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
         </div>
 
-        {/* 顶栏中部只保留两个信息：本人身份标签与本人的词语。
-            身份标签固定占位（非主持人时留空），词语锚点因此始终待在
-            同一水平位置，停靠时不会因标签增减而左右跳动。 */}
-        <div className="flex min-w-0 items-center justify-center gap-2 md:gap-3">
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-            {privateState?.isQuestioner ? (
-              <>
-                <ShieldCheck className="h-3.5 w-3.5" />主持人
-              </>
-            ) : null}
-          </span>
+        <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden md:gap-2">
+          {dayVisible && day > 0 && (
+            <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
+              第 {day} 天
+            </span>
+          )}
+          {privateState?.isQuestioner && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />主持人视角
+            </span>
+          )}
+          {isSpectator && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+              <Eye className="h-3.5 w-3.5" />旁观视角
+            </span>
+          )}
+          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
+          {globalWords && (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
+                </span>
+              </span>
+              {globalWords.blankHint && (
+                <span className="hidden min-w-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex">
+                  <span className="truncate">白板：{globalWords.blankHint}</span>
+                </span>
+              )}
+            </>
+          )}
           {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
               此处只占位撑开顶栏空间，避免停靠时挤动相邻元素。 */}
           {privateInfoVisible && assignedWordText ? (
             <span
               ref={wordAnchorRef}
               aria-label={`你的词语 ${assignedWordText}`}
+              className="shrink-0"
               style={{ width: dockSize.width, height: dockSize.height }}
             />
           ) : null}

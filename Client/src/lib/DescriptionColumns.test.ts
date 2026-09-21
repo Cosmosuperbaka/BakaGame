@@ -6,7 +6,6 @@ import {
   buildDescriptionColumns,
   descriptionCellShade,
   descriptionCellShadeForPlayer,
-  speechOrdersByColumn,
   type SpeechStatus,
 } from "./DescriptionColumns";
 
@@ -110,53 +109,5 @@ describe("description column model", () => {
     };
 
     expect(buildDescriptionColumns([], status).columns).toEqual([]);
-  });
-
-  it("numbers speech order per column so each round has its own sequence", () => {
-    const roundOne = [
-      { ...description("c1-p1", "p1", "description"), cycle: 1 },
-      { ...description("c1-p2", "p2", "description"), cycle: 1 },
-    ];
-    const roundTwo = [
-      { ...description("c2-p1", "p1", "description"), cycle: 2 },
-      { ...description("c2-p2", "p2", "description"), cycle: 2 },
-    ];
-
-    const model = buildDescriptionColumns(
-      [...roundOne, ...roundTwo],
-      undefined,
-      // 两轮的随机顺序不同：p2 第一轮先手，第二轮反而是 p1 先手。
-      { "cycle-1": ["p2", "p1"], "cycle-2": ["p1", "p2"] },
-    );
-
-    expect(model.orderByColumn.get("cycle-1")?.get("p2")).toBe(1);
-    expect(model.orderByColumn.get("cycle-1")?.get("p1")).toBe(2);
-    // 第二轮里 p1 反而先发言，与第一轮的名次无关。
-    expect(model.orderByColumn.get("cycle-2")?.get("p1")).toBe(1);
-    expect(model.orderByColumn.get("cycle-2")?.get("p2")).toBe(2);
-  });
-
-  it("falls back to submission time when a column has no explicit order", () => {
-    // 服务端只下发当前子阶段的顺序，历史列取不到，必须仍能给出稳定名次。
-    const later = { ...description("late", "p2", "description"), createdAt: 200 };
-    const earlier = { ...description("early", "p1", "description"), createdAt: 100 };
-
-    const model = buildDescriptionColumns([later, earlier]);
-
-    expect(model.orderByColumn.get("cycle-1")?.get("p1")).toBe(1);
-    expect(model.orderByColumn.get("cycle-1")?.get("p2")).toBe(2);
-  });
-
-  it("derives the in-progress column order from the server speech order", () => {
-    const status: SpeechStatus = {
-      phase: "description",
-      started: true,
-      day: 3,
-      speechMode: "normal",
-      speechOrder: ["p3", "p1"],
-    };
-
-    expect(speechOrdersByColumn(status)).toEqual({ "cycle-3": ["p3", "p1"] });
-    expect(speechOrdersByColumn(undefined)).toEqual({});
   });
 });

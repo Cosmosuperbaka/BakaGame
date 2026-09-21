@@ -19,11 +19,6 @@ export interface DescriptionColumnModel {
   columns: DescriptionColumn[];
   /** playerId → columnKey → 发言记录 */
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
-  /**
-   * columnKey → playerId → 该玩家在本列的发言序号（1-based）。
-   * 每一列的发言顺序独立随机，因此序号必须按列存储，不能跨列共用。
-   */
-  orderByColumn: Map<string, Map<string, number>>;
 }
 
 /** 计算应发言名单所需的快照状态字段 */
@@ -73,21 +68,12 @@ export function pendingColumn(status: SpeechStatus): { key: string; playerIds: s
 export function buildDescriptionColumns(
   descriptions: DescriptionRecord[],
   status?: SpeechStatus,
-  /**
-   * 各列已确定的完整发言顺序。
-   * 键是列键（cycle-N / tie-N / sup-N），值是该列的玩家顺序。
-   * 服务端只为「当前」发言子阶段下发顺序，因此历史列取不到顺序，
-   * 那种情况退回按记录提交时间排序，仍然能给出稳定序号。
-   */
-  columnOrders?: Record<string, string[]>,
 ): DescriptionColumnModel {
   const cycles = new Set<number>();
   const ties = new Set<number>();
   const supplements = new Set<number>();
   // columnKey → 该列应发言的玩家；先由实际发言记录填充。
   const expected = new Map<string, Set<string>>();
-  // columnKey → 实际发言记录，用于在缺少显式顺序时按时间兜底排序。
-  const recordsByColumn = new Map<string, DescriptionRecord[]>();
 
   const expectFor = (key: string) => {
     const found = expected.get(key);
@@ -101,11 +87,7 @@ export function buildDescriptionColumns(
     if (record.kind === "tieBreak") ties.add(record.tieBreakIndex ?? 1);
     else if (record.kind === "supplement") supplements.add(record.supplementIndex ?? 1);
     else cycles.add(record.cycle);
-    const key = columnKeyOf(record);
-    expectFor(key).add(record.playerId);
-    const bucket = recordsByColumn.get(key);
-    if (bucket) bucket.push(record);
-    else recordsByColumn.set(key, [record]);
+    expectFor(columnKeyOf(record)).add(record.playerId);
   }
 
   // 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。
@@ -119,24 +101,6 @@ export function buildDescriptionColumns(
       const bucket = expectFor(key);
       for (const playerId of playerIds) bucket.add(playerId);
     }
-  }
-
-  // 每列的发言序号。显式顺序优先，缺失时按记录提交时间升序兜底，
-  // 保证任何一列都能给出确定且稳定的名次。
-  const orderByColumn = new Map<string, Map<string, number>>();
-  for (const key of expected.keys()) {
-    const explicit = columnOrders?.[key];
-    const ordered = explicit?.length
-      ? explicit
-      : [...(recordsByColumn.get(key) ?? [])]
-          .sort((left, right) => left.createdAt - right.createdAt)
-          .map((record) => record.playerId);
-    const rankByPlayer = new Map<string, number>();
-    ordered.forEach((playerId, position) => {
-      // 同一玩家在一列里只应记录一次，出现重复时保留首个名次。
-      if (!rankByPlayer.has(playerId)) rankByPlayer.set(playerId, position + 1);
-    });
-    orderByColumn.set(key, rankByPlayer);
   }
 
   const ascending = (a: number, b: number) => a - b;
@@ -169,19 +133,7 @@ export function buildDescriptionColumns(
     byPlayer.set(record.playerId, row);
   }
 
-  return { columns, byPlayer, orderByColumn };
-}
-
-/**
- * 把各列的发言顺序整理成列键索引，交给 buildDescriptionColumns。
- * 当前进行中的子阶段顺序取自 `status.speechOrder`，
- * 它同时覆盖普通描述、平票 PK 与补充发言三种模式。
- */
-export function speechOrdersByColumn(status?: SpeechStatus): Record<string, string[]> {
-  if (!status) return {};
-  const pending = pendingColumn(status);
-  if (!pending) return {};
-  return { [pending.key]: [...pending.playerIds] };
+  return { columns, byPlayer };
 }
 
 /**

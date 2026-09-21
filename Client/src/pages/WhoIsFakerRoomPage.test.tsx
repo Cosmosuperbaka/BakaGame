@@ -211,10 +211,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
       });
     });
 
-    // 顶栏已收敛为「身份标签 + 词语」两项，天数与全局词对不再单独占位。
-    expect(screen.queryByText("第 1 天")).not.toBeInTheDocument();
-    expect(screen.queryByText("主持人视角")).not.toBeInTheDocument();
-    expect(screen.queryByText("旁观视角")).not.toBeInTheDocument();
+    expect(screen.getByText("第 1 天")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "描述阶段" })).toBeInTheDocument();
     expect(screen.getByText("这个东西是圆形的")).toBeInTheDocument();
 

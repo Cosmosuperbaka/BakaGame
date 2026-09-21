@@ -231,8 +231,6 @@ export interface RoundSummary {
 // 单局游戏的全部运行态。
 export interface GameRound {
   id: string;
-  /** 本房间内的第几局，1-based。换局自增，用于系统提示里区分「第 x 轮游戏」。 */
-  index: number;
   phase: GamePhase;
   speechMode?: SpeechMode;
   day: number;
@@ -291,11 +289,6 @@ export interface WhoIsFakerRoomRecord {
   players: Record<string, PlayerRecord>;
   chat: ChatMessage[];
   round?: GameRound;
-  /**
-   * 本房间已开过的局数。round 会在回到等待态时被清空，
-   * 但局序号要跨局保留，所以单独记在房间上。
-   */
-  lastRoundIndex?: number;
 }
 
 export type RoomRecord = WhoIsFakerRoomRecord;
@@ -355,8 +348,6 @@ export interface WhoIsFakerRoomSnapshot {
     phase: GamePhase;
     /** 本局的唯一标识。局外为 undefined；换局必变，客户端据此清空跨局状态（如身份预测）。 */
     roundId?: string;
-    /** 本房间内的第几局，1-based。局外为 undefined。 */
-    roundIndex?: number;
     speechMode?: SpeechMode;
     speechResumePhase?: "description" | "voting";
     supplementIndex?: number;
