@@ -151,6 +151,7 @@ test("角色分配在固定随机源下具有稳定顺序", () => {
 test("残局条件满足时白板会进入猜词阶段", () => {
   const round: GameRound = {
     id: "round",
+    index: 1,
     phase: "night",
     day: 1,
     words: {
@@ -185,6 +186,7 @@ test("残局条件满足时白板会进入猜词阶段", () => {
 test("白板猜词会按词对本身判断是否正确", () => {
   const round: GameRound = {
     id: "round",
+    index: 1,
     phase: "blankGuess",
     day: 1,
     words: {

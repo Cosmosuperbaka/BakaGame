@@ -121,6 +121,8 @@ export interface PlayerListProps {
 export interface PlayerListHistory {
   columns: DescriptionColumn[];
   byPlayer: Map<string, Map<string, DescriptionRecord>>;
+  /** columnKey → playerId → 该玩家在本列的发言序号（1-based） */
+  orderByColumn?: Map<string, Map<string, number>>;
   /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
   departedPlayers: PublicPlayerView[];
   /**
@@ -258,6 +260,7 @@ export function PlayerList(props: PlayerListProps) {
             key={column.key}
             tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
+            order={history.orderByColumn?.get(column.key)?.get(player.id)}
             expected={column.expectedPlayerIds.has(player.id)}
             submitted={
               column.key === history.submittedColumnKey &&
@@ -405,12 +408,15 @@ export function PlayerList(props: PlayerListProps) {
 function SpeechCell({
   description,
   tone,
+  order,
   expected,
   submitted,
   shade,
 }: {
   description?: DescriptionRecord;
   tone: DescriptionColumn["tone"];
+  /** 该玩家在本列的发言序号，1-based；无发言任务时为 undefined */
+  order?: number;
   expected: boolean;
   /** 已提交但顺序未到，内容仍折起 */
   submitted?: boolean;
@@ -420,11 +426,21 @@ function SpeechCell({
   return (
     <div
       className={cn(
-        "flex items-center px-4 py-1.5 text-sm leading-relaxed",
+        "flex items-center gap-1.5 px-4 py-1.5 text-sm leading-relaxed",
         DESCRIPTION_TONES[tone],
         shade,
       )}
     >
+      {/* 每列的顺序独立随机，序号按列给出，取走序号后玩家才能对上号。
+          没有发言任务（如出题人、旁观者）的格子不占序号位。 */}
+      {expected && order !== undefined ? (
+        <span
+          aria-label={`本列第 ${order} 位发言`}
+          className="shrink-0 rounded-sm bg-muted px-1 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground"
+        >
+          {order}
+        </span>
+      ) : null}
       {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
         <span className="whitespace-nowrap">{description.text}</span>

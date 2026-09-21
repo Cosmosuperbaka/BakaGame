@@ -64,7 +64,7 @@ export function DescriptionTable({
   playerRowContext,
   compact = false,
 }: DescriptionTableProps) {
-  const { columns, byPlayer } = buildDescriptionColumns(descriptions);
+  const { columns, byPlayer, orderByColumn } = buildDescriptionColumns(descriptions);
   const rows = collectDescriptionRows(players, descriptions);
 
   if (rows.length === 0) {
@@ -150,10 +150,20 @@ export function DescriptionTable({
                   )}
                 >
                   {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
-                  {byPlayer.get(player.id)?.get(column.key)?.text ??
-                    (column.expectedPlayerIds.has(player.id) ? (
-                      <span className="text-muted-foreground/40">—</span>
-                    ) : null)}
+                  <div className="flex items-center gap-1.5">
+                    {byPlayer.get(player.id)?.get(column.key) ? (
+                      <span
+                        aria-label={`本列第 ${orderByColumn.get(column.key)?.get(player.id) ?? 0} 位发言`}
+                        className="shrink-0 rounded-sm bg-muted px-1 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground"
+                      >
+                        {orderByColumn.get(column.key)?.get(player.id)}
+                      </span>
+                    ) : null}
+                    {byPlayer.get(player.id)?.get(column.key)?.text ??
+                      (column.expectedPlayerIds.has(player.id) ? (
+                        <span className="text-muted-foreground/40">—</span>
+                      ) : null)}
+                  </div>
                 </td>
               ))}
             </tr>

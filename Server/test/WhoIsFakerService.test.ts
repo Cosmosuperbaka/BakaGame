@@ -363,6 +363,13 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     },
   });
 
+  // 阶段文案统一收敛：开局属于「第 x 轮游戏已开始」，出题阶段点名出题人。
+  const assignTexts = getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.map(
+    (message) => message.text,
+  );
+  expect(assignTexts).toContain("第 1 轮游戏已开始，请房主指定出题人");
+  expect(assignTexts?.at(-1)).toBe("玩家5 正在出题");
+
   await execute(service, questioner.connection, {
     id: "words",
     type: "game.submitWords",
@@ -372,7 +379,7 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   });
 
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
-    "已进入第 1 天描述阶段",
+    "第 1 天描述阶段",
   );
 
   for (const connection of [host, joined[0].connection, joined[1].connection, joined[2].connection]) {
@@ -391,7 +398,7 @@ test("常规流程可以完整进入好人胜利结算", async () => {
     payload: {},
   });
   expect(getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.at(-1)?.text).toBe(
-    "已进入投票阶段",
+    "第 1 天投票阶段",
   );
 
   await execute(service, host, {
@@ -2825,6 +2832,99 @@ test("游戏进行中死亡玩家与旁观者发言归入ghost频道且仅对有
   expect(deadChatTexts).toContain("我是活人发言");
   expect(deadChatTexts).toContain("我是旁观者发言");
   expect(deadChatTexts).toContain("我是亡者发言");
+});
+
+test("旁观者要等出题人出完题才进入观战频道，出题期间仍留在公共频道", async () => {
+  // 这条守住「观战频道开放时机」：指定出题人与出题阶段属于开局准备，
+  // 旁观者此时发言必须仍落在 main 频道，否则开局过程会被提前隔离。
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "8888", "房主");
+  const joined = await joinPlayers(service, "8888", 4, "玩家");
+  const spectatorConn = createConnection(service, "8888-spectator");
+  await execute(service, spectatorConn, {
+    id: "spectator-join",
+    type: "room.join",
+    roomId: "8888",
+    payload: { userName: "旁观者" },
+  });
+  await execute(service, spectatorConn, {
+    id: "set-spectator",
+    type: "player.setSpectator",
+    roomId: "8888",
+    payload: { spectator: true },
+  });
+
+  for (const item of joined) {
+    await execute(service, item.connection, {
+      id: "ready",
+      type: "player.setReady",
+      roomId: "8888",
+      payload: { ready: true },
+    });
+  }
+  await execute(service, host, {
+    id: "host-ready",
+    type: "player.setReady",
+    roomId: "8888",
+    payload: { ready: true },
+  });
+  await execute(service, host, {
+    id: "start",
+    type: "game.advancePhase",
+    roomId: "8888",
+    payload: {},
+  });
+
+  const room = (service as any).rooms.get("8888")!;
+  expect(room.round.phase).toBe("assigningQuestioner");
+
+  await execute(service, host, {
+    id: "assign-q",
+    type: "game.assignQuestioner",
+    roomId: "8888",
+    payload: { playerId: joined[0].joinResult.playerId },
+  });
+  expect(room.round.phase).toBe("wordSubmission");
+
+  // 出题阶段：旁观者发言仍在公共频道，存活玩家能看到。
+  await execute(service, spectatorConn, {
+    id: "spectator-chat-during-words",
+    type: "chat.send",
+    roomId: "8888",
+    payload: { text: "出题期间旁观者发言" },
+  });
+  const spectatorMessage = room.chat.find(
+    (message: { text: string }) => message.text === "出题期间旁观者发言",
+  );
+  expect(spectatorMessage.channel).toBe("main");
+  expect(spectatorMessage.ghostRole).toBeUndefined();
+  expect(
+    getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.map((m) => m.text),
+  ).toContain("出题期间旁观者发言");
+
+  // 出题人提交词语后进入描述阶段，观战频道才开放。
+  await execute(service, joined[0].connection, {
+    id: "submit-words",
+    type: "game.submitWords",
+    roomId: "8888",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  expect(room.round.phase).toBe("description");
+
+  await execute(service, spectatorConn, {
+    id: "spectator-chat-in-game",
+    type: "chat.send",
+    roomId: "8888",
+    payload: { text: "开局后旁观者发言" },
+  });
+  const inGameMessage = room.chat.find(
+    (message: { text: string }) => message.text === "开局后旁观者发言",
+  );
+  expect(inGameMessage.channel).toBe("ghost");
+  expect(inGameMessage.ghostRole).toBe("spectator");
+  expect(
+    getLastEventPayload<RoomSnapshot>(host, "room.snapshot")?.chat.map((m) => m.text),
+  ).not.toContain("开局后旁观者发言");
 });
 
 test("白板猜词打断发言阶段后，裁定未通过恢复原阶段并还原剩余倒计时", async () => {

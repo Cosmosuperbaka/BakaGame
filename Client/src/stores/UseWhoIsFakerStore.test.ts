@@ -477,6 +477,46 @@ describe("game store integration", () => {
     expect(chatAfterGameOver[1]?.text).toBe("已返回公共聊天频道，所有玩家均可见发言");
   });
 
+  it("keeps spectators on the public channel until the round's words are submitted", () => {
+    useGameStore.getState().setPrivateState({
+      playerId: "spectator-1",
+      sessionToken: "token-1",
+      isQuestioner: false,
+      canSubmitBlankGuess: false,
+      blankGuessUsed: false,
+      nightActionSubmitted: false,
+    });
+
+    const spectatorSnapshot = (phase: RoomSnapshot["status"]["phase"]): RoomSnapshot => ({
+      ...gameOverSnapshot("round-1"),
+      status: { phase, roundId: "round-1", started: true, day: 1 },
+      players: [
+        {
+          id: "spectator-1",
+          name: "旁观者",
+          score: 0,
+          membership: "spectator",
+          online: true,
+          isReady: false,
+          isBot: false,
+          isHost: false,
+          roundStatus: "spectator",
+        },
+      ],
+      chat: [],
+    });
+
+    // 出题阶段属于开局准备，此时还不该播报「已进入观战频道」。
+    useGameStore.getState().setSnapshot(spectatorSnapshot("wordSubmission"));
+    expect(useGameStore.getState().snapshot?.chat).toHaveLength(0);
+
+    // 正式进入描述阶段后，观战频道才开放并给出提示。
+    useGameStore.getState().setSnapshot(spectatorSnapshot("description"));
+    const chat = useGameStore.getState().snapshot?.chat ?? [];
+    expect(chat).toHaveLength(1);
+    expect(chat[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
+  });
+
   it("resets state sync and cleans room state when leaveRoomState or joinRoomState with new roomId is called", () => {
     useGameStore.getState().joinRoomState("room-a", "token-a");
     expect(useGameStore.getState().roomId).toBe("room-a");
