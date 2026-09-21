@@ -405,8 +405,8 @@ export default function WhoIsFakerRoomPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {seoNode}
       {/* ── 顶栏 ── */}
-      <header className="flex h-14 shrink-0 items-center justify-between gap-1 bg-background px-2 md:gap-2 md:px-4 lg:px-6">
-        <div className="flex min-w-0 shrink-0 items-center gap-2">
+      <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -420,7 +420,7 @@ export default function WhoIsFakerRoomPage() {
           <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-1 sm:gap-1.5 md:gap-2">
+        <div className="flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 md:gap-2">
           {dayVisible && day > 0 && (
             <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
               第 {day} 天
@@ -469,7 +469,7 @@ export default function WhoIsFakerRoomPage() {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-0 md:gap-1">
+        <div className="flex items-center justify-end gap-0 md:gap-1">
           {!connected && (
             <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
           )}
