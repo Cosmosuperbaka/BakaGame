@@ -22,9 +22,16 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 ## 前后端同源化 (Same-Origin API Gateway)
 
 前端（Makers 托管）与后端（自有服务器）分属不同域名时，所有请求都是跨域请求。
-`Client/middleware.js` 在 EdgeOne Makers 边缘把同源 `/api/*` 反代到后端公开域名，
-使浏览器侧全部变为同源请求：不再有 CORS 预检、不再依赖服务端 Origin 白名单放行
-浏览器跨域、WebSocket 升级也不再暴露给第三方域名的伪造 Origin 探测。
+理想做法是在边缘把同源 `/api/*` 反代到后端公开域名，使浏览器侧变为同源请求。
+
+**但这条链路当前没有启用**（2026-09-22 更正）：`Client/middleware.js` 曾被 `85b2207`
+加入、又被 `873f94e` 撤销，**撤销原因是 WebSocket 请求无法被转发**——握手阶段能拿到
+`101`，数据帧却过不去，游戏业务实际不可用。同源化声称的三项收益（无 CORS 预检、
+不依赖服务端 Origin 白名单、WS 升级不暴露给伪造 Origin 探测）因此一项都没拿到。
+
+**当前生产形态是跨域直连**：线上产物把请求直接发往后端公开域名 `gameserver.baka.website`
+（见「客户端基址约定」），由后端以 Origin 白名单 + CORS 回应，链路实测可用。
+要动这条链路之前，请先确认线上房间还能正常开局。
 
 ### 请求链路与 CDN 关系
 
@@ -44,14 +51,16 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - **站点加速（zone 级）的边缘函数拦不到 Makers 托管域名**（控制台探针实测）：
   反代只能做在 Makers 项目内部（middleware.js 或 edge-functions 文件），
   不要再尝试 zone 级配置。
-- `Client/middleware.js` 已在 ccb 站点（anime-character-guessr 前端）生产验证：
-  GET/POST 全通、`eo-cache-status` 等 CDN 头保留、SPA fallback 无干扰。
-- **WebSocket 升级可穿透边缘 rewrite**：对 `wss://game.baka.website/api/whoisfaker/ws`
-  手工构造 Upgrade 请求（Origin 为前端域名）实测返回 `101 Switching Protocols`，
-  `Sec-WebSocket-Accept` 为 RFC 6455 标准应答，握手由后端真实完成。同源化后浏览器
-  发送的 Origin 不变（仍是页面 origin），服务端 `CLIENT_URL` 校验无需改动。
-  ⚠️ **该结论在反代未生效期间不成立**：2026-09-21 实测同一请求返回的是 `200` + SPA
-  HTML（未到达后端）。修好反代后请按上一节的三条命令重新验收，其中 WS 应回到 101。
+- `Client/middleware.js` 曾在 ccb 站点（anime-character-guessr 前端）生产验证：
+  **HTTP** GET/POST 全通、`eo-cache-status` 等 CDN 头保留、SPA fallback 无干扰。
+  ⚠️ 那次验证**只覆盖了 HTTP**，没有验证 WebSocket 业务数据。
+- **不要假定 rewrite 能转发 WebSocket**：握手可以返回 `101 Switching Protocols`、
+  `Sec-WebSocket-Accept` 也是标准应答，但**握手成功 ≠ 连接可用**——后续数据帧是否真的
+  被边缘转发必须单独验证（连上后发一条命令，看有没有 ack）。middleware 方案正是栽在
+  这里：握手看着通、业务实际不通，于是被撤销。**在平台明确支持 WS 转发前，
+  不要再把它加回仓库**（2026-09-22 曾误加回一次，已撤回）。
+  ⚠️ 另外：2026-09-21 实测主域名同一请求返回 `200` + SPA HTML——那是反代整体未生效时的
+  表现，与「握手通但数据不转发」是两种不同的故障，排查时要先分清是哪一种。
 - BakaGame 前端的 Makers 项目是 **GitHub 集成型**（Provider 'Github'），CLI 不能
   直传部署，只能推送远端 main 触发自动构建。沙箱内可用 `gh api` contents API 追加
   文件触发部署，但 REST 提交丢失 SSH 签名——签名仓库的常规变更仍应本机 push，
@@ -158,27 +167,34 @@ Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文�
 
 ### 与中间件的关系
 
-同源化反代（`/api/*` → 后端域名）由本仓库的 `Client/middleware.js` 承担，`edgeone.json`
-的 `/api/*` 规则只负责声明「API 不得被缓存」，不参与路由。
+`edgeone.json` 的 `/api/*` 规则只负责声明「API 不得被缓存」，**不参与路由**。
+同源化反代此前由 `Client/middleware.js` 承担，但该方案已撤销且**当前没有替代实现**：
 
-**这个文件必须留在仓库里，不能改成只依赖控制台配置**（2026-09-21 全量审查实测）。
-曾经改过一版「反代在控制台配置、仓库不含 middleware.js」，随后实测发现控制台那份
-同样没生效：主域名的 `/api/*`（**含 WS 升级**）与 `/health` `/readyz` `/livez`
-全部被打回 SPA 兜底，返回的是 `index.html` 而不是后端 JSON，`x-trace-id` 也不存在 ——
-健康检查因此永远「假通过」，后端进程真死也测不出来。不要再把它从仓库删掉。
+- 撤销原因：**WebSocket 请求无法被转发**（握手能拿到 101，数据帧过不去，业务不可用）。
+- 因此 `game.baka.website` / `ccb.baka.website` 的 `/api/*` 与 `/health` `/readyz` `/livez`
+  现在全部落在 SPA 兜底上，返回 `index.html` 而不是后端 JSON（2026-09-21 实测）。
+- 生产实际走的是**跨域直连后端域名**，功能正常，所以这个兜底暂时不致命。
 
-上线验收（部署后用不执行 JS 的方式验证，缺一即视为反代未生效）：
+**在平台明确支持 WebSocket 转发之前，不要把 middleware.js 加回仓库。**
+（2026-09-22 曾因误信「历史文档记录 WS 握手 101」而加回过一次，已撤回——那条记录
+只验证了握手，没验证数据帧，正是本节要防的坑。）
+
+### 健康检查必须直连后端域名
+
+由于运维探针在前端域名上会被 SPA 兜底成首页 HTML，**外部存活探测必须打后端域名**，
+打前端域名会永远「假通过」：
 
 ```bash
-curl -sI https://game.baka.website/api/game/status   # 期望 x-trace-id + application/json（Elysia 404 也算通）
-curl -s  https://game.baka.website/health            # 期望 {"status":"ok",...}，不得是 HTML
-curl -sI https://game.baka.website/                  # 期望仍是 SPA HTML，且不带 x-trace-id
+curl -s https://gameserver.baka.website/health    # 期望 {"status":"ok",...}，不得是 HTML
+curl -s https://gameserver.baka.website/readyz    # 期望 {"status":"ok","ready":true}
 ```
 
+发布流程本身不受影响（deploy.yml 轮询的是容器内 `http://127.0.0.1:4850`）。
+
 **顺序依赖（重要）**：前端是否走同源 `/api/*` 取决于 `Client/src/lib/ServerEndpoint.ts`
-的基址解析（生产构建 `VITE_SERVER_URL` 留空才走同源）。当前线上产物仍是跨域直连后端
-域名，**必须先确认上面的验收通过、再切同源基址**；顺序反了会让前端请求被打回 HTML
-的同源路径，游戏直接不可用。
+的基址解析（生产构建 `VITE_SERVER_URL` 留空才走同源）。当前线上产物跨域直连后端域名，
+**只有确认同源反代真的能转发 WebSocket 之后，才可以把基址切到同源**；切早了会让前端
+请求落到被打回 HTML 的同源路径，游戏直接不可用。
 
 ### 上线验收
 

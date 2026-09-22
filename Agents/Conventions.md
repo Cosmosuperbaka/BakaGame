@@ -158,6 +158,7 @@ VITE_SERVER_URL=http://localhost:4850
 `VITE_SERVER_URL` 是接口基址的唯一入口，取值语义见 `Client/src/lib/ServerEndpoint.ts`：
 
 - `http://localhost:4850` —— 本地开发（Vite 5173 与 Bun 4850 分属不同源）。
-- 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径，`/api/*` 由
-  `Client/middleware.js` 在 EdgeOne 边缘反代到后端公开域名，详见
+- 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径。**该模式当前不可用**：
+  同源反代 `Client/middleware.js` 因无法转发 WebSocket 请求已撤销，前端域名的 `/api/*`
+  会被 SPA 兜底成 HTML。生产必须显式指向后端公开域名（跨域直连），详见
   `Agents/Deployment.md`「前后端同源化」。

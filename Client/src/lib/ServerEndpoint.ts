@@ -3,15 +3,17 @@ import { DEFAULT_SERVER_URL } from "@/config/Constants";
 /**
  * 解析后端请求基址。
  *
- * 生产环境的 `/api/*` 由 EdgeOne Makers 边缘中间件（`Client/middleware.js`）
- * 反代到后端域名，因此浏览器侧应当走**同源相对路径**，而不是跨域的后端域名：
- * 同源之后不再有 CORS 预检、不再依赖服务端 Origin 白名单，
- * WebSocket 升级阶段也不会因为 Origin 不匹配被 403。
+ * 设计目标是让浏览器侧走**同源相对路径**，由边缘把 `/api/*` 反代到后端域名。
+ * 但同源反代当前**没有启用**：`Client/middleware.js` 因无法转发 WebSocket 请求
+ * 已被撤销（握手能拿到 101，数据帧过不去），详见 `Agents/Deployment.md`。
  *
- * 本地开发时 Vite（5173）与 Bun（4850）分属不同端口，同源反代不存在，
- * 所以仍需通过 `VITE_SERVER_URL` 显式指定后端地址。
+ * 因此**生产现在必须回落到后端公开域名做跨域直连**，由后端以 Origin 白名单 +
+ * CORS 回应。只有在确认边缘反代真的能转发 WebSocket 之后，才可以把基址切回同源；
+ * 切早了前端会请求落到被打回 HTML 的同源路径，游戏直接不可用。
  *
- * 返回空串表示「使用同源相对路径」——这是生产环境的正常状态。
+ * 本地开发时 Vite（5173）与 Bun（4850）分属不同端口，同样需要显式指定后端地址。
+ *
+ * 返回空串表示「使用同源相对路径」——仅在反代确认可用时才是生产环境的正常状态。
  */
 export const resolveServerBase = (rawUrl?: string): string => {
   const value = rawUrl ?? import.meta.env.VITE_SERVER_URL;
