@@ -2028,3 +2028,81 @@ describe("NeteaseMusicProvider", () => {
     });
   });
 });
+
+/**
+ * 扫码登录会话必须按「二维码 unikey」分桶。
+ *
+ * 曾经会话 scope 是 provider 级单值：两个房间的房主在相近时间扫码时，后发起者覆盖前者，
+ * 于是先完成的那位被绑上别人的会话 IP（永久错绑）、后完成的那位压根没绑上登录握手时的 IP。
+ * 更糟的是旧实现让 IP 选取无条件优先这个全局字段，任意一个用户处于扫码等待期，
+ * 全进程所有房间的请求都会被带上该会话的 IP。
+ */
+test("并发扫码登录各自绑定自己的会话 IP，不会互相串号", async () => {
+  const calls: Array<{ endpoint: string; key?: string; realIP?: unknown; cookie?: unknown }> = [];
+  let keySeq = 0;
+  const provider = new NeteaseMusicProvider({
+    minRequestIntervalMs: 0,
+    loadApi: async () => ({
+      login_qr_key: async (params: Record<string, unknown>) => {
+        keySeq += 1;
+        calls.push({ endpoint: "key", realIP: params.realIP });
+        return { body: { code: 200, data: { unikey: `key-${keySeq}` } } };
+      },
+      login_qr_create: async (params: Record<string, unknown>) => {
+        calls.push({ endpoint: "create", key: String(params.key), realIP: params.realIP });
+        return {
+          body: { code: 200, data: { qrurl: "https://qr.example", qrimg: "data:image/png;base64,x" } },
+        };
+      },
+      login_qr_check: async (params: Record<string, unknown>) => {
+        calls.push({ endpoint: "check", key: String(params.key), realIP: params.realIP });
+        return {
+          body: { code: 803, message: "授权登录成功" },
+          // 真实上游把 cookie 放在响应顶层的数组里
+          cookie: [`MUSIC_U=session-${params.key}`],
+        };
+      },
+      login_status: async (params: Record<string, unknown>) => {
+        calls.push({ endpoint: "status", realIP: params.realIP });
+        return {
+          body: { code: 200, data: { code: 200, profile: { userId: 10001, nickname: "测试用户" } } },
+        };
+      },
+      deviceinfo_center_upload: async () => ({ body: { code: 200 } }),
+      cloudsearch: async (params: Record<string, unknown>) => {
+        calls.push({ endpoint: "search", realIP: params.realIP, cookie: params.cookie });
+        return { body: { result: { songs: [] } } };
+      },
+    }),
+  });
+
+  const qrA = await provider.createQrLogin();
+  // 后发起者：旧实现在这一步就把 A 的会话 scope 覆盖掉
+  const qrB = await provider.createQrLogin();
+  const resultA = await provider.checkQrLogin(qrA.key);
+  const resultB = await provider.checkQrLogin(qrB.key);
+
+  expect(resultA.status).toBe("authorized");
+  expect(resultB.status).toBe("authorized");
+
+  const ipOf = (endpoint: string, key?: string) =>
+    calls
+      .filter((call) => call.endpoint === endpoint && (key === undefined || call.key === key))
+      .map((call) => call.realIP);
+
+  const ipA = ipOf("check", qrA.key)[0];
+  const ipB = ipOf("check", qrB.key)[0];
+
+  // 同一轮扫码：建码与轮询必须是同一个出口 IP
+  expect(ipOf("create", qrA.key)[0]).toBe(ipA);
+  expect(ipOf("create", qrB.key)[0]).toBe(ipB);
+  // 两轮会话互不串号
+  expect(ipA).not.toBe(ipB);
+
+  // 登录完成后用各自凭证发起普通请求，应继续复用自己登录时的那个 IP
+  await provider.search("歌曲甲", 20, `MUSIC_U=session-${qrA.key}`);
+  await provider.search("歌曲乙", 20, `MUSIC_U=session-${qrB.key}`);
+  const searches = calls.filter((call) => call.endpoint === "search");
+  expect(searches[0]?.realIP).toBe(ipA);
+  expect(searches[1]?.realIP).toBe(ipB);
+});

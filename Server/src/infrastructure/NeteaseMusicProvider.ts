@@ -203,6 +203,8 @@ export const randomChineseIp = (
   return intToIp((chosen.start + Math.floor(rand() * chosen.count)) >>> 0);
 };
 
+/** 二维码会话的有效期：开完不扫的会话超过这个时长就丢弃，避免分桶无限堆积。 */
+const QR_LOGIN_SCOPE_TTL_MS = 10 * 60_000;
 const SEARCH_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_LYRICS_CACHE_TTL_MS = 24 * 60 * 60_000;
@@ -1572,7 +1574,11 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly chinaIpRanges = readChinaIpRanges();
   // 扫码登录是一次多条请求的会话：二维码创建、轮询、设备上报、状态校验必须共用同一个出口 IP。
   // 网易云把登录凭证绑定在登录时的客户端 IP 上，会话中途换 IP 会直接导致刚拿到的 MUSIC_U 失效。
-  private qrLoginScope?: string;
+  //
+  // 必须按「二维码 unikey」分桶，不能是单个字段：两个房间的房主在相近时间扫码时，
+  // 后发起者会覆盖前者，于是先完成的那位拿到的是别人的会话 IP（永久错绑），
+  // 后完成的那位则压根没绑上登录握手时的 IP。
+  private readonly qrLoginScopes = new Map<string, { scope: string; createdAt: number }>();
   private readonly queue: PQueue;
   private readonly pendingRejections = new Map<number, (error: unknown) => void>();
   private requestIdCounter = 0;
@@ -1946,7 +1952,9 @@ export class NeteaseMusicProvider implements MusicProvider {
     const loginUa = this.loginUserAgent();
     // 每次扫码开启一个新的登录会话，并在会话内固定同一个 CN 出口 IP。
     // 沿用上一轮会话的旧 IP 会让「同设备同 IP」的设备指纹失去意义。
-    this.qrLoginScope = `qr-login:${randomUUID()}`;
+    const scope = `qr-login:${randomUUID()}`;
+    // 取 unikey 这一步还没有可用于分桶的 key，先把 scope 显式传进去；
+    // 拿到 key 后登记到同一个 scope 上，保证整轮握手始终是同一个出口 IP。
     const keyResponse = await this.call(
       ["login_qr_key"],
       { ua: loginUa },
@@ -1954,32 +1962,51 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.randomCNIP,
       true,
       false,
+      scope,
     );
     const keyBody = responseBody(keyResponse);
     if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
     if (!key) throw new AppError("MUSIC_LOGIN_FAILED", "无法创建登录二维码");
 
-    const qrResponse = await this.call(
-      ["login_qr_create"],
-      { key, qrimg: true, platform: this.deviceName, ua: loginUa },
-      loginCookie,
-      this.randomCNIP,
-      true,
-      false,
-    );
-    const qrBody = responseBody(qrResponse);
-    if (responseCode(qrBody) !== 200) throw musicLoginError(qrBody, "无法生成登录二维码");
-    const qrData = asRecord(qrBody.data);
-    const qrUrl = readString(qrData.qrurl);
-    const qrImage = readString(qrData.qrimg);
-    if (!qrUrl || !qrImage) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码");
-    return { key, qrUrl, qrImage };
+    this.pruneLoginScopes();
+    this.qrLoginScopes.set(key, { scope, createdAt: this.now() });
+    try {
+      const qrResponse = await this.call(
+        ["login_qr_create"],
+        { key, qrimg: true, platform: this.deviceName, ua: loginUa },
+        loginCookie,
+        this.randomCNIP,
+        true,
+        false,
+        scope,
+      );
+      const qrBody = responseBody(qrResponse);
+      if (responseCode(qrBody) !== 200) throw musicLoginError(qrBody, "无法生成登录二维码");
+      const qrData = asRecord(qrBody.data);
+      const qrUrl = readString(qrData.qrurl);
+      const qrImage = readString(qrData.qrimg);
+      if (!qrUrl || !qrImage) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码");
+      return { key, qrUrl, qrImage };
+    } catch (error) {
+      this.qrLoginScopes.delete(key);
+      throw error;
+    }
+  }
+
+  /** 丢弃开完二维码却长时间不扫的会话，避免条目无限堆积。 */
+  private pruneLoginScopes() {
+    const deadline = this.now() - QR_LOGIN_SCOPE_TTL_MS;
+    for (const [key, entry] of this.qrLoginScopes) {
+      if (entry.createdAt < deadline) this.qrLoginScopes.delete(key);
+    }
   }
 
   async checkQrLogin(keyValue: string): Promise<MusicQrLoginCheck> {
     const key = keyValue.trim();
     if (!key) throw new AppError("INVALID_LOGIN", "二维码登录密钥不能为空");
+    // 本次轮询只认自己那个二维码对应的会话 IP，别人同时扫码不会串到这里。
+    const scope = this.qrLoginScopes.get(key)?.scope;
     const response = await this.call(
       ["login_qr_check"],
       { key, ua: this.loginUserAgent() },
@@ -1987,6 +2014,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.randomCNIP,
       true,
       false,
+      scope,
     );
     const body = responseBody(response);
     const code = responseCode(body);
@@ -1998,18 +2026,20 @@ export class NeteaseMusicProvider implements MusicProvider {
 
     const cookie = responseCookie(response);
     if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录 Cookie");
-    await this.uploadDeviceInfo(cookie, this.deviceName);
-    const session = await this.getLoginStatus(cookie);
-    // 会话结束：把本会话使用的 IP 永久绑定到这份登录凭证上，
-    // 使该凭证后续所有请求（歌曲、歌单、状态校验）继续复用登录时的同一个出口 IP。
-    this.bindSessionIp(cookie);
-    this.qrLoginScope = undefined;
-    return { status: "authorized", message, session };
+    // 先固化会话 IP 再发后续请求：否则设备上报与状态校验会按 cookie 另起一个 IP，
+    // 等会话 IP 回填时又切一次 —— 凭证刚建立就漂移，正是登录态反复失效的成因。
+    this.bindSessionIp(cookie, scope);
+    try {
+      await this.uploadDeviceInfo(cookie, this.deviceName, scope);
+      const session = await this.getLoginStatus(cookie, scope);
+      return { status: "authorized", message, session };
+    } finally {
+      this.qrLoginScopes.delete(key);
+    }
   }
 
-  // 将当前登录会话的 IP 固化到登录后凭证的 scope 上，随后同一凭证稳定复用该 IP。
-  private bindSessionIp(cookieValue: string) {
-    const scope = this.qrLoginScope;
+  // 将登录会话使用的 IP 固化到登录后凭证的 scope 上，随后同一凭证稳定复用该 IP。
+  private bindSessionIp(cookieValue: string, scope?: string) {
     if (!scope) return;
     const ip = this.ipByScope.get(scope);
     const cookie = cookieValue.trim();
@@ -2019,6 +2049,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async uploadDeviceInfo(
     cookieValue: string,
     deviceName = this.deviceName,
+    loginScope?: string,
   ): Promise<boolean> {
     const cookie = cookieValue.trim();
     if (!cookie) return false;
@@ -2030,6 +2061,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         `${cookie}; os=pc`,
         this.randomCNIP,
         false,
+        loginScope,
       );
       if (response) return true;
       if (this.options.loadApi) {
@@ -2045,7 +2077,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         createOption(
           {
             cookie: `${cookie}; os=pc`,
-            ...(this.randomCNIP ? { realIP: this.ipForCookie(cookie) } : {}),
+            ...(this.randomCNIP ? { realIP: this.ipForCookie(cookie, loginScope) } : {}),
             randomCNIP: this.randomCNIP,
           },
           "eapi",
@@ -2058,12 +2090,20 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
   }
 
-  async getLoginStatus(cookieValue: string): Promise<MusicLoginSession> {
+  async getLoginStatus(cookieValue: string, loginScope?: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
     // 该校验请求必须携带与登录同源的 IP：历史实现显式关闭 randomCNIP 导致校验请求无 realIP，
     // 网易云按出口 IP 比对后判定为异地调用，正是「设备还在但凭证反复失效」的直接触发点。
-    const response = await this.call(["login_status"], {}, cookie, this.randomCNIP, true, false);
+    const response = await this.call(
+      ["login_status"],
+      {},
+      cookie,
+      this.randomCNIP,
+      true,
+      false,
+      loginScope,
+    );
     const body = responseBody(response);
     const data = asRecord(body.data);
     const profile = asRecord(body.profile ?? data.profile);
@@ -2331,6 +2371,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP = this.randomCNIP,
     preserveErrorResponse = false,
     includeAnonymousCookie = true,
+    loginScope?: string,
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     let hasEndpoint = false;
@@ -2343,7 +2384,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         try {
           const response = await this.scheduleRequest(() =>
             (fn as ApiFunction)(
-              this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie),
+              this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie, loginScope),
             ),
           );
           // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
@@ -2378,9 +2419,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     cookie?: string | Record<string, unknown>,
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
+    loginScope?: string,
   ): Promise<ApiResponse | undefined> {
     try {
-      return await this.call(names, params, cookie, randomCNIP, false, includeAnonymousCookie);
+      return await this.call(
+        names,
+        params,
+        cookie,
+        randomCNIP,
+        false,
+        includeAnonymousCookie,
+        loginScope,
+      );
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
       if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") throw error;
@@ -2628,10 +2678,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     return responseCode(body) === 405 || readNumber(asRecord(error).status) === 405;
   }
 
-  private ipForCookie(cookie?: string | Record<string, unknown>) {
-    // 登录会话优先：会话建立后 cookie 从「设备字典」换成「MUSIC_U=...」，
-    // 若继续按 cookie 内容做 scope，登录前后会落到两个不同 IP，登录态一建立就漂移。
-    if (this.qrLoginScope) return this.ensureScopeIp(this.qrLoginScope);
+  private ipForCookie(
+    cookie?: string | Record<string, unknown>,
+    loginScope?: string,
+  ) {
+    // 只有**显式属于某个扫码会话**的请求才走会话 IP：会话建立后 cookie 会从
+    // 「设备字典」换成「MUSIC_U=...」，若继续按 cookie 内容取 scope，
+    // 登录前后会落到两个不同 IP，登录态一建立就漂移。
+    //
+    // 旧实现在这里无条件优先全局 qrLoginScope，等于让任意一个用户处于扫码等待期时，
+    // 全进程所有房间、所有凭证的请求都被强行带上那个会话的 IP —— 凭证与出口 IP 的
+    // 绑定关系被整体破坏。因此改成必须由调用方显式传入会话 scope。
+    if (loginScope) return this.ensureScopeIp(loginScope);
     const scope = this.cookieScope(cookie);
     return this.ensureScopeIp(scope);
   }
@@ -2666,6 +2724,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     cookie?: string | Record<string, unknown>,
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
+    loginScope?: string,
   ): Record<string, unknown> {
     const requestCookie = cookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     return {
@@ -2673,7 +2732,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       // 始终显式传入 cookie，阻止 Enhanced API 从进程环境变量 NETEASE_COOKIE 偷读旧凭据。
       cookie: requestCookie ?? {},
       // 同一登录态使用稳定伪装 IP，减少单一出口的限流聚集，也避免请求间频繁漂移触发风控。
-      ...(randomCNIP ? { realIP: this.ipForCookie(cookie) } : {}),
+      ...(randomCNIP ? { realIP: this.ipForCookie(cookie, loginScope) } : {}),
       randomCNIP,
     };
   }
