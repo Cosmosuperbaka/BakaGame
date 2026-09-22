@@ -7,9 +7,24 @@ type CoverageTotals = {
   linesHit: number;
 };
 
+// 覆盖率棘轮阈值。**与 bun 的插桩口径强绑定，换 bun 版本必须同步重校**。
+//
+// 实测对照（同一份代码、同一批 501 条测试，仅换 bun 可执行文件）：
+//   bun 1.3.x  → functions 93.65% (3361/3589)、lines 97.00% (27380/28227)
+//   bun 1.4.2  → functions 90.66% (1495/1649)、lines 94.31% (13374/14181)
+// 两版的分母相差 2 倍以上（函数 3589 vs 1649），因此数值下降是**口径变化**，
+// 不是覆盖质量回退。历史阈值 92.87 / 95.45 即照 1.3.x 口径标定。
+//
+// 注意 `bun run test:coverage` 会触发 `node_modules/.bin` 前置，脚本内层 `bun`
+// 实际解析到 `Server/package.json` 里 pin 的 bun 版本（而非全局 bun），
+// 所以那次 pin 变更会直接改变测量仪器。改动 bun pin 时务必重跑本门禁。
+//
+// 阈值取值规则：实测值向下留约 0.1pp 余量再取整，**不要直接填实测的 toFixed(2) 值** ——
+// 实测 13374/14181 = 94.3092…% 会被 toFixed(2) 显示为 94.31，若阈值也填 94.31
+// 则出现 `lines=94.31% < 94.31%` 的自反失败（已踩过）。
 const thresholds = {
-  functions: 92.87,
-  lines: 95.45,
+  functions: 90.6,
+  lines: 94.2,
 };
 
 export const parseLcov = (text: string): CoverageTotals => {
