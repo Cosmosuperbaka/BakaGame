@@ -50,6 +50,8 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   手工构造 Upgrade 请求（Origin 为前端域名）实测返回 `101 Switching Protocols`，
   `Sec-WebSocket-Accept` 为 RFC 6455 标准应答，握手由后端真实完成。同源化后浏览器
   发送的 Origin 不变（仍是页面 origin），服务端 `CLIENT_URL` 校验无需改动。
+  ⚠️ **该结论在反代未生效期间不成立**：2026-09-21 实测同一请求返回的是 `200` + SPA
+  HTML（未到达后端）。修好反代后请按上一节的三条命令重新验收，其中 WS 应回到 101。
 - BakaGame 前端的 Makers 项目是 **GitHub 集成型**（Provider 'Github'），CLI 不能
   直传部署，只能推送远端 main 触发自动构建。沙箱内可用 `gh api` contents API 追加
   文件触发部署，但 REST 提交丢失 SSH 签名——签名仓库的常规变更仍应本机 push，
@@ -156,9 +158,27 @@ Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文�
 
 ### 与中间件的关系
 
-同源化反代（`/api/*` → 后端域名）在 Makers **控制台**配置，不在本仓库的 `middleware.js`
-里（该文件曾被 Revert，当前仓库不存在）。`edgeone.json` 的 `/api/*` 规则只负责声明
-「API 不得被缓存」，不参与路由。
+同源化反代（`/api/*` → 后端域名）由本仓库的 `Client/middleware.js` 承担，`edgeone.json`
+的 `/api/*` 规则只负责声明「API 不得被缓存」，不参与路由。
+
+**这个文件必须留在仓库里，不能改成只依赖控制台配置**（2026-09-21 全量审查实测）。
+曾经改过一版「反代在控制台配置、仓库不含 middleware.js」，随后实测发现控制台那份
+同样没生效：主域名的 `/api/*`（**含 WS 升级**）与 `/health` `/readyz` `/livez`
+全部被打回 SPA 兜底，返回的是 `index.html` 而不是后端 JSON，`x-trace-id` 也不存在 ——
+健康检查因此永远「假通过」，后端进程真死也测不出来。不要再把它从仓库删掉。
+
+上线验收（部署后用不执行 JS 的方式验证，缺一即视为反代未生效）：
+
+```bash
+curl -sI https://game.baka.website/api/game/status   # 期望 x-trace-id + application/json（Elysia 404 也算通）
+curl -s  https://game.baka.website/health            # 期望 {"status":"ok",...}，不得是 HTML
+curl -sI https://game.baka.website/                  # 期望仍是 SPA HTML，且不带 x-trace-id
+```
+
+**顺序依赖（重要）**：前端是否走同源 `/api/*` 取决于 `Client/src/lib/ServerEndpoint.ts`
+的基址解析（生产构建 `VITE_SERVER_URL` 留空才走同源）。当前线上产物仍是跨域直连后端
+域名，**必须先确认上面的验收通过、再切同源基址**；顺序反了会让前端请求被打回 HTML
+的同源路径，游戏直接不可用。
 
 ### 上线验收
 
