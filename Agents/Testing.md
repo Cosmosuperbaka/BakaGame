@@ -139,5 +139,8 @@ npm run verify
 
 ## Worker 异步错误断言
 
-- Windows 的 Bun 1.3.14 中，对已初始化 Worker 的异步错误回包直接使用 `expect(promise).rejects` 会阻塞消息分发。
+- 该变通最初在 Windows 的 Bun 1.3.x 上确立：对已初始化 Worker 的异步错误回包直接使用
+  `expect(promise).rejects` 会阻塞消息分发。
   相关集成测试必须先通过原生 Promise 捕获结果，再同步断言明确业务错误码；禁止延长超时掩盖挂起。
+- bun pin 升到 1.4.2 后（2026-09-22），**该变通保留且全量测试仍绿**；未单独验证移除后是否仍会挂起，
+  因此不得以「版本已升」为由删除该写法。

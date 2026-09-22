@@ -108,6 +108,32 @@ Server/src/
   *注：Vite 不会自动读取 tsconfig paths，若仅修改一处会导致本地或生产构建隐蔽失败。*
 - **严禁重新引入文件符号链接依赖**：严禁在 `package.json` 中配置 `file:../packages/...`，npm 与 Bun 会将其解析为宿主机绝对路径软链，导致部署容器环境出现 `ENOENT` 挂起崩溃。
 
+### 依赖版本约束（升级前必读）
+
+以下三条是实测得出的硬约束，升级依赖时不得绕过：
+
+| 包 | 锁定值 | 约束原因 |
+|---|---|---|
+| `typescript` | 两端均 5.9.x | TypeScript 最新为 7.x，但 `typescript-eslint`（含 `canary`）的 peer 上限是 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
+| `@applemusic-like-lyrics/core` / `react` | 0.5.2 | `0.6.0` 上游把 `vitest ^4.1.10` 误写进 `dependencies`（0.5.2 是干净的，写在 `devDependencies`），且 registry 上没有修复版本。升级会让测试框架进入生产依赖树，而 `0.6.0` 的导出面与 `0.5.2` 逐符号比对完全一致、零功能收益。 |
+| `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；若 CI 的 Node 降到 22.22.2 以下，`npm ci` 会失败。 |
+
+补充事实：
+
+- **`Server/package.json` 里的 `bun` 是可执行运行时 pin，改它会改变测量仪器。**
+  `bun run <script>` 会把 `node_modules/.bin` 前置到 PATH，因此脚本内层调用的 `bun`
+  解析到的是 **pin 的那个版本**（不是全局 bun）。实战后果：pin 从 1.3.14 升到 1.4.2 后，
+  `test:coverage` 的测量口径随之改变，函数分母从 3589 掉到 1649，直接打挂 `CheckCoverage.ts`
+  的棘轮阈值。**因此改 bun pin 必须与 `CheckCoverage.ts` 阈值重校同批进行**，现行阈值
+  `90.66 / 94.31` 即为 1.4.2 口径标定值。
+- **切换到新 bun 版本后的首次启动会付一次冷缓存成本**：实测 `src/Index.ts` 冷启动到
+  `/health` 就绪 12.1s，热缓存仅 0.94s（1.3.x 冷启动 2.45s）。`ProductionSmoke.ts` 的探活
+  超时是 15s 且 spawn 的 `stdout/stderr` 全为 `ignore`（崩溃时看不到任何日志），
+  所以换 bun 后第一次跑冒烟可能假红——**先重跑一次再判断**。
+- `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿 10 分钟以上且零输出（连日志 mtime 都停住）；同一状态加 `--verbose` 后实测 1 秒内跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。
+- 升级依赖前后的验证必须**先跑基线**（Server `check` + `test`，Client `lint` + `test:coverage` + `build`），否则无法区分「新引入的破坏」与「本来就坏」。
+- 预检优于装完再测：把新旧 tarball 解到 `.workbuddy/tmp/` 直接比 `.d.mts` 导出面与 `dependencies` 字段，可在不触碰 `node_modules` 的前提下否掉一次升级（AMLL 0.6.0 即如此否掉）。注意过滤 `.d.ts` 会漏掉 `.d.mts`/`.d.cts`。
+
 ---
 
 ## 5. 开发、构建与验证命令 (Workspace Commands)
