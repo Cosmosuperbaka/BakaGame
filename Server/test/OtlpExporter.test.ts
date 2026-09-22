@@ -382,8 +382,12 @@ test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandle
   const mockServer = Bun.serve({
     port: 0,
     fetch(req) {
+      // flush 会同时 POST /v1/traces 与 /v1/logs，两者共用同一个 mock。
+      // 若不加区分地捕获，两个请求的到达顺序不定：logs 后到就会把 capturedTrace
+      // 覆盖成 { resourceLogs }，导致下方读取 resourceSpans 报 undefined。
+      const isTraces = req.url.includes("/v1/traces");
       return req.json().then((body) => {
-        capturedTrace = body;
+        if (isTraces) capturedTrace = body;
         return new Response(JSON.stringify({}), { status: 200 });
       });
     },
