@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -646,11 +647,70 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
     const acks = messages.filter(
       (m) => m.type === "ack" && m.id === "req-dedup-concurrency",
     );
-    // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
-    expect(acks).toHaveLength(2);
-    expect(acks[0]).toEqual(acks[1]);
+     // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
+     expect(acks).toHaveLength(2);
+     expect(acks[0]).toEqual(acks[1]);
 
-    socket.close();
+     socket.close();
+   } finally {
+     await stop();
+   }
+ });
+
+/**
+ * 跨站 WebSocket 劫持（CSWSH）防护的回归用例。
+ *
+ * WebSocket **不受浏览器同源策略约束**，服务端的 Origin 白名单是唯一防线。
+ * 这里曾经写成 `return { status: 403 }`，而 Elysia `.ws()` 的 `upgrade` 钩子
+ * **忽略返回值**（1.4.29 与 1.4.30 实测：任意 Origin 照样 101 完成握手），
+ * 整道防线形同虚设却无人发现——因为当时没有任何用例覆盖它。现在改为 throw，
+ * 并用下面这条钉死：改回 return 会立刻失败。
+ */
+const upgradeStatusLine = (port: number, origin?: string) =>
+  new Promise<string>((resolve) => {
+    const lines = [
+      "GET /api/whoisfaker/ws HTTP/1.1",
+      `Host: 127.0.0.1:${port}`,
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+      "Sec-WebSocket-Version: 13",
+    ];
+    if (origin) lines.push(`Origin: ${origin}`);
+    lines.push("", "");
+    let buffer = "";
+    let done = false;
+    const socket = connect({ host: "127.0.0.1", port }, () => socket.write(lines.join("\r\n")));
+    const timer = setTimeout(() => finish("TIMEOUT"), 3000);
+    const finish = (value: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(value);
+    };
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      if (buffer.includes("\r\n\r\n")) finish(buffer.split("\r\n")[0]);
+    });
+    socket.on("error", (error) => finish(`ERR ${error.message}`));
+  });
+
+test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）", async () => {
+  const { port, stop } = startTestServer();
+
+  try {
+    // 白名单内的来源正常完成握手
+    const allowed = await upgradeStatusLine(port, "http://localhost:5173");
+    expect(allowed).toContain("101");
+
+    // 任意第三方站点必须被拒绝
+    const hostile = await upgradeStatusLine(port, "https://evil.example");
+    expect(hostile).toContain("403");
+
+    // 不带 Origin 的是非浏览器来源（本地工具 / 内部调用），按现有策略放行
+    const missing = await upgradeStatusLine(port);
+    expect(missing).toContain("101");
   } finally {
     await stop();
   }

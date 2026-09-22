@@ -268,16 +268,24 @@ interface GameSocketHandlers<TMessage extends { id: string; type: string; traceI
 const connectionIdOf = (ws: GameSocketLike): string | undefined =>
   (ws.data as { connectionId?: string }).connectionId;
 
-/** Origin 白名单校验：三个游戏入口完全一致，不通过即拒绝升级。 */
+/**
+ * Origin 白名单校验：三个游戏入口完全一致，不通过即拒绝升级。
+ *
+ * 必须是 **throw** 而不是 return：Elysia 的 `.ws()` `upgrade` 钩子返回值会被忽略
+ * （实测 1.4.29 / 1.4.30 均如此，返回 `{ status: 403 }` 与 `new Response(403)` 都拦不住，
+ * 任意 Origin 照样 101 完成握手），只有抛出异常才会被转成响应。这个差别曾经让
+ * 整道跨站 WebSocket 防护形同虚设，改动前请先跑 App.test.ts 里对应的用例。
+ */
 const rejectDisallowedOrigin = (
   headers: unknown,
   request: Request | undefined,
   clientUrl?: string,
-): { status: 403 } | undefined => {
+): void => {
   const origin =
     request?.headers?.get("origin") ??
     (headers as Record<string, string> | undefined)?.["origin"];
-  return isAllowedOrigin(origin, clientUrl) ? undefined : { status: 403 };
+  if (isAllowedOrigin(origin, clientUrl)) return;
+  throw new Response("Forbidden", { status: 403 });
 };
 
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
@@ -515,6 +523,18 @@ export const createApp = ({
     },
   })
     .onStop(async () => { await characterService.close(); await localBangumi?.close(); })
+    // ==================== WebSocket 升级的 Origin 白名单（防跨站 WebSocket 劫持） ====================
+    // 必须拦在 HTTP 层：`.ws()` 的 `upgrade` 钩子**返回值会被 Elysia 忽略**
+    // （1.4.29 / 1.4.30 实测：返回 `{ status: 403 }` 或 `new Response(403)` 都拦不住，
+    // 任意 Origin 照样 101 完成握手）。WebSocket 不受浏览器同源策略约束，
+    // 这道闸门是唯一防线 —— 改动前请跑 App.test.ts 里「按 Origin 白名单拦截」那条用例。
+    .onRequest(({ request }) => {
+      if (request.headers.get("upgrade") !== "websocket") return;
+      const { pathname } = new URL(request.url);
+      if (!pathname.endsWith("/ws")) return;
+      if (isAllowedOrigin(request.headers.get("origin"), env.clientUrl)) return;
+      return new Response("Forbidden", { status: 403 });
+    })
     // ==================== 原生插件与全局中间件 ====================
     .use(
       cors({
@@ -569,6 +589,21 @@ export const createApp = ({
       let status = 500;
       let errCode = "INTERNAL_ERROR";
       let errMsg = "服务器内部错误";
+
+      // 业务代码直接抛出 Response（如 WS 升级被 Origin 拒绝）时原样透传：
+      // 否则会被当成未处理异常记成 500，既掩盖真实状态码，也把一次正常拒绝污染成错误日志。
+      if (error instanceof Response) {
+        const responseStatus = error.status;
+        logger.logOperation({
+          status: responseStatus,
+          durationMs,
+          identifier: request?.headers?.get("x-forwarded-for") ?? "127.0.0.1",
+          action: `HTTP ${request?.method ?? "GET"} ${path}`,
+          level: responseStatus >= 500 ? "ERROR" : "WARN",
+          traceId: activeTraceId,
+        });
+        return error;
+      }
 
       if (isAppError(error)) {
         status = 400;
