@@ -137,6 +137,22 @@ npm run verify
 网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。
 
+## E2E 假红排查（本地）
+
+`npm run test:e2e` 报 `Error: Timed out waiting 60000ms from config.webServer.` 时，
+**先怀疑本机代理环境变量，不要先怀疑代码或依赖升级**。实测症状与真因：
+
+| 现象 | 真因 |
+|---|---|
+| 报 webServer 60 秒超时，但手动访问 `127.0.0.1:5173` 明明是 200 | 会话里存在 `HTTP_PROXY` / `HTTPS_PROXY`。Playwright 的就绪探测**会走代理**，拿到 502/404 而非真实响应；而 Node 的 `fetch` 默认**不读** `HTTP_PROXY`，所以手动探针会给出「一切正常」的误导结论。 |
+| 日志里 BAKA 服务反复打印 `HTTP GET /` 与 `/index.html` 的 404 | 那是被代理转发过来的**就绪探测请求**，不是页面请求。`playwright.config.ts` 中「Windows 双栈导致 404/超时」的注释记录的是同类现象。 |
+
+处置：跑 E2E 前清掉代理变量（`unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy`），
+并保持 `playwright.config.ts` 中 preview 的 `127.0.0.1` 硬绑定。CI 无代理变量，不受影响。
+
+诊断利器：`DEBUG=pw:webserver npx playwright test` 会逐次打印探测 URL 与收到的状态码，
+一眼能看出 404/502 是谁回的。
+
 ## Worker 异步错误断言
 
 - 该变通最初在 Windows 的 Bun 1.3.x 上确立：对已初始化 Worker 的异步错误回包直接使用
