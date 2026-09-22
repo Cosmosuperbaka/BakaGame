@@ -5,7 +5,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 import fs from 'fs'
 import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
-import { PAGE_META, SITE_NAME, SITE_ORIGIN } from './src/data/PageMeta'
+import { PAGE_META, SITE_NAME, SITE_ORIGIN } from './src/data/PageMeta.ts'
 
 // ==================== Vite 插件：构建时注入提交历史 ====================
 // 以虚拟模块提供数据，随 JS 产物一同带 hash：
@@ -316,7 +316,7 @@ function staticShellPlugin() {
     name: 'static-shell',
     apply: 'build' as const,
     async closeBundle() {
-      const distDir = path.resolve(__dirname, 'dist')
+      const distDir = path.resolve(import.meta.dirname, 'dist')
       const indexPath = path.join(distDir, 'index.html')
       const original = fs.readFileSync(indexPath, 'utf8')
 
@@ -390,7 +390,7 @@ function staticShellPlugin() {
 
 export default defineConfig(async () => {
   const { publicDir, assetMap } = await preparePublicWebp()
-  const emojiDir = path.resolve(__dirname, './public/emojis')
+  const emojiDir = path.resolve(import.meta.dirname, './public/emojis')
 
   return {
     publicDir,
@@ -416,9 +416,9 @@ export default defineConfig(async () => {
     ],
     resolve: {
       alias: [
-        { find: '@bakagame/shared', replacement: path.resolve(__dirname, '../Server/src/shared/Index.ts') },
-        { find: '@/types', replacement: path.resolve(__dirname, './src/types/Index.ts') },
-        { find: '@', replacement: path.resolve(__dirname, './src') },
+        { find: '@bakagame/shared', replacement: path.resolve(import.meta.dirname, '../Server/src/shared/Index.ts') },
+        { find: '@/types', replacement: path.resolve(import.meta.dirname, './src/types/Index.ts') },
+        { find: '@', replacement: path.resolve(import.meta.dirname, './src') },
       ],
     },
   }

@@ -26,9 +26,9 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: "@bakagame/shared", replacement: path.resolve(__dirname, "../Server/src/shared/Index.ts") },
-      { find: "@/types", replacement: path.resolve(__dirname, "./src/types/Index.ts") },
-      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: "@bakagame/shared", replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts") },
+      { find: "@/types", replacement: path.resolve(import.meta.dirname, "./src/types/Index.ts") },
+      { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
     ],
   },
   test: {

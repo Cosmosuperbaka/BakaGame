@@ -108,6 +108,21 @@ Server/src/
   *注：Vite 不会自动读取 tsconfig paths，若仅修改一处会导致本地或生产构建隐蔽失败。*
 - **严禁重新引入文件符号链接依赖**：严禁在 `package.json` 中配置 `file:../packages/...`，npm 与 Bun 会将其解析为宿主机绝对路径软链，导致部署容器环境出现 `ENOENT` 挂起崩溃。
 
+### Vite 配置前向兼容要求
+
+Vite 8.3 起会对 `vite.config.ts` / `vitest.config.ts` 发出 `configLoader: 'native'` 告警，
+原生配置加载器将成为未来主版本默认。配置文件中**必须**满足：
+
+1. **不得使用 `__dirname` / `__filename`**（CJS 全局，原生加载器下不存在）→ 一律用
+   `import.meta.dirname`（Node ≥20.11，本项目两端均满足；`@types/node` 已声明该类型）。
+2. **相对 import 必须带扩展名**（如 `'./src/data/PageMeta.ts'`）→ `tsconfig.node.json`
+   已开 `allowImportingTsExtensions`，带扩展名合法。
+3. **不得使用不可擦除语法**（`enum`、`namespace`、参数属性等）→ `tsconfig.node.json`
+   已开 `erasableSyntaxOnly`，违反即类型检查报错。
+
+**注意**：测试文件（走 Vite SSR transform）不适用第 1 条 —— `import.meta.dirname` 在 SSR
+transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname` 是**有意为之**，勿「顺手统一」。
+
 ### 依赖版本约束（升级前必读）
 
 以下三条是实测得出的硬约束，升级依赖时不得绕过：
