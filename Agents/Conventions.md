@@ -1,6 +1,6 @@
-# 工程规范与代码整洁度指南 (Conventions & Clean Code Guide)
+# 工作区与命名约定
 
-本文档定义全栈代码库的命名一致性、目录结构、架构边界与重构准则，防止跨技术栈概念断层与风格割裂。
+涉及命名或文件位置时读 §1—§3；启动与依赖升级读 §4—§5；配置读 §6。架构不变量见 [Spec](Spec.md)，验证范围及测试命令见 [Testing](Testing.md)。
 
 ---
 
@@ -10,7 +10,7 @@
 
 - **谁是卧底**: 全栈统一命名为 `WhoIsFaker`（缩写 `wif` 用于缓存/存储前缀如 `wif_session_`）。
 - **猜歌游戏**: 全栈统一命名为 **`SonGuessr`（漏G版）**。
-  - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。严格以 `Agents/Spec.md` 为统一真相源，坚决杜绝保留 `SongGuessr...` 等过渡期别名与兼容导出。
+  - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。命名以本节为准；删除旧别名的约束见 [Spec §4](Spec.md)。
   - **常量命名 (Constants)**：`SonGuessr` 为专有名词，常量一律使用 **`SONGUESSR_XXX`** 前缀（例如 `SONGUESSR_PHASES`, `SONGUESSR_MUSIC_SESSION_CHANGED`），严禁拆分为 `SON_GUESSR_`。
   - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `songuessr`（如 `/songuessr`, `/api/songuessr/ws`, `songuessr_session_`, `songuessr_netease_session_v1`）。
 - **猜动漫角色增强版**: 全栈统一命名为 **`CCB`**（三个字母全大写，副标题「二刺猿笑传之猜猜呗」只作为页面对外展示文案，不进标识符）。
@@ -18,9 +18,9 @@
   - **常量命名 (Constants)**：一律使用 **`CCB_XXX`** 前缀（如 `CCB_PHASES`, `CCB_STATE_EVENTS`, `CCB_PLAYER_MESSAGE_LIMIT`）。
   - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `ccb`（如 `/ccb`、`/api/ccb/ws`、`ccb_session_`），ID 前缀同例（`ccb_player_`、`ccb_chat_`）。
 
-### 1.2 文件与目录命名法则（全量大驼峰 PascalCase）
+### 1.2 代码文件命名
 
-所有代码与测试文件统一使用**大驼峰命名法（PascalCase / UpperCamelCase）**：
+TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有小写结构；框架配置、资源、Python 与构建脚本保留各自现有约定，不批量改名：
 
 | 文件类型 | 命名规则 | 示例 | 放置位置 |
 |---|---|---|---|
@@ -34,61 +34,30 @@
 
 ---
 
-## 2. 目录架构与职责划分 (Directory Structure)
+## 2. 目录职责
 
-### 2.1 前端目录结构 (`Client/src/`)
+| 位置 | 职责 |
+|---|---|
+| `Server/src/shared/` | 平台及各游戏共享契约，`Index.ts` 汇总导出 |
+| `Server/src/domain/` | 纯业务规则、领域类型与错误 |
+| `Server/src/application/` | 服务编排、命令处理与连接登记 |
+| `Server/src/infrastructure/` | 外部 Provider、Worker、数据仓储与日志 |
+| `Server/src/transport/` | HTTP/WS 路由、边界解析及状态同步 |
+| `Client/src/components/ui/`、`common/` | 基础控件与跨游戏组件 |
+| `Client/src/components/{whoisfaker,songuessr,ccb}/` | 各游戏视图，不横向导入其他游戏目录 |
+| `Client/src/pages/`、`contexts/`、`stores/` | 页面入口、连接生命周期、状态管理 |
+| `Client/src/hooks/`、`lib/`、`config/` | 复用 Hook、通信与工具、静态配置 |
+| `Client/src/types/Index.ts` | 共享类型的客户端导出入口 |
 
-```
-Client/src/
-├── components/
-│   ├── common/              # 跨游戏复用组件（ChatPanel.tsx, PlayerStatusPill.tsx, PhaseHeader.tsx, EmojiPicker.tsx, CreateRoomDialog.tsx 等）
-│   ├── whoisfaker/
-│   │   ├── phases/          # 谁是卧底各阶段内容（WaitingPhase.tsx, DescriptionPhase.tsx, VotingPhase.tsx 等）
-│   │   └── layout/          # 房间布局与专属组件（GameArea.tsx, PlayerList.tsx, TestController.tsx 等）
-│   ├── songuessr/           # 猜歌游戏专属组件（PlayerList.tsx, SongSearchDialog.tsx, BangumiSearchDialog.tsx 等）
-│   └── ui/                  # 基础 UI 原子组件（Button.tsx, Input.tsx, Dialog.tsx 等）
-├── config/                  # 领域视觉与静态配置（WhoIsFakerPresentation.ts, Constants.ts）
-├── contexts/                # 顶层 Context 与 Socket 生命周期连接器
-├── hooks/                   # 纯 React 自定义 Hooks（UseAutoSave.ts 等）
-├── lib/                     # 客户端底层通讯、存储与状态工具（Storage.ts, WhoIsFakerWs.ts, SonGuessrWs.ts）
-├── pages/                   # 路由页面（LandingPage.tsx, WhoIsFakerPage.tsx, WhoIsFakerRoomPage.tsx, SonGuessrPage.tsx, SonGuessrRoomPage.tsx）
-├── stores/                  # Zustand 状态管理（UseWhoIsFakerStore.ts, UseSonGuessrStore.ts）
-├── types/                   # 统一导出 @bakagame/shared 契约（Index.ts）
-└── Main.tsx                 # 客户端应用入口
-```
+本表说明职责，不维护逐文件目录树；查找实现时搜索目标符号或路径。
 
-### 2.2 后端目录结构 (`Server/src/`)
+## 3. 跨端状态边界
 
-```
-Server/src/
-├── application/             # 领域编排服务与指令处理器
-│   ├── handlers/            # 命令处理器（CommandHandler.ts, GameCommandHandler.ts, PlayerCommandHandler.ts 等）
-│   ├── ConnectionRegistry.ts# 连接池注册表
-│   ├── WhoIsFakerService.ts # 谁是卧底核心业务服务
-│   └── SonGuessrService.ts  # 猜歌游戏核心业务服务
-├── config/                  # 后端配置与常量（Constants.ts, Env.ts）
-├── domain/                  # 纯业务规则、错误与领域定义（Rules.ts, Errors.ts, Model.ts）
-├── infrastructure/          # 外部适配器与持久化仓储（NeteaseMusicProvider.ts, WordBankRepository.ts, EventLogger.ts）
-├── shared/                  # 前后端强契约共享单源（Protocol.ts, Model.ts, SonGuessr.ts, Index.ts）
-├── transport/               # 网络层与路由定义（App.ts, StateSync.ts, SonGuessrProtocol.ts, routes/System.ts）
-└── Index.ts                 # 服务端应用入口
-```
+共享契约的物理位置和映射见 §4，平台/游戏依赖方向见 [Spec §11](Spec.md)。
 
----
-
-## 3. 跨端契约与状态流向准则 (Cross-Stack & State Rules)
-
-1. **强类型共享契约**:
-   - `Server/src/shared/Index.ts` 是全项目唯一的类型真相源。
-   - 前端通过 `tsconfig.app.json` paths 和 `vite.config.ts` alias `@bakagame/shared` 引用。绝对禁止在 `package.json` 中引入 `file:../` npm 符号链接。
-2. **命令查询职责分离 (CQS)**:
-   - 状态 Store 中的 `setSnapshot` 必须作为处理服务端快照的领域 Reducer（包含阶段延迟展示、淘汰动效保护与聊天合并）。
-   - 禁止在业务组件中直接绕过服务层推断私有权限或覆盖服务端快照。
-3. **高内聚低耦合的组件拆分**:
-   - 表单弹窗（如 `CreateRoomDialog.tsx`）只负责数据采集与校验回调，禁止隐式绑定具体业务 Store。
-   - 跨游戏复用的视觉基建统一收口到 `components/common/` 与 `hooks/`。
-
----
+- Store 的 `setSnapshot` 接收服务端权威状态；动画、淘汰展示与本地聊天提示属于独立展示派生层，不修改或延迟协议基线（Spec §8.3、§9.3）。
+- 组件不推断私有权限、不覆盖服务端快照。表单弹窗通过 Props 与校验回调采集数据，不隐式绑定具体游戏 Store。
+- 跨游戏能力放 `components/common/` 或 `hooks/`，复用边界见 Spec §11。
 
 ## 4. 工作区架构与运行环境 (Workspace Structure & Runtime)
 
@@ -96,11 +65,11 @@ Server/src/
 
 | 包名 | 运行时 / 包管理器 | 源码目录 | 默认端口 |
 |---|---|---|---|
-| `WhoIsFaker_Server` | Bun (`bun:test`, `Bun.env`, `Bun.sleep`) | `Server/` | `4850` |
+| `bakagame-server` | Bun (`bun:test`, `Bun.env`, `Bun.sleep`) | `Server/` | `4850` |
 | `whoisfaker-client` | Node / npm (Vite, React 19, Vitest) | `Client/` | `5173` |
 
 ### 共享协议与契约映射机制 (`@bakagame/shared`)
-- **单一真相源位置**：全库的共享定义统一位于 `Server/src/shared/`（`Model.ts` + `Protocol.ts` + `SonGuessr.ts`），两端共用同一份代码实体。
+- **单一真相源位置**：全库的共享定义统一位于 `Server/src/shared/`（平台 `Model.ts`、`Protocol.ts` 与各游戏契约），两端共用同一份代码实体。
 - **服务端引入方式**：通过相对路径 `../shared/Index` 引入，并通过 `Server/src/domain/Model.ts` 重新导出。部署时仅挂载 `Server/` 作为应用根目录，因此其引用的所有模块必须物理位于该目录内部。
 - **客户端双映射同步**：前端使用 `@bakagame/shared` 规范说明符，必须在两个位置严格保持同步映射：
   1. `Client/tsconfig.app.json` 中的 `compilerOptions.paths`（供 `tsc` 类型检查器识别）。
@@ -125,11 +94,11 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 
 ### 依赖版本约束（升级前必读）
 
-以下三条是实测得出的硬约束，升级依赖时不得绕过：
+以下为当前依赖约束；版本来源是各包清单与锁文件。只有针对原因完成验证后才更新约束，不把历史上的上游状态当作永久事实：
 
 | 包 | 锁定值 | 约束原因 |
 |---|---|---|
-| `typescript` | 两端均 5.9.x | TypeScript 最新为 7.x，但 `typescript-eslint`（含 `canary`）的 peer 上限是 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
+| `typescript` | 两端均 5.9.x | 已核对版本的 `typescript-eslint`（含 `canary`）peer 上限为 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
 | `@applemusic-like-lyrics/core` / `react` | 0.5.2 | `0.6.0` 上游把 `vitest ^4.1.10` 误写进 `dependencies`（0.5.2 是干净的，写在 `devDependencies`），且 registry 上没有修复版本。升级会让测试框架进入生产依赖树，而 `0.6.0` 的导出面与 `0.5.2` 逐符号比对完全一致、零功能收益。 |
 | `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；若 CI 的 Node 降到 22.22.2 以下，`npm ci` 会失败。 |
 
@@ -139,44 +108,27 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
   `bun run <script>` 会把 `node_modules/.bin` 前置到 PATH，因此脚本内层调用的 `bun`
   解析到的是 **pin 的那个版本**（不是全局 bun）。实战后果：pin 从 1.3.14 升到 1.4.2 后，
   `test:coverage` 的测量口径随之改变，函数分母从 3589 掉到 1649，直接打挂 `CheckCoverage.ts`
-  的棘轮阈值。**因此改 bun pin 必须与 `CheckCoverage.ts` 阈值重校同批进行**，现行阈值
-  `90.66 / 94.31` 即为 1.4.2 口径标定值。
+  的棘轮阈值。**因此改 bun pin 必须与 `CheckCoverage.ts` 阈值重校同批进行**。阈值直接读取该脚本；实测百分比不是门禁值，不能把四舍五入后的显示值直接设为阈值。
 - **切换到新 bun 版本后的首次启动会付一次冷缓存成本**：实测 `src/Index.ts` 冷启动到
   `/health` 就绪 12.1s，热缓存仅 0.94s（1.3.x 冷启动 2.45s）。`ProductionSmoke.ts` 的探活
   超时是 15s 且 spawn 的 `stdout/stderr` 全为 `ignore`（崩溃时看不到任何日志），
   所以换 bun 后第一次跑冒烟可能假红——**先重跑一次再判断**。
 - `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿 10 分钟以上且零输出（连日志 mtime 都停住）；同一状态加 `--verbose` 后实测 1 秒内跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。
-- 升级依赖前后的验证必须**先跑基线**（Server `check` + `test`，Client `lint` + `test:coverage` + `build`），否则无法区分「新引入的破坏」与「本来就坏」。
+- 升级前在受影响包运行基线，升级后用同一组检查比较；共享工具链或跨端契约升级覆盖两端。具体范围见 [Testing](Testing.md#验证范围)。
 - 预检优于装完再测：把新旧 tarball 解到 `.workbuddy/tmp/` 直接比 `.d.mts` 导出面与 `dependencies` 字段，可在不触碰 `node_modules` 的前提下否掉一次升级（AMLL 0.6.0 即如此否掉）。注意过滤 `.d.ts` 会漏掉 `.d.mts`/`.d.cts`。
 
 ---
 
-## 5. 开发、构建与验证命令 (Workspace Commands)
+## 5. 开发与构建命令
 
-### 服务端 (`cd Server`)
-```bash
-bun run dev          # 启动热重载开发服务器 (默认端口 4850)
-bun run start        # 启动生产服务器
-bun run check        # 执行 tsc --noEmit 全量静态类型检查
-bun test             # 运行全部 bun:test 单元测试与集成测试
-bun test --coverage  # 运行单测并生成代码覆盖率报告
-bun run docs:openapi # 重新生成并导出 Agents/http-openapi.json
-```
+命令定义以 [Server/package.json](../Server/package.json) 和 [Client/package.json](../Client/package.json) 为准，在对应目录执行：
 
-### 客户端 (`cd Client`)
-```bash
-npm run dev          # 启动 Vite 开发服务器 (http://localhost:5173)
-npm run build        # 执行 tsc -b && vite build 生产打包构建
-npm run lint         # 执行 ESLint 严格静态代码检查
-npm test             # 运行 Vitest 单元与集成测试
-npm run test:watch   # 交互式监听单测
-npm run test:coverage# 运行单测并输出覆盖率报告
-npm run test:e2e     # 运行 Playwright 端到端测试 (自动起 Server + Vite)
-npm run verify       # 运行完整质量门禁 (lint + coverage + build + E2E)
-npm run preview      # 本地预览生产构建产物
-```
+| 包 | 开发 | 生产运行或预览 | 类型与构建 |
+|---|---|---|---|
+| `Server/` | `bun run dev` | `bun run start` | `bun run check` |
+| `Client/` | `npm run dev` | `npm run preview` | `npm run build`、`npm run lint` |
 
----
+HTTP 契约变更需要导出时，在 Server 执行 `bun run docs:openapi`，产物为 `Agents/http-openapi.json`。测试、覆盖率、资源冒烟与完整门禁命令统一见 [Testing](Testing.md)。
 
 ## 6. 环境变量规范 (Environment Variables)
 
@@ -189,7 +141,7 @@ BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_URL=
 ```
 
-`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不能直接请求 Bangumi 或使用 `lain.bgm.tv` 原始地址。
+`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。图片在服务端按配置重写；镜像为空时的行为见 [BangumiApi](BangumiApi.md#配置)，生产镜像要求见 [Deployment](Deployment.md)。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash

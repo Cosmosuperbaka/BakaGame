@@ -1,16 +1,33 @@
 # 测试体系
 
-本项目没有根级 `package.json`。服务端和客户端是两个独立包，验证时必须分别进入对应目录。
+选择验证范围、编写测试或修改 CI 时查阅本文。先用下表确定需要的检查，再阅读对应层级；排障章节只在出现相关症状时使用。命令分别在 `Server/`（Bun）和 `Client/`（Node/npm）内执行。
 
-本文件同时维护覆盖矩阵、生产资源冒烟、过时测试治理、CI 门禁，以及未来新增测试的质量要求。
+## 验证范围
 
-## 优化实施状态
+| 改动类型 | 完成所需的验证 |
+|---|---|
+| 纯文档或注释 | 检查 diff、链接、引用路径、命令与规则一致性；不运行无关业务套件 |
+| 局部服务端行为 | 相关 `bun test` 文件 + `bun run check`；新增行为或缺陷补有判别力的回归 |
+| 局部客户端逻辑 | 相关 Vitest 文件 + `npm run lint` + `npm run build` |
+| 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测 |
+| 共享协议、跨游戏基础设施、全局状态同步 | 两端类型/构建与相关协议、Store、服务回归；涉及握手或路由时验证真实命令 ACK |
+| 快照、私有状态、封包或广播频率 | `Server/test/NetworkCapacity.test.ts`，保留全部容量与最终同步断言 |
+| 歌词几何、字体或动画 | `npm run test:lyrics`；jsdom 高度模拟不替代真实浏览器 |
+| 资源、构建插件或静态外壳 | `npm run test:asset-smoke` 与相关 SEO / 资源 E2E |
+| 依赖或运行时升级 | 升级前后以同一组检查验证受影响包；Server check + test，Client lint + coverage + build；浏览器/构建依赖另跑相关 E2E，基础运行时或跨端影响覆盖两端 |
+| CI、发布准备或明确要求完整回归 | 对应包 `verify`，发布另查 Deployment；服务启动/运维端点改动补 `test:production-smoke` |
 
-本轮测试套件优化已经落地以下门禁：
+本地单测和隔离冒烟可直接运行、修复本次引入的失败并重跑。通过后不重复扩大检查；新改动、失败或未消除风险才增加验证。全量 CI 门禁继续执行，不要求每个局部编辑都先跑完整 CI。
+
+普通测试使用隔离夹具与 Mock 上游；真实网易云测试单独调用，会使用本地凭据。按已有授权和 [NeteaseMusicApi](NeteaseMusicApi.md#测试要求) 执行，不把它当普通单测。环境缺失时记录未验证范围，不用改低阈值或伪造通过来交付。
+
+## 当前门禁与事实来源
+
+当前已落地的门禁：
 
 - 测试夹具在清理临时目录前会排空词库异步写队列；结算流程和资源路径均有回归覆盖。
 - 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
-- 服务端与客户端覆盖率命令已进入 CI。服务端检查函数覆盖率至少 92.87%、行覆盖率至少 95.45%；客户端检查语句 54%、分支 43%、函数 45%、行 56%。CI 会保留两端 lcov/HTML 报告。
+- 服务端与客户端覆盖率命令已进入 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 会保留两端 lcov/HTML 报告。
 - `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
 - 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不再读取 Tailwind 类名；关键落地页和聊天流程会将页面异常、控制台错误及非预期 4xx 转为测试失败。
 
@@ -76,47 +93,30 @@ npx playwright test e2e/App.spec.ts
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
 - Playwright 自动启动服务端与 Vite；使用 `http://localhost:4850/health` 进行服务端健康检查探活，前端监听 `localhost:5173`。
 
-## 编写约定
+## 测试编写与维护
 
-- 修复缺陷时至少补一条能在修复前失败的回归测试。
-- 业务状态机优先从 `WhoIsFakerService.execute` 等真实入口测试，不直接调用私有实现。
-- 纯规则和连接注册表使用无网络的单元测试；HTTP/WS 交互放在 `App.test.ts` 或 Playwright。
-- 每条测试独立创建房间、连接与临时目录，禁止依赖用例顺序。
-- Vitest 测试只放在 `Client/src`；Playwright 测试只放在 `Client/e2e`。
-- 覆盖率用于识别空白区域，不以低价值断言追求全局百分比。新增核心逻辑必须覆盖主要分支。
-- **行为驱动而非细节绑定**：UI 组件与页面单测绑定 ARIA 角色、语义文本与数据契约，严禁断言特定 Tailwind 原子类名或 DOM 深度层级；E2E 严禁对页面外壳进行 class 字符串全等比对。
-- **异常强断言铁律**：严禁使用裸 `toThrow()`，必须断言明确的业务错误码（如 `code: "INVALID_ROOM_ID"`）或关键错误描述。
-- **状态驱动而非过度 Mock**：Zustand 状态测试使用 `store.setState(...)` 原生注入真实状态上下文，严禁模块级 `vi.mock` 替换全局 Store。
-- **依赖注入与无网络时钟**：包含退避、冷却、抖动的类与服务（如 `NeteaseMusicProvider`）必须构造器注入 `now` 与 `random`，以虚拟时钟进行 0ms 确定性测试；遥测打点等外部 IO 必须参数化注入 `fetcher`，禁止单测滥用 `vi.stubGlobal("fetch")`。
-- **杜绝镜像测试文件**：文件重命名或重构后必须同步清理旧镜像单测文件，严禁双胞胎测试共存。
-- **生产资源必须冒烟**：客户端生产构建后必须通过 preview 服务器检查入口 HTML、固定 WebP、所有哈希贴纸、SPA 路由和资源 MIME；只测试 Vite 插件函数不算资源验证。
-- **异步夹具必须排空**：测试删除临时目录或关闭服务前，必须等待所有持久化写队列和异步任务结束；未处理 Promise rejection、console error 和非预期 4xx 必须令测试失败。
-- **覆盖率必须进 CI**：`Server` 执行 `bun run test:coverage`，`Client` 执行 `npm run test:coverage`；覆盖率用于阻止回退，核心模块的主要分支不得以全局平均值掩盖。
-- **开发服务器不代表生产**：Playwright 的资源冒烟使用 `npm run build` 后的 `vite preview`；真实房间 E2E 可以使用开发服务器，但必须另有生产构建冒烟。
-- **覆盖率阈值必须可追溯**：修改阈值时必须同时说明基线、覆盖空白和回退风险；禁止为通过 CI 临时降低阈值。服务端阈值由 `Server/scripts/CheckCoverage.ts` 检查，客户端阈值由 `Client/vitest.config.ts` 检查。
-- **覆盖率报告解析必须实测**：LCOV 的 `FNF/FNH/LF/LH` 是单值记录，不能按 `DA` 的双值结构读取；报告缺少有效计数必须失败，禁止把空报告视为百分之百。真实角色 E2E 的检出步骤必须拉取 LFS 数据实体。
-- **生产冒烟必须隔离上游**：冒烟脚本只能验证本地服务、协议握手和关键 ACK；网易云、Bangumi 等真实第三方调用必须使用 Mock 或单独的凭据隔离集成任务。
-- **E2E 质量监听必须可解释**：监听到的 `pageerror`、控制台 error 或 HTTP 4xx/5xx 必须能关联到当前用户流程；确属预期的状态码要在测试中显式白名单并写明原因。
+- 新行为和缺陷修复覆盖用户可观察结果，缺陷用例应能在修复前失败；纯文案、格式与无行为变化的低风险修改不为覆盖率添加无意义测试。
+- 状态机从公开服务入口（如 `WhoIsFakerService.execute`）测试，非 IO 纯业务逻辑真实运行。Zustand 用 `store.setState` 预置并重置状态，不整体 Mock 核心 Store，也不在 Mock 中重写系统。
+- UI 断言绑定 ARIA 角色、标签、可见文本与数据契约；`data-testid` 只用于稳定业务元素。布局断言检查 Landmark、导航、真实几何和溢出，不绑定 Tailwind 类名、整串 class 或 DOM 深度。
+- 长连接与 Store 测试用 `emitStatus`、`emitMessage` 等语义门面分发事件，不裸调监听器数组下标。
+- 时间、退避、抖动、随机与网络驱动通过 `now`、`random`、`fetcher` 参数注入，使用虚拟时钟及受控 Promise；第三方 Provider 测试不做真实 sleep，不用全局 fetch / 随机替换污染并发用例。
+- 失败断言核对业务错误码、HTTP 状态或关键错误描述；不使用裸 `toThrow()`、裸 truthy 或只检查调用次数的假测试。安全防护变更另遵循 [Spec §16](Spec.md)。
+- 每例独立房间、连接、目录和数据，不依赖顺序；清理前排空持久化写队列。多浏览器上下文、Worker、端口、WebSocket 和子进程在 `finally` / `afterEach` 释放，超时终止子进程。
+- Vitest 位于 `Client/src`，Playwright 位于 `Client/e2e`。名称描述行为；不提交 `.only`、无理由 `.skip`、重命名后的镜像测试或已经删除模块的 Mock。
+- 核心逻辑覆盖主要分支，覆盖率用于查缺及阻止回退，不堆低价值断言。阈值修改说明基线、空白和风险；Bun 升级重新校准插桩口径，见 [Conventions](Conventions.md)。
+- LCOV 的 `FNF/FNH/LF/LH` 按单值解析，不能套用 `DA` 双值格式；无有效计数的报告必须失败。
+- 新增生产资源在构建后通过 preview 验证 HTTP 200、MIME、非空内容及可解码性，覆盖入口 HTML、固定 WebP、哈希贴纸与 SPA 路由。只测插件函数或 Vite 开发模式不够。
+- E2E 关注跨页面、跨进程和真实用户风险；未处理 rejection、`pageerror`、console error 或非预期 4xx/5xx 令用例失败，能关联当前流程。预期错误用明确白名单并说明原因。
+- 生产服务冒烟保持隔离、可重复且不访问第三方；真实第三方集成单独运行、输出脱敏，不进入常规 CI。真实角色 E2E 检出时需拉取 LFS 数据实体。
 
-## 新增测试质量规范
+## 领域专项验收
 
-- 新功能和缺陷修复必须包含测试；缺陷回归测试应在修复前能够失败，并覆盖用户可观察的行为。
-- 测试名称描述业务行为和结果，不描述 DOM 层级、样式类名或私有方法；禁止提交 `.only`、无理由 `.skip` 和镜像测试文件。
-- 每个用例独立创建房间、连接、临时目录和数据；`afterEach` 必须关闭连接、排空异步写队列并清理临时资源。
-- 状态机测试从公开服务入口执行；外部 IO、时钟、随机数通过构造器或参数注入，测试保持确定且无网络依赖。
-- 失败断言必须检查错误码、HTTP 状态或关键字段；禁止裸 `toThrow()`、裸 truthy 断言和只验证调用次数的假测试。
-- Zustand 测试使用 `store.setState` 注入状态；UI 测试优先使用 ARIA、语义文本和 `data-testid`，禁止绑定 Tailwind 类名或 DOM 深度。
-- E2E 只覆盖跨页面、跨进程和真实用户风险；多浏览器上下文必须在 `finally` 中关闭，并确保测试输出没有未处理 rejection、console error 或非预期 4xx。
-- 新增生产资源必须加入构建后 preview 冒烟，验证 HTTP 200、MIME、非空内容和可解码性；仅测试插件函数不合格。
-- 覆盖率用于发现空白和防止回退；核心逻辑须覆盖主要分支，不得用低价值断言堆高全局百分比。真实第三方集成测试单独运行、凭据脱敏，不进入常规 CI。
-- 生产服务冒烟应保持单进程、可重复和无外部网络依赖；端口、临时目录、WebSocket 和子进程必须在 `finally` 中释放，超时后应主动终止子进程。
 - CCB 网络容量使用真实原生服务与生产 `StateSyncEncoder`，以 150 名玩家、每秒 12 次猜测、持续
   60 秒以及公共/私有两通道的全量校准计量，连同请求、ACK、WebSocket 帧及 15% 余量不超过
   6 Mbps。必须断言实际产生补丁，不能只检查事件登记或跳过未变化的校准流量。
 - CCB 图片提示用生成的栅格图片经过真实 sharp 解码、缩放、模糊及 WebP 编码，校验像素尺寸和
   模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
   留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
-- E2E 选择器优先使用 ARIA 角色、可见语义文本和稳定 `data-testid`。只有当元素本身就是业务契约时才增加 `data-testid`，不得把样式类名或 DOM 深度变成测试接口。
 - 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 单独启动 Vite（5177），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
 
 ## CI 推荐顺序
@@ -132,7 +132,7 @@ npx playwright install --with-deps chromium
 npm run verify
 ```
 
-服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 的顺序是 ESLint、Vitest 覆盖率、生产构建、Playwright，便于尽早失败。
+服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 当前依次执行 ESLint、Vitest 覆盖率、build、`test:e2e`（内部再次 build，再运行 Playwright 与歌词回归）。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。
 
 网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。
@@ -140,15 +140,14 @@ npm run verify
 ## E2E 假红排查（本地）
 
 `npm run test:e2e` 报 `Error: Timed out waiting 60000ms from config.webServer.` 时，
-**先怀疑本机代理环境变量，不要先怀疑代码或依赖升级**。实测症状与真因：
+先检查进程输出和实际探活响应；若手动访问正常，再核对代理环境。以下是历史复现条件，不代表所有超时均由代理造成：
 
 | 现象 | 真因 |
 |---|---|
 | 报 webServer 60 秒超时，但手动访问 `127.0.0.1:5173` 明明是 200 | 会话里存在 `HTTP_PROXY` / `HTTPS_PROXY`。Playwright 的就绪探测**会走代理**，拿到 502/404 而非真实响应；而 Node 的 `fetch` 默认**不读** `HTTP_PROXY`，所以手动探针会给出「一切正常」的误导结论。 |
 | 日志里 BAKA 服务反复打印 `HTTP GET /` 与 `/index.html` 的 404 | 那是被代理转发过来的**就绪探测请求**，不是页面请求。`playwright.config.ts` 中「Windows 双栈导致 404/超时」的注释记录的是同类现象。 |
 
-处置：跑 E2E 前清掉代理变量（`unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy`），
-并保持 `playwright.config.ts` 中 preview 的 `127.0.0.1` 硬绑定。CI 无代理变量，不受影响。
+处置：仅在确认代理误路由后，在当前测试子进程内移除 `HTTP_PROXY` / `HTTPS_PROXY`（含小写形式），测试结束恢复；不要更改用户的全局网络配置。保持 preview 的 `127.0.0.1` 硬绑定。
 
 诊断利器：`DEBUG=pw:webserver npx playwright test` 会逐次打印探测 URL 与收到的状态码，
 一眼能看出 404/502 是谁回的。
