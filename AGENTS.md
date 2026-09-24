@@ -1,29 +1,35 @@
-# AGENTS.md
+# BakaGame 工作指南
 
-This repository maintains modular, single-source-of-truth guidance documents in the `Agents/` directory.
-All coding agents (Codex, Antigravity, Claude, etc.) must follow this reading order and structural map before modifying or testing code:
+`AGENTS.md` 是各编码工具共用的入口，专项规则由 `Agents/` 维护。根据任务查阅下表中的相关章节；无需在每次修改前通读全部文档，也无需重复读取本轮已掌握且未变化的内容。
 
-## Reading Order & Documentation Index
+## 工作区要点
 
-Before changing anything in this repository, locate and read the relevant authoritative documents in order:
+- `Server/` 使用 Bun，`Client/` 使用 Node/npm；根目录没有 `package.json`。命令在对应包内执行。
+- 共享模型和协议只有一份物理源码：`Server/src/shared/`。客户端通过 `@bakagame/shared` 引用，不添加 `file:../packages/` 依赖。
+- 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要纯中文、最多 12 字，scope 仅限 `Faker`、`Song`、`CCB`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
 
-1. **[`Agents/Conventions.md`](Agents/Conventions.md)** — **Workspace & Conventions**: Package structure (Bun `Server/`, Vite/Node `Client/`), runtime ports, dev/test/build commands, `@bakagame/shared` dual-mapping, naming conventions, and environment variables.
-2. **[`Agents/Spec.md`](Agents/Spec.md)** — **Engineering Constraints**: Anti-reinventing-the-wheel & third-party ecosystem replacement standards, clean architecture rules, anti-defensive programming & anti-patchwork standards, no-legacy-retention policy, and realtime bandwidth budgets.
-3. **[`Agents/Commitment.md`](Agents/Commitment.md)** — **Commitment & Versioning**: Immediate atomic commit timing ("commit immediately per point, do not accumulate"), SemVer 2.0 versioning, **strict 100% Chinese commit message rule (max 12 chars)**, strict 4-scope enum (`Faker` | `Song` | `CCB` | `Core`), and user-facing changelog syntax and tone constraints.
-4. **[`Agents/WhoIsFaker.md`](Agents/WhoIsFaker.md)** — **WhoIsFaker Domain Architecture**: Typed envelope protocol, dual snapshot model, disconnect handling, complete 9-phase state machine, supplement speeches, blank player guessing & adjudication, and test mode (`Oblivionis`).
-5. **[`Agents/NeteaseMusicApi.md`](Agents/NeteaseMusicApi.md)** — **Songuessr & Music Provider**: Netease cloud music API proxy, rate limits, caching, and credential isolation.
-6. **[`Agents/BangumiApi.md`](Agents/BangumiApi.md)** — **Bangumi 接入与数据集规范**: Bangumi API 镜像、图片重写、缓存、限流、番剧/曲目筛选，以及 `tools/build_bangumi_db.py` 构建的本地只读数据集（含 CCB 的角色标签与声优表）。
-7. **[`Agents/CCB.md`](Agents/CCB.md)** — **CCB 猜动漫角色领域规范**: 服务端权威边界、`/api/ccb/ws` 协议与状态事件登记、房间生命周期数值、反馈判定与高亮箭头真相源，以及原版缺陷修复登记表。
-8. **[`Agents/Design.md`](Agents/Design.md)** — **Frontend Visual & Layout Specs**: Vintage-paper theme, Tailwind v4 semantic variables, three-section topbar, desktop/mobile history overlay matrix, and component usage.
-9. **[`Agents/Animation.md`](Agents/Animation.md)** — **Motion & Interaction**: Framer-motion tokens (`@/lib/Motion`), spring physics, origin-anchored transitions, and spatial causality rules.
-10. **[`Agents/Deployment.md`](Agents/Deployment.md)** — **Production & Edge Gateway**: Reverse proxy boundaries, TLS termination, WebSocket quotas, and port isolation.
-11. **[`Agents/Testing.md`](Agents/Testing.md)** — **Testing & Verification Matrix**: `bun:test` backend suites, Vitest frontend suites, Playwright E2E workflows, and CI verification pipelines.
+## 按任务查阅
 
-## Critical Workspace Rules
+| 任务涉及 | 权威文档与阅读范围 |
+|---|---|
+| 包结构、命名、启动、环境变量、依赖升级 | [Conventions](Agents/Conventions.md) 的对应章节 |
+| 代码修改或审查 | [Spec](Agents/Spec.md) 的任务导航及命中的工程约束 |
+| 提交、版本、玩家更新日志 | [Commitment](Agents/Commitment.md)；只有发布文案任务需要读版本与日志细则 |
+| 谁是卧底规则、权限、断线或状态机 | [WhoIsFaker](Agents/WhoIsFaker.md) |
+| 猜歌的登录、歌曲请求、缓存、歌词或音频 | [NeteaseMusicApi](Agents/NeteaseMusicApi.md) 的对应链路 |
+| Bangumi 请求、图片、曲目筛选、SQLite 数据构建或角色资料 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
+| CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiApi |
+| 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 NeteaseMusicApi |
+| 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
+| 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md) |
+| 选择验证范围、编写测试、覆盖率或 CI | [Testing](Agents/Testing.md) 的验证矩阵及相关专项 |
 
-- **Independent Packages**: Never assume a root `package.json`. Server runs on Bun (`cd Server && bun test`), Client runs on Node/npm (`cd Client && npm test`).
-- **Shared Module Single Truth**: `Server/src/shared/` is the only physical source for shared models and protocols. Never reintroduce `file:../packages/` symlink dependencies.
-- **Commit Immediately**: Commit immediately after finishing each atomic modification point. Never wait until all changes are finished.
-- **Strict Chinese Commit Messages (100% 中文提交铁律)**: Every commit message MUST strictly follow `type(scope): 中文摘要`. The summary MUST be 100% Chinese, at most 12 characters, with ZERO English words. The scope MUST strictly be one of `Faker`, `Song`, `CCB`, `Core` (case-sensitive). Never use English commit messages; never invent arbitrary scopes like `server`, `client`, `tasks`, `shared`.
-- **Review Specifications Sync (审查规范强制同步沉淀)**: Any engineering rules, constraints, or anti-patterns established during any code, architecture, performance, or security reviews MUST be immediately codified and synchronized into `Agents/` docs (primarily `Agents/Spec.md`). Review standards must become permanent repository assets, never left in transient chats.
-- **Do Not Duplicate**: Do not duplicate domain logic or architecture details into this root file. Update the specialized documents in `Agents/` instead so all agents stay strictly aligned.
+跨领域任务组合相关入口；纯文字修订只读目标文档及其关联规则。
+
+## 完成与决策边界
+
+- 持续完成请求所需的实现、配套调用方、文档与验证，修复本次改动引入的问题后再交付。验证范围见 Testing；检查通过后，只有新改动、失败或未解决风险才触发追加检查。
+- 本地编辑、隔离夹具测试及其失败修复可直接进行。已有授权持续有效；常规实现选择不需要逐步确认。
+- 推送、部署、真实第三方写入及破坏性操作按用户已授权范围执行；缺少必要授权时，先完成可独立进行的本地准备与验证，再说明具体待执行动作。文档中的命令示例本身不构成执行授权。
+- 保护用户已有改动；提交前检查暂存区，只提交本任务内容。交付说明改动、验证结果与尚未解决的限制。
+- 审查确认的工程规则在对应修改点立即沉淀到专项文档，维护方法见 [Spec §5](Agents/Spec.md#规范维护)。根入口和 `CLAUDE.md` 不复制领域细则。
