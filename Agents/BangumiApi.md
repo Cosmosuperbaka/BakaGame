@@ -1,8 +1,17 @@
 # Bangumi 接入与数据集规范
 
+涉及 Bangumi API、歌曲匹配、SQLite 构建或 CCB 角色资料时使用本文；按数据链路查阅，不要求先通读另一个游戏的规则。
+
+| 工作范围 | 查阅章节 |
+|---|---|
+| API 镜像、图片与缓存 | 「配置」「Bangumi API 回填缓存」「请求边界」 |
+| 猜番出题与歌曲匹配 | 「番剧题目」「出题性能预算」「曲目过滤与展示」「隐私与协议」 |
+| 数据构建、标签与声优 | 「本地数据集构建」下对应小节 |
+| CCB 查询、目录或资料补全 | 「角色库检索的已知限制」「CCB 运行时资料与补全边界」；游戏权限见 [CCB](CCB.md) |
+
 听歌猜番使用 Bangumi 条目作为答案，服务端负责所有 Bangumi 网络请求。客户端只通过
 `/api/songuessr/ws` 对应的 WebSocket 命令搜索条目和提交 subject ID，不直接访问 Bangumi
-接口，也不接触原始图片域名。
+API；图片由服务端按下节配置重写。
 
 CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色数据见文末「本地数据集构建」。
 
@@ -109,7 +118,9 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 3. **长任务不得设客户端请求超时**：`song.game.start` 与 `song.game.nextRound` 的耗时由上游决定，客户端必须以 `timeout: 0` 发送（见 `WebsocketClient.send`），并在等待期间每 3 秒 `song.room.requestSync` 同步一次房间状态。**严禁用默认 10 秒请求超时**：那只会制造「后端还在选曲、前端已提示失败」的假失败。
 
 
-**曲目池必须先剔除版权署名伪条目（必须遵守）**：Bangumi 关联条目里混有大量**并非歌曲**的署名占位行——版权方、制作委员会、动画师/作家署名，如 `©BanG Dream! Project`、`©SUNRISE`、`©Visual Art's`、`（C）2006 SUNRISE inc.`、`Ⓒ 創通・タツノコプロ`、`時をかける少女」製作委員会2006`。它们在本地数据集 `subject_music_relations` 中 `music_id` 为**负数**（实测全库 7762 条），却被归到 `opening` 类目，因 `KIND_PRIORITY.opening = 1` 而排在所有真实曲目之前。
+## 曲目过滤与展示
+
+**曲目池必须先剔除版权署名伪条目**：Bangumi 关联条目里混有大量**并非歌曲**的署名占位行——版权方、制作委员会、动画师/作家署名，如 `©BanG Dream! Project`、`©SUNRISE`、`©Visual Art's`、`（C）2006 SUNRISE inc.`、`Ⓒ 創通・タツノコプロ`、`時をかける少女」製作委員会2006`。它们在本地数据集 `subject_music_relations` 中 `music_id` 为**负数**（实测全库 7762 条），却被归到 `opening` 类目，因 `KIND_PRIORITY.opening = 1` 而排在所有真实曲目之前。
 
 若不剔除，`resolveAnimeSong` 会拿「版权署名」去网易云搜歌，再经宽松的子串门禁把完全无关的歌曲当成 OP。**真实事故**：`©BanG Dream! Project` 因规范化后包含 `bangdream`，让 `isSongTitleMatch("Bang Dream!", "©BanG Dream! Project")` 判为同一首，于是把 2019 年专辑《Music For All》里的《Bang Dream!》当作 2023 年《BanG Dream! It's MyGO!!!!!》的 OP。
 
@@ -235,7 +246,7 @@ ORDER BY r.subject_id
   「先算 meta、再算普通标签」的累积依赖；**输出顺序**才是 `rating_count` 降序
   （原版 `.sort((a, b) => b.rating_count - a.rating_count)`，`shared_appearances` 依赖它）。
 - **剔除 `nsfw`**：原版客户端里根本没有 `nsfw` 字样，但**本项目一律剔除**（2026-09-18 的合规决定，
-  见 `Agents/CCB.md §6.5`）：构建期 nsfw 作品不进角色库（关联一并丢弃，且 `subjects_nsfw != 0`
+  约束以本节为准）：构建期 nsfw 作品不进角色库（关联一并丢弃，且 `subjects_nsfw != 0`
   会让构建失败），运行期 `CCBCharacterRepository` 的抽样与登场作品查询也各带 `nsfw = 0`。
   **注意只剔角色库**：歌曲库保留全集的动画元数据。
 - **无法还原 `locked`**：原版会丢弃 `locked` 作品，dump 没有该字段 —— 已知差异。
@@ -310,6 +321,8 @@ ORDER BY r.subject_id
   普通测试及真实本地库小查询不得访问上游。
 
 ### 体积
+
+以下是历史构建样本，实际大小和行数以本次构建输出为准，不作为固定验收阈值。
 
 修复 + 新增表后 `bangumi-character.sqlite` 为 **252.8 MiB**（114 MiB 的旧库 → 加 summary/aliases/标签/声优
 → 补 `subjects` 全部类型与 `heat`）：`aliases` 让 trigram 索引显著增长，`subjects` 634,649 行，

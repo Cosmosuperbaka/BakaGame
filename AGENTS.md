@@ -16,10 +16,11 @@
 | 代码修改或审查 | [Spec](Agents/Spec.md) 的任务导航及命中的工程约束 |
 | 提交、版本、玩家更新日志 | [Commitment](Agents/Commitment.md)；只有发布文案任务需要读版本与日志细则 |
 | 谁是卧底规则、权限、断线或状态机 | [WhoIsFaker](Agents/WhoIsFaker.md) |
-| 猜歌的登录、歌曲请求、缓存、歌词或音频 | [NeteaseMusicApi](Agents/NeteaseMusicApi.md) 的对应链路 |
+| 猜歌的登录、歌曲请求、缓存或音频 | [NeteaseMusicApi](Agents/NeteaseMusicApi.md) 的对应链路 |
+| 歌词清洗、切片、AMLL 排版或歌词动效 | [SonGuessrLyrics](Agents/SonGuessrLyrics.md) |
 | Bangumi 请求、图片、曲目筛选、SQLite 数据构建或角色资料 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
 | CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiApi |
-| 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 NeteaseMusicApi |
+| 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
 | 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md) |
 | 选择验证范围、编写测试、覆盖率或 CI | [Testing](Agents/Testing.md) 的验证矩阵及相关专项 |

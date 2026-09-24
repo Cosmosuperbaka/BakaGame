@@ -1,29 +1,16 @@
 # 谁是卧底业务架构与状态机指南 (WhoIsFaker Domain Architecture & State Machine)
 
-本文档是 `WhoIsFaker`（谁是卧底）游戏核心领域模型、网络通信协议、服务端分层、客户端状态流向与游戏规则状态机的权威技术规范。
+修改 WhoIsFaker 规则、协议、权限或房间状态时使用本文。通信与会话读 §1—§3；阶段、角色与胜负读 §4；发言、白板、投票、房主动作分别读 §5—§8；播报及聊天读 §9；调试房读 §10。纯视觉改动另查 [Design](Design.md)。
 
 ---
 
 ## 1. 通信协议模型 (Communication Protocol)
 
-所有 WebSocket 实时通信统一采用 `Server/src/shared/Protocol.ts` 定义的强类型封包信封（Envelope）：
+信封类型直接引用 [Protocol.ts](../Server/src/shared/Protocol.ts)，领域命令引用 [WhoIsFaker.ts](../Server/src/shared/WhoIsFaker.ts)，不在本文复制可编译接口。
 
-### 1.1 客户端至服务端 (Client -> Server)
-```typescript
-interface ClientEnvelope<TPayload = unknown> {
-  id: string;              // 客户端生成的唯一消息 UUID（用于 Promise Ack 关联）
-  type: string;            // 消息类型，如 "room.join", "game.submitWords"
-  roomId?: string;         // 目标房间号（大厅类消息可省略）
-  sessionToken?: string;   // 玩家会话 Token
-  payload: TPayload;       // 强类型参数载荷
-}
-```
-
-### 1.2 服务端至客户端 (Server -> Client)
-服务端推送固定为以下三种信封结构之一：
-- **AckPacket（命令响应）**: `{ type: "ack", id, requestType, payload }`，对应特定命令成功执行。
-- **ErrorPacket（错误响应）**: `{ type: "error", id, error: { code, message, details } }`，对应命令执行失败或参数非法。
-- **EventPacket（事件广播）**: `{ type: "event", event, payload }`，如 `room.snapshot`, `game.privateState` 等全房或私有广播。
+- 客户端使用 `ClientEnvelope<TType, TPayload>`：`id` 关联应答，`type` 选择命令，`payload` 承载参数；`traceId`、`roomId`、`sessionToken` 按契约传递。
+- 服务端只发 `AckPacket`、`ErrorPacket`、`EventPacket`；ACK/error 回传命令身份和追踪字段，事件携带事件名与载荷。
+- 公开/私有通道载荷经 `StateSyncPayload<T>` 传递全量或 RFC 6902 补丁；原始基线隔离与容量要求见 [Spec §7、§9.3](Spec.md)。
 
 客户端 WebSocket 单例（`Client/src/lib/WhoIsFakerWs.ts`）通过内存 `Map<string, PendingRequest>` 维护消息映射，在接收到对应 `id` 的 Ack 或 Error 时精准 `resolve` / `reject` 前端 Promise。
 
@@ -108,7 +95,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 - **死亡身份揭露 (`revealRoleOnDeath`)**：布尔值，默认 `true`。
   - **开启时**：玩家在对局中死亡/被放逐出局时，其真实角色（`revealedRole`）即刻写入公共快照，全房存活普通玩家均可知晓其阵营。
   - **关闭时**：死亡玩家在对局中的角色在公共快照中严格保持 `undefined` 保密，存活普通玩家无法从公共快照探知其死前真实身份；仅出题人、旁观者或待最终 `gameOver` 阶段时方予揭露。
-  - **交互与同步**：房主可在等待大厅（`WaitingPhase`）随时切换，配置变更通过 `room.settings_changed` 实时同步；非房主玩家在设置预览区展示“死亡揭露身份”/“死亡隐藏身份”状态胶囊。
+  - **交互与同步**：房主可在等待大厅（`WaitingPhase`）随时切换，配置变更通过公开状态通道实时同步（`room.settings_changed` 是服务端日志类型）；非房主玩家在设置预览区展示“死亡揭露身份”/“死亡隐藏身份”状态胶囊。
 
 ---
 
