@@ -1,6 +1,6 @@
 # 前端设计规范
 
-本文档用于约束所有 Coding Agents 对 `Client/` 的页面、组件和样式修改。开始前端工作前，必须同时阅读 `Agents/Spec.md`；若两份文档存在冲突，以 `Spec.md` 及用户最新明确要求为准。
+修改页面、组件外观或布局时使用本文。主题与控件读 §1—§6；主页、大厅、房间分别查 §7 对应小节；交互反馈读 §8；响应式与验收读 §9—§10。代码架构另查 [Spec §15](Spec.md)，动效实现查 [Animation](Animation.md)，歌词播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)，无需为纯样式任务通读后端规则。
 
 ## 1. 基本原则
 
@@ -20,9 +20,7 @@
 - 界面图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符代替已有的标准图标。
 - 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
 - 条件类名使用项目现有的 `cn` 工具，组件变体沿用 `class-variance-authority`。
-- 动效使用项目已有的 `framer-motion`，只用于状态切换、列表变化、面板进入退出和必要反馈。
-- 动效令牌统一维护于 `Client/src/lib/Motion.ts`，弹性曲线（`spring`）、曲线（`ease`）、时长（`duration`）、交互反馈（`pressable` / `pressableStrong` / `tappable` / `iconTappable` / `headerTappable` / `selectable`）、编排变体（`listItem` / `listContainer` / `phaseSwap` / `popover` / `backdrop` / `collapsible` / `wipeFromLeft` / `emergeFromOrigin` / `ellipsisDot` / `sharedTransfer` / `lyricOverview` / `spinner`）及来源锚定钩子（`useOriginTracker` / `useOriginStyle`）均从该文件取值；不在业务组件内写死时长或 easing。`App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`，系统开启减弱动效时自动跳过所有 framer-motion 动画。
-- 项目未安装 `tailwindcss-animate`，因此 `animate-in`、`zoom-in-95`、`fade-out-0` 等类名无效，不得使用。Radix 浮层的开合动画有两种正确做法：能包 `AnimatePresence` 的（如 `Dialog`）用 framer-motion 接管；只受 `data-state` 控制的（如 `Select`、`Tooltip`）由 `index.css` 中 `overlay-emerge` / `overlay-retract` 关键帧统一提供，曲线与 `lib/Motion.ts` 保持一致。
+- 动效使用 `framer-motion`，参数唯一来源为 `Client/src/lib/Motion.ts`；令牌、来源锚定、Radix 动画及减弱动效规则统一见 [Animation](Animation.md)。
 - 全站图片全局禁止原生拖拽与幽灵虚影：在 `Client/src/index.css` 声明 `img { -webkit-user-drag: none; user-drag: none; }` 并在应用启动入口通过 `setupGlobalImageProtection()` 拦截原生 `dragstart` 事件，确保全平台/全浏览器（包括 WebKit、Chromium、Gecko 及移动端）下所有 `<img>` 标签天然免于误触与幽灵框，杜绝在业务组件中人肉散落 `draggable={false}` 补丁。
 
 ### 2.1 全局层叠标尺与 Z-Index 语义令牌 (`--z-*`)
@@ -114,7 +112,7 @@
 - 页脚自上而下为友情链接文字链接行、外部链接图标行与版本号，居中排列。版本号点击后在弹窗中分标签展示更新日志与提交历史，不在页面主体常驻展开这两块内容。
 - 友情链接展示为紧凑的文字链接行，使用 `FriendLinkItem` 并带外链指示小图标。
 - 外部链接（社群、代码仓库、作者主页）实现为一排 `h-8 w-8` 纯图标链接，使用对应平台的品牌图标（见第 2 节），取 `text-muted-foreground` 并以 `Tooltip` 提供名称，同时保留 `aria-label`。链接在新标签打开并带 `rel="noreferrer"`，按压反馈取 `iconTappable`。不加文字标签，不做彩色品牌底色，也不把外部链接放进页面主体。
-- `changelog.json` 的 `content` 按 `feat`、`fix`、`chore` 等类型聚合为对象字典，由 `lib/Changelog.ts` 解析成结构化节点后渲染；页面仅渲染包含有效更新的类型，无更新的类型不显示。条目内容用纯文本书写：`-` 开头为列表项，行内支持 `**加粗**`、`` `等宽` `` 与 `[文字](链接)`。禁止写 HTML 标签，也禁止使用 `dangerouslySetInnerHTML`。
+- 更新日志仅渲染有有效内容的分类，结构与允许的行内标记见 [Commitment](Commitment.md#日志结构与文案)。
 - 提交历史使用时间线式列表：单条包含提交信息、短哈希、作者和相对时间，保持单色克制表现，不按提交类型铺设彩色标签。
 
 ### 7.2 游戏大厅
@@ -150,24 +148,16 @@
 - 发言历史表格用行列奇偶叠加的棋盘格底色（`descriptionCellShade`），底色取极低透明度的前景色，只造成轻微明暗差、不引入新色相；玩家列不参与。列宽按本列最长发言取值：房间页由最外层 grid 持有列轨道、各行以 `grid-cols-subgrid` 继承，保证同一列跨行等宽。发言正文一律用正文色，列的种类只由列标题的色相区分。
 - 游戏区容器带 `isolate`：揭词背板、天亮提示等区内浮层只在游戏区内部分层，不会越过玩家面板盖住骑缝的展开按钮。
 
-## 8. 交互与动效
+## 8. 交互状态
 
-- 所有可点击元素必须具有可见的悬停、键盘聚焦、禁用或进行中状态。
-- 异步操作期间应防止重复提交，并通过按钮状态、加载指示或 Toast 给出反馈。
-- 确认、投票、夜间行动等由服务端状态决定的结果，不得仅依赖本地临时样式表示。
-- 动效的唯一目的是表达因果与空间关系：每个动画都要能回答“什么导致了它”和“它从哪来、到哪去”。达不到这两点的动画不加。
-- 所有时长、曲线与弹性参数只能取自 `@/lib/motion`，不在业务组件内写死数值或使用 `easeOut`、`animate-spin` 之类的字符串常量。弹性档位按被移动物体的质量感选择：`spring.snap` 用于按压与小控件，`spring.swift` 用于浮层与列表项，`spring.settle` 用于布局与面板尺寸，`spring.drift` 用于跨区域长距离位移，`spring.impulse` 用于需要落位回弹的确认反馈。需要确定收束时间时才用 `duration.*` 配 `ease.*`。
-- 交互反馈落在按下那一刻，松手由弹性过渡收回。按压反馈统一取 `pressable`、`pressableStrong`、`tappable`、`iconTappable`、`selectable`，不自行编写 `whileTap`。`Button` 已内置分级反馈，其上不再叠加缩放。
-- 浮层必须表达来源。弹窗用 `useOriginTracker` 记录触发按钮位置并传入 `Dialog` 的 `origin`，配合 `emergeFromOrigin` 自按钮展开、按原路收回；就近弹出层用 `popover`。禁止让浮层从屏幕中心凭空淡入。
-- 跨区域移动的同一对象必须是同一个 DOM 元素在连续位移，不用两个元素交接。字号差异大的场景通过 `transform: scale` 过渡，两端都渲染为清晰字形。
-- 列表变化使用 `listItem`（以左缘为原点缩放淡入）与 `listContainer`（步进节奏）；不对批量列表项使用统一纵向位移（translateY），避免多行同时飘入的感知。折叠区域使用 `collapsible`，高度与不透明度分离，避免内容被压扁。侧栏使用 `wipeFromLeft` 或短距离滑入；加载指示可以持续旋转。
-- 阶段切换使用 `phaseSwap`，并在动画结束后清除残留 `transform`，避免分数缩放导致文本子像素抖动。
-- 不添加纯装饰性循环动画、夸张缩放、视差或影响阅读的背景动效。等待类占位（如未提交发言）可使用 `PendingSpeech` 的循环省略号，因为它表达真实的等待状态；已提交但顺序未到的发言改用 `SubmittedSpeech` 的一次性对勾——内容已经有了，等的是揭示时机而不是这个人，不该继续播等待动画。
-- 操作成功、失败、房间关闭和断线等反馈必须使用真实状态文案，不得只播放动画。
+- 可点击元素有可见的悬停、键盘聚焦、禁用或进行中状态；按压与过渡遵循 [Animation](Animation.md)。
+- 异步操作防重复提交，并用按钮状态、加载指示或 Toast 反馈。
+- 确认、投票、夜间行动等结果由服务端状态驱动，不仅依赖本地临时样式。
+- 操作成功、失败、房间关闭和断线等反馈使用真实状态文案，不只播放动画。
 
 ## 9. 响应式与可用性
 
-- 每次样式修改至少检查窄屏移动端、`md` 桌面布局和 `lg` 三栏布局。
+- 页面样式实现修改至少检查窄屏移动端、`md` 桌面布局和 `lg` 三栏布局。
 - 文本、按钮、徽章和顶部栏信息不得重叠；空间不足时优先截断次要信息、换行或切换为图标操作。
 - 固定格式控件应使用明确的高度、宽度、网格列或最大宽度，避免加载文本、动态图标或状态变化引发布局偏移。
 - 主要操作必须可通过键盘访问，图标按钮必须有 `aria-label` 或 Tooltip，表单控件必须具有可理解的标签或上下文。
@@ -179,12 +169,10 @@
 - 新增样式前先确认公共组件或现有语义类是否已覆盖需求，不重复增加近似实现。
 - 不因单个页面需求修改全局主题，除非该变化明确需要影响整个客户端。
 - 不保留占位文案、未完成按钮、假数据入口或用于展示实现效果的说明。
-- 完成后运行 `npm run build` 和 `npm run lint`，并对受影响页面进行实际浏览器检查。
+- 页面实现改动按 [Testing](Testing.md#验证范围) 完成构建、静态检查与受影响页面的浏览器验证；只修改本规范不触发客户端构建。
 - 浏览器检查至少覆盖正常、空、加载、错误、禁用、长文本和移动端状态中与本次修改相关的部分。
 - 验收时以现有页面的一致性、真实业务可用性和交互完整性为准，不以单张静态截图作为唯一判断依据。
 
 ## 11. 规范维护
 
-- 用户后续追加的前端设计与交互约束应同步写入本文件。
-- 若项目全局主题、公共组件或核心布局发生经用户确认的变更，应更新本文件中相应规则，使文档与实际代码保持一致。
-- 不得把尚未实现的设想写成当前规范；需要改变现有基线时，先完成并验证实现，再更新文档。
+主题、控件与布局规则在本文维护，动效令牌在 Animation 维护。随相关改动同步已确认约束，区分目标与已验证实现；通用维护方法见 [Spec §5](Spec.md#规范维护)。

@@ -17,13 +17,9 @@
 
 用户最新明确要求优先。专项文档描述特定领域的规则和有据可查的例外；发现与通用规则冲突时，核对用户要求、实现和测试并同步修正文档，不自行扩大例外。
 
-## 1. 前端页面必须符合生产环境要求
+## 1. 前端交付标准
 
-- 本项目所有页面均视为正式上线的生产环境页面，不得按演示页面、概念稿或 Demo 的标准实现。
-- 修改前端时，界面文案不得包含任何“设计风格说明”、主题名称或用于介绍视觉方案的描述性文字。
-- 前端代码注释不得包含任何关于设计风格或主题名称的描述性文字。
-- 所有用户可见文本必须是服务于真实使用场景的业务文案，不得使用展示性质、占位性质或解释设计意图的内容。
-- 页面交互、状态反馈、异常提示和响应式表现应达到可直接上线使用的完整程度。
+页面按生产标准交付，包含真实流程、状态反馈、错误与响应式表现。业务文案、设计主题、组件使用的具体约束统一见 [Design](Design.md)；不得把演示或占位页面作为完整实现交付。
 
 ## 2. 优先使用原生标准与成熟生态，杜绝重复造轮子
 
@@ -40,15 +36,13 @@
   - **优先原生与框架内置**：优先使用 Web/Node/Bun 原生标准 API 或现有项目依赖（如 Elysia 导出能力），严禁盲目引入臃肿依赖全家桶。
   - **验证范围**：依赖替换与重构按 [Testing](Testing.md) 选择受影响包的类型、行为及集成检查；跨端契约与基础运行时变更扩大到两端。不要为局部改动重复运行无关套件。
 - 后端基于 Elysia 开发。涉及 Elysia 的实现方式、接口或行为时，应优先参考其中文官方文档：<https://elysia.zhcndoc.com/>。
-- 修改 Songuessr 的网易云音乐请求、Cookie、歌词清洗、播放地址或真实接口测试前，必须阅读 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)，并遵守其中的缓存、频率限制、版权和凭据隔离约束。
-- 修改听歌猜番的 Bangumi 请求、番剧筛选、主题曲解析或图床地址前，必须阅读 [`Agents/BangumiApi.md`](BangumiApi.md)，并遵守服务端请求、缓存限流、图片重写和答案隐私约束。
+- 网易云请求、Cookie、播放地址与真实接口测试查 [NeteaseMusicApi](NeteaseMusicApi.md) 的相关章节；歌词清洗与播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)。
+- Bangumi 请求、番剧筛选、曲目解析或图床修改查 [BangumiApi](BangumiApi.md) 的对应链路，遵守服务端边界和答案隐私。
 - 使用框架能力时仍须遵循本仓库现有架构、类型协议和代码组织方式。
 
-## 3. 前端样式保持项目一致性
+## 3. 前端一致性
 
-- 除非需求中另有明确说明，所有前端样式修改必须与项目现有整体样式保持一致。
-- 样式和交互应保持简洁、直观、易用，不得为了视觉展示引入与现有产品不协调的布局、装饰或交互模式。
-- 修改前应检查相关页面及相邻组件的既有实现，复用现有组件、样式约定和交互模式。
+修改页面前检查目标与相邻组件，复用项目现有控件和语义变量。主题与布局规则见 [Design](Design.md)，动画参数与交互因果见 [Animation](Animation.md)。
 
 ## 4. 任何更新绝不保留兼容代码与过渡期遗产 (Zero Legacy & Backward-Compatibility Elimination)
 
@@ -58,7 +52,7 @@
 - **直接物理删除旧实现**：当需求明确替换路由、协议、配置、字段、存储键或交互规范时，旧实现必须直接从代码库中物理删除，**严禁**增加重定向、别名映射、双写、回退读取或兼容分支。
 - **业务领域严禁预留伪开关字段**：严禁在业务领域模型、协议契约或后端配置项中预留无实体的“可用性伪开关与双轨回退分支”。在代码库中正式接入的业务功能即代表正式可用；主页等门户展示层若展示正在孵化中的子游戏 entry（如 CCB 增强版），应仅作为前端纯展示层呈现“即将上线”徽章与不可点击禁用状态，严禁反向向服务端协议与领域模型渗透临时兼容逻辑。
 - **调用方全量同步重构**：替换旧规范时必须同步修改所有调用方、测试用例、文档与示例，确保仓库只剩当前唯一规范，坚决不能以“避免破坏已有外部使用”或“过渡期平滑迁移”为由保留旧入口或兼容层。
-- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才允许增加兼容逻辑，且必须严格限定兼容生命周期与移除触发条件。
+- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才允许增加兼容逻辑，并限定生命周期与移除触发条件。已确认的 CCB 原版互通是现有产品边界，按 [CCB](CCB.md) 执行，无需每轮重新申请。上游能力回退与缓存降级按各 Provider 文档处理，不扩大为旧协议兼容。
 
 ### 4.2 物理消灭过渡期 Shim 桥接文件与镜像单测 (Zero Shim Bridges & Redundant Suites)
 - **严禁残留中转桥接文件**：在文件重命名、模块拆分或目录迁移后，**绝对严禁**在原路径保留仅包含 `export * from "..."` 或简单重新导出的 Shim / 桥接文件。
@@ -193,9 +187,9 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
 - **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
 
-### 10.5 Sentry 全栈异常托管与同源隧道防拦截架构 (Sentry & Tunnel Gateway)
+### 10.5 Sentry 全栈异常托管与服务端隧道 (Sentry & Tunnel Gateway)
 - **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。
-- **同源隧道反代与防广告拦截 (Sentry Tunnel)**：前端 Sentry 上报统一通过服务端同源反代路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，彻底免疫浏览器广告拦截插件（AdBlocker）误杀，保障中国大陆玩家顺畅直连。
+- **服务端隧道转发 (Sentry Tunnel)**：前端 Sentry 上报统一通过后端路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，减少直接请求 Sentry 摄取端点被拦截的影响。浏览器到后端当前跨域，不能把该路由称为已启用的前端同源网关；部署链路见 [Deployment](Deployment.md)。
 - **标准环境变量支撑**：前端通过 `VITE_SENTRY_DSN` 注入客户端上报凭据；服务端通过 `SENTRY_DSN` 与 `SENTRY_ALLOWED_PROJECT_IDS` 注入服务端凭据与隧道校验白名单。现有标准 OpenTelemetry（`OTEL_EXPORTER_OTLP_*`）与 EventLogger 继续保障对局事件落盘审计与双轨观测。
 - **心跳上报间隔必须收敛于 Monitor 判定裕度内**：服务端 Cron Monitor（`bakagame-server-heartbeat`）排程为 `*/5 * * * *`、`checkin_margin` 为 2 分钟，即只在 `[T, T+2min]` 窗口内收到 check-in 才判定为按时；窗口之间（`T+2min` 至 `T+5min`）不存在任何容错区间。服务端心跳上报间隔（`SERVER_HEARTBEAT_INTERVAL_MS`）**必须不大于判定裕度**，且必须与 Monitor slug 同居同一真相源模块；严禁凭“留出网络与调度余量”的直觉把间隔拉长到接近排程周期，否则必然跨过窗口间隙被误报为 `missed check-in`。
 - **客户端异常过滤必须覆盖全部浏览器引擎文案**：客户端 `ignoreErrors` 严禁只覆盖单一引擎文案。网络与模块加载失败必须同时覆盖 Firefox（`NetworkError when attempting to fetch resource.`）、Safari（`Load failed`）、Chromium（`Failed to fetch dynamically imported module`、`Loading chunk N failed`）与 WebKit（`Importing a module script failed`）四套文案，否则同一类失败会因引擎措辞不同而漏网。带锚点的短文案（如 Safari 的 `Load failed`）必须加 `^` 锚定，严禁裸用裸串造成 `Image load failed` 之类无关文案被误伤。这类失败已由自愈重载兜底，不得重复上报污染真实缺陷信号。
@@ -268,8 +262,8 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
 - **OTLP 链路导出失败不丢数据、有限指数退避重试与有界淘汰指标契约**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，积压溢出淘汰最旧数据，准确统计 `droppedCount` 指标）；严格校验上游响应 `response.ok`，在遇到 5xx/429 或网络异常时未发送批次必须安全回退至队列头部，杜绝静默丢数据；基于连续失败次数引入有限指数退避重试（基础 1000ms，最大 30000ms），在退避窗口内拦截无效调用；导出过程挂载 `isFlushing` 飞行并发锁与 5s 网络超时中断，并在停机时提供排空契约。
 
-### 12.5 Sentry 同源反代隧道与安全边界规范 (Sentry Tunnel & SSRF Defense)
-- **严格权威主机白名单**：Sentry 同源转发隧道（`SentryTunnel.ts`）严禁使用 `host.includes("sentry")` 等模糊匹配。必须配置精确的官方权威摄取域名白名单（`*.ingest.sentry.io`、`*.ingest.us.sentry.io`、`*.ingest.de.sentry.io` 等）或显式配置的私有部署主机，彻底封堵 `sentry.evil.example` 等恶意 SSRF 攻击。
+### 12.5 Sentry 服务端隧道与安全边界规范 (Sentry Tunnel & SSRF Defense)
+- **严格权威主机白名单**：Sentry 服务端转发隧道（`SentryTunnel.ts`）严禁使用 `host.includes("sentry")` 等模糊匹配。必须配置精确的官方权威摄取域名白名单（`*.ingest.sentry.io`、`*.ingest.us.sentry.io`、`*.ingest.de.sentry.io` 等）或显式配置的私有部署主机，彻底封堵 `sentry.evil.example` 等恶意 SSRF 攻击。
 - **严格协议、默认端口与路径校验**：隧道仅放行 `https:` 协议与 443 默认端口，杜绝探测内网非常规端口与明文未加密连接；上游目标路径必须强校验合法的 Project ID 正则格式（`/^\/([0-9a-zA-Z_-]+)$/`），杜绝任意路径代理穿透。
 - **载荷上限与错误脱敏**：隧道单次转发载荷严格限制为 256KB（超限快速返回 413），配置 5s fetch 超时中断与应用级滑动窗口限流；任何上游错误必须脱敏为通用安全响应（如 `502 Bad Gateway`），严禁向下游暴露内部网络拓扑与未处理异常堆栈。
 - **上游网络失败识别必须全运行时收口**：隧道判定上游失败时**严禁**只匹配 Node 的旧文案（`fetch failed`、`ECONNREFUSED`、`ENOTFOUND` 等）。必须同时覆盖 Bun（`Unable to connect. Is the computer able to access the url?`）与 undici（`UND_ERR_*`）的文案与 errno 编号（含 `ConnectionRefused`、`FailedToOpenSocket` 等首字母大写形态），并逐层下钻 `error.cause` 链，因为上游失败常被逐层包装。网络抖动与超时必须降级为 `logger.warn` 并返回 502 / 504；只有真正未预期的内部异常才允许 `logger.error` 与 500，否则一次上游抖动就会伪造出内部故障告警。
@@ -309,7 +303,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **单文件行数硬约束与拆分阈值**：单个 React 组件 `.tsx` 文件行数严禁失控膨胀。当单文件行数超过 300 行时，必须主动审视职责分离；超过 500 行的“上帝组件”严禁并入主线。
 - **业务逻辑与平台副作用专用 Hook 下沉**：复杂音频切片调度、定时看门狗轮询、WebSocket 生命周期管理与会话重连，必须封装为专用 Custom Hook（如 `useAudioClipPlayer`、`useSongRoomLifecycle`、`useLobbySession`），严禁将网络订阅、音视频回放与视图 JSX 混杂在一处。
 - **阶段子视图物理拆分**：多阶段游戏房间必须拆分为独立的阶段组件（如 `WaitingPhase`、`GameStage`、`RoundResultPhase`、`SongSettingsPanels`），根页面组件（如 `SonGuessrRoomPage.tsx`）仅作为顶层路由容器（Container/Smart Component），只负责组装 Store 订阅与分发事件。
-- **基础控件规范化与拒绝假轮子**：连续数值与音量调节必须使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件，严禁手写底层透明 `<input type="range">` 伪装滑块；交互命令必须通过标准 `Button` 组件派发，严禁裸写 `<button>` 或 `<motion.button>`。
+- **基础控件复用**：命令使用标准 `Button`，连续数值使用标准 `Slider`；具体组件及整行交互例外见 [Design §6—§7](Design.md)。不在业务组件重写底层控件。
 
 ### 15.2 状态机权威性与禁止全局 DOM 事件横向绕过 (State Machine Authority & Zero DOM Bypass)
 - **严禁利用全局 DOM 事件传递业务信号**：游戏阶段切换、倒计时超时与玩家动作，必须严格由服务端权威推送或全局 Store（Zustand）统一管理驱动。绝对严禁使用 `window.dispatchEvent(new CustomEvent(...))` 绕过状态机横向传递业务事件（如 `whoisfaker:phase-timeout`）。
@@ -320,9 +314,9 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **异步调度与衍生计算**：必须将级联状态更新调整为基于 props/state 的实时纯计算衍生状态；需要同步外部系统时使用有明确生命周期和清理逻辑的 Effect。不得仅为绕过 lint 将 `setState` 包进零延时计时器，时序约束见 §8.3。
 - **严格遵循 Ref 访问规范**：严格遵守 `react-hooks/refs` 规则，严禁在渲染流程中读写 `ref.current`，保证组件渲染过程的纯洁性与可并发性。
 
-### 15.4 骨架屏防御与消除空状态闪烁 (FOES Defense & Skeleton Loading Standards)
-- **防御空状态闪烁 (Flash of Empty State, FOES)**：对于游戏大厅房间列表、排行榜等需要等待 WebSocket 握手或异步数据拉取的容器，在首次连接握手完成前，必须展示骨架屏（`RoomCardSkeleton`），严禁在真实列表到达前瞬间闪现“暂无房间”的假空状态，破坏用户体感。
-- **骨架屏结构对齐**：骨架屏的卡片尺寸、间距与圆角必须与真实卡片严格对齐，并统一配置 `role="status"` 与 `aria-label="正在加载..."` 无障碍语义支持。
+### 15.4 加载状态
+
+握手或异步列表首次返回前显示与真实卡片尺寸一致的骨架屏，不闪现假的“暂无房间”。组件与布局见 [Design §6](Design.md)；保留 `role="status"` 与可访问的加载名称。
 
 ## 16. 安全防护必须可验证，禁止依赖未被测试覆盖的防护 (Verifiable Security Guardrails)
 
