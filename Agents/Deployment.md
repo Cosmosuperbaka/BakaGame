@@ -1,5 +1,17 @@
 # 生产部署边界
 
+仅在修改部署、代理、公开基址、静态外壳或缓存时读取对应章节；普通业务修改不需要通读发布流程。
+
+| 工作范围 | 查阅章节 |
+|---|---|
+| TLS、WS 接入、基址或探活 | 「反向代理职责」「当前请求链路与同源化边界」 |
+| SEO 与构建期 HTML | 「前端静态外壳」 |
+| 资源缓存及响应头 | 「边缘缓存策略」 |
+| 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、LFS、Secrets 小节 |
+| 快照或容量 | 「带宽与容量基线」与 [Testing](Testing.md#验证范围) |
+
+本文描述配置与验收要求，不授权执行部署、重启或线上写探针；按用户已授权范围完成本地验证和发布准备。示例公网地址使用 `example.com` 占位，实际地址从部署配置取得。
+
 WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`、
 `/api/songuessr/ws` 和 `/api/ccb/ws` 提供。应用服务负责 WebSocket
 协议解析、业务权限和房间状态，不在进程内按来源 IP 实现限流或连接配额。
@@ -19,70 +31,39 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
 不得把 Bun 服务端口直接暴露到公网。
 
-## 前后端同源化 (Same-Origin API Gateway)
+## 当前请求链路与同源化边界
 
-前端（Makers 托管）与后端（自有服务器）分属不同域名时，所有请求都是跨域请求。
-理想做法是在边缘把同源 `/api/*` 反代到后端公开域名，使浏览器侧变为同源请求。
+**当前配置要求是浏览器跨域直连后端公开域名**，后端以 Origin 白名单和 CORS 响应。后端公开域名仍可经过站点加速层；不能把“跨域”理解为绕过 CDN 直连源站 IP。
 
-**但这条链路当前没有启用**（2026-09-22 更正）：`Client/middleware.js` 曾被 `85b2207`
-加入、又被 `873f94e` 撤销，**撤销原因是 WebSocket 请求无法被转发**——握手阶段能拿到
-`101`，数据帧却过不去，游戏业务实际不可用。同源化声称的三项收益（无 CORS 预检、
-不依赖服务端 Origin 白名单、WS 升级不暴露给伪造 Origin 探测）因此一项都没拿到。
+`Client/middleware.js` 的同源 `/api/*` 反代已经撤销：历史验证中握手可返回 `101`，但后续 WebSocket 数据帧没有被转发。前端域名的 `/api/*` 会落入 SPA HTML 兜底，不能用作后端健康探针。
 
-**当前生产形态是跨域直连**：线上产物把请求直接发往后端公开域名 `gameserver.baka.website`
-（见「客户端基址约定」），由后端以 Origin 白名单 + CORS 回应，链路实测可用。
-要动这条链路之前，请先确认线上房间还能正常开局。
+### 客户端基址
 
-### 请求链路与 CDN 关系
+解析逻辑以 [ServerEndpoint.ts](../Client/src/lib/ServerEndpoint.ts) 为准：
 
-`浏览器 → game.baka.website（Makers 边缘，rewrite）→ gameserver.baka.website（EdgeOne
-站点加速层）→ 自有服务器`。rewrite 的目标是后端的**公开域名**而非源站 IP，后端域名
-自身仍套在站点加速层后面，加速能力完整保留——只是发起方从浏览器变成边缘节点。
+| 场景 | `VITE_SERVER_URL` | 结果 |
+|---|---|---|
+| 本地开发 | `http://localhost:4850` | 直连本地后端 |
+| 当前生产配置 | 后端公开 HTTPS 基址 | 跨域直连，必须显式配置 |
+| 生产留空，或显式 `/`、`same-origin` | 同源相对路径 | 解析器支持，但当前代理链路不具备使用条件 |
 
-### 实测结论（2026-09 验证，勿凭直觉推翻）
+只有目标平台明确支持 WS 转发，且在目标环境验证“握手 → 命令 → 对应 ACK”后，才可重新引入同源代理并切换基址。先验证链路，再切换配置；仅 `101` 或 HTTP 成功不满足条件。
 
-- Makers middleware 的 `rewrite()` **支持跨域绝对地址**，底层由边缘运行时注入的
-  `fetch` 执行；官方文档示例只演示站内路径，跨域能力是实测得出的。
-- 本地 `edgeone makers dev` **无法验证跨域 rewrite**：本地运行时没有注入该 `fetch`
-  （报 `Cannot read properties of undefined (reading 'fetch')`，恒 502）。跨域反代
-  只能部署到真实边缘后探测。
-- middleware `matcher: ["/api/:path*"]` 优先于 SPA fallback，`/apiish` 等相似前缀
-  不受影响。
-- **站点加速（zone 级）的边缘函数拦不到 Makers 托管域名**（控制台探针实测）：
-  反代只能做在 Makers 项目内部（middleware.js 或 edge-functions 文件），
-  不要再尝试 zone 级配置。
-- `Client/middleware.js` 曾在 ccb 站点（anime-character-guessr 前端）生产验证：
-  **HTTP** GET/POST 全通、`eo-cache-status` 等 CDN 头保留、SPA fallback 无干扰。
-  ⚠️ 那次验证**只覆盖了 HTTP**，没有验证 WebSocket 业务数据。
-- **不要假定 rewrite 能转发 WebSocket**：握手可以返回 `101 Switching Protocols`、
-  `Sec-WebSocket-Accept` 也是标准应答，但**握手成功 ≠ 连接可用**——后续数据帧是否真的
-  被边缘转发必须单独验证（连上后发一条命令，看有没有 ack）。middleware 方案正是栽在
-  这里：握手看着通、业务实际不通，于是被撤销。**在平台明确支持 WS 转发前，
-  不要再把它加回仓库**（2026-09-22 曾误加回一次，已撤回）。
-  ⚠️ 另外：2026-09-21 实测主域名同一请求返回 `200` + SPA HTML——那是反代整体未生效时的
-  表现，与「握手通但数据不转发」是两种不同的故障，排查时要先分清是哪一种。
-- BakaGame 前端的 Makers 项目是 **GitHub 集成型**（Provider 'Github'），CLI 不能
-  直传部署，只能推送远端 main 触发自动构建。沙箱内可用 `gh api` contents API 追加
-  文件触发部署，但 REST 提交丢失 SSH 签名——签名仓库的常规变更仍应本机 push，
-  REST 提交仅用于紧急解锁；本地同内容签名提交在 `git pull --rebase` 时按补丁
-  自动去重。
+### 历史边缘验证的适用范围
 
-### 客户端基址约定
+以下是 2026-09 的实验记录，用于避免重复踩坑，不代表当前线上已启用：
 
-`Client/src/lib/ServerEndpoint.ts` 是接口基址的唯一真相源：生产构建
-`VITE_SERVER_URL` 留空（或显式 `/`、`same-origin`）时走同源相对路径，由边缘中间件
-反代；本地开发经 `.env` 指向 `http://localhost:4850`。WebSocket 相对地址由
-`WebsocketClient` 按 `location` 显式补全协议与主机。
+- Makers `rewrite()` 曾验证支持跨域绝对地址，但本地 `makers dev` 缺少边缘注入的 fetch，无法验证这一能力；本地 502 不能直接代表线上结果。
+- middleware `/api/:path*` matcher 先于 SPA fallback，相似前缀 `/apiish` 不匹配。站点加速的 zone 级边缘函数不能拦截 Makers 托管域名。
+- 当时只验证了 HTTP GET/POST、CDN 响应头及 SPA fallback；WS 握手成功后的数据转发失败才是撤销原因。`200 + HTML` 表示反代未生效，是另一种故障。
+- Makers 项目使用 GitHub 集成，由远端 main 更新触发构建，CLI 不能直传部署。常规发布使用本机签名提交与 push；REST contents 提交会丢失 SSH 签名，不作为常规替代。
 
-### 边缘探针与验证方法
+### 探针与完成条件
 
-- 验证反代是否生效：`GET https://game.baka.website/api/game/status`，响应带
-  `x-trace-id` 头且响应体为 Elysia JSON（即使 404）即代表穿透到了后端；
-  Makers 自身的 404 不带该头。
-- 健康探针：gameserver 的 `/health` 在根路径（不在 `/api/*` 下，不会被反代），
-  跨域验证一律走 `/api/*` 下真实存在的端点。
-- 探测禁止使用带副作用的接口（曾对 ccb 的 `POST /api/character-tags` 发出真实
-  写入），验证只用 GET 探针。
+- 对后端公开基址请求 `/health`、`/livez`、`/readyz`，核对状态码与 JSON 内容，不能只接受 HTTP 200（首页 HTML 也可能是 200）。
+- HTTP 代理验证使用已知只读 GET 端点，并检查响应体和 `x-trace-id`。不得用标签提交等 POST 写接口探测连通性。
+- WS 验证连接后发送只读大厅订阅等命令并检查关联 ACK；可能创建房间或改变对局的命令使用隔离本地实例。
+- 生产目标的检查仅在已有授权范围内运行。只修改文档不触发线上探针；历史“已验证”不能替代本次发布证据。
 
 ## 前端静态外壳 (Static Shell)
 
@@ -126,7 +107,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   改回 `npm run build` 后可以删掉。
 - 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/ccb` 四个路由，正文应含对应文案且 canonical 指向自身。
   若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
-  需在 `Client/middleware.js` 里补路径 rewrite——这是本方案唯一依赖平台行为的一环。
+  先检查静态产物与平台路由解析；不要因此恢复上节已撤销的 API/WS 中间件。静态路径规则与实时反代分别验证。
 
 ## 边缘缓存策略 (edgeone.json)
 
@@ -165,50 +146,26 @@ Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文�
 后者约束边缘。只改一处会让两侧对同一资源的判断分裂，排查时极难定位，必须成对修改
 （测试逐条比对两者相等）。
 
-### 与中间件的关系
+### 缓存与路由分别验证
 
-`edgeone.json` 的 `/api/*` 规则只负责声明「API 不得被缓存」，**不参与路由**。
-同源化反代此前由 `Client/middleware.js` 承担，但该方案已撤销且**当前没有替代实现**：
+`edgeone.json` 的 `/api/*` 规则只声明不缓存，不创建代理路由。当前请求链路、健康探针和同源切换条件见前文；缓存头正确不能证明业务请求到达后端。
 
-- 撤销原因：**WebSocket 请求无法被转发**（握手能拿到 101，数据帧过不去，业务不可用）。
-- 因此 `game.baka.website` / `ccb.baka.website` 的 `/api/*` 与 `/health` `/readyz` `/livez`
-  现在全部落在 SPA 兜底上，返回 `index.html` 而不是后端 JSON（2026-09-21 实测）。
-- 生产实际走的是**跨域直连后端域名**，功能正常，所以这个兜底暂时不致命。
-
-**在平台明确支持 WebSocket 转发之前，不要把 middleware.js 加回仓库。**
-（2026-09-22 曾因误信「历史文档记录 WS 握手 101」而加回过一次，已撤回——那条记录
-只验证了握手，没验证数据帧，正是本节要防的坑。）
-
-### 健康检查必须直连后端域名
-
-由于运维探针在前端域名上会被 SPA 兜底成首页 HTML，**外部存活探测必须打后端域名**，
-打前端域名会永远「假通过」：
+发布时按实际部署基址检查三档资源：
 
 ```bash
-curl -s https://gameserver.baka.website/health    # 期望 {"status":"ok",...}，不得是 HTML
-curl -s https://gameserver.baka.website/readyz    # 期望 {"status":"ok","ready":true}
+curl -sI https://game.example.com/assets/index-<hash>.js  # 一年 + immutable
+curl -sI https://game.example.com/assets/logo.webp        # 七天，无 immutable
+curl -sI https://game.example.com/                       # max-age=0, must-revalidate
+curl -s https://backend.example.com/health               # 后端 JSON，不是 HTML
+curl -s https://backend.example.com/readyz               # ready 为 true
 ```
 
-发布流程本身不受影响（deploy.yml 轮询的是容器内 `http://127.0.0.1:4850`）。
-
-**顺序依赖（重要）**：前端是否走同源 `/api/*` 取决于 `Client/src/lib/ServerEndpoint.ts`
-的基址解析（生产构建 `VITE_SERVER_URL` 留空才走同源）。当前线上产物跨域直连后端域名，
-**只有确认同源反代真的能转发 WebSocket 之后，才可以把基址切到同源**；切早了会让前端
-请求落到被打回 HTML 的同源路径，游戏直接不可用。
-
-### 上线验收
-
-```bash
-curl -sI https://game.baka.website/assets/index-<hash>.js   # 期望 max-age=31536000, immutable
-curl -sI https://game.baka.website/assets/logo.webp         # 期望 max-age=604800（不得 immutable）
-curl -sI https://game.baka.website/                          # 期望 max-age=0, must-revalidate
-curl -sI https://game.baka.website/api/game/status           # 期望 no-store，且带 x-trace-id
-```
+其中 `<hash>` 从本次构建获取。前端 `/api/*` 的 no-store 可单独检查，但不得再要求当前前端兜底响应携带后端 `x-trace-id`。
 
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
-`Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`）的业务校验；应用校验也不能替代代理层的
+`Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`、`CCBService`）的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
 听歌猜番还需要在服务端配置 `BANGUMI_API_URL` 和可选的 `BANGUMI_IMAGE_URL`。这两个地址
@@ -224,36 +181,22 @@ curl -sI https://game.baka.website/api/game/status           # 期望 no-store�
 保留 15% 的 TLS/TCP/IP 传输余量。代理的带宽监控应按应用出口持续核对这一预算；超过预算时
 优先检查新增快照字段、重复事件和广播频率，不得通过取消最终同步或延长到不可接受的状态延迟来过测。
 
-## 持续部署流水线 (Continuous Deployment)
+## 持续部署流水线
 
-后端采用 GitHub Actions 自动化部署流水线（`.github/workflows/deploy.yml`），在代码推送至 `main` 分支且包含 `Server/**` 或 `.github/workflows/deploy.yml` 变更时，或通过 `workflow_dispatch` 手动触发时自动更新服务器。仅客户端或非服务端文件（如 `Client/`、`Agents/`、文档等）变更时不会触发后端部署。
+触发条件与实际命令以 [deploy.yml](../.github/workflows/deploy.yml) 和 [ci.yml](../.github/workflows/ci.yml) 为准：
 
-**部署脚本自身必须列入触发路径**：只写 `Server/**` 会导致改完流水线还得手工 dispatch 才生效，
-改动的正确性无法在真实部署里被验证，故障会被推迟到下一次有人改服务端代码时才暴露。
+- 自动发布由 main 的 `CI` 工作流完成事件触发；gate 要求整体 CI 成功，且 `Server CI` 作业实际执行并成功。客户端或文档改动使服务端作业跳过时，不自动部署后端。
+- `Server/**` 与部署脚本自身必须保留在 CI 的服务端路径过滤范围，保证修改发布脚本也经过门禁。
+- 部署消费 CI 结果，不在 deploy 中重复跑一遍完整测试。手动 `workflow_dispatch` 跳过 gate，执行前需确认目标 main 的 CI 结论及已有发布授权，不能声称手动路径自动保证已通过测试。
+- 前端 Makers 的 main 推送可能独立触发构建；“不部署后端”不代表推送没有任何生产影响。
 
-### 流水线架构与流程
+### 发布链路与失败边界
 
-1. **前置质量门禁 (`verify`)**：
-   - 在 GitHub Actions 托管 runner (`ubuntu-latest`) 中安装 Bun 环境并执行 `bun install`。
-   - 运行严格 TypeScript 类型检查 (`bun run check`) 与全量测试套件 (`bun test`)。
-   - 任何类型错误或单测失败立即阻断流水线，绝不向生产环境推送未验证的代码。
-2. **远程安全连接 (`deploy`)**：
-   - 通过 `appleboy/ssh-action` 建立至生产服务器的 SSH 会话，严格保持 `script_stop: false`（由脚本自身的 `set -euo pipefail` 保证失败即停，防止注入检查截断多行逻辑）。
-   - `command_timeout: 3m`，且 `deploy` 作业设 `timeout-minutes: 3` 作为硬兜底：生产部署不允许长时间挂起。
-3. **代码对齐与数据库校验**：
-   - 切换至 `/BakaGame` 仓库目录。
-   - 执行 `git fetch origin main && git reset --hard origin/main` 对齐生产分支，并按 OID 校验或增量下载 LFS SQLite 数据库。
-4. **停机预告与客户端排空 (`Pre-restart Drain`)**：
-   - 调用 `POST http://127.0.0.1:4850/api/system/notify-shutdown` 运维端点（该接口**严格且 fail-closed** 地校验 `X-Forwarded-For` 与 `X-Real-IP`：取不到来源 IP 或任一跳为公网 IP 一律 403，仅允许本地回环与私网调用）。
-   - ⚠️ **调用方必须显式带上来源头**（流水线里写的是 `-H "X-Real-IP: 127.0.0.1"`）。本机直连 4850 端口时不经过任何反向代理，两个转发头都不存在；在旧的 fail-open 实现下这会整块跳过校验，而改 fail-closed 之后会被直接拒绝 —— 忘记带头的部署脚本会拿不到 200，只能拿到 403。
-   - 服务端向 WhoIsFaker 与 SonGuessr 双模式所有在线玩家广播停机公告（`SERVER_SHUTDOWN_MESSAGE`），并立即使 `/readyz` 探针返回 503 摘除流量。
-   - 部署脚本预留 3 秒排空缓冲（`sleep 3`），确保客户端长连接在容器网络被 Docker 拆除前安全接收协议、清除会话凭据并平滑退回大厅。
-5. **容器热重启**：
-   - 执行 `sudo docker restart BakaGame` 热重启后端容器。容器启动入口自带依赖安装与环境初始化逻辑，每次启动时自动完成容器内部服务端依赖的同步与服务拉起。
-6. **就绪探测与健康检查**：
-   - 轮询 `http://127.0.0.1:4850/health` 端点（最多重试 15 次，每次间隔 2 秒）。
-   - 验证响应中包含 `{"status":"ok"}`。
-   - 若 30 秒内未能就绪，自动打印 `sudo docker logs --tail 50 BakaGame` 并退出报错，便于在 Actions 界面快速定位崩溃日志。
+1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
+2. 远端 `/BakaGame` 拉取并对齐 main，按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
+3. 排空前调用本机 `POST /api/system/notify-shutdown`，显式带 `X-Real-IP: 127.0.0.1`。接口拒绝无来源或任一公网转发地址，向三款游戏广播停机消息并让 readiness 返回 503。脚本当前允许通知失败后继续重启，不能把该步骤描述为强制成功门禁。
+4. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
+5. 轮询本机 `/health`（最多 15 次、间隔 2 秒）；未就绪时打印容器末尾日志并失败。该检查是当前流水线行为；发布验收另核对 `/readyz` 与 WS 命令 ACK。
 
 ### 时间预算铁律
 
@@ -265,20 +208,20 @@ curl -sI https://game.baka.website/api/game/status           # 期望 no-store�
 | runner 准备 + SSH 建连 | ≤ 15s |
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
 | 节点测速 | ≤ 7s |
-| 数据下载（仅数据变更时才发生） | ≤ 105s（脚本内 `DL_DEADLINE` 绝对截止） |
+| 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；当前为从脚本开始起 115s 的绝对截止，包含此前耗时 |
 | 停机通知与客户端排空 | ≤ 3s |
 | 容器重启 | ≤ 5s |
 | 健康检查 | ≤ 30s |
 
-合计上限约 175s，仍留 5s 余量给 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
+下载截止时间与其他阶段预算有重叠，不能把表内数字直接相加。整体仍须满足 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
 这是目标值而非上限：数据下载路径必须设计成"无事发生"。
 
-### Git LFS 大文件获取约束（中国大陆服务器）
+### Git LFS 大文件获取约束
 
-`Server/data/bangumi-*.sqlite` 由 Git LFS 托管（合计约 200MB），是本流水线唯一的重资产。
+`Server/data/bangumi-*.sqlite` 由 Git LFS 托管，是流水线中的大文件；实际大小以 LFS 指针为准，不把历史约 200MB 的样本量写成固定预算。
 在大陆服务器上，**任何"顺手 `git lfs pull`"的写法都是不可接受的**，原因与对策如下：
 
-### ssh-action 两个必须记住的坑（三轮部署失败的真凶）
+#### SSH 执行与文件替换
 
 - **严禁 `script_stop: true`**。drone-ssh 开启它之后会对脚本**逐行改写**，在每条命令后
   注入 `DRONE_SSH_PREV_COMMAND_EXIT_CODE=$?; [ $... -ne 0 ] && exit ...`。后果是：
@@ -346,7 +289,7 @@ curl -sI https://game.baka.website/api/game/status           # 期望 no-store�
 | Secret 名称 | 说明 | 示例/默认值 |
 |---|---|---|
 | `DEPLOY_HOST` | 生产服务器 IP 地址或域名 | 必填 |
-| `DEPLOY_PORT` | SSH 端口号（非标端口） | `5438`（未设置时默认 `22`） |
+| `DEPLOY_PORT` | SSH 端口号 | 未设置时默认 `22` |
 | `DEPLOY_USER` | SSH 登录用户名 | `ubuntu`（未设置时默认 `ubuntu`） |
 | `DEPLOY_KEY` | 用于 SSH 鉴权的私钥纯文本 | 必填（完整包含 BEGIN/END 标记） |
 | `DEPLOY_PASSPHRASE` | 用于解密 SSH 私钥的密码（若私钥受密码保护） | 可选（私钥无密码保护时无需配置） |

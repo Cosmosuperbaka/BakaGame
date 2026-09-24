@@ -91,7 +91,7 @@ npx playwright test e2e/App.spec.ts
 - 客户端只使用 `Client/package-lock.json`，安装时运行 `npm ci`。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
-- Playwright 自动启动服务端与 Vite；使用 `http://localhost:4850/health` 进行服务端健康检查探活，前端监听 `localhost:5173`。
+- 常规 Playwright 自动启动服务端与生产 `vite preview`：后端探活 `http://localhost:4850/health`，前端探活 `http://127.0.0.1:5173`，页面基址 `http://localhost:5173`。单独运行 Playwright 前先构建；`test:e2e` 已包含 build。歌词套件另用 Vite 5177。
 
 ## 测试编写与维护
 

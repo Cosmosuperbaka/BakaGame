@@ -154,4 +154,4 @@ VITE_SERVER_URL=http://localhost:4850
 - 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径。**该模式当前不可用**：
   同源反代 `Client/middleware.js` 因无法转发 WebSocket 请求已撤销，前端域名的 `/api/*`
   会被 SPA 兜底成 HTML。生产必须显式指向后端公开域名（跨域直连），详见
-  `Agents/Deployment.md`「前后端同源化」。
+  [Deployment](Deployment.md)「当前请求链路与同源化边界」。
