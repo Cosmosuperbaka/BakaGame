@@ -29,34 +29,25 @@ export const Loading: Story = {
   beforeEach: () => presetCCB({ connected: true }),
 };
 
-export const NativeRooms: Story = {
-  name: "增强房 · 房间列表",
+/** 增强房与原版公开房合并成一个列表，原版房带来源徽章。 */
+export const Rooms: Story = {
+  name: "房间列表",
   beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
 };
 
-export const NativeEmpty: Story = {
-  name: "增强房 · 暂无房间",
+export const Empty: Story = {
+  name: "暂无房间",
   beforeEach: () => lobby(),
 };
 
-export const OriginalRooms: Story = {
-  name: "原版房 · 房间列表",
-  beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "原版房" }));
-    await canvas.findByText("与原版玩家一起游玩，聊天仅增强版玩家可见。");
-    dropFocus();
-  },
-};
-
 export const OriginalUnavailable: Story = {
-  name: "原版房 · 服务器未接入",
+  name: "原版服务器未接入 · 建房弹窗",
+  tags: ["!page", "overlay"],
   beforeEach: () => lobby({ originalAvailable: false, rooms: CCB_LOBBY_ROOMS.filter((room) => room.source === "native") }),
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "原版房" }));
-    await canvas.findByText("原版服务器暂未接入，请使用增强房。");
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    await dialog.findByText("原版服务器暂未接入，请使用增强房。");
     dropFocus();
   },
 };
@@ -67,9 +58,35 @@ export const CreateDialog: Story = {
   beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
-    const dialog = within(await screen.findByRole("dialog", { name: "创建增强房" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    await userEvent.click(dialog.getByRole("radio", { name: "增强房" }));
     await userEvent.click(dialog.getByRole("switch", { name: "私密房间" }));
     await dialog.findByLabelText("房间密码");
+    dropFocus();
+  },
+};
+
+/** 原版分段没有密码与禁观战开关：该服务器不支持这两项。 */
+export const CreateOriginalDialog: Story = {
+  name: "创建原版房弹窗",
+  tags: ["!page", "overlay"],
+  beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    await userEvent.click(dialog.getByRole("radio", { name: "原版房" }));
+    await dialog.findByText("房间名称");
+    dropFocus();
+  },
+};
+export const JoinPassword: Story = {
+  name: "输入房间密码",
+  tags: ["!page", "overlay"],
+  beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByText("内部练习房"));
+    await screen.findByRole("dialog", { name: "输入房间密码" });
     dropFocus();
   },
 };

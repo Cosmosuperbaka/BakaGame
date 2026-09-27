@@ -28,6 +28,8 @@ export interface LobbyPageProps {
   children?: ReactNode;
   /** 页面级浮层：创建房间与密码弹窗。 */
   dialogs?: ReactNode;
+  /** 有操作在途（例如正在退房）时禁用创建与加入。 */
+  disabled?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export function LobbyPage({
   onSelectRoom,
   children,
   dialogs,
+  disabled = false,
 }: LobbyPageProps) {
   const navigate = useNavigate();
   return (
@@ -90,7 +93,7 @@ export function LobbyPage({
               className="h-8 w-28 border-border/70 bg-card/60 text-xs shadow-2xs sm:w-36 sm:text-sm"
               maxLength={20}
             />
-            <Button size="sm" onClick={onCreate} className="h-8 shrink-0 gap-1.5 text-xs shadow-2xs sm:text-sm">
+            <Button size="sm" onClick={onCreate} disabled={disabled} className="h-8 shrink-0 gap-1.5 text-xs shadow-2xs sm:text-sm">
               <Plus className="h-3.5 w-3.5" />
               创建房间
             </Button>
@@ -107,7 +110,7 @@ export function LobbyPage({
               <RoomListEmpty key="empty" />
             ) : (
               rooms.map((room) => (
-                <RoomListCard key={`${room.tag ?? ""}:${room.roomId}`} room={room} onSelect={(event) => onSelectRoom(room, event)} />
+                <RoomListCard key={`${room.tag ?? ""}:${room.roomId}`} room={room} disabled={disabled} onSelect={(event) => onSelectRoom(room, event)} />
               ))
             )}
           </AnimatePresence>

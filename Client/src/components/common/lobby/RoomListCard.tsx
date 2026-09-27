@@ -29,9 +29,11 @@ const COUNT = "inline-block w-[2ch] text-right tabular-nums";
 export function RoomListCard({
   room,
   onSelect,
+  disabled = false,
 }: {
   room: LobbyRoomView;
   onSelect: (event: React.MouseEvent<HTMLElement>) => void;
+  disabled?: boolean;
 }) {
   return (
     <motion.div
@@ -45,8 +47,12 @@ export function RoomListCard({
     >
       <Card
         role="button"
-        tabIndex={0}
-        className="cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        className={cn(
+          "cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          disabled && "pointer-events-none opacity-60",
+        )}
         onClick={onSelect}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
