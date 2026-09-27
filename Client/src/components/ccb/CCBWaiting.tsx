@@ -1,44 +1,158 @@
-import { useState } from "react";
-import { Settings, Play, Check, Copy } from "lucide-react";
+import { useId, useState } from "react";
+import { Check, Play, Settings } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
 import { Label } from "@/components/ui/Label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/Dialog";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { useOriginTracker } from "@/hooks/UseOriginTracker";
+import { ReadyProgress } from "@/components/common/room/ReadyProgress";
+import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { SettingsAccordion, SettingsChips } from "@/components/common/room/SettingsAccordion";
+import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
-import { CCBSettingsForm } from "./CCBSettingsForm";
+import { ccbRoomPath } from "@/lib/CCBSession";
+import { CCBGameSettings } from "./CCBGameSettings";
 import { CCBSetterPicker } from "./CCBSetterPicker";
 
+/** 非房主看到的只读设置摘要。 */
+function settingsChips(snapshot: CCBRoomSnapshot): string[] {
+  const { settings } = snapshot;
+  return [
+    settings.syncMode ? "同步模式" : "普通模式",
+    settings.nonstopMode ? "血战模式" : "首位猜中结束",
+    `${settings.maxAttempts} 次机会`,
+    settings.timeLimit ? `每次 ${settings.timeLimit} 秒` : "不限行动时间",
+  ];
+}
+
+/**
+ * CCB 等待页。房主在折叠面板里直接改设置，防抖自动保存；
+ * 非房主只看设置摘要与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
+ */
 export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [name, setName] = useState(snapshot.name);
-  const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
-  const [visibility, setVisibility] = useState(snapshot.visibility);
-  const origin = useOriginTracker();
+  const activePlayers = snapshot.players.filter((player) => player.membership === "active");
+  const readyCount = activePlayers.filter((player) => player.ready).length;
   const { run, busy } = useCCBAction();
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(location.href); useCCBStore.getState().setNotice("房间链接已复制", "success"); }
-    catch (error) { useCCBStore.getState().setNotice(ccbErrorMessage(error)); }
-  };
-  return <div className="mx-auto w-full max-w-2xl space-y-6 p-5 md:p-8">
-    <PhaseHeader icon={Play} title="等待玩家准备" />
-    <div className="flex items-center justify-center gap-3"><span className="font-mono text-lg">#{snapshot.roomId}</span><Button variant="outline" size="sm" onClick={() => void copy()}><Copy />复制链接</Button></div>
-    <p className="text-center text-sm text-muted-foreground">{snapshot.settings.syncMode ? "同步" : "普通"} · {snapshot.settings.nonstopMode ? "血战" : "首位猜中结束"} · {snapshot.settings.maxAttempts} 次机会 · {snapshot.settings.timeLimit ? `每次 ${snapshot.settings.timeLimit} 秒` : "不限行动时间"}</p>
-    <div className="flex flex-wrap justify-center gap-2">
-      {me?.membership === "active" ? <Button variant={me.ready ? "secondary" : "default"} disabled={busy} onClick={() => void run("ccb.player.ready", { ready: !me.ready })}><Check />{me.ready ? "取消准备" : "准备"}</Button> : null}
-      <Button variant="outline" onClick={(event) => { origin.capture(event); setSettingsOpen(true); }}><Settings />{isHost ? "题目设置" : "查看设置"}</Button>
-      {isHost ? <Button disabled={busy || !privateState.canStart} loading={busy} onClick={() => void run("ccb.game.start", {})}><Play />随机出题</Button> : null}
+  const [roomOpen, setRoomOpen] = useState(false);
+
+  // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。
+  const [roomDraft, setRoomDraft] = useState(() => ({
+    name: snapshot.name,
+    visibility: snapshot.visibility,
+    allowSpectators: snapshot.allowSpectators,
+    password: "",
+  }));
+  const nameFieldId = useId();
+  const passwordFieldId = useId();
+  const [roomNotice, setRoomNotice] = useState("");
+
+  // 私密房间必须有密码——这是增强房的语义，原版房没有密码机制，
+  // 那里的「不公开」只表示不进大厅，不能因此拦住保存。
+  const roomValidation =
+    snapshot.source === "native" && roomDraft.visibility === "private" && !roomDraft.password.trim() && !snapshot.hasPassword
+      ? "私密房间需要密码，填写后才会保存"
+      : "";
+
+  useAutoSave(roomDraft, async (value) => {
+    await useCCBStore.getState().sendCommand("ccb.room.update", {
+      name: value.name.trim(),
+      visibility: value.visibility,
+      allowSpectators: value.allowSpectators,
+      password: value.password.trim() || null,
+    });
+    setRoomNotice("");
+  }, {
+    enabled: isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
+    onError: (error) => setRoomNotice(ccbErrorMessage(error)),
+  });
+
+  const editRoom = <K extends keyof typeof roomDraft>(key: K, value: (typeof roomDraft)[K]) =>
+    setRoomDraft((current) => ({ ...current, [key]: value }));
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6">
+      <PhaseHeader icon={Play} title="等待玩家准备" />
+
+      <RoomLinkShare
+        path={ccbRoomPath(snapshot.roomId)}
+        onCopyError={() => useCCBStore.getState().setNotice("复制失败，请手动复制", "error")}
+      />
+
+      <ReadyProgress ready={readyCount} total={activePlayers.length} variant={isHost ? "host" : "guest"} />
+
+      {isHost ? (
+        <div className="space-y-3">
+          <CCBGameSettings settings={snapshot.settings} waiting={snapshot.phase === "waiting"} />
+
+          <SettingsAccordion icon={<Settings className="h-4 w-4 text-muted-foreground" />} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen}>
+            <div className="space-y-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor={nameFieldId} className="text-xs">房间名称</Label>
+                <Input
+                  id={nameFieldId}
+                  value={roomDraft.name}
+                  maxLength={snapshot.source === "original" ? 30 : 32}
+                  onChange={(event) => editRoom("name", event.target.value)}
+                />
+              </div>
+              <SettingSwitchRow
+                label="公开显示在大厅"
+                description={snapshot.source === "original" ? "关闭后不在大厅列出，凭链接仍可进入。" : undefined}
+                checked={roomDraft.visibility === "public"}
+                onCheckedChange={(checked) => editRoom("visibility", checked ? "public" : "private")}
+              />
+              {roomDraft.visibility === "private" && snapshot.source === "native" ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor={passwordFieldId} className="text-xs">房间密码</Label>
+                  <Input
+                    id={passwordFieldId}
+                    type="password"
+                    value={roomDraft.password}
+                    placeholder={snapshot.hasPassword ? "留空沿用原密码" : "请输入密码"}
+                    onChange={(event) => editRoom("password", event.target.value)}
+                  />
+                </div>
+              ) : null}
+              {snapshot.source === "native" ? (
+                <SettingSwitchRow
+                  label="允许旁观"
+                  checked={roomDraft.allowSpectators}
+                  onCheckedChange={(checked) => editRoom("allowSpectators", checked)}
+                />
+              ) : null}
+              {roomValidation ? <p role="alert" className="text-xs text-destructive">{roomValidation}</p> : null}
+              {roomNotice ? <p role="alert" className="text-xs text-destructive">{roomNotice}</p> : null}
+              <p className="text-[11px] text-muted-foreground">改动会自动保存。</p>
+            </div>
+          </SettingsAccordion>
+        </div>
+      ) : (
+        <SettingsChips items={settingsChips(snapshot)} />
+      )}
+
+      <div className="flex flex-wrap justify-center gap-2">
+        {me?.membership === "active" ? (
+          <Button
+            variant={me.ready ? "secondary" : "default"}
+            disabled={busy}
+            onClick={() => void run("ccb.player.ready", { ready: !me.ready })}
+          >
+            <Check />{me.ready ? "取消准备" : "准备"}
+          </Button>
+        ) : null}
+        {isHost ? (
+          <Button disabled={busy || !privateState.canStart} loading={busy} onClick={() => void run("ccb.game.start", {})}>
+            <Play />随机出题
+          </Button>
+        ) : null}
+      </div>
+
+      {isHost ? <div className="space-y-4 border-t pt-5"><CCBSetterPicker snapshot={snapshot} privateState={privateState} /></div>
+        : <p className="text-center text-xs text-muted-foreground">准备完成后由房主开始</p>}
     </div>
-    {isHost ? <div className="space-y-4 border-t pt-5">
-      <CCBSetterPicker snapshot={snapshot} privateState={privateState} />
-      <details><summary className="cursor-pointer text-sm text-muted-foreground">房间设置</summary><div className="mt-3 space-y-3"><Label className="block space-y-2">房间名称<Input value={name} maxLength={snapshot.source === "original" ? 30 : 32} onChange={(event) => setName(event.target.value)} /></Label><Label className="flex items-center justify-between">公开显示在大厅<Switch checked={visibility === "public"} onCheckedChange={(value) => setVisibility(value ? "public" : "private")} /></Label>{snapshot.source === "native" ? <Label className="flex items-center justify-between">允许旁观<Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} /></Label> : null}<Button variant="outline" disabled={busy || !name.trim()} onClick={() => void run("ccb.room.update", { name: name.trim(), visibility, allowSpectators })}>保存房间设置</Button></div></details>
-    </div> : <p className="text-center text-xs text-muted-foreground">准备完成后由房主开始</p>}
-    <Dialog open={settingsOpen} onOpenChange={setSettingsOpen} origin={origin.origin}><DialogContent className="max-h-[85dvh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>题目设置</DialogTitle><DialogDescription>设置在开局后固定，仅对下一局生效。</DialogDescription></DialogHeader><CCBSettingsForm key={settingsOpen ? "open" : "closed"} settings={snapshot.settings} editable={isHost && snapshot.phase === "waiting"} onSaved={() => setSettingsOpen(false)} /></DialogContent></Dialog>
-  </div>;
+  );
 }

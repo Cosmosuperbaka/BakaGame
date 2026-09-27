@@ -1,11 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCCBSettings, type CCBPrivateState, type CCBRoomSnapshot } from "@bakagame/shared";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { ccbWs } from "@/lib/CCBWs";
 import { CCBGameArea } from "./CCBGameArea";
-import { CCBSettingsForm } from "./CCBSettingsForm";
+import { CCBGameSettings } from "./CCBGameSettings";
 import { CCBPlayerList } from "./CCBPlayerList";
 
 const room = (changes: Partial<CCBRoomSnapshot> = {}): CCBRoomSnapshot => ({
@@ -55,8 +55,12 @@ describe("CCB 操作区", () => {
     await user.type(screen.getByRole("textbox", { name: "房间名称" }), "新房间");
     await user.click(screen.getByRole("switch", { name: "公开显示在大厅" }));
     expect(screen.queryByRole("switch", { name: "允许旁观" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保存房间设置" }));
-    expect(send).toHaveBeenCalledWith("ccb.room.update", { name: "新房间", visibility: "private", allowSpectators: true }, expect.any(Object));
+    // 改动防抖后自动保存；原版房没有密码机制，载荷里的密码恒为 null。
+    await waitFor(() => expect(send).toHaveBeenCalledWith(
+      "ccb.room.update",
+      { name: "新房间", visibility: "private", allowSpectators: true, password: null },
+      expect.any(Object),
+    ));
   });
 
   it("准备与随机出题使用真实命令", async () => {
@@ -86,19 +90,34 @@ describe("CCB 操作区", () => {
     expect(screen.queryByRole("button", { name: "取消本局" })).not.toBeInTheDocument();
   });
 
-  it("原生房主仅在准备或出题阶段可以取消本局", () => {
+  it("原生房主仅在准备或出题阶段可以取消本局", async () => {
     const view = render(<CCBGameArea snapshot={room({ phase: "preparing" })} privateState={privateState()} />);
     expect(screen.getByRole("button", { name: "取消本局" })).toBeInTheDocument();
     view.rerender(<CCBGameArea snapshot={room({ phase: "guessing" })} privateState={privateState({ canGuess: true })} />);
-    expect(screen.queryByRole("button", { name: "取消本局" })).not.toBeInTheDocument();
+    // 阶段切换是带退场的过渡，旧内容在新阶段进场前仍挂着，等它退完再断言。
+    await waitFor(() => expect(screen.queryByRole("button", { name: "取消本局" })).not.toBeInTheDocument());
   });
 
-  it("设置面板覆盖四个玩法开关且只读玩家不能保存", () => {
-    render(<CCBSettingsForm settings={createDefaultCCBSettings(2026)} editable={false} />);
+  it("设置面板覆盖四个玩法开关，且只在实际生效的阶段提交草稿", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const settings = createDefaultCCBSettings(2026);
+    const view = render(<CCBGameSettings settings={settings} waiting={false} />);
+    await user.click(screen.getByRole("button", { name: /猜测设置/ }));
     for (const name of ["角色全局 BP", "标签全局 BP", "同步模式", "血战模式"]) {
-      expect(screen.getByRole("switch", { name })).toBeDisabled();
+      expect(screen.getByRole("switch", { name })).toBeInTheDocument();
     }
-    expect(screen.getByLabelText("猜测次数")).toHaveValue(10);
-    expect(screen.queryByRole("button", { name: "保存设置" })).not.toBeInTheDocument();
+    // 开局后改动只留在草稿里，等待阶段守卫拦下保存。
+    await user.click(screen.getByRole("switch", { name: "同步模式" }));
+    expect(screen.getByRole("switch", { name: "同步模式" })).toBeChecked();
+    expect(send).not.toHaveBeenCalled();
+
+    view.rerender(<CCBGameSettings settings={settings} waiting />);
+    await waitFor(() => expect(send).toHaveBeenCalledWith(
+      "ccb.room.settings",
+      { settings: expect.objectContaining({ syncMode: true }) },
+      expect.any(Object),
+    ));
   });
 });

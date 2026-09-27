@@ -63,13 +63,16 @@ export const WaitingGuest: Story = {
   beforeEach: () => inRoom(ccbWaitingGuestRoom()),
 };
 
-export const SettingsDialog: Story = {
-  name: "题目设置弹窗 · 房主",
-  tags: ["!page", "overlay"],
+/** 设置改为等待页内的折叠面板，逐个展开以便同屏审查三组设置。 */
+export const SettingsPanels: Story = {
+  name: "设置面板 · 房主",
   beforeEach: () => inRoom(ccbWaitingHostRoom(CCB_CUSTOM_SETTINGS)),
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "题目设置" }));
-    await screen.findByRole("dialog", { name: "题目设置" });
+    const canvas = within(canvasElement);
+    for (const name of [/题目设置/, /猜测设置/, /房间设置/]) {
+      await userEvent.click(canvas.getByRole("button", { name }));
+    }
+    dropFocus();
   },
 };
 

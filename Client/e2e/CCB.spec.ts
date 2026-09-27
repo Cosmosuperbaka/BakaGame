@@ -81,10 +81,14 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(guest.getByRole("heading", { name: "等待玩家准备" })).toBeVisible();
     await expect(page.getByTitle(guestName)).toBeVisible();
 
-    await page.getByRole("button", { name: "题目设置", exact: true }).click();
-    await page.getByRole("spinbutton", { name: "行动限时（秒，0 不限）" }).fill("0");
-    await page.getByRole("button", { name: "保存设置", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // 设置改成等待页内折叠面板加防抖自动保存：没有保存按钮，改动直达服务端。
+    // 用访客侧的设置摘要断言落库——它只可能来自服务端广播，能证明确实保存成功。
+    await expect(guest.getByText("每次 60 秒", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "猜测设置", exact: true }).click();
+    const actionLimit = page.getByRole("textbox", { name: "每次行动限时" });
+    await actionLimit.fill("0");
+    await actionLimit.press("Enter");
+    await expect(guest.getByText("不限行动时间", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "随机出题", exact: true })).toBeDisabled();
 
     const chat = "联机聊天".repeat(75);
