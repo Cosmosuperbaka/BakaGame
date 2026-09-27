@@ -7,6 +7,10 @@
 @import "tailwindcss";
 @import "@applemusic-like-lyrics/core/style.css";
 
+/* 暗色主题变量只挂在 .dark 上，dark: 工具类必须跟随同一个开关；
+   否则系统暗色偏好会单独触发 dark: 颜色，与亮色主题变量混在一起。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

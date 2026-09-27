@@ -16,6 +16,7 @@
 - 全站主题基线来源为 tweakcn 的 `vintage-paper`（<https://tweakcn.com/r/themes/vintage-paper.json>），其主题颜色与 `--panel` 变量已完整落入 `Client/src/index.css` 的 `:root` 与 `.dark`，是唯一的全局设计标准。
 - 主题变量包含颜色、`--radius`、`--shadow-*`、`--font-sans/serif/mono` 与 `--tracking-*`（其中 `--font-*` 与 `--tracking-*` 等排版基线唯一定义于 `:root`），业务组件只能引用这些变量派生出的 Tailwind 语义类，不得在组件内重新定义同类基础值。
 - 需要调整全局观感时，应修改 `index.css` 中的主题变量，并同步更新本文件，不在业务组件中做局部覆盖。
+- `dark:` 工具类由 `index.css` 的 `@custom-variant dark` 绑定到 `.dark` 类，与主题变量同一个开关；不得回到跟随系统 `prefers-color-scheme` 的默认行为，否则系统暗色偏好会把 `dark:` 颜色混进亮色主题。暗色目前只在组件截图中输出，站内不开放切换入口。
 - 通用交互组件优先复用 `Client/src/components/ui/`，其底层 Radix UI 行为不得被无故绕过或重复实现。
 - 界面图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符代替已有的标准图标。
 - 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
