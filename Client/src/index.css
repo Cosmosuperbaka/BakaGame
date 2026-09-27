@@ -74,15 +74,17 @@
   --tracking-wider: calc(var(--tracking-normal) + 0.05em);
   --tracking-widest: calc(var(--tracking-normal) + 0.1em);
 
-  --z-base: 0;
-  --z-panel: 10;
-  --z-sticky: 20;
-  --z-drawer: 30;
-  --z-dropdown: 40;
-  --z-overlay: 50;
-  --z-modal: 60;
-  --z-popover: 70;
-  --z-toast: 100;
+  /* 层级令牌。必须用 Tailwind 的 `--z-index-*` 命名空间：
+     写成 `--z-*` 不会生成任何工具类，`z-overlay` 一类的类名会静默失效。 */
+  --z-index-base: 0;
+  --z-index-panel: 10;
+  --z-index-sticky: 20;
+  --z-index-drawer: 30;
+  --z-index-dropdown: 40;
+  --z-index-overlay: 50;
+  --z-index-modal: 60;
+  --z-index-popover: 70;
+  --z-index-toast: 100;
 }
 
 :root {
