@@ -1,38 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
-  BookOpen,
+  Eye,
   History,
   Menu,
   MessageSquare,
   ShieldCheck,
-  Eye,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { motion } from "framer-motion";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
-import {
-  backdrop,
-  duration,
-  ease,
-  iconTappable,
-  spinner,
-  spring,
-} from "@/lib/Motion";
+import { duration, iconTappable, spring } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import {
   PLAYER_COLUMN_WIDTH,
@@ -45,6 +27,9 @@ import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns
 import { AssignedWord } from "@/components/whoisfaker/layout/AssignedWord";
 import { GameArea } from "@/components/whoisfaker/layout/GameArea";
 import { ChatPanel } from "@/components/common/ChatPanel";
+import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
+import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
+import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { isValidRoomId, type PlayerRole, type PublicPlayerView } from "@/types";
 
 export default function WhoIsFakerRoomPage() {
@@ -337,61 +322,20 @@ export default function WhoIsFakerRoomPage() {
   // 加载中、等待加入，或等用户填名字
   if (joining || needsName || !snapshot) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
+      <RoomJoinGate
+        roomId={roomId ?? ""}
+        needsName={needsName}
+        needsPassword={false}
+        nameDraft={nameDraft}
+        onNameDraftChange={setNameDraft}
+        onConfirmName={() => void handleConfirmName()}
+        passwordDraft=""
+        onPasswordDraftChange={() => {}}
+        onConfirmPassword={() => {}}
+        onExit={() => navigate("/whoisfaker")}
+      >
         {seoNode}
-        {!needsName && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: duration.base, ease: ease.out }}
-            className="flex flex-col items-center gap-3"
-          >
-            <motion.div
-              className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
-              {...spinner}
-            />
-            <span className="text-sm text-muted-foreground">正在加入房间...</span>
-          </motion.div>
-        )}
-
-        <Dialog
-          open={needsName}
-          onOpenChange={(open) => {
-            // 关掉弹窗等于放弃进房，回大厅。
-            if (!open) {
-              setNeedsName(false);
-              navigate("/whoisfaker");
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>设置用户名</DialogTitle>
-              <DialogDescription>
-                进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
-              </DialogDescription>
-            </DialogHeader>
-            <Input
-              autoFocus
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleConfirmName();
-              }}
-              placeholder="用户名"
-              maxLength={20}
-            />
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => navigate("/whoisfaker")}>
-                返回大厅
-              </Button>
-              <Button onClick={handleConfirmName} disabled={!nameDraft.trim()}>
-                进入房间
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      </RoomJoinGate>
     );
   }
 
@@ -401,45 +345,39 @@ export default function WhoIsFakerRoomPage() {
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
   const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
-  return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      {seoNode}
-      {/* ── 顶栏 ── */}
-      <header className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleLeave}
-            className="shrink-0"
-            aria-label="离开房间"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <span className="hidden truncate text-base font-semibold md:block">{snapshot.name}</span>
-          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{snapshot.roomId}</span>
-        </div>
+  const playerList = (withHistory: boolean) => (
+    <PlayerList
+      players={snapshot.players}
+      hostPlayerId={snapshot.hostPlayerId}
+      myPlayerId={privateState?.playerId}
+      isHost={isHost}
+      phase={snapshot.status.phase}
+      allowSpectators={snapshot.allowSpectators}
+      privateState={privateState}
+      roleConfig={roleConfig}
+      playerMarks={playerMarks}
+      onMarkChange={handleMarkChange}
+      revealedRoles={revealedRoles}
+      {...(withHistory ? { history } : {})}
+    />
+  );
 
-        <div className="flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 md:gap-2">
-          {dayVisible && day > 0 && (
-            <span className="shrink-0 text-xs font-semibold text-muted-foreground sm:text-sm">
-              第 {day} 天
-            </span>
-          )}
-          {privateState?.isQuestioner ? (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />主持人
-            </span>
-          ) : isSpectator ? (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-              <Eye className="h-3.5 w-3.5" />旁观
-            </span>
-          ) : null}
+  return (
+    <>
+      <RoomShell
+        before={seoNode}
+        onLeave={handleLeave}
+        title={snapshot.name}
+        roomId={snapshot.roomId}
+        center={<>
+          {dayVisible && day > 0 ? <HeaderCounter>第 {day} 天</HeaderCounter> : null}
+          {privateState?.isQuestioner ? <HeaderChip icon={ShieldCheck} label="主持人" /> : null}
+          {!privateState?.isQuestioner && isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
           {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
-          {globalWords && (
+          {globalWords ? (
             <>
               <span
-                className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
+                className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
                 title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
               >
                 <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -447,16 +385,16 @@ export default function WhoIsFakerRoomPage() {
                   平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
                 </span>
               </span>
-              {globalWords.blankHint && (
+              {globalWords.blankHint ? (
                 <span
                   className="hidden max-w-full items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex"
                   title={`白板：${globalWords.blankHint}`}
                 >
                   <span className="whitespace-normal break-words sm:whitespace-nowrap">白板：{globalWords.blankHint}</span>
                 </span>
-              )}
+              ) : null}
             </>
-          )}
+          ) : null}
           {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
               此处只占位撑开顶栏空间，避免停靠时挤动相邻元素。 */}
           {privateInfoVisible && assignedWordText ? (
@@ -467,66 +405,15 @@ export default function WhoIsFakerRoomPage() {
               style={{ width: dockSize.width, height: dockSize.height }}
             />
           ) : null}
-        </div>
-
-        <div className="flex items-center justify-end gap-0 md:gap-1">
-          {!connected && (
-            <span className="mr-1 hidden shrink-0 animate-pulse text-xs text-destructive sm:inline">断线中...</span>
-          )}
-          <div className="flex gap-1 md:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              aria-label="玩家列表"
-              aria-expanded={mobilePanel === "players"}
-              onClick={() => setMobilePanel(mobilePanel === "players" ? "none" : "players")}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-            {/* 移动端发言历史：仅游戏中显示 */}
-            {showHistoryToggle && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                aria-label={mobilePanel === "history" ? "收起发言历史" : "展开发言历史"}
-                aria-expanded={mobilePanel === "history"}
-                onClick={() => setMobilePanel(mobilePanel === "history" ? "none" : "history")}
-              >
-                <History className="h-5 w-5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              aria-label="聊天"
-              aria-expanded={mobilePanel === "chat"}
-              onClick={() => setMobilePanel(mobilePanel === "chat" ? "none" : "chat")}
-            >
-              <MessageSquare className="h-5 w-5" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {/* ── 主体三栏 ── */}
-      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
-
-        {/* 玩家栏 + 游戏区（共享同一个 section 以便 aside 绝对定位覆盖游戏区） */}
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
-
-          {/* 布局占位：使游戏区不因 aside 展开而收缩 */}
-          <div
-            className="hidden shrink-0 md:block"
-            style={{ width: PLAYER_COLUMN_WIDTH }}
-            aria-hidden="true"
-          />
+        </>}
+        connectionIssue={connected ? null : "断线中..."}
+        player={<>
+          {/* 布局占位：使游戏区不因玩家栏展开而收缩 */}
+          <div className="hidden shrink-0 md:block" style={{ width: PLAYER_COLUMN_WIDTH }} aria-hidden="true" />
 
           {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
           <motion.aside
-            className="absolute inset-y-0 left-0 z-30 hidden flex-col rounded-md border bg-panel md:flex"
+            className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel md:flex"
             initial={false}
             animate={{
               width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
@@ -537,9 +424,9 @@ export default function WhoIsFakerRoomPage() {
             {/* 展开/收起按钮：仅在游戏开始后显示。
                 收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
                 否则会落到 section 的裁切区外被切掉。 */}
-            {showHistoryToggle && (
+            {showHistoryToggle ? (
               <motion.div
-                className="absolute top-1/2 z-40 -translate-y-1/2"
+                className="absolute top-1/2 z-dropdown -translate-y-1/2"
                 initial={false}
                 animate={{ right: historyOpen ? "0.5rem" : "-1rem" }}
                 transition={spring.settle}
@@ -560,132 +447,63 @@ export default function WhoIsFakerRoomPage() {
                   )}
                 </motion.button>
               </motion.div>
-            )}
+            ) : null}
 
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-              <PlayerList
-                players={snapshot.players}
-                hostPlayerId={snapshot.hostPlayerId}
-                myPlayerId={privateState?.playerId}
-                isHost={isHost}
-                phase={snapshot.status.phase}
-                allowSpectators={snapshot.allowSpectators}
-                privateState={privateState}
-                roleConfig={roleConfig}
-                playerMarks={playerMarks}
-                onMarkChange={handleMarkChange}
-                revealedRoles={revealedRoles}
-                history={historyRendered ? history : undefined}
-              />
+              {playerList(historyRendered)}
             </div>
           </motion.aside>
-
-          {/* 游戏区。`isolate` 使揭词背板、天亮提示等区内浮层只在游戏区内部
-              分层，不会越过玩家面板去盖住骑缝的展开按钮。 */}
-          <main
-            ref={stageRef}
-            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel"
-          >
-            <GameArea wordRevealed={wordRevealed} />
-          </main>
-        </section>
-
-        {/* 右栏：聊天（桌面） */}
-        <aside className="hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex">
+        </>}
+        gameRef={stageRef}
+        game={<GameArea wordRevealed={wordRevealed} />}
+        chat={<ChatColumn>
           <ChatPanel
             messages={snapshot?.chat ?? []}
             players={snapshot?.players ?? []}
             myPlayerId={privateState?.playerId}
             onSendMessage={handleSendChatMessage}
           />
-        </aside>
-
-        {/* 移动端玩家列表覆盖层 */}
-        <AnimatePresence>
-          {mobilePanel === "players" && (
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0, transition: spring.swift }}
-              exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-72 min-w-0 flex-col overflow-hidden border-r bg-panel shadow-xl md:hidden"
-            >
-              <PlayerList
-                players={snapshot.players}
-                hostPlayerId={snapshot.hostPlayerId}
-                myPlayerId={privateState?.playerId}
-                isHost={isHost}
-                phase={snapshot.status.phase}
-                allowSpectators={snapshot.allowSpectators}
-                privateState={privateState}
-                roleConfig={roleConfig}
-                playerMarks={playerMarks}
-                onMarkChange={handleMarkChange}
-                revealedRoles={revealedRoles}
-              />
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* 移动端发言历史覆盖层 */}
-        <AnimatePresence>
-          {mobilePanel === "history" && (
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0, transition: spring.swift }}
-              exit={{ x: "-100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 left-0 z-30 flex w-full max-w-sm min-w-0 flex-col overflow-hidden bg-panel shadow-xl md:hidden"
-            >
-              <PlayerList
-                players={snapshot.players}
-                hostPlayerId={snapshot.hostPlayerId}
-                myPlayerId={privateState?.playerId}
-                isHost={isHost}
-                phase={snapshot.status.phase}
-                allowSpectators={snapshot.allowSpectators}
-                privateState={privateState}
-                roleConfig={roleConfig}
-                playerMarks={playerMarks}
-                onMarkChange={handleMarkChange}
-                revealedRoles={revealedRoles}
-                history={history}
-              />
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* 移动端聊天覆盖层 */}
-        <AnimatePresence>
-          {mobilePanel === "chat" && (
-            <motion.aside
-              initial={{ x: "100%" }}
-              animate={{ x: 0, transition: spring.swift }}
-              exit={{ x: "100%", transition: { duration: duration.quick, ease: ease.inOut } }}
-              className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col overflow-hidden border-l bg-panel shadow-xl lg:hidden"
-            >
+        </ChatColumn>}
+        openDrawer={mobilePanel === "none" ? null : mobilePanel}
+        onDrawerChange={(key) => setMobilePanel((key ?? "none") as "none" | "players" | "chat" | "history")}
+        drawers={[
+          {
+            key: "players",
+            icon: Menu,
+            label: "玩家列表",
+            side: "left",
+            title: "玩家",
+            closeFrom: "md",
+            content: playerList(false),
+          },
+          ...(showHistoryToggle ? [{
+            key: "history",
+            icon: History,
+            label: mobilePanel === "history" ? "收起发言历史" : "展开发言历史",
+            side: "left" as const,
+            title: "发言历史",
+            closeFrom: "md" as const,
+            className: "w-full max-w-sm",
+            content: playerList(true),
+          }] : []),
+          {
+            key: "chat",
+            icon: MessageSquare,
+            label: "聊天",
+            side: "right",
+            title: "聊天",
+            closeFrom: "lg",
+            content: (
               <ChatPanel
                 messages={snapshot?.chat ?? []}
                 players={snapshot?.players ?? []}
                 myPlayerId={privateState?.playerId}
                 onSendMessage={handleSendChatMessage}
               />
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* 移动端遮罩 */}
-        <AnimatePresence>
-          {mobilePanel !== "none" && (
-            <motion.div
-              variants={backdrop}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="absolute inset-0 z-20 bg-foreground/20 md:hidden"
-              onClick={() => setMobilePanel("none")}
-            />
-          )}
-        </AnimatePresence>
-      </div>
+            ),
+          },
+        ]}
+      />
 
       {/* 词语本体：始终是同一个元素，在居中揭示位与顶栏停靠位之间连续移动 */}
       {privateInfoVisible && assignedWordText ? (
@@ -697,7 +515,6 @@ export default function WhoIsFakerRoomPage() {
           onDockSizeChange={setDockSize}
         />
       ) : null}
-
-    </div>
+    </>
   );
 }

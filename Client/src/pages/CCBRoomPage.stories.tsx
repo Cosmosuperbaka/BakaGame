@@ -143,7 +143,7 @@ export const MobilePlayers: Story = {
   beforeEach: () => inRoom(ccbGuessingRoom("player")),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "玩家列表" }));
-    // 抽屉的可访问名称取自标题：Radix 的 aria-labelledby 优先于 CCBRoomPanel 传入的 aria-label。
+    // 抽屉的可访问名称取自标题：Radix 的 aria-labelledby 决定面板名。
     await screen.findByRole("dialog", { name: "玩家" });
     dropFocus();
   },

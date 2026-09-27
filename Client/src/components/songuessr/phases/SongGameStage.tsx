@@ -1,5 +1,4 @@
-import { useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Check,
   Clock3,
@@ -15,8 +14,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
@@ -26,7 +25,6 @@ import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
   listContainer,
   listItem,
-  phaseSwap,
   selectable,
   spinner,
 } from "@/lib/Motion";
@@ -451,54 +449,35 @@ export function GameStage(props: SongGameAreaProps) {
 }
 
 export function SongGameArea(props: SongGameAreaProps) {
-  const phaseRef = useRef<HTMLDivElement>(null);
+  const search =
+    props.searchMode && props.snapshot.settings.questionType === "anime" ? (
+      <BangumiSearchDialog
+        open
+        onOpenChange={(open) => { if (!open) props.closeSearch(); }}
+        title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"}
+        description="番剧信息只会在回合结束后公开。"
+        actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"}
+        onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)}
+      />
+    ) : props.searchMode ? (
+      <SongSearchDialog
+        open
+        onOpenChange={(open) => { if (!open) props.closeSearch(); }}
+        title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
+        description={props.searchMode === "submit" ? "歌曲信息只会在回合结束后公开。" : "每次错误猜测会提供年代、热度、语种与标签反馈。"}
+        actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
+        onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
+      />
+    ) : null;
 
   return (
-    <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", props.snapshot.testMode && "pb-16")}>
-      <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
-        <div className="p-6 md:p-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={props.snapshot.phase}
-              variants={phaseSwap}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              onAnimationComplete={(definition) => {
-                if (definition !== "animate") return;
-                const node = phaseRef.current;
-                if (node) node.style.transform = "";
-              }}
-              ref={phaseRef}
-              style={{ willChange: "transform, opacity" }}
-            >
-              <GameStage {...props} />
-            </motion.div>
-          </AnimatePresence>
-          {props.searchMode && props.snapshot.settings.questionType === "anime" ? (
-            <BangumiSearchDialog
-              open
-              onOpenChange={(open) => { if (!open) props.closeSearch(); }}
-              title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"}
-              description="番剧信息只会在回合结束后公开。"
-              actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"}
-              onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)}
-            />
-          ) : props.searchMode ? (
-            <SongSearchDialog
-              open
-              onOpenChange={(open) => { if (!open) props.closeSearch(); }}
-              title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
-              description={props.searchMode === "submit" ? "歌曲信息只会在回合结束后公开。" : "每次错误猜测会提供年代、热度、语种与标签反馈。"}
-              actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
-              onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
-            />
-          ) : null}
-        </div>
-      </ScrollArea>
-      {props.snapshot.testMode ? (
-        <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} />
-      ) : null}
-    </div>
+    <PhaseStage
+      phaseKey={props.snapshot.phase}
+      reserveBottom={props.snapshot.testMode}
+      after={search}
+      overlays={props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} /> : null}
+    >
+      <GameStage {...props} />
+    </PhaseStage>
   );
 }

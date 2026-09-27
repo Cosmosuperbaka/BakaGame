@@ -250,10 +250,11 @@ export const HistoryExpanded: Story = {
   beforeEach: () => presetWifRoom(wifSnapshot("day2"), asMe),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getAllByRole("button", { name: "展开发言历史" })[0]);
-    await waitFor(() => {
-      expect(canvas.getAllByRole("button", { name: "收起发言历史" })[0]).toHaveAttribute("aria-expanded", "true");
-    });
+    // 窄视口下这里点开的是移动端覆盖面板，它由 Radix 渲染：打开后其余内容对读屏隐藏，
+    // 入口按钮本身也会被标成 aria-hidden，因此持有原引用断言，不按名称重查。
+    const toggle = canvas.getAllByRole("button", { name: "展开发言历史" })[0];
+    await userEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "true"));
     dropFocus();
   },
 };
