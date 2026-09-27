@@ -3,6 +3,7 @@ import { ccbTestHarness, character, deferred } from './CCBNativeFixtures';
 import type { CCBCharacterView } from '../src/shared/Index';
 import type { CCBDataProvider } from '../src/infrastructure/CCBData';
 import { HOST_RECONNECT_TIMEOUT_MS } from '../src/config/Constants';
+import { CCB_JOIN_PASSWORD_MAX_ATTEMPTS } from '../src/application/CCBRooms';
 
 const active: ReturnType<typeof ccbTestHarness>[] = [];
 const harness = (data: Partial<CCBDataProvider> = {}) => { const result = ccbTestHarness(data); active.push(result); return result; };
@@ -57,18 +58,18 @@ describe('CCB 会话与异步边界', () => {
     h.service.unregisterConnection(host.record.id); h.advance(HOST_RECONNECT_TIMEOUT_MS - 1);
     expect(h.snapshot(guest).hostPlayerId).toBe(host.id!);
     const recovered = h.connect('恢复房主');
-    await h.send(recovered, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: host.token! });
+    await h.send(recovered, 'ccb.room.reconnect', { roomId: '1234', sessionToken: host.token! });
     expect(h.snapshot(recovered).hostPlayerId).toBe(host.id!); expect(recovered.id).toBe(host.id!);
     h.service.unregisterConnection(recovered.record.id); h.advance(HOST_RECONNECT_TIMEOUT_MS);
     expect(h.snapshot(guest).hostPlayerId).toBe(guest.id!);
-    const oldHost = h.connect('旧房主'); await h.send(oldHost, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: host.token! });
+    const oldHost = h.connect('旧房主'); await h.send(oldHost, 'ccb.room.reconnect', { roomId: '1234', sessionToken: host.token! });
     expect(h.snapshot(oldHost).hostPlayerId).toBe(guest.id!);
     await expect(h.send(oldHost, 'ccb.room.transferHost', { playerId: host.id! })).rejects.toMatchObject({ code: 'NOT_HOST' });
   });
 
   test('连接替换只允许最新会话操作，凭据不会出现在公共快照', async () => {
     const h = harness(); const host = await h.create(); const replacement = h.connect('替换');
-    await h.send(replacement, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: host.token! });
+    await h.send(replacement, 'ccb.room.reconnect', { roomId: '1234', sessionToken: host.token! });
     expect(host.closed[0].code).toBe(4001); expect(h.snapshot(replacement).players[0].online).toBe(true);
     expect(JSON.stringify(h.snapshot(replacement))).not.toContain(host.token!);
     expect(h.service.getHealthSnapshot().onlinePlayerCount).toBe(1);
@@ -80,7 +81,7 @@ describe('CCB 会话与异步边界', () => {
     await h.guess(host, 3); expect(h.privateState(host).canGuess).toBe(false);
     h.service.unregisterConnection(guest.record.id);
     expect(h.snapshot(host).syncRound).toBe(2); expect(h.privateState(host).canGuess).toBe(true);
-    const recovered = h.connect('恢复'); await h.send(recovered, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: guest.token! });
+    const recovered = h.connect('恢复'); await h.send(recovered, 'ccb.room.reconnect', { roomId: '1234', sessionToken: guest.token! });
     expect(h.privateState(recovered).canGuess).toBe(true);
     expect(h.snapshot(recovered).players.find(player => player.id === guest.id)?.attempts).toBe(0);
   });
@@ -92,7 +93,7 @@ describe('CCB 会话与异步边界', () => {
     expect(h.snapshot(host).syncRound).toBe(2); expect(h.privateState(host).canGuess).toBe(true);
     expect(guest.sent.some(packet => packet.event === 'ccb.player.kicked')).toBe(true);
     const recovered = h.connect('尝试恢复');
-    await expect(h.send(recovered, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: guest.token! })).rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
+    await expect(h.send(recovered, 'ccb.room.reconnect', { roomId: '1234', sessionToken: guest.token! })).rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
   });
 
   test('中途加入只观战，下局准备后参加，关闭观战的房间拒绝中途加入', async () => {
@@ -130,7 +131,7 @@ describe('CCB 会话与异步边界', () => {
     h.service.unregisterConnection(guest.record.id);
     expect(h.snapshot(host).phase).toBe('guessing'); expect(h.snapshot(host).roundSummary).toBeNull();
     const restored = h.connect('恢复连接');
-    await h.send(restored, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: guest.token! });
+    await h.send(restored, 'ccb.room.reconnect', { roomId: '1234', sessionToken: guest.token! });
     expect(h.privateState(restored).guesses).toHaveLength(1);
     await h.guess(restored, 1);
     expect(h.snapshot(host).roundSummary!.winners[0].playerId).toBe(guest.id!);
@@ -193,11 +194,38 @@ describe('CCB 会话与异步边界', () => {
     await h.guess(host, 3); expect(h.privateState(host).guesses[1].feedback.popularity.value).toBe(10);
   });
 
+  test('私密房必须有密码，缺密码与错密码分别给出可提示的错误码', async () => {
+    const h = harness(); const host = h.connect('房主');
+    await expect(h.send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '加密房', userName: '房主', visibility: 'private', allowSpectators: true, password: '  ' }))
+      .rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' });
+    await h.send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '加密房', userName: '房主', visibility: 'private', allowSpectators: true, password: ' 正确密码 ' });
+    const guest = h.connect('玩家');
+    await expect(h.send(guest, 'ccb.room.join', { userName: '玩家' })).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' });
+    await expect(h.send(guest, 'ccb.room.join', { userName: '玩家', password: '错误' })).rejects.toMatchObject({ code: 'PASSWORD_INCORRECT' });
+    await h.send(guest, 'ccb.room.join', { userName: '玩家', password: '正确密码' });
+    expect(h.snapshot(host).players).toHaveLength(2);
+  });
+
+  test('密码尝试超过上限后连正确密码也拒绝，其它连接不受影响，窗口过后恢复', async () => {
+    const h = harness(); const host = h.connect('房主');
+    await h.send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '加密房', userName: '房主', visibility: 'private', allowSpectators: true, password: '正确密码' });
+    const attacker = h.connect('尝试者');
+    for (let attempt = 0; attempt < CCB_JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
+      await expect(h.send(attacker, 'ccb.room.join', { userName: '尝试者', password: `猜测${attempt}` })).rejects.toMatchObject({ code: 'PASSWORD_INCORRECT' });
+    }
+    await expect(h.send(attacker, 'ccb.room.join', { userName: '尝试者', password: '正确密码' })).rejects.toMatchObject({ code: 'TOO_MANY_ATTEMPTS' });
+    const friend = h.connect('朋友');
+    await h.send(friend, 'ccb.room.join', { userName: '朋友', password: '正确密码' });
+    h.advance(60_001);
+    await h.send(attacker, 'ccb.room.join', { userName: '尝试者', password: '正确密码' });
+    expect(h.snapshot(host).players.map(player => player.name)).toEqual(['房主', '朋友', '尝试者']);
+  });
+
   test('密码校验期间连接断开，不创建幽灵在线成员', async () => {
     const h = harness(); const host = h.connect('房主');
     await h.send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '加密房', userName: '房主', visibility: 'private', allowSpectators: true, password: '正确密码' });
     const guest = h.connect('玩家');
-    const joining = h.send(guest, 'ccb.room.join', { source: 'native', userName: '玩家', password: '正确密码' });
+    const joining = h.send(guest, 'ccb.room.join', { userName: '玩家', password: '正确密码' });
     h.service.unregisterConnection(guest.record.id);
     await expect(joining).rejects.toMatchObject({ code: 'SESSION_INVALID' });
     expect(h.snapshot(host).players).toHaveLength(1);

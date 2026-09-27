@@ -6,7 +6,7 @@ import { CCB_LOBBY_ROOMS, presetSavedUsername } from "@/stories/fixtures/CCB";
 
 /** 已连上 CCB 服务并完成大厅订阅，原版服务器可用。 */
 const lobby = (patch: Parameters<typeof presetCCB>[0] = {}) =>
-  presetCCB({ connected: true, lobbyReady: true, originalAvailable: true, originalServerKey: "story-original", ...patch });
+  presetCCB({ connected: true, lobbyReady: true, originalAvailable: true, ...patch });
 
 /** 模拟点击会让浏览器按键盘操作绘制焦点环，真实鼠标点击没有；交互结束后移开焦点，画面与鼠标操作一致。 */
 function dropFocus() {
@@ -52,7 +52,7 @@ export const OriginalRooms: Story = {
 
 export const OriginalUnavailable: Story = {
   name: "原版房 · 服务器未接入",
-  beforeEach: () => lobby({ originalAvailable: false, originalServerKey: "", rooms: CCB_LOBBY_ROOMS.filter((room) => room.source === "native") }),
+  beforeEach: () => lobby({ originalAvailable: false, rooms: CCB_LOBBY_ROOMS.filter((room) => room.source === "native") }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("tab", { name: "原版房" }));

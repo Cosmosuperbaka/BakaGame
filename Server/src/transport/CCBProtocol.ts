@@ -15,16 +15,10 @@ const optionalEnvelopeString = (maxLength: number) =>
   t.Optional(t.Union([t.String({ maxLength }), t.Null()]));
 
 /**
- * 信封 `roomId` 的上限必须容纳服务端内部的 `original:` 前缀形态。
- *
- * 业务房间号本身限 32 字符，但服务端会话记录用的是 `original:${roomId}`
- * （见 `CCBOriginalService` 的 `connection.roomId` 赋值）。前端把 sessionStorage
- * 或路由参数里的值原样回填到信封时可能带上该前缀，此时若按 32 截断，
- * 请求会在**解析阶段**被判非法——日志只剩 `WS raw`、错误包 id 不匹配，
- * 前端完全静默。这里放宽到覆盖前缀长度，取值约束仍由业务层承担。
+ * 信封 `roomId` 是统一房号目录的 4 位号（或测试房号），与其它游戏同为 32 字符上限。
+ * 服务端内部的 `original:` 连接标记从不下发给客户端，因此不需要为它放宽。
  */
-const ROOM_ID_PREFIX = "original:";
-const ENVELOPE_ROOM_ID_MAX = ROOM_ID_PREFIX.length + 32;
+const ENVELOPE_ROOM_ID_MAX = 32;
 
 const schemas = Object.fromEntries(Object.entries(CCBPayloadSchemas).map(([type, payload]) => [type,
   t.Object({ id: t.String({ minLength: 1, maxLength: 128 }), traceId: optionalEnvelopeString(128),

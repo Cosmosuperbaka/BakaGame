@@ -73,7 +73,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await page.getByRole("button", { name: "创建房间", exact: true }).click();
     await page.getByRole("textbox", { name: "房间名称" }).fill("连续两局验收房间");
     await page.getByRole("button", { name: "创建", exact: true }).click();
-    await expect(page).toHaveURL(/\/ccb\/room\/native\/\d{4}$/);
+    await expect(page).toHaveURL(/\/ccb\/room\/\d{4}$/);
     const roomUrl = page.url();
     await guest.goto(roomUrl);
     await guest.getByRole("textbox", { name: "用户名" }).fill(guestName);

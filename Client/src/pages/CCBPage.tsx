@@ -51,7 +51,7 @@ export default function CCBPage() {
     if (!roomId.trim()) return;
     saveUsername(name.trim());
     useCCBStore.getState().resetRoom();
-    navigate(ccbRoomPath(source, roomId.trim()));
+    navigate(ccbRoomPath(roomId.trim()));
   };
   const create = async () => {
     if (!name.trim()) { setError("请先填写用户名"); return; }
@@ -65,7 +65,7 @@ export default function CCBPage() {
         allowSpectators: source === "original" || allowSpectators,
         ...(source === "native" && privateRoom ? { password } : {}) });
       saveUsername(name.trim());
-      navigate(ccbRoomPath(source, useCCBStore.getState().roomId!));
+      navigate(ccbRoomPath(useCCBStore.getState().roomId!));
     } catch (failure) { setError(ccbErrorMessage(failure)); }
     finally { setBusy(false); }
   };

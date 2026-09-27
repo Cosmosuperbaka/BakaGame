@@ -17,9 +17,10 @@ export class CCBNativeService {
   private readonly imageHints: CCBImageHints;
   private readonly inFlight = new Set<string>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  constructor(options: { data: CCBDataProvider; now?: () => number; random?: () => number; imageHints?: CCBImageHints }) {
+  constructor(options: { data: CCBDataProvider; now?: () => number; random?: () => number; imageHints?: CCBImageHints;
+    isRoomIdReserved?: (roomId: string) => boolean }) {
     this.data = options.data; this.now = options.now ?? Date.now; this.random = options.random ?? Math.random;
-    this.imageHints = options.imageHints ?? new CCBImageHints(); this.state = new CCBRooms(this.now);
+    this.imageHints = options.imageHints ?? new CCBImageHints(); this.state = new CCBRooms(this.now, options.isRoomIdReserved);
   }
   registerConnection(connection: ConnectionRecord) { this.state.registerConnection(connection); }
   unregisterConnection(connectionId: string) { this.state.unregisterConnection(connectionId); this.rescheduleAll(); }
@@ -55,10 +56,7 @@ export class CCBNativeService {
       case 'ccb.room.settings':
         this.state.requireHost(room, player); this.state.requireWaiting(room); validateCCBSettings(message.payload.settings);
         room.settings = structuredClone(message.payload.settings); break;
-      case 'ccb.room.update':
-        this.state.requireHost(room, player); this.state.requireWaiting(room);
-        if (!message.payload.name.trim()) throw new AppError('INVALID_NAME', '房间名称不能为空');
-        room.name = message.payload.name.trim(); room.visibility = message.payload.visibility; room.allowSpectators = message.payload.allowSpectators; break;
+      case 'ccb.room.update': await this.state.update(room, player, message.payload); break;
       case 'ccb.player.ready': this.state.requireWaiting(room); player.ready = message.payload.ready; break;
       case 'ccb.player.team': this.state.requireWaiting(room); player.team = message.payload.team; break;
       case 'ccb.player.spectate':

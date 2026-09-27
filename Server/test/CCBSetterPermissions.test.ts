@@ -9,10 +9,11 @@ test('原版手动出题名单不受随机开局准备限制，非房主及出�
     socketFactory: upstream.factory, fetcher: async () => Response.json([{ id: '1234', isPublic: true }]) });
   for (const id of ['host', 'guest']) service.registerConnection({ id, lobbySubscribed: false, send() {}, close() {} });
   const send = (id: string, token: string, message: CCBClientMessage) => service.execute(id, { ...message, sessionToken: token });
+  const target = { source: 'original' as const, roomId: '1234', upstreamRoomId: '1234' };
   try {
-    const host = await service.execute('host', { id: 'create', type: 'ccb.room.create', payload: { source: 'original', roomId: '1234',
-      name: '出题权限', userName: '房主', visibility: 'public', allowSpectators: true } }) as CCBRoomEnterResult;
-    const guest = await service.execute('guest', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '出题人' } }) as CCBRoomEnterResult;
+    const host = await service.create('host', target, { source: 'original', roomId: '1234',
+      name: '出题权限', userName: '房主', visibility: 'public', allowSpectators: true });
+    const guest = await service.join('guest', target, { userName: '出题人' });
     await send('guest', guest.sessionToken, { id: 'unready', type: 'ccb.player.ready', payload: { ready: false } });
     const sync = () => send('host', host.sessionToken, { id: 'sync', type: 'ccb.room.requestSync', payload: {} }) as Promise<CCBRoomEnterResult>;
     const waiting = await sync();

@@ -15,12 +15,11 @@ afterEach(() => { resetCCBStateSync(); useCCBStore.getState().resetRoom(); sessi
 
 describe("CCB 状态同步", () => {
   it("原版会话过期后删除旧凭据并允许重新加入", async () => {
-    useCCBStore.setState({ originalServerKey: "remote" });
-    writeCCBSession("original", "remote", "1234", "expired");
+    writeCCBSession("1234", "expired");
     const send = vi.spyOn(ccbWs, "send").mockRejectedValue({ code: "SESSION_EXPIRED", message: "会话已过期" });
-    await expect(useCCBStore.getState().reconnectRoom("original", "1234")).resolves.toBe(false);
-    expect(readCCBSession("original", "remote", "1234")).toBeNull();
-    await expect(useCCBStore.getState().reconnectRoom("original", "1234")).resolves.toBe(false);
+    await expect(useCCBStore.getState().reconnectRoom("1234")).resolves.toBe(false);
+    expect(readCCBSession("1234")).toBeNull();
+    await expect(useCCBStore.getState().reconnectRoom("1234")).resolves.toBe(false);
     expect(send).toHaveBeenCalledTimes(1);
   });
 
@@ -29,8 +28,8 @@ describe("CCB 状态同步", () => {
     vi.spyOn(ccbWs, "onStatus").mockImplementation((handler) => { status = handler; return () => {}; });
     vi.spyOn(ccbWs, "connect").mockImplementation(() => {});
     const disconnect = vi.spyOn(ccbWs, "disconnect").mockImplementation(() => status(false));
-    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({ originalAvailable: false, sourceKey: "" });
-    writeCCBSession("native", "native", "1234", "token");
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({ originalAvailable: false });
+    writeCCBSession("1234", "token");
     useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token", snapshot, lobbyReady: true });
     const cleanup = initCCBWs();
     try {
@@ -41,7 +40,7 @@ describe("CCB 状态同步", () => {
       expect(send.mock.calls.map(([command]) => command)).toEqual(["ccb.lobby.subscribeRooms"]);
     } finally { cleanup(); }
     expect(disconnect).toHaveBeenCalledOnce();
-    expect(readCCBSession("native", "native", "1234")).toBe("token");
+    expect(readCCBSession("1234")).toBe("token");
     expect(useCCBStore.getState()).toMatchObject({ connected: false, lobbyReady: false, roomId: null });
   });
 
@@ -82,7 +81,6 @@ describe("CCB 状态同步", () => {
    * 把刚建立的原版会话清掉，表现为「加入原版房间失败」。
    */
   it("进入原版房间期间不抢发同步，凭据写回后补一次全量", async () => {
-    useCCBStore.setState({ originalServerKey: "remote" });
     const calls: Array<{ command: string; options?: { sessionToken?: string } }> = [];
     vi.spyOn(ccbWs, "send").mockImplementation((command: string, _payload?: unknown, options?: { sessionToken?: string }) => {
       calls.push({ command, options });
@@ -100,7 +98,7 @@ describe("CCB 状态同步", () => {
       return Promise.resolve({});
     });
 
-    await useCCBStore.getState().joinRoom("original", "1234", "甲");
+    await useCCBStore.getState().joinRoom("1234", "甲");
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const duringJoin = calls.filter((call) => call.command === "ccb.room.requestSync" && !call.options?.sessionToken);

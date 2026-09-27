@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { readCCBSession, removeCCBSession, writeCCBSession } from "./CCBSession";
 
-describe("CCB 双源会话", () => {
-  it("同号房间的来源与上游配置分别隔离", () => {
-    writeCCBSession("native", "native", "1234", "local-token");
-    writeCCBSession("original", "server-a", "1234", "remote-token");
-    expect(readCCBSession("native", "native", "1234")).toBe("local-token");
-    expect(readCCBSession("original", "server-a", "1234")).toBe("remote-token");
-    expect(readCCBSession("original", "server-b", "1234")).toBeNull();
-    removeCCBSession("original", "server-a", "1234");
-    expect(readCCBSession("original", "server-a", "1234")).toBeNull();
-    expect(readCCBSession("native", "native", "1234")).toBe("local-token");
+describe("CCB 会话凭据", () => {
+  it("只按统一房号存取，不同房号互不影响", () => {
+    writeCCBSession("1234", "first-token");
+    writeCCBSession("5678", "second-token");
+    expect(readCCBSession("1234")).toBe("first-token");
+    expect(readCCBSession("5678")).toBe("second-token");
+    expect(readCCBSession("9012")).toBeNull();
+    removeCCBSession("1234");
+    expect(readCCBSession("1234")).toBeNull();
+    expect(readCCBSession("5678")).toBe("second-token");
   });
 });

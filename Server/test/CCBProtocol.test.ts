@@ -31,7 +31,7 @@ describe('CCB 协议边界', () => {
    * 否则加入原版房间会在解析阶段就 400（微秒级返回，页面只显示通用失败）。
    */
   test('信封与载荷的可选字段同时接受缺席与显式 null', () => {
-    const join = { id: 'join-1', type: 'ccb.room.join' as const, roomId: '1234', payload: { source: 'original' as const, userName: '甲' } };
+    const join = { id: 'join-1', type: 'ccb.room.join' as const, roomId: '1234', payload: { userName: '甲' } };
     expect(parseCCBMessage(join).type).toBe('ccb.room.join');
     expect(parseCCBMessage({ ...join, sessionToken: null }).type).toBe('ccb.room.join');
     expect(parseCCBMessage({ ...join, traceId: null, roomId: null }).type).toBe('ccb.room.join');
@@ -41,11 +41,13 @@ describe('CCB 协议边界', () => {
     } }).type).toBe('ccb.room.create');
   });
   test('可选字段放开 null 但不放松取值约束', () => {
-    const join = { id: 'join-2', type: 'ccb.room.join' as const, roomId: '1234', payload: { source: 'original' as const, userName: '甲' } };
+    const join = { id: 'join-2', type: 'ccb.room.join' as const, roomId: '1234', payload: { userName: '甲' } };
     expect(() => parseCCBMessage({ ...join, sessionToken: 42 })).toThrow('指令参数不合法');
     expect(() => parseCCBMessage({ ...join, roomId: 1234 })).toThrow('指令参数不合法');
     expect(() => parseCCBMessage({ ...join, payload: { ...join.payload, userName: 12 } })).toThrow('指令参数不合法');
     expect(() => parseCCBMessage({ ...join, payload: { ...join.payload, roomId: '1234' } })).toThrow('指令参数不合法');
+    // 入房来源由统一房号目录解析，客户端不再声明。
+    expect(() => parseCCBMessage({ ...join, payload: { ...join.payload, source: 'original' } })).toThrow('指令参数不合法');
   });
   /**
    * 恢复会话的凭据为空/缺席属于**可恢复状态**，解析层必须放行、由业务层回明确的失效语义。
@@ -56,7 +58,7 @@ describe('CCB 协议边界', () => {
    */
   test('恢复会话的凭据允许为空或缺席，交由业务层判定失效', () => {
     const reconnect = (sessionToken?: unknown) => ({ id: 're-1', type: 'ccb.room.reconnect' as const,
-      payload: { source: 'original' as const, roomId: '1234', ...(sessionToken === undefined ? {} : { sessionToken }) } });
+      payload: { roomId: '1234', ...(sessionToken === undefined ? {} : { sessionToken }) } });
     expect(parseCCBMessage(reconnect('ccb_original_abc_def')).type).toBe('ccb.room.reconnect');
     expect(parseCCBMessage(reconnect('')).type).toBe('ccb.room.reconnect');
     expect(parseCCBMessage(reconnect(null)).type).toBe('ccb.room.reconnect');
@@ -65,14 +67,11 @@ describe('CCB 协议边界', () => {
     expect(() => parseCCBMessage(reconnect('x'.repeat(129)))).toThrow('指令参数不合法');
   });
   /**
-   * 信封 `roomId` 必须容纳服务端内部的 `original:` 前缀形态。
-   *
-   * 该前缀是服务端会话记录的内部表示，前端把它回填到信封时若因长度被拦，
-   * 同样落在「解析阶段失败」的静默陷阱里。
+   * 客户端只见到统一房号目录的 4 位号，服务端内部的 `original:` 连接标记从不下发，
+   * 信封房号与其它游戏同为 32 字符上限。
    */
-  test('信封房间号容纳服务端 original 前缀形态', () => {
-    const prefixed = `original:${'1'.repeat(32)}`;
-    expect(parseCCBMessage({ id: 'sync-1', type: 'ccb.room.requestSync', roomId: prefixed, payload: {} }).type).toBe('ccb.room.requestSync');
-    expect(() => parseCCBMessage({ id: 'sync-2', type: 'ccb.room.requestSync', roomId: `original:${'1'.repeat(33)}`, payload: {} })).toThrow('指令参数不合法');
+  test('信封房间号与其它游戏同为 32 字符上限', () => {
+    expect(parseCCBMessage({ id: 'sync-1', type: 'ccb.room.requestSync', roomId: '1'.repeat(32), payload: {} }).type).toBe('ccb.room.requestSync');
+    expect(() => parseCCBMessage({ id: 'sync-2', type: 'ccb.room.requestSync', roomId: `original:${'1'.repeat(32)}`, payload: {} })).toThrow('指令参数不合法');
   });
 });

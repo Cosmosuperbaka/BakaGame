@@ -230,19 +230,19 @@ const joined = (members: Member[]) => members.map((member, index) =>
 // ==================== 大厅 ====================
 
 const lobbyRoom = (roomId: string, name: string, phase: CCBRoomSummary["phase"], playerCount: number, patch: Partial<CCBRoomSummary> = {}): CCBRoomSummary =>
-  ({ roomId, source: "native", name, phase, playerCount, hasPassword: false, allowSpectators: true, ...patch });
+  ({ roomId, source: "native", name, phase, playerCount, spectatorCount: 0, hasPassword: false, allowSpectators: true, ...patch });
 
-/** 两种来源混排，页面按当前标签过滤；覆盖全部阶段、带锁房间与超长房名。 */
+/** 两种来源混排，页面按当前标签过滤；覆盖全部阶段、带锁房间与超长房名。原版房不提供旁观人数。 */
 export const CCB_LOBBY_ROOMS: CCBRoomSummary[] = [
-  lobbyRoom(CCB_NATIVE_ROOM_ID, "结束乐队应援团", "waiting", 7),
-  lobbyRoom("2718", "周末猜猜呗", "guessing", 5),
+  lobbyRoom(CCB_NATIVE_ROOM_ID, "结束乐队应援团", "waiting", 7, { spectatorCount: 1 }),
+  lobbyRoom("2718", "周末猜猜呗", "guessing", 5, { spectatorCount: 3 }),
   lobbyRoom("3306", "内部练习房", "waiting", 3, { hasPassword: true, allowSpectators: false }),
   lobbyRoom("4096", "老番享受者集合", "answering", 4),
   lobbyRoom("5173", "新人随便玩", "preparing", 2),
-  lobbyRoom("6420", "名称很长的房间用于检查截断与右侧的阶段和人数信息不被挤出", "settled", 12),
-  lobbyRoom(CCB_ORIGINAL_ROOM_ID, "每日一猜", "waiting", 4, { source: "original" }),
-  lobbyRoom("7788", "小布丁的房间", "guessing", 9, { source: "original" }),
-  lobbyRoom("9031", "瓶子严选", "waiting", 2, { source: "original" }),
+  lobbyRoom("6420", "名称很长的房间用于检查截断与右侧的阶段和人数信息不被挤出", "settled", 12, { spectatorCount: 8 }),
+  lobbyRoom(CCB_ORIGINAL_ROOM_ID, "每日一猜", "waiting", 4, { source: "original", spectatorCount: null }),
+  lobbyRoom("7788", "小布丁的房间", "guessing", 9, { source: "original", spectatorCount: null }),
+  lobbyRoom("9031", "瓶子严选", "waiting", 2, { source: "original", spectatorCount: null }),
 ];
 
 // ==================== 房间场景 ====================

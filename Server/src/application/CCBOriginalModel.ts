@@ -14,11 +14,23 @@ export interface CCBOriginalChatRoom {
     hints: string[]; data: CCBOriginalRoundData };
 }
 
+/** 原版服务器 `/api/list-rooms` 的一行，已归一化字段类型；包含非公开房。 */
+export interface CCBUpstreamRoom {
+  id: string;
+  isPublic: boolean;
+  name: string;
+  phase: 'waiting' | 'guessing';
+  playerCount: number;
+}
+
 export interface CCBOriginalSession {
   token: string;
   connectionId?: string;
   detachedAt?: number;
+  /** 原版服务器上的真实房号，所有上游事件与聊天分组都用它。 */
   roomId: string;
+  /** 统一房号目录分配的 4 位别名，客户端只见到这个号。 */
+  alias: string;
   name: string;
   socket: CCBOriginalSocket;
   confirmed: boolean;

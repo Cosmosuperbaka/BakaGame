@@ -86,9 +86,13 @@ export interface CCBPrivateState {
   imageHintAvailable: boolean; imageHintLevel: number; deadlineAt: number | null;
   bannedCharacterIds: number[];
 }
+/**
+ * 大厅房间条目。`roomId` 是统一的 4 位房号（原版客户端建的 UUID 房为服务端分配的别名）。
+ * `playerCount` 只计参与玩家；原版列表不提供旁观人数，`spectatorCount` 为 `null`，界面不得显示为 0。
+ */
 export interface CCBRoomSummary {
   roomId: string; source: CCBSource; name: string; phase: CCBPhase; playerCount: number;
-  hasPassword: boolean; allowSpectators: boolean;
+  spectatorCount: number | null; hasPassword: boolean; allowSpectators: boolean;
 }
 export interface CCBRoomEnterResult { roomId: string; source: CCBSource; sessionToken: string; snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }
 const empty = t.Object({}, strict);
@@ -120,10 +124,13 @@ export const CCBPayloadSchemas = {
   'ccb.room.create': t.Object({ source, roomId, name, userName: name,
     visibility: t.Union([t.Literal('public'), t.Literal('private')]),
     password: optionalPassword, allowSpectators: t.Boolean() }, strict),
-  'ccb.room.join': t.Object({ source, userName: name, password: optionalPassword }, strict),
-  'ccb.room.reconnect': t.Object({ source, roomId, sessionToken: recoverySessionToken }, strict),
+  // 进入已有房间只凭统一房号，来源由服务端的房号目录判定；只有建房需要声明建在哪个服务器。
+  'ccb.room.join': t.Object({ userName: name, password: optionalPassword }, strict),
+  'ccb.room.reconnect': t.Object({ roomId, sessionToken: recoverySessionToken }, strict),
   'ccb.room.leave': empty, 'ccb.room.requestSync': empty,
-  'ccb.room.update': t.Object({ name, visibility: t.Union([t.Literal('public'), t.Literal('private')]), allowSpectators: t.Boolean() }, strict),
+  // 切到私密时 `password` 给新密码；留空或缺席表示沿用已有密码。转为公开会清除密码。
+  'ccb.room.update': t.Object({ name, visibility: t.Union([t.Literal('public'), t.Literal('private')]),
+    allowSpectators: t.Boolean(), password: optionalPassword }, strict),
   'ccb.room.settings': t.Object({ settings: CCBSettingsSchema }, strict),
   'ccb.player.ready': t.Object({ ready: t.Boolean() }, strict),
   'ccb.player.team': t.Object({ team: t.Union([integer(1, 8), t.Null()]) }, strict),

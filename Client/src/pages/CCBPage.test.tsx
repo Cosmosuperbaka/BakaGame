@@ -10,7 +10,7 @@ import CCBPage from "./CCBPage";
 afterEach(() => { useCCBStore.getState().resetRoom(); vi.restoreAllMocks(); });
 
 it("从房间返回大厅时先离开原房且严格模式不重复提交退房", async () => {
-  const send = vi.spyOn(ccbWs, "send").mockResolvedValue({ originalAvailable: false, sourceKey: "" });
+  const send = vi.spyOn(ccbWs, "send").mockResolvedValue({ originalAvailable: false });
   useCCBStore.setState({ connected: true, lobbyReady: true, source: "native", roomId: "1234", sessionToken: "token" });
   render(<StrictMode><HelmetProvider><MemoryRouter><CCBPage /></MemoryRouter></HelmetProvider></StrictMode>);
   await waitFor(() => expect(screen.getByRole("button", { name: "创建房间" })).toBeEnabled());

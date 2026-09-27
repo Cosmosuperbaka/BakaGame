@@ -57,7 +57,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
     await send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '测试房间', userName: name, visibility: 'public', allowSpectators: true });
     return host;
   };
-  const join = async (name: string) => { const client = connect(name); await send(client, 'ccb.room.join', { source: 'native', userName: name }); return client; };
+  const join = async (name: string) => { const client = connect(name); await send(client, 'ccb.room.join', { userName: name }); return client; };
   const configure = (host: CCBTestClient, patch: Partial<CCBSettings>) => send(host, 'ccb.room.settings', { settings: { ...createDefaultCCBSettings(2026), timeLimit: 0, ...patch } });
   const ready = async (...clients: CCBTestClient[]) => { for (const client of clients) await send(client, 'ccb.player.ready', { ready: true }); };
   const guess = (client: CCBTestClient, id: number) => send(client, 'ccb.game.guess', { characterId: id });

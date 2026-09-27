@@ -27,9 +27,10 @@ async function setup(data: Partial<CCBDataProvider> = {}, options: Partial<Const
     if (result && typeof result === 'object' && 'sessionToken' in result) tokens.set(id, String(result.sessionToken));
     return result;
   };
+  const target = { source: 'original' as const, roomId: '1234', upstreamRoomId: '1234' };
   connect('one');
-  await send('one', 'ccb.room.create', { source: 'original', roomId: '1234', name: '代数验证', userName: 'one', visibility: 'public', allowSpectators: true });
-  const join = async (id: string) => { connect(id); await send(id, 'ccb.room.join', { source: 'original', userName: id }); };
+  tokens.set('one', (await service.create('one', target, { source: 'original', roomId: '1234', name: '代数验证', userName: 'one', visibility: 'public', allowSpectators: true })).sessionToken);
+  const join = async (id: string) => { connect(id); tokens.set(id, (await service.join(id, target, { userName: id })).sessionToken); };
   const sync = (id = 'one') => send(id, 'ccb.room.requestSync', {}) as Promise<CCBRoomEnterResult>;
   const start = (value: unknown) => ({ character: value, settings: createDefaultCCBSettings(), players: upstream.players });
   const end = () => ({ guesses: [], scoreDetails: [] });

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { CCBSource } from "@bakagame/shared";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 
+/**
+ * 房间路由只带统一房号：来源（增强房 / 原版房）由服务端的房号目录判定，
+ * 进入成功后才从快照得知，加入表单不预先假设。
+ */
 export function useCCBRoomLifecycle() {
-  const { source: sourceParam, roomId } = useParams();
-  const source: CCBSource | null = sourceParam === "native" || sourceParam === "original" ? sourceParam : null;
+  const { roomId } = useParams();
   const navigate = useNavigate();
   const connected = useCCBStore((state) => state.connected);
   const lobbyReady = useCCBStore((state) => state.lobbyReady);
@@ -19,19 +21,18 @@ export function useCCBRoomLifecycle() {
   const attempted = useRef("");
 
   useEffect(() => {
-    if (!source || !roomId || closed) { navigate("/ccb", { replace: true }); return; }
+    if (!roomId || closed) { navigate("/ccb", { replace: true }); return; }
     if (!connected || !lobbyReady) return;
-    const key = `${source}:${roomId}`;
-    if (attempted.current === key) return;
-    attempted.current = key;
+    if (attempted.current === roomId) return;
+    attempted.current = roomId;
     let cancelled = false;
     const restore = async () => {
       const store = useCCBStore.getState();
-      if (store.source === source && store.roomId === roomId && store.snapshot) {
+      if (store.roomId === roomId && store.snapshot) {
         setJoining(false); return;
       }
       try {
-        const restored = await store.reconnectRoom(source, roomId);
+        const restored = await store.reconnectRoom(roomId);
         if (!cancelled) setNeedsJoin(!restored);
       } catch (failure) {
         if (!cancelled) { setError(ccbErrorMessage(failure)); setNeedsJoin(true); }
@@ -39,13 +40,13 @@ export function useCCBRoomLifecycle() {
     };
     void restore();
     return () => { cancelled = true; attempted.current = ""; };
-  }, [source, roomId, connected, lobbyReady, closed, navigate]);
+  }, [roomId, connected, lobbyReady, closed, navigate]);
 
   const join = async () => {
-    if (!source || !roomId || !name.trim() || joining) return;
+    if (!roomId || !name.trim() || joining) return;
     setJoining(true); setError("");
     try {
-      await useCCBStore.getState().joinRoom(source, roomId, name.trim(), password);
+      await useCCBStore.getState().joinRoom(roomId, name.trim(), password);
       saveUsername(name.trim()); setNeedsJoin(false);
     } catch (failure) { setError(ccbErrorMessage(failure)); }
     finally { setJoining(false); }
@@ -56,5 +57,5 @@ export function useCCBRoomLifecycle() {
     finally { navigate("/ccb"); }
   }, [navigate]);
 
-  return { source, roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, join, leave };
+  return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, join, leave };
 }

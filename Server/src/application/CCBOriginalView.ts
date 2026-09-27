@@ -45,7 +45,7 @@ export function originalPrivateState(session: CCBOriginalSession): CCBPrivateSta
 
 export function originalSnapshot(session: CCBOriginalSession, chatRoom?: CCBOriginalChatRoom): CCBRoomSnapshot {
   return {
-    roomId: session.roomId, source: 'original', name: session.roomName || `${session.players.find(player => player.isHost)?.name || ''}的房间`,
+    roomId: session.alias, source: 'original', name: session.roomName || `${session.players.find(player => player.isHost)?.name || ''}的房间`,
     visibility: session.isPublic ? 'public' : 'private', hasPassword: false, allowSpectators: true,
     hostPlayerId: session.players.find(player => player.isHost)?.id || '', phase: session.phase,
     settings: session.settings,

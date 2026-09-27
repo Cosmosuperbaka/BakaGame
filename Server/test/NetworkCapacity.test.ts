@@ -127,7 +127,7 @@ test("6Mbps 可以承载 150 人 CCB 的高频状态与私有猜测同步", asyn
     const players = [host];
     for (let index = 1; index < TARGET_PLAYERS; index++) {
       const player = h.connect(`玩家${index}`); meter(player); players.push(player);
-      await h.send(player, 'ccb.room.join', { source: 'native', userName: `玩家${index}` });
+      await h.send(player, 'ccb.room.join', { userName: `玩家${index}` });
     }
     await h.configure(host, { nonstopMode: true, maxAttempts: 100 });
     await h.ready(...players.slice(1)); await h.send(host, 'ccb.game.start', {});

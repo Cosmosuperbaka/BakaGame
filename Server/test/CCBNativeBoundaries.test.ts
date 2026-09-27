@@ -70,11 +70,19 @@ describe('CCB 房间与提示边界', () => {
     await expect(pending).rejects.toMatchObject({ code: 'HINT_LOCKED' });
   });
 
-  test('大厅仅列公开房，聊天修剪空白并且退房使旧身份失效', async () => {
+  test('私密即有密码并带锁列出，人数只计在线成员，聊天修剪空白并且退房使旧身份失效', async () => {
     const h = keep(ccbTestHarness()); const host = await h.create(); const guest = await h.join('玩家');
-    expect(h.service.listRooms()).toMatchObject([{ roomId: '1234', playerCount: 2, source: 'native' }]);
+    expect(h.service.listRooms()).toMatchObject([{ roomId: '1234', playerCount: 2, spectatorCount: 0, hasPassword: false, source: 'native' }]);
+    await expect(h.send(host, 'ccb.room.update', { name: '私密房', visibility: 'private', allowSpectators: true }))
+      .rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' });
+    await h.send(host, 'ccb.room.update', { name: '私密房', visibility: 'private', allowSpectators: true, password: ' 口令 ' });
+    expect(h.service.listRooms()).toMatchObject([{ roomId: '1234', name: '私密房', hasPassword: true }]);
     await h.send(host, 'ccb.room.update', { name: '私密房', visibility: 'private', allowSpectators: true });
-    expect(h.service.listRooms()).toEqual([]);
+    expect(h.service.listRooms()[0].hasPassword).toBe(true);
+    await h.send(guest, 'ccb.player.spectate', { spectator: true });
+    expect(h.service.listRooms()).toMatchObject([{ playerCount: 1, spectatorCount: 1 }]);
+    await h.send(host, 'ccb.room.update', { name: '公开房', visibility: 'public', allowSpectators: true });
+    expect(h.service.listRooms()).toMatchObject([{ name: '公开房', hasPassword: false }]);
     await h.send(guest, 'ccb.chat.send', { text: '  你好  ' });
     expect(h.snapshot(host).chat.at(-1)).toMatchObject({ playerId: guest.id, playerName: '玩家', text: '你好', system: false });
     const longMessage = '完整消息'.repeat(125);
@@ -83,7 +91,7 @@ describe('CCB 房间与提示边界', () => {
     await expect(h.send(guest, 'ccb.chat.send', { text: '   ' })).rejects.toMatchObject({ code: 'EMPTY_MESSAGE' });
     await h.send(guest, 'ccb.room.leave', {}); expect(h.snapshot(host).players).toHaveLength(1);
     const recovered = h.connect('恢复');
-    await expect(h.send(recovered, 'ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: guest.token! })).rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
+    await expect(h.send(recovered, 'ccb.room.reconnect', { roomId: '1234', sessionToken: guest.token! })).rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
     await h.send(host, 'ccb.room.leave', {}); expect(h.service.getHealthSnapshot().roomCount).toBe(0);
     expect(host.sent.some(packet => packet.event === 'ccb.room.closed')).toBe(true);
   });

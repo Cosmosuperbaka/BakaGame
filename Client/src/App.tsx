@@ -41,7 +41,7 @@ function App() {
               </Route>
               <Route path="/ccb" element={<CCBLayout />}>
                 <Route index element={<CCBPage />} />
-                <Route path="room/:source/:roomId" element={<CCBRoomPage />} />
+                <Route path="room/:roomId" element={<CCBRoomPage />} />
                 <Route path="*" element={<Navigate to="/ccb" replace />} />
               </Route>
               {/* 其余无法识别的路径一律回落地页 */}

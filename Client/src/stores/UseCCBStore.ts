@@ -6,15 +6,15 @@ import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
 
 export interface CCBStore {
-  connected: boolean; lobbyReady: boolean; originalAvailable: boolean; originalServerKey: string;
+  connected: boolean; lobbyReady: boolean; originalAvailable: boolean;
   rooms: CCBRoomSummary[]; source: CCBSource | null; roomId: string | null; sessionToken: string | null;
   snapshot: CCBRoomSnapshot | null; privateState: CCBPrivateState | null; roomClosedAt: number | null;
   notice: { text: string; type: "info" | "error" | "success" } | null;
   setNotice: (text: string, type?: "info" | "error" | "success") => void;
   subscribeLobby: () => Promise<void>;
   createRoom: (payload: CCBPayload<"ccb.room.create">) => Promise<void>;
-  joinRoom: (source: CCBSource, roomId: string, userName: string, password?: string) => Promise<void>;
-  reconnectRoom: (source: CCBSource, roomId: string) => Promise<boolean>;
+  joinRoom: (roomId: string, userName: string, password?: string) => Promise<void>;
+  reconnectRoom: (roomId: string) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
   resetRoom: (closed?: boolean) => void;
   sendCommand: <T extends CCBCommand>(command: T, payload: CCBPayload<T>) => Promise<CCBResponse<T>>;
@@ -53,7 +53,6 @@ export function resetCCBStateSync() {
   syncDeferred = false;
 }
 
-const getServerKey = (source: CCBSource) => source === "native" ? "native" : useCCBStore.getState().originalServerKey;
 export const ccbErrorMessage = (error: unknown) => error instanceof Error || isProtocolError(error) ? error.message : "操作失败，请重试";
 
 export const useCCBStore = create<CCBStore>((set, get) => {
@@ -62,14 +61,14 @@ export const useCCBStore = create<CCBStore>((set, get) => {
     const deferred = syncDeferred;
     const sameRoom = rawSnapshot?.roomId === result.roomId && rawSnapshot.source === result.source;
     if (!sameRoom) { resetCCBStateSync(); rawSnapshot = result.snapshot; rawPrivate = result.privateState; }
-    writeCCBSession(result.source, getServerKey(result.source), result.roomId, result.sessionToken);
+    writeCCBSession(result.roomId, result.sessionToken);
     set({ source: result.source, roomId: result.roomId, sessionToken: result.sessionToken,
       snapshot: rawSnapshot, privateState: rawPrivate ?? result.privateState, roomClosedAt: null });
     // 进入房间期间若收到过无法应用的状态补丁，此刻凭据已就绪，补一次全量同步。
     if (deferred) requestSync();
   };
   return {
-    connected: false, lobbyReady: false, originalAvailable: false, originalServerKey: "",
+    connected: false, lobbyReady: false, originalAvailable: false,
     rooms: [], source: null, roomId: null, sessionToken: null, snapshot: null, privateState: null,
     roomClosedAt: null, notice: null,
     setNotice: (text, type = "error") => {
@@ -81,7 +80,7 @@ export const useCCBStore = create<CCBStore>((set, get) => {
       const generation = connectionGeneration;
       const result = await sendCCB("ccb.lobby.subscribeRooms", {});
       if (generation !== connectionGeneration) return;
-      set({ lobbyReady: true, originalAvailable: result.originalAvailable, originalServerKey: result.sourceKey });
+      set({ lobbyReady: true, originalAvailable: result.originalAvailable });
     },
     createRoom: async (payload) => {
       resetCCBStateSync();
@@ -89,36 +88,36 @@ export const useCCBStore = create<CCBStore>((set, get) => {
       try { enter(await sendCCB("ccb.room.create", payload, { timeout: 0 })); }
       finally { enteringRoom = false; }
     },
-    joinRoom: async (source, roomId, userName, password) => {
+    joinRoom: async (roomId, userName, password) => {
       resetCCBStateSync();
       enteringRoom = true;
       try {
-        enter(await sendCCB("ccb.room.join", { source, userName, ...(password ? { password } : {}) }, { roomId, timeout: 0 }));
+        enter(await sendCCB("ccb.room.join", { userName, ...(password ? { password } : {}) }, { roomId, timeout: 0 }));
       } finally { enteringRoom = false; }
     },
-    reconnectRoom: async (source, roomId) => {
-      const token = readCCBSession(source, getServerKey(source), roomId);
+    reconnectRoom: async (roomId) => {
+      const token = readCCBSession(roomId);
       if (!token) return false;
       try {
         resetCCBStateSync();
         enteringRoom = true;
         try {
-          enter(await sendCCB("ccb.room.reconnect", { source, roomId, sessionToken: token }, { timeout: 0 }));
+          enter(await sendCCB("ccb.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }));
         } finally { enteringRoom = false; }
         return true;
       } catch (error) {
         if (!isProtocolError(error) || !permanentErrors.has(error.code)) throw error;
-        removeCCBSession(source, getServerKey(source), roomId);
+        removeCCBSession(roomId);
         get().resetRoom();
         get().setNotice(ccbErrorMessage(error));
         return false;
       }
     },
     leaveRoom: async () => {
-      const { source, roomId } = get();
+      const { roomId } = get();
       try { if (roomId) await get().sendCommand("ccb.room.leave", {}); }
       finally {
-        if (source && roomId) removeCCBSession(source, getServerKey(source), roomId);
+        if (roomId) removeCCBSession(roomId);
         get().resetRoom();
       }
     },
@@ -170,7 +169,7 @@ export function handleCCBMessage(message: ServerMessage) {
     rawPrivate = result.state; privateRevision = result.revision;
     useCCBStore.setState({ privateState: rawPrivate });
   } else if (["ccb.room.closed", "ccb.player.kicked", "session.replaced", "ccb.session.replaced", "server.shutdown"].includes(message.event)) {
-    if (store.source && store.roomId) removeCCBSession(store.source, getServerKey(store.source), store.roomId);
+    if (store.roomId) removeCCBSession(store.roomId);
     store.resetRoom(true);
     const payload = message.payload as { reason?: string; message?: string };
     store.setNotice(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");

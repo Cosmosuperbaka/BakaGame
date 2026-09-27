@@ -5,19 +5,34 @@ import { advanceCCBRound, getCCBUnit, surrenderCCB } from '../domain/CCBRound';
 import { createDefaultCCBSettings, isValidRoomId, ROOM_ID_TEST_MODE, SERVER_SHUTDOWN_MESSAGE,
   type CCBPayload, type CCBRoomEnterResult, type ConnectionRecord } from '../shared/Index';
 import { CHAT_LIMIT, HOST_RECONNECT_TIMEOUT_MS, PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS, ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from '../config/Constants';
+import { SlidingWindowRateLimiter } from '../infrastructure/RateLimiter';
+import { normalizeCCBRoomId } from './CCBRoomDirectory';
 import { ccbPrivateState, ccbSnapshot, ccbRoomSummary } from './CCBViews';
+
+/** 同一连接对同一房间每分钟最多尝试的密码次数。 */
+export const CCB_JOIN_PASSWORD_MAX_ATTEMPTS = 5;
+const CCB_JOIN_PASSWORD_WINDOW_MS = 60_000;
 
 export class CCBRooms {
   readonly connections = new ConnectionRegistry();
   readonly rooms = new Map<string, CCBRoom>();
   onChange?: () => void;
-  constructor(readonly now: () => number) {}
+  /**
+   * 私密房带锁出现在大厅，房间号又只有 9000 个，密码尝试必须封顶。
+   * 在校验密码之前计数：超限后正确密码同样被拒，才能真正挡住穷举。
+   */
+  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: CCB_JOIN_PASSWORD_WINDOW_MS, maxRequests: CCB_JOIN_PASSWORD_MAX_ATTEMPTS,
+  });
+  /** `isRoomIdReserved` 由统一房号目录提供：该号已分配给原版房时增强房不能占用。 */
+  constructor(readonly now: () => number, private readonly isRoomIdReserved: (roomId: string) => boolean = () => false) {}
   getHealthSnapshot() {
     return { roomCount: this.rooms.size, playerCount: [...this.rooms.values()].reduce((sum, room) => sum + room.players.size, 0),
       onlinePlayerCount: [...this.rooms.values()].reduce((sum, room) => sum + [...room.players.values()].filter(player => player.online).length, 0),
       connectionCount: this.connections.stats.totalConnections };
   }
-  listRooms() { return [...this.rooms.values()].filter(room => room.visibility === 'public' && room.id !== ROOM_ID_TEST_MODE).map(ccbRoomSummary); }
+  /** 私密房带锁列出，与其它游戏的大厅口径一致；测试房不进大厅。 */
+  listRooms() { return [...this.rooms.values()].filter(room => room.id !== ROOM_ID_TEST_MODE).map(ccbRoomSummary); }
   registerConnection(connection: ConnectionRecord) { this.connections.registerConnection(connection); }
   unregisterConnection(connectionId: string): void {
     const connection = this.connections.unregisterConnection(connectionId);
@@ -33,7 +48,8 @@ export class CCBRooms {
   async create(connection: ConnectionRecord, payload: CCBPayload<'ccb.room.create'>): Promise<CCBRoomEnterResult> {
     this.ensureFree(connection);
     const id = this.normalizeRoomId(payload.roomId);
-    if (this.rooms.has(id)) throw new AppError('ROOM_EXISTS', '该房间号已被使用');
+    if (this.rooms.has(id) || this.isRoomIdReserved(id)) throw new AppError('ROOM_EXISTS', '该房间号已被使用');
+    const password = payload.visibility === 'private' ? this.requirePassword(payload.password) : undefined;
     const name = this.name(payload.name); const userName = this.name(payload.userName);
     // 密码处理前占用房号，失败时由局部事务撤销，防止并发创建覆盖。
     const player = this.player(userName);
@@ -42,7 +58,7 @@ export class CCBRooms {
       roundNumber: 0, setterPlayerId: null, phaseDeadlineAt: null, round: null, summary: null, chat: [], lastActiveAt: this.now() };
     this.rooms.set(id, room);
     try {
-      if (payload.password) room.passwordHash = await Bun.password.hash(payload.password);
+      if (password) room.passwordHash = await Bun.password.hash(password);
       if (!this.connections.findConnection(connection.id) || connection.roomId) throw new AppError('SESSION_INVALID', '连接状态已经变化，请重新加入');
       player.ready = true; this.attach(connection, room, player); this.system(room, `${player.name} 创建了房间`);
       this.publish(room); return this.entry(room, player);
@@ -50,7 +66,7 @@ export class CCBRooms {
   }
   async join(connection: ConnectionRecord, roomId: string | undefined, payload: CCBPayload<'ccb.room.join'>): Promise<CCBRoomEnterResult> {
     this.ensureFree(connection); const room = this.room(roomId); const name = this.name(payload.userName);
-    if (room.passwordHash && (!payload.password || !await Bun.password.verify(payload.password, room.passwordHash))) throw new AppError('PASSWORD_REQUIRED', '房间密码不正确');
+    if (room.passwordHash) await this.verifyPassword(connection, room.id, room.passwordHash, payload.password);
     this.ensureFree(connection);
     if (this.rooms.get(room.id) !== room) throw new AppError('ROOM_NOT_FOUND', '房间已经关闭');
     if ([...room.players.values()].some(player => player.name.toLowerCase() === name.toLowerCase())) throw new AppError('NAME_TAKEN', '房间中已有同名玩家');
@@ -93,6 +109,18 @@ export class CCBRooms {
     this.requireHost(room, actor); const target = this.member(room, id);
     if (!target.online || target.membership !== 'active') throw new AppError('INVALID_PLAYER', '请选择在线参与玩家');
     room.hostPlayerId = id; delete room.hostDeadlineAt; this.system(room, `${target.name} 成为房主`);
+  }
+  /** 私密即有密码：切到私密时必须带新密码或已有密码；留空保留原密码；公开房清除密码。 */
+  async update(room: CCBRoom, actor: CCBPlayerRecord, payload: CCBPayload<'ccb.room.update'>): Promise<void> {
+    this.requireHost(room, actor); this.requireWaiting(room);
+    const name = this.name(payload.name);
+    const password = payload.password?.trim();
+    if (payload.visibility === 'private' && !password && !room.passwordHash) throw new AppError('PASSWORD_REQUIRED', '私密房间需要密码');
+    const passwordHash = payload.visibility === 'public' ? undefined : password ? await Bun.password.hash(password) : room.passwordHash;
+    if (this.rooms.get(room.id) !== room) throw new AppError('ROOM_NOT_FOUND', '房间已经关闭');
+    this.requireHost(room, actor); this.requireWaiting(room);
+    room.name = name; room.visibility = payload.visibility; room.allowSpectators = payload.allowSpectators;
+    if (passwordHash) room.passwordHash = passwordHash; else delete room.passwordHash;
   }
   member(room: CCBRoom, id: string): CCBPlayerRecord {
     const player = room.players.get(id); if (!player) throw new AppError('PLAYER_NOT_FOUND', '玩家不在房间中'); return player;
@@ -145,9 +173,20 @@ export class CCBRooms {
   }
   private normalizeRoomId(id: string): string {
     if (!isValidRoomId(id)) throw new AppError('INVALID_ROOM_ID', '请输入四位数字房间号');
-    return id.trim().toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase() ? ROOM_ID_TEST_MODE : id.trim();
+    return normalizeCCBRoomId(id);
   }
   private name(value: string): string { const result = value.trim(); if (!result) throw new AppError('INVALID_NAME', '名称不能为空'); return result.slice(0, 32); }
+  private requirePassword(value: string | null | undefined): string {
+    const password = value?.trim();
+    if (!password) throw new AppError('PASSWORD_REQUIRED', '私密房间需要密码');
+    return password;
+  }
+  private async verifyPassword(connection: ConnectionRecord, roomId: string, hash: string, value: string | null | undefined): Promise<void> {
+    const password = value?.trim();
+    if (!password) throw new AppError('PASSWORD_REQUIRED', '该房间需要密码');
+    if (!this.joinPasswordLimiter.allow(`${connection.id}:${roomId}`, this.now())) throw new AppError('TOO_MANY_ATTEMPTS', '密码错误次数过多，请稍后再试');
+    if (!await Bun.password.verify(password, hash)) throw new AppError('PASSWORD_INCORRECT', '房间密码错误');
+  }
   private ensureFree(connection: ConnectionRecord) {
     if (this.connections.findConnection(connection.id) !== connection) throw new AppError('SESSION_INVALID', '连接已经断开，请重新加入');
     if (connection.roomId) throw new AppError('ALREADY_IN_ROOM', '请先离开当前房间');

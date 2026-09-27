@@ -2,9 +2,13 @@ import type { CCBGuess, CCBPrivateState, CCBRoomSnapshot, CCBRoomSummary } from 
 import { ccbUnitId, type CCBPlayerRecord, type CCBRoom } from '../domain/CCBModel';
 import { ccbParticipants, getCCBUnit } from '../domain/CCBRound';
 
+/** 大厅人数与其它游戏同口径：只计在线成员，参与与旁观分开统计。 */
 export function ccbRoomSummary(room: CCBRoom): CCBRoomSummary {
+  const online = [...room.players.values()].filter(player => player.online);
   return { roomId: room.id, source: 'native', name: room.name, phase: room.phase,
-    playerCount: room.players.size, hasPassword: Boolean(room.passwordHash), allowSpectators: room.allowSpectators };
+    playerCount: online.filter(player => player.membership === 'active').length,
+    spectatorCount: online.filter(player => player.membership === 'spectator').length,
+    hasPassword: Boolean(room.passwordHash), allowSpectators: room.allowSpectators };
 }
 export function ccbSnapshot(room: CCBRoom): CCBRoomSnapshot {
   return { roomId: room.id, source: 'native', name: room.name, visibility: room.visibility,

@@ -10,12 +10,12 @@ import {
 import { removeCCBSession } from "@/lib/CCBSession";
 
 /**
- * 视作已在房间内：连接与大厅订阅就绪，且 Store 的来源、房号和快照与路由一致，
+ * 视作已在房间内：连接与大厅订阅就绪，且 Store 的房号和快照与路由一致，
  * useCCBRoomLifecycle 因此直接复用现有房态，不发重连或加入命令。
  */
 function inRoom({ snapshot, privateState }: CCBRoomScenario) {
   presetCCB({
-    connected: true, lobbyReady: true, originalAvailable: true, originalServerKey: "story-original",
+    connected: true, lobbyReady: true, originalAvailable: true,
     source: snapshot.source, roomId: snapshot.roomId, sessionToken: CCB_SESSION_TOKEN, snapshot, privateState,
   });
 }
@@ -46,7 +46,7 @@ const meta = {
   tags: ["page"],
   parameters: {
     layout: "fullscreen",
-    router: { route: `/ccb/room/native/${CCB_NATIVE_ROOM_ID}`, path: "/ccb/room/:source/:roomId" },
+    router: { route: `/ccb/room/${CCB_NATIVE_ROOM_ID}`, path: "/ccb/room/:roomId" },
   },
 } satisfies Meta<typeof CCBRoomPage>;
 
@@ -112,7 +112,7 @@ export const Settled: Story = {
 
 export const OriginalReconnecting: Story = {
   name: "原版房 · 原版重连中",
-  parameters: { router: { route: `/ccb/room/original/${CCB_ORIGINAL_ROOM_ID}` } },
+  parameters: { router: { route: `/ccb/room/${CCB_ORIGINAL_ROOM_ID}` } },
   beforeEach: () => inRoom(ccbOriginalRoom()),
 };
 
@@ -127,8 +127,8 @@ export const JoinDialog: Story = {
   tags: ["!page", "overlay"],
   beforeEach: () => {
     // 没有本房凭据也没有快照：页面生命周期判定需要重新加入。
-    removeCCBSession("native", "native", CCB_NATIVE_ROOM_ID);
-    presetCCB({ connected: true, lobbyReady: true, originalAvailable: true, originalServerKey: "story-original" });
+    removeCCBSession(CCB_NATIVE_ROOM_ID);
+    presetCCB({ connected: true, lobbyReady: true, originalAvailable: true });
     return presetSavedUsername();
   },
   play: async () => {

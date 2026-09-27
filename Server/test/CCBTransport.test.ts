@@ -19,6 +19,7 @@ class TransportClient {
   private readonly revisions = new Map<string, number>();
   private readonly listeners = new Set<() => void>();
   token?: string;
+  roomId = '1234';
   constructor(port: number) {
     this.socket = new WebSocket(`ws://127.0.0.1:${port}/api/ccb/ws`);
     this.socket.addEventListener('message', (event: MessageEvent<string>) => {
@@ -57,10 +58,14 @@ class TransportClient {
     this.socket.send(JSON.stringify(message));
     return result;
   }
-  async command<T = Record<string, never>, K extends CCBCommand = CCBCommand>(type: K, payload: CCBPayload<K>, roomId = '1234'): Promise<T> {
+  /** 未显式给出房号时沿用上次进入的房间，与前端 Store 的信封口径一致。 */
+  async command<T = Record<string, never>, K extends CCBCommand = CCBCommand>(type: K, payload: CCBPayload<K>, roomId = this.roomId): Promise<T> {
     const packet = await this.request({ id: crypto.randomUUID(), type, payload, roomId, sessionToken: this.token } as CCBClientMessage);
     expect(packet.type).toBe('ack');
-    if (packet.payload && typeof packet.payload === 'object' && 'sessionToken' in packet.payload) this.token = String(packet.payload.sessionToken);
+    if (packet.payload && typeof packet.payload === 'object' && 'sessionToken' in packet.payload) {
+      this.token = String(packet.payload.sessionToken);
+      if ('roomId' in packet.payload) this.roomId = String(packet.payload.roomId);
+    }
     return packet.payload as T;
   }
   snapshot() { return this.states.get('ccb.room.snapshot') as CCBRoomSnapshot; }
@@ -83,7 +88,7 @@ function setup(options: { fetcher?: typeof fetch; initialClock?: number } = {}) 
   const upstream = new FixtureRoom();
   const original = new CCBOriginalService({ data: originalData, serverUrl: 'https://original.invalid', aesSecret: 'transport-fixture',
     now: () => clock, socketFactory: upstream.factory,
-    fetcher: async (...args) => { fetchCount++; return options.fetcher ? options.fetcher(...args) : Response.json([{ id: '1234', isPublic: true, playerCount: upstream.players.length }]); },
+    fetcher: async (...args) => { fetchCount++; return options.fetcher ? options.fetcher(...args) : Response.json([{ id: ORIGINAL_ROOM, isPublic: true, playerCount: upstream.players.length }]); },
   });
   const service = new CCBService({ data: originalData, now: () => clock, originalService: original, eventLogger: logger });
   const { app } = createTestApp({
@@ -101,20 +106,23 @@ function setup(options: { fetcher?: typeof fetch; initialClock?: number } = {}) 
     connect: async () => { const client = new TransportClient(port); clients.push(client); await client.open(); return client; },
   };
 }
+/** 统一房号：增强房与原版房不能同号，测试各用一个固定号。 */
+const NATIVE_ROOM = '1234';
+const ORIGINAL_ROOM = '5678';
 const create = (client: TransportClient, source: CCBSource, name = '房主') => client.command<CCBRoomEnterResult>('ccb.room.create', {
-  source, roomId: '1234', name: '测试房间', userName: name, visibility: 'public', allowSpectators: true,
+  source, roomId: source === 'native' ? NATIVE_ROOM : ORIGINAL_ROOM, name: '测试房间', userName: name, visibility: 'public', allowSpectators: true,
 });
-const join = (client: TransportClient, source: CCBSource, name = '玩家') => client.command<CCBRoomEnterResult>('ccb.room.join', { source, userName: name });
+const join = (client: TransportClient, roomId: string, name = '玩家') => client.command<CCBRoomEnterResult>('ccb.room.join', { userName: name }, roomId);
 const errorRequest = (client: TransportClient, token: string) => client.request({ id: crypto.randomUUID(), type: 'ccb.chat.send',
   roomId: '1234', sessionToken: token, payload: { text: '不应发送' } });
 
 describe('角色游戏真实双来源传输', () => {
-  test('同号双来源房间隔离聊天，连接切换后重新发送全量状态，停机通知无重复', async () => {
+  test('统一房号下双来源房间隔离聊天与凭据，连接切换后重新发送全量状态，停机通知无重复', async () => {
     const fixture = setup();
     const nativeHost = await fixture.connect(), originalHost = await fixture.connect(), member = await fixture.connect();
     const nativeEntry = await create(nativeHost, 'native');
     const originalEntry = await create(originalHost, 'original');
-    await join(member, 'native');
+    await join(member, NATIVE_ROOM);
     await member.command('ccb.chat.send', { text: '仅增强房可见' });
     expect(nativeHost.snapshot().chat.some(chat => chat.text === '仅增强房可见')).toBe(true);
     expect(originalHost.snapshot().chat).toHaveLength(0);
@@ -122,7 +130,7 @@ describe('角色游戏真实双来源传输', () => {
     expect((await errorRequest(originalHost, nativeEntry.sessionToken)).error?.code).toBe('SESSION_INVALID');
     await member.command('ccb.room.leave', {});
     const switchFrom = member.packets.length;
-    const entered = await join(member, 'original');
+    const entered = await join(member, ORIGINAL_ROOM);
     expect(entered.source).toBe('original');
     expect(member.snapshot().source).toBe('original');
     expect(member.snapshot().chat).toHaveLength(0);
@@ -134,7 +142,7 @@ describe('角色游戏真实双来源传输', () => {
     expect(originalHost.snapshot().chat.map(chat => chat.text)).toEqual(['仅兼容房可见']);
     expect(nativeHost.snapshot().chat.some(chat => chat.text === '仅兼容房可见')).toBe(false);
     await member.command('ccb.room.leave', {});
-    await join(member, 'native');
+    await join(member, NATIVE_ROOM);
     expect(member.snapshot().source).toBe('native');
     expect(member.snapshot().chat.some(chat => chat.text === '仅兼容房可见')).toBe(false);
     const health = await (await fetch(`http://127.0.0.1:${fixture.port}/health`)).json();
@@ -151,7 +159,7 @@ describe('角色游戏真实双来源传输', () => {
     const fixture = setup();
     const host = await fixture.connect(), member = await fixture.connect();
     await create(host, 'native');
-    const entry = await join(member, 'native');
+    const entry = await join(member, NATIVE_ROOM);
     await host.command('ccb.room.settings', { settings: { ...createDefaultCCBSettings(), timeLimit: 0 } });
     await member.command('ccb.player.ready', { ready: true });
     await host.command('ccb.game.start', {});
@@ -166,7 +174,7 @@ describe('角色游戏真实双来源传输', () => {
     expect(host.snapshot().roundSummary).toBeNull();
     await member.close();
     const replacement = await fixture.connect();
-    const resumed = await replacement.command<CCBRoomEnterResult>('ccb.room.reconnect', { source: 'native', roomId: '1234', sessionToken: entry.sessionToken });
+    const resumed = await replacement.command<CCBRoomEnterResult>('ccb.room.reconnect', { roomId: NATIVE_ROOM, sessionToken: entry.sessionToken });
     expect(resumed.privateState.guesses).toHaveLength(2);
     expect(resumed.privateState.playerId).toBe(entry.privateState.playerId);
     expect(replacement.packets.find(packet => packet.event === 'ccb.game.privateState')!.payload).toMatchObject({ mode: 'full', revision: 1 });
@@ -185,14 +193,14 @@ describe('角色游戏真实双来源传输', () => {
     const replacement = await fixture.connect();
     expect(fixture.service.getHealthSnapshot()).toMatchObject({ playerCount: 2, onlinePlayerCount: 1, connectionCount: 2 });
     const wrongNative = await replacement.request({ id: 'wrong-native', type: 'ccb.room.reconnect', payload: {
-      source: 'native', roomId: '1234', sessionToken: original.sessionToken,
+      roomId: NATIVE_ROOM, sessionToken: original.sessionToken,
     } });
     expect(wrongNative.error?.code).toBe('SESSION_NOT_FOUND');
     for (const token of [local.sessionToken, original.sessionToken.replace(fixture.original.sourceKey, '000000000000')]) {
-      const rejected = await replacement.request({ id: crypto.randomUUID(), type: 'ccb.room.reconnect', payload: { source: 'original', roomId: '1234', sessionToken: token } });
+      const rejected = await replacement.request({ id: crypto.randomUUID(), type: 'ccb.room.reconnect', payload: { roomId: ORIGINAL_ROOM, sessionToken: token } });
       expect(rejected.error?.code).toBe('SESSION_EXPIRED');
     }
-    const resumed = await replacement.command<CCBRoomEnterResult>('ccb.room.reconnect', { source: 'original', roomId: '1234', sessionToken: original.sessionToken });
+    const resumed = await replacement.command<CCBRoomEnterResult>('ccb.room.reconnect', { roomId: ORIGINAL_ROOM, sessionToken: original.sessionToken });
     expect(resumed.privateState.playerId).toBe(original.privateState.playerId);
     expect(resumed.snapshot.chat.map(chat => chat.text)).toEqual(['恢复时保留']);
     expect(fixture.upstream.sockets).toHaveLength(1);
@@ -205,7 +213,7 @@ describe('角色游戏真实双来源传输', () => {
   test('并发及已完成信封重放仅创建一次房间，聊天重放不重复入库且不消耗额度', async () => {
     const fixture = setup();
     const client = await fixture.connect();
-    const message: CCBClientMessage = { id: 'create-once', type: 'ccb.room.create', payload: { source: 'original', roomId: '1234',
+    const message: CCBClientMessage = { id: 'create-once', type: 'ccb.room.create', payload: { source: 'original', roomId: ORIGINAL_ROOM,
       name: '幂等房间', userName: '房主', visibility: 'public', allowSpectators: true } };
     client.socket.send(JSON.stringify(message)); client.socket.send(JSON.stringify(message));
     await client.wait(packet => packet.id === message.id && client.packets.filter(item => item.id === message.id).length === 2);
@@ -213,8 +221,10 @@ describe('角色游戏真实双来源传输', () => {
     expect(first.type).toBe('ack');
     expect((await client.request(message)).payload).toEqual(first.payload);
     expect(fixture.upstream.sockets).toHaveLength(1);
-    client.token = (first.payload as CCBRoomEnterResult).sessionToken;
-    const chat: CCBClientMessage = { id: 'chat-once', type: 'ccb.chat.send', roomId: '1234', sessionToken: client.token, payload: { text: '只发送一次' } };
+    const entered = first.payload as CCBRoomEnterResult;
+    client.token = entered.sessionToken;
+    client.roomId = entered.roomId;
+    const chat: CCBClientMessage = { id: 'chat-once', type: 'ccb.chat.send', roomId: ORIGINAL_ROOM, sessionToken: client.token, payload: { text: '只发送一次' } };
     for (let index = 0; index < 10; index++) expect((await client.request(chat)).type).toBe('ack');
     expect(client.snapshot().chat.map(item => item.text)).toEqual(['只发送一次']);
     for (let index = 0; index < 7; index++) await client.command('ccb.chat.send', { text: `有效消息${index}` });

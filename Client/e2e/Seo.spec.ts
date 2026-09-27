@@ -56,7 +56,7 @@ test.describe("页面 SEO 元信息", () => {
     });
   });
 
-  for (const route of ["/songuessr/solo", "/ccb/room/native/seo-check", "/ccb/room/original/seo-check"]) {
+  for (const route of ["/songuessr/solo", "/ccb/room/1234", "/ccb/room/5678"]) {
     test(`${route} 对局页标记 noindex`, async ({ page }) => {
       await page.goto(route);
       const robots = page.locator('head meta[name="robots"]');

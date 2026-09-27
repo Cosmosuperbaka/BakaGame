@@ -24,9 +24,14 @@ function setup(options: Partial<ConstructorParameters<typeof CCBOriginalService>
   return { service, upstream, packets, first, connection };
 }
 const tokens = new WeakMap<CCBOriginalService, Map<string, string>>();
+/** 直接驱动原版适配器：入房指令按「别名即上游房号」构造目标，统一房号目录另有 CCBService 级用例。 */
+const target = (roomId = '1234') => ({ source: 'original' as const, roomId, upstreamRoomId: roomId });
 const request = async (service: CCBOriginalService, id: string, message: CCBClientMessage): Promise<unknown> => {
   if (!tokens.has(service)) tokens.set(service, new Map());
-  const result = await service.execute(id, { ...message, sessionToken: message.sessionToken ?? tokens.get(service)!.get(id) });
+  const result = message.type === 'ccb.room.create' ? await service.create(id, target(message.payload.roomId), message.payload)
+    : message.type === 'ccb.room.join' ? await service.join(id, target(message.roomId), message.payload)
+    : message.type === 'ccb.room.reconnect' ? service.reconnect(id, target(message.payload.roomId), message.payload.sessionToken)
+    : await service.execute(id, { ...message, sessionToken: message.sessionToken ?? tokens.get(service)!.get(id) });
   if (result && typeof result === 'object' && 'sessionToken' in result && typeof result.sessionToken === 'string') tokens.get(service)!.set(id, result.sessionToken);
   return result;
 };
@@ -40,7 +45,7 @@ describe('原版房间适配', () => {
     let release!: (response: Response) => void;
     const pending = new Promise<Response>(resolve => { release = resolve; });
     const { service, upstream } = setup({ fetcher: () => pending });
-    const join = { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '甲' } } as const;
+    const join = { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { userName: '甲' } } as const;
     const first = request(service, 'first', join);
     expect(service.hasSession('first')).toBe(true);
     await expect(request(service, 'first', { ...join, id: 'duplicate' })).rejects.toMatchObject({ code: 'CCB_JOIN_PENDING' });
@@ -55,14 +60,14 @@ describe('原版房间适配', () => {
     await expect(create(missing.service)).rejects.toMatchObject({ code: 'CCB_ORIGINAL_UNAVAILABLE' });
     expect(missing.upstream.sockets).toHaveLength(0);
     const { service, upstream } = setup({ fetcher: async () => Response.json([]) });
-    await expect(request(service, 'first', { id: 'join', type: 'ccb.room.join', roomId: '5678', payload: { source: 'original', userName: '甲' } })).rejects.toMatchObject({ code: 'ROOM_NOT_FOUND' });
+    await expect(request(service, 'first', { id: 'join', type: 'ccb.room.join', roomId: '5678', payload: { userName: '甲' } })).rejects.toMatchObject({ code: 'ROOM_NOT_FOUND' });
     expect(upstream.sockets).toHaveLength(0);
   });
 
-  test('原版私密房可按房号加入，但不展示在大厅列表', async () => {
+  test('原版非公开房在上游列表中标记为非公开，仍可按房号加入', async () => {
     const { service, upstream } = setup({ fetcher: async () => Response.json([{ id: '1234', isPublic: false, playerCount: 1 }]) });
-    expect(await service.listRooms()).toEqual([]);
-    const entered = await request(service, 'first', { id: 'private-join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '甲' } }) as CCBRoomEnterResult;
+    expect(await service.listUpstreamRooms()).toEqual([{ id: '1234', isPublic: false, name: '的房间', phase: 'waiting', playerCount: 1 }]);
+    const entered = await request(service, 'first', { id: 'private-join', type: 'ccb.room.join', roomId: '1234', payload: { userName: '甲' } }) as CCBRoomEnterResult;
     expect(entered.roomId).toBe('1234');
     expect(upstream.sockets[0].sent[0]).toMatchObject({ event: 'joinRoom' });
   });
@@ -105,7 +110,7 @@ describe('原版房间适配', () => {
     expect(created.source).toBe('original'); expect(first.roomId).toBe('original:1234');
     expect(upstream.sockets[0].sent[0].payload).toEqual({ roomId: '1234', username: '甲' });
     const second = connection('second'); service.registerConnection(second);
-    await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '乙' } });
+    await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { userName: '乙' } });
     expect(upstream.sockets).toHaveLength(2);
     await expect(request(service, 'first', { id: 'invalid', type: 'ccb.chat.send', sessionToken: 'wrong-token', payload: { text: '冒名消息' } })).rejects.toMatchObject({ code: 'SESSION_INVALID' });
     await request(service, 'first', { id: 'chat', type: 'ccb.chat.send', payload: { text: '你好' } });
@@ -123,7 +128,7 @@ describe('原版房间适配', () => {
   test('加入时按裁剪后的用户名确认，玩家编号为数字也能命中', async () => {
     const { service, upstream, first } = setup();
     const entered = await request(service, 'first', { id: 'join', type: 'ccb.room.join', roomId: '1234',
-      payload: { source: 'original', userName: '  甲  ' } }) as CCBRoomEnterResult;
+      payload: { userName: '  甲  ' } }) as CCBRoomEnterResult;
     expect(entered.source).toBe('original');
     expect(upstream.sockets[0].sent[0].payload).toEqual({ roomId: '1234', username: '甲' });
     expect(first.roomId).toBe('original:1234');
@@ -187,7 +192,7 @@ describe('原版房间适配', () => {
     service.unregisterConnection('first');
     const replacement = connection('replacement'); service.registerConnection(replacement);
     const restored = await request(service, 'replacement', { id: 'reconnect', type: 'ccb.room.reconnect',
-      payload: { source: 'original', roomId: '1234', sessionToken: entered.sessionToken } }) as CCBRoomEnterResult;
+      payload: { roomId: '1234', sessionToken: entered.sessionToken } }) as CCBRoomEnterResult;
     expect(restored.snapshot.chat).toHaveLength(1); expect(upstream.sockets).toHaveLength(1);
     upstream.sockets[0].receive('playerKicked', { playerId: upstream.sockets[0].id });
     expect(service.hasSession('replacement')).toBe(false); expect(replacement.roomId).toBeUndefined();
@@ -223,7 +228,7 @@ describe('原版房间适配', () => {
       },
     } });
     await create(service); service.registerConnection(connection('second'));
-    await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { source: 'original', userName: '乙' } });
+    await request(service, 'second', { id: 'join', type: 'ccb.room.join', roomId: '1234', payload: { userName: '乙' } });
     const remote = { id: 900, name: '原版答案', popularity: 123, highestRating: 9.5, earliestAppearance: 1999,
       appearances: ['原版动画'], appearanceIds: [10,225878] };
     upstream.broadcast('gameStart', { character: remote, settings: createDefaultCCBSettings(), players: upstream.players });

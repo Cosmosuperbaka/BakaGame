@@ -104,7 +104,7 @@ describe("edgeone.json 边缘缓存配置", () => {
   });
 
   it("房间页同样不得被边缘长时间缓存", () => {
-    for (const route of ["/whoisfaker/room/123", "/songuessr/room/456", "/ccb/room/native/789"]) {
+    for (const route of ["/whoisfaker/room/123", "/songuessr/room/456", "/ccb/room/789"]) {
       const value = resolveCacheControl(route);
       expect(value, `${route} 不应被长时间缓存`).toMatch(/max-age=0|no-cache|no-store/);
     }

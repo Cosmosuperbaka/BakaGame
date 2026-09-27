@@ -11,10 +11,11 @@ import { createCCBOriginalSocket, originalConfirmedEvent, originalRequest, type 
 import { decodeOriginalCharacter, encodeOriginalCharacter, originalArray, originalCharacter, originalNumber,
   originalObject, originalPlayers, originalScores, originalSettings, originalString, originalStrings,
   toOriginalCharacter, toOriginalSettings } from '../infrastructure/CCBOriginalProtocol';
-import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBGuess, type CCBRoomEnterResult,
-  type CCBRoomSummary, type CCBSettings } from '../shared/CCB';
+import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBGuess, type CCBPayload,
+  type CCBRoomEnterResult, type CCBSettings } from '../shared/CCB';
 import { createEvent } from '../transport/Packets';
-import type { CCBOriginalChatRoom, CCBOriginalSession } from './CCBOriginalModel';
+import type { CCBOriginalChatRoom, CCBOriginalSession, CCBUpstreamRoom } from './CCBOriginalModel';
+import type { CCBOriginalTarget } from './CCBRoomDirectory';
 import { originalPrivateState, originalSnapshot } from './CCBOriginalView';
 import { CCBOriginalRoundData } from './CCBOriginalRoundData';
 
@@ -64,51 +65,66 @@ export class CCBOriginalService {
     if (session) { session.connectionId = undefined; session.detachedAt = this.now(); }
   }
   hasSession(id: string): boolean { return this.byConnection.has(id) || this.entering.has(id); }
-  getAvailability() {
-    return { configured: this.configured, available: this.configured, sourceKey: this.sourceKey,
-      reason: this.configured ? '' : '原版服务器兼容配置尚未完成' };
-  }
   getHealthSnapshot() {
     return { configured: this.configured, sessions: this.sessions.size, rooms: this.chats.size,
       onlineSessions: [...this.sessions.values()].filter(session => session.confirmed && session.connectionId && session.socket.connected).length };
   }
 
-  async listRooms(): Promise<CCBRoomSummary[]> {
+  /** 上游完整房间列表（含非公开房），供统一房号目录分配别名；大厅只展示其中的公开房。 */
+  async listUpstreamRooms(): Promise<CCBUpstreamRoom[]> {
     if (!this.configured) return [];
-    const rooms = await this.fetchRooms();
-    return rooms.filter(room => room.isPublic === true).map(room => ({
-      roomId: originalString(room.id), source: 'original',
+    return (await this.fetchRooms()).map((room): CCBUpstreamRoom => ({
+      id: originalString(room.id), isPublic: room.isPublic === true,
       name: originalString(room.displayRoomName) || originalString(room.roomName) || `${originalString(room.hostName)}的房间`,
       phase: room.isGameStarted === true ? 'guessing' : 'waiting', playerCount: originalNumber(room.playerCount),
-      hasPassword: false, allowSpectators: true,
-    }));
+    })).filter(room => room.id);
   }
 
-  async execute(connectionId: string, message: CCBClientMessage): Promise<unknown> {
-    const connection = this.connections.get(connectionId);
-    if (!connection) throw new AppError('CONNECTION_NOT_FOUND', '连接不存在或已断开');
+  /** 仍有本地会话（含建房确认途中）的上游房号：这些房间的别名不能释放。 */
+  activeUpstreamRoomIds(): Set<string> {
+    return new Set([...this.sessions.values()].map(session => session.roomId));
+  }
+
+  assertAvailable(): void {
     if (!this.configured) throw new AppError('CCB_ORIGINAL_UNAVAILABLE', '原版服务器兼容配置尚未完成');
-    if (message.type === 'ccb.room.create') {
-      if (message.payload.password || !message.payload.allowSpectators) this.unsupported('原版房间不支持密码或禁止观战');
-      return this.enterOnce(connection, message.payload.roomId, message.payload.userName, message.payload);
-    }
-    if (message.type === 'ccb.room.join') {
-      if (!message.roomId) throw new AppError('ROOM_NOT_FOUND', '请输入原版房间号');
-      if (message.payload.password) this.unsupported('原版房间不支持密码');
-      return this.enterOnce(connection, message.roomId, message.payload.userName);
-    }
-    if (message.type === 'ccb.room.reconnect') {
-      // 载荷里的凭据允许为空/缺席（解析层不拦可恢复状态），这里给出明确的失效语义。
-      const token = message.payload.sessionToken;
-      if (!token) throw new AppError('SESSION_EXPIRED', '原版会话已失效，请重新加入房间');
-      return this.reconnect(connection, message.payload.roomId, token);
-    }
+  }
+
+  /** 在原版服务器建房；`target` 由统一房号目录占号得到，别名与上游房号相同。 */
+  async create(connectionId: string, target: CCBOriginalTarget, payload: CCBPayload<'ccb.room.create'>): Promise<CCBRoomEnterResult> {
+    const connection = this.requireConnection(connectionId);
+    if (payload.password || !payload.allowSpectators) this.unsupported('原版房间不支持密码或禁止观战');
+    return this.enterOnce(connection, target, payload.userName, payload);
+  }
+
+  async join(connectionId: string, target: CCBOriginalTarget, payload: CCBPayload<'ccb.room.join'>): Promise<CCBRoomEnterResult> {
+    const connection = this.requireConnection(connectionId);
+    if (payload.password) this.unsupported('原版房间不支持密码');
+    return this.enterOnce(connection, target, payload.userName);
+  }
+
+  reconnect(connectionId: string, target: CCBOriginalTarget, token: string | null | undefined): CCBRoomEnterResult {
+    const connection = this.requireConnection(connectionId);
+    // 载荷里的凭据允许为空/缺席（解析层不拦可恢复状态），这里给出明确的失效语义。
+    if (!token) throw new AppError('SESSION_EXPIRED', '原版会话已失效，请重新加入房间');
+    return this.resume(connection, target, token);
+  }
+
+  /** 已进入原版房间后的指令；信封房号是客户端见到的别名。 */
+  async execute(connectionId: string, message: CCBClientMessage): Promise<unknown> {
+    this.requireConnection(connectionId);
     const session = this.requireSession(connectionId);
     if (message.sessionToken !== session.token) throw new AppError('SESSION_INVALID', '原版会话凭据无效，请重新加入');
-    if (message.roomId && message.roomId !== session.roomId) throw new AppError('ROOM_NOT_FOUND', '房间与当前会话不一致');
+    if (message.roomId && message.roomId !== session.alias) throw new AppError('ROOM_NOT_FOUND', '房间与当前会话不一致');
     const task = session.queue.then(() => this.executeInRoom(session, message));
     session.queue = task.catch(() => undefined);
     return task;
+  }
+
+  private requireConnection(connectionId: string): ConnectionRecord {
+    const connection = this.connections.get(connectionId);
+    if (!connection) throw new AppError('CONNECTION_NOT_FOUND', '连接不存在或已断开');
+    this.assertAvailable();
+    return connection;
   }
 
   private async executeInRoom(session: CCBOriginalSession, message: CCBClientMessage): Promise<unknown> {
@@ -162,14 +178,15 @@ export class CCBOriginalService {
     }
   }
 
-  private async enter(connection: ConnectionRecord, roomId: string, name: string,
+  private async enter(connection: ConnectionRecord, target: CCBOriginalTarget, name: string,
     create?: { name: string; visibility: 'public' | 'private' }): Promise<CCBRoomEnterResult> {
+    const roomId = target.upstreamRoomId;
     if (connection.roomId || this.byConnection.has(connection.id)) throw new AppError('ALREADY_IN_ROOM', '请先离开当前房间');
     if (!create && !(await this.fetchRooms()).some(room => room.id === roomId)) throw new AppError('ROOM_NOT_FOUND', '原版房间不存在');
     if (!this.connections.has(connection.id)) throw new AppError('CONNECTION_NOT_FOUND', '加入期间连接已断开');
     const socket = (this.options.socketFactory || createCCBOriginalSocket)(this.options.serverUrl!);
     const session: CCBOriginalSession = {
-      token: `ccb_original_${this.sourceKey}_${randomUUID()}`, connectionId: connection.id, roomId, name, socket,
+      token: `ccb_original_${this.sourceKey}_${randomUUID()}`, connectionId: connection.id, roomId, alias: target.roomId, name, socket,
       confirmed: false, revoked: false, players: [], settings: createDefaultCCBSettings(), phase: 'waiting',
       roomName: '', isPublic: true, setterId: null, roundNumber: 0, syncRound: 1, roundKey: null,
       answer: null, hints: [], guesses: [], bannedTags: new Map(), winners: [], roundSummary: null,
@@ -203,16 +220,17 @@ export class CCBOriginalService {
     }
   }
 
-  private async enterOnce(connection: ConnectionRecord, roomId: string, name: string,
+  private async enterOnce(connection: ConnectionRecord, target: CCBOriginalTarget, name: string,
     create?: { name: string; visibility: 'public' | 'private' }): Promise<CCBRoomEnterResult> {
     if (this.entering.has(connection.id)) throw new AppError('CCB_JOIN_PENDING', '正在加入原版房间，请稍候');
     this.entering.add(connection.id);
-    try { return await this.enter(connection, roomId, name, create); }
+    try { return await this.enter(connection, target, name, create); }
     finally { this.entering.delete(connection.id); }
   }
 
-  private reconnect(connection: ConnectionRecord, roomId: string, token: string): CCBRoomEnterResult {
+  private resume(connection: ConnectionRecord, target: CCBOriginalTarget, token: string): CCBRoomEnterResult {
     const session = this.sessions.get(token);
+    const roomId = target.upstreamRoomId;
     if (!session || session.roomId !== roomId || !session.confirmed || session.revoked || !session.socket.connected
       || (session.detachedAt !== undefined && this.now() - session.detachedAt >= 60_000)) {
       throw new AppError('SESSION_EXPIRED', '原版会话已失效，请重新加入房间');
@@ -366,7 +384,7 @@ export class CCBOriginalService {
   }
   private unsupported(message: string): never { throw new AppError('CCB_ORIGINAL_UNSUPPORTED', message); }
   private enterResult(session: CCBOriginalSession): CCBRoomEnterResult {
-    return { roomId: session.roomId, source: 'original', sessionToken: session.token,
+    return { roomId: session.alias, source: 'original', sessionToken: session.token,
       snapshot: originalSnapshot(session, this.chats.get(session.roomId)), privateState: originalPrivateState(session) };
   }
   private publish(session: CCBOriginalSession, calibration = false): void {
@@ -383,7 +401,7 @@ export class CCBOriginalService {
     session.revoked = true; session.confirmed = false;
     if (session.connectionId) {
       const connection = this.connections.get(session.connectionId);
-      if (notify) connection?.send(createEvent(kicked ? 'ccb.player.kicked' : 'ccb.room.closed', { roomId: session.roomId, source: 'original', reason }));
+      if (notify) connection?.send(createEvent(kicked ? 'ccb.player.kicked' : 'ccb.room.closed', { roomId: session.alias, source: 'original', reason }));
       if (connection) { connection.roomId = undefined; connection.playerId = undefined; }
       this.byConnection.delete(session.connectionId);
     }
