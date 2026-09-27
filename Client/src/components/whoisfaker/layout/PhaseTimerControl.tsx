@@ -17,7 +17,7 @@ interface Props {
   onTimeout?: () => void;
 }
 
-export function PhaseTimerControl({ className, onTimeout }: Props = {}) {
+export function PhaseTimerControl({ className, onTimeout }: Props) {
   const snapshot = useGameStore((s) => s.snapshot);
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
