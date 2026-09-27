@@ -30,5 +30,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../Server/src/shared/**/*"]
+  "include": ["src", ".storybook/**/*.tsx", "../Server/src/shared/**/*"]
 }

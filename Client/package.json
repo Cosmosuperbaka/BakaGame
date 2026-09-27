@@ -17,7 +17,10 @@
     "build:seo": "npm run build",
     "//build:seo": "兼容别名：Makers 控制台的构建命令填的是 build:seo。静态外壳已在 build 内完成（vite 插件 static-shell），无需单独步骤；控制台改回 npm run build 后即可删除本别名。",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:e2e",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "storybook": "storybook dev --port 6006 --no-open --no-version-updates",
+    "build-storybook": "storybook build --output-dir storybook-static",
+    "storybook:shots": "node scripts/storybook-shots.mjs"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",
@@ -62,6 +65,7 @@
     "@emnapi/runtime": "^1.11.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "@storybook/react-vite": "10.6.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -77,6 +81,7 @@
     "globals": "^17.12.0",
     "jsdom": "^30.1.1",
     "sharp": "^0.35.4",
+    "storybook": "10.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.1",

@@ -31,6 +31,8 @@ playwright-report
 test-results
 Client/dist
 Client/.generated-public
+Client/storybook-static
+Client/storybook-shots
 Server/.next/
 Server/out/
 Server/build

@@ -9,7 +9,8 @@
 | 纯文档或注释 | 检查 diff、链接、引用路径、命令与规则一致性；不运行无关业务套件 |
 | 局部服务端行为 | 相关 `bun test` 文件 + `bun run check`；新增行为或缺陷补有判别力的回归 |
 | 局部客户端逻辑 | 相关 Vitest 文件 + `npm run lint` + `npm run build` |
-| 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测 |
+| 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测；受影响组件的故事同步更新，用 `storybook:shots --filter` 做改前改后截图对照 |
+| Storybook 故事、假数据或截图工具 | `npx tsc -p tsconfig.app.json --noEmit`、lint、`npm run build-storybook`，相关故事 `storybook:shots` 零失败、零控制台错误 |
 | 共享协议、跨游戏基础设施、全局状态同步 | 两端类型/构建与相关协议、Store、服务回归；涉及握手或路由时验证真实命令 ACK |
 | 快照、私有状态、封包或广播频率 | `Server/test/NetworkCapacity.test.ts`，保留全部容量与最终同步断言 |
 | 歌词几何、字体或动画 | `npm run test:lyrics`；jsdom 高度模拟不替代真实浏览器 |
@@ -30,6 +31,7 @@
 - 服务端与客户端覆盖率命令已进入 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 会保留两端 lcov/HTML 报告。
 - `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
 - 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不再读取 Tailwind 类名；关键落地页和聊天流程会将页面异常、控制台错误及非预期 4xx 转为测试失败。
+- 客户端 CI 在生产构建后执行 `npm run build-storybook`，防止故事与截图工具随组件改动失效。
 
 以下事项属于后续容量或维护工作，目前没有伪装成已完成的门禁：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
 
@@ -44,6 +46,7 @@
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
 | 端到端测试 | `Client/e2e/*.spec.ts` | Playwright | 落地页、大厅、移动端、双浏览器真实房间流程 |
+| 组件截图 | `Client/src/**/*.stories.tsx` | Storybook + Playwright | 全部组件与阶段状态的亮/暗、三档视口范例，供样式审查与改前改后对照；不做像素断言 |
 
 ## 常用命令
 
@@ -72,6 +75,10 @@ npm run test:coverage
 npm run test:e2e
 npm run test:lyrics   # 原生歌词布局、字体、翻译注音、和声及连续动画浏览器回归
 npm run verify
+npm run storybook                           # 组件工作台，http://localhost:6006
+npm run storybook:shots                     # 全量截图，输出 storybook-shots/index.html
+npm run storybook:shots -- --filter 猜歌 --out storybook-shots/after
+npm run build-storybook                     # 静态构建，CI 冒烟
 ```
 
 只运行单个用例文件：
@@ -118,6 +125,16 @@ npx playwright test e2e/App.spec.ts
   模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
   留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
 - 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 单独启动 Vite（5177），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
+
+## 组件截图（Storybook）
+
+用于样式审查与改前改后对照，不做像素断言，也不替代 E2E 与单测。
+
+- 故事与组件同目录（`Foo.stories.tsx`），标题按 `基础控件`、`公共组件`、`页面`、`谁是卧底`、`猜歌`、`CCB` 分组，故事名写中文状态。假数据放 `src/stories/fixtures/`，按共享类型构造且与真实业务口径一致；文案同样遵守 [Design §1](Design.md)。
+- 连 Store 的组件在 `beforeEach` 用 `src/stories/StorePresets.ts` 预置状态；预览层在每个故事前把全部 Store 复位。故事不得渲染 `layouts/`、`contexts/` 或调用 `init*Ws`，不访问外网：图片用本地资源或数据 URL，截止时间在运行时用 `fromNow` 计算。
+- 截图规则由 tags 决定：`page` 整页 × 手机 390 / 平板 900 / 桌面 1440；`overlay` 含 Portal 的整页 × 手机 / 桌面；`mobile` 只拍手机宽度；`no-shot` 不拍；其余按故事根元素取景。每种都出亮、暗两套；暗色只用于样式检查，站内不开放。
+- `storybook:shots` 自启独立端口的 Storybook（`--url` 可复用已运行的实例），关闭 framer-motion 过渡并模拟减弱动效，等字体、图片与动画落定后截图。故事渲染失败、页面异常或控制台错误令命令以非零退出。`--filter` 只重拍匹配的故事，索引保留其余故事的上次结果；`--out` 另存一份用于对照。
+- `npm run storybook`、`build-storybook` 与应用的 dev/build 一样会重建 `.generated-public/`，不要与其它 Vite 进程并行启动。
 
 ## CI 推荐顺序
 

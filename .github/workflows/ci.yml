@@ -115,6 +115,11 @@ jobs:
         working-directory: Client
         run: node scripts/asset-smoke.mjs
 
+      # 组件截图工具的构建冒烟：故事随组件改动失效时在 CI 暴露。
+      - name: Build Storybook
+        working-directory: Client
+        run: npm run build-storybook
+
       - name: Upload client coverage
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

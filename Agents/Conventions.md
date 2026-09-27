@@ -31,6 +31,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 | **React Context** | `PascalCase.tsx` | `WhoIsFakerContext.tsx`, `SonGuessrContext.tsx` | `Client/src/contexts/` |
 | **React 页面与组件** | `PascalCase.tsx` | `Main.tsx`, `WhoIsFakerRoomPage.tsx`, `SonGuessrRoomPage.tsx`, `PhaseHeader.tsx`, `EmojiPicker.tsx`, `Button.tsx` | `Client/src/pages/`, `Client/src/components/` |
 | **测试与集成文件** | `PascalCase.test.ts(x)` | `WhoIsFakerService.test.ts`, `Rules.test.ts`, `UseWhoIsFakerStore.test.ts`, `UseAutoSave.test.tsx` | 与源文件同名放置在 `test/` 或源码同级 |
+| **Storybook 故事** | `PascalCase.stories.tsx` | `Button.stories.tsx`, `PlayerList.stories.tsx` | 与组件同级；假数据放 `Client/src/stories/fixtures/`，预览配置在 `Client/.storybook/` |
 
 ---
 
@@ -48,6 +49,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 | `Client/src/pages/`、`contexts/`、`stores/` | 页面入口、连接生命周期、状态管理 |
 | `Client/src/hooks/`、`lib/`、`config/` | 复用 Hook、通信与工具、静态配置 |
 | `Client/src/types/Index.ts` | 共享类型的客户端导出入口 |
+| `Client/.storybook/`、`Client/src/stories/` | 组件截图工具的预览配置、假数据与 Store 预置，只供开发，不被应用代码导入 |
 
 本表说明职责，不维护逐文件目录树；查找实现时搜索目标符号或路径。
 
@@ -101,6 +103,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `typescript` | 两端均 5.9.x | 已核对版本的 `typescript-eslint`（含 `canary`）peer 上限为 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
 | `@applemusic-like-lyrics/core` / `react` | 0.5.2 | `0.6.0` 上游把 `vitest ^4.1.10` 误写进 `dependencies`（0.5.2 是干净的，写在 `devDependencies`），且 registry 上没有修复版本。升级会让测试框架进入生产依赖树，而 `0.6.0` 的导出面与 `0.5.2` 逐符号比对完全一致、零功能收益。 |
 | `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；若 CI 的 Node 降到 22.22.2 以下，`npm ci` 会失败。 |
+| `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
 
 补充事实：
 
@@ -127,6 +130,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 |---|---|---|---|
 | `Server/` | `bun run dev` | `bun run start` | `bun run check` |
 | `Client/` | `npm run dev` | `npm run preview` | `npm run build`、`npm run lint` |
+| `Client/` 组件工作台 | `npm run storybook` | `npm run build-storybook` | `npm run storybook:shots`（用法见 [Testing](Testing.md#组件截图storybook)） |
 
 HTTP 契约变更需要导出时，在 Server 执行 `bun run docs:openapi`，产物为 `Agents/http-openapi.json`。测试、覆盖率、资源冒烟与完整门禁命令统一见 [Testing](Testing.md)。
 
