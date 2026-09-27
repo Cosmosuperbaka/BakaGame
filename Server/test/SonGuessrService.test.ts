@@ -13,6 +13,8 @@ import { AppError } from "../src/domain/Errors";
 import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
   HOST_RECONNECT_TIMEOUT_MS,
+  JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_WINDOW_MS,
   ROOM_IDLE_TIMEOUT_MS,
   TEST_MODE_MAX_PLAYERS,
 } from "../src/config/Constants";
@@ -725,6 +727,37 @@ describe("SonGuessrService", () => {
     ]);
     await expect(joinRoom(service, guest, "玩家")).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
     await joinRoom(service, guest, "玩家", "1234", "secret");
+  });
+
+  test("密码尝试超过上限后连正确密码也拒绝，其它连接不受影响，窗口过后恢复", async () => {
+    let now = 1_000_000;
+    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+    await createRoom(service, connection(service, "host"), { visibility: "private", password: "secret" });
+    let attemptId = 0;
+    const attempt = (client: TestConnection, userName: string, password?: string) => execute(service, client, {
+      id: `password-attempt-${++attemptId}`,
+      type: "song.room.join",
+      roomId: "1234",
+      payload: password === undefined ? { userName } : { userName, password },
+    });
+
+    const attacker = connection(service, "attacker");
+    for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+      await expect(attempt(attacker, "尝试者", `猜测${index}`)).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+    }
+    await expect(attempt(attacker, "尝试者", "secret")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+
+    // 缺少密码只是提示输入，不消耗配额：另一个连接先空试到上限，仍能凭正确密码进入。
+    const friend = connection(service, "friend");
+    for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+      await expect(attempt(friend, "朋友")).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+    }
+    await attempt(friend, "朋友", "secret");
+
+    now += JOIN_PASSWORD_WINDOW_MS + 1;
+    await attempt(attacker, "尝试者", "secret");
+    expect(lastEvent<SonGuessrRoomSnapshot>(friend, "song.room.snapshot").players.map((player) => player.name).sort())
+      .toEqual(["尝试者", "房主", "朋友"].sort());
   });
 
   test("房主 Cookie 只存在房间内存、供全房请求使用并在房主离开时销毁", async () => {

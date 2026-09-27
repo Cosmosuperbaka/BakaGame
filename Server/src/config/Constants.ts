@@ -18,6 +18,13 @@ export const PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS = 3 * 60 * 1000;
 /** 房间聊天记录最大保留条数 */
 export const CHAT_LIMIT = 20;
 
+/**
+ * 私密房密码尝试配额：同一连接对同一房间在统计窗口内最多尝试的次数。
+ * 在校验密码之前计数，超限后正确密码同样被拒；缺少密码不计数。
+ */
+export const JOIN_PASSWORD_MAX_ATTEMPTS = 5;
+export const JOIN_PASSWORD_WINDOW_MS = 60 * 1000;
+
 /** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
 export const PHASE_RESULT_DISPLAY_MS = 1_500;
 

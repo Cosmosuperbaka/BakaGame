@@ -2,6 +2,8 @@ import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
   HOST_RECONNECT_TIMEOUT_MS,
+  JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_WINDOW_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
@@ -391,10 +393,6 @@ export const AUTO_SONG_CANDIDATE_LIMIT = 5;
 const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
 const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
 
-/** 同一连接对同一房间的密码尝试：一分钟内最多 5 次，超出直接拒绝。 */
-const JOIN_FAILURE_MAX_ATTEMPTS = 5;
-const JOIN_FAILURE_WINDOW_MS = 60_000;
-
 /** 聊天：每秒 2 条、突发 5 条。 */
 const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
 const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
@@ -525,11 +523,11 @@ export class SonGuessrService {
   });
   /**
    * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
-   * 房间号只有 9000 个且私密房密码没有退避，不设限流就能一直试。
+   * 房间号只有 9000 个且私密房带锁出现在大厅，不设限流就能一直试。
    */
-  private readonly joinFailureLimiter = new SlidingWindowRateLimiter({
-    windowMs: JOIN_FAILURE_WINDOW_MS,
-    maxRequests: JOIN_FAILURE_MAX_ATTEMPTS,
+  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: JOIN_PASSWORD_WINDOW_MS,
+    maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
   });
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。 */
   private readonly chatLimiter = new SlidingWindowRateLimiter({
@@ -2836,15 +2834,17 @@ export class SonGuessrService {
   private ensurePassword(
     room: SonGuessrRoomRecord,
     password: string | undefined,
-    connection?: ConnectionRecord,
+    connection: ConnectionRecord,
   ) {
-    if (room.visibility === "private" && room.password !== password?.trim()) {
-      // 房间号只有 9000 个、私密房密码又没有退避，必须给尝试次数封顶。
-      if (connection && !this.joinFailureLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
-        throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-      }
-      throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
+    if (room.visibility !== "private") return;
+    const normalized = password?.trim();
+    // 缺少密码只是提示玩家输入，不消耗尝试次数。
+    if (!normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
+    // 先计数再校验：只在猜错时计数的话，猜中那一次不经过限流，超限后的成功与失败仍可区分。
+    if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
+      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
+    if (room.password !== normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
   }
 
   private requirePassword(password?: string) {

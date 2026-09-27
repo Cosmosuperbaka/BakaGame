@@ -47,6 +47,7 @@ import {
 import type { LogEntry } from "../infrastructure/EventLogger";
 
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
+import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
 import { SERVER_SHUTDOWN_MESSAGE } from "../shared/Index";
@@ -62,6 +63,8 @@ import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
+  JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_WINDOW_MS,
   PHASE_RESULT_DISPLAY_MS,
   TEST_MODE_DEFAULT_WORD,
   TEST_MODE_MAX_PLAYERS,
@@ -93,6 +96,14 @@ export class WhoIsFakerService {
   private readonly publishedPhaseKeyByRoomId = new Map<string, string>();
   private readonly gameOverAdvanceAllowedAtByRoomId = new Map<string, number>();
   private readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
+   * 房间号只有 9000 个且私密房带锁出现在大厅，不设限流就能一直试。
+   */
+  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: JOIN_PASSWORD_WINDOW_MS,
+    maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
+  });
   private idCounter = 0;
 
   constructor(private readonly options: WhoIsFakerServiceOptions) {
@@ -409,7 +420,7 @@ export class WhoIsFakerService {
     const roomId = ensureRoomId(message.roomId ?? "");
     const room = this.getRoom(roomId);
 
-    this.ensurePasswordMatch(room, message.payload.password);
+    this.ensurePasswordMatch(room, message.payload.password, connection);
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
@@ -3896,11 +3907,20 @@ export class WhoIsFakerService {
     }
   }
 
-  private ensurePasswordMatch(room: RoomRecord, password?: string | null) {
-    if (room.settings.visibility === "private") {
-      if (room.settings.password !== this.requirePassword(password)) {
-        throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
-      }
+  private ensurePasswordMatch(
+    room: RoomRecord,
+    password: string | null | undefined,
+    connection: ConnectionRecord,
+  ) {
+    if (room.settings.visibility !== "private") return;
+    // 缺少密码回 PASSWORD_REQUIRED，不消耗尝试次数。
+    const normalized = this.requirePassword(password);
+    // 先计数再校验：超限后正确密码同样被拒，攻击者无法区分猜中与猜错。
+    if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
+      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
+    }
+    if (room.settings.password !== normalized) {
+      throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
     }
   }
 

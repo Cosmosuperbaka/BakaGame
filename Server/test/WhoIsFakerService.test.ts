@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 
 import {
+  JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_WINDOW_MS,
   PHASE_RESULT_DISPLAY_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
 } from "../src/config/Constants";
@@ -108,6 +110,49 @@ test("房间设置只通过公开快照同步且不会暴露私房密码", async
   expect(snapshot?.visibility).toBe("private");
   expect(snapshot?.hasPassword).toBe(true);
   expect(JSON.stringify(snapshot)).not.toContain("new-password");
+});
+
+test("密码尝试超过上限后连正确密码也拒绝，其它连接不受影响，窗口过后恢复", async () => {
+  const { service, advanceTime } = createTestContext();
+  const host = createConnection(service, "limit-host");
+  await execute(service, host, {
+    id: "limit-create",
+    type: "room.create",
+    payload: {
+      roomId: "1414",
+      name: "私房",
+      visibility: "private",
+      password: "secret",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  });
+  let attemptId = 0;
+  const attempt = (connection: ReturnType<typeof createConnection>, userName: string, password?: string) =>
+    execute(service, connection, {
+      id: `limit-join-${++attemptId}`,
+      type: "room.join",
+      roomId: "1414",
+      payload: password === undefined ? { userName } : { userName, password },
+    });
+
+  const attacker = createConnection(service, "limit-attacker");
+  for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+    await expect(attempt(attacker, "尝试者", `猜测${index}`)).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+  }
+  await expect(attempt(attacker, "尝试者", "secret")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+
+  // 缺少密码回 PASSWORD_REQUIRED 且不消耗配额：另一个连接先空试到上限，仍能凭正确密码进入。
+  const friend = createConnection(service, "limit-friend");
+  for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+    await expect(attempt(friend, "朋友")).rejects.toMatchObject({ code: "PASSWORD_REQUIRED" });
+  }
+  await attempt(friend, "朋友", "secret");
+
+  advanceTime(JOIN_PASSWORD_WINDOW_MS + 1);
+  await attempt(attacker, "尝试者", "secret");
+  expect(getLastEventPayload<RoomSnapshot>(friend, "room.snapshot")?.players.map((player) => player.name).sort())
+    .toEqual(["尝试者", "房主", "朋友"].sort());
 });
 
 test("玩家改名会规范化名称并广播最新快照", async () => {
