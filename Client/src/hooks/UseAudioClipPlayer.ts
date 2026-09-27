@@ -2,6 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 const SONG_VOLUME_KEY = "songuessr_volume";
+const DEFAULT_SONG_VOLUME = 0.65;
+
+/** 只采用 0–1 之间的有效存档；缺失、空串、无法解析或越界时用默认音量。 */
+function readSavedVolume(): number {
+  try {
+    const saved = window.localStorage.getItem(SONG_VOLUME_KEY);
+    if (!saved) return DEFAULT_SONG_VOLUME;
+    const value = Number(saved);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : DEFAULT_SONG_VOLUME;
+  } catch {
+    // 浏览器禁用本地存储（隐身沙箱等）时读取会抛错。
+    return DEFAULT_SONG_VOLUME;
+  }
+}
 
 export interface AudioClipPlayerOptions {
   roomId: string;
@@ -24,17 +38,7 @@ export function useAudioClipPlayer({
   isPlayingPhase,
   sendCommand,
 }: AudioClipPlayerOptions) {
-  const [volume, setVolumeState] = useState(() => {
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = Number(window.localStorage.getItem(SONG_VOLUME_KEY));
-        return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.65;
-      }
-    } catch {
-      // 忽略 SSR 或浏览器隐身沙箱异常
-    }
-    return 0.65;
-  });
+  const [volume, setVolumeState] = useState(readSavedVolume);
 
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
   const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">("idle");

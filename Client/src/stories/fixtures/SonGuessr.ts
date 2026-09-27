@@ -111,20 +111,6 @@ export const pendingOn = (command: string) => (type: string): boolean => type ==
 /** 永不结算的请求，用于固定“查询中 / 提交中 / 生成中”这类进行态。 */
 export const pending = <T>() => new Promise<T>(() => {});
 
-/**
- * 预置播放音量。`useAudioClipPlayer` 在本地没有存档时把 `Number(null)` 当作有效值，
- * 首访会得到 0% 而不是代码里声明的 65%；故事里写入默认值，截图按真实使用中的状态呈现。
- */
-export function seedSongVolume(value = 0.65) {
-  const key = "songuessr_volume";
-  const previous = window.localStorage.getItem(key);
-  window.localStorage.setItem(key, String(value));
-  return () => {
-    if (previous === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, previous);
-  };
-}
-
 /** 预置本机用户名；返回的清理函数恢复原值。 */
 export function seedUsername(name: string) {
   const previous = getSavedUsername();

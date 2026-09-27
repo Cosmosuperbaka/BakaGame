@@ -10,7 +10,6 @@ import {
   presetSongRoom,
   roundResultSnapshot,
   seedSoloRoom,
-  seedSongVolume,
   seedUsername,
   soloPlayingSnapshot,
   soloResultSnapshot,
@@ -38,7 +37,6 @@ const meta = {
   component: SonGuessrRoomPage,
   tags: ["page"],
   parameters: { layout: "fullscreen", router: SONG_ROOM_ROUTER },
-  beforeEach: () => seedSongVolume(),
 } satisfies Meta<typeof SonGuessrRoomPage>;
 
 export default meta;

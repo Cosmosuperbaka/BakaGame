@@ -85,4 +85,24 @@ describe("useAudioClipPlayer", () => {
 
     expect(result.current.audioPlaybackState).toBe("completed");
   });
+
+  describe("初始音量", () => {
+    it.each([
+      { label: "没有存档时用默认 65%", saved: null, expected: 0.65 },
+      { label: "存档为空串时用默认 65%", saved: "", expected: 0.65 },
+      { label: "存档无法解析时用默认 65%", saved: "响亮", expected: 0.65 },
+      { label: "存档超出 0–1 时用默认 65%", saved: "1.5", expected: 0.65 },
+      { label: "存档 0.3 时沿用", saved: "0.3", expected: 0.3 },
+      { label: "存档 0 时尊重玩家的静音选择", saved: "0", expected: 0 },
+    ])("$label", ({ saved, expected }) => {
+      if (saved !== null) window.localStorage.setItem("songuessr_volume", saved);
+      const { result } = renderHook(() =>
+        useAudioClipPlayer({ roomId: "test-room", isPlayingPhase: false, sendCommand: vi.fn() }),
+      );
+
+      expect(result.current.volume).toBe(expected);
+      // 挂载后写回的是实际采用的音量：首访不会把 0 固化进存档。
+      expect(window.localStorage.getItem("songuessr_volume")).toBe(String(expected));
+    });
+  });
 });
