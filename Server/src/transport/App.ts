@@ -511,6 +511,9 @@ export const createApp = ({
     data: new CCBCharacterWorkerProvider({
       characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath,
       apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl,
+      meilisearch: env.ccbMeilisearchUrl ? {
+        url: env.ccbMeilisearchUrl, apiKey: env.ccbMeilisearchKey, timeoutMs: env.ccbMeilisearchTimeoutMs,
+      } : undefined,
     }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret,
   });
   const app = new Elysia({

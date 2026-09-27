@@ -23,6 +23,9 @@ export interface AppEnv {
   bangumiCharacterDbPath?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
+  ccbMeilisearchUrl?: string;
+  ccbMeilisearchKey?: string;
+  ccbMeilisearchTimeoutMs?: number;
   enableGeneralUnblock?: boolean;
   ccbOriginalServerUrl?: string;
   ccbOriginalAesSecret?: string;
@@ -123,6 +126,12 @@ export const readEnv = (): AppEnv => {
     serverPort,
   );
 
+  const rawMeilisearchTimeout = Bun.env.CCB_MEILISEARCH_TIMEOUT_MS ?? "5000";
+  const ccbMeilisearchTimeoutMs = Number(rawMeilisearchTimeout);
+  if (!Number.isInteger(ccbMeilisearchTimeoutMs) || ccbMeilisearchTimeoutMs < 100 || ccbMeilisearchTimeoutMs > 120_000) {
+    throw new AppError("CONFIG_ERROR", `环境变量 CCB_MEILISEARCH_TIMEOUT_MS 必须为 100~120000 之间的整数，收到: "${rawMeilisearchTimeout}"`);
+  }
+
   const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
   const otelServiceName =
     Bun.env.OTEL_SERVICE_NAME ??
@@ -170,6 +179,9 @@ export const readEnv = (): AppEnv => {
     bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
     bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
+    ccbMeilisearchUrl: (Bun.env.CCB_MEILISEARCH_URL ?? "").trim().replace(/\/+$/, "") || undefined,
+    ccbMeilisearchKey: Bun.env.CCB_MEILISEARCH_KEY?.trim() || undefined,
+    ccbMeilisearchTimeoutMs,
     ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
     ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined

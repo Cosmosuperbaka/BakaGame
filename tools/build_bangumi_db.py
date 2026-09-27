@@ -90,7 +90,7 @@ def setup_character(db: sqlite3.Connection):
       );
       CREATE TABLE subjects (
         id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
-        name_cn TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
+        name_cn TEXT NOT NULL, aliases TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
         -- 原版 `details.raw_tags`：全类型、未过滤的 {标签: 票数}。
         -- 原版的 `details.tags`（只对动画(2)/游戏(4)填充、且剔除含 "20" 的年份型标签）
         -- 由它 + 类型在运行时导出 —— 存两份会制造漂移。
@@ -101,7 +101,7 @@ def setup_character(db: sqlite3.Connection):
         -- 热度：出题时按它降序取前 `topNSubjects` 个候选作品（原版 `POST /v0/search/subjects`
         -- 的 `sort: "heat"`）。dump 没有热度字段，用收藏分布 `favorite` 五个桶求和近似
         -- —— 与歌库的 `heat` 同一个口径。
-        heat INTEGER NOT NULL
+        heat INTEGER NOT NULL, rank INTEGER NOT NULL
       );
       CREATE TABLE character_subject_relations (
         character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
@@ -491,7 +491,9 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             # 但 **nsfw 一律不进角色库** —— 进了就会出现在反馈的登场作品里。
             if item["id"] in nsfw_subject_ids:
                 continue
-            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat))
+            _, alias_blocks = parse_infobox(item.get("infobox", ""))
+            aliases = json.dumps([item.get("name_cn", ""), *alias_blocks.get("别名", [])], ensure_ascii=False)
+            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases, item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat, int(item.get("rank", 0) or 0)))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:

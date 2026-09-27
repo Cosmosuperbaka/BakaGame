@@ -22,6 +22,7 @@ self.onmessage = async ({ data: request }: MessageEvent<CCBWorkerRequest>) => {
     let value: unknown;
     if (request.method === "init") {
       repository = new CCBCharacterRepository(request.options);
+      await repository.initialize();
       value = true;
     } else {
       if (!repository) throw new AppError("CCB_DATA_UNAVAILABLE", "本地角色数据尚未就绪");
