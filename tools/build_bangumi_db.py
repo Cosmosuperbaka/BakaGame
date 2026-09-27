@@ -287,7 +287,19 @@ def parse_character_infobox(infobox: str) -> tuple[str, str, list[str]]:
     name_cn = first_matching(singles, INFOBOX_NAME_KEYS)
     gender = normalize_gender(first_matching(singles, INFOBOX_GENDER_KEYS))
     aliases: list[str] = []
+    # Bangumi server 的 character search 会把所有中文名字段和别名字段
+    # 都交给 GetWikiValues；name_cn 只是详情里的一个首选值。保留其它
+    # 中文名字段，避免同时存在「中文名」和「简体中文名」时搜索结果漂移。
+    for key in INFOBOX_NAME_KEYS:
+        value = singles.get(key)
+        value = clean_infobox_value(value) if value else ""
+        if value and value != name_cn and value not in aliases:
+            aliases.append(value)
     for key in INFOBOX_ALIAS_KEYS:
+        alias = singles.get(key)
+        alias = clean_infobox_value(alias) if alias else ""
+        if alias and alias not in aliases:
+            aliases.append(alias)
         for alias in blocks.get(key, []):
             if alias and alias not in aliases:
                 aliases.append(alias)
@@ -491,8 +503,15 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             # 但 **nsfw 一律不进角色库** —— 进了就会出现在反馈的登场作品里。
             if item["id"] in nsfw_subject_ids:
                 continue
-            _, alias_blocks = parse_infobox(item.get("infobox", ""))
-            aliases = json.dumps([item.get("name_cn", ""), *alias_blocks.get("别名", [])], ensure_ascii=False)
+            singles, alias_blocks = parse_infobox(item.get("infobox", ""))
+            aliases = [item.get("name_cn", "")]
+            # 与 subject search 的 extractAliases/GetWikiValues 保持一致：
+            # 别名既可能是数组块，也可能是普通单值字段。
+            alias_value = singles.get("别名")
+            if alias_value:
+                aliases.append(clean_infobox_value(alias_value))
+            aliases.extend(alias_blocks.get("别名", []))
+            aliases = json.dumps(aliases, ensure_ascii=False)
             char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases, item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat, int(item.get("rank", 0) or 0)))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})

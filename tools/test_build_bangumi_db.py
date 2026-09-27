@@ -119,6 +119,14 @@ def test_parse_character_infobox() -> None:
     name_cn, _, _ = subject.parse_character_infobox("{{Infobox Crt\r\n|简体中文名= [[内链]]名\r\n}}")
     check("内链被清洗", name_cn, "内链名")
 
+    # 与 Bangumi server 的 GetWikiValues 对齐：别名允许是单值，且多个
+    # 中文名字段都应进入搜索别名；详情仍使用首个中文名作为 name_cn。
+    name_cn, _, aliases = subject.parse_character_infobox(
+        "{{Infobox Crt\r\n|中文名= 首选名\r\n|简体中文名= 简体名\r\n|别名= 单值别名\r\n}}"
+    )
+    check("多中文名首选", name_cn, "首选名")
+    check("多中文名可搜索", aliases, ["简体名", "单值别名"])
+
 
 def test_load_character_tags() -> None:
     print("load_character_tags（上游 id_tags.js 的裸数字键）")
