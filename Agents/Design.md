@@ -24,21 +24,23 @@
 - 动效使用 `framer-motion`，参数唯一来源为 `Client/src/lib/Motion.ts`；令牌、来源锚定、Radix 动画及减弱动效规则统一见 [Animation](Animation.md)。
 - 全站图片全局禁止原生拖拽与幽灵虚影：在 `Client/src/index.css` 声明 `img { -webkit-user-drag: none; user-drag: none; }` 并在应用启动入口通过 `setupGlobalImageProtection()` 拦截原生 `dragstart` 事件，确保全平台/全浏览器（包括 WebKit、Chromium、Gecko 及移动端）下所有 `<img>` 标签天然免于误触与幽灵框，杜绝在业务组件中人肉散落 `draggable={false}` 补丁。
 
-### 2.1 全局层叠标尺与 Z-Index 语义令牌 (`--z-*`)
+### 2.1 全局层叠标尺与 Z-Index 语义令牌 (`--z-index-*`)
 
 全站层叠上下文严格收敛于 `Client/src/index.css` 的 `@theme inline` 语义变量，禁止在业务组件中随手写死任意魔数（如 `z-[80]`、`z-[100]`、`z-[110]`）。所有组件必须且只能使用以下语义标尺：
 
+变量必须写在 Tailwind v4 的 `--z-index-*` 命名空间下（`z` 工具类的 `themeKeys` 只读该命名空间）。写成 `--z-*` 不会生成任何工具类，`z-overlay` 一类的类名会静默失效并退化成 `z-index: auto`，外观上看不出报错。
+
 | 语义变量 | 数值 | 对应的 Tailwind 类 | 适用场景与真相源说明 |
 | :--- | :--- | :--- | :--- |
-| `--z-base` | `0` | `z-base` | 文档流默认层级与普通流内容 |
-| `--z-panel` | `10` | `z-panel` | 游戏房间工作面板、吸顶表格行、固定列 |
-| `--z-sticky` | `20` | `z-sticky` | 页面局部/全局粘性表头、粘性导航栏 |
-| `--z-drawer` | `30` | `z-drawer` | 移动端侧栏抽屉、从边缘划入的操作栏 |
-| `--z-dropdown` | `40` | `z-dropdown` | 常规页面级下拉菜单、未凌驾于模态框之上的弹出选项 |
-| `--z-overlay` | `50` | `z-overlay` | 全局暗色遮罩（`DialogOverlay`、全屏 Backdrop 模糊层） |
-| `--z-modal` | `60` | `z-modal` | 对话框主体（`DialogContent`）、核心弹出模态卡片 |
-| `--z-popover` | `70` | `z-popover` | 允许凌驾于模态框之上的下拉列表（`SelectContent`、`Tooltip`、右键上下文菜单） |
-| `--z-toast` | `100` | `z-toast` | 顶层通知消息（`Toast`）、新版本更新公告栏（`VersionUpdateNotice`） |
+| `--z-index-base` | `0` | `z-base` | 文档流默认层级与普通流内容 |
+| `--z-index-panel` | `10` | `z-panel` | 游戏房间工作面板、吸顶表格行、固定列 |
+| `--z-index-sticky` | `20` | `z-sticky` | 页面局部/全局粘性表头、粘性导航栏 |
+| `--z-index-drawer` | `30` | `z-drawer` | 移动端侧栏抽屉、从边缘划入的操作栏 |
+| `--z-index-dropdown` | `40` | `z-dropdown` | 常规页面级下拉菜单、未凌驾于模态框之上的弹出选项 |
+| `--z-index-overlay` | `50` | `z-overlay` | 全局暗色遮罩（`DialogOverlay`、全屏 Backdrop 模糊层） |
+| `--z-index-modal` | `60` | `z-modal` | 对话框主体（`DialogContent`）、核心弹出模态卡片 |
+| `--z-index-popover` | `70` | `z-popover` | 允许凌驾于模态框之上的下拉列表（`SelectContent`、`Tooltip`、右键上下文菜单） |
+| `--z-index-toast` | `100` | `z-toast` | 顶层通知消息（`Toast`）、新版本更新公告栏（`VersionUpdateNotice`） |
 
 
 ## 3. 颜色与信息层级
