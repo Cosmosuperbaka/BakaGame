@@ -88,10 +88,10 @@ export function GameOverPhase() {
     summary.winner === "aborted"
       ? "text-muted-foreground"
       : summary.winner === "undercover"
-        ? "text-rose-600"
+        ? "text-destructive"
         : summary.winner === "blank"
-          ? "text-slate-600"
-          : "text-amber-600";
+          ? "text-muted-foreground"
+          : "text-warning";
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -110,22 +110,22 @@ export function GameOverPhase() {
         </div>
         {summary.words ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
-            <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3">
-              <div className="text-xs text-emerald-600 font-medium mb-1">平民词</div>
-              <div className="text-base font-bold text-emerald-700">
+            <div className="rounded-md border border-success/40 bg-success/10 p-3">
+              <div className="text-xs text-success font-medium mb-1">平民词</div>
+              <div className="text-base font-bold text-success">
                 {summary.words.civilianWord}
               </div>
             </div>
-            <div className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3">
-              <div className="text-xs text-rose-600 font-medium mb-1">卧底词</div>
-              <div className="text-base font-bold text-rose-700">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+              <div className="text-xs text-destructive font-medium mb-1">卧底词</div>
+              <div className="text-base font-bold text-destructive">
                 {summary.words.undercoverWord}
               </div>
             </div>
             {summary.words.blankHint && (
-              <div className="col-span-2 rounded-md border border-slate-500/20 bg-slate-500/10 p-3 md:col-span-1">
-                <div className="text-xs text-slate-600 font-medium mb-1">白板提示</div>
-                <div className="text-base font-bold text-slate-700">
+              <div className="col-span-2 rounded-md border border-border bg-muted p-3 md:col-span-1">
+                <div className="text-xs text-muted-foreground font-medium mb-1">白板提示</div>
+                <div className="text-base font-bold text-foreground">
                   {summary.words.blankHint}
                 </div>
               </div>
@@ -179,10 +179,10 @@ export function GameOverPhase() {
                       {ROLE_LABELS[role]}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
+                  <td className="px-4 py-2.5 text-right font-semibold text-success">
                     +{delta}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-amber-600">
+                  <td className="px-4 py-2.5 text-right font-semibold text-warning">
                     {totalScore}
                   </td>
                 </motion.tr>

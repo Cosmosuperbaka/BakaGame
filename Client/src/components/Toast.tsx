@@ -48,9 +48,9 @@ function ToastViewport({
             className={cn(
               "pointer-events-auto rounded-md border px-4 py-3 text-sm shadow-md backdrop-blur-sm",
               t.type === "error" &&
-                "bg-destructive/10 border-destructive/30 text-destructive",
+                "bg-destructive/10 border-destructive/40 text-destructive",
               t.type === "success" &&
-                "bg-emerald-500/10 border-emerald-500/30 text-emerald-700",
+                "bg-success/10 border-success/40 text-success",
               t.type === "info" && "bg-primary/10 border-primary/25 text-primary"
             )}
           >

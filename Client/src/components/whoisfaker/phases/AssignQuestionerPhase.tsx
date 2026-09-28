@@ -64,7 +64,7 @@ export function AssignQuestionerPhase() {
               title="玩家"
               hint={
                 spectatorCandidates.length > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-amber-600">
+                  <span className="inline-flex items-center gap-1 text-warning">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     从此处指定会自动把卧底人数减 1
                   </span>

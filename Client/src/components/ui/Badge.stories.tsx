@@ -40,7 +40,7 @@ export const WithIcons: Story = {
         8s
       </Badge>
       <Badge variant="secondary" className="gap-1.5 px-3 py-1 text-xs font-medium">
-        <Shield className="h-3.5 w-3.5 text-purple-600" />
+        <Shield className="h-3.5 w-3.5 text-questioner" />
         出题人视角
       </Badge>
       <Badge variant="outline" className="gap-1 text-xs font-normal">

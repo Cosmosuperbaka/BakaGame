@@ -150,7 +150,7 @@ function BlankGuessInput() {
   if (pendingReview) {
     return (
       <div className="mx-auto max-w-md space-y-5">
-        <PhaseHeader icon={Gavel} title="等待主持人裁定" iconClassName="text-amber-600" />
+        <PhaseHeader icon={Gavel} title="等待主持人裁定" iconClassName="text-warning" />
         <GuessReadout words={snapshot.status.blankGuessDraft} submitted />
         <p className="text-center text-sm text-muted-foreground">
           你的猜测与答案不完全一致，正在由主持人判断是否算作猜中。
@@ -161,7 +161,7 @@ function BlankGuessInput() {
 
   return (
     <div className="mx-auto max-w-md space-y-5">
-      <PhaseHeader icon={CircleHelp} title="白板猜词" iconClassName="text-amber-600" />
+      <PhaseHeader icon={CircleHelp} title="白板猜词" iconClassName="text-warning" />
       <p className="text-center text-sm text-muted-foreground">
         猜出两个词，不分顺序。全场都能看到你的输入，机会只有一次。
       </p>
@@ -284,7 +284,7 @@ export function BlankGuessWaiting() {
       <PhaseHeader
         icon={pendingReview ? Gavel : CircleHelp}
         title={pendingReview ? "白板猜词 · 待裁定" : "白板猜词"}
-        iconClassName="text-amber-600"
+        iconClassName="text-warning"
       />
 
       <div className="space-y-1 text-center">

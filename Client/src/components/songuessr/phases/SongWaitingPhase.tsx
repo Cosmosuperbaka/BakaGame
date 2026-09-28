@@ -58,7 +58,7 @@ export function SongRoomLinkShare({ roomId }: { roomId: string }) {
           className={cn(
             "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
             copied
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+              ? "border-success/40 bg-success/10 text-success"
               : "hover:bg-accent/60",
           )}
         >

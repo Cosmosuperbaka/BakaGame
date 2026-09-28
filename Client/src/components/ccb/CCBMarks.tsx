@@ -15,12 +15,12 @@ interface MarkStyle {
 }
 
 const MARK_STYLES: Record<string, MarkStyle> = {
-  "✔": { icon: Check, label: "猜中", tone: "text-emerald-600 dark:text-emerald-400" },
-  "✅": { icon: Check, label: "猜中", tone: "text-emerald-600 dark:text-emerald-400" },
-  "💡": { icon: Lightbulb, label: "作品命中", tone: "text-amber-600 dark:text-amber-400" },
-  "👑": { icon: Crown, label: "首次猜中", tone: "text-amber-600 dark:text-amber-400" },
-  "✌": { icon: Star, label: "猜中", tone: "text-emerald-600 dark:text-emerald-400" },
-  "🏆": { icon: Trophy, label: "队伍获胜", tone: "text-amber-600 dark:text-amber-400" },
+  "✔": { icon: Check, label: "猜中", tone: "text-success" },
+  "✅": { icon: Check, label: "猜中", tone: "text-success" },
+  "💡": { icon: Lightbulb, label: "作品命中", tone: "text-warning" },
+  "👑": { icon: Crown, label: "首次猜中", tone: "text-warning" },
+  "✌": { icon: Star, label: "猜中", tone: "text-success" },
+  "🏆": { icon: Trophy, label: "队伍获胜", tone: "text-warning" },
   "❌": { icon: X, label: "未命中", tone: "text-muted-foreground" },
   // 上游有的标记带变体选择符、有的不带，两种写法都要认。
   "⏱": { icon: Clock, label: "超时", tone: "text-muted-foreground" },

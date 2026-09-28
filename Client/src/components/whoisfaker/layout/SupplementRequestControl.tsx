@@ -51,7 +51,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
 
   if (!isQuestioner) {
     return supplementActive ? (
-      <div className="flex items-center justify-center gap-2 text-xs text-sky-700 dark:text-sky-300">
+      <div className="flex items-center justify-center gap-2 text-xs text-info">
         <MessageSquarePlus className="h-3.5 w-3.5" />
         补充发言进行中，完成后恢复原阶段
       </div>
@@ -72,7 +72,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
             <div className="mb-3 space-y-3 rounded-md bg-muted p-4 text-left">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <Users className="h-4 w-4 text-sky-600" />
+                  <Users className="h-4 w-4 text-info" />
                   选择补充发言玩家
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={close}>
@@ -134,7 +134,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
       </AnimatePresence>
 
       {supplementActive ? (
-        <p className="text-center text-xs text-sky-700 dark:text-sky-300">
+        <p className="text-center text-xs text-info">
           等待 {pendingPlayerIds.length} 名玩家完成补充发言
         </p>
       ) : canRequest && !open ? (

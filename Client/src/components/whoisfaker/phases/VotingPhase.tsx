@@ -73,7 +73,7 @@ export function VotingPhase() {
       <PhaseHeader
         icon={Vote}
         title={isTieBreak ? "平票 PK · 投票" : "投票阶段"}
-        iconClassName={isTieBreak ? "text-amber-600" : undefined}
+        iconClassName={isTieBreak ? "text-warning" : undefined}
       />
 
       <PrivilegedActionPreview mode="vote" />

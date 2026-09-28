@@ -56,7 +56,7 @@ export function SongTestController({
               >
                 <div className="space-y-2 border-t px-4 pb-4 pt-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Users className="h-3.5 w-3.5 text-sky-500" />
+                    <Users className="h-3.5 w-3.5 text-info" />
                     测试人机
                   </div>
                   <div className="flex items-center gap-1.5">

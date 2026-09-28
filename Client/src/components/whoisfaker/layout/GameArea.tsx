@@ -70,7 +70,7 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
                   animate={{ y: 0, scale: 1 }}
                   transition={spring.swift}
                 >
-                  <Sunrise className="mx-auto h-14 w-14 text-amber-500" />
+                  <Sunrise className="mx-auto h-14 w-14 text-warning" />
                 </motion.span>
                 <h2 className="mt-4 text-2xl font-semibold">天亮了</h2>
                 <p className="mt-1 text-sm text-muted-foreground">第 {daybreakNotice.day} 天开始</p>

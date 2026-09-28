@@ -1,6 +1,6 @@
 import { cn } from "@/lib/Utils";
 
-export type PlayerStatusTone = "default" | "emerald" | "violet" | "red" | "amber";
+export type PlayerStatusTone = "default" | "success" | "questioner" | "warning" | "danger";
 
 /** 玩家行统一行高，保证各面板对齐 */
 export const PLAYER_ROW_HEIGHT = "min-h-14";
@@ -26,12 +26,17 @@ export const PLAYER_ROW_BASE =
 export const PLAYER_ME_MARK =
   "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary";
 
+/**
+ * 状态色调。含义固定：默认=中性等待，success=成功/完成，questioner=出题人，
+ * warning=提示，danger=危险/淘汰。取语义令牌而非调色板色阶，
+ * 暗色变体由令牌自身携带，不再逐处补 `dark:`。
+ */
 const PLAYER_STATUS_TONES: Record<PlayerStatusTone, string> = {
   default: "text-muted-foreground",
-  emerald: "text-emerald-600",
-  violet: "text-purple-600",
-  red: "text-red-600",
-  amber: "text-amber-600",
+  success: "text-success",
+  questioner: "text-questioner",
+  warning: "text-warning",
+  danger: "text-destructive",
 };
 
 /** 统一状态胶囊徽章 */

@@ -161,13 +161,13 @@ export function AttemptList({
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {attempt.result === "correct" ? (
-                <Check className="h-4 w-4 text-emerald-600" />
+                <Check className="h-4 w-4 text-success" />
               ) : attempt.result === "timeout" ? (
-                <Clock3 className="h-4 w-4 text-amber-600" />
+                <Clock3 className="h-4 w-4 text-warning" />
               ) : attempt.result === "gaveUp" ? (
                 <Flag className="h-4 w-4 text-muted-foreground" />
               ) : (
-                <X className="h-4 w-4 text-red-500" />
+                <X className="h-4 w-4 text-destructive" />
               )}
               <span className="min-w-0 break-words text-sm">
                 {showPlayerName ? `${attempt.playerName}：` : ""}

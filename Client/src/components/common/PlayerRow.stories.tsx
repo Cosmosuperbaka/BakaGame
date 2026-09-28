@@ -13,10 +13,10 @@ const [host, me, peach, azumi, kanade, , longName] = STORY_PLAYERS;
 /** 三个游戏在次行实际放的内容，用于核对同一行骨架承载不同信息的观感。 */
 const SECOND_LINE_CASES: Array<{ name: string; badges: ReactNode; meta?: ReactNode; detail?: ReactNode }> = [
   { name: "谁是卧底 · 局内", badges: <PlayerStatusPill label="平民" tone="default" /> },
-  { name: "猜歌 · 猜歌中", badges: <PlayerStatusPill label="猜歌" tone="amber" /> },
+  { name: "猜歌 · 猜歌中", badges: <PlayerStatusPill label="猜歌" tone="warning" /> },
   {
     name: "CCB · 猜测中",
-    badges: <PlayerStatusPill label="猜测中" tone="amber" />,
+    badges: <PlayerStatusPill label="猜测中" tone="warning" />,
     meta: <span className="truncate font-sans text-[11px] text-muted-foreground">2 队 · 3/10 次 · 已提交</span>,
     detail: <CCBMarks marks="❌💡❌" name={host.name} />,
   },
@@ -43,11 +43,11 @@ export const AllStates: Story = {
   name: "全部行内状态",
   render: () => (
     <div className="flex flex-col gap-px">
-      <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="准备" tone="emerald" />} />
-      <PlayerRow name={me.name} score={9} me host badges={<PlayerStatusPill label="猜歌" tone="amber" />} />
+      <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="准备" tone="success" />} />
+      <PlayerRow name={me.name} score={9} me host badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
       <PlayerRow name={peach.name} score={15} eliminated badges={<PlayerStatusPill label="完成" tone="default" />} />
       <PlayerRow name={kanade.name} score={3} online={false} badges={<PlayerStatusPill label="等待" tone="default" />} />
-      <PlayerRow name={azumi.name} score={6} bot badges={<PlayerStatusPill label="准备" tone="emerald" />} />
+      <PlayerRow name={azumi.name} score={6} bot badges={<PlayerStatusPill label="准备" tone="success" />} />
       <PlayerRow name={longName.name} score={0} badges={<PlayerStatusPill label="旁观" tone="default" />} />
     </div>
   ),
@@ -77,7 +77,7 @@ export const ScoreWidths: Story = {
           key={score}
           name={longName.name}
           score={score}
-          badges={<PlayerStatusPill label="猜测中" tone="amber" />}
+          badges={<PlayerStatusPill label="猜测中" tone="warning" />}
         />
       ))}
     </div>

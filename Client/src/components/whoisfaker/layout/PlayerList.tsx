@@ -59,14 +59,15 @@ const roleTones: Record<PlayerMark, string> = {
 
 /**
  * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
- * 半透明色底会被它吃掉，所以这里单独给一套实底。
+ * 半透明色底会被它吃掉，所以这里单独给一套实底：
+ * 底色取状态令牌本身，前景取配套的 `-foreground`，两档同源于一套取值。
  */
 const roleSelectedTones: Record<PlayerMark, string> = {
   unknown: "bg-muted-foreground/85 text-background",
-  civilian: "bg-sky-800 text-white dark:bg-sky-700",
-  undercover: "bg-red-900 text-white dark:bg-red-800",
-  blank: "bg-stone-700 text-white dark:bg-stone-600",
-  angel: "bg-amber-800 text-white dark:bg-amber-700",
+  civilian: "bg-info text-info-foreground",
+  undercover: "bg-destructive text-destructive-foreground",
+  blank: "bg-muted-foreground text-background",
+  angel: "bg-warning text-warning-foreground",
 };
 
 /** 玩家行与发言历史首栏共用的行高，保证两处对齐 */

@@ -4,7 +4,8 @@ import type { DescriptionRecord, PublicPlayerView, RoomSnapshot } from "@/types"
 export interface DescriptionColumn {
   key: string;
   label: string;
-  tone: "default" | "amber" | "sky";
+  /** 列的种类：常规轮次、平票 PK 或补充发言；配色由下方两张表按种类映射。 */
+  tone: "default" | "tieBreak" | "supplement";
   /** 在整张表中的列序号，0-based。表格据此给奇偶列上交替底色。 */
   index: number;
   /**
@@ -116,13 +117,13 @@ export function buildDescriptionColumns(
     ...[...ties].sort(ascending).map((index) => ({
       key: `tie-${index}`,
       label: `平票 ${index}`,
-      tone: "amber" as const,
+      tone: "tieBreak" as const,
       expectedPlayerIds: expectFor(`tie-${index}`),
     })),
     ...[...supplements].sort(ascending).map((index) => ({
       key: `sup-${index}`,
       label: `补充 ${index}`,
-      tone: "sky" as const,
+      tone: "supplement" as const,
       expectedPlayerIds: expectFor(`sup-${index}`),
     })),
     // 列序在三类列全部展开后才确定，因此统一在这里补齐。
@@ -170,15 +171,15 @@ export function buildDescriptionColumns(
  */
 export const DESCRIPTION_TONES: Record<DescriptionColumn["tone"], string> = {
   default: "text-foreground",
-  amber: "text-foreground",
-  sky: "text-foreground",
+  tieBreak: "text-foreground",
+  supplement: "text-foreground",
 };
 
 /** 列标题的文字色，用于区分轮次、平票与补充三类列。 */
 export const DESCRIPTION_HEAD_TONES: Record<DescriptionColumn["tone"], string> = {
   default: "text-muted-foreground",
-  amber: "text-amber-700 dark:text-amber-400",
-  sky: "text-sky-700 dark:text-sky-300",
+  tieBreak: "text-warning",
+  supplement: "text-info",
 };
 
 /**

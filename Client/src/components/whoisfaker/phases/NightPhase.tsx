@@ -66,7 +66,6 @@ export function NightPhase() {
       <PhaseHeader
         icon={Moon}
         title="夜晚降临"
-        iconClassName="text-indigo-500"
       />
 
       <PrivilegedActionPreview mode="night" />
@@ -84,11 +83,11 @@ export function NightPhase() {
                 type="button"
                 variants={listItem}
                 {...selectable}
-                className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-3.5 text-left transition-colors hover:border-rose-400/50 hover:bg-rose-500/5"
+                className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-3.5 text-left transition-colors hover:border-destructive/40 hover:bg-destructive/5"
                 onClick={() => handleNightAction(p.id)}
               >
                 <span className="truncate text-sm font-medium">{p.name}</span>
-                <Sword className="ml-2 h-4 w-4 shrink-0 text-rose-500" />
+                <Sword className="ml-2 h-4 w-4 shrink-0 text-destructive" />
               </motion.button>
             ))}
           <AbstainOption onSelect={() => handleNightAction()} />

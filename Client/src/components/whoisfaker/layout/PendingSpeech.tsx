@@ -44,7 +44,7 @@ export function PendingSpeech({
 export function SubmittedSpeech({ className }: { className?: string }) {
   return (
     <motion.span
-      className={cn("inline-flex items-center align-middle text-emerald-700 dark:text-emerald-400", className)}
+      className={cn("inline-flex items-center align-middle text-success", className)}
       role="status"
       aria-label="已提交发言"
       initial={{ scale: 0.4, opacity: 0 }}

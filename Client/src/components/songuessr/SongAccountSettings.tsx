@@ -176,7 +176,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         <span className={cn(
           "rounded-md px-2 py-0.5 text-[11px] font-medium",
           snapshot.musicAccountReady
-            ? "bg-emerald-500/10 text-emerald-700"
+            ? "bg-success/10 text-success"
             : "bg-muted text-muted-foreground",
         )}>
           {snapshot.musicAccountReady ? "房间已连接" : storedSession ? "本机已登录" : "未登录"}
@@ -213,7 +213,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                     <div className="min-w-0 flex-1">
                       <div className="break-words text-sm font-medium">{storedSession.account.nickname}</div>
                       <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Check className="h-3 w-3 text-emerald-600" />
+                        <Check className="h-3 w-3 text-success" />
                         {snapshot.musicAccountReady ? "全房音乐请求正在使用此账号" : "等待加载到当前房间"}
                       </div>
                     </div>
@@ -221,9 +221,9 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                   <div className={cn(
                     "rounded-md border px-3 py-2 text-xs",
                     vipStatus === "vip"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      ? "border-success/40 bg-success/10 text-success"
                       : vipStatus === "nonVip"
-                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        ? "border-warning/40 bg-warning/10 text-warning"
                         : "border-muted bg-muted/50 text-muted-foreground",
                   )}>
                     <div className="font-medium">{vipLabel}{vipExpireLabel ? ` · ${vipExpireLabel}` : ""}</div>
@@ -277,7 +277,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
       </AnimatePresence>
 
       <div className="flex gap-2 border-t bg-muted/30 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
         <p>
           隐私说明：服务器不会保存账号信息。账号信息仅保存在登录者浏览器，
           在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或主动移除登录时销毁。

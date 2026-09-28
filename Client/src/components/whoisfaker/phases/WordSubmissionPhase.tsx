@@ -142,7 +142,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
 
       <div className="w-full space-y-4">
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-emerald-600 dark:text-emerald-500">平民词</Label>
+          <Label className="text-xs font-semibold text-success">平民词</Label>
           <Input
             value={civilianWord}
             onChange={(e) => setCivilianWord(e.target.value)}
@@ -152,7 +152,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-rose-600 dark:text-rose-500">卧底词</Label>
+          <Label className="text-xs font-semibold text-destructive">卧底词</Label>
           <Input
             value={undercoverWord}
             onChange={(e) => setUndercoverWord(e.target.value)}
@@ -163,7 +163,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
         </div>
         {hasBlank && (
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400">白板提示</Label>
+            <Label className="text-xs font-semibold text-muted-foreground">白板提示</Label>
             <Input
               value={blankHint}
               onChange={(e) => setBlankHint(e.target.value)}

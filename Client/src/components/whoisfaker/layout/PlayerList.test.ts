@@ -42,7 +42,7 @@ describe("player list presentation", () => {
   it("keeps the questioner badge even after elimination checks", () => {
     const questioner = createPlayer({ roundStatus: "questioner" });
 
-    expect(resolveStatus(questioner, false, false)).toEqual({ label: "主持", tone: "violet" });
+    expect(resolveStatus(questioner, false, false)).toEqual({ label: "主持", tone: "questioner" });
   });
 
   it("never renders readiness for spectators", () => {

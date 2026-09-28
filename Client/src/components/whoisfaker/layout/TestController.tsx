@@ -136,7 +136,7 @@ export function TestController() {
                     </div>
                   </ControlGroup>
 
-                  <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-blue-500" />}>
+                  <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-info" />}>
                     <div className="grid grid-cols-3 gap-1.5">
                       <Button
                         variant={currentPerspective === "player" ? "default" : "outline"}
@@ -152,7 +152,7 @@ export function TestController() {
                         className="h-7 text-xs gap-1"
                         onClick={() => handleSetPerspective("questioner")}
                       >
-                        <Shield className="h-3 w-3 text-purple-400" />
+                        <Shield className="h-3 w-3 text-questioner" />
                         出题人
                       </Button>
                       <Button
@@ -167,7 +167,7 @@ export function TestController() {
                   </ControlGroup>
 
                   {currentPerspective === "player" && (
-                    <ControlGroup label="切换玩家身份" icon={<UserCog className="h-3.5 w-3.5 text-emerald-500" />}>
+                    <ControlGroup label="切换玩家身份" icon={<UserCog className="h-3.5 w-3.5 text-success" />}>
                       <div className="grid grid-cols-4 gap-1.5">
                         {ROLES.map((r) => (
                           <Button
@@ -186,7 +186,7 @@ export function TestController() {
 
                   <ControlGroup
                     label="测试人机"
-                    icon={<Bot className="h-3.5 w-3.5 text-sky-500" />}
+                    icon={<Bot className="h-3.5 w-3.5 text-info" />}
                   >
                     <div className="flex items-center gap-1.5">
                       <Button

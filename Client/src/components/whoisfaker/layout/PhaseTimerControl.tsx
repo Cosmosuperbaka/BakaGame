@@ -124,9 +124,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             className={cn(
               "relative overflow-hidden rounded-md border p-3 shadow-xs transition-colors duration-300",
               isCritical
-                ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : isWarning
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                  ? "border-warning/40 bg-warning/10 text-warning"
                   : "border-border/80 bg-muted/60 text-foreground",
             )}
           >
@@ -141,9 +141,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                     className={cn(
                       "h-4 w-4",
                       isCritical
-                        ? "text-rose-600 dark:text-rose-400"
+                        ? "text-destructive"
                         : isWarning
-                          ? "text-amber-600 dark:text-amber-400"
+                          ? "text-warning"
                           : "text-muted-foreground",
                     )}
                   />
@@ -160,9 +160,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                   className={cn(
                     "font-mono text-xl font-bold tracking-widest tabular-nums",
                     isCritical
-                      ? "text-rose-600 dark:text-rose-400"
+                      ? "text-destructive"
                       : isWarning
-                        ? "text-amber-700 dark:text-amber-400"
+                        ? "text-warning"
                         : "text-foreground",
                   )}
                 >
@@ -190,9 +190,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                 className={cn(
                   "h-full rounded-full transition-all duration-100 ease-linear",
                   isCritical
-                    ? "bg-rose-500"
+                    ? "bg-destructive"
                     : isWarning
-                      ? "bg-amber-500"
+                      ? "bg-warning"
                       : "bg-primary",
                 )}
                 style={{ width: `${percent}%` }}

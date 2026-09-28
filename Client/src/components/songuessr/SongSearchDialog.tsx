@@ -144,7 +144,7 @@ export function SongSearchDialog({
                     <div className="flex flex-wrap items-center gap-1.5 font-medium">
                       <span>{song.title}</span>
                       {song.requiresVip ? (
-                        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                        <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
                           会员专享
                         </span>
                       ) : null}

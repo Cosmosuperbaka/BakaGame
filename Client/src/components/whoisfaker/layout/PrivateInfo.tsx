@@ -14,9 +14,9 @@ export function PrivateInfo({ privateState }: Props) {
       <div className="flex items-center gap-2">
         <Badge variant="secondary" className="gap-1.5 px-3 py-1 text-xs font-medium">
           {privateState.isQuestioner ? (
-            <Shield className="h-3.5 w-3.5 text-purple-600" />
+            <Shield className="h-3.5 w-3.5 text-questioner" />
           ) : (
-            <Eye className="h-3.5 w-3.5 text-blue-600" />
+            <Eye className="h-3.5 w-3.5 text-info" />
           )}
           {privateState.isQuestioner ? "出题人视角" : "旁观视角"}
         </Badge>
@@ -40,9 +40,9 @@ export function PrivateInfo({ privateState }: Props) {
 
       {privateState.angelWordOptions && (
         <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-amber-500 shrink-0" />
+          <BookOpen className="h-4 w-4 text-warning shrink-0" />
           <span className="text-xs text-muted-foreground font-medium">天使</span>
-          <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md">
+          <span className="text-sm font-bold text-warning bg-warning/10 px-2.5 py-0.5 rounded-md">
             {privateState.angelWordOptions[0]}/{privateState.angelWordOptions[1]}
           </span>
         </div>
@@ -50,9 +50,9 @@ export function PrivateInfo({ privateState }: Props) {
 
       {privateState.blankHint && (
         <div className="flex items-center gap-2 border-l pl-3">
-          <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+          <AlertCircle className="h-4 w-4 text-warning shrink-0" />
           <span className="text-xs text-muted-foreground font-medium">白板提示</span>
-          <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-md">
+          <span className="text-sm font-bold text-warning bg-warning/10 px-2.5 py-0.5 rounded-md">
             {privateState.blankHint}
           </span>
         </div>

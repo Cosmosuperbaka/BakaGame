@@ -6,7 +6,7 @@ import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "./Pla
 const meta = {
   title: "公共组件/PlayerStatusPill",
   component: PlayerStatusPill,
-  args: { label: "准备", tone: "emerald" },
+  args: { label: "准备", tone: "success" },
 } satisfies Meta<typeof PlayerStatusPill>;
 
 export default meta;
@@ -19,12 +19,12 @@ const TONES: Array<{ label: string; tone: PlayerStatusTone }> = [
   { label: "等待", tone: "default" },
   { label: "旁观", tone: "default" },
   { label: "完成", tone: "default" },
-  { label: "准备", tone: "emerald" },
-  { label: "猜中", tone: "emerald" },
-  { label: "主持", tone: "violet" },
-  { label: "出题", tone: "violet" },
-  { label: "猜歌", tone: "amber" },
-  { label: "卧底", tone: "red" },
+  { label: "准备", tone: "success" },
+  { label: "猜中", tone: "success" },
+  { label: "主持", tone: "questioner" },
+  { label: "出题", tone: "questioner" },
+  { label: "猜歌", tone: "warning" },
+  { label: "卧底", tone: "danger" },
 ];
 
 export const Tones: Story = {
@@ -49,11 +49,11 @@ export const Groups: Story = {
         <div className="relative flex w-full min-w-0 flex-col py-3">
           <PlayerGroupTitle label="玩家" count={6} />
           <div className="flex flex-col gap-px">
-            <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="出题" tone="violet" />} />
-            <PlayerRow name={peach.name} score={9} badges={<PlayerStatusPill label="猜中" tone="emerald" />} />
-            <PlayerRow name={me.name} score={7} me badges={<PlayerStatusPill label="猜歌" tone="amber" />} />
-            <PlayerRow name={longName.name} score={6} badges={<PlayerStatusPill label="猜中" tone="emerald" />} />
-            <PlayerRow name={kanade.name} score={3} badges={<PlayerStatusPill label="猜歌" tone="amber" />} />
+            <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="出题" tone="questioner" />} />
+            <PlayerRow name={peach.name} score={9} badges={<PlayerStatusPill label="猜中" tone="success" />} />
+            <PlayerRow name={me.name} score={7} me badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
+            <PlayerRow name={longName.name} score={6} badges={<PlayerStatusPill label="猜中" tone="success" />} />
+            <PlayerRow name={kanade.name} score={3} badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
             <PlayerRow name={azumi.name} score={0} online={false} badges={<PlayerStatusPill label="完成" tone="default" />} />
           </div>
           <PlayerGroupTitle label="旁观" count={1} withRule />

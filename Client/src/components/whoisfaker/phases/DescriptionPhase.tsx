@@ -20,8 +20,8 @@ import type { SpeechMode } from "@/types";
 
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
-  supplement: { title: "补充发言", icon: MessageSquarePlus, tone: "text-sky-600" },
-  tieBreak: { title: "平票 PK", icon: Scale, tone: "text-amber-600" },
+  supplement: { title: "补充发言", icon: MessageSquarePlus, tone: "text-info" },
+  tieBreak: { title: "平票 PK", icon: Scale, tone: "text-warning" },
 } satisfies Record<SpeechMode, { title: string; icon: typeof MessageSquareText; tone: string }>;
 
 /** 发言表格中的一行 */
@@ -244,7 +244,7 @@ export function DescriptionPhase() {
       <PhaseHeader icon={meta.icon} title={meta.title} iconClassName={meta.tone} />
 
       {mode === "supplement" && waitingPlayerIds.includes(myId) ? (
-        <div className="flex items-center justify-center gap-2 rounded-md bg-sky-500/10 px-4 py-2.5 text-sky-700 dark:text-sky-300">
+        <div className="flex items-center justify-center gap-2 rounded-md bg-info/10 px-4 py-2.5 text-info">
           <MessageSquarePlus className="h-4 w-4 shrink-0" />
           <span className="text-sm font-medium">轮到你补充发言</span>
         </div>

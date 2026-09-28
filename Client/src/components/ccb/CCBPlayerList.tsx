@@ -14,9 +14,9 @@ type CCBRun = ReturnType<typeof useCCBAction>["run"];
 
 const statuses: Record<CCBPlayer["status"], { label: string; tone: PlayerStatusTone }> = {
   waiting: { label: "等待", tone: "default" },
-  playing: { label: "猜测中", tone: "amber" },
-  solved: { label: "猜中", tone: "emerald" },
-  teamWon: { label: "队伍获胜", tone: "emerald" },
+  playing: { label: "猜测中", tone: "warning" },
+  solved: { label: "猜中", tone: "success" },
+  teamWon: { label: "队伍获胜", tone: "success" },
   exhausted: { label: "次数用尽", tone: "default" },
   surrendered: { label: "已放弃", tone: "default" },
   observing: { label: "旁观", tone: "default" },
@@ -112,7 +112,7 @@ interface CCBPlayerRowProps {
 function CCBPlayerRow({ player, snapshot, self, canManage, waiting, membership, busy, run }: CCBPlayerRowProps) {
   // 等待阶段用准备状态，开局后换成本局行动状态；旁观者只表达旁观。
   const status = waiting && membership === "active"
-    ? { label: player.ready ? "准备" : "等待", tone: (player.ready ? "emerald" : "default") as PlayerStatusTone }
+    ? { label: player.ready ? "准备" : "等待", tone: (player.ready ? "success" : "default") as PlayerStatusTone }
     : statuses[player.status];
   const progress = snapshot.phase === "guessing" && player.status !== "observing";
   const detail = [

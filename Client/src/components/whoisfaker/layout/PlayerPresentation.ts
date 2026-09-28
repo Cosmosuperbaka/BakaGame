@@ -1,8 +1,9 @@
+import type { PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import type { PlayerRole, PrivateState, PublicPlayerView } from "@/types";
 
 export interface StatusInfo {
   label: string;
-  tone: "default" | "emerald" | "violet" | "red" | "amber";
+  tone: PlayerStatusTone;
 }
 
 export function buildKnownRoleMap(
@@ -27,7 +28,7 @@ export function resolveStatus(
   waitingPhase: boolean,
   hideSpectatorStatus?: boolean,
 ): StatusInfo | null {
-  if (player.roundStatus === "questioner") return { label: "主持", tone: "violet" };
+  if (player.roundStatus === "questioner") return { label: "主持", tone: "questioner" };
   // 出局不占行首徽章位：它与房主、掉线一样是玩家的一种标记，
   // 统一放在名字之后的图标位，行首留给身份与阶段状态。
   if (player.roundStatus === "dead") return null;
@@ -35,7 +36,7 @@ export function resolveStatus(
     return hideSpectatorStatus ? null : { label: "旁观", tone: "default" };
   }
   if (waitingPhase) {
-    if (player.isReady) return { label: "准备", tone: "emerald" };
+    if (player.isReady) return { label: "准备", tone: "success" };
     return { label: "等待", tone: "default" };
   }
   return null;

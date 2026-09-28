@@ -21,12 +21,17 @@ export const ROLE_LABELS: Record<PlayerRole, string> = {
   blank: "白板",
 };
 
-// 角色颜色
+/**
+ * 身份色。三个游戏的身份徽章、结算身份表与中盘预览共用这一套，
+ * 不各写一份；中性身份取语义的 `muted-foreground`，不引入第三种灰色。
+ * 取值全部来自 `index.css` 的状态语义令牌，亮暗两侧由令牌自身切换，
+ * 组件里不再逐处补 `dark:` 变体。
+ */
 export const ROLE_COLORS: Record<PlayerRole, string> = {
-  civilian: "text-blue-600",
-  undercover: "text-red-600",
-  angel: "text-amber-500",
-  blank: "text-gray-500",
+  civilian: "text-info",
+  undercover: "text-destructive",
+  angel: "text-warning",
+  blank: "text-muted-foreground",
 };
 
 // 阵营中文名

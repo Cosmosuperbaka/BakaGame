@@ -4,14 +4,14 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { PlayerGroupTitle, PlayerStatusPill } from "@/components/common/PlayerStatusPill";
+import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
 
 type SongStatus = {
   label: string;
-  tone: "default" | "emerald" | "violet" | "amber";
+  tone: PlayerStatusTone;
 };
 
 export interface PlayerListProps {
@@ -195,12 +195,12 @@ function resolveSongStatus(
   }
   if (phase === "waiting") {
     return player.isReady
-      ? { label: "准备", tone: "emerald" }
+      ? { label: "准备", tone: "success" }
       : { label: "等待", tone: "default" };
   }
-  if (player.roundStatus === "submitter") return { label: "出题", tone: "violet" };
-  if (player.roundStatus === "guessing") return { label: "猜歌", tone: "amber" };
-  if (player.roundStatus === "correct") return { label: "猜中", tone: "emerald" };
+  if (player.roundStatus === "submitter") return { label: "出题", tone: "questioner" };
+  if (player.roundStatus === "guessing") return { label: "猜歌", tone: "warning" };
+  if (player.roundStatus === "correct") return { label: "猜中", tone: "success" };
   if (player.roundStatus === "finished") return { label: "完成", tone: "default" };
   return null;
 }

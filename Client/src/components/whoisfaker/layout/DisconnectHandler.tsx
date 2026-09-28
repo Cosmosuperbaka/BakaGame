@@ -32,11 +32,11 @@ export function DisconnectHandler() {
   if (!pendingId || !pendingPlayer) return null;
 
   return (
-    <Card className="border-amber-200 bg-amber-50">
+    <Card className="border-warning/40 bg-warning/10">
       <CardContent className="py-3 px-4">
         <div className="flex items-center gap-2 mb-2">
-          <AlertTriangle className="h-4 w-4 text-amber-600" />
-          <span className="text-sm font-semibold text-amber-800">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <span className="text-sm font-semibold text-warning">
             玩家 {pendingPlayer.name} 已掉线
           </span>
         </div>
@@ -63,7 +63,7 @@ export function DisconnectHandler() {
           </div>
         )}
         {!isQuestioner && (
-          <p className="text-xs text-amber-700">等待出题人处理...</p>
+          <p className="text-xs text-warning">等待出题人处理...</p>
         )}
       </CardContent>
     </Card>

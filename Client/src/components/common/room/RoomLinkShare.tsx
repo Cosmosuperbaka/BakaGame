@@ -43,7 +43,7 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           aria-live="polite"
           className={cn(
             "flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            copied ? "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400" : "hover:bg-accent/60",
+            copied ? "border-success/40 bg-success/10 text-success" : "hover:bg-accent/60",
           )}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

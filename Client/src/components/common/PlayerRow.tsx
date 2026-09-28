@@ -76,14 +76,14 @@ export function PlayerRow({
           >
             {name}
           </span>
-          {host ? <Crown className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-label="房主" /> : null}
+          {host ? <Crown className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="房主" /> : null}
         </span>
         <span className="flex min-h-4 min-w-0 items-center gap-1">
           {badges}
           {meta}
           {eliminated ? <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" /> : null}
           {bot ? (
-            <Bot className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" aria-label="测试人机" />
+            <Bot className="h-3.5 w-3.5 shrink-0 text-info" aria-label="测试人机" />
           ) : !online ? (
             <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
           ) : null}
