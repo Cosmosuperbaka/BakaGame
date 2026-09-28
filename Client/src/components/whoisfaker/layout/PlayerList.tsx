@@ -1,21 +1,10 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import * as Popover from "@radix-ui/react-popover";
-import {
-  ArrowUpRightFromCircle,
-  Bot,
-  Crown,
-  Eye,
-  EyeOff,
-  MoreHorizontal,
-  Skull,
-  UserX,
-  WifiOff,
-} from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { PlayerAvatar } from "@/components/common/PlayerAvatar";
-import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
+import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
+import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
   DESCRIPTION_TONES,
@@ -28,18 +17,12 @@ import { cn } from "@/lib/Utils";
 import {
   PLAYER_BADGE_BASE,
   PLAYER_GROUP_TITLE_HEIGHT,
-  PLAYER_ME_MARK,
-  PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
   PlayerStatusPill,
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
-import {
-  buildKnownRoleMap,
-  resolveStatus,
-  type StatusInfo,
-} from "./PlayerPresentation";
+import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
 import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
 import type {
   DescriptionRecord,
@@ -516,125 +499,45 @@ export function PlayerRow(props: PlayerRowProps) {
 
   const isMe = player.id === myPlayerId;
   const canManage = isHostViewer && !isMe;
-  const interactive = canMark || canManage;
   const eliminated = player.roundStatus === "dead";
   const status = resolveStatus(player, waitingPhase, hideSpectatorStatus);
 
-  const rowClass = cn(
-    PLAYER_ROW_BASE,
-    PLAYER_ROW_HEIGHT,
-    isMe && "bg-primary/10",
-    !isMe && "transition-colors hover:bg-accent/50",
-    !player.online && !player.isBot && "opacity-60",
-    interactive && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-  );
-  const body = (
-    <>
-      {isMe ? (
-        <span className={PLAYER_ME_MARK} />
-      ) : null}
-      <PlayerAvatar />
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1">
-          <span
-            className={cn(
-              "min-w-0 truncate font-medium",
-              eliminated && "text-muted-foreground line-through decoration-muted-foreground/60",
-            )}
-            title={player.name}
-          >
-            {player.name}
-          </span>
-          {player.isHost ? (
-            <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
-          ) : null}
-        </span>
-        <span className="flex min-h-4 items-center gap-1">
-          {actualRole ? (
-            <RoleBadge role={actualRole} />
-          ) : mark !== "unknown" ? (
-            <RoleBadge role={mark} predicted />
-          ) : null}
-          {status ? <StatusPill tone={status.tone} label={status.label} /> : null}
-          {eliminated ? (
-            <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
-          ) : null}
-          {player.isBot ? (
-            <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
-          ) : !player.online ? (
-            <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-          ) : null}
-        </span>
-      </span>
-      <span aria-label={`${player.score} 分`} className="shrink-0 whitespace-nowrap font-sans text-xs font-normal tabular-nums text-muted-foreground">
-        {player.score}<span className="ml-0.5 text-[10px]">分</span>
-      </span>
-      {interactive ? <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
-    </>
-  );
-
-  const content = interactive ? (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <Button type="button" variant="ghost" aria-label={`${player.name} 操作`} className={cn("h-auto justify-start", rowClass)}>
-          {body}
-        </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="right"
-          align="center"
-          sideOffset={6}
-          collisionPadding={12}
-          asChild
-        >
-          <motion.div
-            variants={popover}
-            initial="initial"
-            animate="animate"
-            className="z-popover overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
-          >
-            {/* 身份猜测行：与下方管理按钮等宽，无缝 */}
-            {canMark ? (
-              <div className="flex">
-                {availableMarks.map((option, idx) => (
-                  <MarkButton
-                    key={option}
-                    option={option}
-                    selected={mark === option}
-                    first={idx === 0}
-                    last={idx === availableMarks.length - 1}
-                    onSelect={() => onMarkChange(player.id, option)}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {/* 管理操作：两行，无缝拼接 */}
-            {canManage ? (
-              <div className={cn("flex flex-col", canMark && "border-t")}>
-                <ManageButton
-                  icon={<ArrowUpRightFromCircle className="h-3.5 w-3.5" />}
-                  label="转移房主"
-                  onClick={() => onTransferHost(player.id)}
-                />
-                <ManageButton
-                  icon={<UserX className="h-3.5 w-3.5" />}
-                  label="踢出玩家"
-                  destructive
-                  onClick={() => onKick(player.id)}
-                />
-              </div>
-            ) : null}
-          </motion.div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  ) : <div className={rowClass}>{body}</div>;
-
-  return embedded ? content : (
-    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" className="min-w-0">
-      {content}
-    </motion.div>
+  return (
+    <PlayerRowBase
+      name={player.name}
+      score={player.score}
+      me={isMe}
+      host={player.isHost}
+      online={player.online}
+      bot={player.isBot}
+      eliminated={eliminated}
+      badges={<>
+        {actualRole ? (
+          <RoleBadge role={actualRole} />
+        ) : mark !== "unknown" ? (
+          <RoleBadge role={mark} predicted />
+        ) : null}
+        {status ? <PlayerStatusPill tone={status.tone} label={status.label} /> : null}
+      </>}
+      embedded={embedded}
+      {...(canMark
+        ? {
+            actionsHeader: availableMarks.map((option, idx) => (
+              <MarkButton
+                key={option}
+                option={option}
+                selected={mark === option}
+                first={idx === 0}
+                last={idx === availableMarks.length - 1}
+                onSelect={() => onMarkChange(player.id, option)}
+              />
+            )),
+          }
+        : {})}
+      {...(canManage
+        ? { actions: hostActions({ onTransferHost: () => onTransferHost(player.id), onKick: () => onKick(player.id) }) }
+        : {})}
+    />
   );
 }
 
@@ -674,38 +577,6 @@ function MarkButton({
   );
 }
 
-function ManageButton({
-  icon,
-  label,
-  destructive,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  destructive?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Popover.Close asChild>
-      <motion.button
-        type="button"
-        {...tappable}
-        onClick={onClick}
-        className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
-          "border-t first:border-t-0",
-          destructive
-            ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            : "text-foreground hover:bg-accent hover:text-accent-foreground",
-        )}
-      >
-        {icon}
-        {label}
-      </motion.button>
-    </Popover.Close>
-  );
-}
-
 /** 身份标签；预测身份使用略淡底色，真实身份沿用投票预览的标准底色。 */
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
   return (
@@ -716,9 +587,4 @@ function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean 
       {roleLabels[role]}
     </span>
   );
-}
-
-/** 主持、旁观与准备状态，与身份徽章共用次行。 */
-function StatusPill({ label, tone }: StatusInfo) {
-  return <PlayerStatusPill label={label} tone={tone} />;
 }

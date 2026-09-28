@@ -1,19 +1,11 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import * as Popover from "@radix-ui/react-popover";
-import { ArrowUpRightFromCircle, Bot, Crown, Eye, EyeOff, MoreHorizontal, UserX, WifiOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { PlayerAvatar } from "@/components/common/PlayerAvatar";
-import {
-  PLAYER_ME_MARK,
-  PLAYER_ROW_BASE,
-  PLAYER_ROW_HEIGHT,
-  PlayerGroupTitle,
-  PlayerStatusPill,
-} from "@/components/common/PlayerStatusPill";
-import { listContainer, listItem, popover, tappable } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
+import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
+import { PlayerGroupTitle, PlayerStatusPill } from "@/components/common/PlayerStatusPill";
+import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
 
@@ -172,91 +164,24 @@ function SongPlayerRow({
   const canManage = isHostViewer && !isMe;
   const canTransfer = canManage && player.membership === "active" && player.online && !player.isBot;
   const status = resolveSongStatus(player, phase, hideSpectatorStatus);
-
-  const rowClass = cn(
-    PLAYER_ROW_BASE,
-    PLAYER_ROW_HEIGHT,
-    isMe && "bg-primary/10",
-    !isMe && "transition-colors hover:bg-accent/50",
-    !player.online && !player.isBot && "opacity-60",
-    canManage && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-  );
-  const body = (
-    <>
-      {isMe ? (
-        <span className={PLAYER_ME_MARK} />
-      ) : null}
-      <PlayerAvatar />
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1">
-          <span className="min-w-0 truncate font-medium" title={player.name}>{player.name}</span>
-          {player.isHost ? (
-            <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="房主" />
-          ) : null}
-        </span>
-        <span className="flex min-h-4 items-center gap-1">
-          {status ? <StatusPill {...status} /> : null}
-          {player.isBot ? (
-            <Bot className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="测试人机" />
-          ) : !player.online ? (
-            <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-          ) : null}
-        </span>
-      </span>
-      <span aria-label={`${player.score} 分`} className="shrink-0 whitespace-nowrap font-sans text-xs font-normal tabular-nums text-muted-foreground">
-        {player.score}<span className="ml-0.5 text-[10px]">分</span>
-      </span>
-      {canManage ? <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
-    </>
-  );
-
-  const content = canManage ? (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <Button type="button" variant="ghost" aria-label={`${player.name} 操作`} className={cn("h-auto justify-start", rowClass)}>
-          {body}
-        </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side="right" align="center" sideOffset={6} collisionPadding={12} asChild>
-          <motion.div
-            variants={popover}
-            initial="initial"
-            animate="animate"
-            className="z-popover overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
-          >
-            <div className="flex flex-col">
-              {canTransfer ? (
-                <ManageButton
-                  icon={<ArrowUpRightFromCircle className="h-3.5 w-3.5" />}
-                  label="转移房主"
-                  onClick={() => onTransferHost(player.id)}
-                />
-              ) : null}
-              <ManageButton
-                icon={<UserX className="h-3.5 w-3.5" />}
-                label="踢出玩家"
-                destructive
-                onClick={() => onKick(player.id)}
-              />
-            </div>
-          </motion.div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  ) : <div className={rowClass}>{body}</div>;
+  const actions = canManage
+    ? hostActions({
+        ...(canTransfer ? { onTransferHost: () => onTransferHost(player.id) } : {}),
+        onKick: () => onKick(player.id),
+      })
+    : undefined;
 
   return (
-    <motion.div
-      variants={listItem}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      layout="position"
-      className="w-full min-w-0"
-    >
-      {content}
-    </motion.div>
+    <PlayerRow
+      name={player.name}
+      score={player.score}
+      me={isMe}
+      host={player.isHost}
+      online={player.online}
+      bot={player.isBot}
+      badges={status ? <PlayerStatusPill {...status} /> : null}
+      actions={actions}
+    />
   );
 }
 
@@ -304,41 +229,5 @@ function SpectatorToggle({
       {spectator ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{selected ? `${label}（已选择）` : label}</span>
     </Button>
-  );
-}
-
-function StatusPill({ label, tone }: SongStatus) {
-  return <PlayerStatusPill label={label} tone={tone} />;
-}
-
-function ManageButton({
-  icon,
-  label,
-  destructive,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  destructive?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Popover.Close asChild>
-      <motion.button
-        type="button"
-        {...tappable}
-        onClick={onClick}
-        className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
-          "border-t first:border-t-0",
-          destructive
-            ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            : "text-foreground hover:bg-accent hover:text-accent-foreground",
-        )}
-      >
-        {icon}
-        {label}
-      </motion.button>
-    </Popover.Close>
   );
 }

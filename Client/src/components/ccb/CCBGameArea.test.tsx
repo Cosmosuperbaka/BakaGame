@@ -41,7 +41,10 @@ describe("CCB 操作区", () => {
     snapshot.players[0] = { ...snapshot.players[0], status: "playing", attempts: 3, syncCompleted: true, marks: "❌❌✅" };
     render(<CCBPlayerList snapshot={snapshot} privateState={privateState()} />);
     expect(screen.getByText("3/10 次 · 已提交")).toBeInTheDocument();
-    expect(screen.getByLabelText("房主 猜测进度：❌❌✅")).toHaveAttribute("title", "❌❌✅");
+    // 进度以图标呈现，整串作为一个图像读给读屏，文字描述同时出现在悬停提示里。
+    const marks = screen.getByLabelText("房主 猜测进度：未命中、未命中、猜中");
+    expect(marks).toHaveAttribute("title", "房主 猜测进度：未命中、未命中、猜中");
+    expect(marks.querySelectorAll("svg")).toHaveLength(3);
   });
 
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
