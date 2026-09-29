@@ -23,6 +23,7 @@ const badgeVariants = cva(
         subtle: "border-border/80 font-normal text-muted-foreground",
         active: "border-primary/40 bg-primary/10 font-normal text-primary",
         unavailable: "border-dashed border-border/60 font-normal text-muted-foreground/45",
+        placeholder: "border-transparent bg-muted/60",
       },
       size: {
         default: "px-2.5 py-0.5",

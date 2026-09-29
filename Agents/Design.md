@@ -112,10 +112,10 @@
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
-- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`。调用处不覆写底色、描边、字重或文字色，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。
+- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。调用处不覆写底色、描边、字重或文字色，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
 - 连续数值与音量调节统一使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件（`Client/src/components/ui/Slider.tsx`），自动具备键盘方向键/Home/End 步进及触控无障碍支持，严禁在业务组件中手写透明原生 `<input type="range">` 假滑块。
-- 房间列表与数据面板加载过渡统一使用 `RoomCardSkeleton` 骨架屏组件，尺寸与实际卡片保持严格一致，防御初次加载网络等待期间出现的空状态闪烁（FOES）。
+- 房间列表加载过渡统一使用 `RoomCardSkeleton`，防御初次加载网络等待期间出现的空状态闪烁（FOES）。骨架与真实卡片共用 `RoomCardLayout` 网格，文字位用 `h-[1lh]` 占满所在字号的一行，徽章位用 `Badge` 的 `placeholder` 变体，因此各断点下两者高度一致，加载前后不跳动；不另写一套近似尺寸。
 - 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效；开发环境（`import.meta.env.DEV`）下不发起检测也不展示，避免打断本地调试。展示层是只由 Props 驱动的 `VersionUpdateBanner`，检测留在 `VersionUpdateNotice`，Storybook 直接渲染展示层。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
@@ -139,8 +139,9 @@
 
 - 三个游戏的大厅（`/whoisfaker`、`/songuessr`、`/ccb`）共用 `components/common/lobby/` 的同一套外壳，保持单列、居中，内容宽度以 `max-w-3xl` 为基线。
 - 返回主页入口、游戏标识、用户名、创建房间和房间列表构成主要层级。三个游戏的结构一致；CCB 的差异只在列表里原版房带「原版」标签、建房弹窗里多一个服务器分段。
-- 房名左侧为游戏图标（可选）：WhoIsFaker 通过 `logo` 插槽传入 `Faker.png`，猜歌与 CCB 不传。
-- 房间项保持整行可识别，房间名和房间号在左，阶段、人数、密码和旁观状态等辅助信息在右；来源标签等游戏特有标记接在房名之后。
+- 顶栏标题后可跟游戏图标（可选）：WhoIsFaker 通过 `logo` 插槽传入 `Faker.png`，猜歌与 CCB 不传。
+- 列表标题行在 `sm` 起为一行：标题与计数在左，用户名输入与创建按钮在右；窄屏分两行，输入框占满第二行剩余宽度。用户名输入保持 `text-sm`，不低于 16px，避免 iOS 聚焦缩放。
+- 房间项整张卡片可点。`sm` 起为一行：房间名和房间号在左，阶段、旁观状态和人数在右；窄屏分三行：房名；房间号与人数；分隔线下的阶段与旁观状态。徽章与人数不换行，空间不足时只截断房名；来源标签、密码锁等游戏特有标记接在房名之后。
 - 各游戏把自家房间摘要映射成 `LobbyRoomView` 交给外壳；外壳不认识任何游戏的字段。上游不提供旁观人数时 `spectatorCount` 传 `null`，界面不显示该数字，也不伪造为 0。
 - 空状态、加载状态和错误状态不得改变主要布局尺寸，且必须提供真实业务反馈。
 - 创建房间弹窗由 Props 驱动、不绑定 Store：需要区分服务器的游戏传入 `serverOptions` 分段，被禁用的选项须给出原因。

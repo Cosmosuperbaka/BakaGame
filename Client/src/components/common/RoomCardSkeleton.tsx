@@ -1,29 +1,35 @@
-import { Card, CardContent } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
+import { RoomCardLayout } from "@/components/common/lobby/RoomListCard";
+import { cn } from "@/lib/Utils";
 
+/** 占一整行文字高度（随所在字号），条本身略矮于行高，与真实文字的视觉高度相近。 */
+function SkeletonLine({ className }: { className: string }) {
+  return (
+    <span className="flex h-[1lh] items-center">
+      <span className={cn("h-[0.8lh] rounded-md", className)} />
+    </span>
+  );
+}
+
+/** 房间卡片骨架：与真实卡片共用 `RoomCardLayout`，徽章位用 `placeholder` 变体，加载前后不跳动。 */
 export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="space-y-3" role="status" aria-label="正在加载房间列表">
+    <div className="flex flex-col gap-3" role="status" aria-label="正在加载房间列表">
       {Array.from({ length: count }).map((_, index) => (
-        <Card
-          key={index}
-          className="border-border/60 bg-card/40 pointer-events-none"
-        >
-          <CardContent className="p-4 sm:py-4 sm:px-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 animate-pulse">
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="min-w-0 space-y-2">
-                <div className="h-5 w-36 rounded bg-muted/70" />
-                <div className="h-4 w-24 rounded bg-muted/40" />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 border-t border-border/30 pt-2.5 sm:border-0 sm:pt-0">
-              <div className="flex items-center gap-2">
-                <div className="h-5 w-12 rounded-full bg-muted/60" />
-                <div className="h-5 w-14 rounded-full bg-muted/50" />
-              </div>
-              <div className="h-4 w-20 rounded bg-muted/50" />
-            </div>
-          </CardContent>
+        <Card key={index} className="pointer-events-none border-border/60 bg-card/40">
+          <RoomCardLayout
+            className="animate-pulse"
+            name={<SkeletonLine className="w-36 bg-muted/70" />}
+            id={<SkeletonLine className="w-24 bg-muted/40" />}
+            badges={
+              <>
+                <Badge variant="placeholder"><span className="h-[1lh] w-[3em]" /></Badge>
+                <Badge variant="placeholder"><span className="h-[1lh] w-[4.5em]" /></Badge>
+              </>
+            }
+            counts={<SkeletonLine className="w-20 bg-muted/50" />}
+          />
         </Card>
       ))}
       <span className="sr-only">正在加载房间列表...</span>

@@ -80,7 +80,8 @@ export function LobbyPage({
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-10 pt-6 md:px-10">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        {/* 窄屏分两行：标题与计数在上，用户名与创建按钮占满下一行；`sm` 起并成一行。 */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold tracking-tight">房间列表</h2>
             <span className="rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground">{rooms.length}</span>
@@ -90,10 +91,10 @@ export function LobbyPage({
               value={userName}
               onChange={(event) => onUserNameChange(event.target.value)}
               placeholder="输入用户名"
-              className="h-8 w-28 border-border/70 bg-card/60 text-xs shadow-2xs sm:w-36 sm:text-sm"
+              className="h-8 min-w-0 flex-1 border-border/70 bg-card/60 shadow-2xs sm:w-36 sm:flex-none"
               maxLength={20}
             />
-            <Button size="sm" onClick={onCreate} disabled={disabled} className="h-8 shrink-0 gap-1.5 text-xs shadow-2xs sm:text-sm">
+            <Button size="sm" onClick={onCreate} disabled={disabled} className="shrink-0 gap-1.5 text-sm shadow-2xs">
               <Plus className="h-3.5 w-3.5" />
               创建房间
             </Button>

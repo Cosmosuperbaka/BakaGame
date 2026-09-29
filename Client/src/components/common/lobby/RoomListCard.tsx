@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Lock, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -21,6 +22,38 @@ export interface LobbyRoomView {
 }
 
 const COUNT = "inline-block w-[2ch] text-right tabular-nums";
+
+/**
+ * 房间卡片的内容网格，真实卡片与骨架屏共用，两者尺寸因此一致。
+ * 窄屏分三行：房名；房号与人数；分隔线下的阶段与观战。`sm` 起并成一行：房名与房号在左，阶段与人数在右。
+ * 徽章与人数不换行，空间不足时只截断房名。
+ */
+export function RoomCardLayout({
+  name,
+  id,
+  badges,
+  counts,
+  className,
+}: {
+  name: ReactNode;
+  id: ReactNode;
+  badges: ReactNode;
+  counts: ReactNode;
+  className?: string;
+}) {
+  return (
+    <CardContent className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5 sm:py-4", className)}>
+      <div className="col-span-full row-1 flex min-w-0 items-center gap-2 truncate text-base font-medium sm:col-1">{name}</div>
+      <div className="col-1 row-2 mt-0.5 text-sm text-muted-foreground sm:mt-1">{id}</div>
+      <div className="col-span-full row-3 mt-3 flex items-center gap-2 border-t border-border/30 pt-2.5 sm:col-2 sm:row-[1/span_2] sm:mt-0 sm:border-0 sm:pt-0">
+        {badges}
+      </div>
+      <div className="col-2 row-2 mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground tabular-nums sm:col-3 sm:row-[1/span_2] sm:mt-0 sm:text-sm">
+        {counts}
+      </div>
+    </CardContent>
+  );
+}
 
 /**
  * 大厅房间卡片：整张卡片可点，房名与房号在左，阶段、观战与人数在右。
@@ -64,26 +97,25 @@ export function RoomListCard({
           }
         }}
       >
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5 sm:py-4">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 truncate text-base font-medium">
-                <span className="truncate">{room.name}</span>
-                {room.hasPassword ? <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
-                {room.tag ? (
-                  <Badge variant="subtle" className="shrink-0">
-                    {room.tag}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="mt-0.5 text-sm text-muted-foreground sm:mt-1">
-                房间号: <span className="font-mono">{room.roomId}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/30 pt-2.5 text-sm text-muted-foreground sm:justify-end sm:gap-4 sm:border-0 sm:pt-0">
-            <div className="flex items-center gap-2">
+        <RoomCardLayout
+          name={
+            <>
+              <span className="truncate">{room.name}</span>
+              {room.hasPassword ? <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
+              {room.tag ? (
+                <Badge variant="subtle" className="shrink-0">
+                  {room.tag}
+                </Badge>
+              ) : null}
+            </>
+          }
+          id={
+            <>
+              房间号: <span className="font-mono">{room.roomId}</span>
+            </>
+          }
+          badges={
+            <>
               <Badge variant={room.inGame ? "active" : "subtle"}>
                 {room.inGame ? "游戏中" : "等待中"}
               </Badge>
@@ -98,17 +130,18 @@ export function RoomListCard({
                   禁观战
                 </Badge>
               )}
-            </div>
-
-            <div className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground sm:text-sm">
+            </>
+          }
+          counts={
+            <>
               <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
               <span className="flex items-center gap-2">
                 <span><span className={COUNT}>{room.playerCount}</span>玩家</span>
                 {room.spectatorCount !== null ? <span><span className={COUNT}>{room.spectatorCount}</span>旁观</span> : null}
               </span>
-            </div>
-          </div>
-        </CardContent>
+            </>
+          }
+        />
       </Card>
     </motion.div>
   );

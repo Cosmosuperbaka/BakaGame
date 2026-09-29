@@ -19,7 +19,7 @@ export const Loading: Story = {
   ),
 };
 
-/** 窄屏下卡片改为上下两段，右侧信息换到分隔线下方。 */
+/** 窄屏下卡片分三行：房名；房号与人数；分隔线下的阶段与观战。 */
 export const LoadingMobile: Story = {
   name: "加载中 · 手机",
   tags: ["page", "mobile"],
