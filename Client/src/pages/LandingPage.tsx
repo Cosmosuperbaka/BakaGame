@@ -239,6 +239,7 @@ function GameRow({ game }: { game: GameEntry }) {
 
   // 包含子模式入口的游戏（如 Songuessr 与 CCB）
   const isWholeGameDisabled = !game.available;
+  const subModeCount = game.subModes.length;
 
   return (
     <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
@@ -268,19 +269,21 @@ function GameRow({ game }: { game: GameEntry }) {
         {/* 子模式按钮行 */}
         <div
           className={`grid w-full gap-2 ${
-            game.subModes.length === 2 ? "grid-cols-2" : "grid-cols-3 gap-1.5"
+            game.subModes.length === 2 ? "grid-cols-2" : "grid-cols-2 gap-1.5 sm:grid-cols-3"
           }`}
         >
-          {game.subModes.map((mode) => {
+          {game.subModes.map((mode, index) => {
             const isModeAvailable = !isWholeGameDisabled && mode.available;
             const isSubEntering = enteringPath === mode.path;
+            // 三个子模式在窄屏排成两行，首项独占一行：三等分时每格不到 110px，放不下模式名加「即将上线」。
+            const spanClass = subModeCount === 3 && index === 0 ? "max-sm:col-span-2" : "";
 
             if (!isModeAvailable) {
               return (
                 <div
                   key={mode.id}
                   aria-disabled="true"
-                  className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/20 px-1.5 text-center text-xs text-muted-foreground select-none"
+                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/20 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
                 >
                   <span className="truncate">{mode.title}</span>
                   {!isWholeGameDisabled && <ComingSoonBadge />}
@@ -296,7 +299,7 @@ function GameRow({ game }: { game: GameEntry }) {
                 aria-label={`${game.title} ${mode.title}`}
                 onClick={() => handleEnter(mode.path)}
                 animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
-                className="h-8 w-full px-2.5 text-xs sm:text-sm font-medium"
+                className={`h-8 w-full px-2.5 text-xs sm:text-sm font-medium ${spanClass}`}
               >
                 <span className="truncate">{mode.title}</span>
               </Button>
