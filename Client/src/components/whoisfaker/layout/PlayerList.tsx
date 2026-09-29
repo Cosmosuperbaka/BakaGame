@@ -1,9 +1,8 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
+import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
@@ -441,26 +440,6 @@ function SpeechCell({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function SpectatorToggle({
-  spectator,
-  onToggle,
-}: {
-  spectator: boolean;
-  onToggle: (spectator: boolean) => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="mt-1 h-8 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
-      onClick={() => onToggle(spectator)}
-    >
-      {spectator ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-      {spectator ? "加入旁观" : "取消旁观"}
-    </Button>
   );
 }
 

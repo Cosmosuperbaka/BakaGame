@@ -1,10 +1,9 @@
 import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
@@ -203,31 +202,4 @@ function resolveSongStatus(
   if (player.roundStatus === "correct") return { label: "猜中", tone: "success" };
   if (player.roundStatus === "finished") return { label: "完成", tone: "default" };
   return null;
-}
-
-function SpectatorToggle({
-  spectator,
-  queued,
-  selected,
-  onToggle,
-}: {
-  spectator: boolean;
-  queued: boolean;
-  selected: boolean;
-  onToggle: (spectator: boolean) => void;
-}) {
-  const label = queued
-    ? spectator ? "下轮加入旁观" : "下轮加入游戏"
-    : spectator ? "加入旁观" : "取消旁观";
-  return (
-    <Button
-      variant={selected ? "secondary" : "ghost"}
-      size="sm"
-      className="mt-1 h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs text-muted-foreground"
-      onClick={() => onToggle(spectator)}
-    >
-      {spectator ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
-      <span className="truncate">{selected ? `${label}（已选择）` : label}</span>
-    </Button>
-  );
 }

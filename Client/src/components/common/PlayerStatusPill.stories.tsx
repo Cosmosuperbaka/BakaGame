@@ -56,9 +56,10 @@ export const Groups: Story = {
             <PlayerRow name={kanade.name} score={3} badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
             <PlayerRow name={azumi.name} score={0} online={false} badges={<PlayerStatusPill label="完成" tone="default" />} />
           </div>
+          {/* 旁观分组的标题已经说明身份，行内不再重复「旁观」徽章。 */}
           <PlayerGroupTitle label="旁观" count={1} withRule />
           <div className="flex flex-col gap-px">
-            <PlayerRow name={STORY_SPECTATORS[0].name} score={0} badges={<PlayerStatusPill label="旁观" tone="default" />} />
+            <PlayerRow name={STORY_SPECTATORS[0].name} score={0} />
           </div>
         </div>
       </div>

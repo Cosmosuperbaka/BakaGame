@@ -33,8 +33,8 @@ export const WIF_TEST_ROUTER = { route: `/whoisfaker/room/${ROOM_ID_TEST_MODE}`,
 
 /** 与房间页游戏区一致的面板外壳；宽度取桌面三栏布局下游戏区的实际宽度。 */
 export const WIF_STAGE_FRAME = "w-[36rem] overflow-hidden rounded-md border bg-panel p-6 md:p-8";
-/** 与房间页左侧玩家栏一致的面板外壳。 */
-export const WIF_PLAYER_PANEL = "h-[36rem] w-[16rem] overflow-hidden rounded-md border bg-panel";
+/** 与房间页左侧玩家栏一致的面板外壳；高度要容下九人等待列表之后的旁观分组与切换入口。 */
+export const WIF_PLAYER_PANEL = "h-[44rem] w-[16rem] overflow-hidden rounded-md border bg-panel";
 /** 展开发言历史时玩家栏会扩到游戏区，组件故事用同一宽度取景。 */
 export const WIF_HISTORY_FRAME = "h-[36rem] w-[64rem] overflow-hidden rounded-md border bg-panel";
 

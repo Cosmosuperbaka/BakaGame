@@ -1,15 +1,15 @@
 import type { CCBPlayer, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
-import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer } from "@/lib/Motion";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { AnimatePresence, motion } from "framer-motion";
 import { CCBMarks } from "./CCBMarks";
 import { CCBSelect } from "./CCBSelect";
 
-/** 与 `useCCBAction` 的 `run` 同签名，避免player row 各自重写命令类型。 */
+/** 与 `useCCBAction` 的 `run` 同签名，避免玩家行各自重写命令类型。 */
 type CCBRun = ReturnType<typeof useCCBAction>["run"];
 
 type CCBStatus = { label: string; tone: PlayerStatusTone };
@@ -40,67 +40,64 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const waiting = snapshot.phase === "waiting";
   const { run, busy } = useCCBAction();
+  const activePlayers = snapshot.players.filter((player) => player.membership === "active");
+  const observers = snapshot.players.filter((player) => player.membership === "spectator");
+  // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
+  const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
+  const canJoinPlayers = waiting && me?.membership === "spectator";
+  const toggleSpectator = (spectator: boolean) => void run("ccb.player.spectate", { spectator });
+
+  const renderGroup = (players: CCBPlayer[]) => (
+    <motion.div
+      className="flex flex-col gap-px"
+      variants={listContainer(players.length)}
+      initial={false}
+      animate="animate"
+    >
+      <AnimatePresence initial={false}>
+        {players.map((player) => (
+          <CCBPlayerRow
+            key={player.id}
+            player={player}
+            snapshot={snapshot}
+            self={player.id === privateState.playerId}
+            canManage={isHost && player.id !== privateState.playerId}
+            busy={busy}
+            run={run}
+          />
+        ))}
+      </AnimatePresence>
+    </motion.div>
+  );
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col px-2 py-3">
-        {(["active", "spectator"] as const).map((membership, groupIndex) => {
-          const players = snapshot.players.filter((player) => player.membership === membership);
-          return (
-            <section key={membership} className="flex min-w-0 flex-col">
-              <PlayerGroupTitle
-                label={membership === "active" ? "玩家" : "旁观"}
-                count={players.length}
-                withRule={groupIndex > 0}
-              />
-              <motion.div
-                className="flex flex-col gap-px"
-                variants={listContainer(players.length)}
-                initial={false}
-                animate="animate"
-              >
-                <AnimatePresence initial={false}>
-                  {players.map((player) => (
-                    <CCBPlayerRow
-                      key={player.id}
-                      player={player}
-                      snapshot={snapshot}
-                      self={player.id === privateState.playerId}
-                      canManage={isHost && player.id !== privateState.playerId}
-                      busy={busy}
-                      run={run}
-                    />
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            </section>
-          );
-        })}
+      <div className="flex min-w-0 flex-col px-2 py-3">
+        <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+        {renderGroup(activePlayers)}
+        {canJoinPlayers ? <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} /> : null}
 
-        {me && waiting ? (
-          <div className="mt-3 space-y-2 border-t pt-3">
-            {me.membership === "active" ? (
-              <CCBSelect
-                label="我的队伍"
-                value={me.team === null ? "solo" : String(me.team)}
-                options={[
-                  { value: "solo", label: "个人游玩" },
-                  ...Array.from({ length: 8 }, (_, index) => ({ value: String(index + 1), label: `第 ${index + 1} 队` })),
-                ]}
-                disabled={busy}
-                onChange={(value) => void run("ccb.player.team", { team: value === "solo" ? null : Number(value) })}
-              />
-            ) : null}
-            {snapshot.allowSpectators || me.membership === "spectator" ? (
-              <Button
-                variant="ghost"
-                className="w-full"
-                disabled={busy}
-                onClick={() => void run("ccb.player.spectate", { spectator: me.membership !== "spectator" })}
-              >
-                {me.membership === "spectator" ? "加入游戏" : "加入旁观"}
-              </Button>
-            ) : null}
+        {observers.length > 0 || canJoinSpectators ? (
+          <>
+            <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+            {renderGroup(observers)}
+            {canJoinSpectators ? <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} /> : null}
+          </>
+        ) : null}
+
+        {/* 组队是 CCB 独有的设置，放在两个分组之后，不和旁观切换混在一起。 */}
+        {waiting && me?.membership === "active" ? (
+          <div className="mt-3 border-t pt-3">
+            <CCBSelect
+              label="我的队伍"
+              value={me.team === null ? "solo" : String(me.team)}
+              options={[
+                { value: "solo", label: "个人游玩" },
+                ...Array.from({ length: 8 }, (_, index) => ({ value: String(index + 1), label: `第 ${index + 1} 队` })),
+              ]}
+              disabled={busy}
+              onChange={(value) => void run("ccb.player.team", { team: value === "solo" ? null : Number(value) })}
+            />
           </div>
         ) : null}
       </div>

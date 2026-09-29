@@ -64,6 +64,35 @@ describe("CCB 操作区", () => {
     expect(screen.getAllByText("旁观")).toHaveLength(1);
   });
 
+  it("旁观切换挂在目标分组下方，空旁观分组只在可加入时出现", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const [host] = room().players;
+    const view = render(<CCBPlayerList snapshot={room()} privateState={privateState()} />);
+    expect(screen.getByText("旁观")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "加入旁观" }));
+    expect(send).toHaveBeenCalledWith("ccb.player.spectate", { spectator: true }, expect.objectContaining({ roomId: "1234" }));
+    expect(screen.getByRole("combobox", { name: "我的队伍" })).toBeInTheDocument();
+
+    // 房间关闭观战后，空分组与入口一起收起。
+    view.rerender(<CCBPlayerList snapshot={room({ allowSpectators: false })} privateState={privateState()} />);
+    expect(screen.queryByText("旁观")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加入旁观" })).not.toBeInTheDocument();
+
+    // 已在旁观的人仍能回到玩家组，入口接在玩家分组之后；旁观者没有队伍可选。
+    const watching = room({ allowSpectators: false, players: [{ ...host, membership: "spectator", status: "observing" }] });
+    view.rerender(<CCBPlayerList snapshot={watching} privateState={privateState()} />);
+    expect(screen.queryByRole("combobox", { name: "我的队伍" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "取消旁观" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "取消旁观" }));
+    expect(send).toHaveBeenCalledWith("ccb.player.spectate", { spectator: false }, expect.objectContaining({ roomId: "1234" }));
+
+    // 开局后身份锁定，两种来源都不接受切换。
+    view.rerender(<CCBPlayerList snapshot={{ ...watching, phase: "guessing" }} privateState={privateState()} />);
+    expect(screen.queryByRole("button", { name: /旁观/ })).not.toBeInTheDocument();
+  });
+
   it("出题人与本局观战者看到身份说明而不是猜测次数", () => {
     const [host] = room().players;
     const view = render(<CCBGameArea snapshot={room({ phase: "guessing", setterPlayerId: "host", players: [{ ...host, status: "observing" }] })} privateState={privateState()} />);
