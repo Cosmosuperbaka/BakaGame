@@ -17,19 +17,20 @@ function FeedbackCell({ data, gender = false }: { data: CCBFeedbackValue; gender
   const unknown = data.value === "" || data.value === "?" || data.value === -1;
   const text = unknown ? "未知" : gender ? ({ male: "男", female: "女" }[String(data.value)] ?? data.value) : data.value;
   const matched = data.comparison === "=" || data.comparison === "yes";
-  return <td className={cn("whitespace-nowrap px-2 pt-3 pb-2 text-center", matched && "bg-success/10 text-success")}>
+  return <td className={cn("whitespace-nowrap px-1 pt-3 pb-2 text-center", matched && "bg-success/10 text-success")}>
     <span className="inline-flex items-center gap-1" title={labels[data.comparison]}><span>{text}</span><Icon className="h-3.5 w-3.5" aria-label={labels[data.comparison]} /></span>
   </td>;
 }
 
 export function CCBFeedbackTable({ guesses }: { guesses: CCBGuess[] }) {
   if (!guesses.length) return <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">提交第一个猜测后，这里会显示线索</p>;
+  // 自动表格布局只会压缩可折行的角色列：数值列收紧内边距、角色列给最小宽度，否则名字被挤成逐字折行。
   return <div className="overflow-x-auto rounded-md border" tabIndex={0} role="region" aria-label="猜测反馈">
-    <table className="w-full text-sm"><thead className="bg-muted"><tr><th scope="col" className="px-3 py-2 text-left">猜测角色</th>{fields.map(([key, label]) => <th key={key} scope="col" className="whitespace-nowrap px-2 py-2 font-medium">{label}</th>)}</tr></thead>
+    <table className="w-full text-sm"><thead className="bg-muted"><tr><th scope="col" className="min-w-36 px-3 py-2 text-left font-medium">猜测角色</th>{fields.map(([key, label]) => <th key={key} scope="col" className="whitespace-nowrap px-1 py-2 font-medium">{label}</th>)}</tr></thead>
       {/* 每个猜测一组：首行角色与数值比较，次行整宽放共同作品与标签，避免标签列把表格撑出横向滚动。 */}
       {guesses.map((guess) => <tbody key={guess.id} className="border-t">
         <tr className="align-top">
-          <th scope="row" className="px-3 pt-3 pb-2 text-left font-normal"><span className="flex gap-2"><CCBCharacterImage character={guess.character} /><span className="min-w-0"><span className="block break-words font-medium">{guess.character.nameCn || guess.character.name}</span><span className="block text-xs text-muted-foreground">{guess.playerName} · 第 {guess.syncRound} 轮</span>{guess.correct ? <span className="text-xs text-success">猜中</span> : guess.partial ? <span className="text-xs text-muted-foreground">作品命中</span> : null}</span></span></th>
+          <th scope="row" className="px-3 pt-3 pb-2 text-left font-normal"><span className="flex gap-2"><CCBCharacterImage character={guess.character} /><span className="min-w-0 [overflow-wrap:anywhere]"><span className="block font-medium">{guess.character.nameCn || guess.character.name}</span><span className="block text-xs text-muted-foreground">{guess.playerName} · <span className="whitespace-nowrap">第 {guess.syncRound} 轮</span></span>{guess.correct ? <span className="text-xs text-success">猜中</span> : guess.partial ? <span className="text-xs text-muted-foreground">作品命中</span> : null}</span></span></th>
           {fields.map(([field]) => <FeedbackCell key={field} data={guess.feedback[field]} gender={field === "gender"} />)}
         </tr>
         <tr>
