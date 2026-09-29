@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, Users } from "lucide-react";
+import { Eye, MessageSquare, PenLine, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
@@ -11,7 +11,7 @@ import { CCBPlayerList } from "@/components/ccb/CCBPlayerList";
 import { CCBGameArea } from "@/components/ccb/CCBGameArea";
 import { useCCBRoomLifecycle } from "@/hooks/UseCCBRoomLifecycle";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
-import { CCB_SOURCE_LABELS, ccbDisplayRound, ccbRoomPath } from "@/lib/CCBSession";
+import { CCB_SOURCE_LABELS, ccbDisplayRound, ccbPerspective, ccbRoomPath } from "@/lib/CCBSession";
 
 export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
@@ -78,6 +78,7 @@ export default function CCBRoomPage() {
     />
   );
   const displayRound = ccbDisplayRound(snapshot.phase, snapshot.roundNumber);
+  const perspective = ccbPerspective(snapshot, privateState.playerId);
 
   return (
     <>
@@ -87,8 +88,11 @@ export default function CCBRoomPage() {
         title={snapshot.name || "猜猜呗"}
         roomId={lifecycle.roomId}
         center={<>
-          <HeaderChip icon={Users} label={CCB_SOURCE_LABELS[snapshot.source]} muted />
+          {/* 中栏在 lg 以下放不下三枚徽章：出现视角徽章时让出来源徽章，视角关系到本人能做什么。 */}
+          <HeaderChip icon={Users} label={CCB_SOURCE_LABELS[snapshot.source]} muted className={perspective ? "max-lg:hidden" : undefined} />
           {displayRound > 0 ? <HeaderCounter>第 {displayRound} 局</HeaderCounter> : null}
+          {perspective === "setter" ? <HeaderChip icon={PenLine} label="出题人视角" /> : null}
+          {perspective === "observer" ? <HeaderChip icon={Eye} label="旁观视角" muted /> : null}
         </>}
         connectionIssue={connectionIssue}
         player={<PlayerColumn><CCBPlayerList snapshot={snapshot} privateState={privateState} /></PlayerColumn>}

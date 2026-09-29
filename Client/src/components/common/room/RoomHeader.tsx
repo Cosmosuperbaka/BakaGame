@@ -17,13 +17,14 @@ export interface RoomHeaderToggle {
 const HIDE_FROM = { md: "md:hidden", lg: "lg:hidden" } as const;
 
 /** 顶栏中间的视角/身份徽章（主持人、出题人视角、旁观等）。 */
-export function HeaderChip({ icon: Icon, label, muted = false, title }: { icon: LucideIcon; label: string; muted?: boolean; title?: string }) {
+export function HeaderChip({ icon: Icon, label, muted = false, title, className }: { icon: LucideIcon; label: string; muted?: boolean; title?: string; className?: string }) {
   return (
     <span
       title={title}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
         muted ? "text-muted-foreground" : "text-foreground",
+        className,
       )}
     >
       <Icon className="h-3.5 w-3.5" />

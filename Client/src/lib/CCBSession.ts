@@ -1,4 +1,4 @@
-import type { CCBPhase, CCBSource } from "@bakagame/shared";
+import type { CCBPhase, CCBRoomSnapshot, CCBSource } from "@bakagame/shared";
 
 /**
  * 统一房号目录保证同一时刻一个 4 位号只属于一个房间（增强房或原版房），
@@ -30,4 +30,17 @@ export const CCB_SOURCE_LABELS: Record<CCBSource, string> = { native: "增强房
  */
 export function ccbDisplayRound(phase: CCBPhase, roundNumber: number): number {
   return phase === "preparing" || phase === "answering" ? roundNumber + 1 : roundNumber;
+}
+
+/**
+ * 顶栏视角徽章，口径与玩家栏一致：出题人看得到答案，旁观者不参与本局。
+ * 出题人在出题阶段状态仍是 `waiting`，只能按 `setterPlayerId` 判定且优先；其队友、中途加入者本局记为 `observing`。
+ * 等待阶段不属于任何一局，玩家栏只显示准备状态，残留的出题人与观战标记不作数，只看旁观分组。
+ */
+export function ccbPerspective(snapshot: Pick<CCBRoomSnapshot, "phase" | "players" | "setterPlayerId">, playerId: string): "setter" | "observer" | null {
+  const me = snapshot.players.find((player) => player.id === playerId);
+  if (!me) return null;
+  const inRound = snapshot.phase !== "waiting";
+  if (inRound && snapshot.setterPlayerId === me.id) return "setter";
+  return me.membership === "spectator" || (inRound && me.status === "observing") ? "observer" : null;
 }
