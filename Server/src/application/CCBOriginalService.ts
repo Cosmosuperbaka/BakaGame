@@ -205,6 +205,8 @@ export class CCBOriginalService {
       if (!this.connections.has(connection.id)) throw new AppError('CONNECTION_NOT_FOUND', '加入期间连接已断开');
       session.confirmed = true;
       if (!this.chats.has(roomId)) this.chats.set(roomId, { generation: randomUUID(), chat: [], seenRoundKeys: new LRUCache({ max: 256 }) });
+      // 后来者沿用共享房间已知局数；否则在下一次开局前，顶栏局数与同房其他人不一致。
+      session.roundNumber = this.chats.get(roomId)!.round?.number ?? 0;
       connection.resetStateSync?.();
       connection.roomId = `original:${roomId}`;
       connection.playerId = socket.id;

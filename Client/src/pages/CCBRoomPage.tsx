@@ -11,7 +11,7 @@ import { CCBPlayerList } from "@/components/ccb/CCBPlayerList";
 import { CCBGameArea } from "@/components/ccb/CCBGameArea";
 import { useCCBRoomLifecycle } from "@/hooks/UseCCBRoomLifecycle";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
-import { CCB_SOURCE_LABELS, ccbRoomPath } from "@/lib/CCBSession";
+import { CCB_SOURCE_LABELS, ccbDisplayRound, ccbRoomPath } from "@/lib/CCBSession";
 
 export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
@@ -80,6 +80,7 @@ export default function CCBRoomPage() {
   const chatNote = snapshot.source === "original" ? (
     <p className="border-b px-3 py-2 text-xs text-muted-foreground">增强版聊天</p>
   ) : null;
+  const displayRound = ccbDisplayRound(snapshot.phase, snapshot.roundNumber);
 
   return (
     <>
@@ -90,7 +91,7 @@ export default function CCBRoomPage() {
         roomId={lifecycle.roomId}
         center={<>
           <HeaderChip icon={Users} label={CCB_SOURCE_LABELS[snapshot.source]} muted />
-          {snapshot.roundNumber > 0 ? <HeaderCounter>第 {snapshot.roundNumber} 局</HeaderCounter> : null}
+          {displayRound > 0 ? <HeaderCounter>第 {displayRound} 局</HeaderCounter> : null}
         </>}
         connectionIssue={connectionIssue}
         player={<PlayerColumn><CCBPlayerList snapshot={snapshot} privateState={privateState} /></PlayerColumn>}

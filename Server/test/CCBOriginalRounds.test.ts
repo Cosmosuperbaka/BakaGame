@@ -103,6 +103,15 @@ describe('原版房间对局代数', () => {
     expect(h.guesses(1)).toEqual([2]); expect(loads).toBe(2);
   });
 
+  test('后来者进房即沿用共享房间已知局数，不必等到下一局开局', async () => {
+    const h = await setup();
+    h.upstream.broadcast('gameStart', h.start({ id: 900, name: '第一局', appearances: [] }));
+    h.upstream.broadcast('gameEnded', h.end());
+    await h.join('late');
+    expect((await h.sync('late')).snapshot.roundNumber).toBe(1);
+    expect((await h.sync()).snapshot.roundNumber).toBe(1);
+  });
+
   test('相同载荷新局开始后旧查询返回不能提交或占用新局资料缓存', async () => {
     const pending = deferred<CCBCharacterView>(), started = deferred<void>(); let loads = 0;
     const h = await setup({ async getCharacter(id) {
