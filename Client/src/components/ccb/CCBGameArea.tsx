@@ -68,10 +68,15 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
   const origin = useOriginTracker();
   const { run, busy } = useCCBAction();
   const waitingSync = snapshot.settings.syncMode && me?.syncCompleted && me.status === "playing";
+  // 出题人、其观战队友与中途加入者在服务端都记为观战，次数对他们没有意义。
+  const standing = !me || me.membership === "spectator" ? "旁观中"
+    : snapshot.setterPlayerId === me.id ? "你是本局出题人"
+      : me.status === "observing" ? "本局观战"
+        : `已用 ${me.attempts} / ${snapshot.settings.maxAttempts} 次${me.team !== null ? ` · 第 ${me.team} 队共享` : ""}`;
   return <div className="space-y-5">
     <PhaseHeader icon={Search} title={privateState.canGuess ? "猜猜是哪位角色" : "本局进行中"} />
     <div className="flex justify-center"><Countdown deadline={privateState.deadlineAt} /></div>
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">{me?.membership === "active" ? <span>已用 {me.attempts} / {snapshot.settings.maxAttempts} 次{me.team !== null ? ` · 第 ${me.team} 队共享` : ""}</span> : <span>旁观中</span>}{snapshot.settings.syncMode ? <span>同步第 {snapshot.syncRound} 轮</span> : null}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground"><span>{standing}</span>{snapshot.settings.syncMode ? <span>同步第 {snapshot.syncRound} 轮</span> : null}</div>
     {privateState.answer ? <><p className="text-xs text-muted-foreground">答案仅对当前观战或出题视角公开</p><CCBAnswerCard answer={privateState.answer} /></> : null}
     {waitingSync ? <p role="status" className="rounded-md bg-muted p-3 text-sm">本轮已完成，等待其他玩家</p> : null}
     {privateState.canGuess ? <CCBSearch allowSubjects={snapshot.settings.subjectSearch} bannedIds={privateState.bannedCharacterIds} disabled={busy} onSelect={async (character) => { await run("ccb.game.guess", { characterId: character.id }); }} /> : !privateState.answer && !waitingSync ? <p role="status" className="text-sm text-muted-foreground">本局已结束行动，等待结算</p> : null}

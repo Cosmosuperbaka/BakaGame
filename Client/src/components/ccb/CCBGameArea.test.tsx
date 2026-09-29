@@ -47,6 +47,34 @@ describe("CCB 操作区", () => {
     expect(marks.querySelectorAll("svg")).toHaveLength(3);
   });
 
+  it("出题人在玩家栏标为「出题」，旁观分组不重复旁观状态", () => {
+    const [host] = room().players;
+    const snapshot = room({
+      phase: "guessing", setterPlayerId: "host",
+      players: [
+        { ...host, status: "observing" },
+        { ...host, id: "peach", name: "桃子", status: "playing", attempts: 1, marks: "❌" },
+        { ...host, id: "late", name: "路人", membership: "spectator", status: "observing" },
+      ],
+    });
+    render(<CCBPlayerList snapshot={snapshot} privateState={privateState()} />);
+    expect(screen.getByText("出题")).toBeInTheDocument();
+    expect(screen.getByText("猜测中")).toBeInTheDocument();
+    // 「旁观」只剩分组标题，旁观者行不再重复同一个词。
+    expect(screen.getAllByText("旁观")).toHaveLength(1);
+  });
+
+  it("出题人与本局观战者看到身份说明而不是猜测次数", () => {
+    const [host] = room().players;
+    const view = render(<CCBGameArea snapshot={room({ phase: "guessing", setterPlayerId: "host", players: [{ ...host, status: "observing" }] })} privateState={privateState()} />);
+    expect(screen.getByText("你是本局出题人")).toBeInTheDocument();
+    expect(screen.queryByText(/已用/)).not.toBeInTheDocument();
+    // 中途加入者与出题人队友有席位，但本局同样观战。
+    view.rerender(<CCBGameArea snapshot={room({ phase: "guessing", players: [{ ...host, status: "observing" }] })} privateState={privateState()} />);
+    expect(screen.getByText("本局观战")).toBeInTheDocument();
+    expect(screen.queryByText(/已用/)).not.toBeInTheDocument();
+  });
+
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});

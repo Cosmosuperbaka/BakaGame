@@ -12,7 +12,9 @@ import { CCBSelect } from "./CCBSelect";
 /** 与 `useCCBAction` 的 `run` 同签名，避免player row 各自重写命令类型。 */
 type CCBRun = ReturnType<typeof useCCBAction>["run"];
 
-const statuses: Record<CCBPlayer["status"], { label: string; tone: PlayerStatusTone }> = {
+type CCBStatus = { label: string; tone: PlayerStatusTone };
+
+const statuses: Record<CCBPlayer["status"], CCBStatus> = {
   waiting: { label: "等待", tone: "default" },
   playing: { label: "猜测中", tone: "warning" },
   solved: { label: "猜中", tone: "success" },
@@ -21,6 +23,17 @@ const statuses: Record<CCBPlayer["status"], { label: string; tone: PlayerStatusT
   surrendered: { label: "已放弃", tone: "default" },
   observing: { label: "旁观", tone: "default" },
 };
+
+/**
+ * 与另外两个游戏同一口径：旁观分组不重复「旁观」，等待阶段表达准备状态；
+ * 开局后服务端把出题人记为观战，这里按 `setterPlayerId` 标成「出题」，其余取本局行动状态。
+ */
+function resolveCCBStatus(player: CCBPlayer, snapshot: CCBRoomSnapshot): CCBStatus | null {
+  if (player.membership === "spectator") return null;
+  if (snapshot.phase === "waiting") return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
+  if (snapshot.setterPlayerId === player.id) return { label: "出题", tone: "questioner" };
+  return statuses[player.status];
+}
 
 export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
@@ -54,8 +67,6 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
                       snapshot={snapshot}
                       self={player.id === privateState.playerId}
                       canManage={isHost && player.id !== privateState.playerId}
-                      waiting={waiting}
-                      membership={membership}
                       busy={busy}
                       run={run}
                     />
@@ -102,18 +113,13 @@ interface CCBPlayerRowProps {
   snapshot: CCBRoomSnapshot;
   self: boolean;
   canManage: boolean;
-  waiting: boolean;
-  membership: "active" | "spectator";
   busy: boolean;
   /** 与 `useCCBAction` 的 `run` 同签名，避免每个玩家行各自重写命令类型。 */
   run: CCBRun;
 }
 
-function CCBPlayerRow({ player, snapshot, self, canManage, waiting, membership, busy, run }: CCBPlayerRowProps) {
-  // 等待阶段用准备状态，开局后换成本局行动状态；旁观者只表达旁观。
-  const status = waiting && membership === "active"
-    ? { label: player.ready ? "准备" : "等待", tone: (player.ready ? "success" : "default") as PlayerStatusTone }
-    : statuses[player.status];
+function CCBPlayerRow({ player, snapshot, self, canManage, busy, run }: CCBPlayerRowProps) {
+  const status = resolveCCBStatus(player, snapshot);
   const progress = snapshot.phase === "guessing" && player.status !== "observing";
   const detail = [
     player.team !== null ? `${player.team} 队` : null,
@@ -138,7 +144,7 @@ function CCBPlayerRow({ player, snapshot, self, canManage, waiting, membership, 
       me={self}
       host={snapshot.hostPlayerId === player.id}
       online={player.online}
-      badges={<PlayerStatusPill label={status.label} tone={status.tone} />}
+      badges={status ? <PlayerStatusPill {...status} /> : null}
       meta={detail ? <span className="truncate font-sans text-[11px] text-muted-foreground">{detail}</span> : null}
       detail={player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}
       actions={actions}
