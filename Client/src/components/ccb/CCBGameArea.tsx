@@ -83,12 +83,48 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
   </div>;
 }
 
+type CCBScore = NonNullable<CCBRoomSnapshot["roundSummary"]>["scores"][number];
+
+/** 结算得分表：与另外两个游戏同一 section/表头结构；得分明细收在玩家名下，窄屏不逐字换行。 */
+function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
+  return (
+    <section className="overflow-hidden rounded-md bg-muted">
+      <div className="border-b border-background px-4 py-2.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">本局得分</h3>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-background text-xs text-muted-foreground">
+            <th className="px-4 py-2 text-left font-medium">玩家</th>
+            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">名次</th>
+            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">得分</th>
+          </tr>
+        </thead>
+        <tbody>
+          {scores.map((score) => (
+            <tr key={score.playerId} className="border-b border-background align-top last:border-b-0">
+              <th scope="row" className="px-4 py-2.5 text-left font-normal">
+                <span className="block break-words font-medium">{score.playerName}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {score.reason ? `${score.reason} · ` : ""}基础 {score.base} · 首猜 {score.firstGuess} · 快速 {score.quickGuess} · 作品 {score.partial} · 出题 {score.setter}
+                </span>
+              </th>
+              <td className="px-4 py-2.5 text-right tabular-nums">{score.rank ?? "—"}</td>
+              <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{score.score > 0 ? "+" : ""}{score.score}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const summary = snapshot.roundSummary!;
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, busy } = useCCBAction();
   return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} />
-    <div className="overflow-x-auto"><table className="w-full text-sm"><caption className="pb-3 text-left font-medium">本局得分</caption><thead><tr className="border-b text-muted-foreground"><th className="py-2 text-left">玩家</th><th className="whitespace-nowrap px-3 text-right">名次</th><th className="whitespace-nowrap px-3 text-right">得分</th><th className="py-2 text-left">得分明细</th></tr></thead><tbody>{summary.scores.map((score) => <tr key={score.playerId} className="border-b"><th className="py-3 text-left font-normal">{score.playerName}</th><td className="px-3 text-right tabular-nums">{score.rank ?? "—"}</td><td className="px-3 text-right tabular-nums">{score.score > 0 ? "+" : ""}{score.score}</td><td className="py-3 text-xs text-muted-foreground">{score.reason}<span className="block">基础 {score.base} · 首猜 {score.firstGuess} · 快速 {score.quickGuess} · 作品 {score.partial} · 出题 {score.setter}</span></td></tr>)}</tbody></table></div>
+    <CCBScoreTable scores={summary.scores} />
     <CCBFeedbackTable guesses={summary.guesses} />
     {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
