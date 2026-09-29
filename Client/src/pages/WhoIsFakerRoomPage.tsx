@@ -63,8 +63,11 @@ export default function WhoIsFakerRoomPage() {
   // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
   const [needsName, setNeedsName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat" | "history">("none");
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
+  // 发言历史的展开状态记下展开时的局次，而不是一个布尔值：回到等待阶段、换局后自然收起，
+  // 不会在切换按钮已隐藏时仍盖住游戏区，也不会在下一局一进描述阶段就自己弹开。
+  const [historyRoundKey, setHistoryRoundKey] = useState<string | null>(null);
+  const [historyDrawerRoundKey, setHistoryDrawerRoundKey] = useState<string | null>(null);
   // 延迟清除：宽度动画收回期间保持 history prop，避免 PlayerList 瞬间膨胀
   const [historyRendered, setHistoryRendered] = useState(false);
   // 身份预测推理笔记按局次 (roundId) 隔离，换局自动读取新局空映射，杜绝渲染期 setState 截断
@@ -76,20 +79,6 @@ export default function WhoIsFakerRoomPage() {
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [mountTime] = useState(() => Date.now());
-
-  // 展开：立即渲染；收起：等动画结束后再移除列，避免 PlayerList 瞬间膨胀
-  useEffect(() => {
-    const t = window.setTimeout(() => setHistoryRendered(historyOpen), historyOpen ? 0 : 380);
-    return () => window.clearTimeout(t);
-  }, [historyOpen]);
-
-  // Escape 收起历史
-  useEffect(() => {
-    if (!historyOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setHistoryOpen(false); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [historyOpen]);
 
   // 挂载与卸载时清理残留的 roomClosedAt
   useEffect(() => {
@@ -309,6 +298,27 @@ export default function WhoIsFakerRoomPage() {
     };
   }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
 
+  // 身份分配与出词阶段还没有发言，历史入口从描述阶段起才提供。
+  const historyAvailable = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
+  const roundKey = roundId ?? "";
+  const historyOpen = historyAvailable && historyRoundKey === roundKey;
+  const historyDrawerOpen = historyAvailable && historyDrawerRoundKey === roundKey;
+  const openDrawer = historyDrawerOpen ? "history" : mobilePanel === "none" ? null : mobilePanel;
+
+  // 展开：立即渲染；收起：等动画结束后再移除列，避免 PlayerList 瞬间膨胀
+  useEffect(() => {
+    const t = window.setTimeout(() => setHistoryRendered(historyOpen), historyOpen ? 0 : 380);
+    return () => window.clearTimeout(t);
+  }, [historyOpen]);
+
+  // Escape 收起历史
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setHistoryRoundKey(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [historyOpen]);
+
   // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
   const seoNode = (
@@ -340,7 +350,6 @@ export default function WhoIsFakerRoomPage() {
   }
 
   const roleConfig = snapshot.settings.roleConfig;
-  const showHistoryToggle = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
   const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
   const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
@@ -424,7 +433,7 @@ export default function WhoIsFakerRoomPage() {
             {/* 展开/收起按钮：仅在游戏开始后显示。
                 收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
                 否则会落到 section 的裁切区外被切掉。 */}
-            {showHistoryToggle ? (
+            {historyAvailable ? (
               <motion.div
                 className="absolute top-1/2 z-dropdown -translate-y-1/2"
                 initial={false}
@@ -435,7 +444,7 @@ export default function WhoIsFakerRoomPage() {
                   type="button"
                   aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
                   aria-expanded={historyOpen}
-                  onClick={() => setHistoryOpen(!historyOpen)}
+                  onClick={() => setHistoryRoundKey(historyOpen ? null : roundKey)}
                   {...iconTappable}
                   className="flex h-8 w-8 items-center justify-center floating-surface text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
@@ -464,8 +473,11 @@ export default function WhoIsFakerRoomPage() {
             onSendMessage={handleSendChatMessage}
           />
         </ChatColumn>}
-        openDrawer={mobilePanel === "none" ? null : mobilePanel}
-        onDrawerChange={(key) => setMobilePanel((key ?? "none") as "none" | "players" | "chat" | "history")}
+        openDrawer={openDrawer}
+        onDrawerChange={(key) => {
+          setHistoryDrawerRoundKey(key === "history" ? roundKey : null);
+          setMobilePanel(key === "players" || key === "chat" ? key : "none");
+        }}
         drawers={[
           {
             key: "players",
@@ -476,10 +488,10 @@ export default function WhoIsFakerRoomPage() {
             closeFrom: "md",
             content: playerList(false),
           },
-          ...(showHistoryToggle ? [{
+          ...(historyAvailable ? [{
             key: "history",
             icon: History,
-            label: mobilePanel === "history" ? "收起发言历史" : "展开发言历史",
+            label: historyDrawerOpen ? "收起发言历史" : "展开发言历史",
             side: "left" as const,
             title: "发言历史",
             closeFrom: "md" as const,

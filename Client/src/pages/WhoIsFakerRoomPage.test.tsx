@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -93,6 +93,25 @@ const createMockPrivateState = (
   nightActionSubmitted: false,
   ...overrides,
 });
+
+/** 把房间推到某一局的某个阶段；不传 roundId 表示回到局外的等待阶段。 */
+function setRoundPhase(phase: RoomSnapshot["status"]["phase"], roundId?: string) {
+  const base = createMockSnapshot();
+  act(() => {
+    useWhoIsFakerStore.setState({
+      snapshot: createMockSnapshot({
+        status: {
+          phase,
+          roundId,
+          started: roundId !== undefined,
+          day: roundId === undefined ? 0 : 1,
+          ...(phase === "description" ? { speechOrder: ["player-2", "player-3", "player-1"] } : {}),
+        },
+        players: base.players.map((player) => ({ ...player, roundStatus: roundId === undefined ? "waiting" : "alive" })),
+      }),
+    });
+  });
+}
 
 function renderRoomPage(roomId = "FAKER_ROOM") {
   return render(
@@ -274,6 +293,47 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     fireEvent.click(voteButton);
 
     expect(sendCommandSpy).toHaveBeenCalledWith("game.submitVote", { targetId: "player-2" });
+  });
+
+  it("桌面发言历史只在展开它的那一局保持展开，回到等待后收起，下一局不自动弹开", () => {
+    const { container } = renderRoomPage();
+    setRoundPhase("description", "round-100");
+    const pane = () => within(container.querySelector<HTMLElement>("section > aside")!);
+
+    fireEvent.click(pane().getByRole("button", { name: "展开发言历史" }));
+    expect(pane().getByRole("button", { name: "收起发言历史" })).toHaveAttribute("aria-expanded", "true");
+
+    // 同一局内换阶段，展开状态保留
+    setRoundPhase("voting", "round-100");
+    expect(pane().getByRole("button", { name: "收起发言历史" })).toBeInTheDocument();
+
+    // 回到等待：切换按钮隐藏，面板也不能继续盖住游戏区
+    setRoundPhase("waiting");
+    expect(pane().queryByRole("button", { name: /发言历史/ })).not.toBeInTheDocument();
+
+    setRoundPhase("description", "round-101");
+    expect(pane().getByRole("button", { name: "展开发言历史" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("手机发言历史抽屉在回到等待时关闭，下一局不会自己重新打开", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    try {
+      const { container } = renderRoomPage();
+      setRoundPhase("description", "round-100");
+      const header = () => within(container.querySelector<HTMLElement>("header")!);
+
+      fireEvent.click(header().getByRole("button", { name: "展开发言历史" }));
+      expect(screen.getByRole("dialog", { name: "发言历史" })).toBeInTheDocument();
+
+      setRoundPhase("waiting");
+      expect(screen.queryByRole("dialog", { name: "发言历史" })).not.toBeInTheDocument();
+
+      setRoundPhase("description", "round-101");
+      expect(screen.queryByRole("dialog", { name: "发言历史" })).not.toBeInTheDocument();
+      expect(header().getByRole("button", { name: "展开发言历史" })).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("结算弹框展示：卧底胜利、词语揭秘全景与胜负原因", () => {
