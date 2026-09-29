@@ -112,7 +112,7 @@
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
-- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章。
+- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`。调用处不覆写底色、描边、字重或文字色，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
 - 连续数值与音量调节统一使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件（`Client/src/components/ui/Slider.tsx`），自动具备键盘方向键/Home/End 步进及触控无障碍支持，严禁在业务组件中手写透明原生 `<input type="range">` 假滑块。
 - 房间列表与数据面板加载过渡统一使用 `RoomCardSkeleton` 骨架屏组件，尺寸与实际卡片保持严格一致，防御初次加载网络等待期间出现的空状态闪烁（FOES）。

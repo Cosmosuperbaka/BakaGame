@@ -361,16 +361,17 @@ export function SongQuestionSettings({
             {artists.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {artists.map((artist) => (
-                  <Badge
+                  <Button
                     key={artist.id}
+                    type="button"
                     variant="secondary"
-                    className="cursor-pointer gap-1 hover:bg-destructive/10 hover:text-destructive"
+                    size="sm"
+                    aria-label={`移除歌手 ${artist.name}`}
                     onClick={() => setArtists((current) => current.filter((item) => item.id !== artist.id))}
-                    title="点击移除歌手筛选"
                   >
-                    <span>{artist.name}</span>
-                    <X className="h-3 w-3" />
-                  </Badge>
+                    {artist.name}
+                    <X />
+                  </Button>
                 ))}
               </div>
             ) : null}

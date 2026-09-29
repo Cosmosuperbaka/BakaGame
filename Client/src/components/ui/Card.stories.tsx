@@ -26,10 +26,8 @@ export const Composed: Story = {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
-          等待中
-        </Badge>
-        <Badge variant="outline" className="gap-1 text-xs font-normal text-muted-foreground">
+        <Badge variant="subtle">等待中</Badge>
+        <Badge variant="subtle">
           <Eye className="h-3.5 w-3.5" />
           可观战
         </Badge>
@@ -58,9 +56,7 @@ export const ContentOnly: Story = {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
-          <Badge variant="secondary" className="border border-primary/20 bg-primary/10 text-xs font-normal text-primary">
-            游戏中
-          </Badge>
+          <Badge variant="active">游戏中</Badge>
           <span className="flex items-center gap-1.5 tabular-nums">
             <Users className="h-4 w-4 text-muted-foreground/70" />
             6 玩家

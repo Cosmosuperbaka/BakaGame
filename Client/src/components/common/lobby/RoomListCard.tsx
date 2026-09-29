@@ -71,7 +71,7 @@ export function RoomListCard({
                 <span className="truncate">{room.name}</span>
                 {room.hasPassword ? <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
                 {room.tag ? (
-                  <Badge variant="outline" className="shrink-0 border-border/80 text-xs font-normal text-muted-foreground">
+                  <Badge variant="subtle" className="shrink-0">
                     {room.tag}
                   </Badge>
                 ) : null}
@@ -84,24 +84,16 @@ export function RoomListCard({
 
           <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/30 pt-2.5 text-sm text-muted-foreground sm:justify-end sm:gap-4 sm:border-0 sm:pt-0">
             <div className="flex items-center gap-2">
-              <Badge
-                variant={room.inGame ? "secondary" : "outline"}
-                className={cn(
-                  "text-xs font-normal",
-                  room.inGame
-                    ? "border border-primary/20 bg-primary/10 text-primary"
-                    : "border-border/80 text-muted-foreground",
-                )}
-              >
+              <Badge variant={room.inGame ? "active" : "subtle"}>
                 {room.inGame ? "游戏中" : "等待中"}
               </Badge>
               {room.allowSpectators ? (
-                <Badge variant="outline" className="gap-1 border-border/80 text-xs font-normal text-muted-foreground">
+                <Badge variant="subtle">
                   <Eye className="h-3.5 w-3.5" />
                   可观战
                 </Badge>
               ) : (
-                <Badge variant="outline" className="gap-1 border-dashed border-border/60 text-xs font-normal text-muted-foreground/45">
+                <Badge variant="unavailable">
                   <EyeOff className="h-3.5 w-3.5" />
                   禁观战
                 </Badge>

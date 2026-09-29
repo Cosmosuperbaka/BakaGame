@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
@@ -323,9 +324,7 @@ export function GameStage(props: SongGameAreaProps) {
             </h3>
             <div className="flex items-center gap-2">
               {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
-                <Badge variant={secondsLeft <= 10 ? "destructive" : "outline"} className="gap-1 font-mono">
-                  <Clock3 className="h-3.5 w-3.5" />{secondsLeft}s
-                </Badge>
+                <CountdownBadge secondsLeft={secondsLeft} />
               ) : null}
               {audioStatus === "loading" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">
