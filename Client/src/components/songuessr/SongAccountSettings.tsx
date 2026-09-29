@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   ChevronDown,
-  LoaderCircle,
   LogOut,
   QrCode,
   RefreshCw,
@@ -12,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Label } from "@/components/ui/Label";
+import { Spinner } from "@/components/ui/Spinner";
 import { Switch } from "@/components/ui/Switch";
 import {
   clearStoredSongMusicSession,
@@ -249,7 +249,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                       <img src={qr.qrImage} alt="网易云登录二维码" className="h-44 w-44 rounded-md border bg-white p-2" />
                     ) : (
                       <div className="flex h-44 w-44 items-center justify-center rounded-md border bg-muted">
-                        {busy ? <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" /> : <QrCode className="h-8 w-8 text-muted-foreground" />}
+                        {busy ? <Spinner className="size-6 text-muted-foreground" /> : <QrCode className="h-8 w-8 text-muted-foreground" />}
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground">{qrStatus}</p>

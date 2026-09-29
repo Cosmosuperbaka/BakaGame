@@ -1,11 +1,10 @@
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { AnimatePresence, motion } from "framer-motion"
-import { X } from "lucide-react"
+import { CloseButton } from "@/components/ui/CloseButton"
 import {
   backdrop,
   emergeFromOrigin,
-  iconTappable,
   useOriginStyle,
   type OriginPoint,
 } from "@/lib/Motion"
@@ -82,14 +81,7 @@ const DialogContent = React.forwardRef<
         >
           {children}
           <DialogPrimitive.Close asChild>
-            <motion.button
-              type="button"
-              {...iconTappable}
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none"
-            >
-              <X className="h-4 w-4" />
-              <span className="sr-only">关闭</span>
-            </motion.button>
+            <CloseButton className="absolute right-3 top-3" />
           </DialogPrimitive.Close>
         </motion.div>
       </DialogPrimitive.Content>

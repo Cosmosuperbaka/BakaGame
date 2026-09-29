@@ -10,6 +10,9 @@ vi.mock("framer-motion", () => ({
     div: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
       <div {...props}>{children}</div>
     ),
+    span: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <span {...props}>{children}</span>
+    ),
   },
 }));
 vi.mock("@/components/ui/Tooltip", () => ({

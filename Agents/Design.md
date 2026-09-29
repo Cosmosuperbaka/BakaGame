@@ -107,6 +107,9 @@
 
 - 命令操作使用 `Button` 的既有变体：主要操作使用 `default`，次要操作使用 `outline` 或 `secondary`，低强调操作使用 `ghost`，危险操作使用 `destructive`。
 - 只有纯图标命令使用 `size="icon"`，并提供可访问名称或 Tooltip；带业务含义且不够直观的操作使用图标加文字。
+- 关闭弹窗、覆盖面板与内嵌面板统一用 `CloseButton`：ghost 图标钮、`text-muted-foreground`，默认可访问名「关闭」，能说得更具体时用 `aria-label` 改写（如「关闭搜索」）。需要 Radix 的关闭语义时包在 `Close asChild` 里；业务组件不再另拼 `X` 图标按钮。
+- 加载指示统一用 `Spinner`，尺寸与颜色由调用处的 `size-*`、`text-*` 给出。它对读屏隐藏，进行中的含义由外层 `role="status"`、按钮的 `aria-busy` 或并排文字表达；按钮的提交态优先用 `Button` 的 `loading`。不手写 `animate-spin` 或边框圆环，动效约束见 [Animation](Animation.md)。
+- 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章。

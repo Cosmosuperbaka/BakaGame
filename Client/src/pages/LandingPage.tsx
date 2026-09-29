@@ -312,17 +312,19 @@ function FooterLink({ link }: { link: ExternalLink }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <motion.a
-          href={link.href}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={link.label}
-          variants={listItem}
-          {...iconTappable}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <FontAwesomeIcon icon={link.icon} className="h-4 w-4" />
-        </motion.a>
+        <Button asChild variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+          <motion.a
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={link.label}
+            variants={listItem}
+            {...iconTappable}
+          >
+            {/* Font Awesome 的内置样式不进层叠层，按 em 定尺寸并压过 w-4 这类工具类，尺寸只能经字号给。 */}
+            <FontAwesomeIcon icon={link.icon} className="text-base" />
+          </motion.a>
+        </Button>
       </TooltipTrigger>
       <TooltipContent>{link.label}</TooltipContent>
     </Tooltip>

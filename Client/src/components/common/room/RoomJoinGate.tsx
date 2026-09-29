@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
-import { duration, ease, spinner } from "@/lib/Motion";
+import { Spinner } from "@/components/ui/Spinner";
+import { duration, ease } from "@/lib/Motion";
 
 /**
  * 进房前的三种状态：加入中、需要用户名、需要密码。
@@ -50,9 +50,7 @@ export function RoomJoinGate({
           transition={{ duration: duration.base, ease: ease.out }}
           className="flex flex-col items-center gap-3"
         >
-          <motion.span {...spinner} className="inline-flex text-primary" aria-hidden="true">
-            <Loader2 className="h-8 w-8" />
-          </motion.span>
+          <Spinner className="size-8 text-primary" />
           <span className="text-sm text-muted-foreground">正在加入房间...</span>
         </motion.div>
       ) : null}

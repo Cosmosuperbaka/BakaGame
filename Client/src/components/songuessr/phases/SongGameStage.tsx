@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
@@ -26,7 +27,6 @@ import {
   listContainer,
   listItem,
   selectable,
-  spinner,
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
@@ -329,10 +329,7 @@ export function GameStage(props: SongGameAreaProps) {
               ) : null}
               {audioStatus === "loading" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">
-                  <motion.span
-                    className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent"
-                    {...spinner}
-                  />
+                  <Spinner className="text-primary" />
                 </Button>
               ) : audioStatus === "error" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onRetryAudio} aria-label="重新加载音频">
@@ -340,10 +337,7 @@ export function GameStage(props: SongGameAreaProps) {
                 </Button>
               ) : audioPlaybackState === "playing" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频播放中">
-                  <motion.span
-                    className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent"
-                    {...spinner}
-                  />
+                  <Spinner className="text-primary" />
                 </Button>
               ) : audioPlaybackState === "completed" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">

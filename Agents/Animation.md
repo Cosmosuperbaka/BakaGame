@@ -121,7 +121,7 @@
 
 - 只动 `transform` 与 `opacity`。`width`、`height`、`top`、`left`、`filter` 仅在无替代方案时使用，且必须限定作用范围。
 - 长距离位移期间设置 `willChange`，动画结束后清除残留 `transform`，避免分数缩放导致文本子像素抖动（见 4.3）。
-- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`。
+- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`。Tailwind 的 `animate-spin` 等内置关键帧同样不受 MotionConfig 约束，加载指示一律用 `Spinner`：它走 `spinner` 令牌，减弱动效下静止。
 - 循环动画只允许用于表达真实的持续状态（加载中、等待发言），不做纯装饰。
 
 ## 4. 三类问题的正确解法
@@ -184,7 +184,7 @@
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
 | `sharedTransfer` | 跨区域共享元素位移 |
 | `lyricOverview` | 原生歌词同节点位移与整体缩放共用时间轴 |
-| `spinner` | 匀速持续旋转的加载指示 |
+| `spinner` | 匀速持续旋转的加载指示，只经 `Spinner` 组件使用 |
 
 ## 6. 状态反馈的边界
 

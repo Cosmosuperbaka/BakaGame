@@ -2,8 +2,8 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { motion, type HTMLMotionProps } from "framer-motion"
 import { cva, type VariantProps } from "class-variance-authority"
-import { Loader2 } from "lucide-react"
-import { pressable, pressableStrong, spinner } from "@/lib/Motion"
+import { Spinner } from "@/components/ui/Spinner"
+import { pressable, pressableStrong } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 const buttonVariants = cva(
@@ -80,16 +80,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...(isDisabled ? undefined : feedback)}
         {...props}
       >
-        {loading ? (
-          <motion.span
-            {...spinner}
-            className="inline-flex items-center justify-center shrink-0"
-            aria-hidden="true"
-            data-testid="button-spinner"
-          >
-            <Loader2 className="size-4" />
-          </motion.span>
-        ) : null}
+        {loading ? <Spinner data-testid="button-spinner" /> : null}
         {children}
       </motion.button>
     )

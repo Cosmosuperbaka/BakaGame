@@ -1,8 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { CloseButton } from "@/components/ui/CloseButton";
 import { backdrop, duration, ease, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -66,9 +65,7 @@ export function RoomDrawer({
                 <div className="flex h-10 shrink-0 items-center justify-between border-b pl-3 pr-1">
                   <DialogPrimitive.Title className="text-sm font-medium">{title}</DialogPrimitive.Title>
                   <DialogPrimitive.Close asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="关闭面板">
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <CloseButton aria-label="关闭面板" />
                   </DialogPrimitive.Close>
                 </div>
                 <div className="min-h-0 flex-1">{children}</div>

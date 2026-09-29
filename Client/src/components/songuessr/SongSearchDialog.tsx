@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Music2, Search, X } from "lucide-react";
+import { Music2, Search } from "lucide-react";
 import type { SongSearchResult } from "@/types";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { CloseButton } from "@/components/ui/CloseButton";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Spinner } from "@/components/ui/Spinner";
 
 interface SongSearchDialogProps {
   open: boolean;
@@ -86,16 +88,7 @@ export function SongSearchDialog({
           <h3 className="text-sm font-semibold">{title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{description}</p>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => handleOpenChange(false)}
-          aria-label="关闭搜索"
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <CloseButton onClick={() => handleOpenChange(false)} aria-label="关闭搜索" />
       </div>
 
         <div className="relative">
@@ -120,7 +113,7 @@ export function SongSearchDialog({
           <div className="space-y-2 p-3">
             {searching ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
+                <Spinner />
                 正在查询网易云音乐
               </div>
             ) : results.length > 0 ? (
@@ -159,7 +152,7 @@ export function SongSearchDialog({
                     onClick={() => void choose(song)}
                   >
                     {submittingId === song.id ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      <Spinner />
                     ) : (
                       actionLabel
                     )}

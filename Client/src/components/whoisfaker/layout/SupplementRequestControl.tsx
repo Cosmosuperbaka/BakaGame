@@ -1,7 +1,8 @@
 ﻿import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, MessageSquarePlus, Send, Users, X } from "lucide-react";
+import { Check, MessageSquarePlus, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CloseButton } from "@/components/ui/CloseButton";
 import { collapsible, spring, tappable } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
@@ -75,9 +76,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
                   <Users className="h-4 w-4 text-info" />
                   选择补充发言玩家
                 </div>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={close}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <CloseButton className="h-7 w-7" onClick={close} aria-label="收起补充发言" />
               </div>
               <div className="flex flex-wrap gap-2">
                 {candidates.map((player) => {
