@@ -134,6 +134,7 @@ npx playwright test e2e/App.spec.ts
 - 连 Store 的组件在 `beforeEach` 用 `src/stories/StorePresets.ts` 预置状态；预览层在每个故事前把全部 Store 复位。故事不得渲染 `layouts/`、`contexts/` 或调用 `init*Ws`，不访问外网：图片用本地资源或数据 URL，截止时间在运行时用 `fromNow` 计算。
 - 截图规则由 tags 决定：`page` 整页 × 手机 390 / 平板 900 / 桌面 1440；`overlay` 含 Portal 的整页 × 手机 / 桌面；`mobile` 只拍手机宽度；`no-shot` 不拍；其余按故事根元素取景。每种都出亮、暗两套；暗色只用于样式检查，站内不开放。
 - `storybook:shots` 自启独立端口的 Storybook（`--url` 可复用已运行的实例），关闭 framer-motion 过渡并模拟减弱动效，等字体、图片与动画落定后截图。故事渲染失败、页面异常或控制台错误令命令以非零退出。`--filter` 只重拍匹配的故事，索引保留其余故事的上次结果；`--out` 另存一份用于对照。
+- 截图基本可复现：「当前时间」固定为脚本里的 `FIXED_NOW`（计时器照常运行，倒计时与相对时间每次都一样），动图（GIF、APNG、动态 WebP）换成首帧静态图，浏览器以同步解码、绘制前完成光栅的软件渲染启动。同一代码两次截图之间只剩少数图片边缘像素、通道差不超过个位数的抗锯齿抖动，因此改前改后对照要按容差比较或目视，不能只比文件哈希。新增故事若两次截图差异明显，先排查其中的随机数、真实时间或外部资源。
 - `npm run storybook`、`build-storybook` 与应用的 dev/build 一样会重建 `.generated-public/`，不要与其它 Vite 进程并行启动。
 
 ## CI 推荐顺序

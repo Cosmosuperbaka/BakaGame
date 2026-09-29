@@ -31,6 +31,8 @@ const outDir = path.resolve(clientDir, options.out);
 const port = Number(options.port);
 /** 组件截图在故事根元素外保留的边距（像素），容纳投影。 */
 const FRAME_MARGIN = 12;
+/** 截图时的「当前时间」。取常量，倒计时与相对时间每次截图都一样；晚于现有提交，更新日志不会显示成「刚刚」。 */
+const FIXED_NOW = new Date("2027-01-01T12:00:00+08:00");
 const themes = ["light", "dark"];
 const viewports = {
   mobile: { width: 390, height: 844 },
@@ -98,6 +100,32 @@ async function waitForStory(page) {
     // 懒加载图片不进视口就永远不会开始下载，截图前一律改为立即加载。
     for (const image of document.images) image.loading = "eager";
     await within(Promise.all([...document.images].map((image) => (image.complete ? null : image.decode().catch(() => null)))), 15_000);
+    // 动图（GIF、APNG、动态 WebP）的帧由浏览器内部推进，animations: "disabled" 管不到；
+    // 换成首帧静态图（createImageBitmap 按规范取首帧），同一故事两次截图才会逐像素一致。
+    if ("ImageDecoder" in window) {
+      await within(Promise.all([...document.images].map(async (image) => {
+        const source = image.currentSrc;
+        if (!source || source.startsWith("data:")) return;
+        try {
+          const blob = await (await fetch(source)).blob();
+          const decoder = new ImageDecoder({ data: blob.stream(), type: blob.type });
+          await decoder.tracks.ready;
+          const animated = decoder.tracks.selectedTrack?.animated;
+          decoder.close();
+          if (!animated) return;
+          const frame = await createImageBitmap(blob);
+          const canvas = document.createElement("canvas");
+          canvas.width = frame.width;
+          canvas.height = frame.height;
+          canvas.getContext("2d").drawImage(frame, 0, 0);
+          image.srcset = "";
+          image.src = canvas.toDataURL();
+          await image.decode();
+        } catch {
+          // 解码器不支持的格式保持原样。
+        }
+      })), 15_000);
+    }
     await within(Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished)), 5_000);
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
@@ -106,6 +134,8 @@ async function waitForStory(page) {
 async function captureStory(browser, baseUrl, story) {
   const mode = shotMode(story.tags ?? []);
   const context = await browser.newContext({ reducedMotion: "reduce", viewport: viewports.desktop });
+  // 固定「当前时间」：倒计时与相对时间都按同一时刻渲染，改前改后的截图才能逐像素对照；计时器照常运行。
+  await context.clock.setFixedTime(FIXED_NOW);
   const page = await context.newPage();
   const issues = [];
   // 故事只允许访问本机资源，杜绝截图结果依赖外网。
@@ -199,7 +229,12 @@ async function main() {
       .filter((entry) => !filter || filter.test(entry.id) || filter.test(`${entry.title}/${entry.name}`));
     if (!stories.length) throw new Error("没有匹配的故事");
 
-    browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined });
+    browser = await chromium.launch({
+      channel: process.platform === "win32" ? "msedge" : undefined,
+      // 图片同步解码、光栅在绘制前全部完成并走软件光栅：缩小显示的图片不会因截图时机不同
+      // 落在低质量或高质量两种滤波上，同一故事两次截图才会逐像素一致。
+      args: ["--disable-gpu", "--disable-checker-imaging", "--run-all-compositor-stages-before-draw"],
+    });
     const queue = [...stories];
     const results = [];
     const workers = Math.max(1, Number(options.workers) || 1);
