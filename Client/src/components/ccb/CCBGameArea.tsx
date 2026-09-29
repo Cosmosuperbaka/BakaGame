@@ -71,7 +71,7 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
   return <div className="space-y-5">
     <PhaseHeader icon={Search} title={privateState.canGuess ? "猜猜是哪位角色" : "本局进行中"} />
     <div className="flex justify-center"><Countdown deadline={privateState.deadlineAt} /></div>
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground"><span>已用 {me?.attempts ?? 0} / {snapshot.settings.maxAttempts} 次{me?.team !== null && me?.team !== undefined ? ` · 第 ${me.team} 队共享` : ""}</span>{snapshot.settings.syncMode ? <span>同步第 {snapshot.syncRound} 轮</span> : null}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">{me?.membership === "active" ? <span>已用 {me.attempts} / {snapshot.settings.maxAttempts} 次{me.team !== null ? ` · 第 ${me.team} 队共享` : ""}</span> : <span>旁观中</span>}{snapshot.settings.syncMode ? <span>同步第 {snapshot.syncRound} 轮</span> : null}</div>
     {privateState.answer ? <><p className="text-xs text-muted-foreground">答案仅对当前观战或出题视角公开</p><CCBAnswerCard answer={privateState.answer} /></> : null}
     {waitingSync ? <p role="status" className="rounded-md bg-muted p-3 text-sm">本轮已完成，等待其他玩家</p> : null}
     {privateState.canGuess ? <CCBSearch allowSubjects={snapshot.settings.subjectSearch} bannedIds={privateState.bannedCharacterIds} disabled={busy} onSelect={async (character) => { await run("ccb.game.guess", { characterId: character.id }); }} /> : !privateState.answer && !waitingSync ? <p role="status" className="text-sm text-muted-foreground">本局已结束行动，等待结算</p> : null}
