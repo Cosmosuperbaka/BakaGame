@@ -2,15 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { duration, spring, tappable } from "@/lib/Motion";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
+import { duration, spring } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
-const DURATION_OPTIONS = [
-  { label: "1分钟", seconds: 60 },
-  { label: "2分钟", seconds: 120 },
-  { label: "3分钟", seconds: 180 },
-] as const;
+const DURATION_OPTIONS: SegmentedOption<string>[] = [
+  { label: "1分钟", value: "60" },
+  { label: "2分钟", value: "120" },
+  { label: "3分钟", value: "180" },
+];
 
 interface Props {
   className?: string;
@@ -214,28 +215,14 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 1分 / 2分 / 3分 分段选择器 */}
-            <div className="flex items-center rounded-md bg-muted p-0.5">
-              {DURATION_OPTIONS.map((opt) => {
-                const isSelected = selectedDuration === opt.seconds;
-                return (
-                  <motion.button
-                    key={opt.seconds}
-                    type="button"
-                    {...tappable}
-                    onClick={() => setSelectedDuration(opt.seconds)}
-                    className={cn(
-                      "cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
-                      isSelected
-                        ? "bg-background text-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {opt.label}
-                  </motion.button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              size="sm"
+              aria-label="倒计时时长"
+              className="w-auto"
+              value={String(selectedDuration)}
+              options={DURATION_OPTIONS}
+              onValueChange={(value) => setSelectedDuration(Number(value))}
+            />
 
             <Button
               size="sm"

@@ -114,12 +114,14 @@ describe("PhaseTimerControl", () => {
     render(<PhaseTimerControl />);
 
     expect(screen.getByTestId("host-timer-bar")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "1分钟" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2分钟" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "3分钟" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "倒计时时长" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1分钟" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "2分钟" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "3分钟" })).toBeInTheDocument();
 
     // 切换为 2 分钟并点击开启
-    fireEvent.click(screen.getByRole("button", { name: "2分钟" }));
+    fireEvent.click(screen.getByRole("radio", { name: "2分钟" }));
+    expect(screen.getByRole("radio", { name: "2分钟" })).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "开启倒计时" }));
 
     await waitFor(() => {

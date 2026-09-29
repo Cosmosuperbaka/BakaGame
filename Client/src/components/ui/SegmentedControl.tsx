@@ -14,8 +14,15 @@ interface SegmentedControlProps<T extends string> {
   options: SegmentedOption<T>[]
   onValueChange: (value: T) => void
   "aria-label": string
+  /** `sm` 用于工具条等密集区域，高度与 `Button size="sm"` 对齐。 */
+  size?: "default" | "sm"
   className?: string
 }
+
+const SIZES = {
+  default: { root: "h-9 p-1", item: "px-3 text-sm" },
+  sm: { root: "h-8 p-0.5", item: "px-2.5 text-xs" },
+} as const
 
 /**
  * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供；
@@ -25,15 +32,17 @@ export function SegmentedControl<T extends string>({
   value,
   options,
   onValueChange,
+  size = "default",
   className,
   "aria-label": ariaLabel,
 }: SegmentedControlProps<T>) {
   const groupId = React.useId()
+  const sizing = SIZES[size]
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn("inline-flex h-9 w-full items-center rounded-md bg-muted p-1 text-muted-foreground", className)}
+      className={cn("inline-flex w-full items-center rounded-md bg-muted text-muted-foreground", sizing.root, className)}
     >
       {options.map((option) => {
         const checked = option.value === value
@@ -45,8 +54,9 @@ export function SegmentedControl<T extends string>({
             // 不显式排除的话会被 framer-motion 因 whileTap 自动加上 tabIndex=0。
             tabIndex={-1}
             className={cn(
-              "relative flex h-full flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors",
-              checked && "text-foreground",
+              "relative flex h-full flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors",
+              sizing.item,
+              checked ? "text-foreground" : !option.disabled && "hover:text-foreground",
               option.disabled && "cursor-not-allowed opacity-50",
             )}
           >
