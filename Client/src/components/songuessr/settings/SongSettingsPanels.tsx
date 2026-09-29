@@ -292,7 +292,7 @@ export function SongQuestionSettings({
               </Button>
             </div>
             {playlist ? (
-              <div className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2 text-xs">
                 <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                   <span className="truncate">{playlist.name ?? playlist.id}</span>
                   <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
@@ -341,14 +341,14 @@ export function SongQuestionSettings({
               </Button>
             </div>
             {artistResults.length > 0 ? (
-              <div className="space-y-1 rounded border bg-background p-2">
+              <div className="space-y-1 rounded-md border bg-background p-2">
                 {artistResults.map((artist) => {
                   const selected = artists.some((item) => item.id === artist.id);
                   return (
                     <button
                       key={artist.id}
                       type="button"
-                      className={cn("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-muted", selected && "bg-primary/10 text-primary")}
+                      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted", selected && "bg-primary/10 text-primary")}
                       onClick={() => setArtists((current) => selected ? current.filter((item) => item.id !== artist.id) : [...current, { id: artist.id, name: artist.name }])}
                     >
                       <span>{artist.name}</span>
@@ -394,7 +394,7 @@ export function SongQuestionSettings({
             <p className="text-[11px] text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
           </div>
           {!playlist && artists.length === 0 ? (
-            <p className="rounded border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+            <p className="rounded-md border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
               未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
             </p>
           ) : null}

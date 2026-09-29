@@ -34,8 +34,8 @@
 | :--- | :--- | :--- | :--- |
 | `--z-index-base` | `0` | `z-base` | 文档流默认层级与普通流内容 |
 | `--z-index-panel` | `10` | `z-panel` | 游戏房间工作面板、吸顶表格行、固定列 |
-| `--z-index-sticky` | `20` | `z-sticky` | 页面局部/全局粘性表头、粘性导航栏 |
-| `--z-index-drawer` | `30` | `z-drawer` | 移动端侧栏抽屉、从边缘划入的操作栏 |
+| `--z-index-sticky` | `20` | `z-sticky` | 页面局部/全局粘性表头、粘性导航栏；表格中同时吸顶又固定的角单元格（须压过吸顶行与固定列） |
+| `--z-index-drawer` | `30` | `z-drawer` | 移动端侧栏抽屉、从边缘划入的操作栏、贴游戏区边缘悬浮的操作（测试控制器、白板猜词入口） |
 | `--z-index-dropdown` | `40` | `z-dropdown` | 常规页面级下拉菜单、未凌驾于模态框之上的弹出选项 |
 | `--z-index-overlay` | `50` | `z-overlay` | 全局暗色遮罩（`DialogOverlay`、全屏 Backdrop 模糊层） |
 | `--z-index-modal` | `60` | `z-modal` | 对话框主体（`DialogContent`）、核心弹出模态卡片 |
@@ -98,9 +98,9 @@
 - 页面和主要面板以稳定的 `flex`、`grid`、固定侧栏宽度和 `min-w-0` 管理布局，避免内容变化导致界面跳动。
 - 常规控件高度沿用公共组件：默认按钮和输入框为 `h-9`，紧凑操作为 `h-8`，主要阶段操作通常为 `h-10`。
 - 常规内容间距优先使用 `gap-2` 至 `gap-4`、`space-y-3` 至 `space-y-6`；游戏主区域内边距沿用 `p-6 md:p-8`。
-- 圆角基线由 `--radius: 0.25rem` 控制，整体偏方正。全站统一使用标准圆角 `rounded-md`：内联控件（按钮、输入框、徽章、状态标签、单元格）、主要面板、内容卡片、弹窗（`Dialog`）、新版本提示浮层（`VersionUpdateNotice`）与提及候选、表情选择等浮层均采用 `rounded-md`；聊天气泡是唯一例外，沿用 `rounded-xl`，并以单侧 `rounded-sm` 区分消息方向。只有真正的圆形元素（开关滑块、滚动条、加载指示、时间线圆点）使用 `rounded-full`。除聊天气泡外，严禁混用 `rounded-lg`、`rounded-2xl` 等非标圆角，亦不得在组件内写死像素圆角。
+- 圆角基线由 `--radius: 0.25rem` 控制，整体偏方正。全站统一使用标准圆角 `rounded-md`：内联控件（按钮、输入框、徽章、状态标签、单元格）、主要面板、内容卡片、弹窗（`Dialog`）、新版本提示浮层（`VersionUpdateNotice`）与提及候选、表情选择等浮层均采用 `rounded-md`；聊天气泡是唯一例外，沿用 `rounded-xl`，并以单侧 `rounded-sm` 区分消息方向。只有真正的圆形元素（开关滑块、滚动条、加载指示、时间线圆点）使用 `rounded-full`。除聊天气泡外，严禁混用 `rounded-lg`、`rounded-2xl` 等非标圆角，亦不得在组件内写死像素圆角。不带尺寸的 `rounded` 与 `rounded-sm` 同样算非标：本主题下前者取 0.25rem，比 `rounded-md` 更圆。
 - 聊天气泡沿用经典观感：文本气泡内边距 `px-3 py-1.5`（表情包 `p-1.5`），圆角 `rounded-xl` 并以单侧 `rounded-sm` 区分消息方向。他人文本气泡底色用 `bg-muted` —— 其明度（`0.9239`）低于所在 `bg-panel` 面板（`0.9430`），是柔和的浅灰块；改用近白的 `bg-card`（`0.9914`）会在面板上明显刺眼。自身气泡为 `bg-primary text-primary-foreground` 配 `shadow-2xs`。除观战（ghost）气泡的虚线描边外，普通气泡不加边框，严禁把他人气泡底色改回 `bg-card`。
-- 主要结构通过一层轻边框区分。阴影统一取自 `--shadow-*`，为带横向偏移的暖色投影；常规区域使用 `shadow-sm` 或 `shadow-2xs`，只有移动端抽屉、弹窗等浮层可使用 `shadow-lg` 以上层级。
+- 主要结构通过一层轻边框区分。阴影统一取自 `--shadow-*`，为带横向偏移的暖色投影；常规区域使用 `shadow-sm` 或 `shadow-2xs`（本主题的 `shadow-xs` 与 `shadow-2xs`、裸 `shadow` 与 `shadow-sm` 取值相同，只写后者），只有移动端抽屉、弹窗等浮层可使用 `shadow-lg` 以上层级。
 - 不在卡片中嵌套装饰性卡片，不把普通页面区块全部做成悬浮卡片。
 
 ## 6. 组件使用

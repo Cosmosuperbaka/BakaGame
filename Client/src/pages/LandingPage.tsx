@@ -151,7 +151,7 @@ const EXTERNAL_LINKS: ExternalLink[] = [
 function ComingSoonBadge({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal leading-none text-muted-foreground select-none ${className}`}
+      className={`shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-normal leading-none text-muted-foreground select-none ${className}`}
     >
       即将上线
     </span>
@@ -169,7 +169,7 @@ function GameRow({ game }: { game: GameEntry }) {
   };
 
   const cardContainerClass =
-    "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-xs transition-colors hover:border-primary/40 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+    "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-2xs transition-colors hover:border-primary/40 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
 
   // 单一入口游戏（如 Who is Faker）
   if (!game.subModes) {

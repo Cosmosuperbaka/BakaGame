@@ -63,7 +63,7 @@ export function SegmentedControl<T extends string>({
               <motion.span
                 layoutId={`segmented-${groupId}`}
                 transition={spring.swift}
-                className="absolute inset-0 rounded-md bg-background shadow"
+                className="absolute inset-0 rounded-md bg-background shadow-sm"
               />
             ) : null}
             <span className="relative">{option.label}</span>

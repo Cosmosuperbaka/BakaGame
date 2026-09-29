@@ -72,7 +72,7 @@ const TabsTrigger = React.forwardRef<
         <motion.span
           layoutId={`tabs-active-${groupId}`}
           transition={spring.swift}
-          className="absolute inset-0 rounded-md bg-background shadow"
+          className="absolute inset-0 rounded-md bg-background shadow-sm"
         />
       ) : null}
       <span className="relative">{children}</span>

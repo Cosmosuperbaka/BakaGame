@@ -10,7 +10,7 @@ function AnimatedBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-10 rounded-md bg-secondary px-1 py-0.5 text-xs font-semibold leading-none text-secondary-foreground",
+        "pointer-events-none absolute rounded-md bg-secondary px-1 py-0.5 text-xs font-semibold leading-none text-secondary-foreground",
         className,
       )}
     >

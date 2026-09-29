@@ -11,7 +11,7 @@ interface Props {
 function RoleLabel({ role }: { role?: PlayerRole }) {
   if (!role) return null;
   return (
-    <span className={cn("shrink-0 rounded bg-background/75 px-1.5 py-0.5 text-[11px] font-semibold", ROLE_COLORS[role])}>
+    <span className={cn("shrink-0 rounded-md bg-background/75 px-1.5 py-0.5 text-[11px] font-semibold", ROLE_COLORS[role])}>
       {ROLE_LABELS[role]}
     </span>
   );
@@ -90,7 +90,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
             <div key={player.id} className="flex min-w-0 items-center gap-2 rounded-md bg-muted px-3 py-2.5">
               <RoleLabel role={roleByPlayerId.get(player.id)} />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{player.name}</span>
-              <span className="shrink-0 rounded bg-background/80 px-2 py-0.5 text-sm font-bold tabular-nums">
+              <span className="shrink-0 rounded-md bg-background/80 px-2 py-0.5 text-sm font-bold tabular-nums">
                 {voteCounts.get(player.id) ?? 0}
               </span>
             </div>
@@ -98,7 +98,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
           {(voteCounts.get(ABSTAIN_TARGET_ID) ?? 0) > 0 ? (
             <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5 text-sm text-muted-foreground">
               <span>弃票</span>
-              <span className="rounded bg-background/80 px-2 py-0.5 font-bold tabular-nums text-foreground">
+              <span className="rounded-md bg-background/80 px-2 py-0.5 font-bold tabular-nums text-foreground">
                 {voteCounts.get(ABSTAIN_TARGET_ID)}
               </span>
             </div>

@@ -122,7 +122,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } }}
             transition={spring.swift}
             className={cn(
-              "relative overflow-hidden rounded-md border p-3 shadow-xs transition-colors duration-300",
+              "relative overflow-hidden rounded-md border p-3 shadow-2xs transition-colors duration-300",
               isCritical
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : isWarning

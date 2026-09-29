@@ -20,7 +20,7 @@ export function SongTestController({
   const botCount = snapshot.players.filter((player) => player.isBot).length;
 
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-30 md:bottom-5 md:left-auto md:right-5">
+    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-drawer md:bottom-5 md:left-auto md:right-5">
       <div className="pointer-events-auto flex justify-end">
         <motion.div
           layout

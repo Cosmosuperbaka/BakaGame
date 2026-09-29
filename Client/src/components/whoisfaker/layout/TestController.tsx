@@ -85,7 +85,7 @@ export function TestController() {
   const activeRole = privateState?.role;
 
   return (
-    <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-30 pointer-events-none">
+    <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-drawer pointer-events-none">
       <div className="flex justify-end pointer-events-auto">
         <motion.div
           layout

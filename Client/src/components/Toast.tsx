@@ -52,7 +52,7 @@ function ToastViewport({
                 "bg-destructive/10 border-destructive/40 text-destructive",
               t.type === "success" &&
                 "bg-success/10 border-success/40 text-success",
-              t.type === "info" && "bg-primary/10 border-primary/25 text-primary"
+              t.type === "info" && "bg-primary/10 border-primary/40 text-primary"
             )}
           >
             {t.text}
