@@ -74,7 +74,8 @@ const DialogContent = React.forwardRef<
           exit="exit"
           style={originStyle}
           className={cn(
-            "fixed left-1/2 top-1/2 z-modal grid max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+            // 窄屏两侧各留 1rem：先从宽度里扣掉边距再居中；mx-4 配 w-full 会把右缘推出视口。
+            "fixed left-1/2 top-1/2 z-modal grid max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
             "scrollbar-hidden gap-4 overflow-y-auto rounded-md border bg-popover p-6 text-popover-foreground shadow-lg",
             className
           )}

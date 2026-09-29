@@ -30,7 +30,8 @@ function ToastViewport({
 }) {
 
   return (
-    <div className="fixed top-5 right-5 z-toast flex flex-col gap-2 pointer-events-none max-w-sm">
+    // 左右同时定位：窄屏长提示两侧留同样的边距；宽屏按内容收窄到 max-w-sm，由 ml-auto 靠右。
+    <div className="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none">
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <motion.div

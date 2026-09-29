@@ -10,7 +10,8 @@ const Slider = React.forwardRef<
     ref={ref}
     aria-label={ariaLabel}
     className={cn(
-      "relative flex w-full touch-none select-none items-center",
+      // Radix 用 data-disabled 标记禁用（不触发 :disabled），并自行拦截指针与键盘；这里只让整条轨道一起变淡。
+      "relative flex w-full touch-none select-none items-center data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
       className
     )}
     {...props}
@@ -22,7 +23,7 @@ const Slider = React.forwardRef<
       aria-label={ariaLabel}
       className={cn(
         "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
-        "transition-colors duration-150 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50"
+        "transition-colors duration-150 focus-visible:outline-offset-2"
       )}
     />
   </SliderPrimitive.Root>

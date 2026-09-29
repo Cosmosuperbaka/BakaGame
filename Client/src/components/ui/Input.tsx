@@ -11,6 +11,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
           "placeholder:text-muted-foreground",
           "file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground",
           "disabled:cursor-not-allowed disabled:opacity-50",
+          "aria-[invalid=true]:border-destructive",
           className
         )}
         ref={ref}

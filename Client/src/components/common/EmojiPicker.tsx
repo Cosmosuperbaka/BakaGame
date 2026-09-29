@@ -5,12 +5,12 @@ import { popover } from "@/lib/Motion";
 import { loadStickerPacks, type StickerPack } from "@/lib/Stickers";
 import { cn } from "@/lib/Utils";
 
-/** 动图角标。整包都是动图时挂在标签上，混装包挂在具体表情上。 */
+/** 动图角标。标的是内容类型而不是状态，取中性的 secondary。整包都是动图时挂在标签上，混装包挂在具体表情上。 */
 function AnimatedBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute z-10 rounded-md bg-destructive px-1 py-0.5 text-xs font-semibold leading-none text-destructive-foreground",
+        "pointer-events-none absolute z-10 rounded-md bg-secondary px-1 py-0.5 text-xs font-semibold leading-none text-secondary-foreground",
         className,
       )}
     >

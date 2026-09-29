@@ -103,6 +103,9 @@ function CreateRoomForm({
   const privateFieldId = useId();
   const passwordFieldId = useId();
   const spectatorsFieldId = useId();
+  const errorId = useId();
+  // 只有「私密房缺密码」落在具体输入框上；服务端返回的失败不标红任何字段。
+  const passwordInvalid = isPrivate && !password.trim() && errorMessage !== null;
 
   const handleCreate = async () => {
     if (isPrivate && !password.trim()) {
@@ -183,6 +186,8 @@ function CreateRoomForm({
                     if (errorMessage) setErrorMessage(null);
                   }}
                   placeholder="设置房间密码"
+                  aria-invalid={passwordInvalid || undefined}
+                  aria-describedby={passwordInvalid ? errorId : undefined}
                   className="h-10"
                 />
               </div>
@@ -197,7 +202,7 @@ function CreateRoomForm({
           {spectatorsDisabledReason ? <p className="text-xs text-muted-foreground">{spectatorsDisabledReason}</p> : null}
         </div>
         {errorMessage && (
-          <p role="alert" className="text-xs text-destructive">{errorMessage}</p>
+          <p id={errorId} role="alert" className="text-xs text-destructive">{errorMessage}</p>
         )}
       </div>
       <DialogFooter>
