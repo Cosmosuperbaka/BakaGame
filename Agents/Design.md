@@ -116,7 +116,7 @@
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。
 - 连续数值与音量调节统一使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件（`Client/src/components/ui/Slider.tsx`），自动具备键盘方向键/Home/End 步进及触控无障碍支持，严禁在业务组件中手写透明原生 `<input type="range">` 假滑块。
 - 房间列表与数据面板加载过渡统一使用 `RoomCardSkeleton` 骨架屏组件，尺寸与实际卡片保持严格一致，防御初次加载网络等待期间出现的空状态闪烁（FOES）。
-- 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效；开发环境（`import.meta.env.DEV`）下不发起检测也不展示，避免打断本地调试。
+- 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效；开发环境（`import.meta.env.DEV`）下不发起检测也不展示，避免打断本地调试。展示层是只由 Props 驱动的 `VersionUpdateBanner`，检测留在 `VersionUpdateNotice`，Storybook 直接渲染展示层。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
 ## 7. 页面布局

@@ -91,9 +91,19 @@ export function VersionUpdateNotice({
     window.location.reload();
   };
 
+  return <VersionUpdateBanner open={active && updateAvailable} onReload={handleReload} />;
+}
+
+export interface VersionUpdateBannerProps {
+  open: boolean;
+  onReload: () => void;
+}
+
+/** 新版本提醒的展示部分，只由 Props 驱动；检测逻辑留在 VersionUpdateNotice，Storybook 直接渲染这一层。 */
+export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps) {
   return (
     <AnimatePresence>
-      {active && updateAvailable && (
+      {open && (
         <motion.div
           role="status"
           initial={{ opacity: 0, y: 20, scale: 0.96 }}
@@ -113,7 +123,7 @@ export function VersionUpdateNotice({
           <Button
             size="sm"
             className="shrink-0 gap-1.5"
-            onClick={handleReload}
+            onClick={onReload}
           >
             <RefreshCw className="h-3.5 w-3.5" />
             刷新
