@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Flag, Image, Loader2, PenLine, RotateCcw, Search } from "lucide-react";
+import { Flag, Image, Loader2, PenLine, RotateCcw, Search, Trophy } from "lucide-react";
 import type { CCBCharacterSummary, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -69,7 +69,8 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
   const { run, busy } = useCCBAction();
   const waitingSync = snapshot.settings.syncMode && me?.syncCompleted && me.status === "playing";
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-lg font-semibold"><Search className="h-5 w-5" />{privateState.canGuess ? "猜猜是哪位角色" : "本局进行中"}</h2><Countdown deadline={privateState.deadlineAt} /></div>
+    <PhaseHeader icon={Search} title={privateState.canGuess ? "猜猜是哪位角色" : "本局进行中"} />
+    <div className="flex justify-center"><Countdown deadline={privateState.deadlineAt} /></div>
     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground"><span>已用 {me?.attempts ?? 0} / {snapshot.settings.maxAttempts} 次{me?.team !== null && me?.team !== undefined ? ` · 第 ${me.team} 队共享` : ""}</span>{snapshot.settings.syncMode ? <span>同步第 {snapshot.syncRound} 轮</span> : null}</div>
     {privateState.answer ? <><p className="text-xs text-muted-foreground">答案仅对当前观战或出题视角公开</p><CCBAnswerCard answer={privateState.answer} /></> : null}
     {waitingSync ? <p role="status" className="rounded-md bg-muted p-3 text-sm">本轮已完成，等待其他玩家</p> : null}
@@ -86,8 +87,8 @@ function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; 
   const summary = snapshot.roundSummary!;
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, busy } = useCCBAction();
-  return <div className="space-y-5"><h2 className="text-xl font-semibold">本局揭晓</h2><CCBAnswerCard answer={summary.answer} />
-    <div className="overflow-x-auto"><table className="w-full text-sm"><caption className="pb-3 text-left font-medium">本局得分</caption><thead><tr className="border-b text-muted-foreground"><th className="py-2 text-left">玩家</th><th className="px-3 text-right">名次</th><th className="px-3 text-right">得分</th><th className="py-2 text-left">得分明细</th></tr></thead><tbody>{summary.scores.map((score) => <tr key={score.playerId} className="border-b"><th className="py-3 text-left font-normal">{score.playerName}</th><td className="px-3 text-right tabular-nums">{score.rank ?? "—"}</td><td className="px-3 text-right tabular-nums">{score.score > 0 ? "+" : ""}{score.score}</td><td className="py-3 text-xs text-muted-foreground">{score.reason}<span className="block">基础 {score.base} · 首猜 {score.firstGuess} · 快速 {score.quickGuess} · 作品 {score.partial} · 出题 {score.setter}</span></td></tr>)}</tbody></table></div>
+  return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} />
+    <div className="overflow-x-auto"><table className="w-full text-sm"><caption className="pb-3 text-left font-medium">本局得分</caption><thead><tr className="border-b text-muted-foreground"><th className="py-2 text-left">玩家</th><th className="whitespace-nowrap px-3 text-right">名次</th><th className="whitespace-nowrap px-3 text-right">得分</th><th className="py-2 text-left">得分明细</th></tr></thead><tbody>{summary.scores.map((score) => <tr key={score.playerId} className="border-b"><th className="py-3 text-left font-normal">{score.playerName}</th><td className="px-3 text-right tabular-nums">{score.rank ?? "—"}</td><td className="px-3 text-right tabular-nums">{score.score > 0 ? "+" : ""}{score.score}</td><td className="py-3 text-xs text-muted-foreground">{score.reason}<span className="block">基础 {score.base} · 首猜 {score.firstGuess} · 快速 {score.quickGuess} · 作品 {score.partial} · 出题 {score.setter}</span></td></tr>)}</tbody></table></div>
     <CCBFeedbackTable guesses={summary.guesses} />
     {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
