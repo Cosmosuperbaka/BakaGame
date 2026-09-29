@@ -31,6 +31,10 @@ describe("CCB 操作区", () => {
     expect(send).toHaveBeenCalledWith("ccb.game.chooseSetter", { playerId: "host" }, expect.any(Object));
     view.rerender(<CCBGameArea snapshot={room()} privateState={privateState({ canStart: false, setterCandidateIds: [] })} />);
     expect(screen.getByRole("button", { name: "手动出题" })).toBeDisabled();
+    // 可访问名来自可见标签；没有候选时下拉框一并禁用，框内说明原因而不是留空。
+    expect(screen.getByText("指定出题人").tagName).toBe("LABEL");
+    expect(screen.getByRole("combobox", { name: "指定出题人" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "指定出题人" })).toHaveTextContent("暂无可选出题人");
     view.rerender(<CCBGameArea snapshot={room()} privateState={privateState({ canStart: false, setterCandidateIds: ["host"] })} />);
     expect(screen.getByRole("button", { name: "手动出题" })).toBeEnabled();
   });

@@ -3,11 +3,11 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { SettingSelect } from "@/components/common/room/SettingFields";
 import { listContainer } from "@/lib/Motion";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { AnimatePresence, motion } from "framer-motion";
 import { CCBMarks } from "./CCBMarks";
-import { CCBSelect } from "./CCBSelect";
 
 /** 与 `useCCBAction` 的 `run` 同签名，避免玩家行各自重写命令类型。 */
 type CCBRun = ReturnType<typeof useCCBAction>["run"];
@@ -88,7 +88,7 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
         {/* 组队是 CCB 独有的设置，放在两个分组之后，不和旁观切换混在一起。 */}
         {waiting && me?.membership === "active" ? (
           <div className="mt-3 border-t pt-3">
-            <CCBSelect
+            <SettingSelect
               label="我的队伍"
               value={me.team === null ? "solo" : String(me.team)}
               options={[
