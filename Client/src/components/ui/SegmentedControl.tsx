@@ -41,9 +41,11 @@ export function SegmentedControl<T extends string>({
           <motion.label
             key={option.value}
             {...(option.disabled ? undefined : tappable)}
+            // 视觉隐藏的原生 radio 才是聚焦停靠点；label 只承载按压动画，
+            // 不显式排除的话会被 framer-motion 因 whileTap 自动加上 tabIndex=0。
+            tabIndex={-1}
             className={cn(
               "relative flex h-full flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors",
-              "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
               checked && "text-foreground",
               option.disabled && "cursor-not-allowed opacity-50",
             )}

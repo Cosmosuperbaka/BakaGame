@@ -57,6 +57,13 @@
   - 能包 `AnimatePresence` 的（`Dialog`）由 framer-motion 接管，退出动画播完再卸载。
   - 只受 `data-state` 驱动、无法包裹的（`Select`、`Tooltip`）由 `index.css` 中的 `overlay-emerge` / `overlay-retract` 关键帧提供，曲线与 `lib/Motion.ts` 保持一致。
 
+### 2.7 手势预设只在真正的交互元素上使用
+
+- `pressable`、`tappable`、`selectable` 等预设都含 `whileTap`。framer-motion 见到带 `whileTap` 的元素且其 `tabIndex` 未定义时，会**自动补上 `tabIndex=0`**（`framer-motion` 的 `useHTMLProps`）。因此把预设挂在只承担动画的外层包裹元素上，会凭空多出一个 Tab 停靠点；全站统一焦点环之后，这个多余停靠点还会被画上聚焦框，肉眼可见。
+- 规则：手势预设与 `role`、`tabIndex`、键盘事件挂在**同一个**元素上，让动画元素与被聚焦元素是同一个。整行可点的卡片（`RoomListCard`）把预设挂在外层 `motion.div`、`role="button"` 挂在内层 `Card` 时，外层必须显式写 `tabIndex={-1}`。
+- 分段控件（`SegmentedControl`）的聚焦点在视觉隐藏的原生 `radio` 上，承载按压动画的 `label` 同样显式写 `tabIndex={-1}`，由 `index.css` 的 `label:has(> input.sr-only:focus-visible)` 把环画到 `label` 上。
+- 验收：新增或改动带手势预设的组件后，用键盘逐次 Tab 走查该区域，确认每个可点元素**恰好占一个**停靠点，且停靠点都是可交互元素本身。
+
 ## 3. 六个维度
 
 每段动效都要同时兼顾以下六项。缺失任一项都算实现不完整。

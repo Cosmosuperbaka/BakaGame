@@ -74,7 +74,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
           animate="animate"
           exit="exit"
           style={{ originY: 1 }}
-          className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-md border bg-background/95 shadow-lg backdrop-blur-md"
+          className="absolute bottom-full left-0 right-0 z-dropdown mb-1 overflow-hidden floating-surface shadow-lg"
         >
           {!pack ? (
             <div className="flex h-52 items-center justify-center px-4 text-center text-xs text-muted-foreground">
@@ -89,7 +89,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                 <button
                   key={item.key}
                   onClick={() => { onSelect(item.path); onClose(); }}
-                  className="flex flex-col items-center gap-0.5 rounded-md p-1 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex flex-col items-center gap-0.5 rounded-md p-1 transition-colors hover:bg-accent hover:text-accent-foreground"
                   title={item.label}
                 >
                   <div className="relative aspect-square w-full">
@@ -126,7 +126,8 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                 aria-label={p.name}
                 aria-selected={i === activeTab}
                 className={cn(
-                  "relative flex h-12 w-14 flex-shrink-0 items-center justify-center transition-colors",
+                  // 标签栏横向滚动会裁掉外扩的环，聚焦环向内收。
+                  "relative flex h-12 w-14 flex-shrink-0 items-center justify-center transition-colors focus-visible:-outline-offset-2",
                   i === activeTab
                     ? "bg-accent text-accent-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
                     : "hover:bg-accent hover:text-accent-foreground"

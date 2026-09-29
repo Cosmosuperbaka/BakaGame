@@ -44,13 +44,16 @@ export function RoomListCard({
       layout="position"
       className="rounded-md bg-card"
       {...selectable}
+      // 卡片自身才是聚焦点。外层只承载按压与进出场动画，若不给 tabIndex，
+      // framer-motion 会因为 whileTap 自动补上 tabIndex=0，把这里变成多出来的焦点停靠点。
+      tabIndex={-1}
     >
       <Card
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled || undefined}
         className={cn(
-          "cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm",
           disabled && "pointer-events-none opacity-60",
         )}
         onClick={onSelect}

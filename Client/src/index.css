@@ -232,6 +232,15 @@
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
 }
 
+/**
+ * 面板之上的就近浮层表面：表情选择、提及候选、玩家操作、Select、Tooltip、测试控制器等。
+ * 见 Design §3：靠模糊与阴影从面板里立起来，不靠加深底色；阴影层级由调用方决定。
+ * 自定义工具类不参与 tailwind-merge 的冲突合并，调用处不要再叠加同类圆角、描边或底色。
+ */
+@utility floating-surface {
+  @apply rounded-md border bg-background/95 backdrop-blur-md;
+}
+
 html {
   font-size: 120%;
 }
@@ -294,6 +303,17 @@ html {
     font-family: var(--font-serif);
     letter-spacing: var(--tracking-normal);
     margin: 0;
+  }
+  /* 全站唯一的键盘聚焦指示：2px 实线、`--ring` 色、贴边绘制。
+     用 outline 而非 box-shadow 画环，高对比度模式下仍然可见。
+     组件只按需声明偏移（圆形控件外移、贴边行内收），不再各写一套 ring。 */
+  :where(a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [role="switch"], [role="slider"], [role="checkbox"], [role="radio"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 0;
+  }
+  /* 视觉隐藏的原生单选（分段控件）由外层 label 承担聚焦指示。 */
+  label:has(> input.sr-only:focus-visible) {
+    outline: 2px solid var(--ring);
   }
 }
 

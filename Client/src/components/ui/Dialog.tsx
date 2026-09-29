@@ -84,7 +84,7 @@ const DialogContent = React.forwardRef<
             <motion.button
               type="button"
               {...iconTappable}
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none"
             >
               <X className="h-4 w-4" />
               <span className="sr-only">关闭</span>

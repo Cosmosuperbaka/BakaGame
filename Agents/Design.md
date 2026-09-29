@@ -50,7 +50,7 @@
 - 次要区域使用 `bg-muted`、`bg-accent/40` 或 `text-muted-foreground` 降低层级；`accent` 适用于悬停态和轻量强调块。
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
-- 面板之上的就近弹出层（表情选择器、玩家操作菜单、阶段控制器等）统一用 `bg-background/95` 配 `backdrop-blur-md` 和一层轻边框，靠模糊与阴影从面板里立起来，而不是靠加深底色。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
+- 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）与全局浮动提醒不属于就近浮层，分别沿用 `bg-popover` 与 §6 的 `bg-card/95`。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
 - 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。
 
 ### 3.1 状态语义色
@@ -175,6 +175,7 @@
 ## 8. 交互状态
 
 - 可点击元素有可见的悬停、键盘聚焦、禁用或进行中状态；按压与过渡遵循 [Animation](Animation.md)。
+- 键盘聚焦指示全站只有一种：`index.css` 基础层对可交互元素（链接、按钮、表单控件、`role` 为按钮/标签/开关/滑块/选项等、`tabindex` 非负的元素）的 `:focus-visible` 画 2px `--ring` 实线 outline，贴边绘制；视觉隐藏的原生单选由外层 `label` 承担。用 outline 不用 `ring` 阴影，高对比度模式下仍可见。组件不再写 `focus-visible:ring-*` 或 `outline-none`，只按需声明偏移：圆形控件（开关、滑块）用 `focus-visible:outline-offset-2` 外移；贴着滚动区或裁切容器边缘的整行（玩家行、浮层动作、横向滚动的标签栏）用 `focus-visible:-outline-offset-2` 内收。以背景高亮表达焦点的列表项（`SelectItem`）保留 `outline-none`。
 - 异步操作防重复提交，并用按钮状态、加载指示或 Toast 反馈。
 - 确认、投票、夜间行动等结果由服务端状态驱动，不仅依赖本地临时样式。
 - 操作成功、失败、房间关闭和断线等反馈使用真实状态文案，不只播放动画。

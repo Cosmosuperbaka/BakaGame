@@ -319,7 +319,7 @@ function FooterLink({ link }: { link: ExternalLink }) {
           aria-label={link.label}
           variants={listItem}
           {...iconTappable}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <FontAwesomeIcon icon={link.icon} className="h-4 w-4" />
         </motion.a>
@@ -337,7 +337,7 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
       rel="noreferrer"
       variants={listItem}
       {...pressable}
-      className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <span>{link.name}</span>
       <ArrowUpRight
@@ -543,7 +543,7 @@ export default function LandingPage() {
               capture(event);
               setInfoOpen(true);
             }}
-            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             {versionLabel}
           </motion.button>

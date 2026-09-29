@@ -61,7 +61,8 @@ export function PlayerRow({
     me && "bg-primary/10",
     !me && "transition-colors hover:bg-accent/50",
     !online && !bot && "opacity-60",
-    interactive && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+    // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
+    interactive && "cursor-pointer focus-visible:-outline-offset-2",
   );
 
   const body = (
@@ -110,7 +111,7 @@ export function PlayerRow({
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-popover overflow-hidden rounded-md border bg-background/95 shadow-md backdrop-blur-md"
+            className="z-popover overflow-hidden floating-surface shadow-md"
           >
             {actionsHeader ? <div className="flex">{actionsHeader}</div> : null}
             {actions?.length ? (
@@ -141,7 +142,7 @@ export function PlayerActionButton({ icon, label, destructive = false, disabled 
         {...tappable}
         onClick={onClick}
         className={cn(
-          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors",
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors focus-visible:-outline-offset-2",
           "border-t first:border-t-0",
           "disabled:pointer-events-none disabled:opacity-50",
           destructive
