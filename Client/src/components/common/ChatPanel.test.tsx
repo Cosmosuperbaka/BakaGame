@@ -40,6 +40,37 @@ describe("ChatPanel (Common)", () => {
     expect(container.querySelector(".rounded-full.bg-muted\\/40")).toBeNull();
   });
 
+  it("频道说明以系统提示样式固定为消息流第一行，不另起标题条", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m-1",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "原版那边好像断了一下",
+        createdAt: 1000,
+        system: false,
+      },
+    ];
+
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        notice="聊天仅增强版玩家可见"
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    const notice = screen.getByText("聊天仅增强版玩家可见");
+    expect(notice.className).toContain("text-center");
+    expect(notice.className).not.toContain("border-b");
+    // 说明排在所有消息之前，而不是混进气泡或输入区
+    const bubble = screen.getByTestId("chat-message-bubble");
+    expect(notice.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.closest("[data-radix-scroll-area-viewport]")).not.toBeNull();
+  });
+
   it("正确区分本人与他人的消息气泡左右布局", () => {
     const messages: ChatMessage[] = [
       {

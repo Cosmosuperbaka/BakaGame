@@ -73,13 +73,10 @@ export default function CCBRoomPage() {
       onSendMessage={sendChat}
       onError={showError}
       maxLength={500}
+      // 原版房的聊天只在增强版玩家之间互通，上游的原版玩家看不到，要在频道里交代清楚。
+      notice={snapshot.source === "original" ? "聊天仅增强版玩家可见" : undefined}
     />
   );
-  const chatTitle = snapshot.source === "original" ? "增强版聊天" : "聊天";
-  // 原版房的聊天来自增强版，与上游房间不同步，需要一句来源说明。
-  const chatNote = snapshot.source === "original" ? (
-    <p className="border-b px-3 py-2 text-xs text-muted-foreground">增强版聊天</p>
-  ) : null;
   const displayRound = ccbDisplayRound(snapshot.phase, snapshot.roundNumber);
 
   return (
@@ -96,7 +93,7 @@ export default function CCBRoomPage() {
         connectionIssue={connectionIssue}
         player={<PlayerColumn><CCBPlayerList snapshot={snapshot} privateState={privateState} /></PlayerColumn>}
         game={<CCBGameArea snapshot={snapshot} privateState={privateState} />}
-        chat={<ChatColumn>{chatNote}{chatPanel}</ChatColumn>}
+        chat={<ChatColumn>{chatPanel}</ChatColumn>}
         openDrawer={panel}
         onDrawerChange={(key) => setPanel(key as "players" | "chat" | null)}
         drawers={[
@@ -114,7 +111,7 @@ export default function CCBRoomPage() {
             icon: MessageSquare,
             label: "聊天",
             side: "right",
-            title: chatTitle,
+            title: "聊天",
             closeFrom: "lg",
             content: chatPanel,
           },

@@ -21,6 +21,10 @@ import type { ChatMessage } from "@/types";
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
 const MENTION_LIMIT = 6;
 
+/** 系统提示、阶段提醒与频道说明共用的无背景居中文本 */
+const SYSTEM_TEXT =
+  "min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]";
+
 /** 系统提示 / 阶段提醒动效：从中线展开 */
 const systemMessage = {
   initial: { opacity: 0, scaleY: 0.6 },
@@ -47,6 +51,8 @@ export interface ChatPanelProps {
   onSendSticker?: (path: string) => Promise<void> | void;
   /** 发送失败异常处理回调 */
   onError?: (error: unknown) => void;
+  /** 频道说明：以系统提示样式固定为消息流第一行，用于交代谁能看到这里的消息 */
+  notice?: string;
   /** 输入框占位符，缺省为 "请输入文本" */
   placeholder?: string;
   /** 输入框最大长度，缺省为 200 */
@@ -99,6 +105,7 @@ export function ChatPanel({
   onSendMessage,
   onSendSticker,
   onError,
+  notice,
   placeholder = "请输入文本",
   maxLength = 200,
   className,
@@ -182,6 +189,7 @@ export function ChatPanel({
     <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
       <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
         <div ref={messagesRef} className="min-w-0 space-y-2">
+          {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
           <AnimatePresence initial={false}>
             {messages.map((message) => {
               const isMe = message.playerId === myPlayerId;
@@ -196,7 +204,7 @@ export function ChatPanel({
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]"
+                    className={SYSTEM_TEXT}
                   >
                     {message.text}
                   </motion.div>
