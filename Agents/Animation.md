@@ -179,7 +179,7 @@
 | `backdrop` | 覆盖层背板 |
 | `popover` | 就近弹出层，自触发点方向展开 |
 | `emergeFromOrigin` | 浮层自触发按钮位置被吸出，按原路收回 |
-| `collapsible` | 折叠区域，高度与不透明度分离 |
+| `collapsible` | 折叠区域，高度与不透明度分离；行内折叠用 `ui/Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
 | `sharedTransfer` | 跨区域共享元素位移 |
