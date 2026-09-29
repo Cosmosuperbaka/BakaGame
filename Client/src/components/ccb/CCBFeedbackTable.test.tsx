@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { CCBGuess } from "@bakagame/shared";
 import { CCBFeedbackTable } from "./CCBFeedbackTable";
@@ -18,7 +18,7 @@ const guess: CCBGuess = {
 describe("角色反馈", () => {
   it("原版仅提供作品编号时仍显示可辨认的作品信息", () => {
     render(<CCBFeedbackTable guesses={[{ ...guess, feedback: { ...guess.feedback, sharedAppearances: [{ id: 120, name: "", nameCn: "" }] } }]} />);
-    expect(screen.getByText("作品 120")).toBeInTheDocument();
+    expect(screen.getByText(/作品 120/)).toBeInTheDocument();
   });
 
   it("游戏专属标签按分区展示匹配情况并将上游内容作为安全文本", () => {
@@ -27,7 +27,11 @@ describe("角色反馈", () => {
       { section: "角色能力", tags: [{ text: "吉他", matched: true }, { text: payload, matched: false }] },
     ] } };
     render(<CCBFeedbackTable guesses={[enriched]} />);
-    expect(screen.getByText("游戏专属标签")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "游戏专属标签" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("角色能力")).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("角色能力")).toBeInTheDocument();
     expect(screen.getByText(payload)).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: payload })).not.toBeInTheDocument();
