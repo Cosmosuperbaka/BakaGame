@@ -13,7 +13,8 @@ export interface LobbyRoomTarget {
 export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
   gamePath: string;
   rooms: TRoom[];
-  connected: boolean;
+  /** 本次连接已收到首个房间列表。只连上 WS 不算：订阅回包之前列表必然为空，会闪「暂无房间」。 */
+  ready: boolean;
   createRoom: (params: {
     roomId: string;
     name: string;
@@ -31,7 +32,7 @@ export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
 export function useLobbySession<TRoom extends LobbyRoomTarget>({
   gamePath,
   rooms,
-  connected,
+  ready,
   createRoom,
   joinRoom,
   reconnectRoom,
@@ -42,9 +43,10 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
   const [createOpen, setCreateOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<TRoom | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
-  const [hasConnectedOnce, setHasConnectedOnce] = useState(connected);
-  if (connected && !hasConnectedOnce) {
-    setHasConnectedOnce(true);
+  // 首次就绪后锁定：断线重连期间保留旧列表，不再退回骨架屏。
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(ready);
+  if (ready && !hasLoadedOnce) {
+    setHasLoadedOnce(true);
   }
   const createOrigin = useOriginTracker();
   const joinOrigin = useOriginTracker();
@@ -119,7 +121,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
     [userName, createRoom, navigate, gamePath, showError],
   );
 
-  const isInitialLoading = !hasConnectedOnce && rooms.length === 0;
+  const isInitialLoading = !hasLoadedOnce && rooms.length === 0;
 
   return {
     userName,

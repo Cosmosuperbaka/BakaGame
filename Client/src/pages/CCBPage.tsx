@@ -22,7 +22,7 @@ const toRoomView = (room: CCBRoomSummary): LobbyRoomView => ({
 
 export default function CCBPage() {
   const rooms = useCCBStore((state) => state.rooms);
-  const connected = useCCBStore((state) => state.connected);
+  const lobbyReady = useCCBStore((state) => state.connected && state.lobbyReady);
   const originalAvailable = useCCBStore((state) => state.originalAvailable);
   const [server, setServer] = useState<CCBSource>("native");
   // 从房间返回大厅时先把原房退掉再订阅大厅；严格模式下 effect 会跑两次，用一次性标志防重。
@@ -55,7 +55,7 @@ export default function CCBPage() {
   } = useLobbySession<CCBRoomSummary>({
     gamePath: "/ccb",
     rooms,
-    connected,
+    ready: lobbyReady,
     createRoom: (params) => useCCBStore.getState().createRoom({
       source: server,
       roomId: params.roomId,

@@ -56,10 +56,18 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
   });
 
   it("当房间列表为空且已连接时渲染空状态提示", () => {
-    useWhoIsFakerStore.setState({ rooms: [], connected: true });
+    useWhoIsFakerStore.setState({ rooms: [], connected: true, lobbyReady: true });
     renderPage();
 
     expect(screen.getByText("暂无房间，点击上方按钮创建一个吧")).toBeInTheDocument();
+  });
+
+  it("已连接但首个房间列表未到时仍显示骨架屏", () => {
+    useWhoIsFakerStore.setState({ rooms: [], connected: true, lobbyReady: false });
+    renderPage();
+
+    expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
+    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
   });
 
   it("初次加载尚未完成握手同步时渲染骨架屏防御 FOES", () => {

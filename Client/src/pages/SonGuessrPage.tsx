@@ -19,7 +19,7 @@ const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
 
 export default function SonGuessrPage() {
   const rooms = useSonGuessrStore((state) => state.rooms);
-  const connected = useSonGuessrStore((state) => state.connected);
+  const lobbyReady = useSonGuessrStore((state) => state.lobbyReady);
   const createRoom = useSonGuessrStore((state) => state.createRoom);
   const joinRoom = useSonGuessrStore((state) => state.joinRoom);
   const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
@@ -43,7 +43,7 @@ export default function SonGuessrPage() {
   } = useLobbySession<SonGuessrRoomSummary>({
     gamePath: "/songuessr",
     rooms,
-    connected,
+    ready: lobbyReady,
     createRoom,
     joinRoom,
     reconnectRoom,

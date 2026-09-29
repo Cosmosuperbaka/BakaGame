@@ -24,6 +24,8 @@ export interface ToastItem {
 
 export interface WhoIsFakerGameState {
   connected: boolean;
+  /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
+  lobbyReady: boolean;
   rooms: RoomSummary[];
   roomId: string | null;
   sessionToken: string | null;
@@ -219,6 +221,7 @@ const requestFullSync = () => {
 
 export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
   connected: false,
+  lobbyReady: false,
   rooms: [],
   roomId: null,
   sessionToken: null,
@@ -230,8 +233,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
   roomClosedAt: null,
   phaseTimedOutEndsAt: null,
 
-  setConnected: (connected) => set({ connected }),
-  setRooms: (rooms) => set({ rooms }),
+  setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
+  setRooms: (rooms) => set({ rooms, lobbyReady: true }),
   joinRoomState: (roomId, sessionToken) => {
     if (get().roomId !== roomId) {
       resetWhoIsFakerStateSync();

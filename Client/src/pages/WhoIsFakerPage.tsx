@@ -19,7 +19,7 @@ const toRoomView = (room: RoomSummary): LobbyRoomView => ({
 
 export default function WhoIsFakerPage() {
   const rooms = useWhoIsFakerStore((state) => state.rooms);
-  const connected = useWhoIsFakerStore((state) => state.connected);
+  const lobbyReady = useWhoIsFakerStore((state) => state.lobbyReady);
   const createRoom = useWhoIsFakerStore((state) => state.createRoom);
   const joinRoom = useWhoIsFakerStore((state) => state.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
@@ -43,7 +43,7 @@ export default function WhoIsFakerPage() {
   } = useLobbySession<RoomSummary>({
     gamePath: "/whoisfaker",
     rooms,
-    connected,
+    ready: lobbyReady,
     createRoom,
     joinRoom,
     reconnectRoom,

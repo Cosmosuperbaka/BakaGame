@@ -20,6 +20,8 @@ import { consumeStateSync } from "@/lib/StateSync";
 
 export interface SonGuessrStore {
   connected: boolean;
+  /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
+  lobbyReady: boolean;
   rooms: SonGuessrRoomSummary[];
   roomId: string | null;
   sessionToken: string | null;
@@ -145,6 +147,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     return {
       connected: false,
+      lobbyReady: false,
       rooms: [],
       roomId: null,
       sessionToken: null,
@@ -323,6 +326,7 @@ export function initSonGuessrWs() {
       case "song.lobby.rooms":
         useSonGuessrStore.setState({
           rooms: evt.payload as SonGuessrRoomSummary[],
+          lobbyReady: true,
         });
         break;
       case "song.room.snapshot":
@@ -468,7 +472,7 @@ export function initSonGuessrWs() {
   });
 
   const unsubStatus = sonGuessrWs.onStatus((connected) => {
-    useSonGuessrStore.setState({ connected });
+    useSonGuessrStore.setState(connected ? { connected } : { connected, lobbyReady: false });
     const store = useSonGuessrStore.getState();
 
     if (connected) {

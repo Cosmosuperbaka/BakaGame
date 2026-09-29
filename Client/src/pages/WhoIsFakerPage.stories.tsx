@@ -23,18 +23,18 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   name: "空列表",
-  beforeEach: () => presetWhoIsFaker({ connected: true, rooms: [] }),
+  beforeEach: () => presetWhoIsFaker({ connected: true, lobbyReady: true, rooms: [] }),
 };
 
 export const RoomList: Story = {
   name: "房间列表",
-  beforeEach: () => presetWhoIsFaker({ connected: true, rooms: WIF_LOBBY_ROOMS }),
+  beforeEach: () => presetWhoIsFaker({ connected: true, lobbyReady: true, rooms: WIF_LOBBY_ROOMS }),
 };
 
 export const NoUsername: Story = {
   name: "未设置用户名",
   beforeEach: () => {
-    presetWhoIsFaker({ connected: true, rooms: WIF_LOBBY_ROOMS });
+    presetWhoIsFaker({ connected: true, lobbyReady: true, rooms: WIF_LOBBY_ROOMS });
     return seedWifUsername("");
   },
 };
@@ -42,7 +42,7 @@ export const NoUsername: Story = {
 export const PasswordDialog: Story = {
   name: "输入房间密码",
   tags: ["!page", "overlay"],
-  beforeEach: () => presetWhoIsFaker({ connected: true, rooms: WIF_LOBBY_ROOMS }),
+  beforeEach: () => presetWhoIsFaker({ connected: true, lobbyReady: true, rooms: WIF_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: /深夜卧底局/ }));

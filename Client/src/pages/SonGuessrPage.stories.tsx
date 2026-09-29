@@ -23,18 +23,18 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   name: "空列表",
-  beforeEach: () => presetSonGuessr({ connected: true, rooms: [] }),
+  beforeEach: () => presetSonGuessr({ connected: true, lobbyReady: true, rooms: [] }),
 };
 
 export const RoomList: Story = {
   name: "房间列表",
-  beforeEach: () => presetSonGuessr({ connected: true, rooms: SONG_LOBBY_ROOMS }),
+  beforeEach: () => presetSonGuessr({ connected: true, lobbyReady: true, rooms: SONG_LOBBY_ROOMS }),
 };
 
 export const PasswordDialog: Story = {
   name: "输入房间密码",
   tags: ["!page", "overlay"],
-  beforeEach: () => presetSonGuessr({ connected: true, rooms: SONG_LOBBY_ROOMS }),
+  beforeEach: () => presetSonGuessr({ connected: true, lobbyReady: true, rooms: SONG_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: /周五夜听歌会/ }));
