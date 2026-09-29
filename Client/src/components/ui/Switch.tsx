@@ -24,7 +24,8 @@ const Switch = React.forwardRef<
   >
     <SwitchPrimitives.Thumb
       className={cn(
-        "pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0",
+        // 暗色关闭态：深色滑块压在 input 轨道上几乎隐形，改用浅色滑块。
+        "pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 dark:data-[state=unchecked]:bg-foreground/75",
         "transition-transform duration-[var(--motion-duration-base)] ease-[var(--motion-ease-overshoot)]",
         "data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0",
         "group-active:scale-90"

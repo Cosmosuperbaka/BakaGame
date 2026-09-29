@@ -51,7 +51,11 @@
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
 - 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）与全局浮动提醒不属于就近浮层，分别沿用 `bg-popover` 与 §6 的 `bg-card/95`。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
-- 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。
+- 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。暗色下表面明度顺序为 `muted` < `background` < `card` < `secondary`，与亮色并不对称，以下写法已按此修正，新增同类控件照做：
+  - 骨架条与徽章占位用 `bg-foreground/6` 至 `/10`，不用 `bg-muted`（暗色 muted 比 card 更暗，骨架会整片消失）。
+  - `Tabs`、`SegmentedControl` 的选中块在 `bg-muted` 轨道上，暗色补 `dark:bg-secondary`；只用 `bg-background` 时两者几乎同色。
+  - `Switch` 关闭态滑块暗色改用 `bg-foreground/75`，否则深色滑块压在 `input` 轨道上看不见。
+  - 遮罩层暗色用 `dark:bg-black/50`：`bg-foreground/25` 在暗色下是浅色，会把页面提亮而不是压暗。
 
 ### 3.1 状态语义色
 

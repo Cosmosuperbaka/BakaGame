@@ -72,7 +72,8 @@ const TabsTrigger = React.forwardRef<
         <motion.span
           layoutId={`tabs-active-${groupId}`}
           transition={spring.swift}
-          className="absolute inset-0 rounded-md bg-background shadow-sm"
+          // 暗色下 background 比 muted 轨道只亮一点，选中块几乎看不出；改用更亮的 secondary。
+          className="absolute inset-0 rounded-md bg-background shadow-sm dark:bg-secondary"
         />
       ) : null}
       <span className="relative">{children}</span>

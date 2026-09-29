@@ -20,15 +20,16 @@ export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
         <Card key={index} className="pointer-events-none border-border/60 bg-card/40">
           <RoomCardLayout
             className="animate-pulse"
-            name={<SkeletonLine className="w-36 bg-muted/70" />}
-            id={<SkeletonLine className="w-24 bg-muted/40" />}
+            // 骨架条用前景色低透明度：暗色的 muted 比 card 更暗，用 muted 会整片消失。
+            name={<SkeletonLine className="w-36 bg-foreground/10" />}
+            id={<SkeletonLine className="w-24 bg-foreground/6" />}
             badges={
               <>
                 <Badge variant="placeholder"><span className="h-[1lh] w-[3em]" /></Badge>
                 <Badge variant="placeholder"><span className="h-[1lh] w-[4.5em]" /></Badge>
               </>
             }
-            counts={<SkeletonLine className="w-20 bg-muted/50" />}
+            counts={<SkeletonLine className="w-20 bg-foreground/8" />}
           />
         </Card>
       ))}

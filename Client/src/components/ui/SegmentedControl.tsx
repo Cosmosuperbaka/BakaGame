@@ -73,7 +73,8 @@ export function SegmentedControl<T extends string>({
               <motion.span
                 layoutId={`segmented-${groupId}`}
                 transition={spring.swift}
-                className="absolute inset-0 rounded-md bg-background shadow-sm"
+                // 与 Tabs 选中块一致：暗色下改用 secondary，否则与 muted 轨道几乎同色。
+                className="absolute inset-0 rounded-md bg-background shadow-sm dark:bg-secondary"
               />
             ) : null}
             <span className="relative">{option.label}</span>
