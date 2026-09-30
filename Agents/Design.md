@@ -91,7 +91,7 @@
 - 等宽字体栈（`--font-mono`）以 `@fontsource-variable/jetbrains-mono`（`JetBrains Mono Variable` / `JetBrains Mono`）为最优先，后接 `ui-monospace`、`SF Mono`、`SFMono-Regular`、`Cascadia Code`、`Segoe UI Mono`、`Source Code Pro`、`Menlo`、`Consolas`、`Liberation Mono`、`monospace`。择机用于房间号（`#roomId`）、分享链接、提交哈希、时间戳等具有代码或数据特征的内容。
 - 字距由 `--tracking-normal` 统一控制，业务组件不单独设置 `letter-spacing`。
 - 全局字号基线由 `html { font-size: 120%; }` 控制，不在局部通过视口宽度动态缩放字体。
-- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`，挂在名称或单元格旁的微型标记为 11px（`Badge size="xs"`、`PlayerStatusPill`）。
+- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`，挂在名称或单元格旁的微型标记为 11px（`Badge size="xs"`、`PlayerStatusPill`、分数后的「分」、表情标签），不再出现更小的 `text-[10px]`。
 - 仅产品名称或确属页面主标题的内容使用大字号。面板、弹窗、卡片内标题保持紧凑，不使用宣传页式排版。
 - 正文和状态文案应简短、直接、可执行。操作按钮使用明确动词，如“创建房间”“加入”“发送”“撤销”。
 - 用户生成内容必须支持 `break-words`；单行名称和房间信息在空间不足时使用 `truncate`，不得挤压关键操作。
