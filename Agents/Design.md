@@ -51,7 +51,7 @@
 - 次要文字直接取 `text-muted-foreground`，不再叠透明度（`/70`、`/60`）：令牌已按 §3.1 标定到 4.5:1，叠 `/70` 后在 `panel` 上只剩约 2.6:1。与文字并排的图标取同一色，不单独调淡。禁用与离线等不可用状态照旧整体降不透明度（`opacity-50`、`opacity-60`），装饰性的删除线与占位圆点不计入文字。观战气泡的 `text-foreground/85` 叠在自身浅底上仍约 5.7:1，保留作为观战标记。
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
-- 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）与全局浮动提醒不属于就近浮层，分别沿用 `bg-popover` 与 §6 的 `bg-card/95`。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
+- 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）、全局浮动提醒与状态提示（`Toast`）不属于就近浮层，分别沿用 `bg-popover`、§6 的 `bg-card/95` 与 §3.1 的不透明底。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
 - 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。表面明度顺序在两种主题下并不对称：亮色 `secondary` < `muted` < `panel` < `background` < `card`，暗色 `background` < `muted` < `panel` < `card` < `secondary`。以下写法已按此修正，新增同类控件照做：
   - 骨架条与徽章占位用 `bg-foreground/6` 至 `/10`，不用 `bg-muted`（暗色 muted 比 card 更暗，骨架会整片消失）。
   - `Tabs`、`SegmentedControl` 的选中块在 `bg-muted` 轨道上，暗色补 `dark:bg-secondary`；只用 `bg-background` 时两者几乎同色。
@@ -72,6 +72,7 @@
 
 - 中性状态（等待、旁观、白板身份）取 `muted-foreground`，不引入第三种灰。内容类型角标（表情的「动图」）不是状态，取 `bg-secondary` 配 `text-secondary-foreground`。阶段本身不是状态：`PhaseHeader` 图标默认取正文色，只有补充发言、平票 PK、白板猜词这类确属特殊状态的阶段才着色，不按氛围给图标上色。
 - 浅底与描边由透明度修饰符派生，全站只用一套档位：底色 `/10`、描边 `/40`、悬停预览 `/5`。浮层内的选中档例外：半透明底会被 `bg-background/95` 吃掉，改用实底 `bg-<令牌>` 配 `text-<令牌>-foreground`。
+- 浮在页面内容之上的状态提示（`Toast`）不能只铺半透明浅底：身后是本人的主色气泡时，文字对比度亮色只剩约 1.6:1、暗色约 1.0:1。外层取不透明的 `bg-background` 配状态描边 `/40`，`/10` 浅底叠在内层，对比度才与身后内容无关；成功与错误提示因此在两种主题下都不低于 4.5:1。`info` 提示用主色文字，不在 AA 标定内，见下条。
 - 令牌按 WCAG AA 标定对比度：亮色下与 `muted-foreground` 同档，文字在 `background`、`card`、`panel`、`secondary`、`muted` 上，以及叠在 `background`、`card`、`panel`、`muted` 上的自身 `/10` 浅底上均不低于 4.5:1；`accent` 悬停底上约 3.9:1，只作瞬时悬停，不作常驻文字底。暗色下在 `background`、`card`、`panel`、`muted` 与 `panel` 上的 `/10` 浅底不低于 4.5:1（暗色目前只用于组件截图）。`primary` 不在此列：它是主要操作的底色与强调色，作文字时在亮色表面上约 3.0 至 3.6:1，不用来承载正文或小字说明。实底前景在亮色为白色，在暗色翻转为页面底色，与 `primary` 同构：暗色状态色明度较高，白字会失去对比度。新增或调整令牌时两侧同时核对。
 - 状态不能只靠颜色传达，必须同时配合文字、图标、边框或形状中的至少一种。
 
@@ -85,7 +86,7 @@
 | 面板 | `bg-panel` | 三块主面板；面板内的区内遮罩统一 `bg-panel/90 backdrop-blur-sm`（揭词背板、天亮提示） |
 | 实色块 | `bg-muted`（无描边）、`bg-card` | `bg-muted` 承载面板内的主要内容块（阶段分区、结算表、答案卡、提示、投票选项）与页面上的计数角标；`bg-card` 是页面上的卡片（大厅房间卡片及其骨架、大厅输入框） |
 | 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、步进输入框、身份分配轨道、搜索结果列表）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章 |
-| 浮层 | `floating-surface`、`bg-popover`、`bg-card/95` | 就近浮层、弹窗主体、全局浮动提醒，见 §3 |
+| 浮层 | `floating-surface`、`bg-popover`、`bg-card/95` | 就近浮层、弹窗主体、全局浮动提醒，见 §3；状态提示 `Toast` 例外，外层取不透明的 `bg-background`，见 §3.1 |
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
 - 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。

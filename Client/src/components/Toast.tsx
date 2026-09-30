@@ -46,16 +46,25 @@ function ToastViewport({
               transition: { duration: duration.quick, ease: ease.inOut },
             }}
             transition={{ ...spring.swift, layout: spring.settle }}
+            // 外层取不透明的页面底色，状态浅底叠在内层：提示浮在任意内容之上，
+            // 半透明底会让文字对比度随身后内容变化（盖在本人主色气泡上时几乎看不清）。
             className={cn(
-              "pointer-events-auto rounded-md border px-4 py-3 text-sm shadow-md backdrop-blur-sm",
-              t.type === "error" &&
-                "bg-destructive/10 border-destructive/40 text-destructive",
-              t.type === "success" &&
-                "bg-success/10 border-success/40 text-success",
-              t.type === "info" && "bg-primary/10 border-primary/40 text-primary"
+              "pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-md",
+              t.type === "error" && "border-destructive/40",
+              t.type === "success" && "border-success/40",
+              t.type === "info" && "border-primary/40"
             )}
           >
-            {t.text}
+            <div
+              className={cn(
+                "px-4 py-3",
+                t.type === "error" && "bg-destructive/10 text-destructive",
+                t.type === "success" && "bg-success/10 text-success",
+                t.type === "info" && "bg-primary/10 text-primary"
+              )}
+            >
+              {t.text}
+            </div>
           </motion.div>
         ))}
       </AnimatePresence>
