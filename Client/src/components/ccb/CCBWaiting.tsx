@@ -88,7 +88,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
         <div className="space-y-3">
           <CCBGameSettings settings={snapshot.settings} waiting={snapshot.phase === "waiting"} />
 
-          <SettingsAccordion icon={<Settings className="h-4 w-4 text-muted-foreground" />} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen}>
+          <SettingsAccordion icon={Settings} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen}>
             <div className="space-y-4">
               <div className="grid gap-1.5">
                 <Label htmlFor={nameFieldId} className="text-xs">房间名称</Label>

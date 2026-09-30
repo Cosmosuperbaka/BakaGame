@@ -1,17 +1,17 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, type LucideIcon } from "lucide-react";
 import { collapsible, pressable, spring } from "@/lib/Motion";
 
-/** 等待页的折叠设置区：标题行整行可点，箭头与展开状态同步翻转。 */
+/** 等待页的折叠设置区：标题行整行可点，箭头与展开状态同步翻转。图标只传组件，尺寸与颜色在这里统一。 */
 export function SettingsAccordion({
-  icon,
+  icon: Icon,
   title,
   open,
   onOpenChange,
   children,
 }: {
-  icon: ReactNode;
+  icon: LucideIcon;
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,7 +26,7 @@ export function SettingsAccordion({
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
       >
-        {icon}
+        <Icon className="h-4 w-4 text-muted-foreground" />
         <span className="flex-1 text-left">{title}</span>
         <motion.span className="inline-flex text-muted-foreground" animate={{ rotate: open ? 180 : 0 }} transition={spring.snap}>
           <ChevronDown className="h-4 w-4" />

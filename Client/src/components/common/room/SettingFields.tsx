@@ -1,5 +1,5 @@
-import { useId, useState, type ReactNode } from "react";
-import { Minus, Plus } from "lucide-react";
+import { useId, useState } from "react";
+import { Minus, Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -10,18 +10,18 @@ import { cn } from "@/lib/Utils";
 // 等待页设置面板共用的字段行：标签与控件显式关联，说明经 aria-describedby 挂到控件上，读屏能读出每个开关与输入的名称和说明。
 // 禁用时标签随控件一起变淡；说明保持原色，它往往就是禁用的原因（如「8 人开启」）。
 
-/** 开关行：左侧标签与可选说明，右侧开关。 */
+/** 开关行：左侧标签与可选说明，右侧开关。图标只传组件，尺寸与颜色在这里统一。 */
 export function SettingSwitchRow({
   label,
   description,
-  icon,
+  icon: Icon,
   checked,
   onCheckedChange,
   disabled = false,
 }: {
   label: string;
   description?: string;
-  icon?: ReactNode;
+  icon?: LucideIcon;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   disabled?: boolean;
@@ -32,7 +32,7 @@ export function SettingSwitchRow({
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <div className={cn("flex items-center gap-2", disabled && "opacity-50")}>
-          {icon}
+          {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
           <Label htmlFor={id} className="text-xs">{label}</Label>
         </div>
         {description ? <p id={descriptionId} className="mt-1 text-[11px] text-muted-foreground">{description}</p> : null}

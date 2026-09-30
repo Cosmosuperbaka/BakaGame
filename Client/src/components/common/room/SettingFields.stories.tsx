@@ -3,8 +3,6 @@ import { fn } from "storybook/test";
 import { Eye, Globe, Users } from "lucide-react";
 import { SettingSelect, SettingStepper, SettingSwitchRow } from "./SettingFields";
 
-const ICON_CLASS = "h-3.5 w-3.5 text-muted-foreground";
-
 const meta = {
   title: "公共组件/SettingFields",
   component: SettingSwitchRow,
@@ -28,9 +26,9 @@ export const SwitchRows: Story = {
   name: "开关行",
   render: (args) => (
     <div className="space-y-4">
-      <SettingSwitchRow label="私密房间" icon={<Globe className={ICON_CLASS} />} checked={false} onCheckedChange={args.onCheckedChange} />
-      <SettingSwitchRow label="允许旁观" icon={<Users className={ICON_CLASS} />} checked onCheckedChange={args.onCheckedChange} />
-      <SettingSwitchRow label="死亡时揭露身份" icon={<Eye className={ICON_CLASS} />} checked onCheckedChange={args.onCheckedChange} />
+      <SettingSwitchRow label="私密房间" icon={Globe} checked={false} onCheckedChange={args.onCheckedChange} />
+      <SettingSwitchRow label="允许旁观" icon={Users} checked onCheckedChange={args.onCheckedChange} />
+      <SettingSwitchRow label="死亡时揭露身份" icon={Eye} checked onCheckedChange={args.onCheckedChange} />
       <SettingSwitchRow label="血战模式" description="有人猜中后继续，直到所有人结束。" checked={false} onCheckedChange={args.onCheckedChange} />
       <SettingSwitchRow label="天使" description="8 人开启" checked={false} disabled onCheckedChange={args.onCheckedChange} />
     </div>

@@ -87,7 +87,7 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
 
   return (
     <div className="space-y-5">
-      <SettingsAccordion icon={<BookOpen className="h-4 w-4 text-muted-foreground" />} title="题目设置" open={questionOpen} onOpenChange={setQuestionOpen}>
+      <SettingsAccordion icon={BookOpen} title="题目设置" open={questionOpen} onOpenChange={setQuestionOpen}>
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-40 flex-1">
@@ -141,7 +141,7 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
         </div>
       </SettingsAccordion>
 
-      <SettingsAccordion icon={<Search className="h-4 w-4 text-muted-foreground" />} title="猜测设置" open={guessOpen} onOpenChange={setGuessOpen}>
+      <SettingsAccordion icon={Search} title="猜测设置" open={guessOpen} onOpenChange={setGuessOpen}>
         <div className="space-y-4">
           <SettingStepper label="猜测次数" value={draft.maxAttempts} minimum={1} maximum={100} onChange={(value) => change("maxAttempts", value)} />
           <SettingStepper label="每次行动限时" description="设为 0 表示不限行动时间。" unit="秒" value={draft.timeLimit} minimum={0} maximum={120} step={10}
