@@ -309,6 +309,11 @@ html {
     letter-spacing: var(--tracking-normal);
     margin: 0;
   }
+  /* 选中文字铺主色淡底、保留原文字色。选中是瞬时状态，档位比常驻浅底的 /10 高：/10 叠在表面上几乎看不出。
+     主色实底上的文字（本人气泡）由调用处反转成 primary-foreground 底，见 Design §3。 */
+  ::selection {
+    @apply bg-primary/30;
+  }
   /* 全站唯一的键盘聚焦指示：2px 实线、`--ring` 色、贴边绘制。
      用 outline 而非 box-shadow 画环，高对比度模式下仍然可见。
      组件只按需声明偏移（圆形控件外移、贴边行内收），不再各写一套 ring。 */

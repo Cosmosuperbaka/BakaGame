@@ -239,7 +239,7 @@ export function ChatPanel({
                       isMe
                         ? isGhost
                           ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
-                          : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs"
+                          : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
                         : isGhost
                           ? "rounded-bl-sm bg-muted/40 border border-dashed border-border/80 text-foreground/85"
                           : "rounded-bl-sm bg-muted text-foreground",
