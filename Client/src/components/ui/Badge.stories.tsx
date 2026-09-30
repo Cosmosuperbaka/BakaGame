@@ -13,7 +13,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = { name: "调试", tags: ["no-shot"] };
 
-/** 三行依次为：实底强调标记、内容标签、卡片上的次要信息。 */
+/** 四行依次为：实底强调标记、内容标签、卡片上的次要信息、挂在条目旁的微型提示。 */
 export const Variants: Story = {
   name: "全部变体",
   render: () => (
@@ -41,10 +41,21 @@ export const Variants: Story = {
           禁观战
         </Badge>
       </div>
+      <div className="flex flex-wrap items-center gap-6">
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          示例歌曲
+          <Badge variant="restricted" size="xs">会员专享</Badge>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          排位赛
+          <Badge variant="upcoming" size="xs">即将上线</Badge>
+        </div>
+      </div>
     </div>
   ),
 };
 
+/** default 用于卡片与筛选条件，sm 用于密集的标签表格，xs 用于挂在名称或单元格旁的微型标记。 */
 export const Sizes: Story = {
   name: "尺寸",
   render: () => (
@@ -53,6 +64,8 @@ export const Sizes: Story = {
       <Badge variant="muted" size="sm">双马尾</Badge>
       <Badge variant="matched" size="sm">傲娇</Badge>
       <Badge variant="muted" size="sm">已隐藏</Badge>
+      <Badge variant="secondary" size="xs" className="font-mono lowercase">fix</Badge>
+      <Badge variant="outline" size="xs">卧底</Badge>
     </div>
   ),
 };

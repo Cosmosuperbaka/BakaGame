@@ -91,7 +91,7 @@
 - 等宽字体栈（`--font-mono`）以 `@fontsource-variable/jetbrains-mono`（`JetBrains Mono Variable` / `JetBrains Mono`）为最优先，后接 `ui-monospace`、`SF Mono`、`SFMono-Regular`、`Cascadia Code`、`Segoe UI Mono`、`Source Code Pro`、`Menlo`、`Consolas`、`Liberation Mono`、`monospace`。择机用于房间号（`#roomId`）、分享链接、提交哈希、时间戳等具有代码或数据特征的内容。
 - 字距由 `--tracking-normal` 统一控制，业务组件不单独设置 `letter-spacing`。
 - 全局字号基线由 `html { font-size: 120%; }` 控制，不在局部通过视口宽度动态缩放字体。
-- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`。
+- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`，挂在名称或单元格旁的微型标记为 11px（`Badge size="xs"`、`PlayerStatusPill`）。
 - 仅产品名称或确属页面主标题的内容使用大字号。面板、弹窗、卡片内标题保持紧凑，不使用宣传页式排版。
 - 正文和状态文案应简短、直接、可执行。操作按钮使用明确动词，如“创建房间”“加入”“发送”“撤销”。
 - 用户生成内容必须支持 `break-words`；单行名称和房间信息在空间不足时使用 `truncate`，不得挤压关键操作。
@@ -116,7 +116,7 @@
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
-- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。调用处不覆写底色、描边、字重或文字色，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。
+- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。挂在名称或单元格旁的微型标记用 `size="xs"`（11px，与 `PlayerStatusPill` 同级）：尚未上线的入口用 `upcoming`，受限的条目（会员专享）用 `restricted`。调用处不覆写底色、描边、字重、字号或文字色，字号只由 `size` 给出，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。业务里的下拉选择统一用 `common/room/SettingFields` 的 `SettingSelect`：标签可见，并通过 `htmlFor` 与触发器关联，不只写 `aria-label`；没有可选项时禁用，并用占位项在框内说明原因，不留空白框。两三个互斥且需始终可见的选项用 `SegmentedControl`；工具条等密集区域取 `size="sm"`（与 `Button size="sm"` 同高），不手拼按钮组模拟分段。
 - 有上下限的整数设置用 `SettingStepper`：加减按钮立即生效，手动输入只在失焦或回车时夹到范围内再提交。单位经 `unit` 以「（秒）」的形式接在标签后，并计入输入框的可访问名；不接在按钮组外，按钮组各行等宽，同一面板里的加减按钮才能上下对齐。行内允许折行：手机上标签与按钮组放不下时，按钮组整组折到标签下方靠右（`flex-wrap` 加 `ml-auto`），不让 `min-w-0` 的标签列被挤成逐字断行。
 - 房间名称、房间密码这类单行文本设置用 `SettingTextField`：标签在上并以 `htmlFor` 命名输入框，二者以 `grid gap-1.5` 排布，占位文案必填。业务组件不再手写 `useId` 加 `Label` 加 `Input` 的组合。私密房间的密码框按 `hasPassword` 给占位文案：已有密码时提示留空保留当前密码，还没有时提示设置密码；私密房间必须有密码，此时留空不会保存，占位文案不能暗示留空也行。
@@ -136,7 +136,7 @@
 - 游戏入口在各视口均为单列垂直堆叠的卡片：上行为图标、标题与可选副标题，下行为入口按钮（单一入口为「开始游戏」，多模式为等分的子模式按钮）。三个子模式在窄屏排成两行、首项独占一行，`sm` 起三等分，保证模式名与「即将上线」不被截断。条目内不写玩法描述性文案，站点标识下方也不加标语。
 - 图标资源统一放在 `public/assets/` 并以真实物理文件名（如 `/assets/Faker.png`）在源码中直接引用，构建与开发系统（`webpAssetPlugin`）透明处理编译期 WebP 转换与请求重写，不通过 `src/assets` 打包，既保证开发直觉与 IDE 路径补全，又便于替换。
 - 点击可用条目后先让箭头前移、条目微沉，动效落地再跳转，使离开当前页读作这次点击的结果。
-- 未上线的游戏入口保持相同尺寸与结构，通过降低不透明度和“即将推出”徽章表达不可用，且不可点击、不获取焦点。
+- 未上线的游戏入口保持相同尺寸与结构，整卡不降低不透明度，以标题旁的「即将上线」徽章（`Badge variant="upcoming" size="xs"`）表达不可用；未上线的子模式是虚线描边的占位格，模式名后挂同一徽章。两者都不可点击、不获取焦点。
 - 页脚自上而下为友情链接文字链接行、外部链接图标行与版本号，居中排列。版本号点击后在弹窗中分标签展示更新日志与提交历史，不在页面主体常驻展开这两块内容。
 - 友情链接展示为紧凑的文字链接行，使用 `FriendLinkItem` 并带外链指示小图标。
 - 外部链接（社群、代码仓库、作者主页）实现为一排 `h-8 w-8` 纯图标链接，使用对应平台的品牌图标（见第 2 节），取 `text-muted-foreground` 并以 `Tooltip` 提供名称，同时保留 `aria-label`。链接在新标签打开并带 `rel="noreferrer"`，按压反馈取 `iconTappable`。不加文字标签，不做彩色品牌底色，也不把外部链接放进页面主体。

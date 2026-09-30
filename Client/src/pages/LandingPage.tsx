@@ -148,13 +148,11 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
-function ComingSoonBadge({ className = "" }: { className?: string }) {
+function ComingSoonBadge() {
   return (
-    <span
-      className={`shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-normal leading-none text-muted-foreground select-none ${className}`}
-    >
+    <Badge variant="upcoming" size="xs" className="shrink-0 select-none">
       即将上线
-    </span>
+    </Badge>
   );
 }
 
@@ -402,10 +400,7 @@ function ChangelogBody({ content }: { content: ChangelogContent }) {
       {sections.map((section) => (
         <div key={section.type} className="space-y-1.5" data-testid={`changelog-category-${section.type}`}>
           <div className="flex items-center gap-1.5">
-            <Badge
-              variant="secondary"
-              className="px-1.5 py-0 font-mono text-[11px] font-medium lowercase"
-            >
+            <Badge variant="secondary" size="xs" className="font-mono lowercase">
               {section.type}
             </Badge>
             <span className="text-xs font-semibold text-foreground">{section.label}</span>
