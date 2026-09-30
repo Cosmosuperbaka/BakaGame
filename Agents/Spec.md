@@ -235,7 +235,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   1. **目录拼写严格单一真相源**：游戏组件目录必须遵循 `Conventions.md` 约定的全小写单一规范（如统一使用 `components/songuessr/`，严禁拼写漂移如 `songguessr`）。
   2. **消除命名特权与二等公民双标**：在各游戏的专属子目录内，组件必须遵循对等的命名法则（如各自命名为 `PlayerList.tsx`），严禁一方霸占无前缀基础短名，而另一方被强加冗余的游戏前缀（如 `SongPlayerList`）。
   3. **全局基础 UI 容器去特定业务耦合**：全局通用弹层与容器组件（如 `Toast.tsx`）严禁被单一游戏独占无前缀基础名，且严禁基础 UI 组件反向依赖特定业务 Store。
-- **系统消息与阶段提醒样式标准**：聊天流中的系统提示与阶段流转通知，统一采用**无背景纯文本居中展示**（`min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70`），坚决杜绝嵌套灰色胶囊药丸背景（`rounded-full bg-muted/40`），保持全站纸质复古质感与通透排版。
+- **系统消息与阶段提醒样式标准**：聊天流中的系统提示与阶段流转通知，统一采用**无背景纯文本居中展示**（`min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground`），坚决杜绝嵌套灰色胶囊药丸背景（`rounded-full bg-muted/40`），保持全站纸质复古质感与通透排版。
 
 ## 12. 边界情况与跨环境适应性工程铁律 (Environment & Edge Cases Invariants)
 

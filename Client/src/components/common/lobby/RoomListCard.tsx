@@ -134,7 +134,7 @@ export function RoomListCard({
           }
           counts={
             <>
-              <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+              <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="flex items-center gap-2">
                 <span><span className={COUNT}>{room.playerCount}</span>玩家</span>
                 {room.spectatorCount !== null ? <span><span className={COUNT}>{room.spectatorCount}</span>旁观</span> : null}

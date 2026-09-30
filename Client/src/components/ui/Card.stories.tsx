@@ -32,7 +32,7 @@ export const Composed: Story = {
           可观战
         </Badge>
         <span className="ml-auto flex items-center gap-1.5 tabular-nums">
-          <Users className="h-4 w-4 text-muted-foreground/70" />
+          <Users className="h-4 w-4 text-muted-foreground" />
           5 玩家 · 1 旁观
         </span>
       </CardContent>
@@ -58,7 +58,7 @@ export const ContentOnly: Story = {
         <div className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
           <Badge variant="active">游戏中</Badge>
           <span className="flex items-center gap-1.5 tabular-nums">
-            <Users className="h-4 w-4 text-muted-foreground/70" />
+            <Users className="h-4 w-4 text-muted-foreground" />
             6 玩家
           </span>
         </div>

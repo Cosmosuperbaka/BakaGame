@@ -68,7 +68,7 @@ export function PlayerGroupTitle({
       <h3 className="font-sans text-[11px] font-normal tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <span className="font-sans text-[11px] font-normal tabular-nums text-muted-foreground/70">
+      <span className="font-sans text-[11px] font-normal tabular-nums text-muted-foreground">
         {count}
       </span>
       <span className="h-px flex-1 bg-border/70" />

@@ -23,7 +23,7 @@ const MENTION_LIMIT = 6;
 
 /** 系统提示、阶段提醒与频道说明共用的无背景居中文本 */
 const SYSTEM_TEXT =
-  "min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground/70 [overflow-wrap:anywhere]";
+  "min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground [overflow-wrap:anywhere]";
 
 /** 系统提示 / 阶段提醒动效：从中线展开 */
 const systemMessage = {
@@ -228,7 +228,7 @@ export function ChatPanel({
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <span className="font-sans text-[11px] font-normal text-muted-foreground/70 mb-0.5 px-1 select-none">
+                  <span className="font-sans text-[11px] font-normal text-muted-foreground mb-0.5 px-1 select-none">
                     {message.playerName}
                   </span>
                   <div

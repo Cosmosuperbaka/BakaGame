@@ -518,7 +518,7 @@ export default function LandingPage() {
           initial="initial"
           animate="animate"
         >
-          <span className="mr-0.5 text-muted-foreground/60 select-none">友情链接</span>
+          <span className="mr-0.5 text-muted-foreground select-none">友情链接</span>
           {FRIEND_LINKS.map((link) => (
             <FriendLinkItem key={link.href} link={link} />
           ))}
