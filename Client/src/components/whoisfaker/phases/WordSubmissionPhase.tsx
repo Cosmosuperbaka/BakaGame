@@ -142,7 +142,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
 
       <div className="w-full space-y-4">
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-success">平民词</Label>
+          <Label className="text-xs font-semibold text-info">平民词</Label>
           <Input
             value={civilianWord}
             onChange={(e) => setCivilianWord(e.target.value)}

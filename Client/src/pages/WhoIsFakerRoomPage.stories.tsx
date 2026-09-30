@@ -5,6 +5,7 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { ROOM_ID_TEST_MODE } from "@/types";
 import {
+  goodWinnerSummary,
   presetWifRoom,
   readyPlayers,
   seedWifUsername,
@@ -258,6 +259,14 @@ export const GameOverUndercoverWin: Story = {
   beforeEach: () => presetWifRoom(
     wifSnapshot("over", { summary: undercoverWinnerSummary() }),
     wifPrivate(peach, "over"),
+  ),
+};
+
+export const GameOverGoodWin: Story = {
+  name: "游戏结束 · 好人胜",
+  beforeEach: () => presetWifRoom(
+    wifSnapshot("over", { summary: goodWinnerSummary() }),
+    wifPrivate(me, "over"),
   ),
 };
 

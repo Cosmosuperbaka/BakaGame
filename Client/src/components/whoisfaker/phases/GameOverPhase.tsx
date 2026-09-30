@@ -83,6 +83,7 @@ export function GameOverPhase() {
     );
   }
 
+  // 胜方色与 ROLE_COLORS 同源：好人阵营随平民取 info，卧底阵营取 destructive，白板取中性色。
   const winnerTone =
     summary.winner === "aborted"
       ? "text-muted-foreground"
@@ -90,7 +91,7 @@ export function GameOverPhase() {
         ? "text-destructive"
         : summary.winner === "blank"
           ? "text-muted-foreground"
-          : "text-warning";
+          : "text-info";
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -109,9 +110,9 @@ export function GameOverPhase() {
         </div>
         {summary.words ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
-            <div className="rounded-md border border-success/40 bg-success/10 p-3">
-              <div className="text-xs text-success font-medium mb-1">平民词</div>
-              <div className="text-base font-bold text-success">
+            <div className="rounded-md border border-info/40 bg-info/10 p-3">
+              <div className="text-xs text-info font-medium mb-1">平民词</div>
+              <div className="text-base font-bold text-info">
                 {summary.words.civilianWord}
               </div>
             </div>

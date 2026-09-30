@@ -137,7 +137,7 @@
      同时与 muted 保持可辨差值，使面板内的小块控件仍能浮起。 */
   --panel: oklch(0.9430 0.0168 87.0000);
   /* 状态语义色。见 Design §3：绿=成功/完成，琥珀=提示/测试，
-     天蓝=补充发言与平民身份，红=危险/断线/淘汰（复用 destructive），紫=出题人。
+     天蓝=补充发言与平民、好人阵营，红=危险/断线/淘汰（复用 destructive），紫=出题人。
      底色与边框由透明度修饰符派生（`bg-success/10`、`border-success/40`），
      不再逐处手写深浅，同一含义只此一套取值。明度与 muted-foreground 同档标定：
      在 background、card、panel、secondary、muted 上，以及叠在 background、card、panel、muted
