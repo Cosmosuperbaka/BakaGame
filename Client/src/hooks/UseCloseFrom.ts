@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 /** Tailwind 断点；媒体查询里的 rem 按浏览器初始字号计算，不受 html 120% 字号影响。 */
-const BREAKPOINTS = { md: "48rem", lg: "64rem" } as const;
+const BREAKPOINTS = { sm: "40rem", md: "48rem", lg: "64rem" } as const;
 
 export type Breakpoint = keyof typeof BREAKPOINTS;
 
