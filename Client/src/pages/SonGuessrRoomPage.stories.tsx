@@ -127,6 +127,19 @@ export const WaitingSpectator: Story = {
   name: "等待阶段 · 旁观",
   beforeEach: () => presetSongRoom(songSnapshot(), spectatorPrivate({ submittedSong: undefined, visibleAttempts: [] })),
 };
+
+export const SettingsPanels: Story = {
+  name: "设置面板 · 房主",
+  beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), asHost),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const name of [/题目设置/, /猜测设置/, /房间设置/]) {
+      await userEvent.click(canvas.getByRole("button", { name }));
+    }
+    dropFocus();
+  },
+};
+
 // ==================== 指定出题人与出题 ====================
 
 export const ChoosingHost: Story = {
