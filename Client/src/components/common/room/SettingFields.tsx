@@ -47,6 +47,7 @@ export function SettingSwitchRow({
  * 数值步进：按钮立即生效；手动输入只在失焦或回车时提交并夹到范围内，
  * 输入 2026 这类多位数时不会在第一位就被夹成下限。
  * 单位跟在标签后面，不接在按钮组外：按钮组各行等宽，同一面板里的加减按钮才能上下对齐。
+ * 手机上标签与按钮组一行放不下时，按钮组整组折到标签下方靠右，标签不被挤成逐字断行。
  */
 export function SettingStepper({
   label,
@@ -88,7 +89,7 @@ export function SettingStepper({
     else commit(parsed);
   };
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <div className="min-w-0">
         <Label htmlFor={id} className={cn("text-xs", disabled && "opacity-50")}>
           {label}
@@ -96,7 +97,7 @@ export function SettingStepper({
         </Label>
         {description ? <p id={descriptionId} className="mt-1 text-[11px] text-muted-foreground">{description}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <Button variant="outline" size="icon" className="h-9 w-9" aria-label={`减少${label}`}
           disabled={disabled || value <= minimum} onClick={() => commit(value - step)}>
           <Minus className="h-3 w-3" />

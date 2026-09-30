@@ -48,6 +48,19 @@ export const Steppers: Story = {
   ),
 };
 
+/** 窄容器（约 14rem，相当于 390 宽手机上的设置面板）：短标签仍与按钮组同行，放不下的整组折到标签下方靠右。 */
+export const SteppersNarrow: Story = {
+  name: "数值步进 · 窄容器",
+  decorators: [(Story) => <div className="w-56"><Story /></div>],
+  render: () => (
+    <div className="space-y-4">
+      <SettingStepper label="猜测次数" value={10} minimum={1} maximum={100} onChange={fn()} />
+      <SettingStepper label="每部候选角色数" value={6} minimum={1} maximum={100} onChange={fn()} />
+      <SettingStepper label="每次行动限时" description="设为 0 表示不限行动时间。" unit="秒" value={60} minimum={0} maximum={120} step={10} onChange={fn()} />
+    </div>
+  ),
+};
+
 /** 文本输入：已有值的房间名称，以及尚未填写、只露出占位提示的房间密码。 */
 export const TextFields: Story = {
   name: "文本输入",
