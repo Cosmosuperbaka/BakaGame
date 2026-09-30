@@ -156,13 +156,13 @@ export function DescriptionTable({
                     {desc ? (
                       <span className="flex items-center gap-1.5 whitespace-nowrap">
                         {order !== undefined ? (
-                          <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+                          <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
                         ) : null}
                         <span>{desc.text}</span>
                       </span>
                     ) : (
                       column.expectedPlayerIds.has(player.id) ? (
-                        <span className="flex items-center gap-1 text-muted-foreground/40">
+                        <span className="flex items-center gap-1 text-muted-foreground">
                           {order !== undefined ? (
                             <span className="font-mono text-xs font-medium">#{order}</span>
                           ) : null}

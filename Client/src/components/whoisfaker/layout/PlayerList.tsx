@@ -420,21 +420,21 @@ function SpeechCell({
       {description ? (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
           ) : null}
           <span>{description.text}</span>
         </span>
       ) : submitted ? (
         <div className="flex items-center gap-1.5">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
           ) : null}
           <SubmittedSpeech />
         </div>
       ) : expected ? (
         <div className="flex items-center gap-1.5">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground/70 shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
           ) : null}
           <PendingSpeech />
         </div>
