@@ -100,7 +100,7 @@ export function NightPhase() {
           initial={{ opacity: 0, scale: 0.94 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={spring.impulse}
-          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/30 bg-primary/10 px-4 py-3"
+          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/40 bg-primary/10 px-4 py-3"
         >
           <div className="flex items-center gap-2.5">
             <motion.span

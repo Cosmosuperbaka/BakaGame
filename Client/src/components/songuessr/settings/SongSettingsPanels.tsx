@@ -431,7 +431,7 @@ export function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSna
     ? "不限热度"
     : `热度 ≥ ${filters.minPopularity >= 100_000 ? "100000" : filters.minPopularity}`;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
       <span className="font-medium text-primary">自动出题筛选</span>
       {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
       {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
@@ -447,7 +447,7 @@ export function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSn
     ? filters.trackKinds!.map((kind) => BANGUMI_TRACK_KIND_LABELS[kind] ?? kind).join("、")
     : undefined;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
       <span className="font-medium text-primary">自动出题筛选</span>
       <Badge variant="outline">番剧作品</Badge>
       {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}

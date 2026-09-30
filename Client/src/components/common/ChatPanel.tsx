@@ -85,7 +85,7 @@ function MessageText({
               "rounded-md px-1 font-medium",
               isMe && !isGhost
                 ? "bg-primary-foreground/20"
-                : "bg-primary/12 text-primary",
+                : "bg-primary/10 text-primary",
             )}
           >
             {segment.text}
@@ -243,7 +243,7 @@ export function ChatPanel({
                         : isGhost
                           ? "rounded-bl-sm bg-muted/40 border border-dashed border-border/80 text-foreground/85"
                           : "rounded-bl-sm bg-muted text-foreground",
-                      mentionsMe && "ring-1 ring-primary/45",
+                      mentionsMe && "ring-1 ring-primary/40",
                     )}
                   >
                     {safeStickerPath ? (

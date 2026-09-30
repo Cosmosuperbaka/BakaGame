@@ -88,7 +88,7 @@ export function CandidateGrid({
           className={cn(
             "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150",
             tone === "recommended"
-              ? "border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
+              ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
               : "hover:border-primary/40 hover:bg-primary/5",
           )}
         >
@@ -334,9 +334,9 @@ export function GameStage(props: SongGameAreaProps) {
             </div>
           )}
           {snapshot.settings.questionType === "anime" && privateState.submittedAnime ? (
-            <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
+            <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
           ) : privateState.submittedSong ? (
-            <div className="break-words rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+            <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
               本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
             </div>
           ) : null}

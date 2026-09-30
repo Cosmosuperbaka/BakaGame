@@ -227,6 +227,6 @@ describe("ChatPanel (Common)", () => {
     expect(screen.getByText("@我")).toBeInTheDocument();
     const bubble = screen.getByTestId("chat-message-bubble");
     // 被提及本人时有光圈轮廓
-    expect(bubble.className).toContain("ring-1 ring-primary/45");
+    expect(bubble.className).toContain("ring-1 ring-primary/40");
   });
 });

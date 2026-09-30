@@ -132,13 +132,14 @@ function CandidateGrid({
           onClick={() => onPick(p.id)}
           className={cn(
             "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150",
-            "hover:border-primary/40 hover:bg-primary/5",
-            tone === "recommended" && "border-primary/20 bg-primary/5"
+            tone === "recommended"
+              ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
+              : "hover:border-primary/40 hover:bg-primary/5"
           )}
         >
           <div className="flex items-center gap-1.5">
             {tone === "recommended" ? (
-              <Eye className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+              <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
             ) : (
               <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
