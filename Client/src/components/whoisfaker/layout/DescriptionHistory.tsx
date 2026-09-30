@@ -134,7 +134,7 @@ export function DescriptionTable({
                   >
                     {player.name}
                     {player.roundStatus === "questioner" && (
-                      <span className="shrink-0 text-[10px] text-muted-foreground">出题</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">出题</span>
                     )}
                   </span>
                 )}

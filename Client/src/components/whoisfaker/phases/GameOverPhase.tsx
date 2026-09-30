@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/Button";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { collapsible, headerTappable, listContainer, listItem, spring } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 
@@ -172,10 +171,8 @@ export function GameOverPhase() {
                     {player?.name ?? playerId}
                   </td>
                   <td className="px-4 py-2.5">
-                    <Badge
-                      variant="outline"
-                      className={cn("text-[11px]", ROLE_COLORS[role])}
-                    >
+                    {/* 身份色是结算要公开的信息本身，是 Badge 调用处唯一允许覆写的文字色。 */}
+                    <Badge variant="outline" size="xs" className={ROLE_COLORS[role]}>
                       {ROLE_LABELS[role]}
                     </Badge>
                   </td>
@@ -231,7 +228,7 @@ export function GameOverPhase() {
                             <span className="text-muted-foreground">
                               {abstained ? "选择了" : "投给了"}
                             </span>
-                            <Badge variant="outline" className="text-[11px] font-normal">
+                            <Badge variant="outline" size="xs">
                               {abstained ? "弃票" : (target?.name ?? v.targetId)}
                             </Badge>
                           </div>
@@ -269,10 +266,7 @@ export function GameOverPhase() {
                     {g.guessedWords[0]} / {g.guessedWords[1]}
                   </span>
                   <span className="flex-1" />
-                  <Badge
-                    variant={g.success ? "default" : "destructive"}
-                    className="text-[11px]"
-                  >
+                  <Badge variant={g.success ? "default" : "destructive"} size="xs">
                     {g.success ? "正确" : "错误"}
                   </Badge>
                 </div>
