@@ -1,12 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
+import { useCloseFrom } from "@/hooks/UseCloseFrom";
 import { backdrop, duration, ease, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-
-/** Tailwind 断点；媒体查询里的 rem 按浏览器初始字号计算，不受 html 120% 字号影响。 */
-const BREAKPOINTS = { md: "48rem", lg: "64rem" } as const;
 
 /**
  * 移动端覆盖面板（玩家、聊天、发言历史）。
@@ -35,14 +33,8 @@ export function RoomDrawer({
   children: ReactNode;
 }) {
   const offset = side === "left" ? "-100%" : "100%";
+  useCloseFrom(open, onOpenChange, closeFrom);
 
-  useEffect(() => {
-    if (!open) return;
-    const query = matchMedia(`(min-width: ${BREAKPOINTS[closeFrom]})`);
-    const close = () => { if (query.matches) onOpenChange(false); };
-    query.addEventListener("change", close);
-    return () => query.removeEventListener("change", close);
-  }, [open, closeFrom, onOpenChange]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AnimatePresence>
