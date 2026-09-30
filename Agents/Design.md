@@ -188,7 +188,7 @@
 
 - 可点击元素有可见的悬停、键盘聚焦、禁用或进行中状态；按压与过渡遵循 [Animation](Animation.md)。
 - 键盘聚焦指示全站只有一种：`index.css` 基础层对可交互元素（链接、按钮、表单控件、`role` 为按钮/标签/开关/滑块/选项等、`tabindex` 非负的元素）的 `:focus-visible` 画 2px `--ring` 实线 outline，贴边绘制；视觉隐藏的原生单选由外层 `label` 承担。用 outline 不用 `ring` 阴影，高对比度模式下仍可见。组件不再写 `focus-visible:ring-*` 或 `outline-none`，只按需声明偏移：圆形控件（开关、滑块）用 `focus-visible:outline-offset-2` 外移；贴着滚动区或裁切容器边缘的整行（玩家行、浮层动作、横向滚动的标签栏）用 `focus-visible:-outline-offset-2` 内收。以背景高亮表达焦点的列表项（`SelectItem`）保留 `outline-none`。
-- 禁用态：原生表单控件用 `disabled:` 变体；Radix 以 `data-disabled` 标记禁用的原语（`Slider`）不触发 `:disabled`，改写 `data-[disabled]:` 并放在根节点上，让整条控件一起变淡。
+- 禁用态：原生表单控件用 `disabled:` 变体；Radix 以 `data-disabled` 标记禁用的原语（`Slider`）不触发 `:disabled`，改写 `data-[disabled]:` 并放在根节点上，让整条控件一起变淡。控件旁的文字标签不会跟着变淡：设置字段（`SettingSwitchRow`、`SettingStepper`、`SettingSelect`）禁用时由组件把标签与图标一并降到 `opacity-50`，与控件同档；字段说明保持原色，它往往就是禁用的原因（如「8 人开启」），并经 `aria-describedby` 挂到控件上，读屏停在控件上就能听到。
 - 异步操作防重复提交，并用按钮状态、加载指示或 Toast 反馈。
 - 确认、投票、夜间行动等结果由服务端状态驱动，不仅依赖本地临时样式。
 - 操作成功、失败、房间关闭和断线等反馈使用真实状态文案，不只播放动画。
