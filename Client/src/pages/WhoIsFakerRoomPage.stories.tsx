@@ -17,7 +17,7 @@ import {
 } from "@/stories/fixtures/WhoIsFaker";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
-const { me, peach, kanade, kita } = WIF_PEOPLE;
+const { host, me, peach, azumi, kanade, kita } = WIF_PEOPLE;
 
 const meta = {
   title: "页面/谁是卧底房间",
@@ -84,6 +84,35 @@ export const WaitingPlayer: Story = {
 export const WaitingSpectator: Story = {
   name: "等待阶段 · 旁观",
   beforeEach: () => presetWifRoom(wifSnapshot("waiting"), wifPrivate("spectator", "waiting")),
+};
+
+export const SettingsPanel: Story = {
+  name: "设置面板 · 房主",
+  beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("host", "waiting")),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: /房间设置/ }));
+    dropFocus();
+  },
+};
+
+/** 只有三名参与者：卧底上限为 1，天使与白板不可开启；服务端已按上限夹过保存的角色配置。 */
+export const SettingsPanelFewPlayers: Story = {
+  name: "设置面板 · 房主 · 人数不足",
+  beforeEach: () => {
+    const present = new Set<string>([host.id, me.id, peach.id, azumi.id]);
+    presetWifRoom(
+      wifSnapshot("waiting", {
+        players: readyPlayers().filter((player) => present.has(player.id)),
+        roleLimits: { maxUndercoverCount: 1, canEnableAngel: false, canEnableBlank: false },
+        settings: { roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false }, revealRoleOnDeath: true },
+      }),
+      wifPrivate("host", "waiting"),
+    );
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: /房间设置/ }));
+    dropFocus();
+  },
 };
 
 // ==================== 指定主持人 ====================
