@@ -111,7 +111,7 @@ export function PlayerRow({
             variants={popover}
             initial="initial"
             animate="animate"
-            className="z-popover overflow-hidden floating-surface shadow-md"
+            className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
           >
             {actionsHeader ? <div className="flex">{actionsHeader}</div> : null}
             {actions?.length ? (
