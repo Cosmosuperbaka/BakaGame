@@ -3,6 +3,7 @@ import { Music2, Search } from "lucide-react";
 import type { SongSearchResult } from "@/types";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -137,9 +138,9 @@ export function SongSearchDialog({
                     <div className="flex flex-wrap items-center gap-1.5 font-medium">
                       <span>{song.title}</span>
                       {song.requiresVip ? (
-                        <span className="rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+                        <Badge variant="restricted" size="xs">
                           会员专享
-                        </span>
+                        </Badge>
                       ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground">
