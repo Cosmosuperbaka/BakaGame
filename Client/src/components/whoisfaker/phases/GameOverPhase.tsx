@@ -144,11 +144,12 @@ export function GameOverPhase() {
         </div>
         <table className="w-full text-sm">
           <thead>
+            {/* 手机上四字表头放不下，break-keep 配 <wbr /> 只在两词之间折行；徽章与数值列不折行，余宽留给名字。 */}
             <tr className="border-b border-background text-xs text-muted-foreground">
-              <th className="px-4 py-2 text-left font-medium">玩家</th>
-              <th className="px-4 py-2 text-left font-medium">本局身份</th>
-              <th className="px-4 py-2 text-right font-medium">本局变动</th>
-              <th className="px-4 py-2 text-right font-medium">房间累计</th>
+              <th className="min-w-20 px-4 py-2 text-left font-medium">玩家</th>
+              <th className="break-keep px-3 py-2 text-left font-medium">本局<wbr />身份</th>
+              <th className="break-keep px-3 py-2 text-right font-medium">本局<wbr />变动</th>
+              <th className="break-keep px-3 py-2 text-right font-medium">房间<wbr />累计</th>
             </tr>
           </thead>
           {/* 身份逐行揭示，让战报读作一次开牌而非整块出现 */}
@@ -167,19 +168,19 @@ export function GameOverPhase() {
               const totalScore = player?.score ?? 0;
               return (
                 <motion.tr key={playerId} variants={listItem} className="hover:bg-background/50">
-                  <td className="px-4 py-2.5 font-medium">
+                  <td className="px-4 py-2.5 font-medium [overflow-wrap:anywhere]">
                     {player?.name ?? playerId}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="whitespace-nowrap px-3 py-2.5">
                     {/* 身份色是结算要公开的信息本身，是 Badge 调用处唯一允许覆写的文字色。 */}
                     <Badge variant="outline" size="xs" className={ROLE_COLORS[role]}>
                       {ROLE_LABELS[role]}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-success">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold text-success">
                     +{delta}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-warning">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold text-warning">
                     {totalScore}
                   </td>
                 </motion.tr>
