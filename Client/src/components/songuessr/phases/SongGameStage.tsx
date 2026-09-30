@@ -24,13 +24,13 @@ import { SongTestController } from "@/components/songuessr/layout/SongTestContro
 import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
 import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
+import { AnimeAutoFilterSummary, SongAutoFilterSummary } from "@/components/songuessr/settings/SongSettingsPanels";
 import {
   listContainer,
   listItem,
   selectable,
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import type {
   BangumiSubjectSearchResult,
   SongGuessAttempt,
@@ -46,39 +46,6 @@ const directionSymbol: Record<SongGuessDirection, string> = {
   equal: "=",
   unknown: "?",
 };
-
-export function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const filters = snapshot.settings.autoFilters;
-  const popularityLabel = filters.minPopularity === 0
-    ? "不限热度"
-    : `热度 ≥ ${filters.minPopularity >= 100_000 ? "100000" : filters.minPopularity}`;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
-      {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
-      <Badge variant="outline">{popularityLabel}</Badge>
-    </div>
-  );
-}
-
-export function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const filters = snapshot.settings.animeAutoFilters ?? {};
-  const hasCustomKinds = filters.trackKinds && filters.trackKinds.length > 0 && filters.trackKinds.length < 18;
-  const kindLabel = hasCustomKinds
-    ? filters.trackKinds!.map((kind) => BANGUMI_TRACK_KIND_LABELS[kind] ?? kind).join("、")
-    : undefined;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      <Badge variant="outline">番剧作品</Badge>
-      {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}
-      <Badge variant="outline">{filters.ranking === "year" ? "年榜" : "总榜"}前{filters.subjectLimit ?? 50}部</Badge>
-      {kindLabel ? <Badge variant="outline">歌曲 {kindLabel}</Badge> : null}
-      <Badge variant="outline">网易云热度 ≥ {(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}</Badge>
-    </div>
-  );
-}
 
 export function SectionHeader({ title, icon }: { title: string; icon?: React.ReactNode }) {
   return (
