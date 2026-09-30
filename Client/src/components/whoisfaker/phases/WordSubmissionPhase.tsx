@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -41,6 +41,10 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
 
   // 默认启用随机分配身份
   const [isRandomRole, setIsRandomRole] = useState(true);
+  const civilianFieldId = useId();
+  const undercoverFieldId = useId();
+  const blankHintFieldId = useId();
+  const randomRoleFieldId = useId();
 
   const roleConfig = snapshot.settings.roleConfig;
   const hasBlank = roleConfig.hasBlank;
@@ -142,8 +146,9 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
 
       <div className="w-full space-y-4">
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-info">平民词</Label>
+          <Label htmlFor={civilianFieldId} className="text-xs font-semibold text-info">平民词</Label>
           <Input
+            id={civilianFieldId}
             value={civilianWord}
             onChange={(e) => setCivilianWord(e.target.value)}
             placeholder="输入平民获得的词语"
@@ -152,8 +157,9 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-destructive">卧底词</Label>
+          <Label htmlFor={undercoverFieldId} className="text-xs font-semibold text-destructive">卧底词</Label>
           <Input
+            id={undercoverFieldId}
             value={undercoverWord}
             onChange={(e) => setUndercoverWord(e.target.value)}
             placeholder="输入卧底获得的词语"
@@ -163,8 +169,9 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
         </div>
         {hasBlank && (
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-muted-foreground">白板提示</Label>
+            <Label htmlFor={blankHintFieldId} className="text-xs font-semibold text-muted-foreground">白板提示</Label>
             <Input
+              id={blankHintFieldId}
               value={blankHint}
               onChange={(e) => setBlankHint(e.target.value)}
               placeholder="给白板玩家的分类提示"
@@ -179,9 +186,9 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
           <div className="flex items-center justify-between py-1">
             <div className="flex items-center gap-2">
               <Dices className="h-4 w-4 text-primary" />
-              <Label className="text-sm font-medium cursor-pointer">随机分配身份</Label>
+              <Label htmlFor={randomRoleFieldId} className="text-sm font-medium cursor-pointer">随机分配身份</Label>
             </div>
-            <Switch checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
+            <Switch id={randomRoleFieldId} checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
           </div>
 
           <AnimatePresence initial={false}>
