@@ -10,11 +10,11 @@ export interface RoomHeaderToggle {
   label: string;
   expanded: boolean;
   onClick: () => void;
-  /** 该入口可见的最大断点：玩家面板 `md` 起常驻，聊天面板 `lg` 起常驻 */
-  hideFrom: "md" | "lg";
+  /** 该入口可见的最大断点：玩家面板 `md` 起常驻，聊天面板 `xl` 起常驻 */
+  hideFrom: "md" | "xl";
 }
 
-const HIDE_FROM = { md: "md:hidden", lg: "lg:hidden" } as const;
+const HIDE_FROM = { md: "md:hidden", xl: "xl:hidden" } as const;
 
 /** 顶栏中间的视角/身份徽章（主持人、出题人视角、旁观等）。 */
 export function HeaderChip({ icon: Icon, label, muted = false, title, className }: { icon: LucideIcon; label: string; muted?: boolean; title?: string; className?: string }) {

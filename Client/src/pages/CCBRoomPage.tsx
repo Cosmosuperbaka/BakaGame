@@ -116,7 +116,7 @@ export default function CCBRoomPage() {
             label: "聊天",
             side: "right",
             title: "聊天",
-            closeFrom: "lg",
+            closeFrom: "xl",
             content: chatPanel,
           },
         ]}

@@ -10,7 +10,7 @@ it("侧栏把键盘焦点留在面板内并允许按退出键关闭", async () =
   stubMatchMedia(false);
   function Example() {
     const [open, setOpen] = useState(true);
-    return <><button>背景操作</button><RoomDrawer open={open} onOpenChange={setOpen} side="right" title="聊天" closeFrom="lg"><input aria-label="聊天消息" /></RoomDrawer></>;
+    return <><button>背景操作</button><RoomDrawer open={open} onOpenChange={setOpen} side="right" title="聊天" closeFrom="xl"><input aria-label="聊天消息" /></RoomDrawer></>;
   }
   try {
     render(<Example />);

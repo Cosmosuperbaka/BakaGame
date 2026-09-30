@@ -20,10 +20,10 @@ describe("useCloseFrom", () => {
   it("关闭时不订阅，卸载后移除监听", () => {
     const media = stubMatchMedia(false);
     const onOpenChange = vi.fn();
-    const { rerender, unmount } = renderHook(({ open }) => useCloseFrom(open, onOpenChange, "lg"), { initialProps: { open: false } });
+    const { rerender, unmount } = renderHook(({ open }) => useCloseFrom(open, onOpenChange, "xl"), { initialProps: { open: false } });
     expect(media.queries).toEqual([]);
     rerender({ open: true });
-    expect(media.queries).toEqual(["(min-width: 64rem)"]);
+    expect(media.queries).toEqual(["(min-width: 80rem)"]);
     expect(media.listenerCount).toBe(1);
     unmount();
     expect(media.listenerCount).toBe(0);

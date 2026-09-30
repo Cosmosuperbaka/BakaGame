@@ -27,7 +27,7 @@ export function RoomDrawer({
   side: "left" | "right";
   title: string;
   /** 该面板在此断点及以上常驻显示，视口放大越过它时自动关闭覆盖面板 */
-  closeFrom: "md" | "lg";
+  closeFrom: "md" | "xl";
   /** 宽度等尺寸类，默认左侧 `w-72`、右侧 `w-80` */
   className?: string;
   children: ReactNode;

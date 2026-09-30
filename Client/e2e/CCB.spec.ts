@@ -107,7 +107,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.reload();
     await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
 
-    for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 800 }, { width: 390, height: 844 }]) {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1100, height: 800 }, { width: 900, height: 800 }, { width: 390, height: 844 }]) {
       await guest.setViewportSize(viewport);
       await expectViewportFits(guest);
       const feedback = guest.getByRole("region", { name: "猜测反馈" });
@@ -116,6 +116,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
         await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
         await feedback.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
         await expect.poll(() => feedback.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      }
+      // 聊天栏 xl 起常驻；其下与玩家栏同时常驻会挤窄游戏区，改由顶栏按钮打开覆盖面板。
+      if (viewport.width < 1280) {
         await guest.getByRole("button", { name: "聊天", exact: true }).click();
         await expect(guest.getByRole("dialog", { name: "聊天", exact: true })).toBeVisible();
         await guest.keyboard.press("Escape");

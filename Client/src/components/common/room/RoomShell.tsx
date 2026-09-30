@@ -19,7 +19,7 @@ export interface RoomDrawerSpec {
   /** 面板标题，同时是读屏读到面板名称 */
   title: string;
   /** 该面板在此断点及以上常驻显示，覆盖面板自动隐藏 */
-  closeFrom: "md" | "lg";
+  closeFrom: "md" | "xl";
   /** 尺寸类；省略时左侧 `w-72`、右侧 `w-80` */
   className?: string;
   content: ReactNode;
@@ -41,17 +41,17 @@ export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children 
   );
 }
 
-/** 右侧聊天栏的桌面外壳；`lg` 以下由覆盖面板承担。 */
+/** 右侧聊天栏的桌面外壳；`xl` 以下由覆盖面板承担，否则与玩家栏同时常驻会把游戏区挤得过窄。 */
 export function ChatColumn({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <aside className={cn("hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel lg:flex", className)}>
+    <aside className={cn("hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel xl:flex", className)}>
       {children}
     </aside>
   );
 }
 
 /**
- * 三游戏共用的房间页骨架：固定 `h-14` 顶栏 + 三栏主体（玩家栏、游戏区、聊天栏）+ 移动端覆盖面板。
+ * 三游戏共用的房间页骨架：固定 `h-14` 顶栏 + 三栏主体（玩家栏、游戏区、聊天栏）+ 覆盖面板。
  *
  * 主体宽度、断点与内边距只在这里维护；各游戏传入自己的栏内容与游戏区。
  * 玩家栏与聊天栏在断点以下折叠为覆盖面板，抽屉渲染在主体容器内（不用 Portal），

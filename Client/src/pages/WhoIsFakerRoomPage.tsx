@@ -504,7 +504,7 @@ export default function WhoIsFakerRoomPage() {
             label: "聊天",
             side: "right",
             title: "聊天",
-            closeFrom: "lg",
+            closeFrom: "xl",
             content: (
               <ChatPanel
                 messages={snapshot?.chat ?? []}
