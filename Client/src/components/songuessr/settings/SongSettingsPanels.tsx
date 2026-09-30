@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Globe, Lock, Minus, Plus, Users, X } from "lucide-react";
+import { Globe, Lock, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
-import { Switch } from "@/components/ui/Switch";
 import { Badge } from "@/components/ui/Badge";
-import { collapsible, pressable, spring } from "@/lib/Motion";
+import { SettingsChips } from "@/components/common/room/SettingsAccordion";
+import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
+import { collapsible } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -18,130 +19,6 @@ import type {
   SongPlaylistInfo,
   SonGuessrRoomSnapshot,
 } from "@/types";
-
-export function SettingsAccordion({
-  icon,
-  title,
-  open,
-  onOpenChange,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-md border">
-      <motion.button
-        type="button"
-        {...pressable}
-        onClick={() => onOpenChange(!open)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
-      >
-        {icon}
-        <span className="flex-1 text-left">{title}</span>
-        <motion.span
-          className="inline-flex text-muted-foreground"
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={spring.snap}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </motion.span>
-      </motion.button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            variants={collapsible}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden"
-          >
-            <div className="border-t px-4 py-4">{children}</div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-export function CountStepper({
-  label,
-  value,
-  minimum,
-  maximum,
-  step = 1,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  value: number;
-  minimum: number;
-  maximum: number;
-  step?: number;
-  onChange: (value: number) => void;
-  disabled?: boolean;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  const commit = (raw: string) => {
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      setDraft(String(value));
-      return;
-    }
-    const next = Math.max(minimum, Math.min(maximum, Math.round(parsed)));
-    setDraft(String(next));
-    onChange(next);
-  };
-
-  return (
-    <div className="flex items-center justify-between">
-      <Label className="text-xs">{label}</Label>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9"
-          onClick={() => commit(String(Math.max(minimum, value - step)))}
-          disabled={disabled || value <= minimum}
-          aria-label={`减少${label}`}
-        >
-          <Minus className="h-3 w-3" />
-        </Button>
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={draft}
-          disabled={disabled}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            if (event.target.value !== "") commit(event.target.value);
-          }}
-          onBlur={() => commit(draft)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit(draft);
-          }}
-          aria-label={label}
-          className="h-9 w-16 bg-muted/30 px-1 text-center text-base font-medium tabular-nums shadow-inner"
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9"
-          onClick={() => commit(String(Math.min(maximum, value + step)))}
-          disabled={disabled || value >= maximum}
-          aria-label={`增加${label}`}
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export function SongQuestionSettings({
   snapshot,
@@ -164,6 +41,8 @@ export function SongQuestionSettings({
   const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
   const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
   const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
+  const playlistFieldId = useId();
+  const artistFieldId = useId();
 
   const resolvePlaylist = async () => {
     if (resolvingPlaylist) return;
@@ -254,21 +133,18 @@ export function SongQuestionSettings({
       ) : null}
 
       {questionMode === "manual" ? (
-        <div className="flex items-center justify-between rounded-md bg-muted/40 p-3">
-          <div>
-            <Label className="text-xs">自动轮流出题</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">每轮按玩家加入顺序自动指定下一位出题人。</p>
-          </div>
-          <Switch checked={autoRotateSubmitter} onCheckedChange={setAutoRotateSubmitter} />
+        <div className="rounded-md bg-muted/40 p-3">
+          <SettingSwitchRow label="自动轮流出题" description="每轮按玩家加入顺序自动指定下一位出题人。" checked={autoRotateSubmitter} onCheckedChange={setAutoRotateSubmitter} />
         </div>
       ) : null}
 
       {questionMode === "automatic" && questionType === "song" ? (
         <div className="space-y-4 rounded-md bg-muted/40 p-3">
           <div className="space-y-2">
-            <Label className="text-xs">歌单筛选</Label>
+            <Label htmlFor={playlistFieldId} className="text-xs">歌单筛选</Label>
             <div className="flex gap-2">
               <Input
+                id={playlistFieldId}
                 value={playlistDraft}
                 onChange={(event) => setPlaylistDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -278,7 +154,6 @@ export function SongQuestionSettings({
                   }
                 }}
                 placeholder="粘贴网易云歌单链接或 ID"
-                className="h-9"
               />
               <Button
                 type="button"
@@ -315,9 +190,10 @@ export function SongQuestionSettings({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">歌手筛选（可多选）</Label>
+            <Label htmlFor={artistFieldId} className="text-xs">歌手筛选（可多选）</Label>
             <div className="flex gap-2">
               <Input
+                id={artistFieldId}
                 value={artistDraft}
                 onChange={(event) => setArtistDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -327,7 +203,6 @@ export function SongQuestionSettings({
                   }
                 }}
                 placeholder="输入歌手名后搜索"
-                className="h-9"
               />
               <Button
                 type="button"
@@ -467,57 +342,20 @@ export function SongGameSettings({
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">显示歌词</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">关闭后只播放音乐，不显示歌词提示。</p>
-          </div>
-          <Switch checked={showLyrics} onCheckedChange={setShowLyrics} />
-        </div>
+        <SettingSwitchRow label="显示歌词" description="关闭后只播放音乐，不显示歌词提示。" checked={showLyrics} onCheckedChange={setShowLyrics} />
         {showLyrics ? (
-          <CountStepper
-            label="歌词行数"
-            value={lyricsLineCount}
-            minimum={1}
-            maximum={10}
-            onChange={setLyricsLineCount}
-          />
+          <SettingStepper label="歌词行数" value={lyricsLineCount} minimum={1} maximum={10} onChange={setLyricsLineCount} />
         ) : null}
       </div>
-      <CountStepper
-        label="猜测次数"
-        value={maxGuesses}
-        minimum={1}
-        maximum={10}
-        onChange={setMaxGuesses}
-      />
+      <SettingStepper label="猜测次数" value={maxGuesses} minimum={1} maximum={10} onChange={setMaxGuesses} />
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">猜测时限</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">关闭后本轮不会倒计时。</p>
-          </div>
-          <Switch checked={showGuessTimer} onCheckedChange={setShowGuessTimer} />
-        </div>
+        <SettingSwitchRow label="猜测时限" description="关闭后本轮不会倒计时。" checked={showGuessTimer} onCheckedChange={setShowGuessTimer} />
         {showGuessTimer ? (
-          <CountStepper
-            label="每次猜测时限"
-            value={guessDuration}
-            minimum={10}
-            maximum={180}
-            step={10}
-            onChange={setGuessDuration}
-          />
+          <SettingStepper label="每次猜测时限" unit="秒" value={guessDuration} minimum={10} maximum={180} step={10} onChange={setGuessDuration} />
         ) : null}
       </div>
       {!solo ? (
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">血战模式</Label>
-            <p className="mt-1 text-[11px] text-muted-foreground">首位答对获得正式玩家数分，之后每位答对者依次少 1 分。</p>
-          </div>
-          <Switch checked={bloodMode} onCheckedChange={setBloodMode} />
-        </div>
+        <SettingSwitchRow label="血战模式" description="首位答对获得正式玩家数分，之后每位答对者依次少 1 分。" checked={bloodMode} onCheckedChange={setBloodMode} />
       ) : null}
     </div>
   );
@@ -554,40 +392,20 @@ export function SongRoomSettings({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label className="text-xs">房间名称</Label>
-        <Input value={name} onChange={(event) => setName(event.target.value)} className="h-9" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isPrivate ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
-          <Label className="text-xs">私密房间</Label>
-        </div>
-        <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-      </div>
+      <SettingTextField label="房间名称" value={name} placeholder="输入房间名称" onChange={setName} />
+      <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
       <AnimatePresence initial={false}>
         {isPrivate ? (
           <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-            <div className="space-y-1.5 pt-1">
-              <Label className="text-xs">密码</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="留空则保留当前密码"
-                className="h-9"
-              />
+            <div className="pt-1">
+              {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
+              <SettingTextField label="密码" type="password" value={password} onChange={setPassword}
+                placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
             </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label className="text-xs">允许旁观</Label>
-        </div>
-        <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} />
-      </div>
+      <SettingSwitchRow label="允许旁观" icon={Users} checked={allowSpectators} onCheckedChange={setAllowSpectators} />
     </div>
   );
 }
@@ -604,15 +422,7 @@ export function SongSettingsPreview({ snapshot }: { snapshot: SonGuessrRoomSnaps
     snapshot.settings.showGuessTimer ? `每次 ${snapshot.settings.guessDurationSeconds} 秒` : "猜测时限已关闭",
     snapshot.settings.bloodMode ? "血战模式" : "普通模式",
   ];
-  return (
-    <div className="flex flex-wrap justify-center gap-2">
-      {items.map((item) => (
-        <span key={item} className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          {item}
-        </span>
-      ))}
-    </div>
-  );
+  return <SettingsChips items={items} />;
 }
 
 export function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {

@@ -1,74 +1,21 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
-import {
-  Check,
-  Copy,
-  Gamepad2,
-  Headphones,
-  Link,
-  Music2,
-  Settings,
-  X,
-} from "lucide-react";
+import { Check, Gamepad2, Headphones, Music2, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Label } from "@/components/ui/Label";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ReadyProgress } from "@/components/common/room/ReadyProgress";
+import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
 import {
-  SettingsAccordion,
   SongGameSettings,
   SongQuestionSettings,
   SongRoomSettings,
   SongSettingsPreview,
 } from "@/components/songuessr/settings/SongSettingsPanels";
-import { pressable, spring } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@/types";
 
-export function SongRoomLinkShare({ roomId }: { roomId: string }) {
-  const [copied, setCopied] = useState(false);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const shareUrl = `${window.location.origin}/songuessr/room/${roomId}`;
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2_000);
-    } catch {
-      setNotice("复制失败，请手动复制", "error");
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      <Label className="text-xs text-muted-foreground">房间链接</Label>
-      <div className="flex gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {shareUrl}
-          </span>
-        </div>
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={() => void handleCopy()}
-          className={cn(
-            "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-            copied
-              ? "border-success/40 bg-success/10 text-success"
-              : "hover:bg-accent/60",
-          )}
-        >
-          <Copy className="h-3.5 w-3.5" />
-          {copied ? "已复制" : "复制"}
-        </motion.button>
-      </div>
-    </div>
-  );
-}
+const notifyCopyFailed = () => useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
 
 export function SongSoloWaitingPanel({
   snapshot,
@@ -88,7 +35,7 @@ export function SongSoloWaitingPanel({
       <PhaseHeader icon={Headphones} title="准备开始" />
       <SongAccountSettings snapshot={snapshot} />
       <SettingsAccordion
-        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
+        icon={Music2}
         title="题目设置"
         open={questionSettingsOpen}
         onOpenChange={setQuestionSettingsOpen}
@@ -96,7 +43,7 @@ export function SongSoloWaitingPanel({
         <SongQuestionSettings snapshot={snapshot} solo />
       </SettingsAccordion>
       <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        icon={Settings}
         title="猜测设置"
         open={gameSettingsOpen}
         onOpenChange={setGameSettingsOpen}
@@ -148,29 +95,14 @@ export function SongHostWaitingPanel({
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Gamepad2} title="等待玩家加入" />
 
-      <SongRoomLinkShare roomId={snapshot.roomId} />
+      <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
 
-      {showProgress ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>玩家准备进度</span>
-            <span>{readyCount}/{nonHostTotal}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostTotal) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      ) : null}
+      {showProgress ? <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" /> : null}
 
       <SongAccountSettings snapshot={snapshot} />
 
       <SettingsAccordion
-        icon={<Music2 className="h-4 w-4 text-muted-foreground" />}
+        icon={Music2}
         title="题目设置"
         open={questionSettingsOpen}
         onOpenChange={setQuestionSettingsOpen}
@@ -179,7 +111,7 @@ export function SongHostWaitingPanel({
       </SettingsAccordion>
 
       <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        icon={Settings}
         title="猜测设置"
         open={gameSettingsOpen}
         onOpenChange={setGameSettingsOpen}
@@ -188,7 +120,7 @@ export function SongHostWaitingPanel({
       </SettingsAccordion>
 
       <SettingsAccordion
-        icon={<Settings className="h-4 w-4 text-muted-foreground" />}
+        icon={Settings}
         title="房间设置"
         open={roomSettingsOpen}
         onOpenChange={setRoomSettingsOpen}
@@ -261,23 +193,9 @@ export function SongWaitingPhase({
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6">
       <PhaseHeader icon={Gamepad2} title="等待开始" />
-      <SongRoomLinkShare roomId={snapshot.roomId} />
+      <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
       <SongSettingsPreview snapshot={snapshot} />
-      {showProgress ? (
-        <div className="w-full space-y-2 text-center">
-          <p className="text-sm text-muted-foreground">
-            {readyCount}/{nonHostActive.length} 名玩家已准备
-          </p>
-          <div className="mx-auto h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostActive.length) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      ) : null}
+      {showProgress ? <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" /> : null}
       {me?.membership === "active" ? (
         <Button
           variant={me.isReady ? "outline" : "default"}

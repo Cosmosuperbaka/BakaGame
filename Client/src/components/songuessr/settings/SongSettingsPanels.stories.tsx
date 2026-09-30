@@ -1,13 +1,12 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn, userEvent, within } from "storybook/test";
+import { userEvent, within } from "storybook/test";
 import { Music2, Settings } from "lucide-react";
+import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { songSettings, songSnapshot, stubSongCommand } from "@/stories/fixtures/SonGuessr";
 import {
   AnimeAutoFilterSummary,
-  CountStepper,
-  SettingsAccordion,
   SongAutoFilterSummary,
   SongGameSettings,
   SongQuestionSettings,
@@ -34,9 +33,9 @@ function AccordionGroup({ initiallyOpen }: { initiallyOpen: string | null }) {
   const [open, setOpen] = useState(initiallyOpen);
   const snapshot = songSnapshot();
   const sections = [
-    { key: "question", title: "题目设置", icon: <Music2 className="h-4 w-4 text-muted-foreground" />, body: <SongQuestionSettings snapshot={snapshot} /> },
-    { key: "game", title: "猜测设置", icon: <Settings className="h-4 w-4 text-muted-foreground" />, body: <SongGameSettings snapshot={snapshot} /> },
-    { key: "room", title: "房间设置", icon: <Settings className="h-4 w-4 text-muted-foreground" />, body: <SongRoomSettings snapshot={snapshot} /> },
+    { key: "question", title: "题目设置", icon: Music2, body: <SongQuestionSettings snapshot={snapshot} /> },
+    { key: "game", title: "猜测设置", icon: Settings, body: <SongGameSettings snapshot={snapshot} /> },
+    { key: "room", title: "房间设置", icon: Settings, body: <SongRoomSettings snapshot={snapshot} /> },
   ];
   return (
     <div className="space-y-5">
@@ -180,18 +179,6 @@ export const AutoFilterSummaries: Story = {
           animeAutoFilters: { startYear: 2015, endYear: 2024, ranking: "year", subjectLimit: 30, songMinPopularity: 1_000, trackKinds: ["opening", "ending"] },
         }),
       })} />
-    </div>
-  ),
-};
-
-export const Steppers: Story = {
-  name: "数值步进器",
-  render: () => (
-    <div className={`${panel} space-y-4`}>
-      <CountStepper label="歌词行数" value={1} minimum={1} maximum={10} onChange={fn()} />
-      <CountStepper label="猜测次数" value={3} minimum={1} maximum={10} onChange={fn()} />
-      <CountStepper label="每次猜测时限" value={180} minimum={10} maximum={180} step={10} onChange={fn()} />
-      <CountStepper label="猜测次数" value={3} minimum={1} maximum={10} onChange={fn()} disabled />
     </div>
   ),
 };

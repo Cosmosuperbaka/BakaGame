@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -670,6 +670,30 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByText("热度范围")).toBeInTheDocument();
     expect(screen.getByText("网易云歌曲热度")).toBeInTheDocument();
     expect(screen.queryByText("歌曲类型")).not.toBeInTheDocument();
+  });
+
+  it("房主设置字段由可见标签命名，数值在失焦时才夹到范围内", async () => {
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("猜歌测试房");
+    fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));
+    // 房间还没有密码：留空不会保存，占位文案不能再说「保留当前密码」。
+    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "设置房间密码");
+
+    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    // 输入多位数的第一位时不提前夹到下限。
+    fireEvent.change(duration, { target: { value: "1" } });
+    expect(duration).toHaveValue("1");
+    fireEvent.blur(duration);
+    expect(duration).toHaveValue("10");
+    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ guessDurationSeconds: 10 }),
+    ));
   });
 
   it("竞猜阶段歌词片段与纯音乐展示正确区分", () => {

@@ -11,7 +11,7 @@ import {
   songSnapshot,
   waitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
-import { SongRoomLinkShare, SongWaitingPhase } from "./SongWaitingPhase";
+import { SongWaitingPhase } from "./SongWaitingPhase";
 
 const { host, me } = SONG_PEOPLE;
 
@@ -56,9 +56,4 @@ export const HostStarting: Story = {
 export const SoloLoggedOut: Story = {
   name: "单人模式 · 未登录网易云",
   args: { snapshot: soloSnapshot({ musicAccountReady: false }), me: soloPlayer(), isHost: true },
-};
-
-export const RoomLink: Story = {
-  name: "房间链接",
-  render: () => <SongRoomLinkShare roomId={snapshot.roomId} />,
 };
