@@ -57,7 +57,7 @@ export function RoomDrawer({
                 animate={{ x: 0, transition: spring.swift }}
                 exit={{ x: offset, transition: { duration: duration.quick, ease: ease.inOut } }}
                 className={cn(
-                  "absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-xl",
+                  "absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg",
                   side === "left" ? "left-0 border-r" : "right-0 border-l",
                   className ?? (side === "left" ? "w-72" : "w-80"),
                 )}

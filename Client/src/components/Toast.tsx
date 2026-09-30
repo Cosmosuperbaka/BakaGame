@@ -49,7 +49,7 @@ function ToastViewport({
             // 外层取不透明的页面底色，状态浅底叠在内层：提示浮在任意内容之上，
             // 半透明底会让文字对比度随身后内容变化（盖在本人主色气泡上时几乎看不清）。
             className={cn(
-              "pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-md",
+              "pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg",
               t.type === "error" && "border-destructive/40",
               t.type === "success" && "border-success/40",
               t.type === "info" && "border-primary/40"

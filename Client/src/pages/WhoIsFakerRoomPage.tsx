@@ -426,7 +426,7 @@ export default function WhoIsFakerRoomPage() {
             initial={false}
             animate={{
               width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
-              boxShadow: historyOpen ? "var(--shadow-xl)" : "var(--shadow-2xs)",
+              boxShadow: historyOpen ? "var(--shadow-lg)" : "var(--shadow-2xs)",
             }}
             transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
           >

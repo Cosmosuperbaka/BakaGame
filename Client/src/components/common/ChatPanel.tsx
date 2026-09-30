@@ -289,7 +289,7 @@ export function ChatPanel({
               style={{ originY: 1 }}
               role="listbox"
               aria-label="提及玩家"
-              className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-lg"
+              className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
             >
               {candidates.map((player, index) => (
                 <motion.button

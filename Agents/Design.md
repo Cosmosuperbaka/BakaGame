@@ -52,7 +52,7 @@
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 主色的浅底与描边沿用 §3.1 的档位：描边与提及光圈 `/40`、浅底 `/10`、悬停预览 `/5`；并排的图标直接取 `text-primary`，不单独调淡。推荐态（猜歌推荐候选、谁是卧底推荐出题人）静止时取 `/40` 描边配 `/5` 底，悬停升一档到 `/50` 描边配 `/10` 底，否则与普通候选的悬停同档，看不出区别。整条的静态说明块（猜歌的自动出题筛选与本轮答案、描述表中本人所在行）底色保持 `/5`，与上条的「避免大面积铺色」一致。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
-- 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）、全局浮动提醒与状态提示（`Toast`）不属于就近浮层，分别沿用 `bg-popover`、§6 的 `bg-card/95` 与 §3.1 的不透明底。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
+- 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色。该类本身不带阴影，由调用处按 §5 的三档给出：就近浮层 `shadow-md`，测试控制器这类盖住整块内容的面板 `shadow-lg`，骑缝按钮是按钮，取 `shadow-sm`。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）、全局浮动提醒与状态提示（`Toast`）不属于就近浮层，分别沿用 `bg-popover`、§6 的 `bg-card/95` 与 §3.1 的不透明底。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
 - 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。表面明度顺序在两种主题下并不对称：亮色 `secondary` < `muted` < `panel` < `background` < `card`，暗色 `background` < `muted` < `panel` < `card` < `secondary`。以下写法已按此修正，新增同类控件照做：
   - 骨架条与徽章占位用 `bg-foreground/6` 至 `/10`，不用 `bg-muted`（暗色 muted 比 card 更暗，骨架会整片消失）。
   - `Tabs`、`SegmentedControl` 的选中块在 `bg-muted` 轨道上，暗色补 `dark:bg-secondary`；只用 `bg-background` 时两者几乎同色。
@@ -123,7 +123,11 @@
 - 常规内容间距优先使用 `gap-2` 至 `gap-4`、`space-y-3` 至 `space-y-6`；游戏主区域内边距沿用 `p-6 md:p-8`。
 - 圆角基线由 `--radius: 0.25rem` 控制，整体偏方正。全站统一使用标准圆角 `rounded-md`：内联控件（按钮、输入框、徽章、状态标签、单元格）、主要面板、内容卡片、弹窗（`Dialog`）、新版本提示浮层（`VersionUpdateNotice`）与提及候选、表情选择等浮层均采用 `rounded-md`；聊天气泡是唯一例外，沿用 `rounded-xl`，并以单侧 `rounded-sm` 区分消息方向。只有真正的圆形元素（开关滑块、滚动条、加载指示、时间线圆点）使用 `rounded-full`。除聊天气泡外，严禁混用 `rounded-lg`、`rounded-2xl` 等非标圆角，亦不得在组件内写死像素圆角。不带尺寸的 `rounded` 与 `rounded-sm` 同样算非标：本主题下前者取 0.25rem，比 `rounded-md` 更圆。
 - 聊天气泡沿用经典观感：文本气泡内边距 `px-3 py-1.5`（表情包 `p-1.5`），圆角 `rounded-xl` 并以单侧 `rounded-sm` 区分消息方向。他人文本气泡底色用 `bg-muted` —— 其明度（`0.9239`）低于所在 `bg-panel` 面板（`0.9430`），是柔和的浅灰块；改用近白的 `bg-card`（`0.9914`）会在面板上明显刺眼。自身气泡为 `bg-primary text-primary-foreground` 配 `shadow-2xs`。除观战（ghost）气泡的虚线描边外，普通气泡不加边框，严禁把他人气泡底色改回 `bg-card`。
-- 主要结构通过一层轻边框区分。阴影统一取自 `--shadow-*`，为带横向偏移的暖色投影；常规区域使用 `shadow-sm` 或 `shadow-2xs`（本主题的 `shadow-xs` 与 `shadow-2xs`、裸 `shadow` 与 `shadow-sm` 取值相同，只写后者），只有移动端抽屉、弹窗等浮层可使用 `shadow-lg` 以上层级。
+- 主要结构通过一层轻边框区分。阴影统一取自 `--shadow-*`，为带横向偏移的暖色投影，按叠放关系只用三档（本主题的 `shadow-xs` 与 `shadow-2xs`、裸 `shadow` 与 `shadow-sm` 取值相同，只写后者）：
+  - 流内：`shadow-sm`，公共控件（`Button`、`Card`、`Input`、`Switch` 轨道与滑块等）的默认值即此档；`shadow-2xs` 是更平的变体（本人气泡、大厅顶栏控件、主页游戏卡片、限时栏）。流内不用 `shadow-md` 及以上，需要更突出时靠描边或底色区分，不升阴影。
+  - 就近浮层：`shadow-md`，锚在触发处、只盖住周围一小块（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`）。
+  - 覆盖层：`shadow-lg`，盖住整块内容或整页（抽屉、`Dialog`、测试控制器、谁是卧底展开的发言历史、`Toast`、`VersionUpdateNotice`）。
+  - `shadow-xl`、`shadow-2xl` 不用。骑缝按钮、开关与滑块的滑块仍是控件，即使配了 `floating-surface` 也取 `shadow-sm`；framer-motion 内联动画的 `boxShadow` 引用 `var(--shadow-*)`，同样按以上三档取值。
 - 不在卡片中嵌套装饰性卡片，不把普通页面区块全部做成悬浮卡片。
 
 ## 6. 组件使用

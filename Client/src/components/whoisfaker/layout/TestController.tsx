@@ -90,7 +90,7 @@ export function TestController() {
         <motion.div
           layout
           transition={spring.settle}
-          className="w-full max-w-full overflow-hidden floating-surface shadow-xl md:w-96"
+          className="w-full max-w-full overflow-hidden floating-surface shadow-lg md:w-96"
         >
           <motion.button
             type="button"
