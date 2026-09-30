@@ -116,6 +116,7 @@
 - 正文和状态文案应简短、直接、可执行。操作按钮使用明确动词，如“创建房间”“加入”“发送”“撤销”。
 - 用户生成内容必须支持 `break-words`；单行名称和房间信息在空间不足时使用 `truncate`，不得挤压关键操作。
 - 中文与数字、英文混排保持自然，不使用装饰性字距。
+- 断行由 `index.css` 统一处理：标题（`h1`–`h6`）取 `text-wrap-style: balance` 平衡各行长度，段落与列表项（`p`、`li`）取 `text-wrap-style: pretty`，避免末行只剩一两个字；只影响折行位置。成段的说明文字用 `<p>` 才能拿到这条规则。只写 `text-wrap-style`，不写简写 `text-wrap`（Tailwind 的 `text-balance`、`text-pretty` 生成的就是简写）：简写会把 `text-wrap-mode` 重置为 `wrap`，打断从父级继承的 `nowrap` 与 `truncate`。聊天气泡这类按内容收窄的容器不加 `pretty`：首行会提前折断，气泡右侧留出空白。
 
 ## 5. 间距、圆角与边框
 

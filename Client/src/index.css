@@ -314,6 +314,20 @@ html {
   ::selection {
     @apply bg-primary/30;
   }
+  /* 中文断行：标题平衡各行长度，段落避免末行只剩一两个字，见 Design §4。
+     只写 text-wrap-style：简写 text-wrap 会把 text-wrap-mode 重置为 wrap，打断继承来的 nowrap 与 truncate。 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap-style: balance;
+  }
+  p,
+  li {
+    text-wrap-style: pretty;
+  }
   /* 全站唯一的键盘聚焦指示：2px 实线、`--ring` 色、贴边绘制。
      用 outline 而非 box-shadow 画环，高对比度模式下仍然可见。
      组件只按需声明偏移（圆形控件外移、贴边行内收），不再各写一套 ring。 */
