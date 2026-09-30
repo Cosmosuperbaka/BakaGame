@@ -269,7 +269,7 @@ export function ChatPanel({
       </ScrollArea>
 
       {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框 */}
-      <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background/50">
+      <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background">
         <EmojiPicker
           open={pickerOpen}
           activeTab={activeTab}

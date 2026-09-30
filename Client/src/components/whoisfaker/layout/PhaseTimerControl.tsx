@@ -123,12 +123,12 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } }}
             transition={spring.swift}
             className={cn(
-              "relative overflow-hidden rounded-md border p-3 shadow-2xs transition-colors duration-300",
+              "relative overflow-hidden rounded-md border p-3 transition-colors duration-300",
               isCritical
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : isWarning
                   ? "border-warning/40 bg-warning/10 text-warning"
-                  : "border-border/80 bg-muted/60 text-foreground",
+                  : "border-border/80 bg-muted/40 text-foreground",
             )}
           >
             <div className="flex items-center justify-between gap-3">
@@ -136,7 +136,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                 <motion.span
                   animate={isCritical ? { scale: [1, 1.2, 1] } : {}}
                   transition={isCritical ? { duration: 0.8, repeat: Infinity } : {}}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/80"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background"
                 >
                   <Timer
                     className={cn(
@@ -174,7 +174,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:bg-background/80 hover:text-foreground"
+                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
                     onClick={handleStopTimer}
                     disabled={stopping}
                   >
@@ -207,7 +207,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
       {canControl && !phaseTimer && (
         <div
           data-testid="host-timer-bar"
-          className="flex flex-wrap items-center justify-between gap-2.5 rounded-md border border-border/70 bg-background/80 p-2.5 shadow-2xs backdrop-blur-md"
+          className="flex flex-wrap items-center justify-between gap-2.5 rounded-md border border-border/70 bg-background p-2.5 shadow-2xs"
         >
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />

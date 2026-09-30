@@ -59,7 +59,7 @@ export function PlayerRow({
     PLAYER_ROW_HEIGHT,
     "gap-2.5",
     me && "bg-primary/10",
-    !me && "transition-colors hover:bg-accent/50",
+    !me && "transition-colors hover:bg-accent/40",
     !online && !bot && "opacity-60",
     // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
     interactive && "cursor-pointer focus-visible:-outline-offset-2",

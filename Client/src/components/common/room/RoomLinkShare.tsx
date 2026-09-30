@@ -32,7 +32,7 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
     <div className="w-full space-y-2">
       <Label className="text-xs text-muted-foreground">房间链接</Label>
       <div className="flex gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{shareUrl}</span>
         </div>
@@ -43,7 +43,7 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           aria-live="polite"
           className={cn(
             "flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-            copied ? "border-success/40 bg-success/10 text-success" : "hover:bg-accent/60",
+            copied ? "border-success/40 bg-success/10 text-success" : "hover:bg-accent hover:text-accent-foreground",
           )}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

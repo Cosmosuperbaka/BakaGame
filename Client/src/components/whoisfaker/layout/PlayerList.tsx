@@ -561,7 +561,7 @@ function MarkButton({
 function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
   return (
     <span
-      className={cn(PLAYER_BADGE_BASE, roleTones[role], predicted && "bg-muted/70")}
+      className={cn(PLAYER_BADGE_BASE, roleTones[role], predicted && "bg-muted/40")}
       aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
     >
       {roleLabels[role]}

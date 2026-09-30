@@ -362,7 +362,7 @@ export function GameStage(props: SongGameAreaProps) {
               audioStatus={audioStatus}
             />
           ) : (
-            <div className="rounded-md bg-background/60 p-5 text-center text-sm text-muted-foreground">
+            <div className="rounded-md bg-background p-5 text-center text-sm text-muted-foreground">
               本房间已关闭歌词提示，请根据音乐进行猜测
             </div>
           )}

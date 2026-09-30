@@ -38,7 +38,7 @@ export function SongLyricPlayer({
   return (
     <div
       className={cn(
-        "relative w-full overflow-hidden rounded-md border border-border/40 bg-background/60 p-3 sm:p-4 select-none",
+        "relative w-full overflow-hidden rounded-md border border-border/40 bg-background p-3 sm:p-4 select-none",
         empty && "flex h-24 sm:h-28 items-center justify-center text-center text-sm text-muted-foreground",
         className,
       )}

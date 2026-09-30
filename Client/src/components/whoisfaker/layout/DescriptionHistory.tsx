@@ -113,7 +113,7 @@ export function DescriptionTable({
 
         <tbody className="divide-y divide-background text-foreground">
           {rows.map((player, rowIndex) => (
-            <tr key={player.id} className="hover:bg-accent/20">
+            <tr key={player.id} className="hover:bg-accent/40">
               <td className="sticky left-0 z-panel w-64 min-w-64 max-w-64 border-r bg-panel p-0">
                 {playerRowContext ? (
                   <PlayerRow

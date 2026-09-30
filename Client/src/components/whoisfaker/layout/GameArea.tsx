@@ -61,7 +61,7 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="pointer-events-none absolute inset-0 z-dropdown flex items-center justify-center bg-background/90 backdrop-blur-sm"
+              className="pointer-events-none absolute inset-0 z-dropdown flex items-center justify-center bg-panel/90 backdrop-blur-sm"
             >
               <div className="text-center">
                 <motion.span

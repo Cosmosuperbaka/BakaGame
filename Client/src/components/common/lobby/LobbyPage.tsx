@@ -84,14 +84,14 @@ export function LobbyPage({
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold tracking-tight">房间列表</h2>
-            <span className="rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground">{rooms.length}</span>
+            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">{rooms.length}</span>
           </div>
           <div className="flex items-center gap-2.5">
             <Input
               value={userName}
               onChange={(event) => onUserNameChange(event.target.value)}
               placeholder="输入用户名"
-              className="h-8 min-w-0 flex-1 border-border/70 bg-card/60 shadow-2xs sm:w-36 sm:flex-none"
+              className="h-8 min-w-0 flex-1 border-border/70 bg-card shadow-2xs sm:w-36 sm:flex-none"
               maxLength={20}
             />
             <Button size="sm" onClick={onCreate} disabled={disabled} className="shrink-0 gap-1.5 text-sm shadow-2xs">

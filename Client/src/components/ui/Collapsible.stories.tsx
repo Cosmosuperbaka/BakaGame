@@ -29,7 +29,7 @@ export const Default: Story = {
   render: (args) => (
     <div className="space-y-6">
       {[false, true].map((open) => (
-        <div key={String(open)} className="space-y-4 rounded-md border bg-muted/30 p-4">
+        <div key={String(open)} className="space-y-4 rounded-md bg-muted p-4">
           <p className="text-sm">声优：示例声优</p>
           <Collapsible {...args} defaultOpen={open} />
         </div>

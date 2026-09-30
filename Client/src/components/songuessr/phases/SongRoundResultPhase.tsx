@@ -53,7 +53,7 @@ export function SongSettlementDetails({
       {song.pictureUrl ? (
         <img src={song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-md" />
       ) : (
-        <div className="flex h-28 w-28 items-center justify-center rounded-md bg-background/60">
+        <div className="flex h-28 w-28 items-center justify-center rounded-md bg-background">
           <Music2 className="h-9 w-9" />
         </div>
       )}
@@ -182,7 +182,7 @@ export function SongRoundResultPhase({
             {summary.anime.imageUrl ? (
               <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-md" />
             ) : (
-              <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background/60">
+              <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background">
                 <Film className="h-9 w-9" />
               </div>
             )}

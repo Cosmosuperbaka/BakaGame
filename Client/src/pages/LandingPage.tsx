@@ -281,7 +281,7 @@ function GameRow({ game }: { game: GameEntry }) {
                 <div
                   key={mode.id}
                   aria-disabled="true"
-                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/20 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
+                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
                 >
                   <span className="truncate">{mode.title}</span>
                   {!isWholeGameDisabled && <ComingSoonBadge />}

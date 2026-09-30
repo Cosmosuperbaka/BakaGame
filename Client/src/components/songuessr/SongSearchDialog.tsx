@@ -83,7 +83,7 @@ export function SongSearchDialog({
   if (!open) return null;
 
   return (
-    <section className="mt-4 space-y-3 rounded-md border bg-background/80 p-4 shadow-sm" aria-label={title}>
+    <section className="mt-4 space-y-3 rounded-md border bg-background p-4 shadow-sm" aria-label={title}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -110,7 +110,7 @@ export function SongSearchDialog({
           />
         </div>
 
-      <ScrollArea className="h-[min(45vh,24rem)] rounded-md border bg-muted/25">
+      <ScrollArea className="h-[min(45vh,24rem)] rounded-md border bg-muted/40">
           <div className="space-y-2 p-3">
             {searching ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">

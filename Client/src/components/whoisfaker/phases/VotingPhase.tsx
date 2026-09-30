@@ -91,7 +91,7 @@ export function VotingPhase() {
               type="button"
               variants={listItem}
               {...selectable}
-              className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-muted/70"
+              className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
               onClick={() => handleVote(player.id)}
             >
               <span className="truncate text-sm font-medium">{player.name}</span>

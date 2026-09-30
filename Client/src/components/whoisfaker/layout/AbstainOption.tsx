@@ -8,7 +8,7 @@ export function AbstainOption({ onSelect }: { onSelect: () => void }) {
       type="button"
       variants={listItem}
       {...selectable}
-      className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent/40"
       onClick={onSelect}
     >
       <span className="truncate text-sm font-medium">弃票</span>

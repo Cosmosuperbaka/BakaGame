@@ -223,7 +223,7 @@ export function SongQuestionSettings({
                     <button
                       key={artist.id}
                       type="button"
-                      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted", selected && "bg-primary/10 text-primary")}
+                      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent/40", selected && "bg-primary/10 text-primary")}
                       onClick={() => setArtists((current) => selected ? current.filter((item) => item.id !== artist.id) : [...current, { id: artist.id, name: artist.name }])}
                     >
                       <span>{artist.name}</span>

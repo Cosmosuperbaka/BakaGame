@@ -30,7 +30,7 @@ function DisclosureHeader({
       onClick={onToggle}
       aria-expanded={open}
       {...headerTappable}
-      className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-background/50"
+      className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
     >
       {icon}
       <h3 className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -168,7 +168,7 @@ export function GameOverPhase() {
               const delta = award?.delta ?? 0;
               const totalScore = player?.score ?? 0;
               return (
-                <motion.tr key={playerId} variants={listItem} className="hover:bg-background/50">
+                <motion.tr key={playerId} variants={listItem} className="hover:bg-accent/40">
                   <td className="px-4 py-2.5 font-medium [overflow-wrap:anywhere]">
                     {player?.name ?? playerId}
                   </td>
@@ -224,7 +224,7 @@ export function GameOverPhase() {
                         return (
                           <div
                             key={vIdx}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-xs"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background text-xs"
                           >
                             <span className="font-medium">{voter?.name ?? v.voterId}</span>
                             <span className="text-muted-foreground">

@@ -93,7 +93,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
                         "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
                         selected
                           ? "border-primary/40 bg-primary/10 text-foreground"
-                          : "border-border text-muted-foreground hover:bg-accent/50",
+                          : "border-border text-muted-foreground hover:bg-accent/40",
                       )}
                     >
                       <AnimatePresence initial={false}>

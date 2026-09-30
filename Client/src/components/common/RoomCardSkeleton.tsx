@@ -17,7 +17,7 @@ export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="正在加载房间列表">
       {Array.from({ length: count }).map((_, index) => (
-        <Card key={index} className="pointer-events-none border-border/60 bg-card/40">
+        <Card key={index} className="pointer-events-none">
           <RoomCardLayout
             className="animate-pulse"
             // 骨架条用前景色低透明度：暗色的 muted 比 card 更暗，用 muted 会整片消失。

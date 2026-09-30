@@ -47,12 +47,12 @@
 
 - 页面主体使用 `background`、`foreground`、`card`、`muted`、`accent`、`border`、`primary` 等语义色，不以硬编码颜色替代通用语义。
 - 主题整体为暖色纸质色系：页面底色为暖白，卡片与浮层比页面底色更亮，正文为暖褐色深色文本。不得把页面或卡片改回纯白、纯灰或冷色中性底。
-- 次要区域使用 `bg-muted`、`bg-accent/40` 或 `text-muted-foreground` 降低层级；`accent` 适用于悬停态和轻量强调块。
+- 次要区域按 §3.2 的表面档位取 `bg-muted` 或 `bg-muted/40`，文字取 `text-muted-foreground` 降低层级；`accent` 只作悬停与浮层内的高亮，不作流内的常驻底色。
 - 次要文字直接取 `text-muted-foreground`，不再叠透明度（`/70`、`/60`）：令牌已按 §3.1 标定到 4.5:1，叠 `/70` 后在 `panel` 上只剩约 2.6:1。与文字并排的图标取同一色，不单独调淡。禁用与离线等不可用状态照旧整体降不透明度（`opacity-50`、`opacity-60`），装饰性的删除线与占位圆点不计入文字。观战气泡的 `text-foreground/85` 叠在自身浅底上仍约 5.7:1，保留作为观战标记。
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 游戏区、玩家面板、聊天区等三块主要面板使用 `bg-panel`（CSS 变量 `--panel`，浅色模式 oklch 0.9430，深色模式 oklch 0.3080），明度介于 `background` 与 `muted` 之间，使面板从页面底色中清晰分离而不刺眼。`--panel` 已通过 `@theme inline` 映射为 Tailwind 语义类，使用 `bg-panel` 即可；不得用 `bg-card` 或硬编码颜色替代面板底色。
 - 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色；阴影层级由调用处决定。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）与全局浮动提醒不属于就近浮层，分别沿用 `bg-popover` 与 §6 的 `bg-card/95`。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
-- 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。暗色下表面明度顺序为 `muted` < `background` < `card` < `secondary`，与亮色并不对称，以下写法已按此修正，新增同类控件照做：
+- 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。表面明度顺序在两种主题下并不对称：亮色 `secondary` < `muted` < `panel` < `background` < `card`，暗色 `background` < `muted` < `panel` < `card` < `secondary`。以下写法已按此修正，新增同类控件照做：
   - 骨架条与徽章占位用 `bg-foreground/6` 至 `/10`，不用 `bg-muted`（暗色 muted 比 card 更暗，骨架会整片消失）。
   - `Tabs`、`SegmentedControl` 的选中块在 `bg-muted` 轨道上，暗色补 `dark:bg-secondary`；只用 `bg-background` 时两者几乎同色。
   - `Switch` 关闭态滑块暗色改用 `bg-foreground/75`，否则深色滑块压在 `input` 轨道上看不见。
@@ -74,6 +74,22 @@
 - 浅底与描边由透明度修饰符派生，全站只用一套档位：底色 `/10`、描边 `/40`、悬停预览 `/5`。浮层内的选中档例外：半透明底会被 `bg-background/95` 吃掉，改用实底 `bg-<令牌>` 配 `text-<令牌>-foreground`。
 - 令牌按 WCAG AA 标定对比度：亮色下与 `muted-foreground` 同档，文字在 `background`、`card`、`panel`、`secondary`、`muted` 上，以及叠在 `background`、`card`、`panel`、`muted` 上的自身 `/10` 浅底上均不低于 4.5:1；`accent` 悬停底上约 3.9:1，只作瞬时悬停，不作常驻文字底。暗色下在 `background`、`card`、`panel`、`muted` 与 `panel` 上的 `/10` 浅底不低于 4.5:1（暗色目前只用于组件截图）。`primary` 不在此列：它是主要操作的底色与强调色，作文字时在亮色表面上约 3.0 至 3.6:1，不用来承载正文或小字说明。实底前景在亮色为白色，在暗色翻转为页面底色，与 `primary` 同构：暗色状态色明度较高，白字会失去对比度。新增或调整令牌时两侧同时核对。
 - 状态不能只靠颜色传达，必须同时配合文字、图标、边框或形状中的至少一种。
+
+### 3.2 表面层级与悬停
+
+中性表面只用五档，不再按局部观感另调透明度（`bg-muted/20`、`bg-background/60`、`bg-card/40` 之类）：
+
+| 档位 | 写法 | 用途 |
+|---|---|---|
+| 页面底 | `bg-background` | 页面底色；实色块或状态浅底上的内嵌小块（票数、身份标签、票型明细行、封面与图片占位、歌词框）；自成一段的流内区块（搜索分区、主持人限时栏）；聊天输入托盘 |
+| 面板 | `bg-panel` | 三块主面板；面板内的区内遮罩统一 `bg-panel/90 backdrop-blur-sm`（揭词背板、天亮提示） |
+| 实色块 | `bg-muted`（无描边）、`bg-card` | `bg-muted` 承载面板内的主要内容块（阶段分区、结算表、答案卡、提示、投票选项）与页面上的计数角标；`bg-card` 是页面上的卡片（大厅房间卡片及其骨架、大厅输入框） |
+| 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、步进输入框、身份分配轨道、搜索结果列表）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章 |
+| 浮层 | `floating-surface`、`bg-popover`、`bg-card/95` | 就近浮层、弹窗主体、全局浮动提醒，见 §3 |
+
+- 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
+- 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。
+- 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的分段按钮与 ghost 小按钮用 `hover:bg-background`。状态色的悬停预览见 §3.1 的 `/5`。
 
 ## 4. 字体与文案
 
@@ -124,7 +140,7 @@
 - 开关设置用 `SettingSwitchRow`（标签、可选说明与右侧开关成一行），等待页的整组折叠设置用 `SettingsAccordion`，非房主看到的只读摘要用 `SettingsChips`。前两者的 `icon` 只收 `LucideIcon` 组件，尺寸与弱化色在组件内统一（折叠标题 `h-4 w-4`、开关行 `h-3.5 w-3.5`，均为 `text-muted-foreground`）；调用处不传预先写好样式的图标元素。
 - 行内折叠（答案卡的角色简介、反馈表的游戏专属标签）用 `ui/Collapsible`，不写原生 `<details>`。标题字号跟随所在区域的正文：默认 `text-sm`，text-xs 的密集区域取 `size="sm"`，箭头随之收小，折叠标题不比周围内容更醒目。收起时内容卸载，`aria-controls` 只在展开时指向内容区。
 - 连续数值与音量调节统一使用基于 `@radix-ui/react-slider` 封装的标准 `Slider` 组件（`Client/src/components/ui/Slider.tsx`），自动具备键盘方向键/Home/End 步进及触控无障碍支持，严禁在业务组件中手写透明原生 `<input type="range">` 假滑块。
-- 房间列表加载过渡统一使用 `RoomCardSkeleton`，防御初次加载网络等待期间出现的空状态闪烁（FOES）。骨架与真实卡片共用 `RoomCardLayout` 网格，文字位用 `h-[1lh]` 占满所在字号的一行，徽章位用 `Badge` 的 `placeholder` 变体，因此各断点下两者高度一致，加载前后不跳动；不另写一套近似尺寸。
+- 房间列表加载过渡统一使用 `RoomCardSkeleton`，防御初次加载网络等待期间出现的空状态闪烁（FOES）。骨架与真实卡片共用 `RoomCardLayout` 网格，文字位用 `h-[1lh]` 占满所在字号的一行，徽章位用 `Badge` 的 `placeholder` 变体，因此各断点下两者高度一致，加载前后不跳动；不另写一套近似尺寸。骨架卡片直接用 `Card` 自身的底色与描边，不另调透明度，加载完成时只替换内容，卡片外观不变。
 - 全局浮动提醒（如新版本提醒 `VersionUpdateNotice`）统一采用居中底部浮层，使用 `bg-card/95`、`backdrop-blur-md`、`border-border` 与 `shadow-lg`，圆角统一取标准 `rounded-md`，正文继承衬线体，搭配标准 `Button`（`size="sm"`）；严禁使用未适配暗黑模式的硬编码告警色（如 `amber-*`），且必须通过 `AnimatePresence` 与 `spring.swift` 提供平滑升起与收拢动效；开发环境（`import.meta.env.DEV`）下不发起检测也不展示，避免打断本地调试。展示层是只由 Props 驱动的 `VersionUpdateBanner`，检测留在 `VersionUpdateNotice`，Storybook 直接渲染展示层。
 - 相同交互不得在不同页面分别创建外观和行为不一致的私有版本；确需复用时下沉到公共组件。
 
@@ -182,8 +198,8 @@
 - 玩家栏固定「玩家」「旁观」两组，分组标题用 `PlayerGroupTitle`。旁观分组已经说明身份，行内不再挂「旁观」徽章；分组为空且本人不能加入时整组不渲染。旁观切换统一用 `components/common/SpectatorToggle`，入口接在要去的那一组之后：「加入旁观」在旁观分组下方，「取消旁观」在玩家分组下方。允许对局中排队的游戏（猜歌）传 `queued` 与 `selected`，文案随之换成「下轮加入…」并以次要底色标出已排队。游戏特有的本人设置（如 CCB 的队伍）放在两组之后、以分隔线隔开，不和旁观切换混在一起。
 - 玩家行的操作浮层由 `PlayerRow` 自己持有：有操作权限时整行是原生按钮并带可见聚焦态，Enter 与空格都能打开；房主任免、转移房主等共有动作取 `hostActions` 组装，避免各游戏重复写同一组动作。动作不可执行时保留在浮层里并禁用，不直接隐藏造成位置跳变。
 - 纵向 `ScrollArea` 的内容层使用块布局，禁止 Radix 默认的表格最小内容宽度撑开玩家栏。长名字、分数和历史展开必须用浏览器验证实际可见范围，不能仅以页面没有横向滚动判定通过。
-- 玩家身份一律以双字徽章呈现，出题人视角与结算公开的真实身份用常规底色，本人的身份预测降低底色不透明度表达“未确认”。有操作权限的整行使用原生按钮与可见聚焦态，支持 Enter/空格打开操作浮层。
-- 次行徽章与投票预览的身份标签共用同一套语言：浅色底（`bg-muted`）承载彩色文字，内容自适应宽度、无边框、小圆角。身份、主持、旁观与准备状态共用同一高度与字重，靠文字颜色而非尺寸或底色艳度区分含义。身份色统一取 `ROLE_COLORS`，两处不各写一套。
+- 玩家身份一律以双字徽章呈现，出题人视角与结算公开的真实身份用常规底色，本人的身份预测改用淡色块 `bg-muted/40` 表达“未确认”。有操作权限的整行使用原生按钮与可见聚焦态，支持 Enter/空格打开操作浮层。
+- 次行徽章与投票预览的身份标签共用同一套语言：浅色底承载彩色文字（玩家栏在面板上取 `bg-muted`；投票预览的行本身是 `bg-muted`，标签按 §3.2 取 `bg-background`），内容自适应宽度、无边框、小圆角。身份、主持、旁观与准备状态共用同一高度与字重，靠文字颜色而非尺寸或底色艳度区分含义。身份色统一取 `ROLE_COLORS`，两处不各写一套。
 - 浮层内的选中态例外：`bg-background/95` 之类的浮层底会吃掉浅色底，因此身份选择器这类浮层内控件的选中档单独用实底。
 - 出局使用次行的 `Skull` 图标，名字保留删除线，不额外占用身份徽章位。
 - 发言历史表格用行列奇偶叠加的棋盘格底色（`descriptionCellShade`），底色取极低透明度的前景色，只造成轻微明暗差、不引入新色相；玩家列不参与。列宽按本列最长发言取值：房间页由最外层 grid 持有列轨道、各行以 `grid-cols-subgrid` 继承，保证同一列跨行等宽。发言正文一律用正文色，列的种类只由列标题的色相区分。

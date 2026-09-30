@@ -97,7 +97,7 @@ export function TestController() {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             {...headerTappable}
-            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
+            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <FlaskConical className="h-4 w-4 text-primary" />
             <span>阶段控制器</span>

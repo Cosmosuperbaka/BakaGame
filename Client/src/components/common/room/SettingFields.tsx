@@ -112,7 +112,7 @@ export function SettingStepper({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitDraft}
           onKeyDown={(event) => { if (event.key === "Enter") commitDraft(); }}
-          className="h-9 w-16 bg-muted/30 px-1 text-center text-base font-medium tabular-nums shadow-inner"
+          className="h-9 w-16 bg-muted/40 px-1 text-center text-base font-medium tabular-nums shadow-inner"
         />
         <Button variant="outline" size="icon" className="h-9 w-9" aria-label={`增加${label}`}
           disabled={disabled || value >= maximum} onClick={() => commit(value + step)}>

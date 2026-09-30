@@ -224,7 +224,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                       ? "border-success/40 bg-success/10 text-success"
                       : vipStatus === "nonVip"
                         ? "border-warning/40 bg-warning/10 text-warning"
-                        : "border-muted bg-muted/50 text-muted-foreground",
+                        : "bg-muted/40 text-muted-foreground",
                   )}>
                     <div className="font-medium">{vipLabel}{vipExpireLabel ? ` · ${vipExpireLabel}` : ""}</div>
                     {vipStatus === "nonVip" ? (
@@ -276,7 +276,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         ) : null}
       </AnimatePresence>
 
-      <div className="flex gap-2 border-t bg-muted/30 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="flex gap-2 border-t bg-muted/40 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
         <p>
           隐私说明：服务器不会保存账号信息。账号信息仅保存在登录者浏览器，
