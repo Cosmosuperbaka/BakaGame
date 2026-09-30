@@ -14,11 +14,11 @@ it("开关行用可见标签命名开关，说明挂为开关的描述", () => {
   expect(screen.getByRole("switch", { name: "允许旁观" })).toHaveAccessibleDescription("");
 });
 
-it("步进输入框由可见标签命名，手动输入在失焦时夹到范围内再提交", async () => {
+it("步进输入框由可见标签连同单位命名，手动输入在失焦时夹到范围内再提交", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
   render(<SettingStepper label="每次行动限时" description="设为 0 表示不限行动时间。" unit="秒" value={0} minimum={0} maximum={120} step={10} onChange={onChange} />);
-  const input = screen.getByRole("textbox", { name: "每次行动限时" });
+  const input = screen.getByRole("textbox", { name: "每次行动限时（秒）" });
   expect(input).toHaveAccessibleDescription("设为 0 表示不限行动时间。");
   expect(screen.getByRole("button", { name: "减少每次行动限时" })).toBeDisabled();
 

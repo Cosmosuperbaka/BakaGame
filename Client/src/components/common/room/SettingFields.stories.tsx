@@ -37,12 +37,12 @@ export const SwitchRows: Story = {
   ),
 };
 
-/** 数值步进：到达边界时对应按钮禁用；目录模式下年份与热度范围整行禁用。 */
+/** 数值步进：到达上下限时对应按钮禁用，单位接在标签后；目录模式下年份与热度范围整行禁用。 */
 export const Steppers: Story = {
   name: "数值步进",
   render: () => (
     <div className="space-y-4">
-      <SettingStepper label="卧底人数" description="上限 3" value={2} minimum={1} maximum={3} onChange={fn()} />
+      <SettingStepper label="卧底人数" description="上限 3" value={3} minimum={1} maximum={3} onChange={fn()} />
       <SettingStepper label="每次行动限时" description="设为 0 表示不限行动时间。" unit="秒" value={0} minimum={0} maximum={120} step={10} onChange={fn()} />
       <SettingStepper label="猜测次数" value={10} minimum={1} maximum={100} onChange={fn()} />
       <SettingStepper label="起始年份" value={2005} minimum={1900} maximum={2200} disabled onChange={fn()} />
