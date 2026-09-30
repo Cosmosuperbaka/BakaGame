@@ -125,20 +125,21 @@ export function ScoreTable({
       </div>
       <table className="w-full text-sm">
         <thead>
+          {/* 表头与数值列不折行，余宽留给名字；名字列的下限防止短名被挤成逐字折行。 */}
           <tr className="border-b border-background text-xs text-muted-foreground">
-            <th className="px-4 py-2 text-left font-medium">玩家</th>
-            <th className="px-4 py-2 text-right font-medium">本轮</th>
-            <th className="px-4 py-2 text-right font-medium">总分</th>
-            <th className="px-4 py-2 text-right font-medium">命中</th>
+            <th className="min-w-20 px-4 py-2 text-left font-medium">玩家</th>
+            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">本轮</th>
+            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">总分</th>
+            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">命中</th>
           </tr>
         </thead>
         <tbody>
           {scores.map((score, index) => (
             <tr key={score.playerId} className="border-b border-background last:border-b-0">
-              <td className="px-4 py-2.5 font-medium">{index === 0 ? "🏆 " : ""}{score.playerName}</td>
-              <td className="px-4 py-2.5 text-right">{score.delta >= 0 ? "+" : ""}{score.delta}</td>
-              <td className="px-4 py-2.5 text-right font-semibold">{score.score}</td>
-              <td className="px-4 py-2.5 text-right text-muted-foreground">
+              <td className="px-4 py-2.5 font-medium [overflow-wrap:anywhere]">{index === 0 ? "🏆 " : ""}{score.playerName}</td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-right">{score.delta >= 0 ? "+" : ""}{score.delta}</td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{score.score}</td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-right text-muted-foreground">
                 {score.correctGuesses}/{score.totalGuesses}
               </td>
             </tr>
