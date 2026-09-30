@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import { SettingSelect, SettingStepper, SettingSwitchRow } from "./SettingFields";
+import { SettingSelect, SettingStepper, SettingSwitchRow, SettingTextField } from "./SettingFields";
 
 it("开关行用可见标签命名开关，说明挂为开关的描述", () => {
   render(<>
@@ -28,6 +28,20 @@ it("步进输入框由可见标签连同单位命名，手动输入在失焦时�
   await user.tab();
   expect(onChange).toHaveBeenCalledTimes(1);
   expect(onChange).toHaveBeenCalledWith(120);
+});
+
+it("文本输入由可见标签命名，密码框同样能按标签找到", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  render(<>
+    <SettingTextField label="房间名称" value="" placeholder="输入房间名称" maxLength={32} onChange={onChange} />
+    <SettingTextField label="房间密码" type="password" value="" placeholder="设置房间密码" onChange={vi.fn()} />
+  </>);
+  const name = screen.getByRole("textbox", { name: "房间名称" });
+  expect(name).toHaveAttribute("maxlength", "32");
+  await user.type(name, "新");
+  expect(onChange).toHaveBeenCalledWith("新");
+  expect(screen.getByLabelText("房间密码")).toHaveAttribute("type", "password");
 });
 
 it("下拉选择的可见标签命名触发器，没有候选时整项禁用", () => {

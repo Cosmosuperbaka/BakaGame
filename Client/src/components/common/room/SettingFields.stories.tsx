@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Eye, Globe, Users } from "lucide-react";
-import { SettingSelect, SettingStepper, SettingSwitchRow } from "./SettingFields";
+import { SettingSelect, SettingStepper, SettingSwitchRow, SettingTextField } from "./SettingFields";
 
 const meta = {
   title: "公共组件/SettingFields",
@@ -44,6 +44,17 @@ export const Steppers: Story = {
       <SettingStepper label="每次行动限时" description="设为 0 表示不限行动时间。" unit="秒" value={0} minimum={0} maximum={120} step={10} onChange={fn()} />
       <SettingStepper label="猜测次数" value={10} minimum={1} maximum={100} onChange={fn()} />
       <SettingStepper label="起始年份" value={2005} minimum={1900} maximum={2200} disabled onChange={fn()} />
+    </div>
+  ),
+};
+
+/** 文本输入：已有值的房间名称，以及尚未填写、只露出占位提示的房间密码。 */
+export const TextFields: Story = {
+  name: "文本输入",
+  render: () => (
+    <div className="space-y-4">
+      <SettingTextField label="房间名称" value="周五夜听歌会" placeholder="输入房间名称" onChange={fn()} />
+      <SettingTextField label="房间密码" type="password" value="" placeholder="设置房间密码" onChange={fn()} />
     </div>
   ),
 };

@@ -1,14 +1,12 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Check, Play, Settings } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { SettingsAccordion, SettingsChips } from "@/components/common/room/SettingsAccordion";
-import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
@@ -46,8 +44,6 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
     allowSpectators: snapshot.allowSpectators,
     password: "",
   }));
-  const nameFieldId = useId();
-  const passwordFieldId = useId();
   const [roomNotice, setRoomNotice] = useState("");
 
   // 私密房间必须有密码——这是增强房的语义，原版房没有密码机制，
@@ -90,15 +86,13 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
 
           <SettingsAccordion icon={Settings} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen}>
             <div className="space-y-4">
-              <div className="grid gap-1.5">
-                <Label htmlFor={nameFieldId} className="text-xs">房间名称</Label>
-                <Input
-                  id={nameFieldId}
-                  value={roomDraft.name}
-                  maxLength={snapshot.source === "original" ? 30 : 32}
-                  onChange={(event) => editRoom("name", event.target.value)}
-                />
-              </div>
+              <SettingTextField
+                label="房间名称"
+                value={roomDraft.name}
+                maxLength={snapshot.source === "original" ? 30 : 32}
+                placeholder="输入房间名称"
+                onChange={(value) => editRoom("name", value)}
+              />
               <SettingSwitchRow
                 label="公开显示在大厅"
                 description={snapshot.source === "original" ? "关闭后不在大厅列出，凭链接仍可进入。" : undefined}
@@ -106,16 +100,13 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
                 onCheckedChange={(checked) => editRoom("visibility", checked ? "public" : "private")}
               />
               {roomDraft.visibility === "private" && snapshot.source === "native" ? (
-                <div className="grid gap-1.5">
-                  <Label htmlFor={passwordFieldId} className="text-xs">房间密码</Label>
-                  <Input
-                    id={passwordFieldId}
-                    type="password"
-                    value={roomDraft.password}
-                    placeholder={snapshot.hasPassword ? "留空沿用原密码" : "请输入密码"}
-                    onChange={(event) => editRoom("password", event.target.value)}
-                  />
-                </div>
+                <SettingTextField
+                  label="房间密码"
+                  type="password"
+                  value={roomDraft.password}
+                  placeholder={snapshot.hasPassword ? "留空沿用原密码" : "请输入密码"}
+                  onChange={(value) => editRoom("password", value)}
+                />
               ) : null}
               {snapshot.source === "native" ? (
                 <SettingSwitchRow

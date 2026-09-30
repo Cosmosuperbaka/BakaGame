@@ -122,6 +122,32 @@ export function SettingStepper({
   );
 }
 
+/** 单行文本设置（房间名称、房间密码）：可见标签命名输入框，占位文案给出业务提示。 */
+export function SettingTextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  maxLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: "text" | "password";
+  maxLength?: number;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={id} className="text-xs">{label}</Label>
+      <Input id={id} type={type} value={value} maxLength={maxLength} placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
 /** Radix Select 不接受空字符串作为选项值，「不限」用占位值往返。 */
 const EMPTY_VALUE = "__all";
 
