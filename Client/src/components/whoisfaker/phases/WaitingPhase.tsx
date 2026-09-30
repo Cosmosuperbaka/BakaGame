@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Check, X, Gamepad2, Copy, Link, ChevronDown, Settings,
-  Lock, Globe, Users, Minus, Plus, Eye,
-} from "lucide-react";
+import { Check, X, Gamepad2, Settings, Lock, Globe, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
-import { Switch } from "@/components/ui/Switch";
-import { spring, collapsible, pressable } from "@/lib/Motion";
+import { collapsible } from "@/lib/Motion";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ReadyProgress } from "@/components/common/room/ReadyProgress";
+import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingsAccordion, SettingsChips } from "@/components/common/room/SettingsAccordion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
-import type { RoomSnapshot } from "@/types";
+import type { RoleConfig, RoleLimits, RoomSnapshot } from "@/types";
+
+const notifyCopyFailed = () => useWhoIsFakerStore.getState().addToast("复制失败，请手动复制", "error");
 
 export function WaitingPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
@@ -78,23 +77,9 @@ export function WaitingPhase() {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6">
       <PhaseHeader icon={Gamepad2} title="等待开始" />
-      <RoomLinkShare roomId={snapshot.roomId} onError={addToast} />
+      <RoomLinkShare path={`/whoisfaker/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
       <SettingsPreview snapshot={snapshot} />
-      {showProgress && (
-        <div className="w-full space-y-2 text-center">
-          <p className="text-sm text-muted-foreground">
-            {readyCount}/{nonHostActive.length} 名玩家已准备
-          </p>
-          <div className="mx-auto h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostActive.length) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      )}
+      {showProgress && <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" />}
       {me?.membership === "active" && (
         <Button
           variant={me.isReady ? "outline" : "default"}
@@ -135,66 +120,19 @@ function HostWaitingPanel({
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Gamepad2} title="等待玩家加入" />
 
-      <RoomLinkShare roomId={snapshot.roomId} onError={addToast} />
+      <RoomLinkShare path={`/whoisfaker/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
 
       {/* 进度条：有其他玩家时显示 */}
-      {showProgress && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>玩家准备进度</span>
-            <span>{readyCount}/{nonHostTotal}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={false}
-              animate={{ width: `${(readyCount / nonHostTotal) * 100}%` }}
-              transition={spring.settle}
-            />
-          </div>
-        </div>
-      )}
+      {showProgress && <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" />}
 
-      {/* 房间设置（折叠） */}
-      <div className="rounded-md border">
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={() => setSettingsOpen((v) => !v)}
-          aria-expanded={settingsOpen}
-          className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
-        >
-          <Settings className="h-4 w-4 text-muted-foreground" />
-          <span className="flex-1 text-left">房间设置</span>
-          <motion.span
-            className="inline-flex text-muted-foreground"
-            animate={{ rotate: settingsOpen ? 180 : 0 }}
-            transition={spring.snap}
-          >
-            <ChevronDown className="h-4 w-4" />
-          </motion.span>
-        </motion.button>
-        <AnimatePresence initial={false}>
-          {settingsOpen && (
-            <motion.div
-              variants={collapsible}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="overflow-hidden"
-            >
-              <div className="border-t px-4 py-4">
-                <InlineSettings
-                  key={snapshot.status.roundId || snapshot.roomId}
-                  snapshot={snapshot}
-                  sendCommand={sendCommand}
-                  addToast={addToast}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <SettingsAccordion icon={Settings} title="房间设置" open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <InlineSettings
+          key={snapshot.status.roundId || snapshot.roomId}
+          snapshot={snapshot}
+          sendCommand={sendCommand}
+          addToast={addToast}
+        />
+      </SettingsAccordion>
 
       {/* 开始按钮 */}
       <Button
@@ -209,119 +147,15 @@ function HostWaitingPanel({
   );
 }
 
-function RoomLinkShare({
-  roomId,
-  onError,
-}: {
-  roomId: string;
-  onError: (text: string, type?: "info" | "error" | "success") => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const shareUrl = `${window.location.origin}/whoisfaker/room/${roomId}`;
+/* ── 阵营配置 ────────────────────────────────────────────── */
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      onError("复制失败，请手动复制", "error");
-    }
+/** 按当前人数上限夹住阵营配置，与服务端 clampRoleConfig 同口径：保存、步进器、开关与只读预览都读这一份。 */
+function effectiveRoleConfig(config: RoleConfig, limits: RoleLimits): RoleConfig {
+  return {
+    undercoverCount: Math.max(1, Math.min(config.undercoverCount, limits.maxUndercoverCount)),
+    hasAngel: limits.canEnableAngel && config.hasAngel,
+    hasBlank: limits.canEnableBlank && config.hasBlank,
   };
-
-  return (
-    <div className="w-full space-y-2">
-      <Label className="text-xs text-muted-foreground">房间链接</Label>
-      <div className="flex gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {shareUrl}
-          </span>
-        </div>
-        <motion.button
-          type="button"
-          {...pressable}
-          onClick={handleCopy}
-          className={cn(
-            "flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-            copied
-              ? "border-success/40 bg-success/10 text-success"
-              : "hover:bg-accent/60",
-          )}
-        >
-          <Copy className="h-3.5 w-3.5" />
-          {copied ? "已复制" : "复制"}
-        </motion.button>
-      </div>
-    </div>
-  );
-}
-
-/* ── 人数步进器 ──────────────────────────────────────────── */
-
-interface CountStepperProps {
-  value: number;
-  max: number;
-  label: string;
-  onChange: (next: number) => void;
-}
-
-function CountStepper({ value, max, label, onChange }: CountStepperProps) {
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="icon"
-        className="h-7 w-7"
-        onClick={() => onChange(Math.max(1, value - 1))}
-        disabled={value <= 1}
-        aria-label={`减少${label}`}
-      >
-        <Minus className="h-3 w-3" />
-      </Button>
-      <span className="w-5 text-center text-sm font-medium tabular-nums">{value}</span>
-      <Button
-        variant="outline"
-        size="icon"
-        className="h-7 w-7"
-        onClick={() => onChange(Math.min(max, value + 1))}
-        disabled={value >= max}
-        aria-label={`增加${label}`}
-      >
-        <Plus className="h-3 w-3" />
-      </Button>
-    </div>
-  );
-}
-
-/* ── 阵营开关行 ─────────────────────────────────────────── */
-
-interface RoleToggleRowProps {
-  title: string;
-  enabled: boolean;
-  onEnabledChange: (next: boolean) => void;
-  canEnable: boolean;
-  unavailableHint: string;
-}
-
-function RoleToggleRow({
-  title, enabled, onEnabledChange, canEnable, unavailableHint,
-}: RoleToggleRowProps) {
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Label className={cn("text-xs", !canEnable && "opacity-50")}>{title}</Label>
-        {!canEnable && <span className="text-xs text-muted-foreground">{unavailableHint}</span>}
-      </div>
-      <Switch
-        checked={enabled}
-        onCheckedChange={onEnabledChange}
-        disabled={!canEnable}
-        aria-label={title}
-      />
-    </div>
-  );
 }
 
 /* ── 行内设置表单（房主） ────────────────────────────────── */
@@ -343,6 +177,8 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
   const [undercoverCount, setUndercoverCount] = useState(snapshot.settings.roleConfig.undercoverCount);
   const [hasAngel, setHasAngel] = useState(snapshot.settings.roleConfig.hasAngel);
   const [hasBlank, setHasBlank] = useState(snapshot.settings.roleConfig.hasBlank);
+  // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
+  const roleConfig = effectiveRoleConfig({ undercoverCount, hasAngel, hasBlank }, limits);
 
   const draft = {
     name: name || undefined,
@@ -350,11 +186,7 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
     password: isPrivate ? password || undefined : "",
     allowSpectators,
     revealRoleOnDeath,
-    roleConfig: {
-      undercoverCount: Math.max(1, Math.min(undercoverCount, limits.maxUndercoverCount)),
-      hasAngel: limits.canEnableAngel && hasAngel,
-      hasBlank: limits.canEnableBlank && hasBlank,
-    },
+    roleConfig,
   };
   useAutoSave(draft, (payload) => sendCommand("room.updateSettings", payload), {
     enabled:
@@ -365,67 +197,27 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label className="text-xs">房间名称</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isPrivate ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
-          <Label className="text-xs">私密房间</Label>
-        </div>
-        <Switch checked={isPrivate} onCheckedChange={setIsPrivate} aria-label="私密房间" />
-      </div>
+      <SettingTextField label="房间名称" value={name} placeholder="输入房间名称" onChange={setName} />
+      <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
       <AnimatePresence initial={false}>
         {isPrivate && (
           <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-            <div className="space-y-1.5 pt-1">
-              <Label className="text-xs">密码</Label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="留空则保留当前密码" className="h-9" />
+            <div className="pt-1">
+              {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
+              <SettingTextField label="密码" type="password" value={password} onChange={setPassword}
+                placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label className="text-xs">允许旁观</Label>
-        </div>
-        <Switch checked={allowSpectators} onCheckedChange={setAllowSpectators} aria-label="允许旁观" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label className="text-xs">死亡时揭露身份</Label>
-        </div>
-        <Switch checked={revealRoleOnDeath} onCheckedChange={setRevealRoleOnDeath} aria-label="死亡时揭露身份" />
-      </div>
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">卧底人数</Label>
-        <div className="flex items-center gap-2">
-          <CountStepper
-            value={undercoverCount}
-            max={limits.maxUndercoverCount}
-            label="卧底人数"
-            onChange={setUndercoverCount}
-          />
-          <span className="text-xs text-muted-foreground">上限 {limits.maxUndercoverCount}</span>
-        </div>
-      </div>
-      <RoleToggleRow
-        title="天使"
-        enabled={hasAngel}
-        onEnabledChange={setHasAngel}
-        canEnable={limits.canEnableAngel}
-        unavailableHint="8 人开启"
-      />
-      <RoleToggleRow
-        title="白板"
-        enabled={hasBlank}
-        onEnabledChange={setHasBlank}
-        canEnable={limits.canEnableBlank}
-        unavailableHint="8 人开启"
-      />
+      <SettingSwitchRow label="允许旁观" icon={Users} checked={allowSpectators} onCheckedChange={setAllowSpectators} />
+      <SettingSwitchRow label="死亡时揭露身份" icon={Eye} checked={revealRoleOnDeath} onCheckedChange={setRevealRoleOnDeath} />
+      <SettingStepper label="卧底人数" description={`上限 ${limits.maxUndercoverCount}`} value={roleConfig.undercoverCount}
+        minimum={1} maximum={limits.maxUndercoverCount} onChange={setUndercoverCount} />
+      <SettingSwitchRow label="天使" description={limits.canEnableAngel ? undefined : "8 人开启"} checked={roleConfig.hasAngel}
+        disabled={!limits.canEnableAngel} onCheckedChange={setHasAngel} />
+      <SettingSwitchRow label="白板" description={limits.canEnableBlank ? undefined : "8 人开启"} checked={roleConfig.hasBlank}
+        disabled={!limits.canEnableBlank} onCheckedChange={setHasBlank} />
     </div>
   );
 }
@@ -433,27 +225,15 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
 /* ── 只读设置预览（非房主） ─────────────────────────────── */
 
 function SettingsPreview({ snapshot }: { snapshot: RoomSnapshot }) {
-  const cfg = snapshot.settings.roleConfig;
-  const limits = snapshot.roleLimits;
-  const effectiveUndercover = Math.max(1, Math.min(cfg.undercoverCount, limits.maxUndercoverCount));
-  const effectiveAngel = limits.canEnableAngel && cfg.hasAngel;
-  const effectiveBlank = limits.canEnableBlank && cfg.hasBlank;
+  const roleConfig = effectiveRoleConfig(snapshot.settings.roleConfig, snapshot.roleLimits);
 
   const items = [
     snapshot.visibility === "private" ? "私密房间" : "公开房间",
     snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
     (snapshot.settings.revealRoleOnDeath ?? true) ? "死亡揭露身份" : "死亡隐藏身份",
-    `${effectiveUndercover} 名卧底`,
-    ...(effectiveAngel ? ["1 名天使"] : []),
-    ...(effectiveBlank ? ["1 名白板"] : []),
+    `${roleConfig.undercoverCount} 名卧底`,
+    ...(roleConfig.hasAngel ? ["1 名天使"] : []),
+    ...(roleConfig.hasBlank ? ["1 名白板"] : []),
   ];
-  return (
-    <div className="flex flex-wrap justify-center gap-2">
-      {items.map((item) => (
-        <span key={item} className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          {item}
-        </span>
-      ))}
-    </div>
-  );
+  return <SettingsChips items={items} />;
 }

@@ -129,4 +129,34 @@ describe("waiting room sharing", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-checked", "false");
   });
+
+  it("房主设置字段由可见标签命名，密码占位文案随是否已有密码变化", () => {
+    useGameStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand: vi.fn().mockResolvedValue({}),
+    });
+
+    const { unmount } = render(<WaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
+
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("房间");
+    // 只有两名参与者：卧底上限为 1，天使不可开启；上限与开启条件都挂在控件的说明上。
+    const undercover = screen.getByRole("textbox", { name: "卧底人数" });
+    expect(undercover).toHaveValue("1");
+    expect(undercover).toHaveAccessibleDescription("上限 1");
+    expect(screen.getByRole("button", { name: "增加卧底人数" })).toBeDisabled();
+    const angel = screen.getByRole("switch", { name: "天使" });
+    expect(angel).toBeDisabled();
+    expect(angel).toHaveAccessibleDescription("8 人开启");
+
+    // 还没有密码时留空不会保存，占位文案提示房主设置密码。
+    fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "设置房间密码");
+    unmount();
+
+    useGameStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
+    render(<WaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
+  });
 });
