@@ -197,10 +197,11 @@ const VOTE_HISTORY = [
 ];
 // ==================== 玩家名单 ====================
 
+/** 房主标记与服务端一致按 hostPlayerId 推出：页面据此切换房主视图，玩家栏据此显示房主徽标。 */
 export function wifPlayer(person: Person, overrides: Partial<PublicPlayerView> = {}): PublicPlayerView {
   return {
     id: person.id, name: person.name, score: SCORE_BEFORE[person.id] ?? 0, membership: "active", online: true,
-    isReady: true, isBot: false, isHost: false, roundStatus: "waiting", ...overrides,
+    isReady: true, isBot: false, isHost: person.id === HOST.id, roundStatus: "waiting", ...overrides,
   };
 }
 
@@ -457,7 +458,8 @@ export function wifSettings(overrides: Partial<RoomSnapshot> = {}): RoomSnapshot
     status: stageStatus("waiting", {}),
     players: waitingPlayers(), descriptions: [], chat: wifChat("waiting"),
   };
-  return { ...base, ...overrides };
+  const snapshot = { ...base, ...overrides };
+  return { ...snapshot, players: snapshot.players.map((player) => ({ ...player, isHost: player.id === snapshot.hostPlayerId })) };
 }
 
 /** 按节点产出整局快照。玩家名单、发言、聊天与结算都取自同一条时间线。 */
