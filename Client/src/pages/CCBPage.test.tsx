@@ -17,3 +17,11 @@ it("从房间返回大厅时先离开原房且严格模式不重复提交退房"
   expect(send.mock.calls.map(([command]) => command)).toEqual(["ccb.room.leave", "ccb.lobby.subscribeRooms"]);
   expect(useCCBStore.getState().roomId).toBeNull();
 });
+
+it("大厅用户名上限与 CCB 协议一致为 32 字", async () => {
+  vi.spyOn(ccbWs, "send").mockResolvedValue({ originalAvailable: false });
+  useCCBStore.setState({ connected: true, lobbyReady: true });
+  render(<HelmetProvider><MemoryRouter><CCBPage /></MemoryRouter></HelmetProvider>);
+  await waitFor(() => expect(screen.getByRole("button", { name: "创建房间" })).toBeEnabled());
+  expect(screen.getByPlaceholderText("输入用户名")).toHaveAttribute("maxlength", "32");
+});

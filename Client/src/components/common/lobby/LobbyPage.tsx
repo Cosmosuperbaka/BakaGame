@@ -22,6 +22,8 @@ export interface LobbyPageProps {
   loading: boolean;
   userName: string;
   onUserNameChange: (value: string) => void;
+  /** 用户名输入上限，与该游戏服务端协议一致；默认 20。 */
+  nameMaxLength?: number;
   onCreate: (event: React.MouseEvent<HTMLElement>) => void;
   onSelectRoom: (room: LobbyRoomView, event: React.MouseEvent<HTMLElement>) => void;
   /** 列表上方的附加内容（说明文案、服务器分段等）。 */
@@ -44,6 +46,7 @@ export function LobbyPage({
   loading,
   userName,
   onUserNameChange,
+  nameMaxLength = 20,
   onCreate,
   onSelectRoom,
   children,
@@ -92,7 +95,7 @@ export function LobbyPage({
               onChange={(event) => onUserNameChange(event.target.value)}
               placeholder="输入用户名"
               className="h-8 min-w-0 flex-1 border-border/70 bg-card shadow-2xs sm:w-36 sm:flex-none"
-              maxLength={20}
+              maxLength={nameMaxLength}
             />
             <Button size="sm" onClick={onCreate} disabled={disabled} className="shrink-0 gap-1.5 text-sm shadow-2xs">
               <Plus className="h-3.5 w-3.5" />

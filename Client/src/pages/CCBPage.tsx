@@ -88,6 +88,7 @@ export default function CCBPage() {
       disabled={leaving}
       userName={userName}
       onUserNameChange={setUserName}
+      nameMaxLength={32}
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
       onSelectRoom={(room, event) => {
         const target = rooms.find((candidate) => candidate.roomId === room.roomId);
