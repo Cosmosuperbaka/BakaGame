@@ -112,10 +112,14 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
       await expectViewportFits(guest);
       const feedback = guest.getByRole("region", { name: "猜测反馈" });
       await feedback.scrollIntoViewIfNeeded();
-      if (viewport.width < 1024) {
+      // 角色名独占组标题行，900 起数值列放得下、不横滚；手机上仍横滚，角色名贴住可视区，不随数值列移出。
+      if (viewport.width < 768) {
         await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
         await feedback.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
         await expect.poll(() => feedback.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+        await expect(feedback.getByText("伊地知虹夏")).toBeInViewport({ ratio: 1 });
+      } else {
+        await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
       }
       // 聊天栏 xl 起常驻；其下与玩家栏同时常驻会挤窄游戏区，改由顶栏按钮打开覆盖面板。
       if (viewport.width < 1280) {
