@@ -102,17 +102,18 @@
   - 英文衬线首选：`"Libre Baskerville"`, `"Lora Variable"`, `"Lora"`, `Georgia`；
   - 中文矢量衬线：`@fontsource-variable/noto-serif-sc`（`"Noto Serif SC Variable"`, `"Noto Serif SC"`）；
   - 系统衬线回退链（参考 Jacob 字体指南）：`STZhongsong`, `STSong`, `"Noto Serif CJK SC"`, `"Noto Serif CJK"`, `"Source Han Serif SC"`, `PMingLiu`, `SimSun`, `"WenQuanYi Bitmap Song"`, `"Times New Roman"`, `Times`, `serif`。
-- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态，且统一采用常规字重（`font-normal`，禁止使用 `font-semibold`，避免 11px/12px 小字号在黑体下因笔画过粗导致字怀糊死）：
-  1. 玩家列表分组标题与计数（`PlayerGroupTitle`，`font-normal text-[11px]`）；
-  2. 玩家准备/等待/出题/旁观微型状态标签与谁是卧底的身份徽章（`PlayerStatusPill`、`RoleBadge` 共用 `PLAYER_BADGE_BASE`，`font-normal text-[11px]`）；
+- 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态，且统一采用常规字重（`font-normal`，禁止使用 `font-semibold`，避免 `text-2xs`/`text-xs` 小字号在黑体下因笔画过粗导致字怀糊死）：
+  1. 玩家列表分组标题与计数（`PlayerGroupTitle`，`font-normal text-2xs`）；
+  2. 玩家准备/等待/出题/旁观微型状态标签与谁是卧底的身份徽章（`PlayerStatusPill`、`RoleBadge` 共用 `PLAYER_BADGE_BASE`，`font-normal text-2xs`）；
   3. 玩家栏分数展示（`font-normal tabular-nums font-sans text-xs`）；
-  4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`，`font-normal font-sans text-[11px]`）。
+  4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`，`font-normal font-sans text-2xs`）。
   除上述 4 处微型文本外，严禁在聊天气泡正文、提及高亮、系统提示、顶栏天数/轮数/词语提示、通用徽章（`Badge.tsx`）或操作按钮上滥用 `font-sans`。
 - 无衬线字体栈（`--font-sans-serif` / `--font-sans`）参考 Jacob 字体指南：`-apple-system`, `BlinkMacSystemFont`, `"Apple Color Emoji"`, `"Segoe UI Emoji"`, `"Segoe UI Symbol"`, `"Segoe UI"`, `"PingFang SC"`, `HarmonyOS_Regular`, `"Hiragino Sans GB"`, `"Microsoft YaHei"`, `"Helvetica Neue"`, `Helvetica`, `"Noto Sans SC Variable"`, `"Noto Sans SC"`, `"Source Han Sans SC"`, `"Noto Sans CJK SC"`, `"WenQuanYi Micro Hei"`, `Arial`, `sans-serif`。
 - 等宽字体栈（`--font-mono`）以 `@fontsource-variable/jetbrains-mono`（`JetBrains Mono Variable` / `JetBrains Mono`）为最优先，后接 `ui-monospace`、`SF Mono`、`SFMono-Regular`、`Cascadia Code`、`Segoe UI Mono`、`Source Code Pro`、`Menlo`、`Consolas`、`Liberation Mono`、`monospace`。择机用于房间号（`#roomId`）、分享链接、提交哈希、时间戳等具有代码或数据特征的内容。
 - 字距由 `--tracking-normal` 统一控制，业务组件不单独设置 `letter-spacing`。
 - 全局字号基线由 `html { font-size: 120%; }` 控制，不在局部通过视口宽度动态缩放字体。
-- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`，挂在名称或单元格旁的微型标记为 11px（`Badge size="xs"`、`PlayerStatusPill`、分数后的「分」、表情标签），不再出现更小的 `text-[10px]`。
+- 游戏阶段标题通常使用 `text-2xl font-semibold`；区域标题通常使用 `text-base` 或 `text-xl font-semibold`；正文以 `text-sm` 为主；辅助信息和徽章使用 `text-xs`，挂在名称或单元格旁的微型标记用 `text-2xs`（11px：`Badge size="xs"`、`PlayerStatusPill`、分数后的「分」、表情标签），不再出现更小的字号。
+- 字号只取 Tailwind 字号档与 `index.css` 中 `@theme inline` 的字号令牌，业务组件不写 `text-[11px]`、`text-[2.25rem]` 一类任意值；确需新档位时先在 `@theme inline` 加令牌。`--text-2xs` 必须用 `px` 定义：根字号为 120%，`0.6875rem` 会渲染成 13.2px。它也不配 `--text-2xs--line-height`，只给字号，行高沿用所在元素；需要高度只由字号和内边距决定的徽章自己加 `leading-none`。歌词播放器样式表里的字号由 [SonGuessrLyrics](SonGuessrLyrics.md) 约束，不在此列。
 - 仅产品名称或确属页面主标题的内容使用大字号。面板、弹窗、卡片内标题保持紧凑，不使用宣传页式排版。
 - 正文和状态文案应简短、直接、可执行。操作按钮使用明确动词，如“创建房间”“加入”“发送”“撤销”。
 - 用户生成内容必须支持 `break-words`；单行名称和房间信息在空间不足时使用 `truncate`，不得挤压关键操作。

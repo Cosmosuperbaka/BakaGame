@@ -35,7 +35,7 @@ export function SettingSwitchRow({
           {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
           <Label htmlFor={id} className="text-xs">{label}</Label>
         </div>
-        {description ? <p id={descriptionId} className="mt-1 text-[11px] text-muted-foreground">{description}</p> : null}
+        {description ? <p id={descriptionId} className="mt-1 text-2xs text-muted-foreground">{description}</p> : null}
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled}
         aria-describedby={description ? descriptionId : undefined} />
@@ -95,7 +95,7 @@ export function SettingStepper({
           {label}
           {unit ? <span className="font-normal text-muted-foreground">（{unit}）</span> : null}
         </Label>
-        {description ? <p id={descriptionId} className="mt-1 text-[11px] text-muted-foreground">{description}</p> : null}
+        {description ? <p id={descriptionId} className="mt-1 text-2xs text-muted-foreground">{description}</p> : null}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <Button variant="outline" size="icon" className="h-9 w-9" aria-label={`减少${label}`}

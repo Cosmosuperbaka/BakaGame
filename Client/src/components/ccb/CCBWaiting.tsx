@@ -117,7 +117,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
               ) : null}
               {roomValidation ? <p role="alert" className="text-xs text-destructive">{roomValidation}</p> : null}
               {roomNotice ? <p role="alert" className="text-xs text-destructive">{roomNotice}</p> : null}
-              <p className="text-[11px] text-muted-foreground">改动会自动保存。</p>
+              <p className="text-2xs text-muted-foreground">改动会自动保存。</p>
             </div>
           </SettingsAccordion>
         </div>

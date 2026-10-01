@@ -93,7 +93,7 @@ export function PlayerRow({
       </span>
       <span aria-label={`${score} 分`} className="flex shrink-0 items-baseline gap-0.5 tabular-nums">
         <span className="text-base leading-none">{score}</span>
-        <span className="font-sans text-[11px] text-muted-foreground">分</span>
+        <span className="font-sans text-2xs text-muted-foreground">分</span>
       </span>
     </>
   );

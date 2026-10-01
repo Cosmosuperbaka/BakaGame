@@ -17,7 +17,7 @@ const SECOND_LINE_CASES: Array<{ name: string; badges: ReactNode; meta?: ReactNo
   {
     name: "CCB · 猜测中",
     badges: <PlayerStatusPill label="猜测中" tone="warning" />,
-    meta: <span className="truncate font-sans text-[11px] text-muted-foreground">2 队 · 3/10 次 · 已提交</span>,
+    meta: <span className="truncate font-sans text-2xs text-muted-foreground">2 队 · 3/10 次 · 已提交</span>,
     detail: <CCBMarks marks="❌💡❌" name={host.name} />,
   },
 ];
@@ -59,7 +59,7 @@ export const PerGameSecondLine: Story = {
     <div className="flex flex-col gap-3">
       {SECOND_LINE_CASES.map((game) => (
         <div key={game.name} className="flex flex-col gap-1">
-          <p className="font-sans text-[11px] text-muted-foreground">{game.name}</p>
+          <p className="font-sans text-2xs text-muted-foreground">{game.name}</p>
           <PlayerRow name={host.name} score={12} host badges={game.badges} meta={game.meta} detail={game.detail} />
         </div>
       ))}

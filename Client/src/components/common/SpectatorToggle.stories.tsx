@@ -40,7 +40,7 @@ export const AllStates: Story = {
     <div className="flex flex-col gap-2">
       {CASES.map(({ name, props }) => (
         <div key={name} className="flex flex-col">
-          <p className="px-2 font-sans text-[11px] text-muted-foreground">{name}</p>
+          <p className="px-2 font-sans text-2xs text-muted-foreground">{name}</p>
           <SpectatorToggle {...props} onToggle={args.onToggle} />
         </div>
       ))}

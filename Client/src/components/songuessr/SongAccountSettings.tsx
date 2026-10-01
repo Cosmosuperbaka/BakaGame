@@ -174,7 +174,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         <UserRound className="h-4 w-4 text-muted-foreground" />
         <span className="flex-1 text-left">网易云账号</span>
         <span className={cn(
-          "rounded-md px-2 py-0.5 text-[11px] font-medium",
+          "rounded-md px-2 py-0.5 text-2xs font-medium",
           snapshot.musicAccountReady
             ? "bg-success/10 text-success"
             : "bg-muted text-muted-foreground",
@@ -260,7 +260,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                   <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5">
                     <div>
                       <Label className="text-xs">保存登录状态</Label>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">仅保存在当前浏览器，服务器不持久化账号信息</p>
+                      <p className="mt-0.5 text-2xs text-muted-foreground">仅保存在当前浏览器，服务器不持久化账号信息</p>
                     </div>
                     <Switch checked={remember} onCheckedChange={setRemember} />
                   </div>
@@ -276,7 +276,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         ) : null}
       </AnimatePresence>
 
-      <div className="flex gap-2 border-t bg-muted/40 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="flex gap-2 border-t bg-muted/40 px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
         <p>
           隐私说明：服务器不会保存账号信息。账号信息仅保存在登录者浏览器，

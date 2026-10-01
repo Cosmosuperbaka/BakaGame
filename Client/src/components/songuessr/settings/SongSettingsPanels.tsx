@@ -267,10 +267,10 @@ export function SongQuestionSettings({
                 </Button>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
+            <p className="text-2xs text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
           </div>
           {!playlist && artists.length === 0 ? (
-            <p className="rounded-md border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+            <p className="rounded-md border border-dashed px-3 py-2 text-2xs text-muted-foreground">
               未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
             </p>
           ) : null}

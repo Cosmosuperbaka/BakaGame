@@ -64,6 +64,10 @@
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
 
+  /* 微型标记字号（徽章、分组标题、单位）。根字号为 120%，必须写 px：0.6875rem 会渲染成 13.2px。
+     不配 --text-2xs--line-height：只给字号，行高沿用所在元素。 */
+  --text-2xs: 11px;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

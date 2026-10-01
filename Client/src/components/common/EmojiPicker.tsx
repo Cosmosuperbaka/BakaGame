@@ -103,7 +103,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                       <AnimatedBadge className="right-0 top-0 scale-90" />
                     )}
                   </div>
-                  <span className="w-full truncate text-center text-[11px] leading-tight text-muted-foreground">
+                  <span className="w-full truncate text-center text-2xs leading-tight text-muted-foreground">
                     {item.label}
                   </span>
                 </button>

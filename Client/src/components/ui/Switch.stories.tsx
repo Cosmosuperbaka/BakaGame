@@ -30,7 +30,7 @@ function SettingRow({
         <Label htmlFor={id} className="text-sm">
           {label}
         </Label>
-        {hint ? <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p> : null}
+        {hint ? <p className="mt-1 text-2xs text-muted-foreground">{hint}</p> : null}
       </div>
       <Switch id={id} defaultChecked={defaultChecked} disabled={disabled} />
     </div>

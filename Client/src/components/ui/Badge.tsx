@@ -33,7 +33,7 @@ const badgeVariants = cva(
         // 密集表格（CCB 反馈表）里一格十几个标签，收紧内边距；py-px 抵掉描边多占的 2px，行高不因描边变高。
         sm: "px-1.5 py-px text-xs",
         // 挂在名称、表格单元旁的微型标记，与 PlayerStatusPill 同为 11px；leading-none 让高度只由字号和内边距决定，不随所在行的行高变化。
-        xs: "px-1.5 py-0.5 text-[11px] leading-none",
+        xs: "px-1.5 py-0.5 text-2xs leading-none",
       },
     },
     defaultVariants: {

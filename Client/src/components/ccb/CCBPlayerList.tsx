@@ -142,7 +142,7 @@ function CCBPlayerRow({ player, snapshot, self, canManage, busy, run }: CCBPlaye
       host={snapshot.hostPlayerId === player.id}
       online={player.online}
       badges={status ? <PlayerStatusPill {...status} /> : null}
-      meta={detail ? <span className="truncate font-sans text-[11px] text-muted-foreground">{detail}</span> : null}
+      meta={detail ? <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span> : null}
       detail={player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}
       actions={actions}
     />

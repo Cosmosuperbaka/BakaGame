@@ -151,7 +151,7 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
           <SettingStepper label="角色标签数" value={draft.characterTagNum} minimum={0} maximum={10} onChange={(value) => change("characterTagNum", value)} />
           <SettingSwitchRow label="显示常见标签" checked={draft.commonTags} onCheckedChange={(value) => change("commonTags", value)} />
           <div className="space-y-3">
-            <p className="text-[11px] text-muted-foreground">文本提示在剩余次数降到设定值时出现，0 为关闭，按从大到小填写。</p>
+            <p className="text-2xs text-muted-foreground">文本提示在剩余次数降到设定值时出现，0 为关闭，按从大到小填写。</p>
             {[0, 1, 2].map((index) => (
               <SettingStepper key={index} label={`第 ${index + 1} 条提示`} value={draft.useHints[index] ?? 0} minimum={0} maximum={draft.maxAttempts}
                 onChange={(value) => setHint(index, value)} />

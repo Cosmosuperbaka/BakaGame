@@ -149,7 +149,7 @@ export function AttemptList({
               </span>
             </div>
             {attempt.feedback ? (
-              <div className="flex flex-wrap gap-1 text-[11px]">
+              <div className="flex flex-wrap gap-1 text-2xs">
                 <Badge variant="outline">
                   年份 {attempt.feedback.releaseYear ?? "?"} {directionSymbol[attempt.feedback.releaseYearDirection]}
                 </Badge>
