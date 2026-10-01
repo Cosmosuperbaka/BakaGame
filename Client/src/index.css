@@ -111,11 +111,12 @@
   --secondary-foreground: oklch(0.4313 0.0300 64.9288);
   --muted: oklch(0.9239 0.0190 83.0636);
   /* 次要文字与危险色在基线上压低明度：基线值在 panel、muted 上只有约 4.1 至 4.5:1，
-     调整后在 background、card、panel、secondary、muted 上均不低于 4.5:1。 */
-  --muted-foreground: oklch(0.4840 0.0387 71.1655);
+     调整后在 background、card、panel、secondary、muted 上均不低于 4.5:1。
+     比值按铺纸纹理（--paper-grain）后的实测标定：纹理压暗表面，对比度约降 4%。 */
+  --muted-foreground: oklch(0.4770 0.0387 71.1655);
   --accent: oklch(0.8348 0.0426 88.8064);
   --accent-foreground: oklch(0.3760 0.0225 64.3434);
-  --destructive: oklch(0.4970 0.1438 32.9149);
+  --destructive: oklch(0.4840 0.1438 32.9149);
   --destructive-foreground: oklch(1.0000 0 0);
   --border: oklch(0.8606 0.0321 84.5881);
   --input: oklch(0.8606 0.0321 84.5881);
@@ -141,16 +142,16 @@
      底色与边框由透明度修饰符派生（`bg-success/10`、`border-success/40`），
      不再逐处手写深浅，同一含义只此一套取值。明度与 muted-foreground 同档标定：
      在 background、card、panel、secondary、muted 上，以及叠在 background、card、panel、muted
-     上的自身 `/10` 浅底上，文字均不低于 4.5:1。
+     上的自身 `/10` 浅底上，文字均不低于 4.5:1（含纸纹理）。
      实底填充（浮层内的选中档）取配套的 `*-foreground`，与 primary 同构：
      暗色下状态色本身会抬明，白字会失去对比度，因此前景也随主题翻转。 */
-  --success: oklch(0.4600 0.1200 165.0000);
+  --success: oklch(0.4480 0.1200 165.0000);
   --success-foreground: oklch(1.0000 0 0);
-  --warning: oklch(0.4900 0.1250 62.0000);
+  --warning: oklch(0.4750 0.1250 62.0000);
   --warning-foreground: oklch(1.0000 0 0);
-  --info: oklch(0.4750 0.1200 240.0000);
+  --info: oklch(0.4600 0.1200 240.0000);
   --info-foreground: oklch(1.0000 0 0);
-  --questioner: oklch(0.4900 0.1500 300.0000);
+  --questioner: oklch(0.4840 0.1500 300.0000);
   --questioner-foreground: oklch(1.0000 0 0);
   --font-sans-serif: -apple-system, BlinkMacSystemFont, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Segoe UI", "PingFang SC",
@@ -175,6 +176,9 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
+  /* 纸纹理：160px 平铺的分形噪点，由基础层铺在实底表面上，见 Design §3.2。
+     亮色为暖褐色斑点，表面平均压暗约 5%；上方文字令牌的对比度按铺纹理后标定，调整强度须重新核对。 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.12 0.264 0 0 0 -0.108'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 }
@@ -195,9 +199,9 @@
   --accent: oklch(0.4186 0.0281 56.3404);
   --accent-foreground: oklch(0.9239 0.0190 83.0636);
   /* 基线取值（0.5471）在深底上只有约 2.5:1，红字读不清；抬高明度后在 background、card、
-     panel、muted 及 panel 上的 `/10` 浅底不低于 4.5:1。
+     panel、muted 及 panel 上的 `/10` 浅底不低于 4.5:1（含纸纹理）。彩度略收，避免抬明后超出 sRGB。
      填充随之变亮，白字对比度不足，前景与 primary 一样翻转为页面底色。 */
-  --destructive: oklch(0.7350 0.1550 30.0000);
+  --destructive: oklch(0.7550 0.1450 30.0000);
   --destructive-foreground: oklch(0.2747 0.0139 57.6523);
   --border: oklch(0.3795 0.0181 57.1280);
   --input: oklch(0.3795 0.0181 57.1280);
@@ -216,7 +220,9 @@
   --sidebar-border: oklch(0.3795 0.0181 57.1280);
   --sidebar-ring: oklch(0.7264 0.0581 66.6967);
   --panel: oklch(0.3080 0.0148 58.0000);
-  /* 状态语义色在暗色下抬高明度，保证在深底上的对比度与亮色侧一致；
+  /* 状态语义色在暗色下抬高明度：在 background、card、panel、muted 上，以及叠在 background、
+     panel、muted 上的自身 `/10` 浅底上不低于 4.5:1（含纸纹理）。红、绿、蓝、紫在 secondary 上
+     与 card 上的 `/10` 浅底只有约 4.1 至 4.5:1，暗色只用于组件截图，暂不标定这两档。
      配套前景反转为页面底色，实底填充仍能读清。 */
   --success: oklch(0.7200 0.1300 165.0000);
   --success-foreground: oklch(0.2747 0.0139 57.6523);
@@ -224,7 +230,7 @@
   --warning-foreground: oklch(0.2747 0.0139 57.6523);
   --info: oklch(0.7400 0.1100 240.0000);
   --info-foreground: oklch(0.2747 0.0139 57.6523);
-  --questioner: oklch(0.7400 0.1400 300.0000);
+  --questioner: oklch(0.7500 0.1400 300.0000);
   --questioner-foreground: oklch(0.2747 0.0139 57.6523);
   --radius: 0.25rem;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
@@ -235,6 +241,8 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
+  /* 暗色纸纹理改用暖白斑点，表面平均提亮约 10% 至 17%。 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.9 0 0 0 0 0.8 0.176 0 0 0 -0.072'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 /**
@@ -308,6 +316,19 @@ html {
     font-family: var(--font-serif);
     letter-spacing: var(--tracking-normal);
     margin: 0;
+  }
+  /* 纸纹理铺在实底表面上，见 Design §3.2。body 经 @apply 取色，不带 .bg-background 类名，需单独列出。
+     带透明度的写法（`bg-muted/40`、`bg-background/95`）不在此列：半透明层透出下层纹理，
+     浮层与区内遮罩的模糊再把纹理抹平，与面板拉开层次。 */
+  body,
+  .bg-background,
+  .bg-panel,
+  .bg-card,
+  .bg-muted,
+  .bg-popover,
+  .bg-secondary {
+    background-image: var(--paper-grain);
+    background-size: 160px 160px;
   }
   /* 选中文字铺主色淡底、保留原文字色。选中是瞬时状态，档位比常驻浅底的 /10 高：/10 叠在表面上几乎看不出。
      主色实底上的文字（本人气泡）由调用处反转成 primary-foreground 底，见 Design §3。 */

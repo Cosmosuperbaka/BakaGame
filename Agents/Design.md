@@ -13,7 +13,7 @@
 ## 2. 技术基线
 
 - 样式使用 Tailwind CSS v4 和 `Client/src/index.css` 中的语义变量。
-- 全站主题基线来源为 tweakcn 的 `vintage-paper`（<https://tweakcn.com/r/themes/vintage-paper.json>），其主题颜色已完整落入 `Client/src/index.css` 的 `:root` 与 `.dark`，是唯一的全局设计标准。基线之外只增补房间面板色 `--panel` 与 §3.1 的状态语义色，并为对比度调整了三处取值：亮色 `--muted-foreground` 与 `--destructive` 压低明度（基线值在 `panel`、`muted` 上约 4.1 至 4.5:1），暗色 `--destructive` 抬高明度（基线值在深底上约 2.5:1，红字读不清）；其余取值不偏离基线。
+- 全站主题基线来源为 tweakcn 的 `vintage-paper`（<https://tweakcn.com/r/themes/vintage-paper.json>），其主题颜色已完整落入 `Client/src/index.css` 的 `:root` 与 `.dark`，是唯一的全局设计标准。基线之外只增补房间面板色 `--panel`、§3.1 的状态语义色与 §3.2 的纸纹理 `--paper-grain`，并为对比度调整了三处取值：亮色 `--muted-foreground` 与 `--destructive` 压低明度（基线值在 `panel`、`muted` 上约 4.1 至 4.5:1），暗色 `--destructive` 抬高明度并略收彩度（基线值在深底上约 2.5:1，红字读不清）；三处均按铺纹理后的实测标定，其余取值不偏离基线。
 - 主题变量包含颜色、`--radius`、`--shadow-*`、`--font-sans/serif/mono` 与 `--tracking-*`（其中 `--font-*` 与 `--tracking-*` 等排版基线唯一定义于 `:root`），业务组件只能引用这些变量派生出的 Tailwind 语义类，不得在组件内重新定义同类基础值。
 - 需要调整全局观感时，应修改 `index.css` 中的主题变量，并同步更新本文件，不在业务组件中做局部覆盖。
 - `dark:` 工具类由 `index.css` 的 `@custom-variant dark` 绑定到 `.dark` 类，与主题变量同一个开关；不得回到跟随系统 `prefers-color-scheme` 的默认行为，否则系统暗色偏好会把 `dark:` 颜色混进亮色主题。暗色目前只在组件截图中输出，站内不开放切换入口。
@@ -48,7 +48,7 @@
 - 页面主体使用 `background`、`foreground`、`card`、`muted`、`accent`、`border`、`primary` 等语义色，不以硬编码颜色替代通用语义。
 - 主题整体为暖色纸质色系：页面底色为暖白，卡片与浮层比页面底色更亮，正文为暖褐色深色文本。不得把页面或卡片改回纯白、纯灰或冷色中性底。
 - 次要区域按 §3.2 的表面档位取 `bg-muted` 或 `bg-muted/40`，文字取 `text-muted-foreground` 降低层级；`accent` 只作悬停与浮层内的高亮，不作流内的常驻底色。
-- 次要文字直接取 `text-muted-foreground`，不再叠透明度（`/70`、`/60`）：令牌已按 §3.1 标定到 4.5:1，叠 `/70` 后在 `panel` 上只剩约 2.6:1。与文字并排的图标取同一色，不单独调淡。禁用与离线等不可用状态照旧整体降不透明度（`opacity-50`、`opacity-60`），装饰性的删除线与占位圆点不计入文字。观战气泡的 `text-foreground/85` 叠在自身浅底上仍约 5.7:1，保留作为观战标记。
+- 次要文字直接取 `text-muted-foreground`，不再叠透明度（`/70`、`/60`）：令牌已按 §3.1 标定到 4.5:1，叠 `/70` 后在 `panel` 上只剩约 2.9:1。与文字并排的图标取同一色，不单独调淡。禁用与离线等不可用状态照旧整体降不透明度（`opacity-50`、`opacity-60`），装饰性的删除线与占位圆点不计入文字。观战气泡的 `text-foreground/85` 叠在自身浅底上仍约 5.7:1，保留作为观战标记。
 - `primary` 为暖褐色，只用于主要操作、当前玩家信息、本人消息或明确的交互焦点，避免大面积铺色。
 - 主色的浅底与描边沿用 §3.1 的档位：描边与提及光圈 `/40`、浅底 `/10`、悬停预览 `/5`；并排的图标直接取 `text-primary`，不单独调淡。推荐态（猜歌推荐候选、谁是卧底推荐出题人）静止时取 `/40` 描边配 `/5` 底，悬停升一档到 `/50` 描边配 `/10` 底，否则与普通候选的悬停同档，看不出区别。整条的静态说明块（猜歌的自动出题筛选与本轮答案、描述表中本人所在行）底色保持 `/5`，与上条的「避免大面积铺色」一致。
 - 选中文字由 `index.css` 的 `::selection` 统一铺 `bg-primary/30`，文字保持原色，不用浏览器默认的蓝底。选中是瞬时状态，档位比常驻浅底高：`/10` 叠在表面上几乎看不出，`/30` 下正文仍在 6:1 以上。主色实底上的文字（本人气泡）会被同色淡底吞掉，调用处反转成 `selection:bg-primary-foreground selection:text-primary`。
@@ -75,7 +75,7 @@
 - 中性状态（等待、旁观、白板身份）取 `muted-foreground`，不引入第三种灰。内容类型角标（表情的「动图」）不是状态，取 `bg-secondary` 配 `text-secondary-foreground`。阶段本身不是状态：`PhaseHeader` 图标默认取正文色，只有补充发言、平票 PK、白板猜词这类确属特殊状态的阶段才着色，不按氛围给图标上色。
 - 浅底与描边由透明度修饰符派生，全站只用一套档位：底色 `/10`、描边 `/40`、悬停预览 `/5`。浮层内的选中档例外：半透明底会被 `bg-background/95` 吃掉，改用实底 `bg-<令牌>` 配 `text-<令牌>-foreground`。
 - 浮在页面内容之上的状态提示（`Toast`）不能只铺半透明浅底：身后是本人的主色气泡时，文字对比度亮色只剩约 1.6:1、暗色约 1.0:1。外层取不透明的 `bg-background` 配状态描边 `/40`，`/10` 浅底叠在内层，对比度才与身后内容无关；成功与错误提示因此在两种主题下都不低于 4.5:1。`info` 提示用主色文字，不在 AA 标定内，见下条。
-- 令牌按 WCAG AA 标定对比度：亮色下与 `muted-foreground` 同档，文字在 `background`、`card`、`panel`、`secondary`、`muted` 上，以及叠在 `background`、`card`、`panel`、`muted` 上的自身 `/10` 浅底上均不低于 4.5:1；`accent` 悬停底上约 3.9:1，只作瞬时悬停，不作常驻文字底。暗色下在 `background`、`card`、`panel`、`muted` 与 `panel` 上的 `/10` 浅底不低于 4.5:1（暗色目前只用于组件截图）。`primary` 不在此列：它是主要操作的底色与强调色，作文字时在亮色表面上约 3.0 至 3.6:1，不用来承载正文或小字说明。实底前景在亮色为白色，在暗色翻转为页面底色，与 `primary` 同构：暗色状态色明度较高，白字会失去对比度。新增或调整令牌时两侧同时核对。
+- 令牌按 WCAG AA 标定对比度，比值均为铺 §3.2 纸纹理后的实测：亮色下与 `muted-foreground` 同档，文字在 `background`、`card`、`panel`、`secondary`、`muted` 上，以及叠在 `background`、`card`、`panel`、`muted` 上的自身 `/10` 浅底上均不低于 4.5:1；`accent` 悬停底不铺纹理，约 4.0 至 4.2:1，只作瞬时悬停，不作常驻文字底。暗色下在 `background`、`card`、`panel`、`muted` 上，以及叠在 `background`、`panel`、`muted` 上的 `/10` 浅底上不低于 4.5:1；红、绿、蓝、紫在 `secondary` 上与 `card` 上的 `/10` 浅底约 4.1 至 4.5:1，暗色目前只用于组件截图，暂不标定这两档。纹理使对比度下降约 4% 至 5%，按无纹理色值估算时目标取约 4.75:1。`primary` 不在此列：它是主要操作的底色与强调色，作文字时在亮色表面上约 3.0 至 3.6:1，不用来承载正文或小字说明。实底前景在亮色为白色，在暗色翻转为页面底色，与 `primary` 同构：暗色状态色明度较高，白字会失去对比度。新增或调整令牌时两侧同时核对。
 - 状态不能只靠颜色传达，必须同时配合文字、图标、边框或形状中的至少一种。
 
 ### 3.2 表面层级与悬停
@@ -92,6 +92,7 @@
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
 - 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。
+- 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的分形噪点（SVG `feTurbulence`），基础层把它铺在 `body` 与实底表面类 `bg-background`、`bg-panel`、`bg-card`、`bg-muted`、`bg-popover`、`bg-secondary` 上。亮色为暖褐斑点，表面平均压暗约 5%；暗色为暖白斑点，提亮约 10% 至 17%。带透明度的写法（淡色块 `bg-muted/40`、状态浅底、`floating-surface`、`bg-card/95`）不单独铺纹理：半透明层透出下层纹理，就近浮层与区内遮罩的模糊再把它抹平，因而比面板更素净；弹窗主体 `bg-popover` 是实底，照常铺纹理。`accent` 只作悬停与高亮，也不铺纹理。调用处不在实底表面上另写背景图或渐变，否则会盖掉纹理；新增实底表面令牌时同步加入该选择器。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
 - 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的分段按钮与 ghost 小按钮用 `hover:bg-background`。状态色的悬停预览见 §3.1 的 `/5`。
 
 ## 4. 字体与文案
