@@ -38,11 +38,30 @@ describe("player row presentation", () => {
 
     // 验证核心业务属性的无障碍与语义呈现，不绑定原子类与 DOM 层级
     expect(screen.getByText("测试玩家")).toBeInTheDocument();
-    expect(screen.getByLabelText("平民")).toBeInTheDocument();
-    expect(screen.getByLabelText("平民")).toHaveTextContent("平民");
+    // 真实身份只读出身份名，不带预测前缀
+    expect(screen.getByText("平民")).toHaveTextContent(/^平民$/);
     expect(screen.getByText("准备")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("分")).toBeInTheDocument();
+  });
+
+  it("身份预测给读屏补上「预测」前缀", () => {
+    render(
+      <PlayerRow
+        player={player}
+        myPlayerId="another-player"
+        isHostViewer={false}
+        waitingPhase={false}
+        mark="undercover"
+        canMark={false}
+        availableMarks={["unknown", "civilian", "undercover"]}
+        onMarkChange={vi.fn()}
+        onKick={vi.fn()}
+        onTransferHost={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("卧底")).toHaveTextContent(/^预测卧底$/);
   });
 
   it("历史里的长昵称玩家仍可用键盘标记身份与管理", async () => {

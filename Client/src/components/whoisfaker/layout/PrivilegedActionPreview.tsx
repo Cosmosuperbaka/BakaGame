@@ -1,20 +1,11 @@
 ﻿import { Clock3 } from "lucide-react";
-import { ROLE_COLORS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
-import { ABSTAIN_TARGET_ID, type PlayerRole } from "@/types";
+import { ABSTAIN_TARGET_ID } from "@/types";
+import { RoleBadge } from "./RoleBadge";
 
 interface Props {
   mode: "vote" | "night";
-}
-
-function RoleLabel({ role }: { role?: PlayerRole }) {
-  if (!role) return null;
-  return (
-    <span className={cn("shrink-0 rounded-md bg-background px-1.5 py-0.5 text-[11px] font-semibold", ROLE_COLORS[role])}>
-      {ROLE_LABELS[role]}
-    </span>
-  );
 }
 
 export function PrivilegedActionPreview({ mode }: Props) {
@@ -86,15 +77,18 @@ export function PrivilegedActionPreview({ mode }: Props) {
     <section className="mx-auto w-full max-w-lg space-y-3" aria-label={mode === "vote" ? "投票预览" : "夜间行动预览"}>
       {mode === "vote" ? (
         <div className="grid grid-cols-2 gap-2">
-          {voteTargets.map((player) => (
-            <div key={player.id} className="flex min-w-0 items-center gap-2 rounded-md bg-muted px-3 py-2.5">
-              <RoleLabel role={roleByPlayerId.get(player.id)} />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{player.name}</span>
-              <span className="shrink-0 rounded-md bg-background px-2 py-0.5 text-sm font-bold tabular-nums">
-                {voteCounts.get(player.id) ?? 0}
-              </span>
-            </div>
-          ))}
+          {voteTargets.map((player) => {
+            const role = roleByPlayerId.get(player.id);
+            return (
+              <div key={player.id} className="flex min-w-0 items-center gap-2 rounded-md bg-muted px-3 py-2.5">
+                {role ? <RoleBadge role={role} inset /> : null}
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{player.name}</span>
+                <span className="shrink-0 rounded-md bg-background px-2 py-0.5 text-sm font-bold tabular-nums">
+                  {voteCounts.get(player.id) ?? 0}
+                </span>
+              </div>
+            );
+          })}
           {(voteCounts.get(ABSTAIN_TARGET_ID) ?? 0) > 0 ? (
             <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5 text-sm text-muted-foreground">
               <span>弃票</span>
@@ -113,7 +107,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
             className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 py-2 text-sm"
           >
             <span className="flex min-w-0 items-center gap-2">
-              <RoleLabel role={row.role} />
+              {row.role ? <RoleBadge role={row.role} inset /> : null}
               <span className="truncate font-medium">{row.name}</span>
             </span>
             <span className="text-muted-foreground">→</span>

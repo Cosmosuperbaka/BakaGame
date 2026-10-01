@@ -4,11 +4,12 @@ import { Trophy, ChevronDown, BookOpen, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
-import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
+import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { collapsible, headerTappable, spring } from "@/lib/Motion";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
+import { RoleBadge } from "../layout/RoleBadge";
 
 const WIF_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "role", header: "身份", align: "left" },
@@ -154,8 +155,7 @@ export function GameOverPhase() {
             key: playerId,
             name: player?.name ?? playerId,
             cells: {
-              // 身份色是结算要公开的信息本身，是 Badge 调用处唯一允许覆写的文字色。
-              role: <Badge variant="outline" size="xs" className={ROLE_COLORS[role]}>{ROLE_LABELS[role]}</Badge>,
+              role: <RoleBadge role={role} inset />,
               delta: summary.awardedScores.find((s) => s.playerId === playerId)?.delta ?? 0,
               total: player?.score ?? 0,
             },

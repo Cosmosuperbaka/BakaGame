@@ -14,7 +14,7 @@ export const PLAYER_COLUMN_WIDTH = "16rem";
 /** 分组标题行高，展开历史时列标题沿用同一高度 */
 export const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
-/** 玩家栏统一使用的浅底状态徽章基底类名；各游戏共用 */
+/** 浅底徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用 */
 export const PLAYER_BADGE_BASE =
   "inline-flex shrink-0 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 font-sans text-[11px] font-normal leading-none tracking-normal";
 

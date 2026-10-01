@@ -11,10 +11,10 @@ import {
   type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
 import { PendingSpeech, SubmittedSpeech } from "./PendingSpeech";
-import { ROLE_COLORS } from "@/config/WhoIsFakerPresentation";
+import { RoleBadge } from "./RoleBadge";
+import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import {
-  PLAYER_BADGE_BASE,
   PLAYER_GROUP_TITLE_HEIGHT,
   PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
@@ -35,26 +35,8 @@ import type {
 export type PlayerMark = "unknown" | PlayerRole;
 export type PlayerMarks = Record<string, PlayerMark>;
 
-/** 身份徽章上的双字，身份标与身份预测共用 */
-const roleLabels: Record<PlayerMark, string> = {
-  unknown: "未知",
-  civilian: "平民",
-  undercover: "卧底",
-  blank: "白板",
-  angel: "天使",
-};
-
-/**
- * 与投票预览里的身份标签使用同一套纯文字配色。
- * 浅色卡片底承载标签，不再额外绘制彩色边框。
- */
-const roleTones: Record<PlayerMark, string> = {
-  unknown: "text-muted-foreground",
-  civilian: ROLE_COLORS.civilian,
-  undercover: ROLE_COLORS.undercover,
-  blank: ROLE_COLORS.blank,
-  angel: ROLE_COLORS.angel,
-};
+/** 身份选择器上的双字：真实身份沿用 `ROLE_LABELS`，只多一档「未知」 */
+const roleLabels: Record<PlayerMark, string> = { unknown: "未知", ...ROLE_LABELS };
 
 /**
  * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
@@ -554,17 +536,5 @@ function MarkButton({
     >
       {roleLabels[option]}
     </motion.button>
-  );
-}
-
-/** 身份标签；预测身份使用略淡底色，真实身份沿用投票预览的标准底色。 */
-function RoleBadge({ role, predicted }: { role: PlayerMark; predicted?: boolean }) {
-  return (
-    <span
-      className={cn(PLAYER_BADGE_BASE, roleTones[role], predicted && "bg-muted/40")}
-      aria-label={predicted ? `预测 ${roleLabels[role]}` : roleLabels[role]}
-    >
-      {roleLabels[role]}
-    </span>
   );
 }

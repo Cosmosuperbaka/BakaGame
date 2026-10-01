@@ -104,7 +104,7 @@
   - 系统衬线回退链（参考 Jacob 字体指南）：`STZhongsong`, `STSong`, `"Noto Serif CJK SC"`, `"Noto Serif CJK"`, `"Source Han Serif SC"`, `PMingLiu`, `SimSun`, `"WenQuanYi Bitmap Song"`, `"Times New Roman"`, `Times`, `serif`。
 - 无衬线字体栈（`--font-sans-serif` / `--font-sans`）严格收敛于以下 4 类微型密集文本与紧凑状态，且统一采用常规字重（`font-normal`，禁止使用 `font-semibold`，避免 11px/12px 小字号在黑体下因笔画过粗导致字怀糊死）：
   1. 玩家列表分组标题与计数（`PlayerGroupTitle`，`font-normal text-[11px]`）；
-  2. 玩家准备/等待/出题/旁观微型状态标签（`PlayerStatusPill` / `PLAYER_BADGE_BASE`，`font-normal text-[11px]`）；
+  2. 玩家准备/等待/出题/旁观微型状态标签与谁是卧底的身份徽章（`PlayerStatusPill`、`RoleBadge` 共用 `PLAYER_BADGE_BASE`，`font-normal text-[11px]`）；
   3. 玩家栏分数展示（`font-normal tabular-nums font-sans text-xs`）；
   4. 聊天面板发言者姓名（`msg.playerName` / `message.playerName`，`font-normal font-sans text-[11px]`）。
   除上述 4 处微型文本外，严禁在聊天气泡正文、提及高亮、系统提示、顶栏天数/轮数/词语提示、通用徽章（`Badge.tsx`）或操作按钮上滥用 `font-sans`。
@@ -142,7 +142,7 @@
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
-- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。挂在名称或单元格旁的微型标记用 `size="xs"`（11px，与 `PlayerStatusPill` 同级）：尚未上线的入口用 `upcoming`，受限的条目（会员专享）用 `restricted`。调用处不覆写底色、描边、字重、字号或文字色，字号只由 `size` 给出，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。唯一的例外是结算表的身份徽章：身份色是要公开的信息本身，`outline` 配 `ROLE_COLORS` 覆写文字色。
+- 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。挂在名称或单元格旁的微型标记用 `size="xs"`（11px，与 `PlayerStatusPill` 同级）：尚未上线的入口用 `upcoming`，受限的条目（会员专享）用 `restricted`。调用处不覆写底色、描边、字重、字号或文字色，字号只由 `size` 给出，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。谁是卧底的身份不走 `Badge`：玩家栏、出题人的中盘预览与结算表一律用 `RoleBadge`（§7.3）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。业务里的下拉选择统一用 `common/room/SettingFields` 的 `SettingSelect`：标签可见，并通过 `htmlFor` 与触发器关联，不只写 `aria-label`；没有可选项时禁用，并用占位项在框内说明原因，不留空白框。两三个互斥且需始终可见的选项用 `SegmentedControl`；工具条等密集区域取 `size="sm"`（与 `Button size="sm"` 同高），不手拼按钮组模拟分段。
 - 有上下限的整数设置用 `SettingStepper`：加减按钮立即生效，手动输入只在失焦或回车时夹到范围内再提交。单位经 `unit` 以「（秒）」的形式接在标签后，并计入输入框的可访问名；不接在按钮组外，按钮组各行等宽，同一面板里的加减按钮才能上下对齐。行内允许折行：手机上标签与按钮组放不下时，按钮组整组折到标签下方靠右（`flex-wrap` 加 `ml-auto`），不让 `min-w-0` 的标签列被挤成逐字断行。
 - 房间名称、房间密码这类单行文本设置用 `SettingTextField`：标签在上并以 `htmlFor` 命名输入框，二者以 `grid gap-1.5` 排布，占位文案必填。业务组件不再手写 `useId` 加 `Label` 加 `Input` 的组合。私密房间的密码框按 `hasPassword` 给占位文案：已有密码时提示留空保留当前密码，还没有时提示设置密码；私密房间必须有密码，此时留空不会保存，占位文案不能暗示留空也行。
@@ -210,8 +210,8 @@
 - 玩家栏固定「玩家」「旁观」两组，分组标题用 `PlayerGroupTitle`。旁观分组已经说明身份，行内不再挂「旁观」徽章；分组为空且本人不能加入时整组不渲染。旁观切换统一用 `components/common/SpectatorToggle`，入口接在要去的那一组之后：「加入旁观」在旁观分组下方，「取消旁观」在玩家分组下方。允许对局中排队的游戏（猜歌）传 `queued` 与 `selected`，文案随之换成「下轮加入…」并以次要底色标出已排队。游戏特有的本人设置（如 CCB 的队伍）放在两组之后、以分隔线隔开，不和旁观切换混在一起。
 - 玩家行的操作浮层由 `PlayerRow` 自己持有：有操作权限时整行是原生按钮并带可见聚焦态，Enter 与空格都能打开；房主任免、转移房主等共有动作取 `hostActions` 组装，避免各游戏重复写同一组动作。动作不可执行时保留在浮层里并禁用，不直接隐藏造成位置跳变。
 - 纵向 `ScrollArea` 的内容层使用块布局，禁止 Radix 默认的表格最小内容宽度撑开玩家栏。长名字、分数和历史展开必须用浏览器验证实际可见范围，不能仅以页面没有横向滚动判定通过。
-- 玩家身份一律以双字徽章呈现，出题人视角与结算公开的真实身份用常规底色，本人的身份预测改用淡色块 `bg-muted/40` 表达“未确认”。有操作权限的整行使用原生按钮与可见聚焦态，支持 Enter/空格打开操作浮层。
-- 次行徽章与投票预览的身份标签共用同一套语言：浅色底承载彩色文字（玩家栏在面板上取 `bg-muted`；投票预览的行本身是 `bg-muted`，标签按 §3.2 取 `bg-background`），内容自适应宽度、无边框、小圆角。身份、主持、旁观与准备状态共用同一高度与字重，靠文字颜色而非尺寸或底色艳度区分含义。身份色统一取 `ROLE_COLORS`，两处不各写一套。
+- 玩家身份一律以双字徽章 `whoisfaker/layout/RoleBadge` 呈现，玩家栏、出题人的投票与夜间预览、结算身份表共用这一个实现：出题人视角与结算公开的真实身份用常规底色，本人的身份预测改用淡色块 `bg-muted/40` 表达“未确认”，并以视觉隐藏的「预测」前缀告诉读屏（不在无语义的 `span` 上写 `aria-label`，读屏多半不读）。有操作权限的整行使用原生按钮与可见聚焦态，支持 Enter/空格打开操作浮层。
+- 身份徽章与次行状态徽章共用 `PLAYER_BADGE_BASE` 一套语言：浅色底承载彩色文字，内容自适应宽度、无边框、小圆角。玩家栏在面板上取 `bg-muted`；出题人预览的卡片与行、结算得分表本身是 `bg-muted` 实色块，徽章取 `inset`，按 §3.2 换成 `bg-background`。身份、主持、旁观与准备状态共用同一高度与字重，靠文字颜色而非尺寸或底色艳度区分含义。身份徽章的颜色统一取 `ROLE_COLORS`，只在 `RoleBadge` 里引用，各处不另写一套。
 - 浮层内的选中态例外：`bg-background/95` 之类的浮层底会吃掉浅色底，因此身份选择器这类浮层内控件的选中档单独用实底。
 - 出局使用次行的 `Skull` 图标，名字保留删除线，不额外占用身份徽章位。
 - 发言历史表格用行列奇偶叠加的棋盘格底色（`descriptionCellShade`），底色取极低透明度的前景色，只造成轻微明暗差、不引入新色相；玩家列不参与。列宽按本列最长发言取值：房间页由最外层 grid 持有列轨道、各行以 `grid-cols-subgrid` 继承，保证同一列跨行等宽。发言正文一律用正文色，列的种类只由列标题的色相区分。
