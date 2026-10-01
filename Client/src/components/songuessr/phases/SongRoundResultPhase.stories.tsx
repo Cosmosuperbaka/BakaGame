@@ -18,7 +18,7 @@ import {
   songRoundSummary,
   songSettings,
 } from "@/stories/fixtures/SonGuessr";
-import { ScoreTable, SongRoundResultPhase, SongSettlementDetails } from "./SongRoundResultPhase";
+import { SongRoundResultPhase, SongScoreTable, SongSettlementDetails } from "./SongRoundResultPhase";
 
 const { host, me } = SONG_PEOPLE;
 const hostView = roundResultPlayers().find((player) => player.id === host.id);
@@ -93,5 +93,5 @@ export const Settlement: Story = {
 
 export const Scores: Story = {
   name: "得分统计 · 长名字",
-  render: () => <ScoreTable scores={SONG_ROUND_SCORES} />,
+  render: () => <SongScoreTable scores={SONG_ROUND_SCORES} />,
 };

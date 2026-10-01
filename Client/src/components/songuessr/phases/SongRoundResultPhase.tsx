@@ -3,6 +3,7 @@ import { Film, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import {
   BANGUMI_TRACK_KIND_LABELS,
   detectExplicitTrackKind,
@@ -106,47 +107,24 @@ export function SoloRoundOutcome({
   );
 }
 
-export function ScoreTable({
-  scores,
-}: {
-  scores: Array<{
-    playerId: string;
-    playerName: string;
-    score: number;
-    delta: number;
-    correctGuesses: number;
-    totalGuesses: number;
-  }>;
-}) {
+const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
+  { key: "delta", header: "本轮", signed: true },
+  { key: "score", header: "总分", tone: "strong" },
+  { key: "hits", header: "命中", tone: "muted" },
+];
+
+/** 多人模式的得分统计，首行加奖杯 */
+export function SongScoreTable({ scores }: { scores: SonGuessrRoundSummary["scores"] }) {
   return (
-    <section className="overflow-hidden rounded-md bg-muted">
-      <div className="border-b border-background px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">得分统计</h3>
-      </div>
-      <table className="w-full text-sm">
-        <thead>
-          {/* 表头与数值列不折行，余宽留给名字；名字列的下限防止短名被挤成逐字折行。 */}
-          <tr className="border-b border-background text-xs text-muted-foreground">
-            <th className="min-w-20 px-4 py-2 text-left font-medium">玩家</th>
-            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">本轮</th>
-            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">总分</th>
-            <th className="whitespace-nowrap px-4 py-2 text-right font-medium">命中</th>
-          </tr>
-        </thead>
-        <tbody>
-          {scores.map((score, index) => (
-            <tr key={score.playerId} className="border-b border-background last:border-b-0">
-              <td className="px-4 py-2.5 font-medium [overflow-wrap:anywhere]">{index === 0 ? "🏆 " : ""}{score.playerName}</td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-right">{score.delta >= 0 ? "+" : ""}{score.delta}</td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{score.score}</td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-right text-muted-foreground">
-                {score.correctGuesses}/{score.totalGuesses}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <ScoreTable
+      title="得分统计"
+      columns={SONG_SCORE_COLUMNS}
+      rows={scores.map((score, index) => ({
+        key: score.playerId,
+        name: `${index === 0 ? "🏆 " : ""}${score.playerName}`,
+        cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
+      }))}
+    />
   );
 }
 
@@ -224,7 +202,7 @@ export function SongRoundResultPhase({
           rounds={snapshot.roundNumber}
         />
       ) : (
-        <ScoreTable scores={summary.scores} />
+        <SongScoreTable scores={summary.scores} />
       )}
       {isHost ? (
         <div className="flex justify-end gap-2">

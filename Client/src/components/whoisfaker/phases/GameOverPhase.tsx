@@ -5,9 +5,16 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { ROLE_LABELS, ROLE_COLORS, WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
-import { collapsible, headerTappable, listContainer, listItem, spring } from "@/lib/Motion";
+import { collapsible, headerTappable, spring } from "@/lib/Motion";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
+
+const WIF_SCORE_COLUMNS: ScoreTableColumn[] = [
+  { key: "role", header: "身份", align: "left" },
+  { key: "delta", header: "本局", signed: true },
+  { key: "total", header: "总分", tone: "strong" },
+];
 
 /**
  * 折叠区标题。箭头以弹性过渡翻转，与内容展开同时发生，
@@ -136,60 +143,25 @@ export function GameOverPhase() {
         )}
       </section>
 
-      {/* 身份揭示与得分表格 */}
-      <section className="overflow-hidden rounded-md bg-muted">
-        <div className="flex items-center justify-between border-b border-background px-4 py-2.5">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            身份揭示与得分统计
-          </h3>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            {/* 手机上四字表头放不下，break-keep 配 <wbr /> 只在两词之间折行；徽章与数值列不折行，余宽留给名字。 */}
-            <tr className="border-b border-background text-xs text-muted-foreground">
-              <th className="min-w-20 px-4 py-2 text-left font-medium">玩家</th>
-              <th className="break-keep px-3 py-2 text-left font-medium">本局<wbr />身份</th>
-              <th className="break-keep px-3 py-2 text-right font-medium">本局<wbr />变动</th>
-              <th className="break-keep px-3 py-2 text-right font-medium">房间<wbr />累计</th>
-            </tr>
-          </thead>
-          {/* 身份逐行揭示，让战报读作一次开牌而非整块出现 */}
-          <motion.tbody
-            className="divide-y divide-background"
-            variants={listContainer(summary.revealedRoles.length)}
-            initial="initial"
-            animate="animate"
-          >
-            {summary.revealedRoles.map(({ playerId, role }) => {
-              const player = snapshot.players.find((p) => p.id === playerId);
-              const award = summary.awardedScores.find(
-                (s) => s.playerId === playerId
-              );
-              const delta = award?.delta ?? 0;
-              const totalScore = player?.score ?? 0;
-              return (
-                <motion.tr key={playerId} variants={listItem} className="hover:bg-accent/40">
-                  <td className="px-4 py-2.5 font-medium [overflow-wrap:anywhere]">
-                    {player?.name ?? playerId}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    {/* 身份色是结算要公开的信息本身，是 Badge 调用处唯一允许覆写的文字色。 */}
-                    <Badge variant="outline" size="xs" className={ROLE_COLORS[role]}>
-                      {ROLE_LABELS[role]}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold text-success">
-                    +{delta}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold text-warning">
-                    {totalScore}
-                  </td>
-                </motion.tr>
-              );
-            })}
-          </motion.tbody>
-        </table>
-      </section>
+      {/* 身份逐行揭示，让战报读作一次开牌而非整块出现 */}
+      <ScoreTable
+        title="身份揭示与得分统计"
+        columns={WIF_SCORE_COLUMNS}
+        reveal
+        rows={summary.revealedRoles.map(({ playerId, role }) => {
+          const player = snapshot.players.find((p) => p.id === playerId);
+          return {
+            key: playerId,
+            name: player?.name ?? playerId,
+            cells: {
+              // 身份色是结算要公开的信息本身，是 Badge 调用处唯一允许覆写的文字色。
+              role: <Badge variant="outline" size="xs" className={ROLE_COLORS[role]}>{ROLE_LABELS[role]}</Badge>,
+              delta: summary.awardedScores.find((s) => s.playerId === playerId)?.delta ?? 0,
+              total: player?.score ?? 0,
+            },
+          };
+        })}
+      />
 
       {/* 投票复盘：按天顺序展示 */}
       {summary.voteHistory && summary.voteHistory.length > 0 && (
