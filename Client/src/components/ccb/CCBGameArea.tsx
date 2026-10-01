@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Flag, Image, Loader2, PenLine, RotateCcw, Search, Trophy } from "lucide-react";
 import type { CCBCharacterSummary, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
@@ -90,14 +90,15 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
 
 type CCBScore = NonNullable<CCBRoomSnapshot["roundSummary"]>["scores"][number];
 
-/** 结算得分表：与另外两个游戏同一 section/表头结构；得分明细收在玩家名下，窄屏不逐字换行。 */
+/** 结算得分表：与另外两个游戏同一 section/表头结构，区块标题经 aria-labelledby 作表格的可访问名；得分明细收在玩家名下，窄屏不逐字换行。 */
 function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
+  const titleId = useId();
   return (
     <section className="overflow-hidden rounded-md bg-muted">
       <div className="border-b border-background px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">本局得分</h3>
+        <h3 id={titleId} className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">本局得分</h3>
       </div>
-      <table className="w-full text-sm">
+      <table aria-labelledby={titleId} className="w-full text-sm">
         <thead>
           <tr className="border-b border-background text-xs text-muted-foreground">
             <th className="px-4 py-2 text-left font-medium">玩家</th>

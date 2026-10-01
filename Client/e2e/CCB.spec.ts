@@ -136,7 +136,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await chooseCharacter(guest, "后藤一里");
     await expect(guest.getByRole("heading", { name: "本局揭晓" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "本局揭晓" })).toBeVisible();
-    await expect(guest.getByRole("table").filter({ has: guest.getByText("本局得分", { exact: true }) })).toContainText("快速 2");
+    await expect(guest.getByRole("table", { name: "本局得分" })).toContainText("快速 2");
     await page.getByRole("button", { name: "返回等待房间" }).click();
     await expect(guest.getByRole("heading", { name: "等待玩家准备" })).toBeVisible();
     const ready = guest.getByRole("button", { name: "准备", exact: true });
@@ -149,7 +149,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.getByRole("button", { name: "确认答案并开始" }).click();
     await chooseCharacter(page, "伊地知虹夏");
     await expect(page.getByRole("heading", { name: "本局揭晓" })).toBeVisible();
-    await expect(page.getByRole("table").filter({ has: page.getByText("本局得分", { exact: true }) })).toContainText("首猜 12");
+    await expect(page.getByRole("table", { name: "本局得分" })).toContainText("首猜 12");
     await expect(page.getByText("第 2 局", { exact: true })).toBeVisible();
     await page.evaluate(() => document.documentElement.classList.add("dark"));
     await page.evaluate(() => Promise.allSettled(document.getAnimations().map((animation) => animation.finished)));
