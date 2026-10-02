@@ -138,11 +138,10 @@ export function GameOverPhase() {
         )}
       </section>
 
-      {/* 身份逐行揭示，让战报读作一次开牌而非整块出现 */}
+      {/* 身份按座次自上而下逐行揭示，让战报读作一次开牌而非整块出现 */}
       <ScoreTable
         title="身份揭示与得分统计"
         columns={WIF_SCORE_COLUMNS}
-        reveal
         rows={summary.revealedRoles.map(({ playerId, role }) => {
           const player = snapshot.players.find((p) => p.id === playerId);
           return {

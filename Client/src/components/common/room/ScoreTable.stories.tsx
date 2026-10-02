@@ -51,6 +51,7 @@ export const DetailRow: Story = {
   render: () => (
     <ScoreTable
       title="本局得分"
+      ranked
       columns={[
         { key: "rank", header: "名次" },
         { key: "score", header: "得分", signed: true, tone: "strong" },

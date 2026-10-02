@@ -113,12 +113,13 @@ const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "hits", header: "命中", tone: "muted" },
 ];
 
-/** 多人模式的得分统计，首行加奖杯 */
+/** 多人模式的得分统计：服务端已按总分从高到低排好，首行加奖杯 */
 export function SongScoreTable({ scores }: { scores: SonGuessrRoundSummary["scores"] }) {
   return (
     <ScoreTable
       title="得分统计"
       columns={SONG_SCORE_COLUMNS}
+      ranked
       rows={scores.map((score, index) => ({
         key: score.playerId,
         name: `${index === 0 ? "🏆 " : ""}${score.playerName}`,

@@ -1,7 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultCCBSettings, type CCBPrivateState, type CCBRoomSnapshot } from "@bakagame/shared";
+import {
+  createDefaultCCBSettings,
+  type CCBCharacterView,
+  type CCBPrivateState,
+  type CCBRoomSnapshot,
+  type CCBScoreDetail,
+} from "@bakagame/shared";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { ccbWs } from "@/lib/CCBWs";
 import { CCBGameArea } from "./CCBGameArea";
@@ -148,6 +154,32 @@ describe("CCB 操作区", () => {
     expect(screen.getByText("本轮已完成，等待其他玩家")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "搜索角色" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查看图片提示" })).not.toBeInTheDocument();
+  });
+
+  it("结算表按名次排列：猜中者在前，没有名次的保持服务端顺序", () => {
+    // 带图片地址时角色图不再走懒加载的 IntersectionObserver（jsdom 没有）。
+    const answer: CCBCharacterView = {
+      id: 1, name: "Nijika", nameCn: "伊地知虹夏", gender: "female", popularity: 0, summary: "",
+      imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      appearances: [], highestRating: -1, earliestAppearance: 0, latestAppearance: 0,
+      subjectTags: [], characterTags: [], voiceActors: [], metaTags: [], comparisonAppearances: [], extraTags: [],
+    };
+    const line = (playerName: string, changes: Partial<CCBScoreDetail> = {}): CCBScoreDetail => ({
+      playerId: playerName, playerName, score: 0, base: 0, firstGuess: 0, quickGuess: 0, partial: 0, setter: 0, reason: "", ...changes,
+    });
+    // 服务端按参与者顺序给出，猜中者的名次与座位无关。
+    const scores = [
+      line("作品命中", { score: 1, partial: 1, reason: "猜中共同作品" }),
+      line("第二名", { score: 2, base: 2, reason: "猜中角色", rank: 2 }),
+      line("未猜中"),
+      line("第一名", { score: 4, base: 2, quickGuess: 2, reason: "猜中角色", rank: 1 }),
+      line("出题人", { score: -1, setter: -1, reason: "太简单了" }),
+    ];
+    render(<CCBGameArea snapshot={room({ phase: "settled", roundSummary: { answer, scores, guesses: [], winners: [] } })} privateState={privateState()} />);
+    const rows = within(screen.getByRole("table", { name: "本局得分" })).getAllByRole("rowheader");
+    expect(rows.map((row) => row.textContent)).toEqual(
+      ["第一名", "第二名", "作品命中", "未猜中", "出题人"].map((name) => expect.stringMatching(new RegExp(`^${name}`))),
+    );
   });
 
   it("原版准备题目期间没有不支持的取消按钮", () => {

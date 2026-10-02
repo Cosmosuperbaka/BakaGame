@@ -1,6 +1,6 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { listContainer, listItem } from "@/lib/Motion";
+import { scoreRevealDelay, scoreRow } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -32,21 +32,22 @@ const alignClass = (column: ScoreTableColumn) => (column.align === "left" ? "tex
 /**
  * 三个游戏共用的结算得分表。区块标题经 `aria-labelledby` 作表格的可访问名，
  * 玩家名是行标题，明细收在名字下方；数值列不折行，余宽留给名字。
+ * 各行逐行揭示（`scoreRow`），顺序见 `ranked`。
  */
 export function ScoreTable({
   title,
   columns,
   rows,
-  reveal = false,
+  ranked = false,
 }: {
   title: string;
   columns: ScoreTableColumn[];
   rows: ScoreTableRow[];
-  /** 逐行揭示，供谁是卧底的身份开牌；其余结算表整块出现 */
-  reveal?: boolean;
+  /** 行按名次排列、第一名在最上：自末行往上揭示，第一名最后落定。缺省按座次自上而下（谁是卧底的身份开牌） */
+  ranked?: boolean;
 }) {
   const titleId = useId();
-  const body = rows.map((row) => {
+  const body = rows.map((row, rowIndex) => {
     const cells = (
       <>
         <th scope="row" className="py-2.5 pl-4 pr-3 text-left font-normal">
@@ -85,10 +86,17 @@ export function ScoreTable({
         })}
       </>
     );
-    return reveal ? (
-      <motion.tr key={row.key} variants={listItem} className={rowClass}>{cells}</motion.tr>
-    ) : (
-      <tr key={row.key} className={rowClass}>{cells}</tr>
+    return (
+      <motion.tr
+        key={row.key}
+        variants={scoreRow}
+        custom={scoreRevealDelay(rowIndex, rows.length, ranked)}
+        initial="initial"
+        animate="animate"
+        className={rowClass}
+      >
+        {cells}
+      </motion.tr>
     );
   });
   return (
@@ -110,13 +118,7 @@ export function ScoreTable({
               ))}
             </tr>
           </thead>
-          {reveal ? (
-            <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
-              {body}
-            </motion.tbody>
-          ) : (
-            <tbody>{body}</tbody>
-          )}
+          <tbody>{body}</tbody>
         </table>
       </div>
     </section>

@@ -14,6 +14,8 @@ import {
   receiptMarkFollow,
   roomEntrance,
   roomEntranceMs,
+  scoreReveal,
+  scoreRevealDelay,
   spring,
   springSettleMs,
   springToCss,
@@ -53,6 +55,19 @@ describe("Motion tokens", () => {
     expect(delays).toEqual(roomEntrance.parts.map((_, index) => Number((index * roomEntrance.step).toFixed(3))));
     expect(variables["room-entrance-scale"]).toBe(String(roomEntrance.scale));
     expect(roomEntranceMs).toBeGreaterThanOrEqual(Math.round(delays.at(-1)! * 1000) + springSettleMs(spring.swift));
+  });
+
+  it("结算表按名次自末行往上揭示、按座次自上而下，总跨度封顶", () => {
+    const ranked = [0, 1, 2, 3].map((index) => scoreRevealDelay(index, 4, true));
+    // 第一名在首行、最后落定，末行最先出现。
+    expect(ranked[0]).toBeGreaterThan(ranked[1]);
+    expect(ranked[3]).toBe(0);
+    const seated = [0, 1, 2, 3].map((index) => scoreRevealDelay(index, 4, false));
+    expect(seated).toEqual([...ranked].reverse());
+    expect(seated[1] - seated[0]).toBeCloseTo(scoreReveal.step);
+    // 人多时步长收窄，最晚一行的等待不超过总跨度。
+    expect(scoreRevealDelay(0, 16, true)).toBeCloseTo(scoreReveal.span);
+    expect(scoreRevealDelay(0, 1, true)).toBe(0);
   });
 
   it("跨页过渡的前后两层尺度写进 CSS 变量，且后方小于 1、前方大于 1", () => {

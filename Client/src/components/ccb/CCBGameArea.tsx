@@ -96,13 +96,17 @@ const CCB_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "score", header: "得分", signed: true, tone: "strong" },
 ];
 
-/** 结算得分表：得分明细作名字下方的次行，窄屏不逐字换行。 */
+/** 猜中者按名次在前；同名次、没有名次的（未猜中、作品命中、出题人）保持服务端给的顺序。 */
+const byRank = (score: CCBScore) => score.rank ?? Number.MAX_SAFE_INTEGER;
+
+/** 结算得分表：按名次排列、自末行往上揭示；得分明细作名字下方的次行，窄屏不逐字换行。 */
 function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
   return (
     <ScoreTable
       title="本局得分"
       columns={CCB_SCORE_COLUMNS}
-      rows={scores.map((score) => ({
+      ranked
+      rows={[...scores].sort((left, right) => byRank(left) - byRank(right)).map((score) => ({
         key: score.playerId,
         name: score.playerName,
         detail: [

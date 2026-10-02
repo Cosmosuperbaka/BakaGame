@@ -242,14 +242,38 @@ export function listContainer(count: number): Variants {
   };
 }
 
+/** 列表项进场的起点：`listItem` 与 `scoreRow` 共用，结算表的行与普通列表读作同一种「推到前面来」。 */
+const listItemEnter = { opacity: 0, scale: 0.94 };
+
 /**
  * 列表项。以自身左缘为原点做等比缩放，读作“推到前面来”。
  * 不使用纵向位移，避免多行同时平移产生的批量飘入观感。
  */
 export const listItem: Variants = {
-  initial: { opacity: 0, scale: 0.94 },
+  initial: listItemEnter,
   animate: { opacity: 1, scale: 1, transition: spring.swift },
   exit: { opacity: 0, scale: 0.965, pointerEvents: "none", transition: { duration: duration.instant } },
+};
+
+/**
+ * 结算表逐行揭示。结算是一局的落点，行距比普通列表宽，名次才读得出先后；
+ * 总跨度封顶，人多时步长自动收窄，末行不至于久等。
+ */
+export const scoreReveal = { step: 0.07, span: 0.42 } as const;
+
+/**
+ * 结算表第 `index` 行的入场延迟（秒）。按名次排列的表（第一名在最上）自末行往上揭示，第一名最后落定；
+ * 按座次排列的表（谁是卧底的身份开牌）自上而下。行内的数字滚动与胜者扫光都从这里取时刻。
+ */
+export function scoreRevealDelay(index: number, count: number, ranked: boolean): number {
+  const step = count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0;
+  return (ranked ? count - 1 - index : index) * step;
+}
+
+/** 结算表的行：与 `listItem` 同一个入场，延迟经 `custom` 逐行传入（取 `scoreRevealDelay`），不靠外层 stagger。 */
+export const scoreRow: Variants = {
+  initial: listItemEnter,
+  animate: (delay: number) => ({ opacity: 1, scale: 1, transition: { ...spring.swift, delay } }),
 };
 
 /**
