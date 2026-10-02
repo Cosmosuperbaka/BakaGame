@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
-import type { Transition, Variants } from "framer-motion";
+import type { TargetAndTransition, Transition, Variants } from "framer-motion";
 
 // ==================== 过渡基线 ====================
 // 所有动效必须从本文件取值，不在业务组件内写死时长或曲线。
@@ -43,6 +43,103 @@ export const duration = {
   /** 需要玩家读完内容的停留时长（词语揭示） */
   hold: 2.2,
 } as const;
+
+// ==================== CSS 令牌 ====================
+// 无法接入 framer-motion 的场景（Radix data-state 浮层、开关滑块、Tailwind 过渡类）
+// 读 `:root` 上的 `--motion-*` 变量。变量由下面的函数从上方令牌生成，不在 CSS 里手抄。
+
+type SpringToken = (typeof spring)[keyof typeof spring];
+
+/** 弹性判定静止的阈值：位移与速度都以 0→1 的进度为单位。 */
+const SPRING_REST_DELTA = 0.001;
+const SPRING_REST_SPEED = 0.02;
+/** 采样点数：足够还原 impulse 的回弹，又不至于让样式表过长。 */
+const SPRING_SAMPLES = 48;
+
+/**
+ * 把弹性过渡解成 CSS 可用的曲线与时长。
+ * 以 1ms 步长积分 0→1 的阻尼振动，到位移与速度都低于阈值时视为静止，
+ * 再等时采样成 `linear()`：过冲部分保留为大于 1 的取值，观感与 framer-motion 的同名弹性一致。
+ */
+export function springToCss({ stiffness, damping, mass }: SpringToken): { easing: string; duration: number } {
+  const step = 0.001;
+  const trace = [0];
+  let position = 0;
+  let velocity = 0;
+  // 上限 5 秒，防止参数失误时死循环；现有档位都在 1 秒内静止。
+  while (trace.length < 5_000) {
+    velocity += ((stiffness * (1 - position) - damping * velocity) / mass) * step;
+    position += velocity * step;
+    trace.push(position);
+    if (Math.abs(1 - position) < SPRING_REST_DELTA && Math.abs(velocity) < SPRING_REST_SPEED) break;
+  }
+  const last = trace.length - 1;
+  const points = Array.from({ length: SPRING_SAMPLES + 1 }, (_, index) =>
+    index === SPRING_SAMPLES ? 1 : Number(trace[Math.round((index / SPRING_SAMPLES) * last)].toFixed(3)),
+  );
+  return { easing: `linear(${points.join(", ")})`, duration: last / 1000 };
+}
+
+const cubicBezier = (curve: readonly number[]) => `cubic-bezier(${curve.join(", ")})`;
+const seconds = (value: number) => `${Number(value.toFixed(3))}s`;
+const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
+/** 就近弹出层的起止尺度，`popover` 变体与 CSS 关键帧共用。 */
+export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
+
+/** 全部 CSS 动效变量。键名即 `--motion-` 之后的部分。 */
+export function motionCssVariables(): Record<string, string> {
+  const variables: Record<string, string> = {};
+  for (const [name, curve] of Object.entries(ease)) variables[`ease-${kebab(name)}`] = cubicBezier(curve);
+  for (const [name, value] of Object.entries(duration)) {
+    if (name !== "none" && name !== "hold") variables[`duration-${name}`] = seconds(value);
+  }
+  for (const [name, token] of Object.entries(spring)) {
+    const { easing, duration: settle } = springToCss(token);
+    variables[`spring-${name}`] = easing;
+    variables[`spring-${name}-duration`] = seconds(settle);
+  }
+  variables["popover-enter-scale"] = String(popoverScale.enter);
+  variables["popover-exit-scale"] = String(popoverScale.exit);
+  return variables;
+}
+
+/**
+ * 生成写入 `:root` 的样式表。减弱动效时弹性时长归零：
+ * 弹性只用于位移与缩放，与 `MotionConfig reducedMotion="user"` 关掉变换动画同口径；颜色过渡保留。
+ */
+export function motionTokenCss(): string {
+  const variables = motionCssVariables();
+  const declarations = Object.entries(variables).map(([name, value]) => `--motion-${name}: ${value};`);
+  const reduced = Object.keys(variables)
+    .filter((name) => name.startsWith("spring-") && name.endsWith("-duration"))
+    .map((name) => `--motion-${name}: 0s;`);
+  return `:root { ${declarations.join(" ")} }\n@media (prefers-reduced-motion: reduce) { :root { ${reduced.join(" ")} } }`;
+}
+
+/** 把动效变量装进文档。应用入口与 Storybook 预览在首次渲染前各调用一次，重复调用只更新同一个样式节点。 */
+export function installMotionTokens(doc: Document = document): void {
+  const id = "motion-tokens";
+  let node = doc.getElementById(id);
+  if (!node) {
+    node = doc.createElement("style");
+    node.id = id;
+    doc.head.appendChild(node);
+  }
+  node.textContent = motionTokenCss();
+}
+
+/**
+ * 倒计时刷新步长（毫秒）。进度条在两次刷新之间匀速补间，
+ * 时长与刷新步长相同，读作连续流逝的时间；这是除加载旋转外唯一允许的匀速过渡。
+ */
+export const countdownTickMs = 100;
+
+/** 倒计时进入最后阶段的脉动：表达真实的持续状态「快到时间了」，不做纯装饰。 */
+export const urgentPulse: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { scale: [1, 1.2, 1] },
+  transition: { duration: 0.8, ease: ease.inOut, repeat: Infinity },
+};
 
 /** 歌词播放与总览：同一批文字同时移动和缩小，原生布局负责两端位置。 */
 export const lyricOverview = {
@@ -170,9 +267,9 @@ export const wipeFromLeft: Variants = {
 
 /** 弹出层。自触发点方向展开，保持点击位置与浮层的视觉因果。 */
 export const popover: Variants = {
-  initial: { opacity: 0, scale: 0.94 },
+  initial: { opacity: 0, scale: popoverScale.enter },
   animate: { opacity: 1, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, scale: 0.96, transition: { duration: duration.instant } },
+  exit: { opacity: 0, scale: popoverScale.exit, transition: { duration: duration.instant } },
 };
 
 /** 共享元素跨区域位移（词语从游戏区移入顶栏） */

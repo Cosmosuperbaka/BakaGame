@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
-import { listContainer, spring } from "@/lib/Motion";
+import { duration, ease, listContainer } from "@/lib/Motion";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
 
@@ -55,10 +55,11 @@ export function LobbyPage({
 }: LobbyPageProps) {
   const navigate = useNavigate();
   return (
+    // 整页只做显影，不带纵向位移（Animation §2.2）；列表项的入场由 listItem 负责。
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={spring.swift}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: duration.base, ease: ease.out }}
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
     >
       <Seo path={path} />

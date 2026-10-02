@@ -68,6 +68,11 @@
      不配 --text-2xs--line-height：只给字号，行高沿用所在元素。 */
   --text-2xs: 11px;
 
+  /* `transition-colors` 等过渡类不写 duration-* / ease-* 时取这里，指向 lib/Motion.ts 生成的变量，
+     业务组件不再写 `duration-150` 之类的裸数字（Animation §2.5）。 */
+  --default-transition-duration: var(--motion-duration-quick);
+  --default-transition-timing-function: var(--motion-ease-out);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -262,26 +267,15 @@ html {
   font-size: 120%;
 }
 
-/* 纯 CSS 动效的共享曲线与时长，与 lib/motion.ts 保持同一套观感。
-   仅供无法接入 framer-motion 的场景使用（Radix data-state 浮层、开关滑块）。 */
-:root {
-  /* 对应 ease.out：起步快、收尾长 */
-  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* 对应 ease.inOut：两端对称 */
-  --motion-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  /* 对应 spring.snap 的过冲观感：落位时略微越过再回收 */
-  --motion-ease-overshoot: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --motion-duration-instant: 0.12s;
-  --motion-duration-quick: 0.18s;
-  --motion-duration-base: 0.26s;
-}
+/* 纯 CSS 动效的 `--motion-*` 变量（曲线、时长、弹性 linear()、浮层尺度）不在这里手写：
+   由 lib/Motion.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 Animation §2.5。 */
 
 /* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
-   在此提供与 lib/motion.ts 同曲线的开合动画，保持全站节奏一致。 */
+   在此提供与 popover 变体同尺度、同曲线的开合动画，保持全站节奏一致。 */
 @keyframes overlay-emerge {
   from {
     opacity: 0;
-    transform: scale(0.94);
+    transform: scale(var(--motion-popover-enter-scale));
   }
   to {
     opacity: 1;
@@ -296,7 +290,7 @@ html {
   }
   to {
     opacity: 0;
-    transform: scale(0.96);
+    transform: scale(var(--motion-popover-exit-scale));
   }
 }
 
@@ -304,7 +298,8 @@ html {
   [data-radix-popper-content-wrapper] > [data-state="delayed-open"],
   [data-radix-popper-content-wrapper] > [data-state="instant-open"],
   [data-radix-popper-content-wrapper] > [data-state="open"] {
-    animation: overlay-emerge var(--motion-duration-quick) var(--motion-ease-out);
+    /* 与 popover 变体同取 spring.swift；缩放原点由 Select / Tooltip 内容元素按 Radix 落位给出。 */
+    animation: overlay-emerge var(--motion-spring-swift-duration) var(--motion-spring-swift);
   }
   [data-radix-popper-content-wrapper] > [data-state="closed"] {
     animation: overlay-retract var(--motion-duration-instant) var(--motion-ease-in-out);

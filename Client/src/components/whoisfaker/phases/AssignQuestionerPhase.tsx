@@ -131,7 +131,7 @@ function CandidateGrid({
           {...selectable}
           onClick={() => onPick(p.id)}
           className={cn(
-            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] duration-150",
+            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color]",
             tone === "recommended"
               ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
               : "hover:border-primary/40 hover:bg-primary/5"

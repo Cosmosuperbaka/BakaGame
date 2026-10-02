@@ -23,7 +23,7 @@ const Slider = React.forwardRef<
       aria-label={ariaLabel}
       className={cn(
         "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
-        "transition-colors duration-150 focus-visible:outline-offset-2"
+        "transition-colors focus-visible:outline-offset-2"
       )}
     />
   </SliderPrimitive.Root>

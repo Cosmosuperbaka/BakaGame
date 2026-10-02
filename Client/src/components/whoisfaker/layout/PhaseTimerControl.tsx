@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
-import { duration, spring } from "@/lib/Motion";
+import { countdownTickMs, duration, spring, urgentPulse } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -54,7 +54,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
     }
     const interval = window.setInterval(() => {
       setNow(Date.now());
-    }, 100);
+    }, countdownTickMs);
     return () => window.clearInterval(interval);
   }, [phaseTimer]);
 
@@ -123,7 +123,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } }}
             transition={spring.swift}
             className={cn(
-              "relative overflow-hidden rounded-md border p-3 transition-colors duration-300",
+              "relative overflow-hidden rounded-md border p-3 transition-colors",
               isCritical
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : isWarning
@@ -134,8 +134,8 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <motion.span
-                  animate={isCritical ? { scale: [1, 1.2, 1] } : {}}
-                  transition={isCritical ? { duration: 0.8, repeat: Infinity } : {}}
+                  animate={isCritical ? urgentPulse.animate : { scale: 1 }}
+                  transition={isCritical ? urgentPulse.transition : spring.snap}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background"
                 >
                   <Timer
@@ -189,14 +189,15 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
             <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
               <div
                 className={cn(
-                  "h-full rounded-full transition-all duration-100 ease-linear",
+                  // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
+                  "h-full rounded-full transition-[width] ease-linear",
                   isCritical
                     ? "bg-destructive"
                     : isWarning
                       ? "bg-warning"
                       : "bg-primary",
                 )}
-                style={{ width: `${percent}%` }}
+                style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
               />
             </div>
           </motion.div>

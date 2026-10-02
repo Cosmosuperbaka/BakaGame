@@ -15,7 +15,8 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-popover overflow-hidden floating-surface px-3 py-1.5 text-xs text-foreground shadow-md",
+        // 开合动画在 index.css；原点取 Radix 按实际落位（含避让翻转）给出的方向，读作从触发元素长出来。
+        "z-popover overflow-hidden floating-surface px-3 py-1.5 text-xs text-foreground shadow-md origin-(--radix-tooltip-content-transform-origin)",
         className
       )}
       {...props}

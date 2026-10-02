@@ -345,7 +345,7 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
       <span>{link.name}</span>
       <ArrowUpRight
         aria-hidden="true"
-        className="h-3 w-3 shrink-0 opacity-40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+        className="h-3 w-3 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
       />
     </motion.a>
   );

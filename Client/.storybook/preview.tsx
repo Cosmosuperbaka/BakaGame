@@ -5,8 +5,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { resetAllStores } from "@/stories/StorePresets";
 import { NavigatedAway, ThemeScope } from "./StoryShell";
+import { installMotionTokens } from "@/lib/Motion";
 import "@/index.css";
 import "./Preview.css";
+
+// 与应用入口一致：CSS 动效变量由 Motion.ts 的令牌生成。
+installMotionTokens();
 
 /** 故事所需的路由：`route` 为初始地址，`path` 为匹配模式（供 useParams 取值）。 */
 interface StoryRouteParameters {

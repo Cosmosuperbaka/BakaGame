@@ -33,7 +33,7 @@
 
 - `hover` 可以使用简单的线性或匀速渐变（颜色、边框、阴影）。
 - **其余所有动效**（点击反馈、点击后的过渡、进出场、布局变化、跨区域位移）必须是非线性的：使用 `spring.*` 弹性过渡，或 `duration.*` 配 `ease.*` 曲线。
-- 禁止 `ease: "linear"`，唯一例外是持续旋转的加载指示（`spinner`），因为匀速旋转本身就是「进行中」的正确表达。
+- 禁止 `ease: "linear"`，例外只有两处：持续旋转的加载指示（`spinner`），匀速旋转本身就是「进行中」的正确表达；倒计时进度条（`countdownTickMs`），匀速走完才读作时间在流逝。
 - 禁止 framer-motion 的字符串简写（`"easeOut"`、`"easeInOut"` 等），必须从 `lib/Motion.ts` 取值。
 
 ### 2.4 点击之间必须有状态延续或视觉因果
@@ -49,13 +49,16 @@
 - 所有时长、曲线、弹性参数、缩放幅度只能取自 `Client/src/lib/Motion.ts`。
 - 业务组件内不得出现裸数字时长、裸贝塞尔数组或自行编写的 `whileTap`。
 - 需要新的动效语汇时，先在 `lib/Motion.ts` 中定义具名令牌并写清适用场景，再在组件中引用。
+- CSS 侧只有一个来源：`installMotionTokens()`（应用入口与 Storybook 预览各调用一次）把 `ease.*`、`duration.*`（`none`、`hold` 除外）、每档 `spring.*` 解出的 `linear()` 曲线与静止时长、`popover` 起止尺度写进 `:root`，变量名 `--motion-ease-out`、`--motion-duration-quick`、`--motion-spring-swift`、`--motion-spring-swift-duration`、`--motion-popover-enter-scale` 依此类推。`index.css` 不手写任何 `--motion-*` 值。减弱动效时只把 `--motion-spring-*-duration` 归零（弹性只驱动位移与缩放），颜色过渡保留。
+- Tailwind 过渡类不写 `duration-*` / `ease-*`：`--default-transition-duration` 与 `--default-transition-timing-function` 已指向 `--motion-duration-quick`、`--motion-ease-out`。需要弹性观感的 CSS 过渡写 `duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)`（如 `Switch` 滑块）。
+- 唯一的匀速补间是倒计时进度条：宽度在两次刷新之间按 `countdownTickMs` 匀速走完，读作连续流逝的时间。
 
 ### 2.6 禁止使用不存在的动画类
 
 - 项目**未安装** `tailwindcss-animate`。`animate-in`、`animate-out`、`zoom-in-95`、`fade-out-0`、`slide-in-from-top-2` 等类名全部无效，写了等于没有动画。
 - Radix 浮层的开合动画只有两种正确做法：
   - 能包 `AnimatePresence` 的（`Dialog`）由 framer-motion 接管，退出动画播完再卸载。
-  - 只受 `data-state` 驱动、无法包裹的（`Select`、`Tooltip`）由 `index.css` 中的 `overlay-emerge` / `overlay-retract` 关键帧提供，曲线与 `lib/Motion.ts` 保持一致。
+  - 只受 `data-state` 驱动、无法包裹的（`Select`、`Tooltip`）由 `index.css` 中的 `overlay-emerge` / `overlay-retract` 关键帧提供：尺度取 `--motion-popover-*-scale`，打开走 `--motion-spring-swift`，与 `popover` 变体同一组参数；内容元素带 `origin-(--radix-select-content-transform-origin)` / `origin-(--radix-tooltip-content-transform-origin)`，从触发元素一侧展开。
 
 ### 2.7 手势预设只在真正的交互元素上使用
 
@@ -121,7 +124,7 @@
 
 - 只动 `transform` 与 `opacity`。`width`、`height`、`top`、`left`、`filter` 仅在无替代方案时使用，且必须限定作用范围。
 - 长距离位移期间设置 `willChange`，动画结束后清除残留 `transform`，避免分数缩放导致文本子像素抖动（见 4.3）。
-- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`。Tailwind 的 `animate-spin` 等内置关键帧同样不受 MotionConfig 约束，加载指示一律用 `Spinner`：它走 `spinner` 令牌，减弱动效下静止。
+- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`，Tailwind 的 `animate-pulse` 写成 `motion-safe:animate-pulse`。Tailwind 的 `animate-spin` 等内置关键帧同样不受 MotionConfig 约束，加载指示一律用 `Spinner`：它走 `spinner` 令牌，减弱动效下静止。
 - 循环动画只允许用于表达真实的持续状态（加载中、等待发言），不做纯装饰。
 
 ## 4. 三类问题的正确解法
@@ -185,6 +188,10 @@
 | `sharedTransfer` | 跨区域共享元素位移 |
 | `lyricOverview` | 原生歌词同节点位移与整体缩放共用时间轴 |
 | `spinner` | 匀速持续旋转的加载指示，只经 `Spinner` 组件使用 |
+| `urgentPulse` | 倒计时最后阶段的图标脉动，表达「快到时间了」这一持续状态 |
+| `countdownTickMs` | 倒计时刷新步长，进度条宽度按同一时长匀速补间 |
+| `popoverScale` | 就近弹出层起止尺度，`popover` 变体与 CSS 关键帧共用 |
+| `springToCss` / `installMotionTokens` | 把令牌生成 `:root` 上的 CSS 变量（见 §2.5） |
 
 ## 6. 状态反馈的边界
 

@@ -56,7 +56,8 @@ const SelectContent = React.forwardRef<
       ref={ref}
       className={cn(
         "relative z-popover max-h-96 min-w-[8rem] overflow-hidden floating-surface text-foreground shadow-md",
-        position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+        // 开合动画在 index.css；原点取 Radix 按实际落位给出的方向，读作从触发框里展开。
+        position === "popper" && "origin-(--radix-select-content-transform-origin) data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className
       )}
       position={position}

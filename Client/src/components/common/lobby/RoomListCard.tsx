@@ -86,7 +86,7 @@ export function RoomListCard({
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled || undefined}
         className={cn(
-          "cursor-pointer transition-[background,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm",
+          "cursor-pointer transition-[background,border-color,box-shadow] hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm",
           disabled && "pointer-events-none opacity-60",
         )}
         onClick={onSelect}

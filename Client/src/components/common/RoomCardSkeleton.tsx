@@ -19,7 +19,8 @@ export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
       {Array.from({ length: count }).map((_, index) => (
         <Card key={index} className="pointer-events-none">
           <RoomCardLayout
-            className="animate-pulse"
+            // CSS 关键帧不受 MotionConfig 约束，减弱动效时由 motion-safe 关掉（Animation §3.6）。
+            className="motion-safe:animate-pulse"
             // 骨架条用前景色低透明度：暗色的 muted 比 card 更暗，用 muted 会整片消失。
             name={<SkeletonLine className="w-36 bg-foreground/10" />}
             id={<SkeletonLine className="w-24 bg-foreground/6" />}
