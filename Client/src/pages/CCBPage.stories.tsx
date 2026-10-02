@@ -66,19 +66,20 @@ export const CreateDialog: Story = {
   },
 };
 
-/** 原版分段没有密码与禁观战开关：该服务器不支持这两项。 */
+/** 原版服务器没有密码机制：私密开关改为「不在大厅显示」并常驻说明，禁观战开关禁用并写明原因。 */
 export const CreateOriginalDialog: Story = {
-  name: "创建原版房弹窗",
+  name: "创建原版房弹窗 · 不在大厅显示",
   tags: ["!page", "overlay"],
   beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
     await userEvent.click(dialog.getByRole("radio", { name: "原版房" }));
-    await dialog.findByText("房间名称");
+    await userEvent.click(await dialog.findByRole("switch", { name: "不在大厅显示" }));
     dropFocus();
   },
 };
+
 export const JoinPassword: Story = {
   name: "输入房间密码",
   tags: ["!page", "overlay"],

@@ -93,11 +93,12 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
                 placeholder="输入房间名称"
                 onChange={(value) => editRoom("name", value)}
               />
+              {/* 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */}
               <SettingSwitchRow
-                label="公开显示在大厅"
-                description={snapshot.source === "original" ? "关闭后不在大厅列出，凭链接仍可进入。" : undefined}
-                checked={roomDraft.visibility === "public"}
-                onCheckedChange={(checked) => editRoom("visibility", checked ? "public" : "private")}
+                label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
+                description={snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined}
+                checked={roomDraft.visibility === "private"}
+                onCheckedChange={(checked) => editRoom("visibility", checked ? "private" : "public")}
               />
               {roomDraft.visibility === "private" && snapshot.source === "native" ? (
                 <SettingTextField
@@ -117,7 +118,6 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
               ) : null}
               {roomValidation ? <p role="alert" className="text-xs text-destructive">{roomValidation}</p> : null}
               {roomNotice ? <p role="alert" className="text-xs text-destructive">{roomNotice}</p> : null}
-              <p className="text-2xs text-muted-foreground">改动会自动保存。</p>
             </div>
           </SettingsAccordion>
         </div>

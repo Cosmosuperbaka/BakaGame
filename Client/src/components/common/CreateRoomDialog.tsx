@@ -16,6 +16,14 @@ export interface ServerOption {
   disabledReason?: string;
 }
 
+export type RoomPrivacy = "password" | "unlisted";
+
+/** 私密开关的标签与说明随含义变化；不在大厅显示的说明常驻，告诉房主链接仍然有效。 */
+const PRIVACY_COPY: Record<RoomPrivacy, { label: string; description?: string }> = {
+  password: { label: "私密房间" },
+  unlisted: { label: "不在大厅显示", description: "开启后不在大厅列出，凭链接仍可进入。" },
+};
+
 export interface CreateRoomDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,8 +34,11 @@ export interface CreateRoomDialogProps {
   serverOptions?: ServerOption[];
   server?: string;
   onServerChange?: (server: string) => void;
-  /** 当前服务器不支持私密房时给出原因：开关禁用并常驻显示原因。 */
-  privateRoomDisabledReason?: string;
+  /**
+   * 私密的含义：`password`（默认）为私密房设密码、带锁进大厅；
+   * `unlisted` 用于没有密码机制的服务器，开关只控制不进大厅，凭链接仍可进入。
+   */
+  privacy?: RoomPrivacy;
   /** 当前服务器不支持禁止观战时给出原因：开关禁用并常驻显示原因。 */
   spectatorsDisabledReason?: string;
   onCreate: (params: {
@@ -47,7 +58,7 @@ export function CreateRoomDialog({
   serverOptions,
   server,
   onServerChange,
-  privateRoomDisabledReason,
+  privacy,
   spectatorsDisabledReason,
   onCreate,
   onValidationError,
@@ -65,7 +76,7 @@ export function CreateRoomDialog({
           serverOptions={serverOptions}
           server={server}
           onServerChange={onServerChange}
-          privateRoomDisabledReason={privateRoomDisabledReason}
+          privacy={privacy}
           spectatorsDisabledReason={spectatorsDisabledReason}
           onCreate={onCreate}
           onValidationError={onValidationError}
@@ -78,7 +89,7 @@ export function CreateRoomDialog({
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
   | "defaultName" | "onOpenChange" | "serverOptions" | "server" | "onServerChange"
-  | "privateRoomDisabledReason" | "spectatorsDisabledReason" | "onCreate" | "onValidationError"
+  | "privacy" | "spectatorsDisabledReason" | "onCreate" | "onValidationError"
 >;
 
 function CreateRoomForm({
@@ -87,13 +98,17 @@ function CreateRoomForm({
   serverOptions,
   server,
   onServerChange,
-  privateRoomDisabledReason,
+  privacy = "password",
   spectatorsDisabledReason,
   onCreate,
   onValidationError,
 }: CreateRoomFormProps) {
   const [roomName, setRoomName] = useState(defaultName);
-  const [isPrivate, setIsPrivate] = useState(false);
+  // 开关状态记下它属于哪种含义：切换服务器后两种「私密」不是一回事，开关回到关闭，不沿用上一种的选择。
+  const [privateChoice, setPrivateChoice] = useState<{ privacy: RoomPrivacy; on: boolean }>({ privacy, on: false });
+  const isPrivate = privateChoice.privacy === privacy && privateChoice.on;
+  const needsPassword = isPrivate && privacy === "password";
+  const privacyCopy = PRIVACY_COPY[privacy];
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -101,14 +116,17 @@ function CreateRoomForm({
   // 标签与控件显式关联，读屏能读出每个开关与输入的名称。
   const nameFieldId = useId();
   const privateFieldId = useId();
+  const privateDescriptionId = useId();
   const passwordFieldId = useId();
   const spectatorsFieldId = useId();
+  const spectatorsDescriptionId = useId();
+  const spectatorsLocked = Boolean(spectatorsDisabledReason);
   const errorId = useId();
   // 只有「私密房缺密码」落在具体输入框上；服务端返回的失败不标红任何字段。
-  const passwordInvalid = isPrivate && !password.trim() && errorMessage !== null;
+  const passwordInvalid = needsPassword && !password.trim() && errorMessage !== null;
 
   const handleCreate = async () => {
-    if (isPrivate && !password.trim()) {
+    if (needsPassword && !password.trim()) {
       const msg = "私密房间需要设置密码";
       setErrorMessage(msg);
       onValidationError?.(msg);
@@ -120,8 +138,8 @@ function CreateRoomForm({
       await onCreate({
         name: roomName || "新房间",
         visibility: isPrivate ? "private" : "public",
-        password: isPrivate ? password : undefined,
-        allowSpectators,
+        password: needsPassword ? password : undefined,
+        allowSpectators: spectatorsLocked || allowSpectators,
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "创建房间失败";
@@ -161,13 +179,20 @@ function CreateRoomForm({
         </div>
         <div className="space-y-1 py-1">
           <div className="flex items-center justify-between">
-            <Label htmlFor={privateFieldId} className="text-sm">私密房间</Label>
-            <Switch id={privateFieldId} checked={isPrivate} onCheckedChange={setIsPrivate} disabled={Boolean(privateRoomDisabledReason)} />
+            <Label htmlFor={privateFieldId} className="text-sm">{privacyCopy.label}</Label>
+            <Switch
+              id={privateFieldId}
+              checked={isPrivate}
+              onCheckedChange={(on) => setPrivateChoice({ privacy, on })}
+              aria-describedby={privacyCopy.description ? privateDescriptionId : undefined}
+            />
           </div>
-          {privateRoomDisabledReason ? <p className="text-xs text-muted-foreground">{privateRoomDisabledReason}</p> : null}
+          {privacyCopy.description ? (
+            <p id={privateDescriptionId} className="text-xs text-muted-foreground">{privacyCopy.description}</p>
+          ) : null}
         </div>
         <AnimatePresence initial={false}>
-          {isPrivate && (
+          {needsPassword && (
             <motion.div
               variants={collapsible}
               initial="initial"
@@ -197,9 +222,16 @@ function CreateRoomForm({
         <div className="space-y-1 py-1">
           <div className="flex items-center justify-between">
             <Label htmlFor={spectatorsFieldId} className="text-sm">允许旁观</Label>
-            <Switch id={spectatorsFieldId} checked={allowSpectators} onCheckedChange={setAllowSpectators} disabled={Boolean(spectatorsDisabledReason)} />
+            {/* 不允许禁止观战的服务器上开关恒为开：显示与实际提交一致，不沿用另一服务器上关掉的状态。 */}
+            <Switch
+              id={spectatorsFieldId}
+              checked={spectatorsLocked || allowSpectators}
+              onCheckedChange={setAllowSpectators}
+              disabled={spectatorsLocked}
+              aria-describedby={spectatorsLocked ? spectatorsDescriptionId : undefined}
+            />
           </div>
-          {spectatorsDisabledReason ? <p className="text-xs text-muted-foreground">{spectatorsDisabledReason}</p> : null}
+          {spectatorsLocked ? <p id={spectatorsDescriptionId} className="text-xs text-muted-foreground">{spectatorsDisabledReason}</p> : null}
         </div>
         {errorMessage && (
           <p id={errorId} role="alert" className="text-xs text-destructive">{errorMessage}</p>

@@ -23,4 +23,36 @@ describe("CreateRoomDialog", () => {
     expect(password).not.toHaveAttribute("aria-invalid");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("不在大厅显示的房间不要密码，切换含义后开关回到关闭", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn(async () => {});
+    const view = render(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" privacy="unlisted" onCreate={onCreate} />);
+
+    const unlisted = screen.getByRole("switch", { name: "不在大厅显示" });
+    expect(unlisted).toHaveAccessibleDescription("开启后不在大厅列出，凭链接仍可进入。");
+    await user.click(unlisted);
+    expect(screen.queryByLabelText("房间密码")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建" }));
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ visibility: "private", password: undefined }));
+
+    // 换到有密码机制的服务器：上一种「私密」不沿用，否则会带着未填的密码直接报错。
+    view.rerender(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" privacy="password" onCreate={onCreate} />);
+    expect(screen.getByRole("switch", { name: "私密房间" })).not.toBeChecked();
+  });
+
+  it("不能禁止观战时旁观开关恒为开，与提交值一致", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn(async () => {});
+    const view = render(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" onCreate={onCreate} />);
+    await user.click(screen.getByRole("switch", { name: "允许旁观" }));
+    expect(screen.getByRole("switch", { name: "允许旁观" })).not.toBeChecked();
+
+    view.rerender(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" spectatorsDisabledReason="原版房间不允许禁止观战" onCreate={onCreate} />);
+    const spectators = screen.getByRole("switch", { name: "允许旁观" });
+    expect(spectators).toBeChecked();
+    expect(spectators).toHaveAccessibleDescription("原版房间不允许禁止观战");
+    await user.click(screen.getByRole("button", { name: "创建" }));
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ allowSpectators: true }));
+  });
 });

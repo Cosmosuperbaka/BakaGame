@@ -117,7 +117,9 @@ describe("CCB 操作区", () => {
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveAttribute("maxlength", "30");
     await user.clear(screen.getByRole("textbox", { name: "房间名称" }));
     await user.type(screen.getByRole("textbox", { name: "房间名称" }), "新房间");
-    await user.click(screen.getByRole("switch", { name: "公开显示在大厅" }));
+    const unlisted = screen.getByRole("switch", { name: "不在大厅显示" });
+    expect(unlisted).toHaveAccessibleDescription("开启后不在大厅列出，凭链接仍可进入。");
+    await user.click(unlisted);
     expect(screen.queryByRole("switch", { name: "允许旁观" })).not.toBeInTheDocument();
     // 改动防抖后自动保存；原版房没有密码机制，载荷里的密码恒为 null。
     await waitFor(() => expect(send).toHaveBeenCalledWith(

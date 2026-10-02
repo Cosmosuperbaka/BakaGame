@@ -61,7 +61,8 @@ export default function CCBPage() {
       roomId: params.roomId,
       name: params.name,
       userName: params.userName,
-      visibility: server === "original" ? "public" : params.visibility,
+      // 原版房的 private 只表示不进大厅（弹窗以 unlisted 呈现），密码与禁观战仍只属于增强房。
+      visibility: params.visibility,
       allowSpectators: server === "original" ? true : params.allowSpectators,
       ...(server === "native" && params.password ? { password: params.password } : {}),
     }),
@@ -104,7 +105,7 @@ export default function CCBPage() {
           serverOptions={serverOptions}
           server={server}
           onServerChange={(value) => setServer(value as CCBSource)}
-          privateRoomDisabledReason={server === "original" ? "原版房间不支持密码" : undefined}
+          privacy={server === "original" ? "unlisted" : "password"}
           spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止观战" : undefined}
           onValidationError={(message) => useCCBStore.getState().setNotice(message, "error")}
           onCreate={(params) => handleCreateRoom(params)}
