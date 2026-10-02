@@ -159,4 +159,29 @@ describe("waiting room sharing", () => {
     fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
   });
+
+  it("房主独自在房时开始按钮提示等待加入，不显示 0/0", () => {
+    useGameStore.setState({
+      snapshot: { ...snapshot, players: snapshot.players.filter((p) => p.id === "host") },
+      privateState: { ...privateState, playerId: "host" },
+    });
+    render(<WaitingPhase />);
+    expect(screen.getByRole("button", { name: "等待玩家加入" })).toBeDisabled();
+  });
+
+  it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    const sendCommand = vi.fn(() => new Promise((r) => { resolve = r; }));
+    useGameStore.setState({ sendCommand });
+    render(<WaitingPhase />);
+
+    fireEvent.click(screen.getByRole("button", { name: "准备" }));
+    const pending = await screen.findByRole("button", { name: "正在准备..." });
+    expect(pending).toBeDisabled();
+    fireEvent.click(pending);
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+
+    resolve({});
+    expect(await screen.findByRole("button", { name: "准备" })).toBeEnabled();
+  });
 });

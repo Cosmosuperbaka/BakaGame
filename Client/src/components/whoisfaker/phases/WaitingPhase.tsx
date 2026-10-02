@@ -35,13 +35,19 @@ export function WaitingPhase() {
     }
   }, [isHost, me, sendCommand]);
 
+  // 与猜歌同口径：准备、开始在等服务端应答期间显示加载态并禁用，避免连点发出相反的两条命令。
+  const [readying, setReadying] = useState(false);
   const handleReady = useCallback(async () => {
+    if (readying) return;
+    setReadying(true);
     try {
       await sendCommand("player.setReady", { ready: !me?.isReady });
     } catch (e) {
       addToast((e as { message: string }).message, "error");
+    } finally {
+      setReadying(false);
     }
-  }, [me, sendCommand, addToast]);
+  }, [me, sendCommand, addToast, readying]);
 
   const [starting, setStarting] = useState(false);
   const handleStart = useCallback(async () => {
@@ -63,7 +69,6 @@ export function WaitingPhase() {
         showProgress={showProgress}
         readyCount={readyCount}
         nonHostTotal={nonHostActive.length}
-        canSoloStart={canSoloStart}
         allReady={allReady}
         starting={starting}
         onStart={handleStart}
@@ -84,10 +89,14 @@ export function WaitingPhase() {
         <Button
           variant={me.isReady ? "outline" : "default"}
           size="lg"
+          disabled={readying}
+          loading={readying}
           onClick={handleReady}
           className="gap-2 min-w-[120px]"
         >
-          {me.isReady ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
+          {readying
+            ? me.isReady ? "正在取消..." : "正在准备..."
+            : me.isReady ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
         </Button>
       )}
     </div>
@@ -101,7 +110,6 @@ interface HostWaitingPanelProps {
   showProgress: boolean;
   readyCount: number;
   nonHostTotal: number;
-  canSoloStart: boolean;
   allReady: boolean;
   starting?: boolean;
   onStart: () => void;
@@ -111,7 +119,7 @@ interface HostWaitingPanelProps {
 
 function HostWaitingPanel({
   snapshot, showProgress, readyCount, nonHostTotal,
-  canSoloStart, allReady, starting, onStart,
+  allReady, starting, onStart,
   sendCommand, addToast,
 }: HostWaitingPanelProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -138,10 +146,17 @@ function HostWaitingPanel({
       <Button
         size="lg"
         disabled={!allReady || starting}
+        loading={starting}
         onClick={onStart}
         className="w-full text-base"
       >
-        {canSoloStart ? "开始游戏" : allReady ? "开始游戏" : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
+        {starting
+          ? "正在开始游戏..."
+          : allReady
+            ? "开始游戏"
+            : nonHostTotal === 0
+              ? "等待玩家加入"
+              : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
       </Button>
     </div>
   );
