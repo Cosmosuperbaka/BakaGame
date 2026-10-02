@@ -41,6 +41,21 @@ describe("CreateRoomDialog", () => {
     expect(screen.getByRole("switch", { name: "私密房间" })).not.toBeChecked();
   });
 
+  it("房间名称按服务器上限截断，超长的默认名称不会被服务端拒绝", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn(async () => {});
+    const view = render(<CreateRoomDialog open onOpenChange={() => {}} defaultName={"长".repeat(35)} nameMaxLength={32} onCreate={onCreate} />);
+
+    const name = screen.getByRole("textbox", { name: "房间名称" });
+    expect(name).toHaveAttribute("maxLength", "32");
+    expect(name).toHaveValue("长".repeat(32));
+
+    // 换到上限更小的服务器：输入框已有的字不会被浏览器裁掉，提交时按当前上限截断。
+    view.rerender(<CreateRoomDialog open onOpenChange={() => {}} defaultName={"长".repeat(35)} nameMaxLength={30} onCreate={onCreate} />);
+    await user.click(screen.getByRole("button", { name: "创建" }));
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "长".repeat(30) }));
+  });
+
   it("不能禁止观战时旁观开关恒为开，与提交值一致", async () => {
     const user = userEvent.setup();
     const onCreate = vi.fn(async () => {});

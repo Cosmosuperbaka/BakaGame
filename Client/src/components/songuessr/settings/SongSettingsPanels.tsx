@@ -397,7 +397,7 @@ export function SongRoomSettings({
 
   return (
     <div className="space-y-4">
-      <SettingTextField label="房间名称" value={name} placeholder="输入房间名称" onChange={setName} />
+      <SettingTextField label="房间名称" value={name} maxLength={40} placeholder="输入房间名称" onChange={setName} />
       <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
       <AnimatePresence initial={false}>
         {isPrivate ? (

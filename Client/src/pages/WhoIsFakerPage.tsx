@@ -70,6 +70,7 @@ export default function WhoIsFakerPage() {
           onOpenChange={setCreateOpen}
           origin={createOrigin.origin}
           defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
+          nameMaxLength={40}
           onValidationError={(message) => addToast(message, "error")}
           onCreate={handleCreateRoom}
         />

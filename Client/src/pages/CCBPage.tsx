@@ -102,6 +102,8 @@ export default function CCBPage() {
           onOpenChange={setCreateOpen}
           origin={createOrigin.origin}
           defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
+          // 协议上限 32；原版服务器只保留前 30 个字符。
+          nameMaxLength={server === "original" ? 30 : 32}
           serverOptions={serverOptions}
           server={server}
           onServerChange={(value) => setServer(value as CCBSource)}

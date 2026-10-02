@@ -28,6 +28,8 @@ export interface CreateRoomDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultName: string;
+  /** 房间名称上限，按当前服务器的协议传入；默认名称超出时截到上限，避免服务端拒绝。 */
+  nameMaxLength?: number;
   /** 触发按钮位置，弹窗由此展开 */
   origin?: OriginPoint | null;
   /** 有多个服务器可选时显示分段；选项可带禁用原因。 */
@@ -54,6 +56,7 @@ export function CreateRoomDialog({
   open,
   onOpenChange,
   defaultName,
+  nameMaxLength,
   origin,
   serverOptions,
   server,
@@ -72,6 +75,7 @@ export function CreateRoomDialog({
         </DialogHeader>
         <CreateRoomForm
           defaultName={defaultName}
+          nameMaxLength={nameMaxLength}
           onOpenChange={onOpenChange}
           serverOptions={serverOptions}
           server={server}
@@ -88,12 +92,13 @@ export function CreateRoomDialog({
 
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
-  | "defaultName" | "onOpenChange" | "serverOptions" | "server" | "onServerChange"
+  | "defaultName" | "nameMaxLength" | "onOpenChange" | "serverOptions" | "server" | "onServerChange"
   | "privacy" | "spectatorsDisabledReason" | "onCreate" | "onValidationError"
 >;
 
 function CreateRoomForm({
   defaultName,
+  nameMaxLength,
   onOpenChange,
   serverOptions,
   server,
@@ -103,7 +108,8 @@ function CreateRoomForm({
   onCreate,
   onValidationError,
 }: CreateRoomFormProps) {
-  const [roomName, setRoomName] = useState(defaultName);
+  // 默认名称由用户名拼成，可能超过上限；切换服务器后上限也可能变小，提交时再按当前上限截一次。
+  const [roomName, setRoomName] = useState(() => defaultName.slice(0, nameMaxLength));
   // 开关状态记下它属于哪种含义：切换服务器后两种「私密」不是一回事，开关回到关闭，不沿用上一种的选择。
   const [privateChoice, setPrivateChoice] = useState<{ privacy: RoomPrivacy; on: boolean }>({ privacy, on: false });
   const isPrivate = privateChoice.privacy === privacy && privateChoice.on;
@@ -136,7 +142,7 @@ function CreateRoomForm({
     setLoading(true);
     try {
       await onCreate({
-        name: roomName || "新房间",
+        name: (roomName || "新房间").slice(0, nameMaxLength),
         visibility: isPrivate ? "private" : "public",
         password: needsPassword ? password : undefined,
         allowSpectators: spectatorsLocked || allowSpectators,
@@ -173,6 +179,7 @@ function CreateRoomForm({
             id={nameFieldId}
             value={roomName}
             onChange={(e) => setRoomName(e.target.value)}
+            maxLength={nameMaxLength}
             placeholder="输入房间名称"
             className="h-10"
           />

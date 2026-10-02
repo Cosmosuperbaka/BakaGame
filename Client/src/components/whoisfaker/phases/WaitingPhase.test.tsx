@@ -170,8 +170,8 @@ describe("waiting room sharing", () => {
   });
 
   it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
-    let resolve: (value: unknown) => void = () => {};
-    const sendCommand = vi.fn(() => new Promise((r) => { resolve = r; }));
+    let resolve: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn(() => new Promise<Record<string, unknown>>((r) => { resolve = r; }));
     useGameStore.setState({ sendCommand });
     render(<WaitingPhase />);
 
