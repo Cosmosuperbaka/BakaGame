@@ -1,7 +1,6 @@
 import * as React from "react"
 import { X } from "lucide-react"
 import { Button, type ButtonProps } from "@/components/ui/Button"
-import { iconTappable } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 type CloseButtonProps = Omit<ButtonProps, "children" | "variant" | "size">
@@ -18,7 +17,6 @@ const CloseButton = React.forwardRef<HTMLButtonElement, CloseButtonProps>(
       variant="ghost"
       size="icon"
       aria-label={ariaLabel}
-      {...iconTappable}
       className={cn("h-8 w-8 shrink-0 text-muted-foreground", className)}
       {...props}
     >

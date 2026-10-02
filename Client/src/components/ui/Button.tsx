@@ -3,7 +3,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { motion, type HTMLMotionProps } from "framer-motion"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Spinner } from "@/components/ui/Spinner"
-import { pressable, pressableStrong } from "@/lib/Motion"
+import { iconTappable, pressable, pressableStrong } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 const buttonVariants = cva(
@@ -42,6 +42,7 @@ export interface ButtonProps
 
 /**
  * 按压反馈随变体分级：主要与危险操作幅度更大，确认感更强；
+ * 图标钮（size="icon"）不分变体，一律 iconTappable，连同图标一起下沉；
  * link 是文本入口，只保留下划线，不做尺度变化。
  * asChild 交由外层元素承担交互，此时不叠加动效避免双重缩放。
  * loading 态强制禁用并展示 spinner，抑制悬浮与点击缩放。
@@ -67,9 +68,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const feedback =
       variant === "link"
         ? undefined
-        : variant === "default" || variant === "destructive"
-          ? pressableStrong
-          : pressable
+        : size === "icon"
+          ? iconTappable
+          : variant === "default" || variant === "destructive"
+            ? pressableStrong
+            : pressable
 
     return (
       <motion.button
