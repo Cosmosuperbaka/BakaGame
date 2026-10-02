@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, Copy, Link } from "lucide-react";
-import { Label } from "@/components/ui/Label";
 import { pressable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -29,8 +28,9 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
   };
 
   return (
-    <div className="w-full space-y-2">
-      <Label className="text-xs text-muted-foreground">房间链接</Label>
+    // 标题与下方设置字段同一间距（gap-1.5）；它不是某个控件的 label，没有 htmlFor 目标，写成普通文字。
+    <div className="grid w-full gap-1.5">
+      <p className="text-xs font-medium text-muted-foreground">房间链接</p>
       <div className="flex gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
