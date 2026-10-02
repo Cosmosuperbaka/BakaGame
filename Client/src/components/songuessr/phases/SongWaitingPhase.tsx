@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Gamepad2, Headphones, Music2, Settings, X } from "lucide-react";
+import { Check, Gamepad2, Headphones, Music2, Search, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
@@ -43,7 +43,7 @@ export function SongSoloWaitingPanel({
         <SongQuestionSettings snapshot={snapshot} solo />
       </SettingsAccordion>
       <SettingsAccordion
-        icon={Settings}
+        icon={Search}
         title="猜测设置"
         open={gameSettingsOpen}
         onOpenChange={setGameSettingsOpen}
@@ -111,7 +111,7 @@ export function SongHostWaitingPanel({
       </SettingsAccordion>
 
       <SettingsAccordion
-        icon={Settings}
+        icon={Search}
         title="猜测设置"
         open={gameSettingsOpen}
         onOpenChange={setGameSettingsOpen}

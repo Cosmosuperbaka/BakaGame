@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Play, Settings } from "lucide-react";
+import { Check, EyeOff, Globe, Lock, Play, Settings, Users } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -97,6 +97,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
               <SettingSwitchRow
                 label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
                 description={snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined}
+                icon={roomDraft.visibility !== "private" ? Globe : snapshot.source === "original" ? EyeOff : Lock}
                 checked={roomDraft.visibility === "private"}
                 onCheckedChange={(checked) => editRoom("visibility", checked ? "private" : "public")}
               />
@@ -112,6 +113,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
               {snapshot.source === "native" ? (
                 <SettingSwitchRow
                   label="允许旁观"
+                  icon={Users}
                   checked={roomDraft.allowSpectators}
                   onCheckedChange={(checked) => editRoom("allowSpectators", checked)}
                 />
