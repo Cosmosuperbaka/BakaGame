@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import { usePageNavigate, usePageTransitionEnds, useSharedElementName } from "@/hooks/UsePageTransition";
-import { duration, ease, listContainer } from "@/lib/Motion";
+import { duration, ease, listContainer, skeletonFade } from "@/lib/Motion";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
 
@@ -111,25 +111,35 @@ export function LobbyPage({
 
         {children}
 
-        <motion.div className="flex flex-col gap-3" variants={listContainer(rooms.length)} initial="initial" animate="animate">
+        {/* 骨架与列表叠在同一格：数据到达时骨架原地淡出，房间卡片在骨架卡片的位置上推出来（两者共用 RoomCardLayout，高度一致），
+            不是先清空再出现。列表后渲染、叠在骨架之上，淡出期间的点击都落在真实卡片上。
+            列宽固定为 minmax(0,1fr)：隐式的 auto 列会被卡片的最小内容宽撑开，窄屏上整列比容器还宽。 */}
+        <div className="grid grid-cols-1">
           <AnimatePresence initial={false}>
             {loading ? (
-              <RoomCardSkeleton count={3} />
-            ) : rooms.length === 0 ? (
-              <RoomListEmpty key="empty" />
-            ) : (
-              rooms.map((room) => (
-                <RoomListCard
-                  key={`${room.tag ?? ""}:${room.roomId}`}
-                  room={room}
-                  roomPath={`${path}/room/${encodeURIComponent(room.roomId)}`}
-                  disabled={disabled}
-                  onSelect={(event) => onSelectRoom(room, event)}
-                />
-              ))
-            )}
+              <motion.div key="skeleton" className="[grid-area:1/1]" {...skeletonFade}>
+                <RoomCardSkeleton count={3} />
+              </motion.div>
+            ) : null}
           </AnimatePresence>
-        </motion.div>
+          <motion.div className="flex flex-col gap-3 [grid-area:1/1]" variants={listContainer(rooms.length)} initial="initial" animate="animate">
+            <AnimatePresence initial={false}>
+              {loading ? null : rooms.length === 0 ? (
+                <RoomListEmpty key="empty" />
+              ) : (
+                rooms.map((room) => (
+                  <RoomListCard
+                    key={`${room.tag ?? ""}:${room.roomId}`}
+                    room={room}
+                    roomPath={`${path}/room/${encodeURIComponent(room.roomId)}`}
+                    disabled={disabled}
+                    onSelect={(event) => onSelectRoom(room, event)}
+                  />
+                ))
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
       </main>
 
       {dialogs}

@@ -267,6 +267,14 @@ export const phaseSwap: Variants = {
   exit: { opacity: 0, scale: 1.03, transition: { duration: duration.quick, ease: ease.inOut } },
 };
 
+/**
+ * 骨架屏退场：数据到达时骨架原地淡出，真实内容在同一格里以各自的入场推上来，两者交叉而不是先清空再出现。
+ * 骨架与真实内容共用布局，只淡出、不缩放；骨架只在首屏出现，入场不播放，只定义退场。
+ */
+export const skeletonFade = {
+  exit: { opacity: 0, transition: { duration: duration.quick, ease: ease.inOut } },
+} as const;
+
 /** 覆盖层背板 */
 export const backdrop: Variants = {
   initial: { opacity: 0 },

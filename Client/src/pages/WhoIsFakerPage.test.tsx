@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -68,6 +68,21 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
     expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
+  });
+
+  it("房间列表到达时骨架原地淡出，房间卡片同时出现在它之上", async () => {
+    useWhoIsFakerStore.setState({ rooms: [], connected: true, lobbyReady: false });
+    renderPage();
+    const skeleton = screen.getByRole("status", { name: "正在加载房间列表" });
+
+    act(() => useWhoIsFakerStore.setState({ rooms: mockRooms, lobbyReady: true }));
+
+    // 交叉期间两者并存：骨架还在淡出，真实卡片已在同一格里、文档顺序在后（叠在骨架之上，点击落在卡片上）。
+    const card = screen.getByText("测试房间一");
+    expect(skeleton).toBeInTheDocument();
+    expect(skeleton.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("status", { name: "正在加载房间列表" })).not.toBeInTheDocument());
+    expect(screen.getByText("测试房间一")).toBeInTheDocument();
   });
 
   it("初次加载尚未完成握手同步时渲染骨架屏防御 FOES", () => {
