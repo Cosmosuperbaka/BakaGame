@@ -5,6 +5,7 @@ import {
   listItem,
   listContainer,
   iconTappable,
+  navigateAfterPressMs,
   pressable,
   useOriginTracker,
 } from "@/lib/Motion";
@@ -163,7 +164,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const handleEnter = (targetPath?: string) => {
     if (!targetPath || enteringPath) return;
     setEnteringPath(targetPath);
-    window.setTimeout(() => navigate(targetPath), 140);
+    window.setTimeout(() => navigate(targetPath), navigateAfterPressMs);
   };
 
   const cardContainerClass =

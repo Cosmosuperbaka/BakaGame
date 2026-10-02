@@ -5,7 +5,7 @@ import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { popover, spring } from "@/lib/Motion";
+import { popover, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface VolumeControlProps {
@@ -66,9 +66,7 @@ function VolumeSlider({ volume, onVolumeChange, className }: VolumeControlProps 
       </div>
       <motion.span
         key={percentage}
-        initial={{ opacity: 0.5, y: 2, scale: 0.92 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={spring.snap}
+        {...readoutTick}
         className="min-w-10 text-right text-sm font-semibold tabular-nums text-foreground"
       >
         {percentage}%

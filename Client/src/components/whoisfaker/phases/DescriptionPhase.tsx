@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { duration, ease, listContainer, spring } from "@/lib/Motion";
+import { duration, listContainer, speechReveal } from "@/lib/Motion";
 import {
   FastForward,
   MessageSquarePlus,
@@ -37,18 +37,6 @@ interface SpeechRow {
   /** 本人本轮发言，用于高亮自己那一行 */
   isMe: boolean;
 }
-
-/** 发言内容进出：沿文字基线展开，避免与相邻行一起纵向平移 */
-const revealSpeech = {
-  initial: { opacity: 0, y: 6, filter: "blur(2px)" },
-  animate: {
-    opacity: 1,
-    y: 0,
-    filter: "blur(0px)",
-    transition: { ...spring.swift, filter: { duration: duration.base, ease: ease.out } },
-  },
-  exit: { opacity: 0, transition: { duration: duration.instant } },
-};
 
 // 字符宽度计数：CJK 及全角字符算 2 个单位，其余算 1 个单位。上限 20 单位（≈10 中文/20 英文）。
 const DESCRIPTION_MAX_UNITS = 20;
@@ -337,7 +325,7 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
                 {text !== undefined ? (
                   <motion.span
                     key="text"
-                    variants={revealSpeech}
+                    variants={speechReveal}
                     initial="initial"
                     animate="animate"
                     exit="exit"

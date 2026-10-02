@@ -47,7 +47,8 @@
 ### 2.5 禁止写死数值
 
 - 所有时长、曲线、弹性参数、缩放幅度只能取自 `Client/src/lib/Motion.ts`。
-- 业务组件内不得出现裸数字时长、裸贝塞尔数组或自行编写的 `whileTap`。
+- 业务组件内不得出现裸数字时长、裸贝塞尔数组或自行编写的 `whileTap`；位移与缩放幅度（`y: 4`、`scale: 0.94` 之类）同样写成 §5 的具名变体，组件里只展开引用。等动画结束的 `setTimeout` 用 §5 的计时令牌，不写裸毫秒。
+- 按压缩放不用 CSS `active:scale-*`：它没有过渡、按下松开都是硬切，也不受 `MotionConfig` 的减弱动效约束。Radix 触发器用 `asChild` 包一个 `motion.button` 接预设（如 `TabsTrigger`）。唯一例外是 `Switch` 滑块的 `group-active:scale-90`，见该组件注释。
 - 需要新的动效语汇时，先在 `lib/Motion.ts` 中定义具名令牌并写清适用场景，再在组件中引用。
 - CSS 侧只有一个来源：`installMotionTokens()`（应用入口与 Storybook 预览各调用一次）把 `ease.*`、`duration.*`（`none`、`hold` 除外）、每档 `spring.*` 解出的 `linear()` 曲线与静止时长、`popover` 起止尺度写进 `:root`，变量名 `--motion-ease-out`、`--motion-duration-quick`、`--motion-spring-swift`、`--motion-spring-swift-duration`、`--motion-popover-enter-scale` 依此类推。`index.css` 不手写任何 `--motion-*` 值。减弱动效时只把 `--motion-spring-*-duration` 归零（弹性只驱动位移与缩放），颜色过渡保留。
 - Tailwind 过渡类不写 `duration-*` / `ease-*`：`--default-transition-duration` 与 `--default-transition-timing-function` 已指向 `--motion-duration-quick`、`--motion-ease-out`。需要弹性观感的 CSS 过渡写 `duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)`（如 `Switch` 滑块）。
@@ -192,6 +193,15 @@
 | `countdownTickMs` | 倒计时刷新步长，进度条宽度按同一时长匀速补间 |
 | `popoverScale` | 就近弹出层起止尺度，`popover` 变体与 CSS 关键帧共用 |
 | `springToCss` / `installMotionTokens` | 把令牌生成 `:root` 上的 CSS 变量（见 §2.5） |
+| `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲 |
+| `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
+| `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片 |
+| `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽）自下顶上；拖动中连续刷新（音量百分比）起点更贴近终值 |
+| `toastItem` / `bannerRise` / `dropIn` | 提示自右缘推入、横幅自底部升起、状态条自上方落下 |
+| `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
+| `systemNotice` | 聊天系统提示从中线纵向展开 |
+| `speechReveal` | 发言内容沿基线浮现并由失焦变清晰 |
+| `navigateAfterPressMs` / `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：导航前等按压播完、首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒 |
 
 ## 6. 状态反馈的边界
 

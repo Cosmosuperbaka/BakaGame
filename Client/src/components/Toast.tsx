@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { duration, ease, spring } from "@/lib/Motion";
+import { spring, toastItem } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCCBStore } from "@/stores/UseCCBStore";
@@ -37,15 +37,11 @@ function ToastViewport({
           <motion.div
             key={t.id}
             layout
-            initial={{ opacity: 0, x: 24, scale: 0.96 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{
-              opacity: 0,
-              x: 24,
-              scale: 0.97,
-              transition: { duration: duration.quick, ease: ease.inOut },
-            }}
-            transition={{ ...spring.swift, layout: spring.settle }}
+            variants={toastItem}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ layout: spring.settle }}
             // 外层取不透明的页面底色，状态浅底叠在内层：提示浮在任意内容之上，
             // 半透明底会让文字对比度随身后内容变化（盖在本人主色气泡上时几乎看不清）。
             className={cn(

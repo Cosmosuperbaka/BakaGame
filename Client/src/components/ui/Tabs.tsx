@@ -1,7 +1,7 @@
 ﻿import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 import { motion } from "framer-motion"
-import { phaseSwap, spring } from "@/lib/Motion"
+import { phaseSwap, spring, tappable } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 /** 同一组 Tabs 共享的 layoutId，使激活底块在标签之间滑动而非各自淡入。 */
@@ -60,23 +60,26 @@ const TabsTrigger = React.forwardRef<
   }, [])
 
   return (
-    <TabsPrimitive.Trigger
-      ref={innerRef}
-      className={cn(
-        "relative inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground",
-        className
-      )}
-      {...props}
-    >
-      {active && groupId ? (
-        <motion.span
-          layoutId={`tabs-active-${groupId}`}
-          transition={spring.swift}
-          // 暗色下 background 比 muted 轨道只亮一点，选中块几乎看不出；改用更亮的 secondary。
-          className="absolute inset-0 rounded-md bg-background shadow-sm dark:bg-secondary"
-        />
-      ) : null}
-      <span className="relative">{children}</span>
+    // 按压走 tappable：CSS 的 active:scale 没有过渡，按下松开都是硬切，也不受减弱动效约束。
+    <TabsPrimitive.Trigger ref={innerRef} asChild {...props}>
+      <motion.button
+        type="button"
+        {...tappable}
+        className={cn(
+          "relative inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground",
+          className
+        )}
+      >
+        {active && groupId ? (
+          <motion.span
+            layoutId={`tabs-active-${groupId}`}
+            transition={spring.swift}
+            // 暗色下 background 比 muted 轨道只亮一点，选中块几乎看不出；改用更亮的 secondary。
+            className="absolute inset-0 rounded-md bg-background shadow-sm dark:bg-secondary"
+          />
+        ) : null}
+        <span className="relative">{children}</span>
+      </motion.button>
     </TabsPrimitive.Trigger>
   )
 })

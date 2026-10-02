@@ -1,6 +1,6 @@
 ﻿import { motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { ellipsisDot, spring } from "@/lib/Motion";
+import { ellipsisDot, receiptMark } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 const DOTS = [0, 1, 2];
@@ -47,9 +47,7 @@ export function SubmittedSpeech({ className }: { className?: string }) {
       className={cn("inline-flex items-center align-middle text-success", className)}
       role="status"
       aria-label="已提交发言"
-      initial={{ scale: 0.4, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={spring.impulse}
+      {...receiptMark}
     >
       <Check className="h-3.5 w-3.5" aria-hidden="true" />
     </motion.span>

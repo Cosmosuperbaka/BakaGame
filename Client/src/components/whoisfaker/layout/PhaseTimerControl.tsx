@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
-import { countdownTickMs, duration, spring, urgentPulse } from "@/lib/Motion";
+import { countdownTickMs, dropIn, spring, urgentPulse } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -118,10 +118,10 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
         {phaseTimer && (
           <motion.div
             key={`timer-display-${phaseTimer.phase}-${phaseTimer.endsAt}`}
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } }}
-            transition={spring.swift}
+            variants={dropIn}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             className={cn(
               "relative overflow-hidden rounded-md border p-3 transition-colors",
               isCritical

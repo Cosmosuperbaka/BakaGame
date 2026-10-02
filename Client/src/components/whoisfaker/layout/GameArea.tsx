@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sunrise } from "lucide-react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { backdrop, spring } from "@/lib/Motion";
+import { backdrop, sunrise } from "@/lib/Motion";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { WaitingPhase } from "../phases/WaitingPhase";
 import { AssignQuestionerPhase } from "../phases/AssignQuestionerPhase";
@@ -66,9 +66,7 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
               <div className="text-center">
                 <motion.span
                   className="block"
-                  initial={{ y: 18, scale: 0.85 }}
-                  animate={{ y: 0, scale: 1 }}
-                  transition={spring.swift}
+                  {...sunrise}
                 >
                   <Sunrise className="mx-auto h-14 w-14 text-warning" />
                 </motion.span>

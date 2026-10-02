@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import commitHistory from "virtual:commit-history";
 import { Button } from "@/components/ui/Button";
-import { duration, ease, spring } from "@/lib/Motion";
+import { bannerRise } from "@/lib/Motion";
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 
@@ -106,15 +106,10 @@ export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps
       {open && (
         <motion.div
           role="status"
-          initial={{ opacity: 0, y: 20, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{
-            opacity: 0,
-            y: 16,
-            scale: 0.96,
-            transition: { duration: duration.quick, ease: ease.inOut },
-          }}
-          transition={spring.swift}
+          variants={bannerRise}
+          initial="initial"
+          animate="animate"
+          exit="exit"
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom,1.25rem))] left-1/2 z-toast flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-md border border-border bg-card/95 px-4 py-3 text-card-foreground shadow-lg backdrop-blur-md"
         >
           <span className="min-w-0 flex-1 text-sm font-medium leading-snug">

@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { duration, ease, installMotionTokens, listItem, motionCssVariables, motionTokenCss, popover, popoverScale, spring, springToCss } from "./Motion";
+import {
+  duration,
+  ease,
+  followDelay,
+  installMotionTokens,
+  listItem,
+  motionCssVariables,
+  motionTokenCss,
+  popover,
+  popoverScale,
+  receiptMark,
+  receiptMarkFollow,
+  spring,
+  springSettleMs,
+  springToCss,
+  wordRevealTiming,
+} from "./Motion";
 
 /** 解析 `linear(a, b, ...)` 的取值序列。 */
 function linearPoints(easing: string): number[] {
@@ -93,5 +109,25 @@ describe("motionTokenCss", () => {
     const nodes = document.head.querySelectorAll("style#motion-tokens");
     expect(nodes).toHaveLength(1);
     expect(nodes[0].textContent).toBe(motionTokenCss());
+  });
+});
+
+describe("计时令牌", () => {
+  it("springSettleMs 与 CSS 变量里的静止时长一致", () => {
+    for (const token of Object.values(spring)) {
+      expect(springSettleMs(token)).toBe(Math.round(springToCss(token).duration * 1000));
+    }
+    // 玩家栏收起要等宽度动画静止，至少覆盖 settle 的主体过程。
+    expect(springSettleMs(spring.settle)).toBeGreaterThan(400);
+  });
+
+  it("揭词在停留时长之后才停靠", () => {
+    expect(wordRevealTiming.showAfterMs).toBeLessThan(wordRevealTiming.dockAfterMs);
+    expect(wordRevealTiming.dockAfterMs).toBeGreaterThan(duration.hold * 1000);
+  });
+
+  it("回执对勾晚卡片一拍出现", () => {
+    expect(receiptMarkFollow.initial).toEqual(receiptMark.initial);
+    expect(receiptMarkFollow.transition.delay).toBe(followDelay);
   });
 });

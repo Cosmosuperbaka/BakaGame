@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { duration, ease, spring } from "@/lib/Motion";
+import { duration, readoutSwap } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { PendingSpeech } from "../layout/PendingSpeech";
@@ -221,9 +221,10 @@ function GuessReadout({
             {word ? (
               <motion.span
                 key={word}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0, transition: spring.swift }}
-                exit={{ opacity: 0, transition: { duration: duration.instant, ease: ease.inOut } }}
+                variants={readoutSwap}
+                initial="initial"
+                animate="animate"
+                exit="exit"
               >
                 {word}
               </motion.span>

@@ -20,6 +20,8 @@ export const spring = {
   drift: { type: "spring", stiffness: 150, damping: 24, mass: 1.15 },
   /** 确认类反馈：阻尼更低，落位时有一次可感知的回弹，替代触觉提示 */
   impulse: { type: "spring", stiffness: 420, damping: 18, mass: 0.8 },
+  /** 自输入框飞出的消息：起步有力、收尾轻微过冲，介于 swift 与 impulse 之间 */
+  launch: { type: "spring", stiffness: 420, damping: 26, mass: 0.75 },
 } satisfies Record<string, Transition>;
 
 /** 缓动曲线。仅在需要可预期时长（擦除、折叠、退出）时替代弹性过渡。 */
@@ -272,6 +274,9 @@ export const popover: Variants = {
   exit: { opacity: 0, scale: popoverScale.exit, transition: { duration: duration.instant } },
 };
 
+/** 从属元素跟随主体的延迟：回执卡内的对勾、折叠区的显影都晚主体这一拍。 */
+export const followDelay = 0.06;
+
 /** 共享元素跨区域位移（词语从游戏区移入顶栏） */
 export const sharedTransfer: Transition = spring.drift;
 
@@ -286,18 +291,122 @@ export const collapsible: Variants = {
     opacity: 1,
     transition: {
       height: { duration: duration.base, ease: ease.out },
-      opacity: { duration: duration.quick, ease: ease.out, delay: 0.06 },
+      opacity: { duration: duration.quick, ease: ease.out, delay: followDelay },
     },
   },
   exit: {
     height: 0,
     opacity: 0,
     transition: {
-      height: { duration: duration.quick, ease: ease.inOut, delay: 0.04 },
+      height: { duration: duration.quick, ease: ease.inOut, delay: followDelay * 0.66 },
       opacity: { duration: duration.instant, ease: ease.inOut },
     },
   },
 };
+
+// ==================== 具名小动作 ====================
+// 只在一两处出现、但同样必须有名字的动作。组件里只引用，不再内联幅度。
+
+/** 读数替换（音量百分比、白板猜词槽）：新值自下方轻轻顶上来，读作数字被换掉而不是闪一下。 */
+export const readoutSwap: Variants = {
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: 1, y: 0, transition: spring.swift },
+  exit: { opacity: 0, transition: { duration: duration.instant, ease: ease.inOut } },
+};
+
+/** 拖动中连续变化的读数：起点更贴近终值，快速连续刷新时不闪烁。 */
+export const readoutTick = {
+  initial: { opacity: 0.5, y: 2, scale: 0.92 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  transition: spring.snap,
+} as const;
+
+/**
+ * 确认回执：投票、夜晚行动提交后出现的结果卡片。卡片以 impulse 回弹落位，
+ * 卡内对勾用 `receiptMarkFollow` 晚 `followDelay` 再弹出，读作「先接住、再盖章」。
+ */
+export const receiptCard = {
+  initial: { opacity: 0, scale: 0.94 },
+  animate: { opacity: 1, scale: 1 },
+  transition: spring.impulse,
+} as const;
+
+/** 单独落位的对勾（已提交发言）。 */
+export const receiptMark = {
+  initial: { opacity: 0, scale: 0.4 },
+  animate: { opacity: 1, scale: 1 },
+  transition: spring.impulse,
+} as const;
+
+/** 回执卡内跟随卡片弹出的对勾。 */
+export const receiptMarkFollow = {
+  ...receiptMark,
+  transition: { ...spring.impulse, delay: followDelay },
+} as const;
+
+/** 自右侧滑入的提示（Toast）：从屏幕边缘被推进来，退出沿原路回去。堆叠重排由组件的 `layout` 配 `spring.settle` 负责。 */
+export const toastItem: Variants = {
+  initial: { opacity: 0, x: 24, scale: 0.96 },
+  animate: { opacity: 1, x: 0, scale: 1, transition: spring.swift },
+  exit: { opacity: 0, x: 24, scale: 0.97, transition: { duration: duration.quick, ease: ease.inOut } },
+};
+
+/** 自底部升起的横幅（新版本提醒）。 */
+export const bannerRise: Variants = {
+  initial: { opacity: 0, y: 20, scale: 0.96 },
+  animate: { opacity: 1, y: 0, scale: 1, transition: spring.swift },
+  exit: { opacity: 0, y: 16, scale: 0.96, transition: { duration: duration.quick, ease: ease.inOut } },
+};
+
+/** 自上方落下的状态条（倒计时）：与顶部阶段标题同侧进入。 */
+export const dropIn: Variants = {
+  initial: { opacity: 0, y: -8, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1, transition: spring.swift },
+  exit: { opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } },
+};
+
+/** 日出图标自下升起，纵向位移本身就是「天亮」的语义（§2.2 允许的单元素位移）。 */
+export const sunrise = {
+  initial: { y: 18, scale: 0.85 },
+  animate: { y: 0, scale: 1 },
+  transition: spring.swift,
+} as const;
+
+/** 聊天系统提示：从中线纵向展开。 */
+export const systemNotice: Variants = {
+  initial: { opacity: 0, scaleY: 0.6 },
+  animate: { opacity: 1, scaleY: 1, transition: { duration: duration.base, ease: ease.out } },
+  exit: { opacity: 0, transition: { duration: duration.instant } },
+};
+
+/** 发言内容揭示：沿文字基线浮现并从轻微失焦变清晰，读作「翻开」而不是批量飘入。 */
+export const speechReveal: Variants = {
+  initial: { opacity: 0, y: 6, filter: "blur(2px)" },
+  animate: {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { ...spring.swift, filter: { duration: duration.base, ease: ease.out } },
+  },
+  exit: { opacity: 0, transition: { duration: duration.instant } },
+};
+
+/** 点击后先让按压反馈播完再导航的等待（毫秒），离开当前页读作这次点击的结果。 */
+export const navigateAfterPressMs = 140;
+
+/**
+ * 首日揭词的计时（毫秒）：入场晚一拍以免与阶段切换叠在一起；
+ * 居中停留 `duration.hold` 供玩家读完，再加上放大入场本身的时长后停靠回顶栏。
+ */
+export const wordRevealTiming = {
+  showAfterMs: followDelay * 1000,
+  dockAfterMs: duration.hold * 1000 + 400,
+} as const;
+
+/** 弹性过渡大致静止所需的毫秒数，供必须等动画结束才能改结构的计时器使用。 */
+export function springSettleMs(token: SpringToken): number {
+  return Math.round(springToCss(token).duration * 1000);
+}
 
 // ==================== 浮层来源锚定 ====================
 
@@ -419,12 +528,7 @@ export const chatMessageLaunch: Variants = {
     y: 0,
     scaleX: 1,
     scaleY: 1,
-    transition: {
-      type: "spring",
-      stiffness: 420,
-      damping: 26,
-      mass: 0.75,
-    },
+    transition: spring.launch,
   },
   exit: { opacity: 0, scale: 0.95, transition: { duration: duration.instant } },
 };

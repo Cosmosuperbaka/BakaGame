@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
-import { chatMessageLaunch, duration, ease, popover, tappable } from "@/lib/Motion";
+import { chatMessageLaunch, popover, systemNotice, tappable } from "@/lib/Motion";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
   applyMention,
@@ -24,13 +24,6 @@ const MENTION_LIMIT = 6;
 /** 系统提示、阶段提醒与频道说明共用的无背景居中文本 */
 const SYSTEM_TEXT =
   "min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground [overflow-wrap:anywhere]";
-
-/** 系统提示 / 阶段提醒动效：从中线展开 */
-const systemMessage = {
-  initial: { opacity: 0, scaleY: 0.6 },
-  animate: { opacity: 1, scaleY: 1, transition: { duration: duration.base, ease: ease.out } },
-  exit: { opacity: 0, transition: { duration: duration.instant } },
-};
 
 /** 提及联想与高亮匹配所需的最小玩家契约 */
 export interface ChatMentionPlayer {
@@ -200,7 +193,7 @@ export function ChatPanel({
                 return (
                   <motion.div
                     key={message.id}
-                    variants={systemMessage}
+                    variants={systemNotice}
                     initial="initial"
                     animate="animate"
                     exit="exit"

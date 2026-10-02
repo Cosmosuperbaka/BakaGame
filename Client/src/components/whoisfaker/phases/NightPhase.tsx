@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { listContainer, listItem, selectable, spring } from "@/lib/Motion";
+import { listContainer, listItem, receiptCard, receiptMarkFollow, selectable } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PrivilegedActionPreview } from "../layout/PrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -97,18 +97,11 @@ export function NightPhase() {
       {/* 提交行动后的反馈卡片，与投票阶段同一套结构与配色 */}
       {canAct && acted && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.94 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={spring.impulse}
+          {...receiptCard}
           className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/40 bg-primary/10 px-4 py-3"
         >
           <div className="flex items-center gap-2.5">
-            <motion.span
-              className="inline-flex shrink-0"
-              initial={{ scale: 0.4, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ ...spring.impulse, delay: 0.06 }}
-            >
+            <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}>
               <CheckCircle2 className="h-5 w-5 text-primary" />
             </motion.span>
             <div>

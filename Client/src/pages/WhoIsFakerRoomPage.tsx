@@ -14,7 +14,7 @@ import { motion } from "framer-motion";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
-import { duration, iconTappable, spring } from "@/lib/Motion";
+import { duration, iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import {
   PLAYER_COLUMN_WIDTH,
@@ -253,8 +253,8 @@ export default function WhoIsFakerRoomPage() {
     if (phase !== "description" || day !== 1 || !assignedWordText || hasRevealedThisGameRef.current)
       return;
     hasRevealedThisGameRef.current = true;
-    const show = window.setTimeout(() => setWordRevealed(true), 60);
-    const dock = window.setTimeout(() => setWordRevealed(false), duration.hold * 1000 + 400);
+    const show = window.setTimeout(() => setWordRevealed(true), wordRevealTiming.showAfterMs);
+    const dock = window.setTimeout(() => setWordRevealed(false), wordRevealTiming.dockAfterMs);
     return () => {
       window.clearTimeout(show);
       window.clearTimeout(dock);
@@ -305,9 +305,9 @@ export default function WhoIsFakerRoomPage() {
   const historyDrawerOpen = historyAvailable && historyDrawerRoundKey === roundKey;
   const openDrawer = historyDrawerOpen ? "history" : mobilePanel === "none" ? null : mobilePanel;
 
-  // 展开：立即渲染；收起：等动画结束后再移除列，避免 PlayerList 瞬间膨胀
+  // 展开：立即渲染；收起：等宽度动画（spring.settle）静止后再移除列，避免 PlayerList 瞬间膨胀
   useEffect(() => {
-    const t = window.setTimeout(() => setHistoryRendered(historyOpen), historyOpen ? 0 : 380);
+    const t = window.setTimeout(() => setHistoryRendered(historyOpen), historyOpen ? 0 : springSettleMs(spring.settle));
     return () => window.clearTimeout(t);
   }, [historyOpen]);
 
