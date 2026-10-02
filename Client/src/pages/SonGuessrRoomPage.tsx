@@ -16,6 +16,7 @@ import { VolumeControl } from "@/components/songuessr/layout/VolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
+import { songDisplayRound } from "@/lib/SonGuessrRound";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
@@ -162,6 +163,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const isSpectator = me?.membership === "spectator";
+  const displayRound = songDisplayRound(snapshot.phase, snapshot.roundNumber);
 
   return (
     <>
@@ -171,7 +173,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         title={solo ? "单人模式" : snapshot.name}
         roomId={solo ? undefined : snapshot.roomId}
         center={<>
-          {snapshot.roundNumber > 0 ? <HeaderCounter>第 {snapshot.roundNumber} 轮</HeaderCounter> : null}
+          {displayRound > 0 ? <HeaderCounter>第 {displayRound} 轮</HeaderCounter> : null}
           {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人" /> : null}
           {isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
         </>}
