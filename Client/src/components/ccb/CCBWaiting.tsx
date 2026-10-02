@@ -104,7 +104,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
                   label="房间密码"
                   type="password"
                   value={roomDraft.password}
-                  placeholder={snapshot.hasPassword ? "留空沿用原密码" : "请输入密码"}
+                  placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
                   onChange={(value) => editRoom("password", value)}
                 />
               ) : null}

@@ -681,7 +681,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("猜歌测试房");
     fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));
     // 房间还没有密码：留空不会保存，占位文案不能再说「保留当前密码」。
-    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "设置房间密码");
+    expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
 
     fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
     const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });

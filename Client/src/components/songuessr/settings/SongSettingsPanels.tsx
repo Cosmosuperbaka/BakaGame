@@ -399,7 +399,7 @@ export function SongRoomSettings({
           <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
             <div className="pt-1">
               {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-              <SettingTextField label="密码" type="password" value={password} onChange={setPassword}
+              <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
                 placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
             </div>
           </motion.div>

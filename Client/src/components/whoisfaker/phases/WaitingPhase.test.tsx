@@ -151,12 +151,12 @@ describe("waiting room sharing", () => {
 
     // 还没有密码时留空不会保存，占位文案提示房主设置密码。
     fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));
-    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "设置房间密码");
+    expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
     unmount();
 
     useGameStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
     render(<WaitingPhase />);
     fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
-    expect(screen.getByLabelText("密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
+    expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
   });
 });
