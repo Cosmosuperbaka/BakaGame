@@ -19,6 +19,8 @@ import {
   spring,
   springSettleMs,
   springToCss,
+  winnerSweep,
+  winnerSweepDelay,
   wordRevealTiming,
 } from "./Motion";
 
@@ -68,6 +70,15 @@ describe("Motion tokens", () => {
     // 人多时步长收窄，最晚一行的等待不超过总跨度。
     expect(scoreRevealDelay(0, 16, true)).toBeCloseTo(scoreReveal.span);
     expect(scoreRevealDelay(0, 1, true)).toBe(0);
+  });
+
+  it("胜者扫光在最晚一行起播之后才开始，与揭示方向无关", () => {
+    for (const count of [1, 3, 6, 16]) {
+      for (const ranked of [true, false]) {
+        const latest = Math.max(...Array.from({ length: count }, (_, index) => scoreRevealDelay(index, count, ranked)));
+        expect(winnerSweepDelay(count)).toBeCloseTo(latest + winnerSweep.after);
+      }
+    }
   });
 
   it("跨页过渡的前后两层尺度写进 CSS 变量，且后方小于 1、前方大于 1", () => {

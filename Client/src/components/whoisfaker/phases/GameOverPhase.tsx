@@ -144,14 +144,17 @@ export function GameOverPhase() {
         columns={WIF_SCORE_COLUMNS}
         rows={summary.revealedRoles.map(({ playerId, role }) => {
           const player = snapshot.players.find((p) => p.id === playerId);
+          const delta = summary.awardedScores.find((s) => s.playerId === playerId)?.delta ?? 0;
           return {
             key: playerId,
             name: player?.name ?? playerId,
             cells: {
               role: <RoleBadge role={role} inset />,
-              delta: summary.awardedScores.find((s) => s.playerId === playerId)?.delta ?? 0,
+              delta,
               total: player?.score ?? 0,
             },
+            // 服务端只给获胜阵营记分，本局得分即胜方；中止的局没有胜方
+            winner: delta > 0,
           };
         })}
       />

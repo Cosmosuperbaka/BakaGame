@@ -118,6 +118,8 @@ function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
           `出题 ${score.setter}`,
         ],
         cells: { rank: score.rank ?? "—", score: score.score },
+        // 同步模式下同一轮猜中的并列第一
+        winner: score.rank === 1,
       }))}
     />
   );

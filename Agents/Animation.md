@@ -207,6 +207,7 @@
 | `systemNotice` | 聊天系统提示从中线纵向展开 |
 | `speechReveal` | 发言内容沿基线浮现并由失焦变清晰 |
 | `scoreReveal` / `scoreRevealDelay` / `scoreRow` | 结算表逐行揭示：与 `listItem` 同一个入场，行距 `step` 比普通列表宽，名次才读得出先后；总跨度封顶在 `span`，人多时步长收窄。`ScoreTable` 逐行经 `custom` 传入 `scoreRevealDelay(index, count, ranked)`，不靠外层 stagger：按名次排列（`ranked`）自末行往上、第一名最后落定，按座次自上而下 |
+| `winnerSweep` / `winnerSweepDelay` | 胜者扫光：整表揭示完（最晚一行起播后再等 `after`），一道浅色光带自左向右扫过胜者行一次，不循环。只动 transform：光层挂在行首格里（`tr` 上的定位各浏览器不一致），宽度取滚动容器的 `100cqw` 横跨整行，`-z-10` 从文字底下经过、区块 `isolate` 兜住层叠；起止位移与光带渐变只占中间 30%–70% 配套，静止时整段停在行外，减弱动效下直接落到终点、看不见。胜者由各游戏给行标 `winner` |
 | `skeletonFade` | 骨架屏退场：数据到达时骨架原地淡出，真实内容在同一格里（外层 `grid`，两者都写 `[grid-area:1/1]`，真实内容后渲染、叠在上面）以各自的入场推上来，两者交叉而不是先清空再出现。骨架与真实内容共用布局（大厅是 `RoomCardLayout`），只淡出不缩放；骨架只在首屏出现，入场不播放，只定义退场 |
 | `pageScale` | 跨页过渡的前后两层尺度（后方 `behind`、前方 `ahead`），`index.css` 的 `page-leave` / `page-arrive` 关键帧经 `--motion-page-*-scale` 取用，幅度约为 `phaseSwap` 的一半 |
 | `roomEntrance` / `roomEntranceMs` | 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 顺序每栏晚 `step` 就位，读作「房间被搭起来」。玩家栏、聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入，两层不叠缩放）。`RoomShell` 只在挂载后第一帧起的 `roomEntranceMs` 内给根元素加 `data-room-entering`（跨页过渡会暂停渲染直到新页就绪，CSS 动画也从那一帧才起播；从挂载就计时，窗口会在聊天栏的弹性收尾前撤掉），关键帧在 `index.css`，各栏延迟变量由 `parts` 生成；四栏在各自的真实元素上写 `data-room-part`（`RoomHeader`、`PlayerColumn`、`ChatColumn`、游戏区 `main`，自己拼玩家栏的页面写在栏本体上），不加包装层，免得打断 `section > aside` 这类直接父子关系。窗口过后才挂载的栏（断线重连后补上、CCB 加入成功后才有的栏）直接出现，不重播 |

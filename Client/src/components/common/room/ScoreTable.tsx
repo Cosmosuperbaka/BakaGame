@@ -1,6 +1,6 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { scoreRevealDelay, scoreRow } from "@/lib/Motion";
+import { scoreRevealDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -21,6 +21,8 @@ export interface ScoreTableRow {
   /** 名字下方的弱化次行，如 CCB 的得分明细；按项传入，以「·」相连 */
   detail?: ReactNode[];
   cells: Record<string, ReactNode>;
+  /** 第一名或获胜阵营：整表揭示完后有一道光扫过这一行，只播一次 */
+  winner?: boolean;
 }
 
 // 数值列比名字列收紧内边距，末列补回 pr-4 与区块标题对齐。
@@ -28,6 +30,25 @@ const valueCell = "whitespace-nowrap px-3 last:pr-4";
 const rowClass = "border-b border-background align-baseline last:border-b-0";
 
 const alignClass = (column: ScoreTableColumn) => (column.align === "left" ? "text-left" : "text-right");
+
+/**
+ * 胜者行的扫光。`tr` 上的定位各浏览器不一致，光层挂在首格里，宽度取滚动容器的 `100cqw` 横跨整行；
+ * 外层裁掉行外的光带，`-z-10` 让光从文字底下经过（叠在区块底色之上，区块 `isolate` 兜住层叠）。
+ * 渐变只占光带中间 30%–70%，与 `winnerSweep` 的起止位移配套：静止时光带整段停在行外。
+ * 光取比 `muted` 更亮的一档表面：亮色是 card，暗色 card 与 muted 几乎同明度，取 secondary（Design §3.2）。
+ */
+function WinnerSweep({ delay }: { delay: number }) {
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 -z-10 w-[100cqw] overflow-hidden">
+      <motion.span
+        className="absolute inset-0 bg-linear-to-r from-transparent from-30% via-card to-transparent to-70% dark:via-secondary"
+        initial={winnerSweep.initial}
+        animate={winnerSweep.animate}
+        transition={{ ...winnerSweep.transition, delay }}
+      />
+    </span>
+  );
+}
 
 /**
  * 三个游戏共用的结算得分表。区块标题经 `aria-labelledby` 作表格的可访问名，
@@ -47,10 +68,12 @@ export function ScoreTable({
   ranked?: boolean;
 }) {
   const titleId = useId();
+  const sweepDelay = winnerSweepDelay(rows.length);
   const body = rows.map((row, rowIndex) => {
     const cells = (
       <>
-        <th scope="row" className="py-2.5 pl-4 pr-3 text-left font-normal">
+        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.winner && "relative")}>
+          {row.winner ? <WinnerSweep delay={sweepDelay} /> : null}
           <span className="block font-medium [overflow-wrap:anywhere]">{row.name}</span>
           {row.detail?.length ? (
             <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -100,12 +123,12 @@ export function ScoreTable({
     );
   });
   return (
-    <section className="overflow-hidden rounded-md bg-muted">
+    <section className="isolate overflow-hidden rounded-md bg-muted">
       <div className="border-b border-background px-4 py-2.5">
         <h3 id={titleId} className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
       </div>
-      {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位 */}
-      <div className="overflow-x-auto">
+      {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供胜者扫光取行宽 */}
+      <div className="@container overflow-x-auto">
         <table aria-labelledby={titleId} className="w-full text-sm">
           <thead>
             {/* 名字列的下限防止短名被挤成逐字折行：扣去内边距仍放得下三个字，四列的表在 360 宽的手机上也不横滚 */}

@@ -261,13 +261,33 @@ export const listItem: Variants = {
  */
 export const scoreReveal = { step: 0.07, span: 0.42 } as const;
 
+/** 相邻两行的延迟差：不超过 `step`，且整表不超过 `span`。 */
+const scoreRevealStep = (count: number) => (count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0);
+
 /**
  * 结算表第 `index` 行的入场延迟（秒）。按名次排列的表（第一名在最上）自末行往上揭示，第一名最后落定；
  * 按座次排列的表（谁是卧底的身份开牌）自上而下。行内的数字滚动与胜者扫光都从这里取时刻。
  */
 export function scoreRevealDelay(index: number, count: number, ranked: boolean): number {
-  const step = count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0;
-  return (ranked ? count - 1 - index : index) * step;
+  return (ranked ? count - 1 - index : index) * scoreRevealStep(count);
+}
+
+/**
+ * 胜者扫光：整表揭示完后，第一名或获胜阵营的行有一道浅色光带自左向右扫过一次，不循环。
+ * 光带只动 transform：起止位移恰让光带停在行外（与 `ScoreTable` 里光带渐变只占中间 30%–70% 配套），
+ * 整段时长都落在行上，静止时被裁掉，减弱动效下直接落到终点、看不见。
+ */
+export const winnerSweep = {
+  initial: { x: "-70%" },
+  animate: { x: "70%" },
+  transition: { duration: 0.9, ease: ease.inOut },
+  /** 最晚一行起播后再等这一段，等的是 `scoreRow` 弹性的主体过程 */
+  after: duration.base,
+} as const;
+
+/** 胜者扫光的起播时刻（秒）：最晚一行开始入场后再等 `winnerSweep.after`。最晚一行的延迟与排序方向无关。 */
+export function winnerSweepDelay(count: number): number {
+  return Math.max(0, count - 1) * scoreRevealStep(count) + winnerSweep.after;
 }
 
 /** 结算表的行：与 `listItem` 同一个入场，延迟经 `custom` 逐行传入（取 `scoreRevealDelay`），不靠外层 stagger。 */
