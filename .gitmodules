@@ -1,3 +1,6 @@
 [submodule ".Skill/personal-project-engineering"]
 	path = .Skill/personal-project-engineering
 	url = ../personal-project-engineering-skill
+[submodule ".Skill/project-quality-audit"]
+	path = .Skill/project-quality-audit
+	url = ../project-quality-audit-skill

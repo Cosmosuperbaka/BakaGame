@@ -2,7 +2,7 @@
 
 `AGENTS.md` 是各编码工具共用的入口，专项规则由 `Agents/` 维护。根据任务查阅下表中的相关章节；无需在每次修改前通读全部文档，也无需重复读取本轮已掌握且未变化的内容。
 
-可复用的个人工程基线见 [personal-project-engineering](.Skill/personal-project-engineering/SKILL.md)，按任务加载，项目专项规则优先。子模块初始化与维护见 [.Skill/README.md](.Skill/README.md)。
+可复用的个人工程基线见 [personal-project-engineering](.Skill/personal-project-engineering/SKILL.md)，按任务加载，项目专项规则优先。系统工程审查、分方向审查与按报告修复见 [project-quality-audit](.Skill/project-quality-audit/SKILL.md)，普通开发不自动扩大为全仓审查。子模块初始化与维护见 [.Skill/README.md](.Skill/README.md)。
 
 ## 工作区要点
 
