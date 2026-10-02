@@ -1,12 +1,11 @@
 ﻿import { useId, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { Label } from "@/components/ui/Label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/Dialog";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { collapsible } from "@/lib/Motion";
 import type { OriginPoint } from "@/lib/Motion";
 
 export interface ServerOption {
@@ -198,15 +197,7 @@ function CreateRoomForm({
             <p id={privateDescriptionId} className="text-xs text-muted-foreground">{privacyCopy.description}</p>
           ) : null}
         </div>
-        <AnimatePresence initial={false}>
-          {needsPassword && (
-            <motion.div
-              variants={collapsible}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="overflow-hidden"
-            >
+        <CollapsibleRegion open={needsPassword}>
               <div className="space-y-2 pb-1">
                 <Label htmlFor={passwordFieldId} className="text-sm">房间密码</Label>
                 <Input
@@ -223,9 +214,7 @@ function CreateRoomForm({
                   className="h-10"
                 />
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </CollapsibleRegion>
         <div className="space-y-1 py-1">
           <div className="flex items-center justify-between">
             <Label htmlFor={spectatorsFieldId} className="text-sm">允许旁观</Label>

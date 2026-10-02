@@ -1,14 +1,13 @@
 import { useId, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { Globe, Lock, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Badge } from "@/components/ui/Badge";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { SettingsChips } from "@/components/common/room/SettingsAccordion";
 import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
-import { collapsible } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -399,17 +398,13 @@ export function SongRoomSettings({
     <div className="space-y-4">
       <SettingTextField label="房间名称" value={name} maxLength={40} placeholder="输入房间名称" onChange={setName} />
       <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
-      <AnimatePresence initial={false}>
-        {isPrivate ? (
-          <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-            <div className="pt-1">
-              {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-              <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
-                placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <CollapsibleRegion open={isPrivate}>
+        <div className="pt-1">
+          {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
+          <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
+            placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
+        </div>
+      </CollapsibleRegion>
       <SettingSwitchRow label="允许旁观" icon={Users} checked={allowSpectators} onCheckedChange={setAllowSpectators} />
     </div>
   );

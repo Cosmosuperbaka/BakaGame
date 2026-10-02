@@ -1,11 +1,12 @@
 ﻿import { useCallback, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, ChevronDown, BookOpen, RotateCcw, Vote } from "lucide-react";
+import { motion } from "framer-motion";
+import { Trophy, BookOpen, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
-import { collapsible, headerTappable, spring } from "@/lib/Motion";
+import { headerTappable } from "@/lib/Motion";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
@@ -44,14 +45,7 @@ function DisclosureHeader({
       <h3 className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </h3>
-      <motion.span
-        aria-hidden="true"
-        className="inline-flex text-muted-foreground"
-        animate={{ rotate: open ? 180 : 0 }}
-        transition={spring.snap}
-      >
-        <ChevronDown className="h-4 w-4" />
-      </motion.span>
+      <DisclosureChevron open={open} className="text-muted-foreground" />
     </motion.button>
   );
 }
@@ -172,15 +166,8 @@ export function GameOverPhase() {
             open={showVotes}
             onToggle={() => setShowVotes((v) => !v)}
           />
-          <AnimatePresence initial={false}>
-            {showVotes && (
-              <motion.div
-                variants={collapsible}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="space-y-3 overflow-hidden p-4"
-              >
+          <CollapsibleRegion open={showVotes}>
+            <div className="space-y-3 p-4">
                 {[...summary.voteHistory]
                   .sort((a, b) => a.day - b.day || (a.tieBreak ? 1 : 0) - (b.tieBreak ? 1 : 0))
                   .map((item, idx) => (
@@ -211,9 +198,8 @@ export function GameOverPhase() {
                     </div>
                   </div>
                 ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </div>
+          </CollapsibleRegion>
         </section>
       )}
 

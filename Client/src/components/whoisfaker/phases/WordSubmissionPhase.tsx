@@ -1,12 +1,13 @@
 import { useState, useCallback, useId } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Switch } from "@/components/ui/Switch";
-import { collapsible, spring, tappable } from "@/lib/Motion";
+import { spring, tappable } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { PlayerRole } from "@/types";
@@ -191,15 +192,8 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
             <Switch id={randomRoleFieldId} checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
           </div>
 
-          <AnimatePresence initial={false}>
-          {!isRandomRole && (
-            <motion.div
-              variants={collapsible}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="overflow-hidden rounded-md border bg-background text-sm"
-            >
+          <CollapsibleRegion open={!isRandomRole}>
+            <div className="overflow-hidden rounded-md border bg-background text-sm">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/40 px-3 py-2.5 sm:grid-cols-4">
                 {availableRoles.map((availableRole) => {
                   const valid =
@@ -256,9 +250,8 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
                   </div>
                 </div>
               ))}
-            </motion.div>
-          )}
-          </AnimatePresence>
+            </div>
+          </CollapsibleRegion>
         </div>
 
         <Button

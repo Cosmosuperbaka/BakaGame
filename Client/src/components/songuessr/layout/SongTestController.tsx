@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, FlaskConical, Minus, Plus, Users } from "lucide-react";
+import { motion } from "framer-motion";
+import { FlaskConical, Minus, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { collapsible, headerTappable, spring } from "@/lib/Motion";
+import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
+import { headerTappable, spring } from "@/lib/Motion";
 import type { SonGuessrRoomSnapshot } from "@/types";
 
 export interface SongTestControllerProps {
@@ -36,24 +37,9 @@ export function SongTestController({
           >
             <FlaskConical className="h-4 w-4 text-primary" />
             <span>测试控制器</span>
-            <motion.span
-              aria-hidden="true"
-              className="ml-auto inline-flex text-muted-foreground"
-              animate={{ rotate: open ? 180 : 0 }}
-              transition={spring.snap}
-            >
-              <ChevronDown className="h-4 w-4" />
-            </motion.span>
+            <DisclosureChevron open={open} className="ml-auto text-muted-foreground" />
           </motion.button>
-          <AnimatePresence initial={false}>
-            {open ? (
-              <motion.div
-                variants={collapsible}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="overflow-hidden"
-              >
+          <CollapsibleRegion open={open}>
                 <div className="space-y-2 border-t px-4 pb-4 pt-3">
                   <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <Users className="h-3.5 w-3.5 text-info" />
@@ -89,9 +75,7 @@ export function SongTestController({
                     </Button>
                   </div>
                 </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+          </CollapsibleRegion>
         </motion.div>
       </div>
     </div>

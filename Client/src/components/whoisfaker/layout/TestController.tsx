@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronUp, FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
+import { motion } from "framer-motion";
+import { FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
-import { collapsible, headerTappable, spring } from "@/lib/Motion";
+import { headerTappable, spring } from "@/lib/Motion";
 import type { GamePhase, PlayerRole } from "@/types";
 
 /** 观察视角。测试房间通过真实的旁观/出题人指令切换，不再本地伪造。 */
@@ -101,24 +102,9 @@ export function TestController() {
           >
             <FlaskConical className="h-4 w-4 text-primary" />
             <span>阶段控制器</span>
-            <motion.span
-              aria-hidden="true"
-              className="ml-auto inline-flex text-muted-foreground"
-              animate={{ rotate: open ? 0 : 180 }}
-              transition={spring.snap}
-            >
-              <ChevronUp className="h-4 w-4" />
-            </motion.span>
+            <DisclosureChevron open={open} className="ml-auto text-muted-foreground" />
           </motion.button>
-          <AnimatePresence initial={false}>
-            {open && (
-              <motion.div
-                variants={collapsible}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="overflow-hidden"
-              >
+          <CollapsibleRegion open={open}>
                 <div className="px-4 pb-4 pt-1 space-y-3">
                   <ControlGroup label="跳转游戏阶段">
                     <div className="grid grid-cols-2 gap-1.5">
@@ -216,9 +202,7 @@ export function TestController() {
                     </div>
                   </ControlGroup>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          </CollapsibleRegion>
         </motion.div>
       </div>
     </div>

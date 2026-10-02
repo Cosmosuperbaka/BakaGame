@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Gamepad2, Settings, Lock, Globe, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { collapsible } from "@/lib/Motion";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
@@ -214,17 +213,13 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
     <div className="space-y-4">
       <SettingTextField label="房间名称" value={name} maxLength={40} placeholder="输入房间名称" onChange={setName} />
       <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
-      <AnimatePresence initial={false}>
-        {isPrivate && (
-          <motion.div variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-            <div className="pt-1">
-              {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-              <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
-                placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <CollapsibleRegion open={isPrivate}>
+        <div className="pt-1">
+          {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
+          <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
+            placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
+        </div>
+      </CollapsibleRegion>
       <SettingSwitchRow label="允许旁观" icon={Users} checked={allowSpectators} onCheckedChange={setAllowSpectators} />
       <SettingSwitchRow label="死亡时揭露身份" icon={Eye} checked={revealRoleOnDeath} onCheckedChange={setRevealRoleOnDeath} />
       <SettingStepper label="卧底人数" description={`上限 ${limits.maxUndercoverCount}`} value={roleConfig.undercoverCount}

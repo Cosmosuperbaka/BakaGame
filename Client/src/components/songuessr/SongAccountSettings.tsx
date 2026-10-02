@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Check,
-  ChevronDown,
   LogOut,
   QrCode,
   RefreshCw,
@@ -10,6 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { Label } from "@/components/ui/Label";
 import { Spinner } from "@/components/ui/Spinner";
 import { Switch } from "@/components/ui/Switch";
@@ -20,7 +20,7 @@ import {
   SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { collapsible, pressable, spring } from "@/lib/Motion";
+import { headerTappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
@@ -166,7 +166,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
     <div className="overflow-hidden rounded-md border">
       <motion.button
         type="button"
-        {...pressable}
+        {...headerTappable}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
@@ -181,24 +181,10 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         )}>
           {snapshot.musicAccountReady ? "房间已连接" : storedSession ? "本机已登录" : "未登录"}
         </span>
-        <motion.span
-          className="inline-flex text-muted-foreground"
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={spring.snap}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </motion.span>
+        <DisclosureChevron open={open} className="text-muted-foreground" />
       </motion.button>
 
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            variants={collapsible}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden"
-          >
+      <CollapsibleRegion open={open}>
             <div className="space-y-4 border-t px-4 py-4">
               {storedSession && !editing ? (
                 <div className="space-y-3">
@@ -272,9 +258,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                 </div>
               )}
             </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      </CollapsibleRegion>
 
       <div className="flex gap-2 border-t bg-muted/40 px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />

@@ -115,7 +115,7 @@
 | `pressableStrong` | 主要操作与危险操作，幅度更大 |
 | `tappable` | 密集列表中的行内小控件，只按压不悬停缩放 |
 | `iconTappable` | 图标按钮，配合底色变化 |
-| `headerTappable` | 顶栏紧凑入口 |
+| `headerTappable` | 顶栏紧凑入口与整行折叠标题，只按压不悬停缩放，免得整行文字随指针晃动 |
 | `selectable` | 选项卡片，按压时同时收缩与轻微下压 |
 
 `Button` 已按变体内置分级反馈，`size="icon"` 不分变体自动取 `iconTappable`，其上不得再叠加缩放或手动展开预设。`link` 变体只保留下划线，不做尺度变化。
@@ -182,7 +182,7 @@
 | `backdrop` | 覆盖层背板 |
 | `popover` | 就近弹出层，自触发点方向展开 |
 | `emergeFromOrigin` | 浮层自触发按钮位置被吸出，按原路收回 |
-| `collapsible` | 折叠区域，高度与不透明度分离；行内折叠用 `ui/Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
+| `collapsible` | 折叠区域，高度与不透明度分离。不直接手写 `AnimatePresence` + `collapsible`：内容区用 `ui/Collapsible` 的 `CollapsibleRegion`（外层只裁切，内边距与边框写在子元素上），指示箭头用 `DisclosureChevron`；行内折叠用 `Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
 | `sharedTransfer` | 跨区域共享元素位移 |

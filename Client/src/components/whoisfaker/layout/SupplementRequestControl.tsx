@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, MessageSquarePlus, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
-import { collapsible, spring, tappable } from "@/lib/Motion";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
+import { spring, tappable } from "@/lib/Motion";
 import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -61,15 +62,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
 
   return (
     <div>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            variants={collapsible}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden"
-          >
+      <CollapsibleRegion open={open}>
             <div className="mb-3 space-y-3 rounded-md bg-muted p-4 text-left">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium">
@@ -128,9 +121,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
                 </Button>
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </CollapsibleRegion>
 
       {supplementActive ? (
         <p className="text-center text-xs text-info">
