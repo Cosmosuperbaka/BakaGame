@@ -87,9 +87,9 @@ export default function CCBRoomPage() {
         onLeave={() => void lifecycle.leave()}
         title={snapshot.name || "猜猜呗"}
         roomId={lifecycle.roomId}
+        // 与大厅卡片同口径：增强房是默认，只给原版房挂来源标签；放在房号旁，中栏留给局数与视角。
+        roomTag={snapshot.source === "original" ? CCB_SOURCE_LABELS.original : undefined}
         center={<>
-          {/* 中栏在 lg 以下放不下三枚徽章：出现视角徽章时让出来源徽章，视角关系到本人能做什么。 */}
-          <HeaderChip icon={Users} label={CCB_SOURCE_LABELS[snapshot.source]} muted className={perspective ? "max-lg:hidden" : undefined} />
           {displayRound > 0 ? <HeaderCounter>第 {displayRound} 局</HeaderCounter> : null}
           {perspective === "setter" ? <HeaderChip icon={PenLine} label="出题人" /> : null}
           {perspective === "observer" ? <HeaderChip icon={Eye} label="旁观" muted /> : null}

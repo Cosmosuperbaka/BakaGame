@@ -62,6 +62,7 @@ export function RoomShell({
   onLeave,
   title,
   roomId,
+  roomTag,
   center,
   actions,
   connectionIssue,
@@ -78,6 +79,8 @@ export function RoomShell({
   onLeave: () => void;
   title: string;
   roomId?: string;
+  /** 接在房号后的房间类别标签，见 RoomHeader */
+  roomTag?: string;
   /** 顶栏中间的徽章槽（局数、身份、视角） */
   center?: ReactNode;
   /** 顶栏右侧常驻操作（音量等），位于连接状态之后 */
@@ -105,6 +108,7 @@ export function RoomShell({
         onLeave={onLeave}
         title={title}
         roomId={roomId}
+        roomTag={roomTag}
         center={center}
         actions={actions}
         connectionIssue={connectionIssue}

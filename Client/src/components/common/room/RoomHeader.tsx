@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, type LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/Utils";
 
@@ -46,6 +47,7 @@ export function RoomHeader({
   onLeave,
   title,
   roomId,
+  roomTag,
   center,
   actions,
   connectionIssue,
@@ -55,6 +57,8 @@ export function RoomHeader({
   title: string;
   /** 单人模式等没有房号的场景传 undefined */
   roomId?: string;
+  /** 接在房号后的房间类别（如 CCB 原版房），只标与默认不同的房间 */
+  roomTag?: string;
   center?: ReactNode;
   /** 右侧常驻操作（如音量），放在连接状态之后、移动端入口之前 */
   actions?: ReactNode;
@@ -70,6 +74,8 @@ export function RoomHeader({
         </Button>
         <span className="hidden truncate text-base font-semibold md:block">{title}</span>
         {roomId ? <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">#{roomId}</span> : null}
+        {/* 房间类别跟着房号走，与大厅卡片里接在房名后的标签同口径；手机上房号收起，标签仍留着。 */}
+        {roomTag ? <Badge variant="subtle" size="xs" className="shrink-0">{roomTag}</Badge> : null}
       </div>
 
       <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden sm:gap-1.5 md:gap-2">{center}</div>
