@@ -172,8 +172,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         roomId={solo ? undefined : snapshot.roomId}
         center={<>
           {snapshot.roundNumber > 0 ? <HeaderCounter>第 {snapshot.roundNumber} 轮</HeaderCounter> : null}
-          {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人视角" /> : null}
-          {isSpectator ? <HeaderChip icon={Eye} label="旁观视角" muted /> : null}
+          {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人" /> : null}
+          {isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
         </>}
         actions={<VolumeControl volume={volume} onVolumeChange={setVolume} />}
         connectionIssue={connected ? null : "断线中..."}

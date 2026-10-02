@@ -16,7 +16,7 @@ export interface RoomHeaderToggle {
 
 const HIDE_FROM = { md: "md:hidden", xl: "xl:hidden" } as const;
 
-/** 顶栏中间的视角/身份徽章（主持人、出题人视角、旁观等）。 */
+/** 顶栏中间的身份徽章（主持人、出题人、旁观等），只写身份名，不加「视角」后缀。 */
 export function HeaderChip({ icon: Icon, label, muted = false, title, className }: { icon: LucideIcon; label: string; muted?: boolean; title?: string; className?: string }) {
   return (
     <span
