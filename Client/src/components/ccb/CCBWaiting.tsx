@@ -70,7 +70,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
     setRoomDraft((current) => ({ ...current, [key]: value }));
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Play} title="等待玩家准备" />
 
       <RoomLinkShare
