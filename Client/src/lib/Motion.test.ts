@@ -12,6 +12,8 @@ import {
   popoverScale,
   receiptMark,
   receiptMarkFollow,
+  roomEntrance,
+  roomEntranceMs,
   spring,
   springSettleMs,
   springToCss,
@@ -43,6 +45,14 @@ describe("Motion tokens", () => {
     const variables = motionCssVariables();
     expect(variables["popover-enter-scale"]).toBe(String(popoverScale.enter));
     expect(variables["popover-exit-scale"]).toBe(String(popoverScale.exit));
+  });
+
+  it("进房编排的各栏延迟按 parts 顺序生成，窗口覆盖最后一栏的弹性落定", () => {
+    const variables = motionCssVariables();
+    const delays = roomEntrance.parts.map((part) => parseFloat(variables[`room-entrance-delay-${part}`]));
+    expect(delays).toEqual(roomEntrance.parts.map((_, index) => Number((index * roomEntrance.step).toFixed(3))));
+    expect(variables["room-entrance-scale"]).toBe(String(roomEntrance.scale));
+    expect(roomEntranceMs).toBeGreaterThanOrEqual(Math.round(delays.at(-1)! * 1000) + springSettleMs(spring.swift));
   });
 
   it("跨页过渡的前后两层尺度写进 CSS 变量，且后方小于 1、前方大于 1", () => {

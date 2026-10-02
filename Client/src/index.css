@@ -366,6 +366,49 @@ html {
   }
 }
 
+/* 进房编排（RoomShell 挂载后的 roomEntranceMs 内带 data-room-entering）：
+   顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 Motion.ts 生成。
+   玩家栏、聊天栏自外侧边缘等比展开；顶栏与游戏区只显影，游戏区内容另由 phaseSwap 自后推入，两层不叠缩放。
+   fill-mode 只取 backwards：延迟期间停在起点，结束后不留任何 transform。 */
+@keyframes room-part-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes room-part-unfold {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-room-entrance-scale));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-room-entering] [data-room-part] {
+    animation: room-part-fade var(--motion-duration-base) var(--motion-ease-out) backwards;
+  }
+  [data-room-entering] [data-room-part="player"],
+  [data-room-entering] [data-room-part="chat"] {
+    animation-name: room-part-unfold;
+    animation-duration: var(--motion-spring-swift-duration);
+    animation-timing-function: var(--motion-spring-swift);
+  }
+  [data-room-entering] [data-room-part="header"] {
+    animation-delay: var(--motion-room-entrance-delay-header);
+  }
+  [data-room-entering] [data-room-part="player"] {
+    animation-delay: var(--motion-room-entrance-delay-player);
+    transform-origin: left center;
+  }
+  [data-room-entering] [data-room-part="game"] {
+    animation-delay: var(--motion-room-entrance-delay-game);
+  }
+  [data-room-entering] [data-room-part="chat"] {
+    animation-delay: var(--motion-room-entrance-delay-chat);
+    transform-origin: right center;
+  }
+}
+
 /* 减弱动效：不播放任何页面过渡，直接换页。 */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),

@@ -96,6 +96,13 @@ export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
  */
 export const pageScale = { behind: 0.985, ahead: 1.015 } as const;
 
+/**
+ * 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 的顺序依次晚一步就位，读作「房间被搭起来」。
+ * 玩家栏与聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入）。
+ * 顺序在这里定义一次：CSS 的各栏延迟与 `roomEntranceMs` 都由它生成。
+ */
+export const roomEntrance = { step: 0.05, scale: 0.97, parts: ["header", "player", "game", "chat"] } as const;
+
 /** 全部 CSS 动效变量。键名即 `--motion-` 之后的部分。 */
 export function motionCssVariables(): Record<string, string> {
   const variables: Record<string, string> = {};
@@ -112,6 +119,10 @@ export function motionCssVariables(): Record<string, string> {
   variables["popover-exit-scale"] = String(popoverScale.exit);
   variables["page-behind-scale"] = String(pageScale.behind);
   variables["page-ahead-scale"] = String(pageScale.ahead);
+  variables["room-entrance-scale"] = String(roomEntrance.scale);
+  roomEntrance.parts.forEach((part, index) => {
+    variables[`room-entrance-delay-${part}`] = seconds(index * roomEntrance.step);
+  });
   return variables;
 }
 
@@ -413,6 +424,12 @@ export const wordRevealTiming = {
 export function springSettleMs(token: SpringToken): number {
   return Math.round(springToCss(token).duration * 1000);
 }
+
+/**
+ * 进房编排的窗口（毫秒）：最后一栏晚 `parts.length - 1` 步起播，按 `spring.swift` 落定为止。
+ * 窗口内挂载的栏参与编排，窗口外才出现的栏（断线重连后补上、CCB 加入成功后才有的栏）直接出现，不重播。
+ */
+export const roomEntranceMs = Math.round((roomEntrance.parts.length - 1) * roomEntrance.step * 1000) + springSettleMs(spring.swift);
 
 // ==================== 浮层来源锚定 ====================
 

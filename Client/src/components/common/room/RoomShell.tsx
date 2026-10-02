@@ -1,6 +1,7 @@
-import type { ReactNode, Ref } from "react";
+import { useEffect, useState, type ReactNode, type Ref } from "react";
 import type { LucideIcon } from "lucide-react";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { roomEntranceMs } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { RoomDrawer } from "./RoomDrawer";
 import { RoomHeader } from "./RoomHeader";
@@ -25,7 +26,10 @@ export interface RoomDrawerSpec {
   content: ReactNode;
 }
 
-/** 左侧玩家栏的桌面外壳：定宽列，与游戏区、聊天栏同一套圆角与边框。 */
+/**
+ * 左侧玩家栏的桌面外壳：定宽列，与游戏区、聊天栏同一套圆角与边框。
+ * `data-room-part` 标记进房编排的一栏；自己拼玩家栏的页面（谁是卧底）在栏本体上写同一标记。
+ */
 export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children }: {
   width?: string;
   className?: string;
@@ -33,6 +37,7 @@ export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children 
 }) {
   return (
     <aside
+      data-room-part="player"
       className={cn("hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-md border bg-panel md:flex", className)}
       style={{ width }}
     >
@@ -44,7 +49,7 @@ export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children 
 /** 右侧聊天栏的桌面外壳；`xl` 以下由覆盖面板承担，否则与玩家栏同时常驻会把游戏区挤得过窄。 */
 export function ChatColumn({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <aside className={cn("hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel xl:flex", className)}>
+    <aside data-room-part="chat" className={cn("hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel xl:flex", className)}>
       {children}
     </aside>
   );
@@ -101,8 +106,23 @@ export function RoomShell({
 }) {
   const opened = drawers.find((drawer) => drawer.key === openDrawer) ?? null;
 
+  // 进房编排只在房间页挂载后的一小段窗口里打开：窗口内挂载的栏依次就位（index.css 的 data-room-entering）；
+  // 断线重连时房间页不重新挂载，之后补上的栏直接出现，不重播。
+  // 窗口从挂载后的第一帧算起：跨页过渡会暂停渲染直到新页就绪，CSS 动画也是那一帧才起播，从挂载就计时会让窗口早于各栏动画收尾。
+  const [entering, setEntering] = useState(true);
+  useEffect(() => {
+    let timer: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      timer = window.setTimeout(() => setEntering(false), roomEntranceMs);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, []);
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+    <div data-room-entering={entering || undefined} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {before}
       <RoomHeader
         onLeave={onLeave}
@@ -126,7 +146,7 @@ export function RoomShell({
         <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
           {player}
           {/* `isolate` 使游戏区内的浮层只在游戏区内部层级，不会越过玩家面板去盖住骑缝的展开按钮。 */}
-          <main ref={gameRef} className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
+          <main ref={gameRef} data-room-part="game" className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
             {game}
           </main>
         </section>

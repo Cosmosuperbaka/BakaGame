@@ -429,6 +429,7 @@ export default function WhoIsFakerRoomPage() {
 
           {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
           <motion.aside
+            data-room-part="player"
             className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel md:flex"
             initial={false}
             animate={{
