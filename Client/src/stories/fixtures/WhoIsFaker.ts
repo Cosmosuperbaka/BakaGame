@@ -222,10 +222,15 @@ export function waitingPlayers(overrides: Record<string, Partial<PublicPlayerVie
 /** 人齐且全员准备。 */
 export const readyPlayers = () => waitingPlayers({ [AZUMI.id]: { isReady: true }, [KANADE.id]: { online: true } });
 
-/** 局内名单：出题后参与者进入存活 / 出局；开启死亡揭露身份，出局者公开身份。 */
-export function roundPlayers(stage: WifStage): PublicPlayerView[] {
+/**
+ * 局内名单：出题后参与者进入存活 / 出局；开启死亡揭露身份，出局者公开身份。
+ * 终局时服务端已把本局得分加进累计分，`summary` 缺省取默认结算。
+ */
+export function roundPlayers(stage: WifStage, summary?: RoundSummary): PublicPlayerView[] {
   const assigned = at(stage) >= at("day1");
   const over = stage === "over";
+  const awards = over ? (summary ?? wifRoundSummary()).awardedScores : [];
+  const score = (person: Person) => (SCORE_BEFORE[person.id] ?? 0) + (awards.find((award) => award.playerId === person.id)?.delta ?? 0);
   const host = wifPlayer(HOST, { roundStatus: at(stage) >= at("words") ? "questioner" : "waiting" });
   const participants = PARTICIPANTS.map((person) => {
     if (!assigned) return wifPlayer(person);
@@ -233,6 +238,7 @@ export function roundPlayers(stage: WifStage): PublicPlayerView[] {
     const after = ELIMINATED_AFTER[person.id];
     return wifPlayer(person, {
       roundStatus: alive ? "alive" : "dead",
+      score: score(person),
       ...(!alive && after ? { eliminatedAt: stageTime(after, 80) } : {}),
       ...(!alive || over ? { revealedRole: ROLE_OF[person.id] } : {}),
     });
@@ -397,19 +403,25 @@ function stageStatus(
 }
 // ==================== 结算 ====================
 
-/** 第 3 轮结算：卧底全灭、白板存活并进入猜词，因此由白板拿下这一局。 */
+/**
+ * 与服务端 `finishRound` 同口径的本局得分：只有获胜阵营记分（白板胜 +2，好人或卧底胜 +1），中止的局不记分；
+ * 主持人没有身份，不在其中。
+ */
+function awardsFor(winner: RoundSummary["winner"]): RoundSummary["awardedScores"] {
+  if (winner === "aborted") return [];
+  return PARTICIPANTS.filter((person) => SIDE_OF[ROLE_OF[person.id]] === winner)
+    .map((person) => ({ playerId: person.id, delta: winner === "blank" ? 2 : 1 }));
+}
+
+/** 第 3 轮结算：卧底全灭、白板存活并进入猜词，因此由白板拿下这一局。得分按最终的 `winner` 推出，覆写胜方即换一套得分。 */
 export function wifRoundSummary(overrides: Partial<RoundSummary> = {}): RoundSummary {
+  const winner = overrides.winner ?? "blank";
   return {
-    winner: "blank",
+    winner,
     reason: "卧底全部出局，白板存活并猜中词语",
-    awardedScores: [
-      { playerId: HOST.id, delta: 2 }, { playerId: ME.id, delta: 2 }, { playerId: PEACH.id, delta: 0 },
-      { playerId: AZUMI.id, delta: 1 }, { playerId: KANADE.id, delta: 2 }, { playerId: KITA.id, delta: 4 },
-      { playerId: LONG.id, delta: 1 }, { playerId: YUZU.id, delta: 0 }, { playerId: STONE.id, delta: 0 },
-    ],
-    revealedRoles: [
-      { playerId: HOST.id, role: "civilian" }, ...PARTICIPANTS.map((person) => ({ playerId: person.id, role: ROLE_OF[person.id] })),
-    ],
+    awardedScores: awardsFor(winner),
+    // 主持人只出题，服务端只给参与者分配身份。
+    revealedRoles: PARTICIPANTS.map((person) => ({ playerId: person.id, role: ROLE_OF[person.id] })),
     descriptions: publicDescriptions("day3"),
     blankGuesses: [{
       playerId: KITA.id, guessedWords: BLANK_GUESS_WORDS, success: true, reason: "finale",
@@ -425,8 +437,6 @@ export function wifRoundSummary(overrides: Partial<RoundSummary> = {}): RoundSum
 export const undercoverWinnerSummary = () => wifRoundSummary({
   winner: "undercover",
   reason: "存活卧底人数与好人持平",
-  awardedScores: wifRoundSummary().awardedScores.map((award) =>
-    award.playerId === PEACH.id || award.playerId === YUZU.id ? { ...award, delta: 3 } : award),
   blankGuesses: [],
 });
 
@@ -434,7 +444,6 @@ export const undercoverWinnerSummary = () => wifRoundSummary({
 export const goodWinnerSummary = () => wifRoundSummary({
   winner: "good",
   reason: "卧底与白板全部出局",
-  awardedScores: [{ playerId: ME.id, delta: 4 }, { playerId: HOST.id, delta: 3 }],
   blankGuesses: [{
     playerId: KITA.id, guessedWords: ["面团", "汤圆"] as [string, string], success: false, reason: "finale",
     createdAt: stageTime("blankReview", 20),
@@ -464,13 +473,15 @@ export function wifSettings(overrides: Partial<RoomSnapshot> = {}): RoomSnapshot
 
 /** 按节点产出整局快照。玩家名单、发言、聊天与结算都取自同一条时间线。 */
 export function wifSnapshot(stage: WifStage, overrides: SnapshotPatch = {}): RoomSnapshot {
-  const players = at(stage) >= at("assigning") ? roundPlayers(stage) : waitingPlayers();
+  // 结算表与玩家栏的累计分取自同一份结算：覆写胜方时两处一起换。
+  const summary = stage === "over" ? (overrides.summary ?? wifRoundSummary()) : undefined;
+  const players = at(stage) >= at("assigning") ? roundPlayers(stage, summary) : waitingPlayers();
   return wifSettings({
     status: stageStatus(stage, SUBMITTED_IN_PROGRESS),
     players,
     descriptions: publicDescriptions(stage),
     chat: wifChat(stage),
-    ...(stage === "over" ? { summary: wifRoundSummary() } : {}),
+    ...(summary ? { summary } : {}),
     ...overrides,
   });
 }
