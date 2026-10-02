@@ -38,6 +38,7 @@ vi.mock("@/pages/SonGuessrPage", () => ({ default: () => <h1>song-lobby</h1> }))
 vi.mock("@/pages/SonGuessrRoomPage", () => ({ default: () => <h1>song-room</h1> }));
 
 import App from "./App";
+import { createAppRouter } from "./AppRouter";
 
 describe("application routing regressions", () => {
   beforeEach(() => {
@@ -46,7 +47,7 @@ describe("application routing regressions", () => {
 
   it("mounts the landing page on root path", async () => {
     window.history.replaceState({}, "", "/");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("landing-page")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
@@ -56,7 +57,7 @@ describe("application routing regressions", () => {
     "redirects removed route %s to the landing page",
     async (path) => {
       window.history.replaceState({}, "", path);
-      render(<App />);
+      render(<App router={createAppRouter()} />);
 
       expect(await screen.findByText("landing-page")).toBeInTheDocument();
       await waitFor(() => expect(window.location.pathname).toBe("/"));
@@ -65,7 +66,7 @@ describe("application routing regressions", () => {
 
   it("redirects an invalid game sub-route to the game lobby", async () => {
     window.history.replaceState({}, "", "/whoisfaker/not-a-room");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("faker-lobby")).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe("/whoisfaker"));
@@ -73,7 +74,7 @@ describe("application routing regressions", () => {
 
   it("keeps valid room routes mounted", async () => {
     window.history.replaceState({}, "", "/whoisfaker/room/AbCd");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("room-page")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/whoisfaker/room/AbCd");
@@ -81,7 +82,7 @@ describe("application routing regressions", () => {
 
   it("mounts the Songuessr lobby", async () => {
     window.history.replaceState({}, "", "/songuessr");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("song-lobby")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/songuessr");
@@ -89,7 +90,7 @@ describe("application routing regressions", () => {
 
   it("keeps valid Songuessr room routes mounted", async () => {
     window.history.replaceState({}, "", "/songuessr/room/1234");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("song-room")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/songuessr/room/1234");
@@ -97,7 +98,7 @@ describe("application routing regressions", () => {
 
   it("redirects an invalid Songuessr sub-route to its lobby", async () => {
     window.history.replaceState({}, "", "/songuessr/not-a-room");
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(await screen.findByText("song-lobby")).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe("/songuessr"));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import {
@@ -26,7 +27,7 @@ export const isLongRunningCommand = (type: string): boolean =>
   (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
 
 export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const { roomId: routeRoomId = "" } = useParams();
   const [soloRoomId, setSoloRoomId] = useState(() =>
     solo ? getSongSoloRoomId() || randomRoomId() : "",
@@ -46,7 +47,6 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const createRoom = useSonGuessrStore((state) => state.createRoom);
   const joinRoom = useSonGuessrStore((state) => state.joinRoom);
   const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
-  const leaveRoom = useSonGuessrStore((state) => state.leaveRoom);
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
 
@@ -322,10 +322,17 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     }
   };
 
-  const leave = async () => {
+  // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的占位（Animation §2.4）。
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (!exiting) return;
+    return () => void useSonGuessrStore.getState().leaveRoom();
+  }, [exiting]);
+
+  const leave = () => {
     leavingRef.current = true;
     if (solo) clearSongSoloRoomId();
-    await leaveRoom();
+    setExiting(true);
     navigate(exitPath, { replace: true });
   };
 

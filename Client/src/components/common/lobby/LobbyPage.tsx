@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
+import { usePageNavigate, usePageTransitionEnds, useSharedElementName } from "@/hooks/UsePageTransition";
 import { duration, ease, listContainer } from "@/lib/Motion";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
@@ -53,11 +53,15 @@ export function LobbyPage({
   dialogs,
   disabled = false,
 }: LobbyPageProps) {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
+  // 经页面过渡到达时整页的显影已由过渡快照完成，再淡入一遍会让新页晚到、发虚；直接打开链接时才自己显影。
+  const arriving = usePageTransitionEnds() !== null;
+  // 游戏名与主页卡片标题是同一个跨页共享元素，只在与主页互相过渡时命名。
+  const titleName = useSharedElementName("game-title", "/");
   return (
     // 整页只做显影，不带纵向位移（Animation §2.2）；列表项的入场由 listItem 负责。
     <motion.div
-      initial={{ opacity: 0 }}
+      initial={arriving ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: duration.base, ease: ease.out }}
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
@@ -70,7 +74,7 @@ export function LobbyPage({
             <span>返回主页</span>
           </Button>
           <div className="h-4 w-px bg-border/60" />
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl" style={{ viewTransitionName: titleName }}>
             <span>{title}</span>
             {logo ? (
               <img
@@ -115,7 +119,13 @@ export function LobbyPage({
               <RoomListEmpty key="empty" />
             ) : (
               rooms.map((room) => (
-                <RoomListCard key={`${room.tag ?? ""}:${room.roomId}`} room={room} disabled={disabled} onSelect={(event) => onSelectRoom(room, event)} />
+                <RoomListCard
+                  key={`${room.tag ?? ""}:${room.roomId}`}
+                  room={room}
+                  roomPath={`${path}/room/${encodeURIComponent(room.roomId)}`}
+                  disabled={disabled}
+                  onSelect={(event) => onSelectRoom(room, event)}
+                />
               ))
             )}
           </AnimatePresence>

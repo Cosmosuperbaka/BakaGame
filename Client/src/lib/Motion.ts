@@ -89,6 +89,13 @@ const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.to
 /** 就近弹出层的起止尺度，`popover` 变体与 CSS 关键帧共用。 */
 export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
 
+/**
+ * 跨页过渡的前后两层尺度：后方一层略小，前方一层略大。
+ * 前进时新页自后方推入、旧页向前退出，返回时两者对调；
+ * 整页面积远大于游戏区，幅度比 `phaseSwap` 收一半，免得边缘位移过大。
+ */
+export const pageScale = { behind: 0.985, ahead: 1.015 } as const;
+
 /** 全部 CSS 动效变量。键名即 `--motion-` 之后的部分。 */
 export function motionCssVariables(): Record<string, string> {
   const variables: Record<string, string> = {};
@@ -103,6 +110,8 @@ export function motionCssVariables(): Record<string, string> {
   }
   variables["popover-enter-scale"] = String(popoverScale.enter);
   variables["popover-exit-scale"] = String(popoverScale.exit);
+  variables["page-behind-scale"] = String(pageScale.behind);
+  variables["page-ahead-scale"] = String(pageScale.ahead);
   return variables;
 }
 
@@ -390,9 +399,6 @@ export const speechReveal: Variants = {
   },
   exit: { opacity: 0, transition: { duration: duration.instant } },
 };
-
-/** 点击后先让按压反馈播完再导航的等待（毫秒），离开当前页读作这次点击的结果。 */
-export const navigateAfterPressMs = 140;
 
 /**
  * 首日揭词的计时（毫秒）：入场晚一拍以免与阶段切换叠在一起；

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 
@@ -9,7 +10,7 @@ import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
  */
 export function useCCBRoomLifecycle() {
   const { roomId } = useParams();
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const connected = useCCBStore((state) => state.connected);
   const lobbyReady = useCCBStore((state) => state.lobbyReady);
   const closed = useCCBStore((state) => state.roomClosedAt);
@@ -51,10 +52,10 @@ export function useCCBRoomLifecycle() {
     } catch (failure) { setError(ccbErrorMessage(failure)); }
     finally { setJoining(false); }
   };
-  const leave = useCallback(async () => {
-    try { await useCCBStore.getState().leaveRoom(); }
-    catch (failure) { useCCBStore.getState().setNotice(ccbErrorMessage(failure)); }
-    finally { navigate("/ccb"); }
+  // 只换页：大厅挂载时发现仍留着房间，会先退房再订阅大厅（CCBPage），失败提示也在那里。
+  // 先退再走的话，跨页过渡拍下的旧页就成了清空快照后的「请加入房间」（Animation §2.4）。
+  const leave = useCallback(() => {
+    navigate("/ccb");
   }, [navigate]);
 
   return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, join, leave };

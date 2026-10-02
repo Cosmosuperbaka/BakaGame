@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Eye,
   Headphones,
@@ -15,12 +14,13 @@ import { PlayerList } from "@/components/songuessr/PlayerList";
 import { VolumeControl } from "@/components/songuessr/layout/VolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const connected = useSonGuessrStore((state) => state.connected);
 

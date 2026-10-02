@@ -7,6 +7,7 @@ import {
   listItem,
   motionCssVariables,
   motionTokenCss,
+  pageScale,
   popover,
   popoverScale,
   receiptMark,
@@ -42,6 +43,14 @@ describe("Motion tokens", () => {
     const variables = motionCssVariables();
     expect(variables["popover-enter-scale"]).toBe(String(popoverScale.enter));
     expect(variables["popover-exit-scale"]).toBe(String(popoverScale.exit));
+  });
+
+  it("跨页过渡的前后两层尺度写进 CSS 变量，且后方小于 1、前方大于 1", () => {
+    expect(pageScale.behind).toBeLessThan(1);
+    expect(pageScale.ahead).toBeGreaterThan(1);
+    const variables = motionCssVariables();
+    expect(variables["page-behind-scale"]).toBe(String(pageScale.behind));
+    expect(variables["page-ahead-scale"]).toBe(String(pageScale.ahead));
   });
 });
 

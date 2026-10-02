@@ -306,6 +306,75 @@ html {
   }
 }
 
+/* 跨页过渡（View Transitions，经 usePageNavigate 发起）：与 phaseSwap 同一套前后层次。
+   前进时旧页定格成快照向前退出、新页自后方推入；返回时两层对调（data-page-direction 由 RootLayout 写入）。
+   尺度取 --motion-page-*-scale，进入走 spring.swift、退出走 quick + inOut，与 phaseSwap 的分工一致。 */
+@keyframes page-leave {
+  to {
+    opacity: 0;
+    transform: scale(var(--page-leave-scale));
+  }
+}
+
+@keyframes page-arrive {
+  from {
+    opacity: 0;
+    transform: scale(var(--page-arrive-scale));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 方向写在伪元素树的根上，整页与只在一页出现的元素都从这里继承。 */
+  ::view-transition {
+    --page-leave-scale: var(--motion-page-ahead-scale);
+    --page-arrive-scale: var(--motion-page-behind-scale);
+  }
+  :root[data-page-direction="back"]::view-transition {
+    --page-leave-scale: var(--motion-page-behind-scale);
+    --page-arrive-scale: var(--motion-page-ahead-scale);
+  }
+  /* 默认的 plus-lighter 在两层不透明度之和超过 1 时会提亮纸面，整页交叉淡化改回普通叠加。
+     前进时旧页向前退出，叠在新页之上；返回时旧页退向后方，压回新页之下（恢复默认的新页在上）。 */
+  ::view-transition-old(root) {
+    mix-blend-mode: normal;
+    z-index: 1;
+    animation: page-leave var(--motion-duration-quick) var(--motion-ease-in-out) both;
+  }
+  ::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation: page-arrive var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+  }
+  :root[data-page-direction="back"]::view-transition-old(root) {
+    z-index: auto;
+  }
+  /* 只在一页出现的具名元素（手机上隐藏了顶栏房名、大厅仍在骨架屏）没有对象可移动，
+     随整页一起退出或进入，不按共享元素的时长单独拖尾。 */
+  ::view-transition-old(*):only-child {
+    animation: page-leave var(--motion-duration-quick) var(--motion-ease-in-out) both;
+  }
+  ::view-transition-new(*):only-child {
+    animation: page-arrive var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+  }
+  /* 共享元素（游戏名、房名）在两页之间连续移动：位移与缩放走 spring.settle，交叉淡化跟随同一时长。
+     具名参数的优先级高于 `*`，整页这一组随即改回 swift，过渡不因共享元素之外的部分拖长。 */
+  ::view-transition-group(*) {
+    animation-duration: var(--motion-spring-settle-duration);
+    animation-timing-function: var(--motion-spring-settle);
+  }
+  ::view-transition-group(root) {
+    animation-duration: var(--motion-spring-swift-duration);
+  }
+}
+
+/* 减弱动效：不播放任何页面过渡，直接换页。 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

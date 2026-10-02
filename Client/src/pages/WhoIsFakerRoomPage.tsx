@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   BookOpen,
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
 import { duration, iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
@@ -34,7 +35,7 @@ import { isValidRoomId, type PlayerRole, type PublicPlayerView } from "@/types";
 
 export default function WhoIsFakerRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const connected = useWhoIsFakerStore((s) => s.connected);
   const storeRoomId = useWhoIsFakerStore((s) => s.roomId);
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
@@ -42,7 +43,6 @@ export default function WhoIsFakerRoomPage() {
   const createRoom = useWhoIsFakerStore((s) => s.createRoom);
   const joinRoom = useWhoIsFakerStore((s) => s.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((s) => s.reconnectRoom);
-  const leaveRoom = useWhoIsFakerStore((s) => s.leaveRoom);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const roomClosedAt = useWhoIsFakerStore((s) => s.roomClosedAt);
@@ -196,10 +196,17 @@ export default function WhoIsFakerRoomPage() {
     await enterWithName(name);
   }, [nameDraft, addToast, enterWithName]);
 
-  const handleLeave = useCallback(async () => {
-    await leaveRoom();
+  // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，过渡拍下的旧页就成了加入中的转圈，
+  // 清空还会触发上面「脱离房间」的 effect 再导航一次，打断进行中的过渡（Animation §2.4）。
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (!exiting) return;
+    return () => void useWhoIsFakerStore.getState().leaveRoom();
+  }, [exiting]);
+  const handleLeave = useCallback(() => {
+    setExiting(true);
     navigate("/whoisfaker");
-  }, [leaveRoom, navigate]);
+  }, [navigate]);
 
   const roundId = snapshot?.status.roundId;
   const playerMarks = useMemo<PlayerMarks>(

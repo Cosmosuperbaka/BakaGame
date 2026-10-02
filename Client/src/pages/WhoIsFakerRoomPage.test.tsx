@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -433,6 +434,32 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     });
     expect(screen.getByText("WhoIsFaker 游戏大厅")).toBeInTheDocument();
     expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+  });
+
+  it("主动离开先换页、房间页卸载后才退房，严格模式下只退一次", () => {
+    // 跨页过渡拍的是点击那一刻的旧页：先退房会清空快照，旧页就成了加入中的转圈。
+    const lobbyShownAtLeave: boolean[] = [];
+    const leaveRoom = vi.fn(async () => {
+      lobbyShownAtLeave.push(screen.queryByText("WhoIsFaker 游戏大厅") !== null);
+    });
+    useWhoIsFakerStore.setState({ leaveRoom });
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={["/whoisfaker/room/FAKER_ROOM"]}>
+          <Routes>
+            <Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} />
+            <Route path="/whoisfaker" element={<div>WhoIsFaker 游戏大厅</div>} />
+          </Routes>
+        </MemoryRouter>
+      </StrictMode>,
+    );
+    expect(leaveRoom).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "离开房间" }));
+
+    expect(screen.getByText("WhoIsFaker 游戏大厅")).toBeInTheDocument();
+    expect(leaveRoom).toHaveBeenCalledTimes(1);
+    expect(lobbyShownAtLeave).toEqual([true]);
   });
 
   it("离开房间后再进入房间，清除历史关闭状态且绝不发生原地跳转", () => {

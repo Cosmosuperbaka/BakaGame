@@ -132,6 +132,25 @@ describe("game store integration", () => {
     });
   });
 
+  it("退房回包慢于下一次进房时，只清掉发起退房的会话", async () => {
+    let ack!: () => void;
+    wsMock.send.mockReturnValue(new Promise<void>((resolve) => { ack = resolve; }));
+    saveSessionToken("1234", "old-token");
+    useGameStore.setState({ roomId: "1234", sessionToken: "old-token" });
+
+    const leaving = useGameStore.getState().leaveRoom();
+    // 退房在房间页卸载后才发出，回包到达前玩家已经进了下一个房间。
+    saveSessionToken("5678", "new-token");
+    useGameStore.setState({ roomId: "5678", sessionToken: "new-token" });
+    ack();
+    await leaving;
+
+    expect(useGameStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "new-token" });
+    expect(getSessionToken("5678")).toBe("new-token");
+    // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
+    expect(getSessionToken("1234")).toBeNull();
+  });
+
   it("clears a stale token after reconnect fails", async () => {
     saveSessionToken("2345", "stale-token");
     wsMock.send.mockRejectedValue({ code: "SESSION_NOT_FOUND" });

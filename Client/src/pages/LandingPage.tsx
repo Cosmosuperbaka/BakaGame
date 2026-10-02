@@ -1,14 +1,13 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   listItem,
   listContainer,
   iconTappable,
-  navigateAfterPressMs,
   pressable,
   useOriginTracker,
 } from "@/lib/Motion";
+import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
 import { ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
@@ -61,6 +60,8 @@ interface GameSubMode {
 interface GameEntry {
   id: string;
   path?: string;
+  /** 该游戏大厅的路径：卡片标题与大厅顶栏的游戏名是同一个跨页共享元素；未上线的游戏省略 */
+  lobbyPath?: string;
   icon: string;
   /** 条目主标题 */
   title: string;
@@ -74,12 +75,14 @@ const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
     path: "/whoisfaker",
+    lobbyPath: "/whoisfaker",
     icon: "/assets/Faker.png",
     title: "Who is Faker",
     available: true,
   },
   {
     id: "songuessr",
+    lobbyPath: "/songuessr",
     icon: "/assets/SongGuessr.gif",
     title: "Songuessr",
     available: true,
@@ -101,6 +104,7 @@ const GAMES: GameEntry[] = [
   {
     id: "animecharguessr",
     path: "/ccb",
+    lobbyPath: "/ccb",
     icon: "/assets/CCB.jpg",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
@@ -157,14 +161,43 @@ function ComingSoonBadge() {
   );
 }
 
+/** 卡片头部的图标、标题与副标题。标题与大厅顶栏的游戏名是同一个跨页共享元素，只在两页互相过渡时命名。 */
+function GameIdentity({ game }: { game: GameEntry }) {
+  const sharedName = useSharedElementName("game-title", game.lobbyPath ?? false);
+  return (
+    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <img
+        src={game.icon}
+        alt=""
+        aria-hidden="true"
+        className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+      />
+      <div className="min-w-0 flex-1">
+        {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
+        <div
+          className="w-fit max-w-full text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap"
+          style={{ viewTransitionName: sharedName }}
+        >
+          {game.title}
+        </div>
+        {game.subtitle ? (
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function GameRow({ game }: { game: GameEntry }) {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
+  // 只用来挡住重复点击：分块还在加载时旧页仍可点，第二次点击会往历史里再压一条同样的记录。
   const [enteringPath, setEnteringPath] = useState<string | null>(null);
 
+  // 立即导航：旧页连同按下的按钮一起定格成过渡快照向前退出，离开当前页读作这次点击的结果。
   const handleEnter = (targetPath?: string) => {
     if (!targetPath || enteringPath) return;
     setEnteringPath(targetPath);
-    window.setTimeout(() => navigate(targetPath), navigateAfterPressMs);
+    navigate(targetPath);
   };
 
   const cardContainerClass =
@@ -177,20 +210,7 @@ function GameRow({ game }: { game: GameEntry }) {
         <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
           <div aria-disabled="true" className={cardContainerClass}>
             <div className="flex w-full items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <img
-                  src={game.icon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
-                  {game.subtitle ? (
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
-                  ) : null}
-                </div>
-              </div>
+              <GameIdentity game={game} />
               <ComingSoonBadge />
             </div>
           </div>
@@ -198,25 +218,11 @@ function GameRow({ game }: { game: GameEntry }) {
       );
     }
 
-    const isEntering = enteringPath === game.path;
     return (
       <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
         <div className={cardContainerClass}>
           <div className="flex w-full items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <img
-                src={game.icon}
-                alt=""
-                aria-hidden="true"
-                className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
-                {game.subtitle ? (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
-                ) : null}
-              </div>
-            </div>
+            <GameIdentity game={game} />
           </div>
 
           <div className="w-full">
@@ -225,7 +231,6 @@ function GameRow({ game }: { game: GameEntry }) {
               size="sm"
               aria-label={`${game.title} 开始游戏`}
               onClick={() => handleEnter(game.path)}
-              animate={isEntering ? { scale: 0.98 } : { scale: 1 }}
               className="h-8 w-full text-xs sm:text-sm font-medium"
             >
               开始游戏
@@ -248,20 +253,7 @@ function GameRow({ game }: { game: GameEntry }) {
       >
         {/* 卡片头部：图标、标题与主状态 */}
         <div className="flex w-full items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <img
-              src={game.icon}
-              alt=""
-              aria-hidden="true"
-              className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap">{game.title}</div>
-              {game.subtitle ? (
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
-              ) : null}
-            </div>
-          </div>
+          <GameIdentity game={game} />
           {isWholeGameDisabled && <ComingSoonBadge />}
         </div>
 
@@ -273,7 +265,6 @@ function GameRow({ game }: { game: GameEntry }) {
         >
           {game.subModes.map((mode, index) => {
             const isModeAvailable = !isWholeGameDisabled && mode.available;
-            const isSubEntering = enteringPath === mode.path;
             // 三个子模式在窄屏排成两行，首项独占一行：三等分时每格不到 110px，放不下模式名加「即将上线」。
             const spanClass = subModeCount === 3 && index === 0 ? "max-sm:col-span-2" : "";
 
@@ -297,7 +288,6 @@ function GameRow({ game }: { game: GameEntry }) {
                 size="sm"
                 aria-label={`${game.title} ${mode.title}`}
                 onClick={() => handleEnter(mode.path)}
-                animate={isSubEntering ? { scale: 0.98 } : { scale: 1 }}
                 className={`h-8 w-full px-2.5 text-xs sm:text-sm font-medium ${spanClass}`}
               >
                 <span className="truncate">{mode.title}</span>

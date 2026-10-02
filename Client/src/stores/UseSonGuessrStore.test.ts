@@ -219,6 +219,24 @@ describe("Songuessr store integration", () => {
     });
   });
 
+  it("退房回包慢于下一次进房时，只清掉发起退房的会话", async () => {
+    let ack!: () => void;
+    wsMock.send.mockReturnValue(new Promise<void>((resolve) => { ack = resolve; }));
+    saveSonGuessrSessionToken("2345", "old-token");
+    useSonGuessrStore.setState({ roomId: "2345", sessionToken: "old-token", snapshot, privateState });
+
+    const leaving = useSonGuessrStore.getState().leaveRoom();
+    // 退房在房间页卸载后才发出，回包到达前玩家已经进了下一个房间。
+    saveSonGuessrSessionToken("3456", "new-token");
+    useSonGuessrStore.setState({ roomId: "3456", sessionToken: "new-token" });
+    ack();
+    await leaving;
+
+    expect(useSonGuessrStore.getState()).toMatchObject({ roomId: "3456", sessionToken: "new-token", snapshot });
+    expect(getSonGuessrSessionToken("3456")).toBe("new-token");
+    expect(getSonGuessrSessionToken("2345")).toBeNull();
+  });
+
   it("clears only the Songuessr token after a stale reconnect", async () => {
     saveSonGuessrSessionToken("2345", "stale-song-token");
     saveSessionToken("2345", "live-faker-token");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { randomRoomId } from "@/lib/Random";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 
@@ -38,7 +38,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
   reconnectRoom,
   showError,
 }: UseLobbySessionOptions<TRoom>) {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const [userName, setUserName] = useState(getSavedUsername);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<TRoom | null>(null);

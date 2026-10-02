@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Eye, EyeOff, Lock, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent } from "@/components/ui/Card";
+import { useSharedElementName } from "@/hooks/UsePageTransition";
 import { listItem, selectable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -61,13 +62,17 @@ export function RoomCardLayout({
  */
 export function RoomListCard({
   room,
+  roomPath,
   onSelect,
   disabled = false,
 }: {
   room: LobbyRoomView;
+  /** 该房间的页面路径：房名与房间顶栏的房名是同一个跨页共享元素，只在与该房间互相过渡时命名 */
+  roomPath?: string;
   onSelect: (event: React.MouseEvent<HTMLElement>) => void;
   disabled?: boolean;
 }) {
+  const titleName = useSharedElementName("room-title", roomPath ?? false);
   return (
     <motion.div
       variants={listItem}
@@ -100,7 +105,7 @@ export function RoomListCard({
         <RoomCardLayout
           name={
             <>
-              <span className="truncate">{room.name}</span>
+              <span className="truncate" style={{ viewTransitionName: titleName }}>{room.name}</span>
               {room.hasPassword ? <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
               {room.tag ? (
                 <Badge variant="subtle" className="shrink-0">

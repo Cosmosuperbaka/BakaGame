@@ -40,8 +40,13 @@
 
 - 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。
 - 就近弹出层（Popover）使用 `popover`，缩放原点朝向触发元素：Radix 浮层在内容元素上加 `origin-(--radix-popover-content-transform-origin)`，由 Radix 按实际落位（含避让翻转）给出原点；不写死 `origin-top` 之类的方向。
-- 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。
-- 页面跳转前，先让触发元素完成反馈动效再导航，使离开当前页读作这次点击的结果。
+- 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。唯一例外是跨页：两页之间没有共用的节点，改由 View Transitions 把同名元素读作同一个对象，浏览器连续移动并交叉淡化（见下条）。
+- 页面导航一律经 `hooks/UsePageTransition` 的 `usePageNavigate`（默认 `viewTransition: true`），路由必须是数据路由（`AppRouter.tsx` 的 `createBrowserRouter`，页面走路由级 `lazy`，分块到齐后才开始过渡）。旧页连同按下的触发元素定格成快照向前退出、新页自后方推入；回到更浅一层的页面（房间→大厅→主页，浏览器后退同理）时两层对调，方向由 `RootLayout` 写到 `<html data-page-direction>`。不再先等按压播完再导航，快照本身就保留了点击的结果。
+  - 跨页共享元素用 `useSharedElementName(name, partner)` 取 `view-transition-name`，只在本次过渡的另一端是 `partner` 时命名：同一页上有多个候选（主页三张游戏卡、大厅每张房间卡）时，一律命名会重名，不相干的过渡里它们也会脱离整页单独淡出。现有两对：主页卡片标题 ↔ 大厅顶栏游戏名（`game-title`），大厅房间卡房名 ↔ 房间顶栏房名（`room-title`，单人模式不命名）。被命名的元素宽度要贴合内容（`w-fit`），否则整行留白会随快照一起缩放。
+  - 只在一页出现的具名元素（手机上顶栏房名隐藏、CCB 大厅仍是骨架屏）由 `:only-child` 规则随整页退出或进入，不按共享元素的时长拖尾。
+  - 经过渡到达的页面不再自己整页显影：`usePageTransitionEnds()` 非空时 `initial={false}`（`LobbyPage`），直接打开链接时照常显影。
+  - 会改动当前页内容的副作用放在换页之后。离开房间先导航、房间页卸载后再退房（谁是卧底、猜歌在卸载 cleanup 里调 `leaveRoom`，CCB 由大厅挂载时退房并重新订阅）：先退再走，快照拍到的是清空后的加入中占位，清空还会触发「脱离房间」的 effect 再导航一次、打断进行中的过渡。退房回包可能晚于下一次进房，store 只清掉发起这次退房的会话。
+  - 过渡期间页面不响应点击，时长即冻结时长：整页约 0.42s（`spring.swift`），带共享元素约 0.6s（`spring.settle`）。
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
 
 ### 2.5 禁止写死数值
@@ -50,7 +55,7 @@
 - 业务组件内不得出现裸数字时长、裸贝塞尔数组或自行编写的 `whileTap`；位移与缩放幅度（`y: 4`、`scale: 0.94` 之类）同样写成 §5 的具名变体，组件里只展开引用。等动画结束的 `setTimeout` 用 §5 的计时令牌，不写裸毫秒。
 - 按压缩放不用 CSS `active:scale-*`：它没有过渡、按下松开都是硬切，也不受 `MotionConfig` 的减弱动效约束。Radix 触发器用 `asChild` 包一个 `motion.button` 接预设（如 `TabsTrigger`）。唯一例外是 `Switch` 滑块的 `group-active:scale-90`，见该组件注释。
 - 需要新的动效语汇时，先在 `lib/Motion.ts` 中定义具名令牌并写清适用场景，再在组件中引用。
-- CSS 侧只有一个来源：`installMotionTokens()`（应用入口与 Storybook 预览各调用一次）把 `ease.*`、`duration.*`（`none`、`hold` 除外）、每档 `spring.*` 解出的 `linear()` 曲线与静止时长、`popover` 起止尺度写进 `:root`，变量名 `--motion-ease-out`、`--motion-duration-quick`、`--motion-spring-swift`、`--motion-spring-swift-duration`、`--motion-popover-enter-scale` 依此类推。`index.css` 不手写任何 `--motion-*` 值。减弱动效时只把 `--motion-spring-*-duration` 归零（弹性只驱动位移与缩放），颜色过渡保留。
+- CSS 侧只有一个来源：`installMotionTokens()`（应用入口与 Storybook 预览各调用一次）把 `ease.*`、`duration.*`（`none`、`hold` 除外）、每档 `spring.*` 解出的 `linear()` 曲线与静止时长、`popover` 起止尺度、跨页过渡的前后两层尺度写进 `:root`，变量名 `--motion-ease-out`、`--motion-duration-quick`、`--motion-spring-swift`、`--motion-spring-swift-duration`、`--motion-popover-enter-scale`、`--motion-page-behind-scale` 依此类推。`index.css` 不手写任何 `--motion-*` 值。减弱动效时只把 `--motion-spring-*-duration` 归零（弹性只驱动位移与缩放），颜色过渡保留。
 - Tailwind 过渡类不写 `duration-*` / `ease-*`：`--default-transition-duration` 与 `--default-transition-timing-function` 已指向 `--motion-duration-quick`、`--motion-ease-out`。需要弹性观感的 CSS 过渡写 `duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)`（如 `Switch` 滑块）。
 - 唯一的匀速补间是倒计时进度条：宽度在两次刷新之间按 `countdownTickMs` 匀速走完，读作连续流逝的时间。
 
@@ -125,7 +130,7 @@
 
 - 只动 `transform` 与 `opacity`。`width`、`height`、`top`、`left`、`filter` 仅在无替代方案时使用，且必须限定作用范围。
 - 长距离位移期间设置 `willChange`，动画结束后清除残留 `transform`，避免分数缩放导致文本子像素抖动（见 4.3）。
-- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`，Tailwind 的 `animate-pulse` 写成 `motion-safe:animate-pulse`。Tailwind 的 `animate-spin` 等内置关键帧同样不受 MotionConfig 约束，加载指示一律用 `Spinner`：它走 `spinner` 令牌，减弱动效下静止。
+- `App.tsx` 顶层已配置 `<MotionConfig reducedMotion="user" />`（包在 `RouterProvider` 外层）：Framer Motion 按此偏好降低变换与布局动效，不代表所有 opacity、CSS 或原生动画都会自动停用。新增 CSS 关键帧动画必须自行包裹 `@media (prefers-reduced-motion: no-preference)`，Tailwind 的 `animate-pulse` 写成 `motion-safe:animate-pulse`。跨页过渡同理：减弱动效时 `index.css` 把全部 `::view-transition-*` 伪元素的动画置为 `none`，直接换页。Tailwind 的 `animate-spin` 等内置关键帧同样不受 MotionConfig 约束，加载指示一律用 `Spinner`：它走 `spinner` 令牌，减弱动效下静止。
 - 循环动画只允许用于表达真实的持续状态（加载中、等待发言），不做纯装饰。
 
 ## 4. 三类问题的正确解法
@@ -201,7 +206,8 @@
 | `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
 | `systemNotice` | 聊天系统提示从中线纵向展开 |
 | `speechReveal` | 发言内容沿基线浮现并由失焦变清晰 |
-| `navigateAfterPressMs` / `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：导航前等按压播完、首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒 |
+| `pageScale` | 跨页过渡的前后两层尺度（后方 `behind`、前方 `ahead`），`index.css` 的 `page-leave` / `page-arrive` 关键帧经 `--motion-page-*-scale` 取用，幅度约为 `phaseSwap` 的一半 |
+| `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒 |
 
 ## 6. 状态反馈的边界
 
@@ -226,7 +232,7 @@
 - [ ] 没有对批量列表项施加统一 `translateY`。
 - [ ] 除 hover 外的动效均为非线性。
 - [ ] 每个浮层都能说明它从哪个元素展开、收回到哪里。
-- [ ] 跨区域移动的对象是同一个 DOM 元素。
+- [ ] 跨区域移动的对象是同一个 DOM 元素；跨页的共享元素两端同名，且每次过渡里每个名字只出现一次。
 - [ ] 对含文本区块做缩放的动画已清除残留 `transform`。
 - [ ] 折叠区域的指示箭头与展开状态同步。
 - [ ] [Testing](Testing.md#验证范围) 中对应的构建、静态检查与专项回归通过。

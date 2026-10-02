@@ -446,8 +446,15 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     } catch {
       // 忽略离开房间失败
     } finally {
-      clearSessionToken(roomId);
-      get().leaveRoomState();
+      // 退房在房间页卸载后才发出，回包慢时玩家可能已经进了下一个房间：只清掉发起这次退房的会话，
+      // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
+      const current = get();
+      if (current.roomId === roomId && current.sessionToken === sessionToken) {
+        clearSessionToken(roomId);
+        current.leaveRoomState();
+      } else if (sessionToken && getSessionToken(roomId) === sessionToken) {
+        clearSessionToken(roomId);
+      }
     }
   },
 
