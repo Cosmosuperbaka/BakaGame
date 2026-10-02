@@ -672,6 +672,40 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.queryByText("歌曲类型")).not.toBeInTheDocument();
   });
 
+  it("出题设置的互斥选项是由可见标签命名的单选组，选择后自动保存", async () => {
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          settings: { ...createMockSnapshot().settings, questionType: "anime", questionMode: "automatic" },
+          phase: "waiting",
+        }),
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: /题目设置/ }));
+
+    expect(screen.getByRole("radio", { name: "听歌识番" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "自动出题" })).toBeChecked();
+    const ranking = screen.getByRole("radiogroup", { name: "热度范围" });
+    fireEvent.click(within(ranking).getByRole("radio", { name: "年榜" }));
+    const popularity = screen.getByRole("radiogroup", { name: "网易云歌曲热度" });
+    fireEvent.click(within(popularity).getByRole("radio", { name: "10000+" }));
+    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ animeAutoFilters: expect.objectContaining({ ranking: "year", songMinPopularity: 10_000 }) }),
+    ));
+
+    fireEvent.click(screen.getByRole("radio", { name: "听歌识曲" }));
+    const minPopularity = screen.getByRole("radiogroup", { name: "热度筛选" });
+    fireEvent.click(within(minPopularity).getByRole("radio", { name: "1000+" }));
+    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ questionType: "song", autoFilters: expect.objectContaining({ minPopularity: 1_000 }) }),
+    ));
+  });
+
   it("房主设置字段由可见标签命名，数值在失焦时才夹到范围内", async () => {
     const sendCommandSpy = vi.fn().mockResolvedValue({});
     useSonGuessrStore.setState({ sendCommand: sendCommandSpy });

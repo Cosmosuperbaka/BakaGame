@@ -13,7 +13,9 @@ interface SegmentedControlProps<T extends string> {
   value: T
   options: SegmentedOption<T>[]
   onValueChange: (value: T) => void
-  "aria-label": string
+  /** 页面上已有可见标签时改传 `aria-labelledby` 指向它，二者给一个即可。 */
+  "aria-label"?: string
+  "aria-labelledby"?: string
   /** `sm` 用于工具条等密集区域，高度与 `Button size="sm"` 对齐。 */
   size?: "default" | "sm"
   className?: string
@@ -35,6 +37,7 @@ export function SegmentedControl<T extends string>({
   size = "default",
   className,
   "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
 }: SegmentedControlProps<T>) {
   const groupId = React.useId()
   const sizing = SIZES[size]
@@ -42,6 +45,7 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       className={cn("inline-flex w-full items-center rounded-md bg-muted text-muted-foreground", sizing.root, className)}
     >
       {options.map((option) => {

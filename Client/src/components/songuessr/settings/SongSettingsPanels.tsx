@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Badge } from "@/components/ui/Badge";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { SettingsChips } from "@/components/common/room/SettingsAccordion";
 import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import { collapsible } from "@/lib/Motion";
@@ -19,6 +20,26 @@ import type {
   SongPlaylistInfo,
   SonGuessrRoomSnapshot,
 } from "@/types";
+
+const QUESTION_TYPE_OPTIONS: SegmentedOption<SonGuessrRoomSnapshot["settings"]["questionType"]>[] = [
+  { value: "song", label: "听歌识曲" },
+  { value: "anime", label: "听歌识番" },
+];
+const QUESTION_MODE_OPTIONS: SegmentedOption<SonGuessrRoomSnapshot["settings"]["questionMode"]>[] = [
+  { value: "manual", label: "手动出题" },
+  { value: "automatic", label: "自动出题" },
+];
+const RANKING_OPTIONS: SegmentedOption<NonNullable<AnimeAutoFilters["ranking"]>>[] = [
+  { value: "all", label: "总榜" },
+  { value: "year", label: "年榜" },
+];
+// 网易云热度只有这四档；分段控件的值是字符串，回写时按档位查回数字，不让任意数字混进设置。
+const POPULARITY_LEVELS = [0, 1_000, 10_000, 100_000] as const;
+const toPopularityLevel = (value: string) => POPULARITY_LEVELS.find((level) => String(level) === value) ?? 0;
+const POPULARITY_OPTIONS: SegmentedOption<string>[] = POPULARITY_LEVELS.map((value) => ({
+  value: String(value),
+  label: value === 0 ? "不限" : `${value}+`,
+}));
 
 export function SongQuestionSettings({
   snapshot,
@@ -43,6 +64,9 @@ export function SongQuestionSettings({
   const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
   const playlistFieldId = useId();
   const artistFieldId = useId();
+  const popularityLabelId = useId();
+  const rankingLabelId = useId();
+  const songPopularityLabelId = useId();
 
   const resolvePlaylist = async () => {
     if (resolvingPlaylist) return;
@@ -92,44 +116,20 @@ export function SongQuestionSettings({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          variant={questionType === "song" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionType("song")}
-        >
-          听歌识曲
-        </Button>
-        <Button
-          type="button"
-          variant={questionType === "anime" ? "default" : "outline"}
-          className="h-10"
-          onClick={() => setQuestionType("anime")}
-        >
-          听歌识番
-        </Button>
-      </div>
+      <SegmentedControl
+        aria-label="题目类型"
+        value={questionType}
+        options={QUESTION_TYPE_OPTIONS}
+        onValueChange={setQuestionType}
+      />
 
       {!solo ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant={questionMode === "manual" ? "default" : "outline"}
-            className="h-10"
-            onClick={() => setQuestionMode("manual")}
-          >
-            手动出题
-          </Button>
-          <Button
-            type="button"
-            variant={questionMode === "automatic" ? "default" : "outline"}
-            className="h-10"
-            onClick={() => setQuestionMode("automatic")}
-          >
-            自动出题
-          </Button>
-        </div>
+        <SegmentedControl
+          aria-label="出题方式"
+          value={questionMode}
+          options={QUESTION_MODE_OPTIONS}
+          onValueChange={setQuestionMode}
+        />
       ) : null}
 
       {questionMode === "manual" ? (
@@ -253,20 +253,14 @@ export function SongQuestionSettings({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">热度筛选</Label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {([0, 1_000, 10_000, 100_000] as const).map((value) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  variant={minPopularity === value ? "default" : "outline"}
-                  onClick={() => setMinPopularity(value)}
-                >
-                  {value === 0 ? "不限" : `${value}+`}
-                </Button>
-              ))}
-            </div>
+            <p id={popularityLabelId} className="text-xs font-medium leading-none">热度筛选</p>
+            <SegmentedControl
+              size="sm"
+              aria-labelledby={popularityLabelId}
+              value={String(minPopularity)}
+              options={POPULARITY_OPTIONS}
+              onValueChange={(value) => setMinPopularity(toPopularityLevel(value))}
+            />
             <p className="text-2xs text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
           </div>
           {!playlist && artists.length === 0 ? (
@@ -288,16 +282,27 @@ export function SongQuestionSettings({
               <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="结束年份" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="w-20 text-sm text-muted-foreground">热度范围</span>
-              <div className="flex rounded-md border bg-background p-1">
-                {(["all", "year"] as const).map((ranking) => <Button key={ranking} type="button" size="sm" variant={(animeFilters.ranking ?? "all") === ranking ? "default" : "ghost"} onClick={() => setAnimeFilters((f) => ({ ...f, ranking }))}>{ranking === "all" ? "总榜" : "年榜"}</Button>)}
-              </div>
+              <span id={rankingLabelId} className="w-20 text-sm text-muted-foreground">热度范围</span>
+              <SegmentedControl
+                size="sm"
+                aria-labelledby={rankingLabelId}
+                className="w-auto"
+                value={animeFilters.ranking ?? "all"}
+                options={RANKING_OPTIONS}
+                onValueChange={(ranking) => setAnimeFilters((f) => ({ ...f, ranking }))}
+              />
               <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" min="1" max="1000" value={animeFilters.subjectLimit ?? 50} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectLimit: e.target.value ? Number(e.target.value) : undefined }))} aria-label="作品数量" />
               <span className="text-sm text-muted-foreground">部</span>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">网易云歌曲热度</Label>
-              <div className="grid grid-cols-4 gap-1.5">{([0, 1_000, 10_000, 100_000] as const).map((value) => <Button key={value} type="button" size="sm" variant={(animeFilters.songMinPopularity ?? 0) === value ? "default" : "outline"} onClick={() => setAnimeFilters((f) => ({ ...f, songMinPopularity: value }))}>{value === 0 ? "不限" : `${value}+`}</Button>)}</div>
+              <p id={songPopularityLabelId} className="text-sm font-medium leading-none text-muted-foreground">网易云歌曲热度</p>
+              <SegmentedControl
+                size="sm"
+                aria-labelledby={songPopularityLabelId}
+                value={String(animeFilters.songMinPopularity ?? 0)}
+                options={POPULARITY_OPTIONS}
+                onValueChange={(value) => setAnimeFilters((f) => ({ ...f, songMinPopularity: toPopularityLevel(value) }))}
+              />
             </div>
           </div>
         </div>
