@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { CCBMarks } from "@/components/ccb/CCBMarks";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
@@ -124,6 +125,30 @@ export const Embedded: Story = {
       <PlayerRow name={me.name} score={9} me embedded badges={<PlayerStatusPill label="平民" tone="default" />} />
     </div>
   ),
+};
+
+function ScoringRows() {
+  const [scores, setScores] = useState([12, 9]);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-px">
+        <PlayerRow name={host.name} score={scores[0]} host badges={<PlayerStatusPill label="猜中" tone="success" />} />
+        <PlayerRow name={me.name} score={scores[1]} me badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first + 3, second])}>房主 +3</Button>
+        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first, second + 1])}>本人 +1</Button>
+        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first, second - 2])}>本人 -2</Button>
+      </div>
+    </div>
+  );
+}
+
+/** 分数变化：逐位滚到新值，加分时在分数上方浮起「+N」。只供交互调试，截图拍不到过程。 */
+export const Scoring: Story = {
+  name: "得分变化",
+  tags: ["no-shot"],
+  render: () => <ScoringRows />,
 };
 
 /** 与附加徽章并排：徽章槽不限制数量，由各游戏自行组合。 */

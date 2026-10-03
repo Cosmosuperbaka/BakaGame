@@ -1,6 +1,7 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { scoreRevealDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { scoreRevealDelay, scoreRollDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -21,6 +22,8 @@ export interface ScoreTableRow {
   /** 名字下方的弱化次行，如 CCB 的得分明细；按项传入，以「·」相连 */
   detail?: ReactNode[];
   cells: Record<string, ReactNode>;
+  /** 列 key → 滚动起点：这一列的数字在行落定后从起点逐位滚到终值（总分从赛前分滚起，CCB 的本局得分从 0 滚起） */
+  rollFrom?: Record<string, number>;
   /** 第一名或获胜阵营：整表揭示完后有一道光扫过这一行，只播一次 */
   winner?: boolean;
 }
@@ -70,6 +73,7 @@ export function ScoreTable({
   const titleId = useId();
   const sweepDelay = winnerSweepDelay(rows.length);
   const body = rows.map((row, rowIndex) => {
+    const rollDelay = scoreRollDelay(rowIndex, rows.length, ranked);
     const cells = (
       <>
         <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.winner && "relative")}>
@@ -92,6 +96,7 @@ export function ScoreTable({
         </th>
         {columns.map((column) => {
           const value = row.cells[column.key];
+          const from = row.rollFrom?.[column.key];
           return (
             <td
               key={column.key}
@@ -103,7 +108,16 @@ export function ScoreTable({
                 column.tone === "muted" && "text-muted-foreground",
               )}
             >
-              {column.signed && typeof value === "number" && value > 0 ? `+${value}` : value}
+              {typeof value === "number" && from !== undefined ? (
+                // 累计分滚动时在左侧浮起「+N」；增量列本身就是这次的分数，只滚不浮。
+                <AnimatedNumber
+                  value={value}
+                  from={from}
+                  delay={rollDelay}
+                  signed={column.signed}
+                  gain={column.signed ? undefined : "before"}
+                />
+              ) : column.signed && typeof value === "number" && value > 0 ? `+${value}` : value}
             </td>
           );
         })}

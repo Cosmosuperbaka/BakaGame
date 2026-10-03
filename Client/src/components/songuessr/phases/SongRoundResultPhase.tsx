@@ -124,6 +124,7 @@ export function SongScoreTable({ scores }: { scores: SonGuessrRoundSummary["scor
         key: score.playerId,
         name: `${index === 0 ? "🏆 " : ""}${score.playerName}`,
         cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
+        rollFrom: { score: score.score - score.delta },
         // 扫光跟着奖杯走；还没人得分时第一行只是排在最前，不算领先
         winner: index === 0 && score.score > 0,
       }))}

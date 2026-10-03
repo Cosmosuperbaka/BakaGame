@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Button } from "@/components/ui/Button";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
@@ -92,7 +93,7 @@ export function PlayerRow({
         {detail}
       </span>
       <span aria-label={`${score} 分`} className="flex shrink-0 items-baseline gap-0.5 tabular-nums">
-        <span className="text-base leading-none">{score}</span>
+        <AnimatedNumber value={score} gain="above" className="text-base leading-none" />
         <span className="font-sans text-2xs text-muted-foreground">分</span>
       </span>
     </>

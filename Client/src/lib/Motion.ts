@@ -257,9 +257,9 @@ export const listItem: Variants = {
 
 /**
  * 结算表逐行揭示。结算是一局的落点，行距比普通列表宽，名次才读得出先后；
- * 总跨度封顶，人多时步长自动收窄，末行不至于久等。
+ * 总跨度封顶，人多时步长自动收窄，末行不至于久等。`land` 是一行起播到大致落定的时长，行内的数字从这时开始滚。
  */
-export const scoreReveal = { step: 0.07, span: 0.42 } as const;
+export const scoreReveal = { step: 0.07, span: 0.42, land: duration.base } as const;
 
 /** 相邻两行的延迟差：不超过 `step`，且整表不超过 `span`。 */
 const scoreRevealStep = (count: number) => (count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0);
@@ -272,6 +272,32 @@ export function scoreRevealDelay(index: number, count: number, ranked: boolean):
   return (ranked ? count - 1 - index : index) * scoreRevealStep(count);
 }
 
+/** 结算表第 `index` 行的数字滚动起点（秒）：这一行落定之后。 */
+export function scoreRollDelay(index: number, count: number, ranked: boolean): number {
+  return scoreRevealDelay(index, count, ranked) + scoreReveal.land;
+}
+
+/**
+ * 数字逐位滚动（`AnimatedNumber`）：每一位是一条竖排的数字带，沿增减方向滚到新值，增加向上、减少向下，
+ * 跨过 9/0 时接着滚而不倒转；个位先动、每高一位晚 `stagger`，读作里程表进位。减弱动效下直接落到新值。
+ */
+export const digitRoll = {
+  transition: spring.settle,
+  stagger: 0.04,
+  /** 符号随滚动出现（0 滚到 +4、0 滚到 -1） */
+  sign: { duration: duration.quick, ease: ease.out },
+} as const;
+
+/**
+ * 加分浮标（「+N」）：自分数旁弹起、停一拍后淡出，读作这次加分落进了总分；只在分数增加时出现。
+ * 纵向上升本身就是「增加」的语义（§2.2 允许的单元素位移），减弱动效下只淡入淡出。
+ */
+export const gainFloat: { initial: TargetAndTransition; animate: TargetAndTransition; transition: Transition } = {
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: [0, 1, 1, 0], y: [4, -3, -5, -6] },
+  transition: { duration: 1.1, times: [0, 0.18, 0.6, 1], ease: ease.out },
+};
+
 /**
  * 胜者扫光：整表揭示完后，第一名或获胜阵营的行有一道浅色光带自左向右扫过一次，不循环。
  * 光带只动 transform：起止位移恰让光带停在行外（与 `ScoreTable` 里光带渐变只占中间 30%–70% 配套），
@@ -281,13 +307,11 @@ export const winnerSweep = {
   initial: { x: "-70%" },
   animate: { x: "70%" },
   transition: { duration: 0.9, ease: ease.inOut },
-  /** 最晚一行起播后再等这一段，等的是 `scoreRow` 弹性的主体过程 */
-  after: duration.base,
 } as const;
 
-/** 胜者扫光的起播时刻（秒）：最晚一行开始入场后再等 `winnerSweep.after`。最晚一行的延迟与排序方向无关。 */
+/** 胜者扫光的起播时刻（秒）：最晚一行落定、数字滚完之后。最晚一行的延迟与排序方向无关。 */
 export function winnerSweepDelay(count: number): number {
-  return Math.max(0, count - 1) * scoreRevealStep(count) + winnerSweep.after;
+  return Math.max(0, count - 1) * scoreRevealStep(count) + scoreReveal.land + springSettleMs(digitRoll.transition) / 1000;
 }
 
 /** 结算表的行：与 `listItem` 同一个入场，延迟经 `custom` 逐行传入（取 `scoreRevealDelay`），不靠外层 stagger。 */
