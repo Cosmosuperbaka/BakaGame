@@ -29,10 +29,10 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run start",
+      command: "bun --no-env-file run scripts/IsolatedServer.ts",
       cwd: path.resolve(clientDir, "../Server"),
-      url: "http://localhost:4850/health",
-      reuseExistingServer: !process.env.CI,
+      url: "http://127.0.0.1:4850/health",
+      reuseExistingServer: false,
       timeout: 30_000,
     },
     // E2E 必须跑在生产构建（vite preview）而非 dev server：
@@ -47,7 +47,7 @@ export default defineConfig({
       command: "npm run preview -- --host 127.0.0.1 --port 5173 --strictPort",
       cwd: clientDir,
       url: "http://127.0.0.1:5173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000,
     },
   ],

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -19,6 +23,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      tools: ${{ steps.filter.outputs.tools }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,14 +37,32 @@ jobs:
               - 'Server/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
+              - '.github/workflows/bangumi-data.yml'
             client:
-              - 'Client/**'
-              - '!Client/e2e/**'
+              - 'Client/*'
+              - 'Client/!(e2e)/**'
+              - 'Server/src/shared/**'
+              - 'Server/scripts/ClientCiFilter.mjs'
               - '.github/workflows/ci.yml'
             e2e:
               - 'Client/**'
               - 'Server/**'
               - '.github/workflows/ci.yml'
+
+            tools:
+              - 'tools/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/bangumi-data.yml'
+
+  tools:
+    name: Python Builder Fixtures
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tools == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test database builder without downloads
+        run: python3 -B tools/test_build_bangumi_db.py
 
   server:
     name: Server CI
@@ -69,7 +92,7 @@ jobs:
 
       - name: Smoke test production server
         working-directory: Server
-        run: bun run test:production-smoke
+        run: bun --no-env-file run scripts/ProductionSmoke.ts
 
       - name: Upload server coverage
         uses: actions/upload-artifact@v4
@@ -98,6 +121,10 @@ jobs:
       - name: Install client dependencies
         working-directory: Client
         run: npm ci
+
+      - name: Verify CI path filter fixtures
+        working-directory: Client
+        run: node --test ../Server/scripts/ClientCiFilter.mjs
 
       - name: Lint client
         working-directory: Client

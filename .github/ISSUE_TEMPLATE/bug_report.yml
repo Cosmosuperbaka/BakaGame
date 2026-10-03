@@ -18,7 +18,8 @@ body:
       label: 影响范围
       options:
         - WhoIsFaker（谁是卧底）
-        - SongGuessr（听歌猜歌）
+        - SonGuessr（听歌猜歌）
+        - CCB（猜动漫角色增强版）
         - 服务端 / 部署
         - 其他
     validations:

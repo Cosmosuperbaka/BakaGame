@@ -181,22 +181,28 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 保留 15% 的 TLS/TCP/IP 传输余量。代理的带宽监控应按应用出口持续核对这一预算；超过预算时
 优先检查新增快照字段、重复事件和广播频率，不得通过取消最终同步或延长到不可接受的状态延迟来过测。
 
+## 隔离启动与交付回归
+
+- `ProductionSmoke.ts` 与 Playwright 后端共用 `scripts/IsolatedServer.ts`：禁用 Bun `.env` 自动加载、环境白名单、清空遥测/账号、临时词库与 enrichment、自有子进程退出竞赛及仅 preload 注入的随机所有者端点；烟测使用独立端口。Playwright 后端与 preview 都不复用现有服务。
+- 仅测试 preload 阻断主动 fetch、WebSocket、Node TCP/TLS/HTTP/DNS/UDP 与 Bun.connect/udpSocket，拒绝派生进程并向 Worker 传播守卫；真实第三方测试另行授权，不通过增加重试或放开出口修复测试。该守卫不是操作系统沙箱，不承诺隔离原生扩展或未纳入守卫的新网络 API；常规夹具不得调用这些出口。
+- 离线 `bun --no-env-file test scripts/Delivery.test.ts` 覆盖门禁反例、移动分支与固定 SHA、退出假绿、所有者标记、临时目录回收、合成环境与出口拒绝；不运行正式 Index。真实 E2E 的外部图片/音乐需求应由专用 Provider 夹具接替，不可重新放开网络。`ClientCiFilter.mjs` 在 client CI 使用已安装的 picomatch 跑路径反例；Python 构建夹具在普通 PR CI 独立执行，无下载和数据提交。
+
 ## 持续部署流水线
 
 触发条件与实际命令以 [deploy.yml](../.github/workflows/deploy.yml) 和 [ci.yml](../.github/workflows/ci.yml) 为准：
 
 - 自动发布由 main 的 `CI` 工作流完成事件触发；gate 要求整体 CI 成功，且 `Server CI` 作业实际执行并成功。客户端或文档改动使服务端作业跳过时，不自动部署后端。
 - `Server/**` 与部署脚本自身必须保留在 CI 的服务端路径过滤范围，保证修改发布脚本也经过门禁。
-- 部署消费 CI 结果，不在 deploy 中重复跑一遍完整测试。手动 `workflow_dispatch` 跳过 gate，执行前需确认目标 main 的 CI 结论及已有发布授权，不能声称手动路径自动保证已通过测试。
+- 部署消费 CI 结果，不在 deploy 中重复跑一遍完整测试。手动 `workflow_dispatch` 必须提供 `ci_run_id`，与自动路径共用门禁：同仓库 `main` 的 push、整体 CI 完成且成功、实际 `Server CI` 成功；缺失、失败、取消、跳过或 PR run 均不放行。执行仍需发布授权。
 - 前端 Makers 的 main 推送可能独立触发构建；“不部署后端”不代表推送没有任何生产影响。
 
 ### 发布链路与失败边界
 
 1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
-2. 远端 `/BakaGame` 拉取并对齐 main，按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
-3. 排空前调用本机 `POST /api/system/notify-shutdown`，显式带 `X-Real-IP: 127.0.0.1`。接口拒绝无来源或任一公网转发地址，向三款游戏广播停机消息并让 readiness 返回 503。脚本当前允许通知失败后继续重启，不能把该步骤描述为强制成功门禁。
+2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致，所有 LFS raw URL 同样绑定此 SHA（不消费移动 main），按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
+3. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。容器必须通过运行环境显式注入该变量（只在 `.env` 内提供不足以供 `--no-env-file` helper 消费）；缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
 4. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
-5. 轮询本机 `/health`（最多 15 次、间隔 2 秒）；未就绪时打印容器末尾日志并失败。该检查是当前流水线行为；发布验收另核对 `/readyz` 与 WS 命令 ACK。
+5. 在总计 30 秒预算内检查本机 `/health`、`/livez`、`/readyz` 的 `ready:true` 与三款游戏订阅 ACK（不创建房间）。通过 `docker exec -i` 将目标 SHA 的只读 `DeploymentProbe.ts` 送入容器 Bun，不猜测挂载路径，不加载应用或 `.env`。失败打印容器末尾日志、作业失败，不报部署成功；重启后不自动二次重启或回滚，由运维依据日志与获验 SHA 恢复。
 
 ### 时间预算铁律
 
@@ -209,7 +215,8 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
 | 节点测速 | ≤ 7s |
 | 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；当前为从脚本开始起 115s 的绝对截止，包含此前耗时 |
-| 停机通知与客户端排空 | ≤ 3s |
+| 客户端排空 | ≤ 3s |
+| 运维 Bearer 通知 | ≤ 3s |
 | 容器重启 | ≤ 5s |
 | 健康检查 | ≤ 30s |
 
@@ -270,7 +277,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
   —— 一次部署只有 3 分钟，没有第二次机会慢慢猜。
 - **开工先做环境自检**：`git/curl/awk/sort/tr/wc/head/basename/sha256sum/date/grep`
   逐个 `command -v`，缺哪个就报名字退出。生产机环境不受本仓库控制，不要假设它齐全。
-- **失败必须回滚且不重启容器**。脚本用 `trap ... EXIT` 在非零退出时把旧库文件放回
+- **重启前的准备失败必须恢复旧数据且不重启容器**。脚本用 `trap ... EXIT` 在非零退出时把旧库文件放回
   原位，避免把指针文本留在工作区、让下一次容器重启直接读到坏数据；同时失败路径
   不执行 `docker restart`，线上服务保持原状。
 - **断点续传**：分片目录按 `文件名 + 目标 OID 前缀` 命名并跨运行保留（`on_exit` 只清理

@@ -23,22 +23,22 @@
 <!-- 与 commit scope 对应，多项可复选。 -->
 
 - [ ] Faker（WhoIsFaker）
-- [ ] Song（SongGuessr）
-- [ ] CCB（AnimeCharacterGuessr）
+- [ ] Song（SonGuessr）
+- [ ] CCB（猜动漫角色增强版）
 - [ ] Core（公共能力、基础设施、主页）
 
 ## 验证
 
-<!-- 按实际改动勾选，至少完成所改包的 verify；顺序与细节见 Agents/Testing.md。 -->
+<!-- 按 Agents/Testing.md 验证矩阵选择范围；完整回归任务与 CI 门禁仍执行完整验证。 -->
 
-- [ ] Server：`bun install --frozen-lockfile` 后 `bun run verify` 通过
-- [ ] Client：`npm ci` 后 `npm run verify` 通过
-- [ ] 已手动验证主要流程，操作路径：
-- [ ] 纯文档或流程变更，无需运行时验证
+- [ ] 已按影响范围执行验证，命令及结果：
+- [ ] 已验证主要流程，操作路径：
+- [ ] 未验证项与原因（含外部服务、生产或授权限制）：
+- [ ] 纯文档或流程变更，已检查引用与静态契约
 
 ## 自查清单
 
-- [ ] PR 标题符合 `type(scope): 中文摘要`，摘要不超过 12 个中文字（见 Agents/versioning.md）
+- [ ] PR 标题符合 `type(scope): 中文摘要`，摘要不超过 12 个中文字（见 Agents/Commitment.md）
 - [ ] 修复缺陷时附带一条修复前会失败的回归测试（见 Agents/Testing.md）
 - [ ] 协议、模型或共享定义的变更已同步双端与相关文档
 - [ ] 替换旧规范时已删除旧实现，未保留兼容分支（见 Agents/Spec.md 第 4 条）
