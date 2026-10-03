@@ -1735,6 +1735,61 @@ describe("NeteaseMusicProvider", () => {
     expect(unblockCalls).toBe(0);
   });
 
+  test("首个音源只返回网易云官方灰链时跳过该音源并采用后续音源", async () => {
+    const attempted: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      enableGeneralUnblock: true,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 93, name: "灰链兜底曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 93, url: null }] } }),
+        song_url_match: async ({ id, source }: { id: string | number; source?: string }) => {
+          attempted.push(String(source));
+          if (attempted.length === 1) {
+            // 网易云官方外链兜底：字符串非空，但受限歌曲播放器只能拿到下载页 HTML
+            return {
+              body: { code: 200, data: `https://music.163.com/song/media/outer/url?id=${id}.mp3` },
+            };
+          }
+          return { body: { code: 200, data: `http://unblock.example.com/full-${id}.mp3` } };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]灰链曲歌词" } } }),
+      }),
+    });
+
+    const song = await provider.getSong("93");
+    expect(song.audioUrl).toBe("https://unblock.example.com/full-93.mp3");
+    expect(attempted.length).toBeGreaterThan(1);
+    expect(attempted[0]).toBe("unm");
+  });
+
+  test("所有音源都只能给出网易云官方灰链时抛出 SONG_UNAVAILABLE 而非伪解灰地址", async () => {
+    const attempted: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      enableGeneralUnblock: true,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 94, name: "无解曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 94, url: null }] } }),
+        song_url_match: async ({ id, source }: { id: string | number; source?: string }) => {
+          attempted.push(String(source));
+          return {
+            body: { code: 200, data: `https://music.163.com/song/media/outer/url?id=${id}.mp3` },
+          };
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]无解曲歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("94")).rejects.toMatchObject({
+      code: "SONG_UNAVAILABLE",
+      message: "该歌曲暂时没有可用播放地址",
+    });
+    expect(attempted.length).toBeGreaterThan(1);
+    expect(attempted).toContain("unm");
+    expect(attempted).toContain("bugpk");
+  });
+
   test("正常可用官方全曲不触发解灰", async () => {
     let unblockCalls = 0;
     const provider = new NeteaseMusicProvider({

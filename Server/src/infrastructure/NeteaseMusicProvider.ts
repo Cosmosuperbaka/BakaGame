@@ -223,6 +223,23 @@ const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
 
+/**
+ * 解灰音源优先级。包内 `matchID` 不传 `source` 时按 modules 目录的字母序尝试，`bugpk` 恰好排在最前，
+ * 而它对没有自有音源的歌曲会返回网易云官方灰链兜底（`/song/media/outer/url`）：字符串非空所以被当成
+ * 「解灰成功」，实际播放器只会拿到下载页 HTML，还会短路掉后面真正可用的音源。
+ * 这里显式指定顺序：实测可用的多平台音源 `unm` 放最前，其余快速失败的放中间，慢且易伪解灰的 `bugpk` 压到最后。
+ */
+const UNBLOCK_SOURCE_ORDER = [
+  "unm",
+  "ddyr",
+  "gdmusic",
+  "byfuns",
+  "msls",
+  "oi",
+  "qijieya",
+  "bugpk",
+] as const;
+
 type CacheEntry = {
   value: unknown;
   softExpireAt: number;
@@ -249,6 +266,22 @@ const normalizeHttpsUrl = (value: unknown): string | undefined => {
 };
 
 const normalizeAudioUrl = normalizeHttpsUrl;
+
+/**
+ * 识别「伪解灰」：解灰结果指回网易云官方外链 `/song/media/outer/url`。
+ * 该外链只对未受限歌曲有效，受限歌曲会 302 到下载页 HTML（`content-type: text/html`），
+ * 播放器必然报错。解灰只在官方明确受限（无地址 / 试听片段 / 404）时才触发，
+ * 因此在这个语境下拿到该形态一律视为解灰失败，应继续尝试下一个音源，不得写入缓存或广播。
+ */
+const isNeteaseFallbackUrl = (raw: string): boolean => {
+  try {
+    const url = new URL(raw);
+    if (url.hostname !== "music.163.com") return false;
+    return url.pathname.startsWith("/song/media/outer/url");
+  } catch {
+    return false;
+  }
+};
 
 const responseBody = (response: ApiResponse): Record<string, unknown> => {
   const record = asRecord(response);
@@ -2277,13 +2310,22 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private async unblockSongAudio(songId: string, cookie?: string): Promise<string> {
-    // 1. 优先通过 API 模块提供的 song_url_match 接口解灰
-    const matchResponse = await this.callOptional(["song_url_match"], { id: songId }, cookie);
-    if (matchResponse) {
+    // 1. 按显式优先级逐个音源调用 song_url_match，跳过伪解灰结果。
+    //    必须显式传 source：不传时包内按目录字母序尝试，bugpk 排在最前且会返回网易云灰链兜底，
+    //    字符串非空被误判为成功，导致 unm 等真正可用的音源永远得不到机会。
+    let sawMatchResponse = false;
+    for (const source of UNBLOCK_SOURCE_ORDER) {
+      const matchResponse = await this.callOptional(
+        ["song_url_match"],
+        { id: songId, source },
+        cookie,
+      );
+      if (!matchResponse) continue;
+      sawMatchResponse = true;
       const body = responseBody(matchResponse);
       const url = readString(body.data) ?? readString(body.proxyUrl);
       const normalized = normalizeAudioUrl(url);
-      if (normalized) return normalized;
+      if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
     }
 
     // 2. 尝试 song_url_v1 带 unblock 参数解灰
@@ -2297,17 +2339,19 @@ export class NeteaseMusicProvider implements MusicProvider {
       const songData = asRecord(asArray(body.data)[0]);
       const url = readString(songData.url) ?? readString(songData.proxyUrl);
       const normalized = normalizeAudioUrl(url);
-      if (normalized) return normalized;
+      if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
     }
 
-    // 3. 在未显式注入外部 mock API 的生产环境下，尝试直接调用内置 matchID 工具
-    if (!this.options.loadApi) {
+    // 3. 仅当 song_url_match 端点整体不可用（旧版 API 模块）且未注入 mock 时，
+    //    直接调用内置 matchID 兜底。端点正常时不再重复整轮，避免为不可解歌曲付出双倍等待。
+    if (!sawMatchResponse && !this.options.loadApi) {
       try {
         const { matchID } = await import("@neteasecloudmusicapienhanced/unblockmusic-utils");
-        const result = await matchID(songId);
-        const data = asRecord(result?.data);
-        const normalized = normalizeAudioUrl(data.url);
-        if (normalized) return normalized;
+        for (const source of UNBLOCK_SOURCE_ORDER) {
+          const result = await matchID(songId, source);
+          const normalized = normalizeAudioUrl(asRecord(result?.data).url);
+          if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
+        }
       } catch (error) {
         this.logger?.warn("直接调用解灰工具未成功", describeError(error));
       }
