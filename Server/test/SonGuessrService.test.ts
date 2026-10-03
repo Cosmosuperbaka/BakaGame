@@ -6,6 +6,7 @@ import {
   AUTO_SONG_CANDIDATE_LIMIT,
   createSongLyricClip,
   isSongTitleMatch,
+  resolveRecentSongWindow,
   SonGuessrService,
 } from "../src/application/SonGuessrService";
 import { detectExplicitTrackKind } from "../src/shared/Index";
@@ -3906,6 +3907,85 @@ describe("上线前 P0 修复回归", () => {
       payload: { songId: "answer" },
     })) as any;
     expect(guessResult.attempt.result).toBe("correct");
+  });
+
+  test("近期去重窗口按候选池自适应并在上下界截断", () => {
+    // 池子装不满下限窗口时保持改动前的固定 10 首行为
+    expect(resolveRecentSongWindow(0)).toBe(10);
+    expect(resolveRecentSongWindow(15)).toBe(10);
+    expect(resolveRecentSongWindow(20)).toBe(10);
+    expect(resolveRecentSongWindow(21)).toBe(10);
+    // 超过下限后按池子一半线性放长
+    expect(resolveRecentSongWindow(40)).toBe(20);
+    expect(resolveRecentSongWindow(56)).toBe(28);
+    expect(resolveRecentSongWindow(347)).toBe(173);
+    // 上界截断，避免超大歌单把房间的最近列表撑成任意长度
+    expect(resolveRecentSongWindow(990)).toBe(495);
+    expect(resolveRecentSongWindow(1000)).toBe(500);
+    expect(resolveRecentSongWindow(1201)).toBe(500);
+    expect(resolveRecentSongWindow(Number.NaN)).toBe(10);
+  });
+
+  test("大候选池放长去重窗口后，60 轮内不重现旧歌", async () => {
+    // 400 首池子对应窗口 200，远大于本用例的 60 轮：出现任何重现都说明窗口没有生效。
+    const poolSize = 400;
+    const bigPool = Array.from({ length: poolSize }, (_, index) => ({
+      id: `pool-${index}`,
+      title: `池内曲目${index}`,
+      artist: "测试歌手",
+    }));
+    const bigProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "大池", songCount: poolSize },
+        songs: bigPool,
+      }),
+      getSong: async (songId) => makeSong(songId, `池内曲目${songId}`, 2020),
+    };
+    const service = new SonGuessrService({ musicProvider: bigProvider });
+    const solo = connection(service, "window-solo");
+    await createRoom(service, solo, {
+      roomId: "7799",
+      name: "去重窗口",
+      allowSpectators: false,
+      userName: "独狼",
+      solo: true,
+    });
+    await execute(service, solo, {
+      id: "window-settings",
+      type: "song.room.updateSettings",
+      roomId: "7799",
+      payload: {
+        autoFilters: {
+          playlist: { id: "42", name: "大池", songCount: poolSize },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+
+    const chosen: string[] = [];
+    for (let round = 1; round <= 60; round += 1) {
+      await execute(service, solo, {
+        id: `window-round-${round}`,
+        type: round === 1 ? "song.game.start" : "song.game.nextRound",
+        roomId: "7799",
+        payload: {},
+      });
+      // 单人房给出放弃即可完成本回合，答案随 roundSummary 公开。
+      await execute(service, solo, {
+        id: `window-giveup-${round}`,
+        type: "song.game.giveUp",
+        roomId: "7799",
+        payload: {},
+      });
+      const settled = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+      expect(settled.phase).toBe("roundResult");
+      chosen.push(settled.roundSummary!.song.id);
+    }
+
+    expect(chosen).toHaveLength(60);
+    expect(new Set(chosen).size).toBe(60);
   });
 });
 

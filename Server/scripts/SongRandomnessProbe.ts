@@ -1,7 +1,7 @@
 /** 显式运行的真实歌单探针；普通 bun test 不会访问网络。 */
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { SonGuessrService } from "../src/application/SonGuessrService";
+import { resolveRecentSongWindow, SonGuessrService } from "../src/application/SonGuessrService";
 import { NeteaseMusicProvider, type MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { SongDetails, SongSearchResult, SonGuessrClientMessage, SonGuessrRoomSnapshot } from "../src/shared/Index";
@@ -41,8 +41,9 @@ export function measureSongNames(songs: SongSearchResult[], ids: string[]) {
   }));
 }
 
-// 候选数 > 10 且加载均成功时，与生产的最近十首排除策略对应的期望唯一数。
-export function expectedUnique(pool: number, rounds: number, history = 10) {
+// 候选数超过窗口且加载均成功时，与生产的近期去重窗口策略对应的期望唯一数。
+// 窗口长度直接取生产实现：窗口已随候选池自适应，写死 10 会让理论与实测脱钩。
+export function expectedUnique(pool: number, rounds: number, history = resolveRecentSongWindow(pool)) {
   if (!pool || !rounds) return 0;
   if (pool <= history) return null;
   const initial = Math.min(rounds, history + 1);

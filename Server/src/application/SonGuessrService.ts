@@ -385,6 +385,39 @@ export const AUTO_ANIME_CANDIDATE_LIMIT = 5;
  */
 export const AUTO_SONG_CANDIDATE_LIMIT = 5;
 /**
+ * 「最近不出」窗口相对候选池的目标占比。
+ *
+ * 固定的 10 首窗口在池子远大于 10 时几乎不消耗池子容量：1000 首的歌单
+ * 仍然从第 12 轮起就允许重现已出过的歌。窗口按池子线性放长后，
+ * 「不重复」才真正用满池子容量 —— 池 990 时前 495 轮都不会出现旧歌。
+ */
+const RECENT_SONG_WINDOW_RATIO = 0.5;
+/**
+ * 「最近不出」窗口下限。
+ *
+ * 小池子本来就装不满窗口（池 15 时 10 首已占三分之二），继续缩短只会让
+ * 旧歌更早回来；而池子耗尽后总重复次数只由轮数决定、与窗口长度无关，
+ * 因此小池子保留原有的 10 首行为不变。
+ */
+const MIN_RECENT_SONG_WINDOW = 10;
+/**
+ * 「最近不出」窗口上限。房间是纯内存态，需要给窗口一个与池子无关的上界，
+ * 避免超大歌单把每个房间的最近列表撑成任意长度。
+ */
+const MAX_RECENT_SONG_WINDOW = 500;
+
+/**
+ * 按候选池规模计算「最近不出」窗口长度。
+ *
+ * 池子不超过 20 首时恒为 `MIN_RECENT_SONG_WINDOW`（等价于改动前的固定 10 首）；
+ * 更大池子按 `RECENT_SONG_WINDOW_RATIO` 放长，并在 `MAX_RECENT_SONG_WINDOW` 处截断。
+ */
+export const resolveRecentSongWindow = (poolSize: number): number => {
+  if (!Number.isFinite(poolSize) || poolSize <= 0) return MIN_RECENT_SONG_WINDOW;
+  const adaptive = Math.floor(poolSize * RECENT_SONG_WINDOW_RATIO);
+  return Math.max(MIN_RECENT_SONG_WINDOW, Math.min(MAX_RECENT_SONG_WINDOW, adaptive));
+};
+/**
  * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
  *
  * 只卡命令入口，不卡出题解析器内部的上游调用：后者只由房主的
@@ -1785,6 +1818,12 @@ export class SonGuessrService {
     submitterPlayerId: string,
     anime?: BangumiSubjectDetails,
     animeTrack?: BangumiMusicTrack,
+    /**
+     * 本回合「最近不出」集合的长度。只有自动选曲知道候选池规模并按池子自适应，
+     * 手动出题与猜番没有候选池概念，沿用 `MIN_RECENT_SONG_WINDOW`。
+     * 必须在 `installRound` 之前用同一数值过滤候选，否则写入与排除的口径会不一致。
+     */
+    recentSongWindow = MIN_RECENT_SONG_WINDOW,
   ): number {
     this.applyQueuedMemberships(room);
     if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
@@ -1830,7 +1869,8 @@ export class SonGuessrService {
     room.phase = "playing";
 
     const recentSongIds = room.recentSongIds ?? [];
-    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)].slice(0, 10);
+    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)]
+      .slice(0, recentSongWindow);
     if (anime) {
       const recentSubjectIds = room.recentSubjectIds ?? [];
       room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(0, 10);
@@ -1876,20 +1916,24 @@ export class SonGuessrService {
     if (candidates.length === 0) {
       throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
     }
-    const recentSongIds = new Set(room.recentSongIds ?? []);
-    const freshCandidates = candidates.filter((s) => !recentSongIds.has(s.id));
     // 会员限制在检索结果里已经带出，先过滤再回源，
     // 否则非会员账号会在大歌单上逐个串行试错。
-    const playable = (freshCandidates.length > 0 ? freshCandidates : candidates)
-      .filter((song) => room.musicSession?.account.vipStatus !== "nonVip" || !song.requiresVip);
-    const pool = [...playable];
+    const poolCandidates = candidates.filter(
+      (song) => room.musicSession?.account.vipStatus !== "nonVip" || !song.requiresVip,
+    );
+    // 窗口长度取自「过滤后的整池」而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
+    // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
+    const recentSongWindow = resolveRecentSongWindow(poolCandidates.length);
+    const recentSongIds = new Set((room.recentSongIds ?? []).slice(0, recentSongWindow));
+    const freshCandidates = poolCandidates.filter((song) => !recentSongIds.has(song.id));
+    const pool = [...(freshCandidates.length > 0 ? freshCandidates : poolCandidates)];
     let attempts = 0;
     while (pool.length > 0 && attempts < AUTO_SONG_CANDIDATE_LIMIT) {
       attempts += 1;
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
       const song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
       if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
-      this.installRound(room, song, "");
+      this.installRound(room, song, "", undefined, undefined, recentSongWindow);
       return;
     }
     throw new AppError("MUSIC_VIP_REQUIRED", "筛选结果全部为会员歌曲，当前账号无法开始");
