@@ -14,7 +14,7 @@ import { decodeOriginalCharacter, encodeOriginalCharacter, originalArray, origin
 import { createDefaultCCBSettings, type CCBCharacterView, type CCBClientMessage, type CCBGuess, type CCBPayload,
   type CCBRoomEnterResult, type CCBSettings } from '../shared/CCB';
 import { createEvent } from '../transport/Packets';
-import type { CCBOriginalChatRoom, CCBOriginalSession, CCBUpstreamRoom } from './CCBOriginalModel';
+import type { CCBOriginalChatRoom, CCBOriginalPreparation, CCBOriginalSession, CCBUpstreamRoom } from './CCBOriginalModel';
 import type { CCBOriginalTarget } from './CCBRoomDirectory';
 import { originalPrivateState, originalSnapshot } from './CCBOriginalView';
 import { CCBOriginalRoundData } from './CCBOriginalRoundData';
@@ -62,7 +62,7 @@ export class CCBOriginalService {
     this.connections.delete(id);
     const session = this.byConnection.get(id);
     this.byConnection.delete(id);
-    if (session) { session.connectionId = undefined; session.detachedAt = this.now(); }
+    if (session) { this.cancelPreparation(session); session.connectionId = undefined; session.detachedAt = this.now(); }
   }
   hasSession(id: string): boolean { return this.byConnection.has(id) || this.entering.has(id); }
   getHealthSnapshot() {
@@ -115,7 +115,14 @@ export class CCBOriginalService {
     const session = this.requireSession(connectionId);
     if (message.sessionToken !== session.token) throw new AppError('SESSION_INVALID', '原版会话凭据无效，请重新加入');
     if (message.roomId && message.roomId !== session.alias) throw new AppError('ROOM_NOT_FOUND', '房间与当前会话不一致');
-    const task = session.queue.then(() => this.executeInRoom(session, message));
+    // 离房撤销是生命周期边界，不能排在悬挂的资料查询后等待。
+    if (message.type === 'ccb.room.leave') { this.revoke(session, '已离开房间', false); return {}; }
+    const task = session.queue.then(() => {
+      if (session.connectionId !== connectionId || this.byConnection.get(connectionId) !== session || !this.connections.has(connectionId)) {
+        throw new AppError('CCB_ROUND_CHANGED', '操作连接已变化，请重新操作');
+      }
+      return this.executeInRoom(session, message);
+    });
     session.queue = task.catch(() => undefined);
     return task;
   }
@@ -132,7 +139,6 @@ export class CCBOriginalService {
     const { data } = this.options;
     const send = (event: string, payload: Record<string, unknown> = {}) => originalRequest(session.socket, event, { roomId: session.roomId, ...payload });
     switch (message.type) {
-      case 'ccb.room.leave': this.revoke(session, '已离开房间', false); return {};
       case 'ccb.room.requestSync':
         if (session.connectionId) this.connections.get(session.connectionId)?.resetStateSync?.();
         this.publish(session); return this.enterResult(session);
@@ -244,6 +250,7 @@ export class CCBOriginalService {
       if (previous) { previous.roomId = undefined; previous.playerId = undefined; }
       this.byConnection.delete(session.connectionId);
     }
+    this.cancelPreparation(session);
     session.connectionId = connection.id;
     session.detachedAt = undefined;
     this.byConnection.set(connection.id, session);
@@ -262,28 +269,78 @@ export class CCBOriginalService {
       () => session.socket.emit('toggleRoomVisibility', { roomId: session.roomId }));
   }
 
+  private beginPreparation(session: CCBOriginalSession): CCBOriginalPreparation {
+    const phase = session.phase;
+    if (!session.connectionId || (phase !== 'waiting' && phase !== 'settled' && phase !== 'answering')) {
+      throw new AppError('CCB_ROUND_CHANGED', '准备状态已变化');
+    }
+    const room = this.chats.get(session.roomId)!;
+    const operation: CCBOriginalPreparation = {
+      id: randomUUID(), connectionId: session.connectionId, phase,
+      hostId: session.players.find(player => player.isHost)?.id || '', setterId: session.setterId,
+      roomGeneration: room.generation, roundKey: room.round?.id ?? null, settings: structuredClone(session.settings),
+    };
+    session.preparation = operation;
+    if (phase !== 'answering') { session.phase = 'preparing'; this.publish(session); }
+    return operation;
+  }
+
+  private ownsPreparation(session: CCBOriginalSession, operation: CCBOriginalPreparation): boolean {
+    const room = this.chats.get(session.roomId);
+    const phase = operation.phase === 'answering' ? 'answering' : 'preparing';
+    const state = originalPrivateState({ ...session, phase: operation.phase });
+    return session.preparation?.id === operation.id && !session.revoked && session.confirmed && session.socket.connected
+      && session.connectionId === operation.connectionId && this.connections.has(operation.connectionId)
+      && this.byConnection.get(operation.connectionId) === session && session.phase === phase
+      && room?.generation === operation.roomGeneration && (room.round?.id ?? null) === operation.roundKey
+      && (session.players.find(player => player.isHost)?.id || '') === operation.hostId && session.setterId === operation.setterId
+      && (operation.phase === 'answering' ? state.canSetAnswer : state.canStart);
+  }
+
+  private requirePreparation(session: CCBOriginalSession, operation: CCBOriginalPreparation): void {
+    if (!this.ownsPreparation(session, operation)) throw new AppError('CCB_ROUND_CHANGED', '准备操作已失效，请重新操作');
+  }
+
+  private cancelPreparation(session: CCBOriginalSession): void {
+    const operation = session.preparation;
+    if (!operation) return;
+    if (session.phase === 'preparing') session.phase = operation.phase;
+    delete session.preparation;
+  }
+
   private async start(session: CCBOriginalSession): Promise<unknown> {
     this.requireHost(session);
     if (!originalPrivateState(session).canStart) throw new AppError('CCB_CANNOT_START', '请等待玩家准备或本局结束');
-    const previous = session.phase;
-    session.phase = 'preparing'; this.publish(session);
+    const operation = this.beginPreparation(session);
     try {
-      const character = await this.options.data.chooseRandomCharacter(session.settings);
-      if (!character.imageUrl) character.imageUrl = await this.options.data.resolveCharacterImage(character.id);
+      const character = await this.options.data.chooseRandomCharacter(operation.settings);
+      this.requirePreparation(session, operation);
+      if (!character.imageUrl) {
+        character.imageUrl = await this.options.data.resolveCharacterImage(character.id);
+        this.requirePreparation(session, operation);
+      }
       return await originalRequest(session.socket, 'gameStart', { roomId: session.roomId,
-        character: encodeOriginalCharacter(character, this.options.aesSecret!), settings: toOriginalSettings(session.settings) });
-    } catch (error) {
-      if (session.phase === 'preparing') session.phase = previous;
-      this.publish(session); throw error;
+        character: encodeOriginalCharacter(character, this.options.aesSecret!), settings: toOriginalSettings(operation.settings) });
+    } finally {
+      if (session.preparation?.id === operation.id) { this.cancelPreparation(session); this.publish(session); }
     }
   }
 
   private async setAnswer(session: CCBOriginalSession, id: number, hints: string[]): Promise<unknown> {
     if (!originalPrivateState(session).canSetAnswer) throw new AppError('CCB_NOT_SETTER', '只有指定出题人可以提交答案');
-    const character = await this.options.data.getCharacter(id, session.settings);
-    if (!character.imageUrl) character.imageUrl = await this.options.data.resolveCharacterImage(id);
-    return originalRequest(session.socket, 'setAnswer', { roomId: session.roomId,
-      character: encodeOriginalCharacter(character, this.options.aesSecret!), hints });
+    const operation = this.beginPreparation(session);
+    try {
+      const character = await this.options.data.getCharacter(id, operation.settings);
+      this.requirePreparation(session, operation);
+      if (!character.imageUrl) {
+        character.imageUrl = await this.options.data.resolveCharacterImage(id);
+        this.requirePreparation(session, operation);
+      }
+      return await originalRequest(session.socket, 'setAnswer', { roomId: session.roomId,
+        character: encodeOriginalCharacter(character, this.options.aesSecret!), hints });
+    } finally {
+      if (session.preparation?.id === operation.id) this.cancelPreparation(session);
+    }
   }
 
   private async guess(session: CCBOriginalSession, id: number): Promise<unknown> {
@@ -400,6 +457,7 @@ export class CCBOriginalService {
 
   private revoke(session: CCBOriginalSession, reason: string, notify = true, kicked = false): void {
     if (session.revoked) return;
+    this.cancelPreparation(session);
     session.revoked = true; session.confirmed = false;
     if (session.connectionId) {
       const connection = this.connections.get(session.connectionId);
@@ -436,12 +494,13 @@ export class CCBOriginalService {
       session.players = originalPlayers(payload.players, session.phase, session.syncRound);
       if (typeof payload.isPublic === 'boolean') session.isPublic = payload.isPublic;
       if (payload.answerSetterId !== undefined) session.setterId = originalString(payload.answerSetterId) || null;
+      if (session.preparation && !this.ownsPreparation(session, session.preparation)) this.cancelPreparation(session);
       if (session.confirmed && !session.players.some(player => player.id === session.socket.id)) this.revoke(session, '已离开原版房间', true, true);
     });
     on('roomNameUpdated', payload => { session.roomName = originalString(payload.roomName); });
-    on('updateGameSettings', payload => { session.settings = originalSettings(payload.settings); });
-    on('waitForAnswer', payload => { session.setterId = originalString(payload.answerSetterId); session.phase = 'answering'; });
-    on('waitForAnswerCanceled', () => { session.setterId = null; session.phase = 'waiting'; });
+    on('updateGameSettings', payload => { this.cancelPreparation(session); session.settings = originalSettings(payload.settings); });
+    on('waitForAnswer', payload => { this.cancelPreparation(session); session.setterId = originalString(payload.answerSetterId); session.phase = 'answering'; });
+    on('waitForAnswerCanceled', () => { this.cancelPreparation(session); session.setterId = null; session.phase = 'waiting'; });
     on('gameStart', payload => this.gameStarted(session, payload));
     on('guessHistoryUpdate', payload => this.updateHistory(session, payload.guesses));
     on('resetTimer', payload => { session.deadlineAt = originalNumber(payload.deadlineAt) || null; });
@@ -464,6 +523,7 @@ export class CCBOriginalService {
     });
     on('gameEnded', payload => {
       if (!session.answer && session.roundKey === null) return;
+      this.cancelPreparation(session);
       this.updateHistory(session, payload.guesses);
       session.phase = 'settled'; session.deadlineAt = null;
       if (!session.answer) throw new AppError('CCB_ORIGINAL_PROTOCOL', '缺少本局答案');
@@ -502,6 +562,7 @@ export class CCBOriginalService {
     const isNew = session.roundKey !== key;
     session.settings = originalSettings(payload.settings);
     session.answer = answer;
+    this.cancelPreparation(session);
     session.phase = 'guessing'; session.setterId = null;
     session.players = originalPlayers(payload.players, session.phase, session.syncRound);
     if (typeof payload.isPublic === 'boolean') session.isPublic = payload.isPublic;

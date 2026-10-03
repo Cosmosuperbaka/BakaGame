@@ -23,6 +23,18 @@ export interface CCBUpstreamRoom {
   playerCount: number;
 }
 
+/** 查询期间冻结准备事务，连接/权限/阶段失效即撤销，不能靠命令队列保活。 */
+export interface CCBOriginalPreparation {
+  id: string;
+  connectionId: string;
+  phase: 'waiting' | 'settled' | 'answering';
+  hostId: string;
+  setterId: string | null;
+  roomGeneration: string;
+  roundKey: string | null;
+  settings: CCBSettings;
+}
+
 export interface CCBOriginalSession {
   token: string;
   connectionId?: string;
@@ -51,5 +63,6 @@ export interface CCBOriginalSession {
   winners: Array<{ playerId: string; rank: number; score: number }>;
   roundSummary: CCBRoundSummary | null;
   deadlineAt: number | null;
+  preparation?: CCBOriginalPreparation;
   queue: Promise<unknown>;
 }
