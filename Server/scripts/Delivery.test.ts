@@ -70,10 +70,22 @@ test("子进程退出时旧健康实例不能造成假绿", async () => {
 });
 
 test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () => {
-  const fixture = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => Response.json(new URL(request.url).pathname === "/readyz" ? { status: "ok", ready: false } : { status: "ok" }) });
-  try { await expect(probeDeployment(`http://127.0.0.1:${fixture.port}`, 30)).rejects.toThrow("业务探针失败: /readyz"); }
-  finally { fixture.stop(true); }
+  // 该断言验证 readiness 判定，不把 30ms 真实调度窗口当作分支到达保证。
+  // 使用与生产同一探针与总预算逻辑；其他用例继续验证真实 HTTP/三协议 ACK。
+  let now = 0;
+  const paths: string[] = [];
+  const fetcher = (async (input: string | URL | Request) => {
+    const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
+    paths.push(pathname);
+    return Response.json(pathname === "/readyz" ? { status: "ok", ready: false } : { status: "ok" });
+  }) as typeof fetch;
+  await expect(probeDeployment("http://127.0.0.1:1", 30, undefined, {
+    fetch: fetcher, now: () => now, sleep: async ms => { now += ms; },
+  })).rejects.toThrow("业务探针失败: /readyz");
+  expect(paths).toEqual(["/health", "/livez", "/readyz", "/health", "/livez", "/readyz"]);
+  expect(now).toBe(30);
 });
+
 import { notifyDeployment } from "./DeploymentNotify";
 
 test("Elysia 原生 routes/reload 保留测试所有者端点", async () => {

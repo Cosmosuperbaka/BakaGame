@@ -1,12 +1,19 @@
 /** 只读发布探针；不加载应用、凭据或第三方 Provider。 */
-export async function probeDeployment(baseUrl = "http://127.0.0.1:4850", budgetMs = 30_000, signal?: AbortSignal): Promise<void> {
-  const deadline = Date.now() + budgetMs;
-  const remaining = () => Math.max(1, Math.min(5_000, deadline - Date.now()));
+export interface DeploymentProbeIO {
+  fetch: typeof globalThis.fetch;
+  now: () => number;
+  sleep: (milliseconds: number) => Promise<unknown>;
+}
+export async function probeDeployment(baseUrl = "http://127.0.0.1:4850", budgetMs = 30_000, signal?: AbortSignal,
+  io: DeploymentProbeIO = { fetch: globalThis.fetch, now: Date.now, sleep: Bun.sleep },
+): Promise<void> {
+  const deadline = io.now() + budgetMs;
+  const remaining = () => Math.max(1, Math.min(5_000, deadline - io.now()));
   for (;;) {
     signal?.throwIfAborted();
     try {
       for (const path of ["/health", "/livez", "/readyz"]) {
-        const response = await fetch(`${baseUrl}${path}`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(remaining())]) : AbortSignal.timeout(remaining()) });
+        const response = await io.fetch(`${baseUrl}${path}`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(remaining())]) : AbortSignal.timeout(remaining()) });
         const body = await response.json() as { status?: string; ready?: boolean };
         if (!response.ok || body.status !== "ok" || (path === "/readyz" && body.ready !== true)) {
           throw new Error(`业务探针失败: ${path}`);
@@ -47,8 +54,8 @@ export async function probeDeployment(baseUrl = "http://127.0.0.1:4850", budgetM
       return;
     } catch (error) {
       signal?.throwIfAborted();
-      if (Date.now() >= deadline) throw error;
-      await Bun.sleep(Math.min(200, deadline - Date.now()));
+      if (io.now() >= deadline) throw error;
+      await io.sleep(Math.min(200, deadline - io.now()));
     }
   }
 }
