@@ -78,3 +78,36 @@ describe('CCB 服务端图片提示', () => {
     expect((await hints.render('https://images.invalid/a.png', 1)).startsWith('data:image/webp;base64,')).toBe(true);
   });
 });
+
+
+test('跨键共享有界下载解码队列，同键合并且队列饱和拒绝', async () => {
+  const png = await bitmap();
+  let calls = 0, active = 0, peak = 0;
+  const gates: Array<() => void> = [];
+  const hints = new CCBImageHints({ maxConcurrentRequests: 1, maxQueuedRequests: 1, fetcher: async () => {
+    calls++; active++; peak = Math.max(peak, active);
+    await new Promise<void>(resolve => gates.push(resolve)); active--; return new Response(png);
+  } });
+  const first = hints.render('https://images.invalid/one.png', 1);
+  const duplicate = hints.render('https://images.invalid/one.png', 1);
+  const queued = hints.render('https://images.invalid/two.png', 1);
+  await expect(hints.render('https://images.invalid/three.png', 1)).rejects.toMatchObject({ code: 'IMAGE_UNAVAILABLE' });
+  expect(calls).toBe(1);
+  gates.shift()!();
+  expect(await first).toBe(await duplicate);
+  while (!gates.length) await Bun.sleep(1);
+  gates.shift()!(); await queued;
+  expect(calls).toBe(2); expect(peak).toBe(1);
+});
+
+test('挂起响应体截止会取消读取，释放槽位与在途项，恢复可重试', async () => {
+  const png = await bitmap(); let calls = 0, canceled = false;
+  const hints = new CCBImageHints({ maxConcurrentRequests: 1, requestTimeoutMs: 25, fetcher: async () => {
+    if (++calls > 1) return new Response(png);
+    return new Response(new ReadableStream<Uint8Array>({ start() {}, cancel() { canceled = true; } }));
+  } });
+  await expect(hints.render('https://images.invalid/hung.png', 1)).rejects.toMatchObject({ code: 'IMAGE_UNAVAILABLE' });
+  expect(canceled).toBe(true);
+  expect((await hints.render('https://images.invalid/hung.png', 1)).startsWith('data:image/webp;base64,')).toBe(true);
+  expect(calls).toBe(2);
+});
