@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { SongLyricPlayerProps } from "../src/components/songuessr/lyrics/SongLyricPlayer";
-import type { SongLyricLine } from "../src/types";
+import type { SongLyricsFixtureProps } from "./fixtures/SongLyrics";
+import type { SongLyricLine } from "../src/types/Index";
 
 declare global {
   interface Window {
     lyricsFixture: {
-      render(props: Partial<SongLyricPlayerProps>): void;
+      render(props: SongLyricsFixtureProps): void;
       time(ms: number, playing: boolean): void;
+      updates(): number;
     };
   }
 }
@@ -18,7 +19,7 @@ const lines: SongLyricLine[] = Array.from({ length: 8 }, (_, index) => ({
   translatedLyric: "浮现在夜空中的群星点点 将这无尽的寂静一点点撕裂开来",
 }));
 
-async function render(page: Page, props: Partial<SongLyricPlayerProps>) {
+async function render(page: Page, props: SongLyricsFixtureProps) {
   await page.evaluate((props) => window.lyricsFixture.render(props), props);
   await expect(page.locator(".baka-lyric-host")).toHaveAttribute("data-ready", "true");
 }
@@ -169,4 +170,55 @@ test("和声活动切换不改变外壳高度，也不接管页面滚动", async
   expect(new Set(result.heights).size).toBe(1);
   expect(result.pointerEvents.length).toBeGreaterThan(0);
   expect(result.pointerEvents.every((value) => value === "none")).toBe(true);
+});
+
+
+test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async ({ page }) => {
+  await render(page, { lines, audioPlaybackState: "playing" });
+  await page.evaluate(() => window.lyricsFixture.time(38900, true));
+  const countUpdates = () => page.evaluate(async () => {
+    const before = window.lyricsFixture.updates();
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    return window.lyricsFixture.updates() - before;
+  });
+  const playing = await countUpdates();
+  // 正常跨入下一句后立即暂停：必须继续推进尚未落定的原生布局，不能一刀停 update。
+  const motion = await page.evaluate(async () => {
+    const last = document.querySelector<HTMLElement>(".baka-lyric-host")!
+      .querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]").item(1);
+    const y = () => last.getBoundingClientRect().y;
+    window.lyricsFixture.time(39050, true);
+    await new Promise(requestAnimationFrame);
+    window.lyricsFixture.time(39050, false);
+    window.lyricsFixture.render({ audioPlaybackState: "paused" });
+    const start = y();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const middle = y();
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    const end = y();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return { start, middle, end, stable: y() };
+  });
+  const paused = await countUpdates();
+  console.log(JSON.stringify({ playing, paused, motion }));
+  expect(Math.abs(motion.middle - motion.start)).toBeGreaterThan(1);
+  expect(Math.abs(motion.stable - motion.end)).toBeLessThan(1);
+  expect(playing).toBeGreaterThan(10);
+  expect(paused).toBeGreaterThan(0);
+  expect(paused).toBeLessThan(playing * 0.8);
+  await page.evaluate(() => {
+    window.lyricsFixture.render({ audioPlaybackState: "playing" });
+    window.lyricsFixture.time(35500, true);
+  });
+  const replay = await countUpdates();
+  expect(replay).toBeGreaterThan(paused * 1.25);
+  await render(page, { audioPlaybackState: "completed" });
+  await expectOverviewFits(page);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expectOverviewFits(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expectOverviewFits(page);
+  await test.info().attach("update-counts", {
+    body: JSON.stringify({ playing, paused, replay, sampleMs: 700, motion }), contentType: "application/json",
+  });
 });

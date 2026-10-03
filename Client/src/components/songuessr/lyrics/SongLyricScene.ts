@@ -22,6 +22,7 @@ export class SongLyricScene {
   private fontsReady = false;
   private disposed = false;
   private frame = 0;
+  private pausedTimer: number | null = null;
   private lastFrame: number | null = null;
   private animations: Animation[] = [];
   private readonly host: HTMLElement;
@@ -40,7 +41,6 @@ export class SongLyricScene {
     this.observer.observe(this.element);
     document.fonts?.addEventListener("loadingdone", this.measure);
     this.reducedMotion.addEventListener("change", this.onMotionChange);
-    this.frame = requestAnimationFrame(this.tick);
   }
 
   setSource(lines: SongLyricLine[], audio: HTMLAudioElement | null) {
@@ -50,6 +50,7 @@ export class SongLyricScene {
       this.listenAudio(true);
     }
     if (equal(this.lines, lines)) return;
+    this.cancelTick();
     this.cancelAnimations();
     this.ready = false;
     this.fontsReady = false;
@@ -64,6 +65,7 @@ export class SongLyricScene {
       this.observer.observe(group.element);
     }
     this.measure();
+    this.scheduleFrame();
     // 先挂载并触发布局，才会请求本段文字对应的字体分片。
     const source = this.lines;
     void (document.fonts?.ready ?? Promise.resolve()).then(() => {
@@ -96,6 +98,9 @@ export class SongLyricScene {
     if (playing !== this.player.getIsPlaying()) {
       if (playing) this.player.resume();
       else this.player.pause();
+      // 媒体恢复时取消低频等待，下一显示帧立即接回逐帧同步。
+      this.cancelTick();
+      this.scheduleFrame();
     }
     // pause/ended 只停表，绝不能先倒回首句、下一次提交才进入总览。
     if (playing && !this.overview) this.player.setCurrentTime(this.initialTime());
@@ -166,16 +171,40 @@ export class SongLyricScene {
     }
   };
 
+  private scheduleFrame() {
+    if (this.disposed || !this.lines.length || this.frame || this.pausedTimer !== null) return;
+    if (this.player.getIsPlaying()) {
+      this.frame = requestAnimationFrame(this.tick);
+    } else {
+      // pause 仍有布局弹簧，不能停 update 或猜一个“已收敛”时长。
+      // 非播放状态最多 30 次/秒；仍交给 RAF 绘制，隐藏页面不会靠定时器持续更新。
+      this.pausedTimer = window.setTimeout(() => {
+        this.pausedTimer = null;
+        this.frame = requestAnimationFrame(this.tick);
+      }, 1000 / 30);
+    }
+  }
+
+  private cancelTick() {
+    cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    if (this.pausedTimer !== null) window.clearTimeout(this.pausedTimer);
+    this.pausedTimer = null;
+    this.lastFrame = null;
+  }
+
   private tick = (time: number) => {
+    this.frame = 0;
+    if (this.disposed) return;
     this.syncAudio();
     this.player.update(this.lastFrame === null ? 0 : time - this.lastFrame);
     this.lastFrame = time;
-    this.frame = requestAnimationFrame(this.tick);
+    this.scheduleFrame();
   };
 
   dispose() {
     this.disposed = true;
-    cancelAnimationFrame(this.frame);
+    this.cancelTick();
     this.cancelAnimations();
     this.listenAudio(false);
     this.observer.disconnect();

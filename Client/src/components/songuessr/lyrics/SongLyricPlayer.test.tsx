@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import type { LyricLine } from "@applemusic-like-lyrics/core";
 import type { SongLyricLine } from "@/types";
 
 const players = vi.hoisted(() => [] as Array<{
-  lines: LyricLine[]; time: number; playing: boolean; sourceUpdates: number; disposed: boolean;
+  lines: LyricLine[]; time: number; playing: boolean; sourceUpdates: number; disposed: boolean; updates: number[];
 }>);
 
 vi.mock("@applemusic-like-lyrics/core", () => ({
@@ -15,6 +15,7 @@ vi.mock("@applemusic-like-lyrics/core", () => ({
     playing = false;
     disposed = false;
     sourceUpdates = 0;
+    updates: number[] = [];
     currentLyricGroups = [];
     lyricGroupSize = new WeakMap();
     size = [0, 0];
@@ -36,11 +37,12 @@ vi.mock("@applemusic-like-lyrics/core", () => ({
     pause() { this.playing = false; }
     resume() { this.playing = true; }
     calcLayout() { return Promise.resolve(); }
-    update() {}
+    update(delta = 0) { this.updates.push(delta); }
     dispose() { this.disposed = true; this.element.remove(); }
   },
 }));
 
+import { SongLyricScene } from "./SongLyricScene";
 import { SongLyricPlayer } from "./SongLyricPlayer";
 
 const lines: SongLyricLine[] = [
@@ -135,5 +137,96 @@ describe("歌词数据、媒体事件与组件生命周期", () => {
       audioRef={audioRef} audioPlaybackState="idle" audioStatus="loading" />);
     expect(players.at(-1)!.time).toBe(90000);
     expect(players.at(-1)!.playing).toBe(false);
+  });
+});
+
+
+describe("歌词动画调度", () => {
+  let frames: Map<number, FrameRequestCallback>;
+  let scenes: SongLyricScene[];
+  let nextFrame: number;
+  const flushFrame = (time: number) => {
+    const callbacks = [...frames.values()];
+    frames.clear();
+    for (const callback of callbacks) callback(time);
+  };
+  const createScene = () => {
+    const scene = new SongLyricScene(document.createElement("div"));
+    scenes.push(scene);
+    return scene;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    frames = new Map();
+    scenes = [];
+    nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  });
+  afterEach(() => {
+    for (const scene of scenes) scene.dispose();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("暂停仍推进动画，delta 使用实际更新间隔且不会重复调度", () => {
+    const scene = createScene();
+    scene.setSource(lines, null);
+    scene.setPlayback("paused", "ready");
+    scene.setPlayback("paused", "ready");
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(34);
+    expect(frames.size).toBe(1);
+    flushFrame(34);
+    expect(frames.size).toBe(0);
+    vi.advanceTimersByTime(34);
+    flushFrame(68);
+    expect(players.at(-1)!.updates.slice(-2)).toEqual([0, 34]);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("媒体恢复立即取消低频等待，暂停和卸载清理两种调度及事件", () => {
+    const scene = createScene();
+    const audio = document.createElement("audio");
+    scene.setSource(lines, audio);
+    scene.setPlayback("playing", "ready");
+    expect(vi.getTimerCount()).toBe(1);
+    Object.defineProperty(audio, "paused", { configurable: true, value: false });
+    audio.dispatchEvent(new Event("play"));
+    expect(vi.getTimerCount()).toBe(0);
+    expect(frames.size).toBe(1);
+    flushFrame(100);
+    flushFrame(116);
+    expect(players.at(-1)!.updates.slice(-2)).toEqual([0, 16]);
+    Object.defineProperty(audio, "paused", { configurable: true, value: true });
+    audio.dispatchEvent(new Event("pause"));
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+    scene.dispose();
+    const count = players.at(-1)!.updates.length;
+    vi.advanceTimersByTime(1000);
+    audio.dispatchEvent(new Event("play"));
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(players.at(-1)!.updates).toHaveLength(count);
+  });
+
+  it("无歌词不启动更新循环，从有词切换为空也取消待执行帧", () => {
+    const scene = createScene();
+    scene.setSource([], null);
+    scene.setPlayback("idle", "ready");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(frames.size).toBe(0);
+    scene.setSource(lines, null);
+    vi.advanceTimersByTime(34);
+    expect(frames.size).toBe(1);
+    scene.setSource([], null);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(frames.size).toBe(0);
   });
 });

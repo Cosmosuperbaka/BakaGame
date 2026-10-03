@@ -39,9 +39,9 @@
 
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
-| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts`、`BangumiProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化、Bangumi 图片重写与请求缓存 |
-| 后端服务回归 | `Server/test/WhoIsFakerService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts`、`CCBService.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 房间生命周期与清理、人机 |
-| 协议与传输集成 | `Server/test/WhoIsFakerProtocol.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云与 Bangumi 接口 Mock 与解析 |
+| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts`、`Server/test/LocalBangumiProvider.test.ts`、`Server/test/FallbackBangumiProvider.test.ts`、`Server/test/BangumiProvider.test.ts`、`Server/test/BangumiWorkerProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
+| 后端服务回归 | `Server/test/WhoIsFakerService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts`、`Server/test/CCBNativeLifecycle.test.ts`、`Server/test/CCBNativeModes.test.ts`、`Server/test/CCBNativeBoundaries.test.ts`、`Server/test/CCBOriginalService.test.ts`、`Server/test/CCBOriginalRounds.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
+| 协议与传输集成 | `Server/test/WhoIsFakerProtocol.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts`、`Server/test/CCBProtocol.test.ts`、`Server/test/CCBTransport.test.ts`、`Server/test/CCBOriginalProtocol.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -59,7 +59,12 @@ bun run test:coverage
 bun run test:production-smoke
 bun run verify
 bun test test/NetworkCapacity.test.ts
-bun test test/BangumiProvider.test.ts test/SonGuessrService.test.ts
+# Bangumi：本地数据、降级、远端请求边界、Worker 图片/缓存
+bun test test/LocalBangumiProvider.test.ts test/FallbackBangumiProvider.test.ts test/BangumiProvider.test.ts test/BangumiWorkerProvider.test.ts
+# CCB：按原生服务、协议传输、原版互通链路选择，不再使用已拆除的总套件名
+bun test test/CCBNativeLifecycle.test.ts test/CCBNativeModes.test.ts test/CCBNativeBoundaries.test.ts test/CCBRules.test.ts
+bun test test/CCBProtocol.test.ts test/CCBTransport.test.ts
+bun test test/CCBOriginalService.test.ts test/CCBOriginalRounds.test.ts test/CCBOriginalProtocol.test.ts
 
 # 需要本地 Server/.env 中存在 NETEASE_COOKIE；不会在常规 bun test 中执行
 bun run test:music:real
@@ -124,7 +129,7 @@ npx playwright test e2e/App.spec.ts
 - CCB 图片提示用生成的栅格图片经过真实 sharp 解码、缩放、模糊及 WebP 编码，校验像素尺寸和
   模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
   留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
-- 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 单独启动 Vite（5177），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
+- 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 和隔离配置 `Client/e2e/SongLyrics.vite.ts` 单独启动 Vite（5177；独立依赖缓存，不运行应用资源预处理、不写 `.generated-public/` 或 `dist/`），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
 
 ## 组件截图（Storybook）
 
