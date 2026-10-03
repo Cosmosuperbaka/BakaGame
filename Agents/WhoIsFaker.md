@@ -63,8 +63,9 @@ config/          ← Env.ts, Constants.ts
 - 出题人掉线不受普通决策队列影响，走专用的重连宽限期倒计时。
 
 ### 3.5 测试房间空房保护 (Test Room Immunity)
-- 房间号为 `"Oblivionis"`（大小写不敏感）的测试房间，严禁因“全员离线”而被自动回收。
-- `shouldAutoCloseWhenEmpty` 必须在全量 3 处清理切面（`runHousekeeping` 及两处 `handlePlayerOffline` 分支）严格豁免测试房。
+- 房间号为 `"Oblivionis"`（大小写不敏感）的测试房间，不因“闲置超时”或“全员离线（掉线）”而被自动回收。
+- `shouldAutoCloseWhenEmpty` 是这条豁免的唯一判据，只出现在两个切面：`runHousekeeping` 的空房回收分支，以及 `handlePlayerOffline` 中空房计时起点（`emptySinceAt`）的写入分支。
+- `handlePlayerOffline` 内另有两处 `closeRoom(room, "empty")`，条件为 `reason === "leave"`，**不查** `shouldAutoCloseWhenEmpty` —— 真人显式离开测试房间仍会关闭它（由 `真人离开测试房间后测试房间自动关闭` 锁定）。改这块时别把「显式离开」误当成「全员离线」而顺手加豁免。
 
 ---
 
@@ -83,7 +84,9 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 - **卧底人数公式**：`maxUndercoverCount = max(1, Math.ceil(participantCount / 4))`。
 - **可选高级角色**：
   - **白板 (`blank`)**：无词语，仅有词性提示；房间达到 8 人及以上可用。
-  - **天使 (`angel`)**：持有双词，首夜可选阵营并拥有一次性护盾；房间达到 10 人及以上可用。
+  - **天使 (`angel`)**：持有双词，首夜可选阵营并拥有一次性护盾；房间达到 8 人及以上可用。
+
+> 真相源为 `getRoomRoleLimits()`（`Server/src/domain/Rules.ts`）：`canEnableAngel` 与 `canEnableBlank` 同为 `playerCount >= 8`，客户端设置面板的「8 人开启」提示与之对齐。
 
 ### 4.3 胜负判定条件
 - **好人胜 (`good`)**：所有卧底被投票放逐出局。
