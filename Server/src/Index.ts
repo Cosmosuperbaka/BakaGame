@@ -47,9 +47,7 @@ const { app, dispose, sonGuessrService, ccbService } = createServer({
   isShuttingDown: () => isShuttingDown,
   onTriggerShutdown: async () => {
     isShuttingDown = true;
-    void whoIsFakerService.drainPendingWrites().catch((error: unknown) => {
-      logger.error("停机前词库刷盘异常", describeError(error));
-    });
+    // 预通知只摘除 readiness；真正的排空与释放由后续 signal 的唯一任务负责。
   },
 });
 
@@ -107,53 +105,58 @@ const server = app.listen({
 let shutdownTask: Promise<void> | undefined;
 const shutdown = (signal?: string): Promise<void> => {
   if (shutdownTask) return shutdownTask;
-  shutdownTask = (async () => {
   isShuttingDown = true;
+  // 先发布唯一任务再执行副作用，重复或同步重入的 signal 都复用同一编排。
+  shutdownTask = Promise.resolve().then(async () => {
+    logger.warn("收到停机信号，开始优雅停机", { signal });
 
-  logger.warn("收到停机信号，开始优雅停机", {
-    signal,
+    // 总预算仍为 15 秒；挂起 I/O 由看门狗兜底，不按资源重新计时。
+    const watchdog = setTimeout(() => {
+      logger.error("优雅停机超时 (15s)，强制终止进程");
+      process.exit(1);
+    }, 15_000);
+    watchdog.unref();
+
+    const failedStages: string[] = [];
+    const attempt = async (stage: string, cleanup: () => unknown): Promise<void> => {
+      try {
+        await cleanup();
+      } catch (error) {
+        failedStages.push(stage);
+        logger.error("优雅停机步骤失败", { stage, ...describeError(error) });
+      }
+    };
+
+    clearInterval(intervalId);
+    clearInterval(sentryHeartbeatIntervalId);
+    clearInterval(sentryRuntimeMetricsIntervalId);
+
+    // 每款游戏独立通知，不能因一款广播失败跳过剩余资源。
+    await attempt("notify.faker", () => whoIsFakerService.notifyShutdown());
+    await attempt("notify.song", () => sonGuessrService.notifyShutdown());
+    await attempt("notify.ccb", () => ccbService.notifyShutdown());
+    await attempt("buffer", () => Bun.sleep(3000));
+    await attempt("drain", () => whoIsFakerService.drainPendingWrites());
+    await attempt("stop", () => app.stop(true));
+    await attempt("dispose", () => dispose());
+    if (otlpExporter) {
+      await attempt("otlp", () => otlpExporter.shutdown());
+    }
+    await attempt("sentry.flush", async () => {
+      if (!await flushServerSentry(2000)) throw new Error("Sentry flush 未在预算内完成");
+    });
+    await attempt("sentry.close", async () => {
+      if (!await closeServerSentry(2000)) throw new Error("Sentry close 未在预算内完成");
+    });
+
+    clearTimeout(watchdog);
+    if (failedStages.length) {
+      logger.error("优雅停机清理完成但存在失败", { failedStages });
+    } else {
+      logger.info("服务已完成优雅停机");
+    }
+    process.exit(failedStages.length ? 1 : 0);
   });
-
-  // 15 秒硬超时看门狗兜底退出，防止卡死在下游 I/O 或挂起套接字
-  const watchdog = setTimeout(() => {
-    logger.error("优雅停机超时 (15s)，强制终止进程");
-    process.exit(1);
-  }, 15_000);
-  watchdog.unref();
-
-  // 1. 清理后台定时任务，不再触发新的闲置扫描
-  clearInterval(intervalId);
-  clearInterval(sentryHeartbeatIntervalId);
-  clearInterval(sentryRuntimeMetricsIntervalId);
-
-  // 2. 向 WhoIsFaker 与 SonGuessr 所有在线玩家广播停机通知
-  whoIsFakerService.notifyShutdown();
-  sonGuessrService.notifyShutdown();
-  ccbService.notifyShutdown();
-
-  // 3. 预留 3 秒摘流与客户端接收停机协议窗口，使反向代理 / K8s Ingress 切换节点
-  await Bun.sleep(3000);
-
-  // 4. 等待未完成的词库持久化写入队列全部排空落盘
-  await whoIsFakerService.drainPendingWrites();
-
-  // 5. 优雅关闭 HTTP 与 WebSocket 监听端口并关闭存量套接字
-  await app.stop(true);
-  await dispose();
-
-  // 6. 排空并刷新未导出的 OTLP 遥测日志
-  if (otlpExporter) {
-    await otlpExporter.shutdown();
-  }
-
-  // 7. 排空并关闭 Sentry 异常监控客户端
-  await flushServerSentry(2000);
-  await closeServerSentry(2000);
-
-  clearTimeout(watchdog);
-  logger.info("服务已完成优雅停机");
-  process.exit(0);
-  })();
   return shutdownTask;
 };
 
@@ -179,7 +182,7 @@ process.on("uncaughtException", (error) => {
     ...describeError(error),
     error: error instanceof Error ? error : new Error(String(error)),
   });
-  void shutdown("uncaughtException");
+  handleSignal("uncaughtException");
 });
 
 logger.info("BakaGame Server Powered by Elysia Started", {

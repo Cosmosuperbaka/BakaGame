@@ -180,11 +180,14 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **优雅停机 6 步标准时序**：
   1. **标记停机状态**：将 `isShuttingDown` 置为 `true`，触发 `/readyz` 熔断返回 503。
   2. **清除后台轮询**：停止闲置房间清理、心跳超时扫描等定时器，阻止启动新的巡检。
-  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker 与 SonGuessr）全量广播 `server.shutdown` 事件，通知客户端准备重连。
+  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker、SonGuessr 与 CCB）全量广播 `server.shutdown` 事件，通知客户端准备重连。
   4. **流量摘除平滑缓冲窗口**：执行 3 秒（`await Bun.sleep(3000)`）等待，留出反向代理摘流切换与客户端接收停机事件的稳定网络窗口。
   5. **排空写队列落盘**：等待词库异步持久化队列（`drainPendingWrites`）全部排空，杜绝进程退出引发磁盘文件截断或数据丢失。
-  6. **关闭端口与排空遥测**：停止 HTTP/WebSocket 监听端口（`app.stop(true)`），排空并刷新未导出的 OTLP 遥测日志，正常退出进程。
+  6. **关闭端口与排空遥测**：依次 await 停止 HTTP/WebSocket 监听端口（`app.stop(true)`）、释放服务资源（`dispose`）、OTLP `shutdown`、Sentry `flush` 与 `close`；全部成功才以 0 退出。
+- **预通知与最终停机分离**：维护接口先广播停机事件并将 `isShuttingDown` 置为 `true`，只负责摘流，不提前退出或排空持久化队列。最终 signal 编排必须用独立的共享 `shutdownTask` 去重，不能以 readiness 标志判断是否已清理；后续 SIGTERM、重复 SIGTERM/SIGINT 或致命异常共用同一个任务，清定时器、最终广播、await 排空与资源释放各执行一次。预通知广播与 signal 的最终广播是两个阶段，不混为重复 signal 的额外通知。
+- **清理失败隔离**：广播、缓冲、写队列排空、停止监听、服务资源释放与各遥测清理阶段分别捕获并记录带阶段名和完整堆栈的错误；某一步拒绝不能跳过剩余资源的 close。Sentry flush/close 返回 `false` 同样算失败；完成其余清理后以 1 退出，不把失败伪装为正常完成。挂起而非拒绝的步骤仍由总看门狗强制退出，不承诺超时后继续释放。
 - **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
+- **停机回归证据边界**：`Server/test/IndexShutdown.test.ts` 通过完整真实 `Index.ts` 转译 VM 和模块边界替身验证预通知→SIGTERM、每阶段 await、重复 signal、资源失败不短路及 15 秒 unref 总看门狗；`Server/scripts/ShutdownSmoke.ts` 用临时存储、合成维护 token 与出口守卫验证真实服务的预通知、readiness、三款游戏广播和退出。Windows smoke 通过测试 preload 的 `process.emit` 调用已注册 listener，只能证明 listener 集成，不冒充操作系统实际信号投递；平台原生 SIGTERM 验收仍需在 Linux/容器环境执行。
 - **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
 
 ### 10.5 Sentry 全栈异常托管与服务端隧道 (Sentry & Tunnel Gateway)
