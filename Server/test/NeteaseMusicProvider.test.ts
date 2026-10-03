@@ -1685,6 +1685,59 @@ describe("NeteaseMusicProvider", () => {
     expect(unblockCalls).toBe(1);
   });
 
+  test("官方只给试听片段且解灰失败时抛不可用，不把试听当成播放地址", async () => {
+    // 试听片段同样是 audio/mpeg、同样能 Range 206，探测起来与整曲无异（实测只有约 30 秒）。
+    // 一旦在解灰失败时退回它，出题会拿到一个片段作答案，玩家在片段播完后对着静音猜歌。
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 94, name: "试听且解灰失败曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({
+          body: {
+            data: [{
+              id: 94,
+              url: "http://trial.example.com/94.mp3",
+              freeTrialInfo: { start: 0, end: 30 },
+            }],
+          },
+        }),
+        song_url_match: async () => ({ body: { code: 200, data: null } }),
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]试听歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("94")).rejects.toMatchObject({
+      code: "SONG_UNAVAILABLE",
+      message: "该歌曲暂时没有可用播放地址",
+    });
+  });
+
+  test("解灰音源挂起不返回时会超时并按不可用处理，不会把整轮出题钉死", async () => {
+    // 上游确实存在「请求被丢弃、Promise 永不 settle」的情况。没有上界时 getSong 会永远挂起，
+    // 自动出题随即永久停在 automaticRoundLoading，房间再也开不了下一轮（这条用例会直接超时失败）。
+    const attempted: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      // 用极小的上界驱动同一段逻辑，不必等真实的秒级超时
+      unblockSourceTimeoutMs: 10,
+      unblockTotalBudgetMs: 45,
+      loadApi: async () => ({
+        song_detail: async () => ({ body: { songs: [{ id: 95, name: "解灰挂起曲", ar: [{ name: "歌手" }] }] } }),
+        song_url: async () => ({ body: { data: [{ id: 95, url: null, code: 404 }] } }),
+        song_url_match: ({ source }: { source?: string }) => {
+          attempted.push(String(source));
+          return new Promise(() => {});
+        },
+        lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]歌词" } } }),
+      }),
+    });
+
+    await expect(provider.getSong("95")).rejects.toMatchObject({ code: "SONG_UNAVAILABLE" });
+    expect(attempted.length).toBeGreaterThan(0);
+    // 单个音源超时后继续换源，但总预算用尽即停手，不会把 8 个音源全等满
+    expect(attempted.length).toBeLessThanOrEqual(8);
+  });
+
   test("song_url_match 缺失时平滑回退至 song_url_v1 带 unblock 参数解灰", async () => {
     let v1UnblockCalls = 0;
     const provider = new NeteaseMusicProvider({

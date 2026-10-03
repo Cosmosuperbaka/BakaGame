@@ -83,6 +83,10 @@ export interface NeteaseMusicProviderOptions {
   cacheMaxBytes?: number;
   /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。 */
   enableGeneralUnblock?: boolean;
+  /** 单个解灰音源的最长等待，默认 4000ms；上游存在永不 settle 的请求，必须设上界。 */
+  unblockSourceTimeoutMs?: number;
+  /** 一次解灰尝试的总预算，默认 12000ms；用尽后不再换源。 */
+  unblockTotalBudgetMs?: number;
   /** 自定义 AMLL 官方 TTML 歌词检索实现（单元测试注入用）。 */
   fetchAmllLyrics?: (id: string) => Promise<string | undefined>;
   /** 自定义 AMLL 官方 TTML 歌曲名检索实现（单元测试注入用）。 */
@@ -246,6 +250,34 @@ const UNBLOCK_SOURCE_ORDER = [
   "qijieya",
   "bugpk",
 ] as const;
+/** 单个解灰音源的最长等待。 */
+const DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS = 4_000;
+/** 一次解灰尝试的总预算；用尽后不再换源，直接判定解灰失败。 */
+const DEFAULT_UNBLOCK_TOTAL_BUDGET_MS = 12_000;
+
+/**
+ * 给上游 Promise 加一个上界。
+ *
+ * 解灰音源（尤其第三方聚合站）存在「请求被丢弃、返回的 Promise 永不 settle」的情况（实测约每 5~10 次一遇）。
+ * 一旦在 `await` 上无限等待，自动出题会永久停在 `automaticRoundLoading`：房间再也开不了下一轮，
+ * 客户端因为对长任务发的是 `timeout: 0`，连超时提示都没有，只会一直显示「出题中」。
+ *
+ * 必须同时给原 Promise 挂上 `catch`：它在超时之后才拒绝时，若没有处理器就会变成
+ * unhandledRejection —— Bun 会直接终止整个进程（实测 exit=1）。
+ */
+const settleWithin = async <T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
 
 type CacheEntry = {
   value: unknown;
@@ -2361,15 +2393,20 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private async unblockSongAudio(songId: string, cookie?: string): Promise<string> {
+    const sourceTimeoutMs = this.options.unblockSourceTimeoutMs ?? DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS;
+    const deadline = this.now() + (this.options.unblockTotalBudgetMs ?? DEFAULT_UNBLOCK_TOTAL_BUDGET_MS);
+
     // 1. 按显式优先级逐个音源调用 song_url_match，跳过伪解灰结果。
     //    必须显式传 source：不传时包内按目录字母序尝试，bugpk 排在最前且会返回网易云灰链兜底，
     //    字符串非空被误判为成功，导致 unm 等真正可用的音源永远得不到机会。
+    //    每个音源都必须带上界，否则一个被丢弃的请求就足以把整轮出题钉死（见 settleWithin）。
     let sawMatchResponse = false;
     for (const source of UNBLOCK_SOURCE_ORDER) {
-      const matchResponse = await this.callOptional(
-        ["song_url_match"],
-        { id: songId, source },
-        cookie,
+      if (this.now() >= deadline) break;
+      const matchResponse = await settleWithin(
+        this.callOptional(["song_url_match"], { id: songId, source }, cookie),
+        sourceTimeoutMs,
+        undefined,
       );
       if (!matchResponse) continue;
       sawMatchResponse = true;
@@ -2380,10 +2417,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
 
     // 2. 尝试 song_url_v1 带 unblock 参数解灰
-    const v1Response = await this.callOptional(
-      ["song_url_v1"],
-      { id: songId, level: "standard", unblock: "true" },
-      cookie,
+    const v1Response = await settleWithin(
+      this.callOptional(["song_url_v1"], { id: songId, level: "standard", unblock: "true" }, cookie),
+      sourceTimeoutMs,
+      undefined,
     );
     if (v1Response) {
       const body = responseBody(v1Response);
@@ -2399,8 +2436,13 @@ export class NeteaseMusicProvider implements MusicProvider {
       try {
         const { matchID } = await import("@neteasecloudmusicapienhanced/unblockmusic-utils");
         for (const source of UNBLOCK_SOURCE_ORDER) {
-          const result = await matchID(songId, source);
-          const normalized = normalizeAudioUrl(asRecord(result?.data).url);
+          if (this.now() >= deadline) break;
+          const result = await settleWithin<unknown>(
+            Promise.resolve(matchID(songId, source)),
+            sourceTimeoutMs,
+            undefined,
+          );
+          const normalized = normalizeAudioUrl(asRecord(asRecord(result).data).url);
           if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
         }
       } catch (error) {
@@ -2424,8 +2466,13 @@ export class NeteaseMusicProvider implements MusicProvider {
         }, cookie);
         const body = responseBody(response);
         const songData = asRecord(asArray(body.data)[0]);
-        let audioUrl = normalizeAudioUrl(songData.url) ?? "";
-        const isRestricted = !audioUrl || songData.freeTrialInfo != null || songData.code === 404;
+        // 试听片段（`freeTrialInfo`）不是可用的播放地址，整曲只能由解灰提供。
+        // 不能把片段当成结果返回：它同样是 `audio/mpeg` 且能 Range 206，探测起来完全像正常音频，
+        // 实测只有约 30 秒（总字节 ÷ 时长折算等效码率仅 13~19 kbps）。一旦被出成题目，
+        // 玩家会在片段播完后对着静音猜歌，而服务端不会报任何错。
+        const trialOnly = songData.freeTrialInfo != null;
+        let audioUrl = trialOnly ? "" : (normalizeAudioUrl(songData.url) ?? "");
+        const isRestricted = !audioUrl || trialOnly || songData.code === 404;
 
         if (isRestricted && this.enableGeneralUnblock) {
           const unblockedUrl = await this.unblockSongAudio(songId, cookie);
