@@ -75,3 +75,12 @@ describe('CCB 协议边界', () => {
     expect(() => parseCCBMessage({ id: 'sync-2', type: 'ccb.room.requestSync', roomId: `original:${'1'.repeat(32)}`, payload: {} })).toThrow('指令参数不合法');
   });
 });
+
+
+test("可空线路信封在入站边界归一为字段缺席", () => {
+  const message = parseCCBMessage({ id: "wire-null", type: "ccb.game.start", traceId: null, roomId: null, sessionToken: null, payload: {} });
+  expect(message).toEqual({ id: "wire-null", type: "ccb.game.start", payload: {} });
+  expect(message.traceId).toBeUndefined();
+  expect(message.roomId).toBeUndefined();
+  expect(message.sessionToken).toBeUndefined();
+});

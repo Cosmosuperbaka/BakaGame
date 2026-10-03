@@ -15,22 +15,8 @@ export const MAX_SONGUESSR_COOKIE_LENGTH = 16_384;
 export type SongQuestionType = "song" | "anime";
 export type SongQuestionMode = "manual" | "automatic";
 
-export interface SongArtistFilter {
-  id: string;
-  name: string;
-}
-
-export interface SongPlaylistFilter {
-  id: string;
-  name?: string;
-  songCount?: number;
-}
-
-export interface SongAutoFilters {
-  playlist?: SongPlaylistFilter;
-  artists: SongArtistFilter[];
-  minPopularity: 0 | 1_000 | 10_000 | 100_000;
-}
+import type { SongAutoFilters, SongAutoFiltersInput } from "./SonGuessrFilters";
+export * from "./SonGuessrFilters";
 
 export interface BangumiSubjectSearchResult {
   id: string;
@@ -422,7 +408,8 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
   | ClientEnvelope<
       "song.room.updateSettings",
-      Partial<SonGuessrSettings> & {
+      Partial<Omit<SonGuessrSettings, "autoFilters">> & {
+        autoFilters?: SongAutoFiltersInput;
         name?: string;
         visibility?: RoomVisibility;
         password?: string;

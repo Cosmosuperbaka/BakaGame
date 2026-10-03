@@ -12,38 +12,8 @@ import {
 export const SongVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
 export const QuestionTypeSchema = t.Union([t.Literal("song"), t.Literal("anime")]);
 export const QuestionModeSchema = t.Union([t.Literal("manual"), t.Literal("automatic")]);
-export const MinPopularitySchema = t.Union([
-  t.Literal(0),
-  t.Literal(1_000),
-  t.Literal(10_000),
-  t.Literal(100_000),
-]);
-
-export const SongPlaylistFilterSchema = t.Object(
-  {
-    id: t.String({ minLength: 1, maxLength: 64 }),
-    name: t.Optional(t.String({ maxLength: 128 })),
-    songCount: t.Optional(t.Integer({ minimum: 0 })),
-  },
-  { additionalProperties: false },
-);
-
-export const SongArtistFilterSchema = t.Object(
-  {
-    id: t.String({ minLength: 1, maxLength: 64 }),
-    name: t.String({ minLength: 1, maxLength: 128 }),
-  },
-  { additionalProperties: false },
-);
-
-export const SongAutoFiltersSchema = t.Object(
-  {
-    playlist: t.Optional(SongPlaylistFilterSchema),
-    artists: t.Optional(t.Array(SongArtistFilterSchema)),
-    minPopularity: t.Optional(MinPopularitySchema),
-  },
-  { additionalProperties: false },
-);
+import { MinPopularitySchema, SongAutoFiltersInputSchema } from "../shared/SonGuessrFilters";
+export { MinPopularitySchema, SongArtistFilterSchema, SongPlaylistFilterSchema, SongAutoFiltersInputSchema, SongAutoFiltersSchema } from "../shared/SonGuessrFilters";
 
 export const AnimeAutoFiltersSchema = t.Object(
   {
@@ -165,7 +135,7 @@ export const SonGuessrMessageSchemas = {
         questionType: t.Optional(QuestionTypeSchema),
         questionMode: t.Optional(QuestionModeSchema),
         autoRotateSubmitter: t.Optional(t.Boolean()),
-        autoFilters: t.Optional(SongAutoFiltersSchema),
+        autoFilters: t.Optional(SongAutoFiltersInputSchema),
         animeAutoFilters: t.Optional(AnimeAutoFiltersSchema),
         lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
         showLyrics: t.Optional(t.Boolean()),

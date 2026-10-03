@@ -244,3 +244,13 @@ test("SonGuessr 协议支持 16,384 字符合法 Cookie 并拦截超长凭据", 
     }),
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
+
+
+test("局部自动筛选输入和完整房间状态拥有不同契约", async () => {
+  const { Value } = await import("@sinclair/typebox/value");
+  const { SongAutoFiltersSchema, SongAutoFiltersInputSchema } = await import("../src/shared/SonGuessrFilters");
+  const partial = { playlist: { id: "1" } };
+  expect(Value.Check(SongAutoFiltersInputSchema, partial)).toBe(true);
+  expect(Value.Check(SongAutoFiltersSchema, partial)).toBe(false);
+  expect(parseSonGuessrMessage({ id: "filters", type: "song.room.updateSettings", payload: { autoFilters: partial } })).toMatchObject({ payload: { autoFilters: partial } });
+});

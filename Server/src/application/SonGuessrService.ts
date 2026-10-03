@@ -49,6 +49,7 @@ import type {
   SonGuessrScore,
   SonGuessrSettings,
   SongAutoFilters,
+  SongAutoFiltersInput,
   SongSearchResult,
   SongLyricClip,
   BangumiSubjectDetails,
@@ -1279,7 +1280,7 @@ export class SonGuessrService {
     throw new AppError("INVALID_PLAYLIST", "请输入网易云歌单链接或数字 ID");
   }
 
-  private normalizeAutoFilters(filters: SongAutoFilters): SongAutoFilters {
+  private normalizeAutoFilters(filters: SongAutoFiltersInput): SongAutoFilters {
     const playlist = filters.playlist
       ? {
           id: this.parsePlaylistId(filters.playlist.id),
@@ -1287,13 +1288,11 @@ export class SonGuessrService {
           songCount: filters.playlist.songCount,
         }
       : undefined;
-    const artists = filters.artists
+    const artists = (filters.artists ?? [])
       .slice(0, 20)
       .map((artist) => ({ id: artist.id.trim().slice(0, 64), name: normalizeWord(artist.name).slice(0, 80) }))
       .filter((artist) => artist.id && artist.name);
-    const minPopularity = [0, 1_000, 10_000, 100_000].includes(filters.minPopularity)
-      ? filters.minPopularity
-      : 0;
+    const minPopularity = filters.minPopularity ?? 0;
     return { playlist, artists, minPopularity };
   }
 

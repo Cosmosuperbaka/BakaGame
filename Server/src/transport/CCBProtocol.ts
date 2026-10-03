@@ -20,6 +20,12 @@ const optionalEnvelopeString = (maxLength: number) =>
  */
 const ENVELOPE_ROOM_ID_MAX = 32;
 
+export type CCBClientWireMessage = { [K in CCBCommand]:
+  Omit<Extract<CCBClientMessage, { type: K }>, "traceId" | "roomId" | "sessionToken"> & {
+    traceId?: string | null; roomId?: string | null; sessionToken?: string | null;
+  }
+}[CCBCommand];
+
 const schemas = Object.fromEntries(Object.entries(CCBPayloadSchemas).map(([type, payload]) => [type,
   t.Object({ id: t.String({ minLength: 1, maxLength: 128 }), traceId: optionalEnvelopeString(128),
     type: t.Literal(type), roomId: optionalEnvelopeString(ENVELOPE_ROOM_ID_MAX),
@@ -33,5 +39,10 @@ export function parseCCBMessage(input: unknown): CCBClientMessage {
   const type = (input as { type?: CCBCommand } | null)?.type;
   if (!type || !Object.hasOwn(schemas, type)) throw new AppError('UNKNOWN_MESSAGE_TYPE', '未知的角色游戏指令');
   if (!Value.Check(schemas[type]!, input)) throw new AppError('INVALID_MESSAGE', '指令参数不合法');
-  return input as CCBClientMessage;
+  // null 在线路上表示未提供；边界统一为业务层的 optional string。
+  const wire = { ...(input as CCBClientWireMessage) };
+  for (const key of ["traceId", "roomId", "sessionToken"] as const) {
+    if (wire[key] === null) delete wire[key];
+  }
+  return wire as CCBClientMessage;
 }
