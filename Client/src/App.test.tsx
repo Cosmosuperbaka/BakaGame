@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("framer-motion", () => ({
   MotionConfig: ({ children }: { children: ReactNode }) => children,
@@ -42,6 +42,8 @@ import App from "./App";
 import { createAppRouter } from "./AppRouter";
 
 describe("application routing regressions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
   });
