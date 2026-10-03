@@ -84,11 +84,12 @@ const at = (stage: WifStage) => WIF_STAGES.indexOf(stage);
 const stageTime = (stage: WifStage, offsetSeconds: number) => STORY_EPOCH + (at(stage) * 90 + offsetSeconds) * 1000;
 
 /** 出局发生在该节点结束时：之后的快照里该玩家已出局。 */
-const ELIMINATED_AFTER: Record<string, WifStage> = {
+type Eliminations = Partial<Record<string, WifStage>>;
+const ELIMINATED_AFTER: Eliminations = {
   [STONE.id]: "vote1", [AZUMI.id]: "night1", [PEACH.id]: "tieVote2", [LONG.id]: "night2", [YUZU.id]: "vote3",
 };
-const isAlive = (playerId: string, stage: WifStage) => {
-  const after = ELIMINATED_AFTER[playerId];
+const isAlive = (playerId: string, stage: WifStage, eliminations: Eliminations = ELIMINATED_AFTER) => {
+  const after = eliminations[playerId];
   return !after || at(stage) <= at(after);
 };
 // ==================== 发言 ====================
@@ -226,7 +227,7 @@ export const readyPlayers = () => waitingPlayers({ [AZUMI.id]: { isReady: true }
  * 局内名单：出题后参与者进入存活 / 出局；开启死亡揭露身份，出局者公开身份。
  * 终局时服务端已把本局得分加进累计分，`summary` 缺省取默认结算。
  */
-export function roundPlayers(stage: WifStage, summary?: RoundSummary): PublicPlayerView[] {
+export function roundPlayers(stage: WifStage, summary?: RoundSummary, eliminations: Eliminations = ELIMINATED_AFTER): PublicPlayerView[] {
   const assigned = at(stage) >= at("day1");
   const over = stage === "over";
   const awards = over ? (summary ?? wifRoundSummary()).awardedScores : [];
@@ -234,8 +235,8 @@ export function roundPlayers(stage: WifStage, summary?: RoundSummary): PublicPla
   const host = wifPlayer(HOST, { roundStatus: at(stage) >= at("words") ? "questioner" : "waiting" });
   const participants = PARTICIPANTS.map((person) => {
     if (!assigned) return wifPlayer(person);
-    const alive = isAlive(person.id, stage);
-    const after = ELIMINATED_AFTER[person.id];
+    const alive = isAlive(person.id, stage, eliminations);
+    const after = eliminations[person.id];
     return wifPlayer(person, {
       roundStatus: alive ? "alive" : "dead",
       score: score(person),
@@ -433,22 +434,49 @@ export function wifRoundSummary(overrides: Partial<RoundSummary> = {}): RoundSum
   };
 }
 
-/** 卧底阵营胜利的结算：用于终局的不同结局。 */
-export const undercoverWinnerSummary = () => wifRoundSummary({
-  winner: "undercover",
-  reason: "存活卧底人数与好人持平",
-  blankGuesses: [],
-});
-
-/** 好人阵营胜利的结算：白板未猜中，平民留下最后一人。 */
-export const goodWinnerSummary = () => wifRoundSummary({
-  winner: "good",
-  reason: "卧底与白板全部出局",
-  blankGuesses: [{
-    playerId: KITA.id, guessedWords: ["面团", "汤圆"] as [string, string], success: false, reason: "finale",
-    createdAt: stageTime("blankReview", 20),
-  }],
-});
+/**
+ * 替代结局一次生成公开与私有视图，不能只换 summary 而沿用默认白板胜名单。
+ * 卧底胜：第二天投出白板且猜词失败，第二夜刀掉长名玩家后 2 卧底 / 2 好人持平。
+ * 好人胜：原时间线中卧底全灭，仍存活的白板终局猜词失败，再按常规胜负结算。
+ */
+export function wifEndingScenario(winner: "undercover" | "good", viewer: WifViewer) {
+  const undercover = winner === "undercover";
+  const eliminations: Eliminations = undercover ? {
+    [STONE.id]: "vote1", [AZUMI.id]: "night1", [KITA.id]: "vote2", [LONG.id]: "night2",
+  } : ELIMINATED_AFTER;
+  const descriptions = publicDescriptions(undercover ? "day2" : "day3", {});
+  const summary = wifRoundSummary({
+    winner,
+    reason: undercover ? "存活卧底人数与好人持平" : "卧底全部出局，白板终局猜词失败",
+    descriptions,
+    blankGuesses: [{
+      playerId: KITA.id, guessedWords: ["面团", "汤圆"], success: false,
+      reason: undercover ? "eliminated" : "finale",
+      createdAt: stageTime(undercover ? "vote2" : "blankReview", 80),
+    }],
+    voteHistory: undercover ? [
+      { day: 1, votes: VOTES.vote1 },
+      { day: 2, votes: [
+        vote(ME, KITA), vote(PEACH, KITA), vote(KANADE, KITA),
+        vote(KITA, PEACH), vote(LONG, PEACH), vote(YUZU, KITA),
+      ] },
+    ] : VOTE_HISTORY,
+  });
+  const players = roundPlayers("over", summary, eliminations);
+  const snapshot = wifSnapshot("over", {
+    summary, players, descriptions,
+    status: { ...stageStatus("over", {}), day: undercover ? 2 : 3 },
+    chat: wifChat(undercover ? "night2" : "over"),
+  });
+  const privateState = wifPrivate(viewer, "over");
+  if (privateState.questionerView) {
+    const aliveIds = new Set(players.filter((player) => player.roundStatus === "alive").map((player) => player.id));
+    privateState.questionerView = privateState.questionerView.map((player) => ({
+      ...player, alive: aliveIds.has(player.playerId),
+    }));
+  }
+  return { snapshot, privateState };
+}
 
 export {
   VOTE_HISTORY,

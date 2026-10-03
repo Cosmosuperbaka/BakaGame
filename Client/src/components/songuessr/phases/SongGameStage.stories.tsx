@@ -105,6 +105,7 @@ export const GuessesUsedUp: Story = {
 };
 export const Instrumental: Story = {
   name: "纯音乐 · 无歌词",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   args: {
     snapshot: playingSnapshot({
       currentRound: { roundNumber: 3, submitterPlayerId: peach.id, audioUrl: "", lyricClip: { startTime: 60_000, endTime: 90_000, lines: [] } },
@@ -114,6 +115,7 @@ export const Instrumental: Story = {
 
 export const LyricsHidden: Story = {
   name: "房间关闭歌词提示",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   args: { snapshot: playingSnapshot({ settings: songSettings({ showLyrics: false }) }) },
 };
 

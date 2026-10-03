@@ -5,11 +5,10 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { ROOM_ID_TEST_MODE } from "@/types";
 import {
-  goodWinnerSummary,
   presetWifRoom,
   readyPlayers,
   seedWifUsername,
-  undercoverWinnerSummary,
+  wifEndingScenario,
   WIF_PEOPLE,
   WIF_ROOM_ROUTER,
   WIF_TEST_ROUTER,
@@ -256,18 +255,18 @@ export const GameOverPlayer: Story = {
 
 export const GameOverUndercoverWin: Story = {
   name: "游戏结束 · 卧底胜",
-  beforeEach: () => presetWifRoom(
-    wifSnapshot("over", { summary: undercoverWinnerSummary() }),
-    wifPrivate(peach, "over"),
-  ),
+  beforeEach: () => {
+    const { snapshot, privateState } = wifEndingScenario("undercover", peach);
+    presetWifRoom(snapshot, privateState);
+  },
 };
 
 export const GameOverGoodWin: Story = {
   name: "游戏结束 · 好人胜",
-  beforeEach: () => presetWifRoom(
-    wifSnapshot("over", { summary: goodWinnerSummary() }),
-    wifPrivate(me, "over"),
-  ),
+  beforeEach: () => {
+    const { snapshot, privateState } = wifEndingScenario("good", me);
+    presetWifRoom(snapshot, privateState);
+  },
 };
 
 // ==================== 测试房间 ====================
