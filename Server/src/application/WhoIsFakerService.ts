@@ -3100,15 +3100,20 @@ export class WhoIsFakerService {
     return false;
   }
 
-  private filterChatForConnection(
-    room: RoomRecord,
-    chat: ChatMessage[],
-    player?: PlayerRecord,
-  ): ChatMessage[] {
-    if (this.canViewerAccessGhostChat(room, player)) {
-      return chat;
-    }
-    return chat.filter((msg) => msg.channel !== "ghost");
+  private createRoomSnapshotViewSelector(room: RoomRecord, snapshot: RoomSnapshot) {
+    // 缓存只活在本次同步发布中；同权限连接共用只读投影，不能跨房间/阶段复用。
+    const fullSnapshot = Object.freeze(snapshot);
+    let mainChatSnapshot: Readonly<RoomSnapshot> | undefined;
+    return (player?: PlayerRecord): Readonly<RoomSnapshot> => {
+      if (this.canViewerAccessGhostChat(room, player)) {
+        return fullSnapshot;
+      }
+      mainChatSnapshot ??= Object.freeze({
+        ...fullSnapshot,
+        chat: fullSnapshot.chat.filter((message) => message.channel !== "ghost"),
+      });
+      return mainChatSnapshot;
+    };
   }
 
   private publishRoomState(room: RoomRecord, targetConnection?: ConnectionRecord) {
@@ -3125,17 +3130,13 @@ export class WhoIsFakerService {
       this.publishedPhaseKeyByRoomId.set(room.id, phaseKey);
     }
 
+    const selectSnapshot = this.createRoomSnapshotViewSelector(room, snapshot);
     const connections = targetConnection
       ? [targetConnection]
       : this.connectionRegistry.getRoomConnections(room.id);
     for (const connection of connections) {
       const player = connection.playerId ? room.players[connection.playerId] : undefined;
-      const connectionSnapshot = this.canViewerAccessGhostChat(room, player)
-        ? snapshot
-        : {
-            ...snapshot,
-            chat: this.filterChatForConnection(room, snapshot.chat, player),
-          };
+      const connectionSnapshot = selectSnapshot(player);
 
       connection.send(createEvent("room.snapshot", connectionSnapshot));
 
@@ -3151,14 +3152,10 @@ export class WhoIsFakerService {
 
   private publishRoomStateCalibration(room: RoomRecord) {
     const snapshot = this.buildRoomSnapshot(room);
+    const selectSnapshot = this.createRoomSnapshotViewSelector(room, snapshot);
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players[connection.playerId] : undefined;
-      const connectionSnapshot = this.canViewerAccessGhostChat(room, player)
-        ? snapshot
-        : {
-            ...snapshot,
-            chat: this.filterChatForConnection(room, snapshot.chat, player),
-          };
+      const connectionSnapshot = selectSnapshot(player);
       connection.sendStateSyncCalibration?.(createEvent("room.snapshot", connectionSnapshot));
 
       if (!connection.playerId) continue;

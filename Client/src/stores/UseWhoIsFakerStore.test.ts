@@ -114,7 +114,7 @@ describe("game store integration", () => {
 
   it("合并聊天历史保持有界并保留最新消息", () => {
     const base = gameOverSnapshot("chat-round");
-    const history = Array.from({ length: 250 }, (_, index) => ({ id: `chat-${index}`, playerId: "p", playerName: "玩家", content: `消息${index}`, createdAt: index }));
+    const history = Array.from({ length: 250 }, (_, index) => ({ id: `chat-${index}`, playerId: "p", playerName: "玩家", text: `消息${index}`, system: false, createdAt: index }));
     useGameStore.getState().setSnapshot({ ...base, chat: history });
     const chat = useGameStore.getState().snapshot?.chat ?? [];
     expect(chat).toHaveLength(200);

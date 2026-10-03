@@ -38,6 +38,13 @@ config/          ← Env.ts, Constants.ts
   - `/whoisfaker` → `WhoIsFakerPage`（大厅）
   - `/whoisfaker/room/:roomId` → `WhoIsFakerRoomPage`（游戏房间）
 
+### 2.3 广播视图与编码准备性能
+- `publishRoomState`（含目标同步）与 `publishRoomStateCalibration` 共用同一权限视图选择器。每次发布最多生成“含 ghost”与“仅主聊天”两种公开投影，同权限连接复用同一对象及过滤后的聊天数组，不能逐连接重建等价 wrapper。
+- 视图在阶段播报补齐后冻结外壳；同步发布循环内只读，缓存只存活于本次发布，不跨房间、阶段或后续广播保留。不得深冻结状态机仍持有的领域数据；传输层 `StateSyncEncoder` 按公开对象身份准备隔离的克隆基线，并在基线也相同时共享补丁准备。
+- 分组依据始终是 `canViewerAccessGhostChat`，不是单独的 membership：活跃阶段的旁观出题人仍看不到 ghost，普通旁观者及已淘汰玩家可以看到。阶段结束后重新计算可见性，不沿用旧分组。
+- `game.privateState` 仍逐连接构建，sessionToken、词语及本人行动不得并入共享公开视图。校准继续覆盖公开和私有通道，不改变既有周期与版本语义。
+- 回归见 `Server/test/WhoIsFakerViews.test.ts`：150 连接混合权限、对象/编码准备身份复用、ghost 隔离、目标同步和无变化全量校准；网络预算继续以 `Server/test/NetworkCapacity.test.ts` 为准，不将本地准备次数减少描述为生产 CPU 或带宽实测收益。
+
 ---
 
 ## 3. 核心设计模式 (Core Design Patterns)
