@@ -59,14 +59,18 @@ export class CCBCharacterRepository implements CCBDataProvider {
         const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
         if (row) rows.push(row);
       }
-      rows.sort((a, b) => {
-        const aSummary = this.toSummary(a), bSummary = this.toSummary(b);
+    }
+    // 每个候选只读一次补充资料；比较器不执行 SQLite I/O。
+    const candidates = rows.map(row => ({ row, summary: this.toSummary(row) }));
+    if (query) {
+      candidates.sort((a, b) => {
+        const aSummary = a.summary, bSummary = b.summary;
         const aExact = Number(aSummary.name !== query && aSummary.nameCn !== query);
         const bExact = Number(bSummary.name !== query && bSummary.nameCn !== query);
-        return aExact - bExact || b.collects - a.collects || a.id - b.id;
+        return aExact - bExact || b.row.collects - a.row.collects || a.row.id - b.row.id;
       });
     }
-    return rows.slice(0, count).map((row) => this.toSummary(row));
+    return candidates.slice(0, count).map(({ summary }) => summary);
   }
 
   async searchSubjects(keyword: string, limit = 20, types = [1, 2, 4, 6]): Promise<CCBSubjectSummary[]> {

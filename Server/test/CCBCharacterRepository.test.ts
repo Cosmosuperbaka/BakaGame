@@ -162,3 +162,30 @@ describe("CCB 本地角色资料", () => {
     expect((await repository.getCharacter(1, settings())).name).toBe("Makise");
   });
 });
+
+
+test("角色搜索每个候选只读一次补充资料，冷热排序保留改名精确命中", async () => {
+  for (const size of [20, 50]) {
+    const { repository, characterPath } = create();
+    const fixture = new Database(characterPath);
+    for (let index = 0; index < size; index++) {
+      const id = 100 + index, name = `命中${index}`;
+      fixture.query("INSERT INTO characters VALUES (?,1,?,?,'?','[]','',0,?)").run(id, name, name, index);
+    }
+    fixture.close();
+    const enrichment = (repository as unknown as { enrichment: { db: Database; readCharacter: (id: number) => unknown; readImage: (id: number) => unknown } }).enrichment;
+    enrichment.db.query("INSERT INTO ccb_character_enrichment VALUES (?,1,?,?)").run(100, JSON.stringify({ name: "命", nameCn: "命" }), now);
+    let reads = 0;
+    const character = enrichment.readCharacter.bind(enrichment), image = enrichment.readImage.bind(enrichment);
+    enrichment.readCharacter = id => { reads++; return character(id); };
+    enrichment.readImage = id => { reads++; return image(id); };
+    for (let pass = 0; pass < 2; pass++) {
+      reads = 0;
+      const results = await repository.searchCharacters("命", size);
+      expect(results).toHaveLength(size);
+      expect(results[0].id).toBe(100);
+      expect(reads).toBe(size * 2);
+      expect(results[1].id).toBe(100 + size - 1);
+    }
+  }
+});
