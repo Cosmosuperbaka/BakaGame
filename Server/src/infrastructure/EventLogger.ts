@@ -299,7 +299,8 @@ export class EventLogger {
     const timestampStr = formatTimestamp(createdAt);
     const durationStr = formatDuration(durationMs);
     const idStr = identifier.padStart(15, " ");
-    const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}`;
+    const traceContext = traceId ? ` | ${JSON.stringify({ traceId })}` : "";
+    const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}${traceContext}`;
     this.output[LEVEL_METHODS[level]](line);
 
     captureServerOperation({

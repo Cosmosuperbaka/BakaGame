@@ -1,14 +1,19 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import * as Sentry from "@sentry/bun";
+import * as Release from "../src/infrastructure/Release";
 import { EventLogger, describeError, redactData } from "../src/infrastructure/EventLogger";
 import { _resetServerSentryForTest, initServerSentry } from "../src/infrastructure/Sentry";
 import { OtlpExporter } from "../src/infrastructure/OtlpExporter";
 
 let exporter: OtlpExporter | undefined;
+let release: ReturnType<typeof spyOn>;
+// 日志出口测试不依赖本机 Git 开销；发布证据由独立 Release 测试负责。
+beforeEach(() => { release = spyOn(Release, "resolveServerRelease").mockReturnValue("V0.0.0（fixture）"); });
 afterEach(async () => {
   await exporter?.shutdown();
   exporter = undefined;
   _resetServerSentryForTest();
+  release.mockRestore();
 });
 
 test("console / OTLP / Sentry 出口共用脱敏且保留错误 cause 诊断", async () => {
@@ -41,4 +46,45 @@ test("console / OTLP / Sentry 出口共用脱敏且保留错误 cause 诊断", a
     expect(captures).toHaveBeenCalledWith(error);
     expect(JSON.stringify(redactData(context))).toContain("[OMITTED_RAW_PAYLOAD]");
   } finally { init.mockRestore(); logs.mockRestore(); captures.mockRestore(); scoped.mockRestore(); }
+});
+
+test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值", async () => {
+  const output: string[] = [];
+  const bodies: string[] = [];
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const spans = spyOn(Sentry, "startSpan").mockImplementation(() => undefined as never);
+  const count = spyOn(Sentry.metrics, "count").mockImplementation(() => undefined);
+  const distribution = spyOn(Sentry.metrics, "distribution").mockImplementation(() => undefined);
+  const stdout = spyOn(console, "info").mockImplementation((message: string) => { output.push(message); });
+  try {
+    initServerSentry({
+      clientUrl: "http://localhost:5173", serverUrl: "http://127.0.0.1:1", serverListenHost: "127.0.0.1", serverPort: 1,
+      wordBankPath: ":memory:", bangumiApiUrl: "http://127.0.0.1:9", bangumiImageUrl: "", sentryDsn: "https://fixture@o000000.ingest.sentry.io/100001",
+    });
+    exporter = new OtlpExporter({ endpoint: "http://127.0.0.1:9", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
+      bodies.push(String(options?.body)); return new Response("{}");
+    } });
+    const logger = new EventLogger(undefined, () => 1700000000000, exporter);
+    const traceIds = ["4bf92f3577b34da6a3ce929d0e0e4736", "f83c9b4a5b0248aa98d1563fa91a0212"];
+    for (const [index, traceId] of traceIds.entries()) {
+      logger.logOperation({ status: 200, durationMs: 12, identifier: `fixture-${index}`, action: index ? "WS room.requestSync" : "HTTP GET /readyz", traceId });
+    }
+    logger.logOperation({ status: 200, durationMs: 0, action: "fixture without trace" });
+    await exporter.flush();
+    type Span = { traceId: string; attributes: Array<{ key: string; value: { stringValue?: string } }> };
+    const payload = JSON.parse(bodies[0]) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> };
+    const wireSpans = payload.resourceSpans[0].scopeSpans[0].spans;
+    expect(output).toHaveLength(3);
+    for (const [index, traceId] of traceIds.entries()) {
+      const stdoutContext = JSON.parse(output[index].split(" | ").at(-1)!) as { traceId: string };
+      expect(stdoutContext.traceId).toBe(traceId);
+      expect(wireSpans[index].traceId).toBe(traceId);
+      expect(wireSpans[index].attributes.find(attribute => attribute.key === "trace.id")?.value.stringValue).toBe(traceId);
+      expect(spans.mock.calls[index][0].attributes?.["trace.id"]).toBe(traceId);
+    }
+    expect(output[2]).not.toContain("traceId");
+    expect(spans.mock.calls[2][0].attributes).not.toHaveProperty("trace.id");
+  } finally {
+    stdout.mockRestore(); distribution.mockRestore(); count.mockRestore(); spans.mockRestore(); init.mockRestore();
+  }
 });
