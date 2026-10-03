@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 
 export const MAX_ENVELOPE_BYTES = 256 * 1024; // 256KB
@@ -7,42 +8,16 @@ const SENTRY_INGEST_REGEX =
   /^[a-z0-9-]+\.(ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io)$/i;
 
 export class SentryTunnelRateLimiter {
-  private readonly windows = new Map<string, number[]>();
-  private readonly windowMs: number;
-  private readonly maxRequests: number;
-
-  constructor(options: { windowMs?: number; maxRequests?: number } = {}) {
-    this.windowMs = options.windowMs ?? 60_000;
-    this.maxRequests = options.maxRequests ?? 60;
+  private readonly ip: SlidingWindowRateLimiter;
+  private readonly total: SlidingWindowRateLimiter;
+  constructor(options: { windowMs?: number; maxRequests?: number; globalMaxRequests?: number } = {}) {
+    this.ip = new SlidingWindowRateLimiter({ windowMs: options.windowMs ?? 60_000, maxRequests: options.maxRequests ?? 60 });
+    this.total = new SlidingWindowRateLimiter({ windowMs: options.windowMs ?? 60_000, maxRequests: options.globalMaxRequests ?? 1000 });
   }
-
-  public allow(key: string, now = Date.now()): boolean {
-    const windowStart = now - this.windowMs;
-    const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
-    if (timestamps.length >= this.maxRequests) {
-      this.windows.set(key, timestamps);
-      return false;
-    }
-    timestamps.push(now);
-    this.windows.set(key, timestamps);
-
-    if (this.windows.size > 1000) {
-      for (const [k, ts] of this.windows.entries()) {
-        const valid = ts.filter((t) => t > windowStart);
-        if (valid.length === 0) {
-          this.windows.delete(k);
-        } else {
-          this.windows.set(k, valid);
-        }
-      }
-    }
-
-    return true;
+  allow(key: string, now = Date.now()): boolean {
+    return this.total.allow("global", now) && this.ip.allow(key, now);
   }
-
-  public reset(): void {
-    this.windows.clear();
-  }
+  reset(): void { this.ip.reset(); this.total.reset(); }
 }
 
 export interface SentryTunnelOptions {
@@ -160,18 +135,41 @@ export const sentryTunnelRoutes = ({
           return { error: "Payload Too Large" };
         }
 
-        const rawEnvelope = await request.text();
-        if (Buffer.byteLength(rawEnvelope, "utf8") > MAX_ENVELOPE_BYTES) {
-          set.status = 413;
-          return { error: "Payload Too Large" };
+        const chunks: Uint8Array[] = [];
+        let byteLength = 0;
+        const reader = request.body?.getReader();
+        if (reader) {
+          try {
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              byteLength += chunk.value.byteLength;
+              if (byteLength > MAX_ENVELOPE_BYTES) {
+                await reader.cancel();
+                set.status = 413;
+                return { error: "Payload Too Large" };
+              }
+              chunks.push(chunk.value);
+            }
+          } finally { reader.releaseLock(); }
         }
+        const rawEnvelope = new Uint8Array(byteLength);
+        let offset = 0;
+        for (const chunk of chunks) { rawEnvelope.set(chunk, offset); offset += chunk.byteLength; }
 
-        if (!rawEnvelope || !rawEnvelope.trim()) {
+        if (rawEnvelope.byteLength === 0) {
           set.status = 400;
           return { error: "Empty envelope payload" };
         }
 
-        const firstLine = rawEnvelope.split("\n")[0];
+        const newline = rawEnvelope.indexOf(10);
+        let firstLine: string;
+        try {
+          firstLine = new TextDecoder("utf-8", { fatal: true }).decode(rawEnvelope.subarray(0, newline >= 0 ? newline : rawEnvelope.length));
+        } catch {
+          set.status = 400;
+          return { error: "Invalid envelope header encoding" };
+        }
         if (!firstLine) {
           set.status = 400;
           return { error: "Invalid envelope header" };
@@ -179,13 +177,15 @@ export const sentryTunnelRoutes = ({
 
         let header: { dsn?: string };
         try {
-          header = JSON.parse(firstLine) as { dsn?: string };
+          const parsed: unknown = JSON.parse(firstLine);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Invalid header");
+          header = parsed as { dsn?: string };
         } catch {
           set.status = 400;
           return { error: "Failed to parse envelope header JSON" };
         }
 
-        if (!header.dsn) {
+        if (typeof header.dsn !== "string" || !header.dsn) {
           set.status = 400;
           return { error: "Missing DSN in envelope header" };
         }

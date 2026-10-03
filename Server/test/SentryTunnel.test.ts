@@ -164,7 +164,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       capturedUrl = String(input);
       capturedMethod = init?.method ?? "GET";
       capturedHeaders = (init?.headers as Record<string, string>) ?? {};
-      capturedBody = String(init?.body);
+      capturedBody = await new Response(init?.body).text();
       return new Response(JSON.stringify({ id: "event-id-123" }), { status: 200 });
     }) as unknown as typeof fetch;
 
@@ -396,5 +396,41 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     expect(json.error).toBe("Internal Sentry tunnel error");
     expect(json.message).toBeUndefined();
     expect(loggedErrors.length).toBe(1);
+  });
+});
+
+
+it("二进制信封原字节转发且轮换来源仍受总预算限制", async () => {
+  const prefix = new TextEncoder().encode(JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n");
+  const envelope = new Uint8Array([...prefix, 0xff, 0x00, 0x80, 0xc3, 0x28]);
+  let forwarded: Uint8Array | undefined;
+  const fetcher = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    forwarded = new Uint8Array(await new Response(init?.body).arrayBuffer());
+    return new Response("{}", { status: 200 });
+  }, { preconnect: () => {} });
+  const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher, rateLimiter: new SentryTunnelRateLimiter({ globalMaxRequests: 2 }) });
+  for (let index = 0; index < 3; index++) {
+    const response = await app.handle(new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: envelope, headers: { "x-forwarded-for": `203.0.113.${index}` } }));
+    expect(response.status).toBe(index < 2 ? 200 : 429);
+  }
+  expect(forwarded).toEqual(envelope);
+});
+
+
+describe("信封读取边界", () => {
+  it("非法UTF8头与非对象JSON头返回400而不触发上游", async () => {
+    const app = sentryTunnelRoutes({ fetcher: (() => { throw new Error("禁止上游"); }) as unknown as typeof fetch });
+    for (const body of [new Uint8Array([255, 10]), "null\n", "[]\n"]) {
+      const response = await app.handle(new Request("http://localhost/api/monitoring/sentry", { method: "POST", body }));
+      expect(response.status).toBe(400);
+    }
+  });
+  it("无长度头的超大流立即取消，不继续缓存", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(new Uint8Array(MAX_ENVELOPE_BYTES + 1)); }, cancel() { cancelled = true; } });
+    const app = sentryTunnelRoutes();
+    const response = await app.handle(new Request("http://localhost/api/monitoring/sentry", { method: "POST", body, duplex: "half" } as RequestInit));
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
   });
 });
