@@ -10,6 +10,10 @@ interface SeoProps {
   path: string;
   /** 页面描述。已登记在 `PageMeta` 的路径可省略，自动取单一真相源。 */
   description?: string;
+  /** 社交媒体预览大图。已登记在 `PageMeta` 的路径可省略。 */
+  image?: string;
+  /** 供搜索引擎索引的关键词。已登记在 `PageMeta` 的路径可省略。 */
+  keywords?: string[];
   /** 是否允许搜索引擎索引本页。房间页等运行时页面应传 false。 */
   indexable?: boolean;
   /** 结构化数据对象；已登记路径默认取 `PageMeta`，可用此属性覆盖。 */
@@ -31,7 +35,7 @@ interface SeoProps {
  * 「BakaGame」，不带任何后缀，由 index.html 的兜底 <title> 提供。本组件因此不渲染 <title>，
  * og:title 也固定为站名。
  */
-export function Seo({ path, description, indexable = true, structuredData }: SeoProps) {
+export function Seo({ path, description, image, keywords, indexable = true, structuredData }: SeoProps) {
   const meta = findPageMeta(path);
   const resolvedDescription = description ?? meta?.description;
   if (!resolvedDescription) {
@@ -40,6 +44,8 @@ export function Seo({ path, description, indexable = true, structuredData }: Seo
   }
 
   const canonical = `${SITE_ORIGIN}${path}`;
+  const resolvedImage = image ?? meta?.image ?? `${SITE_ORIGIN}/assets/logo.webp`;
+  const resolvedKeywords = keywords ?? meta?.keywords;
   const resolvedStructuredData = structuredData ?? meta?.structuredData;
   const structuredDataJson = resolvedStructuredData ? JSON.stringify(resolvedStructuredData) : null;
 
@@ -62,6 +68,9 @@ export function Seo({ path, description, indexable = true, structuredData }: Seo
   return (
     <Helmet prioritizeSeoTags>
       <meta name="description" content={resolvedDescription} />
+      {resolvedKeywords && resolvedKeywords.length > 0 ? (
+        <meta name="keywords" content={resolvedKeywords.join(", ")} />
+      ) : null}
       <link rel="canonical" href={canonical} />
       <meta name="robots" content={indexable ? "index,follow" : "noindex,follow"} />
 
@@ -69,7 +78,13 @@ export function Seo({ path, description, indexable = true, structuredData }: Seo
       <meta property="og:site_name" content={SITE_NAME} />
       <meta property="og:title" content={SITE_NAME} />
       <meta property="og:description" content={resolvedDescription} />
+      <meta property="og:image" content={resolvedImage} />
       <meta property="og:url" content={canonical} />
+
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={SITE_NAME} />
+      <meta name="twitter:description" content={resolvedDescription} />
+      <meta name="twitter:image" content={resolvedImage} />
     </Helmet>
   );
 }

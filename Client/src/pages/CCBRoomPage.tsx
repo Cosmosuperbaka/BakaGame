@@ -23,7 +23,7 @@ export default function CCBRoomPage() {
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
 
   const seo = (
-    <Seo path={lifecycle.roomId ? ccbRoomPath(lifecycle.roomId) : "/ccb"} description="CCB 多人猜角色房间" indexable={false} />
+    <Seo path={lifecycle.roomId ? ccbRoomPath(lifecycle.roomId) : "/ccb"} description="CCB 猜动漫角色对局中，快进房比拼二次元浓度与看番量！" indexable={false} />
   );
 
   // 尚未握手成功：与原版重连中同为断线语义，文案区分来源。

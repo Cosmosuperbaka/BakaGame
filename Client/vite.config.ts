@@ -331,15 +331,24 @@ function staticShellPlugin() {
       const pages = PAGE_META.map((meta) => {
         const canonical = `${SITE_ORIGIN}${meta.path}`
         const description = escapeHtml(meta.description)
+        const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/assets/logo.webp`)
         const head = [
           `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          ...(meta.keywords && meta.keywords.length > 0
+            ? [`<meta name="keywords" content="${escapeHtml(meta.keywords.join(', '))}" ${STATIC_SEO_ATTRIBUTE}="1" />`]
+            : []),
           `<link rel="canonical" href="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta property="og:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta property="og:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta name="twitter:card" content="summary_large_image" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta name="twitter:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+          `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
         ].join('\n    ')
 

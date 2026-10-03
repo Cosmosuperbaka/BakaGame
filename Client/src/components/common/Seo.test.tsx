@@ -59,7 +59,7 @@ describe("Seo", () => {
     });
   });
 
-  it("写入 og 系列标签，og:title 固定为站名", async () => {
+  it("写入 og 系列标签，og:title 固定为站名，并注入社交卡片大图", async () => {
     renderSeo({ description: "分享描述", path: "/songuessr" });
 
     await waitFor(() => {
@@ -68,6 +68,22 @@ describe("Seo", () => {
         "https://game.baka.website/songuessr",
       );
       expect(document.head.querySelector('meta[property="og:site_name"]')?.getAttribute("content")).toBe("BakaGame");
+      expect(document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")).toBe(
+        "https://game.baka.website/assets/SongGuessr.webp",
+      );
+      expect(document.head.querySelector('meta[name="twitter:card"]')?.getAttribute("content")).toBe(
+        "summary_large_image",
+      );
+    });
+  });
+
+  it("当存在 keywords 时写入 meta keywords", async () => {
+    renderSeo({ path: "/whoisfaker" });
+    const keywords = findPageMeta("/whoisfaker")!.keywords!;
+    await waitFor(() => {
+      expect(document.head.querySelector('meta[name="keywords"]')?.getAttribute("content")).toBe(
+        keywords.join(", "),
+      );
     });
   });
 

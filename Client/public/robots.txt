@@ -13,3 +13,6 @@ Disallow: /ccb/room/
 Disallow: /songuessr/solo
 
 Sitemap: https://game.baka.website/sitemap.xml
+
+# LLM 与 AI 搜索爬虫速查指引（遵循 llms.txt 事实规范）
+# https://game.baka.website/llms.txt

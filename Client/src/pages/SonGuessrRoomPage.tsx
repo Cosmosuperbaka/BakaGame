@@ -137,7 +137,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
 
   const seoNode = (
     <Seo
-      description="BakaGame 听歌猜歌对局页面，内容由服务端实时状态驱动。"
+      description={solo ? "Songuessr 音乐与番剧单人挑战中，冲击更高连胜纪录！" : "Songuessr 音乐与番剧竞猜激战中，点击立即上车听前奏抢答！"}
       path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
       indexable={false}
     />

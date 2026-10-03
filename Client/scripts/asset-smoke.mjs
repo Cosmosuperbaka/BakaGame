@@ -86,9 +86,9 @@ try {
   // 静态外壳：不执行 JS 的爬虫必须能读到正文与 head 元信息（构建期由 static-shell 插件注入）。
   // 这里只做「有没有」的断言；「会不会产生重复标签」由 E2E 用真实浏览器断言（strict 定位器）。
   const shellChecks = [
-    { route: "/", text: "免下载的网页版派对游戏站", canonical: "https://game.baka.website/" },
+    { route: "/", text: "二次元与聚会联机游戏站", canonical: "https://game.baka.website/" },
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
-    { route: "/songuessr", text: "听歌猜歌", canonical: "https://game.baka.website/songuessr" },
+    { route: "/songuessr", text: "音乐与动漫番剧竞猜", canonical: "https://game.baka.website/songuessr" },
     { route: "/ccb", text: "在线猜动漫角色", canonical: "https://game.baka.website/ccb" },
   ];
   for (const { route, text, canonical } of shellChecks) {

@@ -330,7 +330,7 @@ export default function WhoIsFakerRoomPage() {
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
   const seoNode = (
     <Seo
-      description="BakaGame 谁是卧底对局页面，内容由服务端实时状态驱动。"
+      description="Who is Faker 谁是卧底房间已就绪，立即进房狂飙演技抓卧底！"
       path={`/whoisfaker/room/${roomId ?? ""}`}
       indexable={false}
     />

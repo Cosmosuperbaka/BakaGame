@@ -28,6 +28,10 @@ export interface PageMeta {
   path: string;
   /** meta description 与 og:description */
   description: string;
+  /** 社交媒体预览大图（绝对地址或相对站内路径） */
+  image?: string;
+  /** 供爬虫索引与归类的关键词列表（用户不可见） */
+  keywords?: string[];
   shell: PageShell;
   /** JSON-LD 结构化数据 */
   structuredData: Record<string, unknown>;
@@ -37,16 +41,28 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/",
     description:
-      "BakaGame 是免下载的网页版多人派对游戏站，提供在线版谁是卧底、听歌猜歌与 CCB 猜动漫角色，支持实时联机、房间聊天与断线重连，打开浏览器即可开玩。",
+      "叫上朋友即刻开黑！BakaGame 专为聚会与二次元同好打造的多人联机对战站：涵盖谁是卧底语言博弈、动漫与流行歌曲/番剧竞猜（Songuessr）、以及 Bangumi 角色线索竞猜（CCB）。拉个房间随时开局，找回纯粹的联机快乐！",
+    image: `${SITE_ORIGIN}/assets/logo.webp`,
+    keywords: [
+      "BakaGame",
+      "派对游戏",
+      "联机对战",
+      "谁是卧底",
+      "听歌猜歌",
+      "猜番剧",
+      "猜动漫角色",
+      "二次元小游戏",
+      "聚会开黑",
+    ],
     shell: {
-      h1: "BakaGame：免下载的网页版派对游戏站",
+      h1: "BakaGame：二次元与聚会联机游戏站",
       paragraphs: [
-        "BakaGame 提供三款打开浏览器就能玩的联机游戏：在线版谁是卧底、听歌猜歌与 CCB 猜动漫角色，支持房间聊天与断线重连，不需要下载或注册。",
-        "谁是卧底支持出题人自由出题、平票 PK、补充发言与白板猜词；听歌猜歌可以猜歌名或番剧，也能单人练习；CCB 支持多人同时猜角色、轮流出题与组队竞猜。",
+        "BakaGame 专注于轻快硬核的多人联机派对游戏。集合了包含白板与天使机制的谁是卧底、联动网易云与 Bangumi 的歌曲及番剧竞猜（Songuessr）、以及基于数十万角色库线索收敛的 CCB 猜动漫角色。丢个链接即可加入房间，支持实时聊天与断线秒级重连。",
+        "无论是聚会破冰、群友摸鱼还是二次元浓度大比拼：在谁是卧底里狂飙演技，在猜歌房抢答番剧 OP/ED，或在 CCB 里通过角色 BP 斗智斗勇。所有模式均支持自由开房联机。",
       ],
       links: [
         { href: "/whoisfaker", label: "进入谁是卧底" },
-        { href: "/songuessr", label: "进入听歌猜歌" },
+        { href: "/songuessr", label: "进入音乐与番剧竞猜" },
         { href: "/ccb", label: "进入猜动漫角色" },
       ],
     },
@@ -54,25 +70,38 @@ export const PAGE_META: PageMeta[] = [
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: "BakaGame",
-      alternateName: "二刺猿笑传之猜猜呗",
+      alternateName: ["二刺猿笑传之猜猜呗", "Who is Faker", "Songuessr", "CCB"],
       url: `${SITE_ORIGIN}/`,
       inLanguage: "zh-CN",
-      description: "免下载的网页版多人派对游戏站，提供在线版谁是卧底、听歌猜歌与 CCB 猜动漫角色。",
+      description:
+        "专为聚会与二次元同好打造的多人联机对战游戏站，包含谁是卧底、听歌猜番与猜动漫角色。",
     },
   },
   {
     path: "/whoisfaker",
     description:
-      "BakaGame 在线版谁是卧底，免下载直接开玩。支持 4 至 16 人实时联机，含发言投票、平票加赛、补充发言、夜间行动与白板猜词等完整流程，8 人以上出现白板，支持观战与断线重连。",
+      "聚会必备的语言推理与心理博弈！在线谁是卧底（Who is Faker）支持 4~16 人实时联机，自带自由出题、全员投票、平票加赛与夜晚行动；更有 8 人局专属白板背水反杀与天使双词护盾机制。带好演技进房，看看这局谁在一本正经胡说八道！",
+    image: `${SITE_ORIGIN}/assets/Faker.webp`,
+    keywords: [
+      "谁是卧底",
+      "在线版谁是卧底",
+      "文字推理",
+      "聚会桌游",
+      "白板猜词",
+      "天使护盾",
+      "心理博弈",
+      "Who is Faker",
+    ],
     shell: {
       h1: "Who is Faker：在线版谁是卧底",
       paragraphs: [
-        "在线版谁是卧底，免下载直接开玩。参战玩家至少 4 人，另需 1 名出题人；卧底人数按每 4 人配 1 名计算，向上取整。",
-        "完整流程包含轮流描述、全员投票、平票 PK、补充发言与夜晚行动，8 人及以上可以加入白板，支持观战与断线重连，重连后回到原来的座位与身份。",
+        "经典语言推理派对游戏在线版谁是卧底。支持 4 至 16 名玩家同台博弈，出题人自由出题，系统自动分发平民、卧底与特殊身份。支持平票加赛、局外观战与断线即时重连，重连后完整保留席位与身份。",
+        "进阶玩法体验拉满：支持 8 人开启无词靠词性翻盘的「白板」、可选阵营与自带护盾的「天使」，以及死亡身份即时揭露开关。比拼口才、逻辑与演技，找出藏在身边的卧底。",
       ],
       links: [
         { href: "/", label: "返回主页" },
-        { href: "/songuessr", label: "听歌猜歌" },
+        { href: "/songuessr", label: "音乐与番剧竞猜" },
+        { href: "/ccb", label: "猜动漫角色" },
       ],
     },
     structuredData: {
@@ -80,54 +109,92 @@ export const PAGE_META: PageMeta[] = [
       "@type": "SoftwareApplication",
       name: "Who is Faker 在线谁是卧底",
       applicationCategory: "GameApplication",
-      operatingSystem: "Web",
+      operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/whoisfaker`,
       inLanguage: "zh-CN",
-      description: "免下载的在线版谁是卧底，支持 4 至 16 人实时联机。",
+      description: "支持 4 至 16 人的在线语言推理派对游戏，具备白板、天使、平票加赛等深度博弈机制。",
+      featureList: [
+        "4 至 16 人实时联机",
+        "自由出题与题库分发",
+        "8人局白板猜词反杀机制",
+        "天使双词与护盾机制",
+        "平票 PK 加赛与断线无缝重连",
+      ],
       offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
     },
   },
   {
     path: "/songuessr",
     description:
-      "Songuessr 是免下载的网页版听歌猜歌游戏，播放歌曲片段竞猜歌名或番剧，支持单人练习与多人联机对战，曲库接自网易云音乐与 Bangumi 番剧库。",
+      "不仅是听歌猜歌，更是番剧阅历的大考！Songuessr 联动网易云音乐与 Bangumi，支持「猜歌名」与「猜番剧」双赛道。享受逐字渐变点亮歌词演出，在年份、热度与标签偏差的线索收敛中锁定答案，支持单人练习挑战与多人同屏血战抢答。",
+    image: `${SITE_ORIGIN}/assets/SongGuessr.webp`,
+    keywords: [
+      "Songuessr",
+      "听歌猜歌",
+      "猜番剧",
+      "动漫音乐竞猜",
+      "动漫OP ED",
+      "网易云音乐猜歌",
+      "Bangumi番剧",
+      "逐字歌词",
+      "ACG音乐",
+    ],
     shell: {
-      h1: "Songuessr：在线听歌猜歌",
+      h1: "Songuessr：音乐与动漫番剧竞猜",
       paragraphs: [
-        "播放歌曲片段，竞猜歌名或番剧。单人模式自己练手，多人模式在同一房间里同时开猜，每轮默认 3 次提交机会、单次 60 秒倒计时。",
-        "每次提交都会给出方向性反馈（发行年份、热度、语言、共同标签），把答案一步步收敛到目标；曲库接自网易云音乐，番剧数据来自 Bangumi。",
+        "听前奏、辨歌词、猜番剧！Songuessr 深度联动网易云音乐曲库与 Bangumi 番剧资料库，涵盖动漫 OP、ED、插曲、角色歌、OST 与流行金曲。支持「猜歌名」与「猜番剧」双重出题模式，既可轮流手动点歌，也能按年份与热度智能抽题。",
+        "内置 Apple Music 风格逐字歌词动效（亦可盲听隐藏歌词），搭配智能音频平滑切片。独创 Wordle 式反馈系统：每次提交提示发行年代偏差、热度区间、语种与共同标签，配合血战抢分机制，在手速与知识面的碰撞中锁定正确答案。",
       ],
       links: [
         { href: "/", label: "返回主页" },
         { href: "/whoisfaker", label: "谁是卧底" },
+        { href: "/ccb", label: "猜动漫角色" },
       ],
     },
     structuredData: {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      name: "Songuessr 听歌猜歌",
+      name: "Songuessr 听歌猜歌与番剧竞猜",
       applicationCategory: "GameApplication",
-      operatingSystem: "Web",
+      operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/songuessr`,
       inLanguage: "zh-CN",
-      description: "免下载的网页版听歌猜歌游戏，支持单人练习与多人联机。",
+      description: "联动网易云与 Bangumi 的音乐及番剧竞猜游戏，支持猜歌名与猜番剧双赛道、逐字歌词及多维线索收敛。",
+      featureList: [
+        "「猜歌名」与「猜番剧」双重竞猜赛道",
+        "联动网易云音乐与 Bangumi 番剧库",
+        "Apple Music 风格逐字渐变歌词播放器",
+        "发行年份、热度与标签偏差的 Wordle 式收敛反馈",
+        "单人无尽练习与多人血战抢分模式",
+      ],
       offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
     },
   },
   {
     path: "/ccb",
     description:
-      "CCB（二刺猿笑传之猜猜呗）是免下载的网页版猜动漫角色游戏，支持多人同时竞猜、自动或轮流出题、组队与图像提示，可创建增强房，也可在原版服务器接入后与原版玩家同房游玩。",
+      "二次元阅历的终极考场！CCB（二刺猿笑传之猜猜呗）猜动漫角色游戏。基于百万级 Bangumi 资料库，全员同房竞猜唯一角色。从性别、年代、作品评分、声优到作品标签层层排除，更有组队对抗、角色全局 BP 与原版协议互通。测测你的二次元浓度上限！",
+    image: `${SITE_ORIGIN}/assets/CCB.webp`,
+    keywords: [
+      "CCB",
+      "二刺猿笑传之猜猜呗",
+      "猜动漫角色",
+      "在线猜动漫角色",
+      "Bangumi",
+      "动漫知识竞猜",
+      "角色BP",
+      "动漫Wordle",
+    ],
     shell: {
-      h1: "CCB：在线猜动漫角色",
+      h1: "CCB：在线猜动漫角色（二刺猿笑传之猜猜呗）",
       paragraphs: [
-        "同一房间内所有人猜同一个动漫角色。每次提交都会给出逐字段反馈——性别、热度区间、作品评分、登场年、共同出演作品与共同标签，把范围一步步收敛到唯一答案。",
-        "增强房支持自动或轮流出题、组队竞猜、图像提示、旁观与聊天。接入原版服务器后，还可创建或加入原版房，与原版玩家一起游玩；原版房的聊天仅增强版玩家可见。",
+        "专属于动漫爱好者的硬核角色竞猜——在线猜动漫角色。基于百万级 Bangumi 角色资料库，所有人竞猜同一个目标角色。每次提交角色都会实时反馈性别、作品登场年、评分、出演作品重合度与角色标签，像侦探一样抽丝剥茧逼近真相。",
+        "玩法深度拉满：支持个人混战与组队对抗、轮流出题、模糊立绘渐进提示，以及「角色全局 BP」与「标签全局 BP」高阶战术规则。增强版房间更全面兼容原版 CCB 联机协议，老二刺猿速来集合！",
       ],
       links: [
         { href: "/", label: "返回主页" },
         { href: "/whoisfaker", label: "谁是卧底" },
-        { href: "/songuessr", label: "Songuessr 听歌猜歌" },
+        { href: "/songuessr", label: "音乐与番剧竞猜" },
       ],
     },
     structuredData: {
@@ -135,10 +202,17 @@ export const PAGE_META: PageMeta[] = [
       "@type": "SoftwareApplication",
       name: "CCB 猜动漫角色",
       applicationCategory: "GameApplication",
-      operatingSystem: "Web",
+      operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/ccb`,
       inLanguage: "zh-CN",
-      description: "免下载的网页版猜动漫角色游戏，支持多人同房竞猜。",
+      description: "基于 Bangumi 数据库的多人动漫角色竞猜游戏，支持逐属性线索排查、组队对战与战术 BP 规则。",
+      featureList: [
+        "基于百万级 Bangumi 数据库的动漫角色检索与竞猜",
+        "登场年份、评分、性别、声优与标签的多维度线索反馈",
+        "角色全局 BP 与标签全局 BP 深度战术模式",
+        "模糊立绘渐进解锁提示系统",
+        "自研增强版与原版 CCB 房间协议无缝互通",
+      ],
       offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
     },
   },
