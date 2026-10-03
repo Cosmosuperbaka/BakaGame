@@ -8,8 +8,10 @@ import { CCBCharacterImage } from "./CCBCharacterImage";
 // 比较值来自「猜测减答案」；箭头指向答案，方向与差值相反。
 const labels = { "+": "答案更低", "++": "答案低很多", "-": "答案更高", "--": "答案高很多", "=": "相同", "?": "未知", yes: "匹配", no: "不匹配" };
 const icons = { "+": ArrowDown, "++": ChevronsDown, "-": ArrowUp, "--": ChevronsUp, "=": Check, "?": Minus, yes: Check, no: X };
+// 表头取两字（Design §238）：四字的「最高评分 / 最早年份 / 最近年份」把这张表的最小内容宽度顶出 Design §239
+// 的 832 分界，六列在 832 起就放不下。取两字后最小内容宽度 400px，832 及更宽不横滚。
 const fields = [
-  ["gender", "性别"], ["popularity", "收藏"], ["rating", "最高评分"], ["appearancesCount", "作品数"], ["earliestAppearance", "最早年份"], ["latestAppearance", "最近年份"],
+  ["gender", "性别"], ["popularity", "收藏"], ["rating", "评分"], ["appearancesCount", "作品数"], ["earliestAppearance", "最早"], ["latestAppearance", "最近"],
 ] as const;
 
 function FeedbackCell({ data, gender = false }: { data: CCBFeedbackValue; gender?: boolean }) {

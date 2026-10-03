@@ -107,13 +107,15 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.reload();
     await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
 
-    for (const viewport of [{ width: 1440, height: 900 }, { width: 1100, height: 800 }, { width: 900, height: 800 }, { width: 390, height: 844 }]) {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1100, height: 800 }, { width: 900, height: 800 }, { width: 832, height: 800 }, { width: 768, height: 800 }, { width: 390, height: 844 }]) {
       await guest.setViewportSize(viewport);
       await expectViewportFits(guest);
       const feedback = guest.getByRole("region", { name: "猜测反馈" });
       await feedback.scrollIntoViewIfNeeded();
-      // 角色名独占组标题行，900 起数值列放得下、不横滚；手机上仍横滚，角色名贴住可视区，不随数值列移出。
-      if (viewport.width < 768) {
+      // 角色名独占组标题行，表头取两字（Design §238）后六列的最小内容宽度是 400px；容器宽 = 视口 − 428
+      // （两侧 px-3、307px 玩家栏与间距、游戏区边框、舞台 p-8），故 832 是零横滚的精确分界，824 起溢出 3px。
+      // 832 以下（含 768 的 md 双栏）横向滚动是这段宽度的既定形态：数值列横移，角色名贴住可视区。
+      if (viewport.width < 832) {
         await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
         await feedback.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
         await expect.poll(() => feedback.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
