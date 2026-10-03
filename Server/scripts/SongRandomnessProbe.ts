@@ -128,7 +128,7 @@ async function main() {
     ].map(async path => [path, createHash("sha256").update(await Bun.file(path).text()).digest("hex")]))),
     assumptions: {
       live: cookie ? "真实登录权限；真实歌单与歌曲加载" : "公开歌单与真实匿名歌曲加载；单人公开题库流程，不验证账号会员过滤",
-      replay: "真实歌单快照；登录与歌曲资源为夹具；生产选歌、默认随机源、回合命令均为原实现；回放仅对歌单前1000首进行候选集抽样",
+      replay: "真实歌单快照；登录与歌曲资源为夹具；生产选歌、默认随机源、回合命令均为原实现",
       browserPlaybackVerified: false, realAccountVipPermissionVerified: Boolean(cookie), generalUnblockEnabled: false,
       minPopularity: 0, artistFilter: false,
     },

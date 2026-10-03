@@ -171,6 +171,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 ## 歌曲筛选
 
 - 歌单读取使用 `playlist_track_all`（缺少时回退 `playlist_detail`），客户端可提交网易云歌单数字 ID 或链接，服务端只保存规范化后的数字 ID。
+- **歌单必须翻页取完，不得只取单页**：`playlist_track_all` 单页上限 1000 首，按 `offset` 以 `PLAYLIST_PAGE_SIZE` 步进翻页，按曲目 ID 去重，`PLAYLIST_MAX_PAGES` 兜底。`playlist_detail` 不支持 `offset`（每页返回同一份 `tracks`），终止条件用「本页是否带来新曲目」，否则会重复整页；翻页失败只结束翻页、保留已取到的曲目，不得丢弃整个歌单。实测固定 `limit: 1000, offset: 0` 时 1200 首歌单尾部 200 首永远进不了题库。
 - 歌手搜索使用 `cloudsearch` 的 `type=100`，歌手歌曲使用 `artist_songs`（缺少时回退 `artist_top_song`）。多个歌手在歌手筛选组内取并集，再与歌单、热度条件取交集。
 - 红心数使用 `song_red_count` 的 `data.count`，不要使用歌曲详情中的 `pop`（它是另一种热度指标）。`countDesc` 可能只显示 `100w+` 等近似文本，但 `count` 仍是服务端筛选使用的数值。
 - 热度筛选档位固定为 `0`、`1000`、`10000`、`100000`。自动出题选中候选后仍需调用 `song_detail` 获取歌词、音频和百科信息。

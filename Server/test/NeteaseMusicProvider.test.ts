@@ -2161,3 +2161,89 @@ test("并发扫码登录各自绑定自己的会话 IP，不会互相串号", as
   expect(searches[0]?.realIP).toBe(ipA);
   expect(searches[1]?.realIP).toBe(ipB);
 });
+
+test("歌单超过单页上限时继续翻页取完并去重", async () => {
+  const total = 1201;
+  const all = Array.from({ length: total }, (_, index) => ({
+    id: index + 1,
+    name: `曲目${index + 1}`,
+    ar: [{ id: 7, name: "歌手甲" }],
+    al: { name: "专辑" },
+  }));
+  const offsets: number[] = [];
+  const provider = new NeteaseMusicProvider({
+    loadApi: async () => ({
+      playlist_track_all: async (params: Record<string, unknown>) => {
+        const offset = Number(params.offset ?? 0);
+        const limit = Number(params.limit ?? 1000);
+        offsets.push(offset);
+        return { body: { songs: all.slice(offset, offset + limit) } };
+      },
+      // playlist_track_all 不返回歌单名与曲目总数，需要详情补上。
+      playlist_detail: async () => ({
+        body: { playlist: { id: 42, name: "超长歌单", trackCount: total } },
+      }),
+    }),
+  });
+
+  const result = await provider.getPlaylistSongs("42");
+  expect(result.info).toEqual({ id: "42", name: "超长歌单", songCount: total });
+  expect(result.songs).toHaveLength(total);
+  expect(result.songs.at(-1)?.id).toBe(String(total));
+  expect(new Set(result.songs.map((song) => song.id)).size).toBe(total);
+  // 第二页取完即停，不会为空页再发一次请求
+  expect(offsets).toEqual([0, 1000]);
+});
+
+test("歌单接口不支持翻页时不会重复取整页", async () => {
+  let calls = 0;
+  const provider = new NeteaseMusicProvider({
+    loadApi: async () => ({
+      // 只提供 playlist_detail：它忽略 offset，每页都返回同一份 tracks
+      playlist_detail: async () => {
+        calls += 1;
+        return {
+          body: {
+            playlist: {
+              id: 42,
+              name: "两首",
+              tracks: [
+                { id: 1, name: "曲目一", ar: [{ name: "歌手甲" }] },
+                { id: 2, name: "曲目二", ar: [{ name: "歌手甲" }] },
+              ],
+            },
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await provider.getPlaylistSongs("42");
+  expect(result.songs.map((song) => song.id)).toEqual(["1", "2"]);
+  expect(result.info).toEqual({ id: "42", name: "两首", songCount: 2 });
+  // 响应不带 trackCount 时只能靠「本页没有新增曲目」终止翻页；请求数必须仍然有界
+  expect(calls).toBeLessThan(10);
+});
+
+test("歌单翻页中途失败时保留已取到的曲目", async () => {
+  const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+    id: index + 1,
+    name: `曲目${index + 1}`,
+    ar: [{ name: "歌手甲" }],
+  }));
+  const provider = new NeteaseMusicProvider({
+    loadApi: async () => ({
+      playlist_track_all: async (params: Record<string, unknown>) => {
+        if (Number(params.offset ?? 0) > 0) throw new Error("上游翻页失败");
+        return { body: { songs: firstPage } };
+      },
+      playlist_detail: async () => ({
+        body: { playlist: { id: 42, name: "半途", trackCount: 1201 } },
+      }),
+    }),
+  });
+
+  const result = await provider.getPlaylistSongs("42");
+  expect(result.info.songCount).toBe(1201);
+  expect(result.songs).toHaveLength(1000);
+});

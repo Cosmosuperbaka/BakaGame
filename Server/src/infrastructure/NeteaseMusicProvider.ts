@@ -210,6 +210,13 @@ const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_LYRICS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_WIKI_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
 const COLLECTION_CACHE_TTL_MS = 6 * 60 * 60_000;
+/** 歌单单页曲目上限：`playlist_track_all` 的 limit 上限就是 1000。 */
+const PLAYLIST_PAGE_SIZE = 1000;
+/**
+ * 歌单翻页硬上限（50000 首）。正常歌单远达不到，仅作兜底：
+ * 上游对超范围 offset 若仍返回整页，没有上界就会一直翻下去。
+ */
+const PLAYLIST_MAX_PAGES = 50;
 const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const POPULARITY_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_CHORUS_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
@@ -1891,26 +1898,70 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("playlist", cookie, id),
       COLLECTION_CACHE_TTL_MS,
       async () => {
-        const response = await this.call(["playlist_track_all", "playlist_detail"], {
+        const songs: SongSearchResult[] = [];
+        const seenIds = new Set<string>();
+        let name: string | undefined;
+        let songCount: number | undefined;
+
+        const collect = (rawSongs: unknown[]): number => {
+          let added = 0;
+          for (const raw of rawSongs) {
+            const song = normalizeSong(raw);
+            if (!song || seenIds.has(song.id)) continue;
+            seenIds.add(song.id);
+            songs.push(song);
+            added += 1;
+          }
+          return added;
+        };
+
+        const firstResponse = await this.call(["playlist_track_all", "playlist_detail"], {
           id,
-          limit: 1000,
+          limit: PLAYLIST_PAGE_SIZE,
           offset: 0,
         }, cookie);
-        const body = responseBody(response);
-        let playlist = asRecord(body.playlist ?? asRecord(body.data).playlist);
-        if (!readString(playlist.name)) {
+        const firstBody = responseBody(firstResponse);
+        const firstPlaylist = asRecord(firstBody.playlist ?? asRecord(firstBody.data).playlist);
+        name = readString(firstPlaylist.name);
+        songCount = readNumber(firstPlaylist.trackCount ?? firstPlaylist.trackNumber);
+        const firstAdded = collect(
+          asArray(firstBody.songs ?? firstPlaylist.tracks ?? asRecord(firstBody.data).songs),
+        );
+
+        // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
+        if (!name || songCount === undefined) {
           const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
-          if (detailResponse) playlist = asRecord(responseBody(detailResponse).playlist);
+          if (detailResponse) {
+            const detail = asRecord(responseBody(detailResponse).playlist);
+            name = name ?? readString(detail.name);
+            songCount = songCount ?? readNumber(detail.trackCount ?? detail.trackNumber);
+          }
         }
-        const rawSongs = asArray(body.songs ?? playlist.tracks ?? asRecord(body.data).songs);
-        const songs = rawSongs
-          .map(normalizeSong)
-          .filter((song): song is SongSearchResult => Boolean(song));
-        const name = readString(playlist.name) ?? `歌单 ${id}`;
-        const songCount = readNumber(
-          playlist.trackCount ?? playlist.trackNumber ?? songs.length,
-        ) ?? songs.length;
-        return { info: { id, name, songCount }, songs };
+
+        // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
+        // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
+        // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
+        // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
+        for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
+          if (songCount !== undefined && songs.length >= songCount) break;
+          const response = await this.callOptional(["playlist_track_all", "playlist_detail"], {
+            id,
+            limit: PLAYLIST_PAGE_SIZE,
+            offset: page * PLAYLIST_PAGE_SIZE,
+          }, cookie);
+          if (!response) break;
+          const body = responseBody(response);
+          const rawSongs = asArray(
+            body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs,
+          );
+          const added = collect(rawSongs);
+          if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
+        }
+
+        return {
+          info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
+          songs,
+        };
       },
     );
   }
