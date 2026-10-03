@@ -1,10 +1,8 @@
 ﻿import { useCallback } from "react";
-import { motion } from "framer-motion";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { listContainer, listItem, selectable } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
+import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
 
 export function AssignQuestionerPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
@@ -53,6 +51,7 @@ export function AssignQuestionerPhase() {
                 candidates={spectatorCandidates}
                 onPick={handleAssign}
                 tone="recommended"
+                nameWrap="truncate"
               />
             </section>
           )}
@@ -75,78 +74,11 @@ export function AssignQuestionerPhase() {
               candidates={activeCandidates}
               onPick={handleAssign}
               tone="default"
+              nameWrap="truncate"
             />
           </section>
         </div>
       )}
     </div>
-  );
-}
-
-function SectionHeader({
-  icon,
-  title,
-  hint,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  hint?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between mb-2.5 px-1">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-        {icon}
-        {title}
-      </div>
-      {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
-    </div>
-  );
-}
-
-function CandidateGrid({
-  candidates,
-  onPick,
-  tone,
-}: {
-  candidates: { id: string; name: string }[];
-  onPick: (id: string) => void;
-  tone: "recommended" | "default";
-}) {
-  if (candidates.length === 0) {
-    return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
-  }
-
-  return (
-    <motion.div
-      className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-      variants={listContainer(candidates.length)}
-      initial="initial"
-      animate="animate"
-    >
-      {candidates.map((p) => (
-        <motion.button
-          key={p.id}
-          type="button"
-          variants={listItem}
-          {...selectable}
-          onClick={() => onPick(p.id)}
-          className={cn(
-            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color]",
-            tone === "recommended"
-              ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
-              : "hover:border-primary/40 hover:bg-primary/5"
-          )}
-        >
-          <div className="flex items-center gap-1.5">
-            {tone === "recommended" ? (
-              <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
-            ) : (
-              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span className="truncate font-medium">{p.name}</span>
-          </div>
-        </motion.button>
-      ))}
-    </motion.div>
   );
 }

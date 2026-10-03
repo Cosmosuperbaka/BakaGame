@@ -229,7 +229,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
 
 ### 11.4 客户端组件复用与表现层对等契约 (Equal Component Architecture & Zero Cross-Game Infiltration)
-- **跨游戏交互基建强制提升至 `common/`**：凡是涉及两个及以上游戏同构的核心交互组件（如聊天面板 `ChatPanel`、玩家状态胶囊徽章与行布局基底 `PlayerStatusPill`、玩家分组标题 `PlayerGroupTitle`、表情包选择器 `EmojiPicker` 等），**必须且只能**提升至 `Client/src/components/common/`，通过解耦的 Props 与回调注入驱动数据，严禁直接硬编码耦合任何单个游戏的专属 Store。
+- **跨游戏交互基建强制提升至 `common/`**：凡是涉及两个及以上游戏同构的核心交互组件（如聊天面板 `ChatPanel`、玩家状态胶囊徽章与行布局基底 `PlayerStatusPill`、玩家分组标题 `PlayerGroupTitle`、表情包选择器 `EmojiPicker`、候选玩家网格与区块小标题 `CandidateGrid`/`SectionHeader` 等），**必须且只能**提升至 `Client/src/components/common/`，通过解耦的 Props 与回调注入驱动数据，严禁直接硬编码耦合任何单个游戏的专属 Store。提升后仍存的表现差异由**必填**变体 Prop 逐调用点显式声明，不得留下静默的缺省分支——例如 `CandidateGrid` 的 `nameWrap` 区分卧底的截断与猜歌的换行，两者对网格最小内容宽度的影响不同，统一其一都会挪动另一方的布局。各游戏自身保留候选的筛选口径与提交回调，共享组件不感知 Store。
 - **严禁游戏领域跨目录横向依赖 (Zero Cross-Game Infiltration)**：任何游戏专属子目录（如 `components/whoisfaker/` 与 `components/songuessr/`）之间，**绝对严禁**产生横向交叉导入（例如严禁猜歌组件从 `whoisfaker/` 导入 UI 组件、布局或样式常量）。所有通用能力必须且只能由 `components/common/` 向上提供。
 - **目录命名与组件命名绝对平等 (Equal Namespace & Symmetrical Naming)**：
   1. **目录拼写严格单一真相源**：游戏组件目录必须遵循 `Conventions.md` 约定的全小写单一规范（如统一使用 `components/songuessr/`，严禁拼写漂移如 `songguessr`）。
