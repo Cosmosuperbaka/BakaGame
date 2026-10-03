@@ -21,6 +21,8 @@ export interface BangumiProviderOptions {
   rateLimitCooldownMs?: number;
   cacheMaxEntries?: number;
   maxQueuedRequests?: number;
+  /** 排队、请求与响应体读取共用截止预算。 */
+  requestTimeoutMs?: number;
 }
 
 const SEARCH_TTL_MS = 6 * 60 * 60_000;
@@ -325,7 +327,8 @@ export class BangumiProvider {
   private readonly cooldownMs: number;
   private readonly maxQueuedRequests: number;
   private readonly queue: PQueue;
-  private readonly pendingRejections = new Map<number, (error: AppError) => void>();
+  private readonly pendingRequests = new Map<number, AbortController>();
+  private readonly requestTimeoutMs: number;
   private requestIdCounter = 0;
   private cooldownUntil = 0;
   private readonly cache: LRUCache<string, { value: unknown; expiresAt: number }>;
@@ -335,6 +338,7 @@ export class BangumiProvider {
 
   constructor(options: BangumiProviderOptions) {
     this.fetcher = options.fetcher ?? fetch;
+    this.requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 10_000);
     this.now = options.now ?? (() => Date.now());
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
     this.imageUrl = options.imageUrl?.replace(/\/+$/, "") ?? "";
@@ -437,9 +441,9 @@ export class BangumiProvider {
   }
 
   private async requestJson(path: string, init?: RequestInit): Promise<unknown> {
-    return this.scheduleRequest(async () => {
+    return this.scheduleRequest(async (signal) => {
       try {
-        const response = await this.fetcher(`${this.apiUrl}${path}`, init);
+        const response = await this.fetcher(`${this.apiUrl}${path}`, { ...init, signal });
         if (response.status === 429) {
           this.enterRateLimitCooldown();
           throw this.rateLimitError();
@@ -454,32 +458,33 @@ export class BangumiProvider {
         if (error instanceof AppError) throw error;
         throw new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求失败", { cause: String(error) });
       }
-    });
+    }, init?.signal);
   }
 
-  private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
+  private scheduleRequest<T>(task: (signal: AbortSignal) => Promise<T>, callerSignal?: AbortSignal | null): Promise<T> {
     if (this.now() < this.cooldownUntil) return Promise.reject(this.rateLimitError());
     if (this.queue.size >= this.maxQueuedRequests) return Promise.reject(this.rateLimitError("Bangumi 请求排队过多，请稍后重试"));
 
     const id = ++this.requestIdCounter;
-    const cancelled = new Promise<never>((_, reject) => {
-      this.pendingRejections.set(id, reject);
-    });
-    const execution = this.queue.add(async () => {
-      this.pendingRejections.delete(id);
+    const controller = new AbortController();
+    const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
+    this.pendingRequests.set(id, controller);
+    const timer = setTimeout(() => controller.abort(new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求超时")), this.requestTimeoutMs);
+    return (this.queue.add(async () => {
+      this.pendingRequests.delete(id);
       if (this.now() < this.cooldownUntil) throw this.rateLimitError();
-      return task();
-    }) as Promise<T>;
-    return Promise.race([execution, cancelled]).finally(() => this.pendingRejections.delete(id));
+      return task(signal);
+    }, { signal }) as Promise<T>).finally(() => {
+      clearTimeout(timer);
+      this.pendingRequests.delete(id);
+    });
   }
 
   private enterRateLimitCooldown() {
     this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + this.cooldownMs);
     const error = this.rateLimitError();
-    const rejections = [...this.pendingRejections.values()];
-    this.queue.clear();
-    this.pendingRejections.clear();
-    for (const reject of rejections) reject(error);
+    for (const controller of this.pendingRequests.values()) controller.abort(error);
+    this.pendingRequests.clear();
   }
 
   private rateLimitError(message = "Bangumi 请求过于频繁，请稍后重试") {

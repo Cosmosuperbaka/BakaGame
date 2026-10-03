@@ -344,3 +344,7 @@ ORDER BY r.subject_id
 `song.bangumi.search` 只返回公开条目摘要；`song.game.submitAnime` 和
 `song.game.guessAnime` 只传输 subject ID。当前回合的番剧答案仅在出题人的私有状态、旁观者
 私有状态或回合结算摘要中公开，猜测玩家在结算前只能看到自己的猜测记录。
+
+## 排队与截止预算
+
+Bangumi 请求使用有界并发队列，排队、请求和响应体解析共享同一截止预算；超时必须取消排队或在途请求并释放槽位，限流冷却不能留下挂起任务。测试注入请求函数，不访问真实上游。
