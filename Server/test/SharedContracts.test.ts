@@ -28,3 +28,10 @@ test("三个协议拒绝继承的原型键且保持明确业务错误", () => {
     }
   }
 });
+
+// CCB K→payload 关联不能在 Object.fromEntries 后丢失。
+import type { CCBClientWireMessage } from "../src/shared/CCB";
+const ccbWire: CCBClientWireMessage = { id: "wire", type: "ccb.player.ready", roomId: null, payload: { ready: true } };
+// @ts-expect-error ready 命令必须使用 ready 布尔载荷，不能变成任意命令的载荷并集。
+const wrongCCBWire: CCBClientWireMessage = { id: "wire", type: "ccb.player.ready", payload: { text: "错误关联" } };
+void ccbWire; void wrongCCBWire;

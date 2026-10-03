@@ -4285,3 +4285,12 @@ test("SonGuessr 下一轮房主转移再返回也不得恢复旧操作", async (
   expect(await old).toMatchObject({ code: "ROUND_EXPIRED" });
   expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
 });
+
+test("局部自动筛选输入归一为完整快照，不要求客户端伪造默认字段", async () => {
+  const service = new SonGuessrService({ musicProvider: provider });
+  const host = connection(service, "partial-filters-host");
+  await createRoom(service, host);
+  await execute(service, host, { id: "partial-filters", type: "song.room.updateSettings", roomId: "1234", payload: { autoFilters: { playlist: { id: "12345" } } } });
+  const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+  expect(snapshot.settings.autoFilters).toEqual({ playlist: { id: "12345", name: undefined, songCount: undefined }, artists: [], minPopularity: 0 });
+});

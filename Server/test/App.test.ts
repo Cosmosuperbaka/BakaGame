@@ -190,8 +190,8 @@ const createSocketCollector = (socket: WebSocket) => {
     });
 };
 
-const openSocket = async (port: number) => {
-  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`);
+const openSocket = async (port: number, game = "whoisfaker") => {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/${game}/ws`);
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), {
@@ -720,3 +720,31 @@ test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）
 });
 
 
+
+for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songuessr", "song.lobby.subscribeRooms"], ["ccb", "ccb.lobby.subscribeRooms"]] as const) {
+  test(`${game} 原生 WS schema 保持二进制/空白 JSON、关联错误与严格字段契约`, async () => {
+    const { port, stop } = startTestServer();
+    const socket = await openSocket(port, game);
+    const collect = createSocketCollector(socket);
+    const getPacket = (id: string) => collect((packet) => (packet as { id?: string }).id === id) as Promise<{ type: string; traceId?: string; error?: { code: string } }>;
+    try {
+      for (const [id, frame] of [["native-text", "text"], ["native-binary", "binary"]] as const) {
+        const message = JSON.stringify({ id, type: command, traceId: "native-trace", payload: {}, ...(game === "ccb" ? { roomId: null, sessionToken: null } : {}) });
+        socket.send(frame === "text" ? ` \n${message}\n ` : new TextEncoder().encode(message));
+        expect(await getPacket(id)).toMatchObject({ type: "ack", traceId: "native-trace" });
+      }
+      for (const [id, patch, code] of [
+        ["native-invalid", { payload: { unauthorizedField: true } }, "INVALID_MESSAGE"],
+        ["native-prototype", { type: "constructor" }, "UNKNOWN_MESSAGE_TYPE"],
+        ["native-unknown", { type: "not.a.command" }, "UNKNOWN_MESSAGE_TYPE"],
+        ["native-extra", { extraEnvelopeField: true }, "INVALID_MESSAGE"],
+      ] as const) {
+        socket.send(JSON.stringify(Object.assign({ id, type: command, traceId: "error-trace", payload: {} }, patch)));
+        expect(await getPacket(id)).toMatchObject({ type: "error", traceId: "error-trace", error: { code } });
+      }
+      socket.send('{broken json');
+      const raw = await getPacket("unknown");
+      expect(raw).toMatchObject({ type: "error", error: { code: "INVALID_MESSAGE" } });
+    } finally { socket.close(); await stop(); }
+  });
+}

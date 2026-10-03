@@ -12,9 +12,12 @@ import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
-import { parseWhoIsFakerMessage } from "./WhoIsFakerProtocol";
-import { parseSonGuessrMessage } from "./SonGuessrProtocol";
-import { parseCCBMessage } from "./CCBProtocol";
+import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
+import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
+import { parseCCBMessage, CCBClientMessageSchema } from "./CCBProtocol";
+import { normalizeCCBEnvelope } from "../shared/CCB";
+import { ServerMessageSchema } from "../shared/PacketSchemas";
+import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
@@ -58,10 +61,10 @@ const rememberInFlight = (key: string, promise: Promise<InFlightOutcome>) => {
 };
 
 const sendPacket = (
-  ws: { send: (data: string) => unknown },
-  payload: unknown,
+  ws: { send: (data: ServerMessage) => unknown },
+  payload: ServerMessage,
 ) => {
-  ws.send(JSON.stringify(payload));
+  ws.send(payload);
 };
 
 const executeWithDeduplication = async ({
@@ -73,7 +76,7 @@ const executeWithDeduplication = async ({
   execute,
   serviceName,
 }: {
-  ws: { send: (data: string) => unknown };
+  ws: { send: (data: ServerMessage) => unknown };
   connectionId: string;
   parsed: { id: string; type: string; traceId?: string };
   startTime: number;
@@ -250,14 +253,13 @@ const isAllowedOrigin = (
 /** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
 interface GameSocketLike {
   data: unknown;
-  send: (data: string) => unknown;
+  send: (data: ServerMessage) => unknown;
   close: (code?: number, reason?: string) => unknown;
 }
 
 interface GameSocketHandlers<TMessage extends { id: string; type: string; traceId?: string }> {
   /** 只用于错误日志前缀，便于把异常定位到具体游戏。 */
   serviceName: string;
-  parse: (raw: unknown) => TMessage;
   execute: (connectionId: string, message: TMessage) => Promise<unknown>;
 }
 
@@ -292,7 +294,7 @@ const openGameConnection = (
   const connectionId = crypto.randomUUID();
   (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender((payload) => {
-    sendPacket(ws, payload);
+    sendPacket(ws, payload as ServerMessage);
   });
   register({
     id: connectionId,
@@ -300,7 +302,7 @@ const openGameConnection = (
     send: stateSync.send,
     resetStateSync: stateSync.reset,
     sendStateSyncCalibration: stateSync.calibrate,
-    sendPacket: (payload: unknown) => sendPacket(ws, payload),
+    sendPacket: (payload: unknown) => sendPacket(ws, payload as ServerMessage),
     close: (code?: number, reason?: string) => ws.close(code, reason),
   });
 };
@@ -311,9 +313,9 @@ const openGameConnection = (
  * 解析失败时 `parsedType` / `parsedId` 都还是初值，日志只剩 `WS raw`，事后无从判断是哪个命令、
  * 哪条字段不合法——而这类故障恰好只会「静默」发生（客户端拿不到可匹配的 ack/error 包，
  * 请求因 `timeout: 0` 永不超时，页面只表现为卡住）。因此这里在解析失败路径上补一份
- * 裁剪后的原始载荷，让日志自带定位信息。
+ * 类型与大小信息，让日志可定位输入边界。
  *
- * 只保留键名与键数、以及字符串值的截断样本，避免把敏感内容写进日志。
+ * 只保留键名与键数；字符串与二进制正文一律省略，不记录截断样本。
  */
 const describeRawMessage = (raw: unknown): Record<string, unknown> => {
   if (typeof raw === "string") {
@@ -371,96 +373,44 @@ const decodeIncoming = (incoming: unknown, decoder: TextDecoder): unknown =>
  * 只在「解析器、服务、日志前缀」上不同（`Spec.md §11.2` 要求网关对称消费各游戏解析器），
  * 其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
  */
+/** 成功帧已通过 Elysia body 校验，业务层不重复枚举 Value.Errors。 */
 const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
-  ws: GameSocketLike,
-  incoming: unknown,
-  decoder: TextDecoder,
-  logger: EventLogger,
-  { serviceName, parse, execute }: GameSocketHandlers<TMessage>,
+  ws: GameSocketLike, parsed: TMessage, logger: EventLogger,
+  { serviceName, execute }: GameSocketHandlers<TMessage>,
 ): Promise<void> => {
   const connectionId = connectionIdOf(ws);
   if (!connectionId) return;
-
-  const startedAt = performance.now();
-  let parsedId = "unknown";
-  let parsedType = "raw";
-  let traceId: string | undefined;
-  try {
-    const decoded = decodeIncoming(incoming, decoder);
-    let parsed: TMessage;
-    try {
-      parsed = parse(decoded);
-    } catch (parseError) {
-      // 解析失败时抢救信封身份，让错误包带上客户端能匹配的 id。
-      // 否则客户端在 pendingRequests 里查不到该 id，会静默丢弃这条错误，
-      // 请求因 `timeout: 0` 永不超时——页面只表现为一直卡住、前端无任何提示。
-      const identity = salvageMessageIdentity(decoded);
-      if (identity) {
-        parsedId = identity.id;
-        if (identity.type) parsedType = identity.type;
-        traceId = identity.traceId;
-      }
-      logger.warn(`${serviceName} WS 消息解析失败`, {
-        ...describeError(parseError),
-        ...describeRawMessage(decoded),
-        connectionId,
-        rescuedId: identity?.id,
-        rescuedType: identity?.type,
-      });
-      throw parseError;
-    }
-    parsedId = parsed.id;
-    parsedType = parsed.type;
-    traceId = parsed.traceId;
-
-    await executeWithDeduplication({
-      ws,
-      connectionId,
-      parsed,
-      startTime: startedAt,
-      logger,
-      execute: () => execute(connectionId, parsed),
-      serviceName,
-    });
-  } catch (error) {
-    if (isAppError(error)) {
-      logger.logOperation({
-        status: 400,
-        durationMs: performance.now() - startedAt,
-        identifier: connectionId,
-        action: `WS ${parsedType} [${error.code}] ${sanitizeLogText(error.message, 120)}`,
-        level: "WARN",
-        traceId,
-      });
-      sendPacket(
-        ws,
-        createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
-      );
-      return;
-    }
-
-    logger.error(`${serviceName} WS 内部异常 [${parsedType}]`, {
-      ...describeError(error),
-      error: error instanceof Error ? error : new Error(String(error)),
-      connectionId,
-      traceId,
-      parsedId,
-    });
-
-    logger.logOperation({
-      status: 500,
-      durationMs: performance.now() - startedAt,
-      identifier: connectionId,
-      action: `WS ${parsedType}`,
-      level: "ERROR",
-      traceId,
-    });
-    sendPacket(
-      ws,
-      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
-    );
-  }
+  await executeWithDeduplication({
+    ws, connectionId, parsed, startTime: performance.now(), logger,
+    execute: () => execute(connectionId, parsed), serviceName,
+  });
 };
+
+// Elysia 已解码普通 JSON；该补充只统一带空白 JSON / 二进制帧，校验仍归框架。
+const decodeGameFrame = (_ws: unknown, incoming: unknown): ReturnType<typeof JSON.parse> => {
+  const text = typeof incoming === "string" ? incoming : incoming instanceof Uint8Array ? new TextDecoder().decode(incoming) : undefined;
+  if (text === undefined) return undefined;
+  // parse 在 body validator 之前运行；这里的类型断言不替代或跳过框架校验。
+  try { return JSON.parse(text); } catch { return undefined; }
+};
+
+/** route-local error 在 HTTP 全局错误钩子之前保持原有 WS 错误/关联契约。 */
+const gameSocketError = (logger: EventLogger, serviceName: string, parse: (raw: unknown) => unknown) =>
+  ({ error }: { error: unknown }): ServerMessage => {
+    const input = error instanceof ValidationError ? error.value : undefined;
+    const identity = salvageMessageIdentity(input);
+    let failure: unknown = error;
+    if (error instanceof ValidationError) {
+      try { parse(input); } catch (diagnostic) { failure = diagnostic; }
+      // 仅记录类型与大小；畸形正文和凭据永不进入日志。
+      logger.warn(`${serviceName} WS 消息解析失败`, {
+        ...describeRawMessage(input), rescuedId: identity?.id, rescuedType: identity?.type, traceId: identity?.traceId,
+      });
+    }
+    if (isAppError(failure)) return createErrorPacket(identity?.id ?? "unknown", failure.code, failure.message, undefined, identity?.traceId);
+    logger.error(`${serviceName} WS 内部异常`, describeError(failure));
+    return createErrorPacket(identity?.id ?? "unknown", "INTERNAL_ERROR", "服务器内部错误", undefined, identity?.traceId);
+  };
 
 const closeGameConnection = async (
   ws: GameSocketLike,
@@ -480,7 +430,6 @@ export const createApp = ({
   onTriggerShutdown,
   disposeResources,
 }: AppDependencies) => {
-  const decoder = new TextDecoder();
   const fakerService = whoIsFakerService;
   if (!fakerService) {
     throw new Error("WhoIsFakerService dependency is required");
@@ -589,33 +538,37 @@ export const createApp = ({
     )
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
+      body: WhoIsFakerClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
       upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
       open: (ws) => openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
       message: (ws, incoming) =>
-        handleGameMessage(ws, incoming, decoder, logger, {
+        handleGameMessage(ws, incoming, logger, {
           serviceName: "WhoIsFaker",
-          parse: parseWhoIsFakerMessage,
           execute: (connectionId, message) => fakerService.execute(connectionId, message),
         }),
       close: (ws) =>
         closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId)),
     })
     .ws("/api/ccb/ws", {
+      body: CCBClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      error: gameSocketError(logger, "CCB", parseCCBMessage),
       upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
       open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
-      message: (ws, incoming) => handleGameMessage(ws, incoming, decoder, logger, {
-        serviceName: 'CCB', parse: parseCCBMessage,
+      message: (ws, incoming) => handleGameMessage(ws, normalizeCCBEnvelope(incoming), logger, {
+        serviceName: 'CCB',
         execute: (connectionId, message) => characterService.execute(connectionId, message),
       }),
       close: (ws) => closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId)),
     })
     .ws("/api/songuessr/ws", {
+      body: SonGuessrClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
       upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
       open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
       message: (ws, incoming) =>
-        handleGameMessage(ws, incoming, decoder, logger, {
+        handleGameMessage(ws, incoming, logger, {
           serviceName: "SonGuessr",
-          parse: parseSonGuessrMessage,
           execute: (connectionId, message) => songService.execute(connectionId, message),
         }),
       close: (ws) =>

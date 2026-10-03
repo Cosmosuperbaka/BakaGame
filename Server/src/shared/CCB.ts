@@ -154,3 +154,25 @@ export type CCBCommand = keyof typeof CCBPayloadSchemas;
 export type CCBPayload<T extends CCBCommand> = Static<(typeof CCBPayloadSchemas)[T]>;
 export type CCBClientMessage = { [K in CCBCommand]: ClientEnvelope<K, CCBPayload<K>> }[CCBCommand];
 export const CCB_STATE_EVENTS = ['ccb.room.snapshot', 'ccb.game.privateState'] as const;
+
+/** 线路信封接纳 null；进入业务层前统一规范化为可选字符串。 */
+const optionalEnvelopeString = (maxLength: number) =>
+  t.Optional(t.Union([t.String({ maxLength }), t.Null()]));
+const createCCBMessageSchema = <K extends CCBCommand>(type: K) => t.Object({
+  id: t.String({ minLength: 1, maxLength: 128 }), traceId: optionalEnvelopeString(128),
+  type: t.Literal(type), roomId: optionalEnvelopeString(32), sessionToken: optionalEnvelopeString(128),
+  payload: CCBPayloadSchemas[type],
+}, strict);
+export const CCBMessageSchemas = Object.fromEntries(
+  (Object.keys(CCBPayloadSchemas) as CCBCommand[]).map((type) => [type, createCCBMessageSchema(type)]),
+) as { [K in CCBCommand]: ReturnType<typeof createCCBMessageSchema<K>> };
+export const CCBClientMessageSchema = t.Union(Object.values(CCBMessageSchemas));
+export type CCBClientWireMessage = Static<typeof CCBClientMessageSchema>;
+export function normalizeCCBEnvelope(input: CCBClientWireMessage): CCBClientMessage {
+  const message = { ...input };
+  for (const key of ["traceId", "roomId", "sessionToken"] as const) {
+    if (message[key] === null) delete message[key];
+  }
+  // 唯一差异是上面已消除的 nullable 信封；payload 的 K→Schema 关联由映射维持。
+  return message as CCBClientMessage;
+}

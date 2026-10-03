@@ -38,6 +38,8 @@
 - 后端基于 Elysia 开发。涉及 Elysia 的实现方式、接口或行为时，应优先参考其中文官方文档：<https://elysia.zhcndoc.com/>。
 - 网易云请求、Cookie、播放地址与真实接口测试查 [NeteaseMusicApi](NeteaseMusicApi.md) 的相关章节；歌词清洗与播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)。
 - Bangumi 请求、番剧筛选、曲目解析或图床修改查 [BangumiApi](BangumiApi.md) 的对应链路，遵守服务端边界和答案隐私。
+- 三款游戏 WebSocket 在 Elysia `.ws` 声明共享 TypeBox `body` 与统一封包 `response`。原生 validator 负责成功帧校验，业务 callback 不重复解析/校验；route-local 错误处理只在失败时诊断已有错误码并抢救有界 id/traceId，保留 ACK 关联和严格拒绝未知字段。JSON/二进制解码是校验前的非可信边界，不作为类型安全保证。
+- 回复对象交给 Elysia `.send` 校验与序列化，不先转成字符串绕过 object response schema。统一响应 Schema 只声明 ACK/error/event 信封，业务 payload 尚为 opaque，不能把这称为完整事件的端到端类型安全。Eden 的 `.subscribe/.send` 可从保留 App 类型推导入站命令；现有重连、会话恢复、ACK 关联、去重和 StateSync 是业务协议职责，不能因引入 typed transport 丢弃。
 - 使用框架能力时仍须遵循本仓库现有架构、类型协议和代码组织方式。
 
 ## 3. 前端一致性
