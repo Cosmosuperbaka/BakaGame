@@ -87,6 +87,11 @@ export interface NeteaseMusicProviderOptions {
   unblockSourceTimeoutMs?: number;
   /** 一次解灰尝试的总预算，默认 12000ms；用尽后不再换源。 */
   unblockTotalBudgetMs?: number;
+  /** AMLL 独立于网易云风控队列；预算包含等待和搜索的两步请求。 */
+  amllMaxConcurrentRequests?: number;
+  amllMaxQueuedRequests?: number;
+  amllRequestTimeoutMs?: number;
+  amllFetcher?: (input: string, init?: RequestInit) => Promise<Response>;
   /** 自定义 AMLL 官方 TTML 歌词检索实现（单元测试注入用）。 */
   fetchAmllLyrics?: (id: string) => Promise<string | undefined>;
   /** 自定义 AMLL 官方 TTML 歌曲名检索实现（单元测试注入用）。 */
@@ -990,9 +995,18 @@ export const isCreditStructuredLine = (text: string): boolean => {
   return true;
 };
 
+/** 已确认的角色/段落正文优先于任何署名结构启发式。 */
+const isMarkedLyricBody = (text: string): boolean => {
+  const parts = splitCreditHead(text);
+  if (!parts) return false;
+  const [head, tail] = parts.split("\u0000");
+  const label = head.normalize("NFKC").trim();
+  return (DUET_ROLE_LABEL_PATTERN.test(label) || /^(?:solo|rap)$/i.test(label)) && isSubstantiveLyricTail(tail);
+};
+
 /** 过滤会直接暴露创作人员的 LRC 署名行。 */
 export const isCreditLyricLine = (text: string) =>
-  isCreditKeywordLine(text) || isCreditStructuredLine(text);
+  !isMarkedLyricBody(text) && (isCreditKeywordLine(text) || isCreditStructuredLine(text));
 
 /**
  * 单行是否属于「不可用于出题」的无效歌词。
@@ -1651,6 +1665,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   // 后发起者会覆盖前者，于是先完成的那位拿到的是别人的会话 IP（永久错绑），
   // 后完成的那位则压根没绑上登录握手时的 IP。
   private readonly qrLoginScopes = new Map<string, { scope: string; createdAt: number }>();
+  private readonly amllQueue: PQueue;
   private readonly queue: PQueue;
   private readonly pendingRejections = new Map<number, (error: unknown) => void>();
   private requestIdCounter = 0;
@@ -1674,6 +1689,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastUserRequestAt: number;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
+    this.amllQueue = new PQueue({ concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3) });
     this.deviceName = options.deviceName?.trim() || "BakaGame";
     this.enableGeneralUnblock = options.enableGeneralUnblock ?? (
       typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
@@ -1813,114 +1829,72 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    return this.cached(
-      this.cacheKey("song-amll-ttml", undefined, id),
-      SONG_LYRICS_CACHE_TTL_MS,
-      async () => {
-        if (this.options.fetchAmllLyrics) {
-          return this.options.fetchAmllLyrics(id);
-        }
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 3_000);
-        try {
-          const res = await fetch(
-            `https://api.amll.dev/v1/lyrics/get?ncmMusicId=${encodeURIComponent(id)}`,
-            {
-              signal: controller.signal,
-              headers: {
-                "User-Agent": "BakaGame-Songuessr/1.0",
-              },
-            },
-          );
-          if (!res.ok) return undefined;
-          const json = (await res.json()) as { status?: number; data?: { lyrics?: string } };
-          if (
-            json?.status === 200 &&
-            typeof json?.data?.lyrics === "string" &&
-            json.data.lyrics.trim().length > 0
-          ) {
-            return json.data.lyrics.trim();
-          }
-          return undefined;
-        } catch (err) {
-          this.options.logger?.warn?.(`拉取 AMLL 歌词失败 [ID: ${id}]: ${describeError(err)}`);
-          return undefined;
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-    );
+    return this.loadAmllLyrics(this.cacheKey("song-amll-ttml", undefined, id), { songId: id }, async signal => {
+      if (this.options.fetchAmllLyrics) return this.options.fetchAmllLyrics(id);
+      const json = await this.requestAmllJson(`get?ncmMusicId=${encodeURIComponent(id)}`, signal);
+      return this.readAmllLyrics(json);
+    });
   }
 
   async searchAmllTtmlLyrics(songName: string, artistName?: string): Promise<string | undefined> {
     const title = songName.trim();
     if (!title) return undefined;
-    const cacheKey = this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`);
-    return this.cached(
-      cacheKey,
-      SONG_LYRICS_CACHE_TTL_MS,
-      async () => {
-        if (this.options.fetchAmllSearchLyrics) {
-          return this.options.fetchAmllSearchLyrics(title, artistName);
-        }
+    return this.loadAmllLyrics(this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`), { title }, async signal => {
+      if (this.options.fetchAmllSearchLyrics) return this.options.fetchAmllSearchLyrics(title, artistName);
+      const query = artistName ? `${title} ${artistName}` : title;
+      const json = await this.requestAmllJson(`search?q=${encodeURIComponent(query)}&pageSize=5`, signal);
+      if (!json) return undefined;
+      const items = asRecord(json.data).items;
+      if (!Array.isArray(items)) throw new Error("AMLL 搜索响应无效");
+      if (!items.length) return undefined;
+      const id = asRecord(items[0]).id;
+      if (typeof id !== "string" && typeof id !== "number") throw new Error("AMLL 搜索条目无效");
+      return this.readAmllLyrics(await this.requestAmllJson(`get?id=${encodeURIComponent(String(id))}`, signal));
+    });
+  }
+
+  private async loadAmllLyrics(key: string, context: Record<string, string>, loader: (signal: AbortSignal) => Promise<string | undefined>): Promise<string | undefined> {
+    try {
+      // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
+      return await this.cached(key, SONG_LYRICS_CACHE_TTL_MS, async () => {
+        if (this.amllQueue.size >= (this.options.amllMaxQueuedRequests ?? 64)) throw new Error("AMLL 请求排队过多");
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 3_000);
+        const timer = setTimeout(() => controller.abort(new Error("AMLL 请求超时")), Math.max(1, this.options.amllRequestTimeoutMs ?? 3_000));
         try {
-          const query = artistName ? `${title} ${artistName}` : title;
-          const searchRes = await fetch(
-            `https://api.amll.dev/v1/lyrics/search?q=${encodeURIComponent(query)}&pageSize=5`,
-            {
-              signal: controller.signal,
-              headers: {
-                "User-Agent": "BakaGame-Songuessr/1.0",
-              },
-            },
-          );
-          if (!searchRes.ok) return undefined;
-          const searchJson = (await searchRes.json()) as {
-            status?: number;
-            data?: {
-              items?: Array<{
-                id: number | string;
-                filename: string;
-                musicNames?: string[];
-                artistNames?: string[];
-              }>;
-            };
-          };
+          return await this.amllQueue.add(async () => {
+            const lyrics = await loader(controller.signal);
+            controller.signal.throwIfAborted();
+            if (lyrics !== undefined && !parseTTML(lyrics).length) throw new Error("AMLL TTML 歌词无效");
+            return lyrics;
+          }, { signal: controller.signal });
+        } finally { clearTimeout(timer); }
+      });
+    } catch (error) {
+      this.options.logger?.warn?.("获取 AMLL 歌词失败", { ...context, ...describeError(error) });
+      return undefined;
+    }
+  }
 
-          const items = searchJson?.data?.items;
-          if (!Array.isArray(items) || items.length === 0) return undefined;
-          const matchedItem = items[0];
-          if (!matchedItem?.id) return undefined;
+  private async requestAmllJson(path: string, signal: AbortSignal): Promise<Record<string, unknown> | undefined> {
+    const response = await (this.options.amllFetcher ?? fetch)(`https://api.amll.dev/v1/lyrics/${path}`, {
+      signal, headers: { "User-Agent": "BakaGame-Songuessr/1.0" },
+    });
+    signal.throwIfAborted();
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`AMLL 请求失败（${response.status}）`);
+    const json = asRecord(await response.json());
+    signal.throwIfAborted();
+    if (json.status === 404) return undefined;
+    if (json.status !== 200) throw new Error("AMLL 返回无效状态");
+    return json;
+  }
 
-          const getRes = await fetch(
-            `https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(String(matchedItem.id))}`,
-            {
-              signal: controller.signal,
-              headers: {
-                "User-Agent": "BakaGame-Songuessr/1.0",
-              },
-            },
-          );
-          if (!getRes.ok) return undefined;
-          const getJson = (await getRes.json()) as { status?: number; data?: { lyrics?: string } };
-          if (
-            getJson?.status === 200 &&
-            typeof getJson?.data?.lyrics === "string" &&
-            getJson.data.lyrics.trim().length > 0
-          ) {
-            return getJson.data.lyrics.trim();
-          }
-          return undefined;
-        } catch (err) {
-          this.options.logger?.warn?.(`搜索 AMLL 歌词失败 [Title: ${title}]: ${describeError(err)}`);
-          return undefined;
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-    );
+  private readAmllLyrics(json: Record<string, unknown> | undefined): string | undefined {
+    if (!json) return undefined;
+    const lyrics = asRecord(json.data).lyrics;
+    if (typeof lyrics !== "string") throw new Error("AMLL 返回无效歌词");
+    if (!lyrics.trim()) throw new Error("AMLL 返回空歌词");
+    return lyrics.trim();
   }
 
   async getPlaylistSongs(playlistId: string, cookie?: string) {
@@ -2313,7 +2287,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             lyrics = sanitizeLyrics(merged, base);
           }
         } catch (err) {
-          this.options.logger?.warn?.(`解析网易云 YRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+          this.options.logger?.warn?.("解析网易云 YRC 歌词失败", { songId: id, ...describeError(err) });
         }
       }
 
@@ -2329,7 +2303,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             }
           }
         } catch (err) {
-          this.options.logger?.warn?.(`解析 AMLL 网易云 ID 匹配 TTML 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+          this.options.logger?.warn?.("解析 AMLL 网易云 ID 匹配 TTML 歌词失败", { songId: id, ...describeError(err) });
         }
       }
 
@@ -2345,7 +2319,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             }
           }
         } catch (err) {
-          this.options.logger?.warn?.(`解析 AMLL 歌曲名搜索 TTML 歌词失败 [Title: ${base.title}]: ${describeError(err)}`);
+          this.options.logger?.warn?.("解析 AMLL 歌曲名搜索 TTML 歌词失败", { title: base.title, ...describeError(err) });
         }
       }
 
@@ -2356,7 +2330,7 @@ export class NeteaseMusicProvider implements MusicProvider {
           const merged = mergeTranslations(parsed, lrcTrans, lrcRoma);
           lyrics = sanitizeLyrics(merged, base);
         } catch (err) {
-          this.options.logger?.warn?.(`解析网易云 LRC 歌词失败 [ID: ${id}]: ${describeError(err)}`);
+          this.options.logger?.warn?.("解析网易云 LRC 歌词失败", { songId: id, ...describeError(err) });
         }
       }
 
@@ -2400,7 +2374,6 @@ export class NeteaseMusicProvider implements MusicProvider {
     //    必须显式传 source：不传时包内按目录字母序尝试，bugpk 排在最前且会返回网易云灰链兜底，
     //    字符串非空被误判为成功，导致 unm 等真正可用的音源永远得不到机会。
     //    每个音源都必须带上界，否则一个被丢弃的请求就足以把整轮出题钉死（见 settleWithin）。
-    let sawMatchResponse = false;
     for (const source of UNBLOCK_SOURCE_ORDER) {
       if (this.now() >= deadline) break;
       const matchResponse = await settleWithin(
@@ -2409,7 +2382,6 @@ export class NeteaseMusicProvider implements MusicProvider {
         undefined,
       );
       if (!matchResponse) continue;
-      sawMatchResponse = true;
       const body = responseBody(matchResponse);
       const url = readString(body.data) ?? readString(body.proxyUrl);
       const normalized = normalizeAudioUrl(url);
@@ -2428,26 +2400,6 @@ export class NeteaseMusicProvider implements MusicProvider {
       const url = readString(songData.url) ?? readString(songData.proxyUrl);
       const normalized = normalizeAudioUrl(url);
       if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
-    }
-
-    // 3. 仅当 song_url_match 端点整体不可用（旧版 API 模块）且未注入 mock 时，
-    //    直接调用内置 matchID 兜底。端点正常时不再重复整轮，避免为不可解歌曲付出双倍等待。
-    if (!sawMatchResponse && !this.options.loadApi) {
-      try {
-        const { matchID } = await import("@neteasecloudmusicapienhanced/unblockmusic-utils");
-        for (const source of UNBLOCK_SOURCE_ORDER) {
-          if (this.now() >= deadline) break;
-          const result = await settleWithin<unknown>(
-            Promise.resolve(matchID(songId, source)),
-            sourceTimeoutMs,
-            undefined,
-          );
-          const normalized = normalizeAudioUrl(asRecord(asRecord(result).data).url);
-          if (normalized && !isNeteaseFallbackUrl(normalized)) return normalized;
-        }
-      } catch (error) {
-        this.logger?.warn("直接调用解灰工具未成功", describeError(error));
-      }
     }
 
     return "";
