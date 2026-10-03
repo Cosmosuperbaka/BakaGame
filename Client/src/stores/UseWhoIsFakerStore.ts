@@ -102,6 +102,8 @@ const clearPhaseResultPresentation = () => {
   phaseResultVisibleUntil = 0;
 };
 
+const MAX_CHAT_MESSAGES = 200;
+
 const mergeChat = (
   existing: RoomSnapshot["chat"] = [],
   incoming: RoomSnapshot["chat"] = [],
@@ -113,7 +115,7 @@ const mergeChat = (
   for (const msg of incoming) {
     map.set(msg.id, msg);
   }
-  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
 };
 
 const isSameRound = (left: RoomSnapshot | null, right: RoomSnapshot) =>
@@ -280,6 +282,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     let snapshot = previousSummary
       ? { ...incomingSnapshot, summary: previousSummary }
       : incomingSnapshot;
+    snapshot = { ...snapshot, chat: snapshot.chat.slice(-MAX_CHAT_MESSAGES) };
 
     if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
       snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };

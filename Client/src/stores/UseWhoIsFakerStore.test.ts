@@ -112,6 +112,16 @@ describe("game store integration", () => {
     vi.useRealTimers();
   });
 
+  it("合并聊天历史保持有界并保留最新消息", () => {
+    const base = gameOverSnapshot("chat-round");
+    const history = Array.from({ length: 250 }, (_, index) => ({ id: `chat-${index}`, playerId: "p", playerName: "玩家", content: `消息${index}`, createdAt: index }));
+    useGameStore.getState().setSnapshot({ ...base, chat: history });
+    const chat = useGameStore.getState().snapshot?.chat ?? [];
+    expect(chat).toHaveLength(200);
+    expect(chat[0]?.id).toBe("chat-50");
+    expect(chat.at(-1)?.id).toBe("chat-249");
+  });
+
   it("persists a newly created room session in the current tab", async () => {
     wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
 
