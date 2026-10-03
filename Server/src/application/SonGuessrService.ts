@@ -418,6 +418,17 @@ export const resolveRecentSongWindow = (poolSize: number): number => {
   return Math.max(MIN_RECENT_SONG_WINDOW, Math.min(MAX_RECENT_SONG_WINDOW, adaptive));
 };
 /**
+ * 候选级取歌失败：这一首当前拿不到可用播放地址（下架、无版权、解灰全部失败），
+ * 换一个候选即可，不代表整轮无法出题。
+ *
+ * 只吞「单曲不可用」这两种码。限流（`MUSIC_API_RATE_LIMITED`）与接口整体不可用
+ * （`MUSIC_API_UNAVAILABLE`）必须原样抛出：前者在冷却期里继续抽候选只会空转，
+ * 后者说明整条链路坏了，重试没有任何意义。
+ */
+const isUnusableSongCandidate = (error: unknown): boolean =>
+  error instanceof AppError
+  && (error.code === "SONG_UNAVAILABLE" || error.code === "SONG_NOT_FOUND");
+/**
  * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
  *
  * 只卡命令入口，不卡出题解析器内部的上游调用：后者只由房主的
@@ -1604,9 +1615,8 @@ export class SonGuessrService {
     ) {
       return { ignored: true };
     }
-    if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) {
-      throw new AppError("MUSIC_VIP_REQUIRED", "当前网易云账号不是会员，无法选择会员专享歌曲");
-    }
+    // 不再按会员状态拦截会员专享曲：`getSong` 已经负责把受限歌曲交给解灰链路取回完整音频，
+    // 拿不到地址时会直接抛 `SONG_UNAVAILABLE`，出题资格以「实际有没有音频」为准。
     const roundNumber = this.installRound(room, song, player.id);
     this.touch(room);
     this.publishRoom(room);
@@ -1668,7 +1678,6 @@ export class SonGuessrService {
       this.random,
     ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
     const minPopularity = filters.songMinPopularity ?? 0;
-    const nonVip = room.musicSession?.account.vipStatus === "nonVip";
     const cookie = room.musicSession?.cookie;
     const recentSongIds = new Set(room.recentSongIds ?? []);
     let fallbackRecent: { song: SongDetails; track: BangumiMusicTrack } | undefined;
@@ -1706,9 +1715,9 @@ export class SonGuessrService {
         .map((candidate, index) => ({ candidate, index, score: scoreAnimeSongCandidate(candidate, track) }))
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map((entry) => entry.candidate);
-      // 会员专享歌曲在非会员房间必然装不上回合，先用检索结果里免费带出的 fee 标记
-      // 剔除，避免为注定失败的候选逐首回源拉取详情。
-      const pool = nonVip ? ranked.filter((candidate) => candidate.requiresVip !== true) : ranked;
+      // 不再按会员状态预剔除候选：会员专享曲由 `getSong` 的解灰链路取回完整音频，
+      // 取不到时抛 `SONG_UNAVAILABLE`，由下面的 catch 换下一个版本。
+      const pool = ranked;
 
       let attempts = 0;
       for (const candidate of pool) {
@@ -1731,8 +1740,6 @@ export class SonGuessrService {
           // 单首歌曲不可播放时继续尝试同曲目的其他版本。
           continue;
         }
-        // 详情里的会员标记比检索结果更权威（检索结果可能缺失该字段）。
-        if (nonVip && song.requiresVip) continue;
         if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
         const resolved = {
           song,
@@ -1916,27 +1923,29 @@ export class SonGuessrService {
     if (candidates.length === 0) {
       throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
     }
-    // 会员限制在检索结果里已经带出，先过滤再回源，
-    // 否则非会员账号会在大歌单上逐个串行试错。
-    const poolCandidates = candidates.filter(
-      (song) => room.musicSession?.account.vipStatus !== "nonVip" || !song.requiresVip,
-    );
-    // 窗口长度取自「过滤后的整池」而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
+    // 候选池不再按会员状态预剔除：会员专享曲会由 `getSong` 的解灰链路取回完整音频，
+    // 能否出题以「实际拿到的音频」为准，不再看账号是不是会员。
+    // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
     // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
-    const recentSongWindow = resolveRecentSongWindow(poolCandidates.length);
+    const recentSongWindow = resolveRecentSongWindow(candidates.length);
     const recentSongIds = new Set((room.recentSongIds ?? []).slice(0, recentSongWindow));
-    const freshCandidates = poolCandidates.filter((song) => !recentSongIds.has(song.id));
-    const pool = [...(freshCandidates.length > 0 ? freshCandidates : poolCandidates)];
+    const freshCandidates = candidates.filter((song) => !recentSongIds.has(song.id));
+    const pool = [...(freshCandidates.length > 0 ? freshCandidates : candidates)];
     let attempts = 0;
     while (pool.length > 0 && attempts < AUTO_SONG_CANDIDATE_LIMIT) {
       attempts += 1;
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
-      const song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
-      if (room.musicSession?.account.vipStatus === "nonVip" && song.requiresVip) continue;
+      let song: SongDetails;
+      try {
+        song = await this.options.musicProvider.getSong(selected.id, room.musicSession?.cookie);
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)) throw error;
+        continue;
+      }
       this.installRound(room, song, "", undefined, undefined, recentSongWindow);
       return;
     }
-    throw new AppError("MUSIC_VIP_REQUIRED", "筛选结果全部为会员歌曲，当前账号无法开始");
+    throw new AppError("SONG_UNAVAILABLE", "筛选结果中没有可播放的歌曲，请更换题库或稍后重试");
   }
 
   private async resolveAutomaticCandidates(room: SonGuessrRoomRecord): Promise<SongSearchResult[]> {

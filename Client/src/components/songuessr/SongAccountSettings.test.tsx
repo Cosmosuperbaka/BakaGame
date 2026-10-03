@@ -43,7 +43,7 @@ describe("SongAccountSettings", () => {
     expect(await screen.findByAltText("网易云登录二维码")).toBeInTheDocument();
   });
 
-  it("登录后显示会员状态，并为非会员提示会员歌曲限制", () => {
+  it("登录后显示会员状态，并说明非会员也能出会员专享曲", () => {
     saveSongMusicSession({
       cookie: "MUSIC_U=browser-only",
       account: { nickname: "普通账号", vipStatus: "nonVip" },
@@ -53,7 +53,7 @@ describe("SongAccountSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
 
     expect(screen.getByText("非会员")).toBeInTheDocument();
-    expect(screen.getByText("当前账号不是会员，无法选择会员专享歌曲。")).toBeInTheDocument();
+    expect(screen.getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")).toBeInTheDocument();
     expect(sendCommand).not.toHaveBeenCalled();
   });
 

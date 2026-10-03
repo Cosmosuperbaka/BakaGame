@@ -1000,13 +1000,14 @@ describe("SonGuessrService", () => {
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicAccountReady).toBe(true);
   });
 
-  test("非会员不能提交会员专享歌曲", async () => {
+  test("非会员提交会员专享歌曲时按实际音频放行", async () => {
     const nonVipProvider: MusicProvider = {
       ...provider,
       getLoginStatus: async (cookie) => ({
         cookie,
         account: { nickname: "普通账号", vipStatus: "nonVip" },
       }),
+      // getSong 已把会员曲交给解灰链路取回完整音频，`requiresVip` 不再参与出题判定。
       getSong: async (id) => ({ ...songs[id as keyof typeof songs], requiresVip: true }),
     };
     const service = new SonGuessrService({ musicProvider: nonVipProvider });
@@ -1034,16 +1035,15 @@ describe("SonGuessrService", () => {
       payload: { playerId: hostState.playerId },
     });
 
-    await expect(execute(service, host, {
+    const submitted = await execute(service, host, {
       id: "submit-vip-song-without-vip",
       type: "song.game.submitSong",
       roomId: "1234",
       payload: { songId: "answer" },
-    })).rejects.toMatchObject({
-      code: "MUSIC_VIP_REQUIRED",
     });
+    expect(submitted).toMatchObject({ roundNumber: 1 });
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase)
-      .toBe("submittingSong");
+      .toBe("playing");
   });
 
   test("异步取歌期间出题人离开后不会安装无归属回合", async () => {
@@ -2950,17 +2950,16 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
     expect(subjects).toBeLessThan(50);
   });
 
-  test("非会员房间的会员专享候选在回源前就被剔除", async () => {
-    const free = { ...makeSong("free-song", "答案歌", 2020), requiresVip: false };
+  test("非会员房间的会员专享候选不再被预先剔除", async () => {
     const vipOnly = { ...makeSong("vip-song", "答案歌", 2020), requiresVip: true };
     const fetched: string[] = [];
     const musicProvider: MusicProvider = {
       ...provider,
       getLoginStatus: async (cookie) => ({ cookie, account: { nickname: "非会员账号", vipStatus: "nonVip" } }),
-      search: async () => [vipOnly, free],
+      search: async () => [vipOnly],
       getSong: async (id) => {
         fetched.push(id);
-        return id === "vip-song" ? vipOnly : free;
+        return vipOnly;
       },
     };
 
@@ -2974,11 +2973,10 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
 
     await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} });
 
-    // 会员专享歌曲在非会员房间必然装不上回合，必须靠检索结果里的 fee 标记先剔除，
-    // 而不是拉完详情再丢弃。
-    expect(fetched).toEqual(["free-song"]);
+    // 会员专享曲不再因为「账号不是会员」被丢弃：能否出题由 getSong 的解灰结果决定。
+    expect(fetched).toEqual(["vip-song"]);
     expect(lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").currentRound?.audioUrl)
-      .toBe(free.audioUrl);
+      .toBe(vipOnly.audioUrl);
   });
 
   test("首个可播放候选命中后不再为被丢弃的同名候选回源详情", async () => {
@@ -3478,14 +3476,14 @@ describe("上线前 P0 修复回归", () => {
     })).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
   });
 
-  test("P0-5 大歌单全会员曲时自动出题的回源次数不超过常量上界", async () => {
+  test("P0-5 大歌单候选全部取不到音频时自动出题的回源次数不超过常量上界", async () => {
     let attempts = 0;
     const pool = Array.from({ length: 30 }, (_, index) => ({
       ...songs.answer,
       id: `pool-${index}`,
       title: `候选${index}`,
     }));
-    const vipProvider: MusicProvider = {
+    const brokenProvider: MusicProvider = {
       ...provider,
       getLoginStatus: async (cookie) => ({
         cookie,
@@ -3495,14 +3493,16 @@ describe("上线前 P0 修复回归", () => {
         info: { id: playlistId, name: "大歌单", songCount: pool.length },
         songs: pool,
       }),
-      getSong: async (id) => {
+      // 会员曲解灰全部失败时 provider 直接抛「没有可用播放地址」，
+      // 不再把试听片段或空地址交给上层；上层只把它当成「这个候选不能用」。
+      getSong: async () => {
         attempts += 1;
-        return { ...songs.answer, id, title: `候选${attempts}`, requiresVip: true };
+        throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
       },
     };
 
     let now = 2_000_000;
-    const service = new SonGuessrService({ musicProvider: vipProvider, now: () => now, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({ musicProvider: brokenProvider, now: () => now, random: { nextInt: () => 0 } });
     const host = connection(service, "limit-host-2");
     const guest = connection(service, "limit-guest-2");
     await createRoom(service, host, { roomId: "2222" });
@@ -3525,9 +3525,10 @@ describe("上线前 P0 修复回归", () => {
       type: "song.game.start",
       roomId: "2222",
       payload: {},
-    })).rejects.toMatchObject({ code: "MUSIC_VIP_REQUIRED" });
+    })).rejects.toMatchObject({ code: "SONG_UNAVAILABLE" });
 
-    expect(attempts).toBeLessThanOrEqual(AUTO_SONG_CANDIDATE_LIMIT);
+    // 抽到不可用候选只换下一个，回源次数严格受常量上界约束。
+    expect(attempts).toBe(AUTO_SONG_CANDIDATE_LIMIT);
   });
 
   test("P0-6 巡检不会抢占仍在上游校验中的猜测", async () => {
@@ -3986,6 +3987,62 @@ describe("上线前 P0 修复回归", () => {
 
     expect(chosen).toHaveLength(60);
     expect(new Set(chosen).size).toBe(60);
+  });
+
+  test("自动出题遇到取不到音频的候选会继续抽下一个", async () => {
+    const pool = [
+      { id: "broken-1", title: "坏候选一", artist: "测试歌手" },
+      { id: "broken-2", title: "坏候选二", artist: "测试歌手" },
+      { id: "healthy", title: "好候选", artist: "测试歌手" },
+    ];
+    const fetched: string[] = [];
+    const mixedProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async (playlistId) => ({
+        info: { id: playlistId, name: "混合池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (songId) => {
+        fetched.push(songId);
+        if (songId !== "healthy") {
+          throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
+        }
+        return makeSong("healthy", "好候选", 2020);
+      },
+    };
+    // nextInt 恒为 0：每轮都摘掉池子里的第一个，候选顺序完全确定。
+    const service = new SonGuessrService({ musicProvider: mixedProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "mixed-pool-solo");
+    await createRoom(service, solo, {
+      roomId: "7810",
+      name: "混合池",
+      allowSpectators: false,
+      userName: "独狼",
+      solo: true,
+    });
+    await execute(service, solo, {
+      id: "mixed-settings",
+      type: "song.room.updateSettings",
+      roomId: "7810",
+      payload: {
+        autoFilters: {
+          playlist: { id: "42", name: "混合池", songCount: pool.length },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, solo, {
+      id: "mixed-start",
+      type: "song.game.start",
+      roomId: "7810",
+      payload: {},
+    });
+
+    expect(fetched).toEqual(["broken-1", "broken-2", "healthy"]);
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(snapshot.phase).toBe("playing");
+    expect(snapshot.currentRound?.audioUrl).toBe(makeSong("healthy", "好候选", 2020).audioUrl);
   });
 });
 

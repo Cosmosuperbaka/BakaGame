@@ -56,7 +56,7 @@ export const NonVipExpanded: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.nonVip),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    await canvas.findByText("当前账号不是会员，无法选择会员专享歌曲。");
+    await canvas.findByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。");
     dropFocus();
   },
 };

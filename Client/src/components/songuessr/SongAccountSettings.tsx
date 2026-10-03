@@ -214,7 +214,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                   )}>
                     <div className="font-medium">{vipLabel}{vipExpireLabel ? ` · ${vipExpireLabel}` : ""}</div>
                     {vipStatus === "nonVip" ? (
-                      <p className="mt-1">当前账号不是会员，无法选择会员专享歌曲。</p>
+                      <p className="mt-1">非会员账号也能出题，会员专享歌曲会自动匹配可用音源。</p>
                     ) : vipStatus === "unknown" || !vipStatus ? (
                       <p className="mt-1">暂时无法读取会员状态，选歌时以网易云实际权限为准。</p>
                     ) : null}
