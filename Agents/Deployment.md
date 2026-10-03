@@ -14,7 +14,8 @@
 
 WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`、
 `/api/songuessr/ws` 和 `/api/ccb/ws` 提供。应用服务负责 WebSocket
-协议解析、业务权限和房间状态，不在进程内按来源 IP 实现限流或连接配额。
+协议解析、业务权限和房间状态，不在进程内按来源 IP 实现游戏握手限流或连接配额。
+公开遥测与 Sentry 隧道另有应用内资源预算，不能代替入口保护；其来源信任边界见下文。
 
 ## 反向代理职责
 
@@ -30,6 +31,13 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
 不得把 Bun 服务端口直接暴露到公网。
+
+公开遥测 `/api/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的应用内单来源预算，
+只使用 Bun `server.requestIP(request)` 的传输 peer；不信任客户端自报的
+`X-Forwarded-For` / `X-Real-IP`。经反向代理时全体客户端共享代理 peer 桶，
+无 socket 的请求共享 unknown 桶；当前没有 authenticated-forwarding，不能称为每玩家 IP 限流。
+独立总预算仍启用。若生产需要细分代理后来源，须先明确并验证受信代理身份与转发头覆盖规则；
+不能仅解析任意转发头。当前聚合桶容量须结合真实代理流量验收。
 
 ## 当前请求链路与同源化边界
 
