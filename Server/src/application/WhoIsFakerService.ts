@@ -1,6 +1,5 @@
 import { AppError } from "../domain/Errors";
 import type {
-  BlankGuessRecord,
   ChatChannel,
   ChatMessage,
   ConnectionRecord,
@@ -29,6 +28,7 @@ import {
   computeVoteOutcome,
   ensureRoomId,
   evaluateBlankGuess,
+  evaluateBlankGuessDraft,
   getBlankPlayerId,
   getRoomRoleLimits,
   getWinnerAfterBlankFailure,
@@ -342,8 +342,6 @@ export class WhoIsFakerService {
     message: Extract<ClientMessage, { type: "room.create" }>,
   ) {
     // 创建房间时同时把当前连接绑定为房主与首个正式玩家。
-    this.ensureConnectionIsFree(connection);
-
     const roomId = ensureRoomId(message.payload.roomId);
 
     if (this.rooms.has(roomId)) {
@@ -386,10 +384,11 @@ export class WhoIsFakerService {
     );
 
     this.rooms.set(room.id, room);
-    this.attachConnection(room, host, connection);
+    const previousRoomUpdate = this.attachConnection(room, host, connection);
     this.appendSystemMessage(room, `${host.name} 创建了房间`);
     this.touchRoom(room);
 
+    await previousRoomUpdate;
     await this.log({
       type: "room.created",
       createdAt: this.now(),
@@ -415,8 +414,6 @@ export class WhoIsFakerService {
     message: Extract<ClientMessage, { type: "room.join" }>,
   ) {
     // 开局后新连接默认只能作为旁观者进入，避免临时插入正式席位打乱本局。
-    this.ensureConnectionIsFree(connection);
-
     const roomId = ensureRoomId(message.roomId ?? "");
     const room = this.getRoom(roomId);
 
@@ -433,11 +430,12 @@ export class WhoIsFakerService {
     player.membership = joiningAsSpectator ? "spectator" : "active";
 
     room.players[player.id] = player;
-    this.attachConnection(room, player, connection);
+    const previousRoomUpdate = this.attachConnection(room, player, connection);
     this.normalizeRoomRoleConfig(room);
     this.appendSystemMessage(room, `${player.name} 加入了房间`);
     this.touchRoom(room);
 
+    await previousRoomUpdate;
     await this.log({
       type: "room.joined",
       createdAt: this.now(),
@@ -463,8 +461,6 @@ export class WhoIsFakerService {
     message: Extract<ClientMessage, { type: "room.reconnect" }>,
   ) {
     // 重连不会创建新玩家，只会把会话重新挂回原连接。
-    this.ensureConnectionIsFree(connection);
-
     const room = this.getRoom(ensureRoomId(message.payload.roomId));
     const player = Object.values(room.players).find(
       (item) => safeEqualToken(item.sessionToken, message.payload.sessionToken),
@@ -772,17 +768,16 @@ export class WhoIsFakerService {
     this.ensureQuestioner(round, player.id);
     this.ensurePhaseNotBlocked(round);
 
-    if (round.supplement && round.speechMode === "supplement") {
+    if (round.supplement) {
       throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
     }
-
-    this.clearPhaseTimer(room);
 
     switch (phase) {
       case "description":
         if (!this.isDescriptionComplete(round)) {
           throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
         }
+        this.clearPhaseTimer(room);
         {
           const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
           const isTwoPlayerUndercoverEndgame =
@@ -803,10 +798,12 @@ export class WhoIsFakerService {
         if (!this.isVotingComplete(room, false)) {
           throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
         }
+        this.clearPhaseTimer(room);
         await this.resolveVoting(room, false);
         break;
       case "tieBreak":
         if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
+          this.clearPhaseTimer(room);
           await this.applyEliminationAndMove(room, [], "平票候选不足，直接进入夜晚", "night");
           break;
         }
@@ -816,6 +813,7 @@ export class WhoIsFakerService {
             throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
           }
 
+          this.clearPhaseTimer(room);
           round.tieBreak.stage = "vote";
           round.speechMode = undefined;
           round.tieBreak.votes = [];
@@ -824,6 +822,7 @@ export class WhoIsFakerService {
             throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
           }
 
+          this.clearPhaseTimer(room);
           await this.resolveVoting(room, true);
         }
         break;
@@ -831,6 +830,7 @@ export class WhoIsFakerService {
         if (!this.isNightActionComplete(room)) {
           throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
         }
+        this.clearPhaseTimer(room);
         await this.resolveNight(room);
         break;
       default:
@@ -884,13 +884,7 @@ export class WhoIsFakerService {
           order: order > 0 ? order : undefined,
         }),
       );
-      if (round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length) {
-        this.clearPhaseTimer(room);
-        const resumePhase = round.supplement.resumePhase;
-        round.supplement = undefined;
-        round.speechMode = resumePhase === "description" ? "normal" : undefined;
-        round.phase = resumePhase;
-      }
+      this.completeSupplementIfReady(room);
     } else if (round.phase === "description" && round.speechMode !== "supplement") {
       if (!state?.alive) {
         throw new AppError("ACTION_FORBIDDEN", "当前玩家不能描述");
@@ -1033,8 +1027,29 @@ export class WhoIsFakerService {
     round.speechMode = "supplement";
 
     this.touchRoom(room);
+    this.requeuePendingDisconnects(room);
+    await this.runBots(room);
     this.publishRoomState(room);
     return { requested: true };
+  }
+
+  private completeSupplementIfReady(room: RoomRecord): boolean {
+    const round = room.round;
+    const supplement = round?.supplement;
+    if (!round || !supplement || supplement.donePlayers.length < supplement.requestedPlayerIds.length) {
+      return false;
+    }
+    round.supplement = undefined;
+    if (round.phase === "blankGuess" && round.blankGuessContext?.resumePhase === "description") {
+      round.blankGuessContext.resumePhase = supplement.resumePhase;
+      // 原补充已完成，其剩余倒计时不能移植到恢复后的投票。
+      round.blankGuessContext.interruptedRemainingTimerMs = undefined;
+    } else {
+      this.clearPhaseTimer(room);
+      round.phase = supplement.resumePhase;
+      round.speechMode = supplement.resumePhase === "description" ? "normal" : undefined;
+    }
+    return true;
   }
 
   private async handleSubmitVote(connection: ConnectionRecord, targetId: string) {
@@ -1303,28 +1318,8 @@ export class WhoIsFakerService {
         record.approvedByQuestioner = true;
       }
       await this.finishRound(room, "blank", "白板猜词经主持人判定有效，获得胜利");
-    } else if (round.blankGuessContext?.deferredWinner) {
-      await this.finishRound(
-        room,
-        round.blankGuessContext.deferredWinner,
-        "白板猜测失败，系统按残局条件结算",
-      );
-    } else if (round.blankGuessContext?.resumePhase) {
-      const resumePhase = round.blankGuessContext.resumePhase;
-      const remainingTimerMs = round.blankGuessContext.interruptedRemainingTimerMs;
-      round.phase = resumePhase;
-      round.blankGuessContext = undefined;
-      if (resumePhase === "description") {
-        round.speechMode = "normal";
-      } else if (resumePhase === "tieBreak") {
-        round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
-      } else {
-        round.speechMode = undefined;
-      }
-      this.appendSystemMessage(room, "白板猜词未通过，游戏继续");
-      if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
-        this.restoreInterruptedTimer(room, remainingTimerMs);
-      }
+    } else {
+      await this.resolveFailedBlankGuess(room, "白板猜词未通过，游戏继续");
     }
 
     this.touchRoom(room);
@@ -1533,7 +1528,7 @@ export class WhoIsFakerService {
       if (round.supplement && round.speechMode === "supplement") {
         for (const playerId of round.supplement.requestedPlayerIds) {
           if (!round.supplement.donePlayers.includes(playerId)) {
-            const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
+            const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
             round.supplement.donePlayers.push(playerId);
             const order = round.supplement.requestedPlayerIds.indexOf(playerId) + 1;
             round.descriptions.push(
@@ -1550,14 +1545,11 @@ export class WhoIsFakerService {
             );
           }
         }
-        const resumePhase = round.supplement.resumePhase;
-        round.supplement = undefined;
-        round.speechMode = resumePhase === "description" ? "normal" : undefined;
-        round.phase = resumePhase;
+        this.completeSupplementIfReady(room);
       } else {
         for (const playerId of round.descriptionOrder) {
           if (!round.descriptionSubmittedBy.includes(playerId)) {
-            const player = room.players[playerId] ?? ({ id: playerId, name: "超时玩家" } as PlayerRecord);
+            const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
             round.descriptionSubmittedBy.push(playerId);
             const order = round.descriptionOrder.indexOf(playerId) + 1;
             round.descriptions.push(
@@ -1613,7 +1605,7 @@ export class WhoIsFakerService {
       if (round.tieBreak?.stage === "description") {
         for (const candidateId of round.tieBreak.candidateIds) {
           if (!round.tieBreak.descriptionsDone.includes(candidateId)) {
-            const player = room.players[candidateId] ?? ({ id: candidateId, name: "超时玩家" } as PlayerRecord);
+            const player = room.players[candidateId] ?? { id: candidateId, name: "超时玩家" };
             round.tieBreak.descriptionsDone.push(candidateId);
             const order = round.tieBreak.candidateIds.indexOf(candidateId) + 1;
             round.descriptions.push(
@@ -1681,69 +1673,15 @@ export class WhoIsFakerService {
       if (ctx) {
         if (ctx.pendingReview) {
           ctx.pendingReview = undefined;
-          if (ctx.deferredWinner) {
-            await this.finishRound(
-              room,
-              ctx.deferredWinner,
-              "白板猜词超时未通过，系统按残局条件结算",
-            );
-          } else if (ctx.resumePhase) {
-            const resumePhase = ctx.resumePhase;
-            const remainingTimerMs = ctx.interruptedRemainingTimerMs;
-            round.phase = resumePhase;
-            round.blankGuessContext = undefined;
-            if (resumePhase === "description") {
-              round.speechMode = "normal";
-            } else if (resumePhase === "tieBreak") {
-              round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
-            } else {
-              round.speechMode = undefined;
-            }
-            this.appendSystemMessage(room, "白板猜词裁定超时未通过，游戏继续");
-            if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
-              this.restoreInterruptedTimer(room, remainingTimerMs);
-            }
-          }
+          await this.resolveFailedBlankGuess(room, "白板猜词裁定超时未通过，游戏继续");
         } else {
+          const guess = evaluateBlankGuessDraft(round, ctx.draft ?? ["", ""], this.now(), ctx.reason);
           round.blankGuessUsed = true;
-          const draft = ctx.draft;
-          let guess: BlankGuessRecord;
-          if (draft && draft[0].trim() && draft[1].trim()) {
-            guess = evaluateBlankGuess(round, draft, this.now(), ctx.reason);
-          } else {
-            guess = {
-              playerId: ctx.playerId,
-              guessedWords: [draft?.[0] || "", draft?.[1] || ""],
-              success: false,
-              createdAt: this.now(),
-              reason: ctx.reason,
-            };
-          }
           round.blankGuessRecords.push(guess);
           if (guess.success) {
             await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
-          } else if (ctx.deferredWinner) {
-            await this.finishRound(
-              room,
-              ctx.deferredWinner,
-              "白板猜词超时失败，系统按残局条件结算",
-            );
-          } else if (ctx.resumePhase) {
-            const resumePhase = ctx.resumePhase;
-            const remainingTimerMs = ctx.interruptedRemainingTimerMs;
-            round.phase = resumePhase;
-            round.blankGuessContext = undefined;
-            if (resumePhase === "description") {
-              round.speechMode = "normal";
-            } else if (resumePhase === "tieBreak") {
-              round.speechMode = round.tieBreak?.stage === "description" ? "tieBreak" : undefined;
-            } else {
-              round.speechMode = undefined;
-            }
-            this.appendSystemMessage(room, "白板猜词超时失败，游戏继续");
-            if (remainingTimerMs !== undefined && remainingTimerMs > 0) {
-              this.restoreInterruptedTimer(room, remainingTimerMs);
-            }
+          } else {
+            await this.resolveFailedBlankGuess(room, "白板猜词超时失败，游戏继续");
           }
         }
         this.touchRoom(room);
@@ -1752,6 +1690,29 @@ export class WhoIsFakerService {
         await this.runBots(room);
       }
       return;
+    }
+  }
+
+  private async resolveFailedBlankGuess(room: RoomRecord, message: string) {
+    const round = this.requireRound(room);
+    const context = round.blankGuessContext;
+    if (!context) return;
+    if (context.deferredWinner) {
+      await this.finishRound(room, context.deferredWinner, "白板猜词失败，系统按残局条件结算");
+      return;
+    }
+    if (context.resumePhase) {
+      round.phase = context.resumePhase;
+      round.blankGuessContext = undefined;
+      // 补充与 PK 上下文在打断期间保留，恢复时从这些真相源派生发言模式。
+      round.speechMode = round.phase === "description"
+        ? (round.supplement ? "supplement" : "normal")
+        : round.phase === "tieBreak" && round.tieBreak?.stage === "description"
+          ? "tieBreak" : undefined;
+      this.appendSystemMessage(room, message);
+      if (context.interruptedRemainingTimerMs !== undefined && context.interruptedRemainingTimerMs > 0) {
+        this.restoreInterruptedTimer(room, context.interruptedRemainingTimerMs);
+      }
     }
   }
 
@@ -2700,14 +2661,7 @@ export class WhoIsFakerService {
           (donePlayerId) => donePlayerId !== player.id,
         );
 
-        if (
-          round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length
-        ) {
-          const resumePhase = round.supplement.resumePhase;
-          round.supplement = undefined;
-          round.phase = resumePhase;
-          round.speechMode = resumePhase === "description" ? "normal" : undefined;
-        }
+        this.completeSupplementIfReady(room);
       }
 
       preservedVotes = [...round.votes];
@@ -3231,6 +3185,13 @@ export class WhoIsFakerService {
     player: PlayerRecord,
     connection: ConnectionRecord,
   ) {
+    // 目标先校验；旧席位断线状态和新绑定在首次 await 前完成，防止并发建房/同名加入穿透。
+    // handlePlayerOffline 的 disconnect 分支在首个 await 前完成所有领域状态变更。
+    const previousRoom = connection.roomId ? this.rooms.get(connection.roomId) : undefined;
+    const previousRoomUpdate = previousRoom && connection.playerId &&
+      (previousRoom.id !== room.id || connection.playerId !== player.id)
+      ? this.handlePlayerOffline(previousRoom, connection.playerId, "disconnect")
+      : Promise.resolve();
     // 同一 sessionToken 只允许挂一个在线连接，新连接会顶掉旧连接。
     const previousConnection = this.getConnectionByPlayer(player.id);
 
@@ -3252,6 +3213,7 @@ export class WhoIsFakerService {
     connection.resetStateSync?.();
     connection.roomId = room.id;
     connection.playerId = player.id;
+    return previousRoomUpdate;
   }
 
   private getOnlineCount(room: RoomRecord) {
@@ -3486,7 +3448,7 @@ export class WhoIsFakerService {
   }
 
   private createDescription(
-    player: PlayerRecord,
+    player: Pick<PlayerRecord, "id" | "name">,
     text: string,
     kind: DescriptionRecord["kind"],
     cycle: number,
@@ -3580,7 +3542,7 @@ export class WhoIsFakerService {
       appendMessage: string;
     },
   ) {
-    this.attachConnection(room, player, connection);
+    const previousRoomUpdate = this.attachConnection(room, player, connection);
 
     if (room.round) {
       this.clearPendingDisconnect(room.round, player.id);
@@ -3597,6 +3559,7 @@ export class WhoIsFakerService {
     this.touchRoom(room);
     this.appendSystemMessage(room, options.appendMessage);
 
+    await previousRoomUpdate;
     await this.log({
       type: "room.reconnected",
       createdAt: this.now(),
@@ -3681,6 +3644,11 @@ export class WhoIsFakerService {
     if (!round || round.phase === "gameOver") {
       return;
     }
+
+    round.pendingDisconnectPlayerIds = round.pendingDisconnectPlayerIds.filter((playerId) => {
+      const player = room.players[playerId];
+      return player && !player.online && !player.isBot && this.shouldQueueDisconnectForDecision(round, player);
+    });
 
     for (const player of Object.values(room.players)) {
       if (player.online || player.isBot) continue;
@@ -3873,14 +3841,6 @@ export class WhoIsFakerService {
     }
 
     return { room, player };
-  }
-
-  private ensureConnectionIsFree(connection: ConnectionRecord) {
-    // 若连接已有旧房间或旧玩家绑定，先安全清理，避免阻断后续重连或换房
-    if (connection.roomId || connection.playerId) {
-      connection.roomId = undefined;
-      connection.playerId = undefined;
-    }
   }
 
   private ensureHost(room: RoomRecord, playerId: string) {
@@ -4143,19 +4103,10 @@ export class WhoIsFakerService {
       return;
     }
 
-    // 补充发言可能因机器人的提交而完成，需要按真人路径收尾并回到原阶段。
-    if (
-      round.supplement &&
-      round.speechMode === "supplement" &&
-      round.supplement.donePlayers.length >= round.supplement.requestedPlayerIds.length
-    ) {
-      const resumePhase = round.supplement.resumePhase;
-      round.supplement = undefined;
-      round.speechMode = resumePhase === "description" ? "normal" : undefined;
-      round.phase = resumePhase;
-    }
+    this.completeSupplementIfReady(room);
 
     this.touchRoom(room);
+    this.requeuePendingDisconnects(room);
     this.publishRoomState(room);
   }
 

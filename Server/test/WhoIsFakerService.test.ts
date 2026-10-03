@@ -3284,3 +3284,41 @@ test("阶段精简播报、观战频道流转时机与发言顺序序号验证",
   }
 });
 
+
+
+test("换房校验失败保留原绑定，成功建房加入重连均将原席位离线", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host, result } = await createRoom(service, "8910");
+  const { host: targetHost, result: target } = await createRoom(service, "8911");
+  await execute(service, targetHost, { id: "private-target", type: "room.updateSettings", payload: { visibility: "private", password: "secret" } });
+  const failures = [
+    { id: "missing", type: "room.join", roomId: "8912", payload: { userName: "换房" } },
+    { id: "exists", type: "room.create", payload: { roomId: "8911", name: "重复", visibility: "public", allowSpectators: true, userName: "换房" } },
+    { id: "token", type: "room.reconnect", payload: { roomId: "8911", sessionToken: "invalid" } },
+    { id: "name", type: "room.join", roomId: "8911", payload: { userName: "房主", password: "secret" } },
+    { id: "password", type: "room.join", roomId: "8911", payload: { userName: "换房", password: "wrong" } },
+  ] as const;
+  for (const message of failures) {
+    await expect(execute(service, host, message)).rejects.toBeDefined();
+    expect(host.record.roomId).toBe("8910");
+    expect(host.record.playerId).toBe(result.playerId);
+    expect(service.getHealthSnapshot().onlinePlayerCount).toBe(2);
+  }
+  await execute(service, host, {
+    id: "switch-create", type: "room.create",
+    payload: { roomId: "8912", name: "新房", visibility: "public", allowSpectators: true, userName: "换房" },
+  });
+  expect(service.getHealthSnapshot().onlinePlayerCount).toBe(2);
+  await execute(service, host, { id: "switch-join", type: "room.join", roomId: "8911", payload: { userName: "换房", password: "secret" } });
+  expect(service.getHealthSnapshot().onlinePlayerCount).toBe(2);
+  await execute(service, host, { id: "switch-reconnect", type: "room.reconnect", payload: { roomId: "8910", sessionToken: result.sessionToken } });
+  expect(service.getHealthSnapshot().onlinePlayerCount).toBe(2);
+  // 同一连接恢复同一席位不产生离线/房主宽限副作用。
+  await execute(service, host, { id: "same-reconnect", type: "room.reconnect", payload: { roomId: "8910", sessionToken: result.sessionToken } });
+  expect(host.record.playerId).toBe(result.playerId);
+  expect(target.roomId).toBe("8911");
+  await service.unregisterConnection(host.record.id);
+  advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS + 1);
+  await service.runHousekeeping();
+  expect(service.getRoomSummaries().map((room) => room.roomId)).toEqual(["8911"]);
+});

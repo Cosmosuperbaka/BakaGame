@@ -418,10 +418,23 @@ export const evaluateBlankGuess = (
   createdAt: number,
   reason: BlankGuessRecord["reason"],
 ): BlankGuessRecord => {
-  // 白板猜词永远按“词对本身”判断，不要求前端传入固定顺序。
-  const normalizedGuess = normalizeWordPair(guess);
+  return evaluateBlankGuessDraft(round, normalizeWordPair(guess), createdAt, reason);
+};
+
+// 草稿允许空词、同词及尚未完成的输入；到期必须得到确定的失败记录，而非抛出词对校验错误。
+// 正式提交仍由 evaluateBlankGuess 严格校验。
+export const evaluateBlankGuessDraft = (
+  round: GameRound,
+  guess: [string, string],
+  createdAt: number,
+  reason: BlankGuessRecord["reason"],
+): BlankGuessRecord => {
+  const normalizedGuess: [string, string] = [normalizeWord(guess[0]), normalizeWord(guess[1])];
+  normalizedGuess.sort((left, right) => left.localeCompare(right));
   const roundWords = round.words;
-  const success = roundWords
+  const validPair = Boolean(normalizedGuess[0] && normalizedGuess[1]) &&
+    normalizedGuess[0] !== normalizedGuess[1];
+  const success = roundWords && validPair
     ? normalizedGuess[0] === roundWords.pair[0] &&
       normalizedGuess[1] === roundWords.pair[1]
     : false;

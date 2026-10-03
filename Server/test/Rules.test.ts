@@ -6,6 +6,7 @@ import {
   createDefaultRoleConfig,
   ensureRoomId,
   evaluateBlankGuess,
+  evaluateBlankGuessDraft,
   getRoomRoleLimits,
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
@@ -217,4 +218,10 @@ test("白板猜词会按词对本身判断是否正确", () => {
   expect(
     evaluateBlankGuess(round, ["香蕉", "苹果"], Date.now(), "eliminated").success,
   ).toBe(true);
+  for (const words of [["", ""], ["苹果", ""], ["苹果", "苹果"], ["苹果", " 苹果\u200b"], ["\u0000", "\u200b"]] as [string, string][]) {
+    expect(evaluateBlankGuessDraft(round, words, 123, "eliminated")).toMatchObject({ playerId: "blank", success: false, createdAt: 123 });
+    expect(() => evaluateBlankGuess(round, words, 123, "eliminated")).toThrow(expect.objectContaining({ code: "INVALID_WORD_PAIR" }));
+  }
+  expect(evaluateBlankGuessDraft(round, [" 香蕉 ", "苹果"], 123, "eliminated").success).toBe(true);
+
 });
