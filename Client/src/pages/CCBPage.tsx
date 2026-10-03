@@ -25,16 +25,20 @@ export default function CCBPage() {
   const lobbyReady = useCCBStore((state) => state.connected && state.lobbyReady);
   const originalAvailable = useCCBStore((state) => state.originalAvailable);
   const [server, setServer] = useState<CCBSource>("native");
-  // 从房间返回大厅时先把原房退掉再订阅大厅；严格模式下 effect 会跑两次，用一次性标志防重。
+  // 退房操作只有一份；每次 effect 挂载仅订阅该操作，StrictMode 不重复发送。
   const [leaving, setLeaving] = useState(() => Boolean(useCCBStore.getState().roomId));
-  const releaseStarted = useRef(false);
+  const release = useRef<Promise<void> | null>(null);
   useEffect(() => {
     const store = useCCBStore.getState();
-    if (!store.roomId || releaseStarted.current) return;
-    releaseStarted.current = true;
-    void store.leaveRoom().then(() => store.subscribeLobby())
-      .catch((failure) => store.setNotice(ccbErrorMessage(failure)))
-      .finally(() => setLeaving(false));
+    if (!release.current && !store.roomId) return;
+    release.current ??= store.leaveRoom();
+    let active = true;
+    void release.current.then(() => {
+      if (active && useCCBStore.getState().connected) return store.subscribeLobby();
+    }).catch((failure) => {
+      if (active) store.setNotice(ccbErrorMessage(failure));
+    }).finally(() => { if (active) setLeaving(false); });
+    return () => { active = false; };
   }, []);
 
   const {
@@ -52,11 +56,12 @@ export default function CCBPage() {
     handlePasswordJoin,
     handleCreateRoom,
     isInitialLoading,
+    pending,
   } = useLobbySession<CCBRoomSummary>({
     gamePath: "/ccb",
     rooms,
     ready: lobbyReady,
-    createRoom: (params) => useCCBStore.getState().createRoom({
+    createRoom: (params, signal) => useCCBStore.getState().createRoom({
       source: server,
       roomId: params.roomId,
       name: params.name,
@@ -65,9 +70,9 @@ export default function CCBPage() {
       visibility: params.visibility,
       allowSpectators: server === "original" ? true : params.allowSpectators,
       ...(server === "native" && params.password ? { password: params.password } : {}),
-    }),
-    joinRoom: (roomId, name, password) => useCCBStore.getState().joinRoom(roomId, name, password),
-    reconnectRoom: (roomId) => useCCBStore.getState().reconnectRoom(roomId),
+    }, signal),
+    joinRoom: (roomId, name, password, signal) => useCCBStore.getState().joinRoom(roomId, name, password, signal),
+    reconnectRoom: (roomId, signal) => useCCBStore.getState().reconnectRoom(roomId, signal),
     showError: (message) => useCCBStore.getState().setNotice(message, "error"),
   });
 
@@ -86,7 +91,8 @@ export default function CCBPage() {
       title="二刺猿笑传之猜猜呗"
       rooms={rooms.map(toRoomView)}
       loading={isInitialLoading || leaving}
-      disabled={leaving}
+      disabled={leaving || pending}
+      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
       userName={userName}
       onUserNameChange={setUserName}
       nameMaxLength={32}
@@ -113,6 +119,7 @@ export default function CCBPage() {
           onCreate={(params) => handleCreateRoom(params)}
         />
         <JoinPasswordDialog
+          pending={pending}
           roomName={joinTarget?.name ?? null}
           origin={joinOrigin.origin}
           password={joinPassword}

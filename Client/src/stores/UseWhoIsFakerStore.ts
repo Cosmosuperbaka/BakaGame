@@ -600,5 +600,8 @@ export function initWhoIsFakerWs() {
   return () => {
     unsubMsg();
     unsubStatus();
+    ws.whoIsFakerWsClient.disconnect();
+    resetWhoIsFakerStateSync();
+    useWhoIsFakerStore.getState().setConnected(false);
   };
 }

@@ -23,6 +23,18 @@ describe("CCB 会话凭据", () => {
   });
 });
 
+describe("CCB 等价房号会话", () => {
+  it("规范房号写入后支持大小写和空白读取及删除", () => {
+    writeCCBSession("Oblivionis", "canonical");
+    expect(readCCBSession(" oblivionis ")).toBe("canonical");
+    removeCCBSession(" OBLIVIONIS ");
+    expect(readCCBSession("Oblivionis")).toBeNull();
+    writeCCBSession(" 1234 ", "numeric");
+    expect(readCCBSession("1234")).toBe("numeric");
+    expect(readCCBSession("5678")).toBeNull();
+  });
+});
+
 describe("CCB 顶栏局数", () => {
   it("准备与出题阶段显示即将开始的一局，其余阶段显示最近开始的一局", () => {
     expect(ccbDisplayRound("waiting", 0)).toBe(0);

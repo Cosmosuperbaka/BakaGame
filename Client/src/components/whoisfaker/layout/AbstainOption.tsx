@@ -2,13 +2,14 @@
 import { CircleSlash } from "lucide-react";
 import { listItem, selectable } from "@/lib/Motion";
 
-export function AbstainOption({ onSelect }: { onSelect: () => void }) {
+export function AbstainOption({ onSelect, disabled }: { onSelect: () => void; disabled?: boolean }) {
   return (
     <motion.button
       type="button"
       variants={listItem}
       {...selectable}
       className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent/40"
+      disabled={disabled}
       onClick={onSelect}
     >
       <span className="truncate text-sm font-medium">弃票</span>

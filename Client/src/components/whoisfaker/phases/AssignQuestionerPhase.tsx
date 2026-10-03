@@ -1,4 +1,5 @@
-﻿import { useCallback } from "react";
+import { usePhaseAction } from "./UsePhaseAction";
+import { useCallback } from "react";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -9,6 +10,8 @@ export function AssignQuestionerPhase() {
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const action = usePhaseAction();
+  const { run, busy } = action;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
@@ -21,13 +24,15 @@ export function AssignQuestionerPhase() {
 
   const handleAssign = useCallback(
     async (playerId: string) => {
+      await run(async () => {
       try {
         await sendCommand("game.assignQuestioner", { playerId });
       } catch (e) {
         addToast((e as { message: string }).message, "error");
       }
+      });
     },
-    [sendCommand, addToast]
+    [run, sendCommand, addToast]
   );
 
   return (
@@ -49,6 +54,7 @@ export function AssignQuestionerPhase() {
               />
               <CandidateGrid
                 candidates={spectatorCandidates}
+                disabled={busy}
                 onPick={handleAssign}
                 tone="recommended"
                 nameWrap="truncate"
@@ -72,7 +78,8 @@ export function AssignQuestionerPhase() {
             />
             <CandidateGrid
               candidates={activeCandidates}
-              onPick={handleAssign}
+              disabled={busy}
+                onPick={handleAssign}
               tone="default"
               nameWrap="truncate"
             />

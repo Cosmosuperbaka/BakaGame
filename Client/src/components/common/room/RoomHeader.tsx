@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { ArrowLeft, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ export interface RoomHeaderToggle {
   label: string;
   expanded: boolean;
   onClick: () => void;
+  triggerRef?: Ref<HTMLButtonElement>;
   /** 该入口可见的最大断点：玩家面板 `md` 起常驻，聊天面板 `xl` 起常驻 */
   hideFrom: "md" | "xl";
 }
@@ -46,6 +47,7 @@ export function HeaderCounter({ children }: { children: ReactNode }) {
  */
 export function RoomHeader({
   onLeave,
+  leaveRef,
   title,
   roomId,
   roomTag,
@@ -55,6 +57,7 @@ export function RoomHeader({
   toggles = [],
 }: {
   onLeave: () => void;
+  leaveRef?: Ref<HTMLButtonElement>;
   title: string;
   /** 单人模式等没有房号的场景传 undefined */
   roomId?: string;
@@ -73,7 +76,7 @@ export function RoomHeader({
   return (
     <header data-room-part="header" className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={onLeave} className="shrink-0" aria-label="离开房间">
+        <Button ref={leaveRef} variant="ghost" size="icon" onClick={onLeave} className="shrink-0" aria-label="离开房间">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <span className="hidden truncate text-base font-semibold md:block" style={{ viewTransitionName: titleName }}>{title}</span>
@@ -91,9 +94,10 @@ export function RoomHeader({
           </span>
         ) : null}
         {actions}
-        {toggles.map(({ key, icon: Icon, label, expanded, onClick, hideFrom }) => (
+        {toggles.map(({ key, icon: Icon, label, expanded, onClick, hideFrom, triggerRef }) => (
           <Button
             key={key}
+            ref={triggerRef}
             variant="ghost"
             size="icon"
             className={cn("h-9 w-9", HIDE_FROM[hideFrom])}

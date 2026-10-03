@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Eye,
   Headphones,
@@ -93,20 +93,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
 
   const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
-  const [clock, setClock] = useState(() => Date.now());
-
-  const guessDeadlineAt = privateState?.guessDeadlineAt;
-  useEffect(() => {
-    if (!guessDeadlineAt) return;
-    const timer = window.setInterval(() => setClock(Date.now()), 200);
-    return () => window.clearInterval(timer);
-  }, [guessDeadlineAt]);
-
-  // 必须向上取整：向下取整会让 0.9s 显示成 0s，而服务端此刻仍判定未超时，
-  // 玩家会看到「倒计时已经归零、猜测却依然有效」的假超时窗口。
-  const secondsLeft = guessDeadlineAt
-    ? Math.max(0, Math.ceil((guessDeadlineAt - clock) / 1_000))
-    : 0;
 
   const handleSendChatMessage = useCallback(
     async (chatText: string) => {
@@ -201,7 +187,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             privateState={privateState}
             me={me}
             isHost={isHost}
-            secondsLeft={secondsLeft}
+            guessDeadlineAt={privateState.guessDeadlineAt}
             volume={volume}
             onVolumeChange={setVolume}
             audioStatus={audioStatus}

@@ -139,10 +139,7 @@ describe("VersionUpdateNotice", () => {
     });
 
     // 模拟 visibilitychange 为 visible
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible",
-    });
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
 
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));

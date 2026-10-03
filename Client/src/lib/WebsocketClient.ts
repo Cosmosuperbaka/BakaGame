@@ -28,6 +28,18 @@ export const isProtocolError = (value: unknown): value is ProtocolError =>
   typeof (value as { code?: unknown }).code === "string" &&
   typeof (value as { message?: unknown }).message === "string";
 
+/** 传输层只校验信封，事件的领域 payload 仍由对应消费者负责。 */
+const isServerMessage = (value: unknown): value is ServerMessage => {
+  if (typeof value !== "object" || value === null) return false;
+  const packet = value as Record<string, unknown>;
+  if (packet.type === "event") return typeof packet.event === "string" && "payload" in packet;
+  if (typeof packet.id !== "string") return false;
+  if (packet.traceId !== undefined && typeof packet.traceId !== "string") return false;
+  if (packet.type === "error") return isProtocolError(packet.error);
+  // 部分旧 ACK 未携带 requestType；请求归属由 pending 的 id 判定。
+  return packet.type === "ack" && (packet.requestType === undefined || typeof packet.requestType === "string");
+};
+
 interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
   reject: (error: ProtocolError) => void;
@@ -91,23 +103,33 @@ export class WebSocketClient {
     };
 
     this.socket.onmessage = (event) => {
+      let message: ServerMessage;
       try {
-        const message = JSON.parse(event.data as string) as ServerMessage;
-        if (message.type === "ack" || message.type === "error") {
-          const pending = this.pendingRequests.get(message.id);
-          if (pending) {
-            if (pending.timer !== undefined) clearTimeout(pending.timer);
-            this.pendingRequests.delete(message.id);
-            if (message.type === "ack") {
-              pending.resolve((message.payload ?? {}) as Record<string, unknown>);
-            } else {
-              pending.reject(message.error);
-            }
+        const parsed: unknown = JSON.parse(event.data as string);
+        if (!isServerMessage(parsed)) return;
+        message = parsed;
+      } catch {
+        // 仅拒绝坏 JSON；消费者异常由独立边界上报，不伪装成坏帧。
+        return;
+      }
+      if (message.type === "ack" || message.type === "error") {
+        const pending = this.pendingRequests.get(message.id);
+        if (pending) {
+          if (pending.timer !== undefined) clearTimeout(pending.timer);
+          this.pendingRequests.delete(message.id);
+          if (message.type === "ack") {
+            pending.resolve((message.payload ?? {}) as Record<string, unknown>);
+          } else {
+            pending.reject(message.error);
           }
         }
-        this.messageHandlers.forEach((handler) => handler(message));
-      } catch {
-        // 非协议消息不会进入业务层。
+      }
+      for (const handler of [...this.messageHandlers]) {
+        try {
+          handler(message);
+        } catch (error) {
+          captureClientException(error, { path: this.path, messageType: message.type });
+        }
       }
     };
 
@@ -189,6 +211,7 @@ export class WebSocketClient {
       }
     }
 
+    const traceId = generateUuid();
     const startedAt = performance.now();
     return withClientSpan(
       `WS ${type}`,
@@ -200,7 +223,6 @@ export class WebSocketClient {
               return;
             }
 
-            const traceId = generateUuid();
             const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
             const timer = timeoutMs > 0
               ? setTimeout(() => {
@@ -236,20 +258,22 @@ export class WebSocketClient {
           captureClientLog("WebSocket 命令失败", "error", {
             path: this.path,
             command: type,
-            error: error instanceof Error ? error.message : String(error),
+            traceId,
+            ...(isProtocolError(error) ? { code: error.code, message: error.message } : {}),
+            error: isProtocolError(error) ? error.message : error instanceof Error ? error.message : String(error),
           });
           // 业务拒绝（密码错误、房间不存在、阶段不合法等）与断连、超时同属可预期的协议
           // 应答，只计指标与日志，严禁上报成异常事件：否则一次输错房间密码就会污染缺陷信号。
           if (!isProtocolError(error)) {
             captureClientException(
               error instanceof Error ? error : new Error(String(error)),
-              { path: this.path, command: type },
+              { path: this.path, command: type, traceId },
             );
           }
           throw error;
         }
       },
-      { "ws.path": this.path, "ws.command": type },
+      { "ws.path": this.path, "ws.command": type, traceId },
     );
   }
 

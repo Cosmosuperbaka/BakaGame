@@ -161,3 +161,9 @@ VITE_SERVER_URL=http://localhost:4850
   [Deployment](Deployment.md)「当前请求链路与同源化边界」。
 
 共享源码的运行依赖由消费端显式声明；当前两端均声明 TypeBox。客户端 TypeScript paths 与 Vite/Vitest dedupe 将共享文件的 TypeBox 导入解析到 Client 安装，Storybook 复用 Vite 配置，不依赖 Server/node_modules，也不复制 schema。
+
+### 运行环境标记与资产验证隔离
+
+- 服务端遥测环境由 `readEnv` 统一解析：`DEPLOYMENT_ENVIRONMENT` → `OTEL_DEPLOYMENT_ENVIRONMENT` → `OTEL_RESOURCE_ATTRIBUTES` 的 `deployment.environment` → `NODE_ENV` → `production`。本地开发应显式设置 `NODE_ENV=development`（或 deployment 标记），测试使用 `test`；未配置保留生产缺省，不按操作系统猜测环境。
+- 公共图片统一转换为 WebP；表情的 `/emojis/` 公共路径与 `/stickers/` 内容哈希路径保留，单次有界编码后复制同一产物，不重复编码动画。
+- Vite 与 Storybook 的构建配置会重建 `.generated-public`，同一工作区必须串行构建。资源冒烟只服务已有 `dist`，使用不加载项目配置、环境文件及后端代理的独立 preview，绑定回环随机端口；隔离副本的构建不共享主工作区生成目录。

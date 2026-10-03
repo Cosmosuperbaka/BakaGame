@@ -11,6 +11,7 @@ import {
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),
   connect: vi.fn(),
+  disconnect: vi.fn(),
   messageHandlers: [] as Array<(message: ServerMessage) => void>,
   statusHandlers: [] as Array<(connected: boolean) => void>,
 }));
@@ -19,6 +20,7 @@ vi.mock("@/lib/SonGuessrWs", () => ({
   sonGuessrWs: {
     send: wsMock.send,
     connect: wsMock.connect,
+    disconnect: wsMock.disconnect,
     onMessage: (handler: (message: ServerMessage) => void) => {
       wsMock.messageHandlers.push(handler);
       return () => {
@@ -428,4 +430,16 @@ describe("Songuessr store integration", () => {
     expect(useSonGuessrStore.getState().snapshot).toBeNull();
     expect(useSonGuessrStore.getState().sessionToken).toBeNull();
   });
+});
+
+it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
+  saveSonGuessrSessionToken("1234", "recoverable");
+  useSonGuessrStore.setState({connected:true,lobbyReady:true});
+  const cleanup=initSonGuessrWs();cleanup();
+  expect(wsMock.disconnect).toHaveBeenCalledOnce();
+  expect(wsMock.messageHandlers).toHaveLength(0);
+  expect(wsMock.statusHandlers).toHaveLength(0);
+  expect(useSonGuessrStore.getState()).toMatchObject({connected:false,lobbyReady:false});
+  expect(getSonGuessrSessionToken("1234")).toBe("recoverable");
+  const next=initSonGuessrWs();expect(wsMock.messageHandlers).toHaveLength(1);next();
 });

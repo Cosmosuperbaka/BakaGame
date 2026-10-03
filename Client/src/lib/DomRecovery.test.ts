@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isDomInvariantError, recoverFromDomInvariant } from "./DomRecovery";
 
 const DOM_RECOVERY_KEY = "bakagame:dom-recovery";
@@ -13,11 +13,10 @@ describe("DomRecovery 第三方扩展破坏 DOM 后的自愈", () => {
   beforeEach(() => {
     sessionStorage.clear();
     reloadMock.mockClear();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, reload: reloadMock },
-    });
+    vi.stubGlobal("location", { ...window.location, reload: reloadMock });
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it("识别 removeChild 与 insertBefore 两类父子节点不变量破坏", () => {
     expect(isDomInvariantError(new DOMException(REMOVE_CHILD_MESSAGE, "NotFoundError"))).toBe(true);

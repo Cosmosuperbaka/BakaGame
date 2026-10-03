@@ -1,4 +1,5 @@
-﻿import { useCallback } from "react";
+import { usePhaseAction } from "./UsePhaseAction";
+import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
 import { ABSTAIN_TARGET_ID } from "@/types";
@@ -15,6 +16,8 @@ export function VotingPhase() {
   const privateState = useWhoIsFakerStore((state) => state.privateState);
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
+  const action = usePhaseAction();
+  const { run, busy } = action;
   const phaseResultPresentationPending = useWhoIsFakerStore(
     (state) => state.phaseResultPresentationPending,
   );
@@ -27,6 +30,7 @@ export function VotingPhase() {
   const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
   // 自己永远不在投票目标里，测试房间也一样：测试房要复现真实规则。
   const baseTargets = alivePlayers.filter((player) => player.id !== privateState?.playerId);
+  const canVote = Boolean(amAlive && !isQuestioner && !votedId && (!isTieBreak || !tieBreakCandidateIds.includes(privateState?.playerId ?? "")));
   const targets =
     isTieBreak && tieBreakCandidateIds.length > 0
       ? alivePlayers.filter(
@@ -37,30 +41,36 @@ export function VotingPhase() {
 
   const handleVote = useCallback(
     async (targetId: string) => {
+      await run(async () => {
       try {
         await sendCommand("game.submitVote", { targetId });
       } catch (error) {
         addToast((error as { message: string }).message, "error");
       }
+      });
     },
-    [addToast, sendCommand],
+    [run, addToast, sendCommand],
   );
 
   const handleCancelVote = useCallback(async () => {
+    await run(async () => {
     try {
       await sendCommand("game.cancelVote", {});
     } catch (error) {
       addToast((error as { message: string }).message, "error");
     }
-  }, [addToast, sendCommand]);
+    });
+  }, [run, addToast, sendCommand]);
 
   const handleAdvance = useCallback(async () => {
+    await run(async () => {
     try {
       await sendCommand("game.advancePhase");
     } catch (error) {
       addToast((error as { message: string }).message, "error");
     }
-  }, [addToast, sendCommand]);
+    });
+  }, [run, addToast, sendCommand]);
 
   const abstained = votedId === ABSTAIN_TARGET_ID;
   const targetPlayerName = abstained
@@ -78,7 +88,7 @@ export function VotingPhase() {
 
       <PrivilegedActionPreview mode="vote" />
 
-      {amAlive && !isQuestioner && !votedId ? (
+      {canVote ? (
         <motion.div
           className="grid grid-cols-2 gap-2.5"
           variants={listContainer(targets.length)}
@@ -92,6 +102,7 @@ export function VotingPhase() {
               variants={listItem}
               {...selectable}
               className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
+              disabled={busy}
               onClick={() => handleVote(player.id)}
             >
               <span className="truncate text-sm font-medium">{player.name}</span>
@@ -100,8 +111,12 @@ export function VotingPhase() {
           ))}
           {/* 弃票与投人是同一次决定的两种结果，因此并入同一组选项，
               占满整行以区别于具体玩家。 */}
-          <AbstainOption onSelect={() => handleVote(ABSTAIN_TARGET_ID)} />
+          <AbstainOption disabled={busy} onSelect={() => handleVote(ABSTAIN_TARGET_ID)} />
         </motion.div>
+      ) : null}
+
+      {isTieBreak && amAlive && tieBreakCandidateIds.includes(privateState?.playerId ?? "") && !votedId ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-center text-sm text-warning">你是平票候选人，本轮不参与投票。</p>
       ) : null}
 
       {amAlive && !isQuestioner && votedId ? (
@@ -130,6 +145,7 @@ export function VotingPhase() {
             variant="ghost"
             size="sm"
             className="shrink-0 gap-1.5 text-xs"
+            disabled={busy}
             onClick={handleCancelVote}
           >
             <Undo2 className="h-3.5 w-3.5" />
@@ -140,10 +156,10 @@ export function VotingPhase() {
 
       {isQuestioner ? (
         <div className="flex items-center justify-center gap-3 pt-2">
-          <SupplementRequestControl canRequest={!isTieBreak} />
+          <SupplementRequestControl canRequest={!isTieBreak} action={action} />
           <Button
             onClick={handleAdvance}
-            disabled={phaseResultPresentationPending}
+            disabled={busy || phaseResultPresentationPending}
             size="lg"
             className="gap-2 px-6"
           >

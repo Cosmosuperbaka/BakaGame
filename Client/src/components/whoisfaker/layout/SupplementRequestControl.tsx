@@ -1,4 +1,5 @@
-﻿import { useState } from "react";
+import { usePhaseAction, type PhaseAction } from "../phases/UsePhaseAction";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, MessageSquarePlus, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -10,13 +11,16 @@ import { cn } from "@/lib/Utils";
 
 interface Props {
   canRequest: boolean;
+  action?: PhaseAction;
 }
 
-export function SupplementRequestControl({ canRequest }: Props) {
+export function SupplementRequestControl({ canRequest, action }: Props) {
   const snapshot = useGameStore((state) => state.snapshot)!;
   const privateState = useGameStore((state) => state.privateState);
   const sendCommand = useGameStore((state) => state.sendCommand);
   const addToast = useGameStore((state) => state.addToast);
+  const ownAction = usePhaseAction();
+  const { run, busy } = action ?? ownAction;
   const [open, setOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
@@ -43,12 +47,14 @@ export function SupplementRequestControl({ canRequest }: Props) {
 
   const requestSupplement = async () => {
     if (selectedPlayerIds.length === 0) return;
+    await run(async () => {
     try {
       await sendCommand("game.requestSupplement", { playerIds: selectedPlayerIds });
       close();
     } catch (error) {
       addToast((error as { message: string }).message, "error");
     }
+    });
   };
 
   if (!isQuestioner) {
@@ -81,6 +87,7 @@ export function SupplementRequestControl({ canRequest }: Props) {
                       layout
                       {...tappable}
                       aria-pressed={selected}
+                      disabled={busy}
                       onClick={() => togglePlayer(player.id)}
                       className={cn(
                         "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
@@ -113,7 +120,8 @@ export function SupplementRequestControl({ canRequest }: Props) {
                 <Button
                   size="sm"
                   className="gap-1.5"
-                  disabled={selectedPlayerIds.length === 0}
+                  loading={busy}
+                  disabled={selectedPlayerIds.length === 0 || !canRequest}
                   onClick={requestSupplement}
                 >
                   <Send className="h-3.5 w-3.5" />

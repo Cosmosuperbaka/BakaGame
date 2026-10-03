@@ -153,6 +153,8 @@ export const SubmittingAnime: Story = {
   args: {
     snapshot: submittingSnapshot({ settings: songSettings({ questionType: "anime" }) }),
     privateState: songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }),
+    me: submittingSnapshot().players.find((player) => player.id === peach.id),
+    isHost: false,
   },
 };
 

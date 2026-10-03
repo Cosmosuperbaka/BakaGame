@@ -24,4 +24,4 @@ export const Harmony: Story = { name: "播放结束 · 和声", args: { lines: s
 
 export const Chinese: Story = { name: "播放结束 · 中文歌词", args: { lines: SONG_EVENING_CLIP.lines, audioPlaybackState: "completed" } };
 
-export const Instrumental: Story = { name: "纯音乐", args: { lines: [] } };
+export const Instrumental: Story = { name: "纯音乐", args: { lines: [] }, play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0) };

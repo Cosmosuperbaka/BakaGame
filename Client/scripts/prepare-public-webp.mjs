@@ -35,44 +35,9 @@ export function stickerAssetUrl(relativePath, contents) {
   return `/stickers/${digest}.webp`;
 }
 
-async function copyStickerAssets(source, relativeDirectory = "", assetMap = {}) {
-  const entries = await readdir(source, { withFileTypes: true });
-  await Promise.all(entries.map(async (entry) => {
-    const sourcePath = path.join(source, entry.name);
-    const relativePath = path.join(relativeDirectory, entry.name);
-    if (entry.isDirectory()) {
-      await copyStickerAssets(sourcePath, relativePath, assetMap);
-      return;
-    }
-    const extension = path.extname(entry.name).toLowerCase();
-    if (!entry.isFile() || !stickerExtensions.has(extension)) return;
-
-    const contents = await readFile(sourcePath);
-    const assetUrl = stickerAssetUrl(relativePath, contents);
-    const targetPath = path.join(outputDir, assetUrl.slice(1));
-    await mkdir(path.dirname(targetPath), { recursive: true });
-
-    if (extension !== ".webp") {
-      const legacyNormalizedPath = relativePath.split(path.sep).join("/");
-      const legacyDigest = createHash("sha256")
-        .update(legacyNormalizedPath, "utf8")
-        .update("\0", "utf8")
-        .update(contents)
-        .digest("hex")
-        .slice(0, 24);
-      const legacyUrl = `/stickers/${legacyDigest}${extension}`;
-      assetMap[legacyUrl] = assetUrl;
-    }
-
-    await sharp(sourcePath, { animated: true })
-      .webp({ quality: 82, alphaQuality: 90, effort: 4 })
-      .toFile(targetPath);
-  }));
-}
-
 const toWebPath = (...parts) => "/" + parts.filter(Boolean).join("/").replace(/\\+/g, "/").replace(/^\/+/, "");
 
-async function convertDirectory(source, output, relativeDir = "", assetMap = {}) {
+async function convertDirectory(source, output, relativeDir = "", assetMap = {}, encode) {
   await mkdir(output, { recursive: true });
   const entries = await readdir(source, { withFileTypes: true });
   const outputNames = new Set();
@@ -93,7 +58,7 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {})
     const sourcePath = path.join(source, entry.name);
     const childRelative = path.join(relativeDir, entry.name);
     if (entry.isDirectory()) {
-      await convertDirectory(sourcePath, path.join(output, entry.name), childRelative, assetMap);
+      await convertDirectory(sourcePath, path.join(output, entry.name), childRelative, assetMap, encode);
       return;
     }
     if (!entry.isFile()) return;
@@ -110,19 +75,48 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {})
       assetMap[sourceWebPath] = targetWebPath;
     }
 
-    await sharp(sourcePath, { animated: true })
-      .webp({ quality: 82, alphaQuality: 90, effort: 4 })
-      .toFile(path.join(output, outputName(entry.name)));
+    const targetPath = path.join(output, outputName(entry.name));
+    await encode(sourcePath, targetPath);
+
+    // 保留公共路径与哈希路径，复用同一份编码结果（包括动画帧）。
+    const parts = childRelative.split(path.sep);
+    if (parts[0] === "emojis" && stickerExtensions.has(extension)) {
+      const relativePath = parts.slice(1).join("/");
+      const assetUrl = stickerAssetUrl(relativePath, await readFile(sourcePath));
+      const stickerPath = path.join(outputDir, assetUrl.slice(1));
+      await mkdir(path.dirname(stickerPath), { recursive: true });
+      await cp(targetPath, stickerPath);
+      if (extension !== ".webp") {
+        assetMap[assetUrl.replace(/\.webp$/, extension)] = assetUrl;
+      }
+    }
   }));
+}
+
+function createEncoder(concurrency) {
+  let active = 0;
+  const waiting = [];
+  return async (source, target) => {
+    if (active >= concurrency) await new Promise((resolve) => waiting.push(resolve));
+    else active += 1;
+    try {
+      await sharp(source, { animated: true })
+        .webp({ quality: 82, alphaQuality: 90, effort: 4 })
+        .toFile(target);
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
 }
 
 export async function preparePublicWebp() {
   await rm(outputDir, { recursive: true, force: true });
   const assetMap = {};
-  await Promise.all([
-    convertDirectory(sourceDir, outputDir, "", assetMap),
-    copyStickerAssets(path.join(sourceDir, "emojis"), "", assetMap),
-  ]);
+  // 所有目录共用一个编码队列，避免递归 Promise.all 同时耗尽原生线程。
+  const encode = createEncoder(4);
+  await convertDirectory(sourceDir, outputDir, "", assetMap, encode);
   return { publicDir: outputDir, assetMap };
 }
 

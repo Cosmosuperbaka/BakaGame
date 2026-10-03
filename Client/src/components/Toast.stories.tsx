@@ -1,15 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { ToastItem } from "@/stores/UseWhoIsFakerStore";
-import { presetCCB, presetSonGuessr, presetWhoIsFaker } from "@/stories/StorePresets";
+import type { ToastItem } from "./Toast";
 import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
-import { CCBToastContainer, SonGuessrToastContainer, ToastContainer } from "./Toast";
+import { ToastViewport } from "./Toast";
 
 const meta = {
   title: "公共组件/Toast",
-  component: ToastContainer,
+  component: ToastViewport,
+  args: { toasts: [] },
   tags: ["overlay"],
   parameters: { layout: "fullscreen" },
-} satisfies Meta<typeof ToastContainer>;
+} satisfies Meta<typeof ToastViewport>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -22,18 +22,14 @@ const ALL_TYPES: ToastItem[] = [
 
 export const AllTypes: Story = {
   name: "提示、成功与错误",
-  beforeEach: () => {
-    presetWhoIsFaker({ toasts: ALL_TYPES });
-  },
+  args: { toasts: ALL_TYPES },
 };
 
 // 提示浮在页面内容之上，身后可能是本人的主色气泡、正文或页面底。
 // 用三种颜色的竖条垫底，截图里能直接看出文字对比度是否随身后内容变化。
 export const OverContent: Story = {
   name: "盖在内容上",
-  beforeEach: () => {
-    presetWhoIsFaker({ toasts: ALL_TYPES });
-  },
+  args: { toasts: ALL_TYPES },
   render: () => (
     <>
       <div
@@ -44,30 +40,22 @@ export const OverContent: Story = {
             "repeating-linear-gradient(90deg, var(--primary) 0 48px, var(--foreground) 48px 96px, var(--background) 96px 144px)",
         }}
       />
-      <ToastContainer />
+      <ToastViewport toasts={ALL_TYPES} />
     </>
   ),
 };
 
 export const LongText: Story = {
   name: "长文本",
-  beforeEach: () => {
-    presetWhoIsFaker({ toasts: [{ id: 1, text: SERVER_SHUTDOWN_MESSAGE, type: "error" }] });
-  },
+  args: { toasts: [{ id: 1, text: SERVER_SHUTDOWN_MESSAGE, type: "error" }] },
 };
 
 export const SonGuessr: Story = {
   name: "猜歌提示",
-  beforeEach: () => {
-    presetSonGuessr({ notice: { text: "网易云登录状态已失效，请重新扫码登录", type: "error" } });
-  },
-  render: () => <SonGuessrToastContainer />,
+  args: { toasts: [{ id: "song-notice", text: "网易云登录状态已失效，请重新扫码登录", type: "error" }] },
 };
 
 export const CCB: Story = {
   name: "CCB 提示",
-  beforeEach: () => {
-    presetCCB({ notice: { text: "设置已保存", type: "success" } });
-  },
-  render: () => <CCBToastContainer />,
+  args: { toasts: [{ id: "ccb-notice", text: "设置已保存", type: "success" }] },
 };

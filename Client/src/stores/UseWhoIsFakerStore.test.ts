@@ -11,6 +11,7 @@ const wsMock = vi.hoisted(() => {
   return {
     send: vi.fn(),
     connect: vi.fn(),
+    disconnect: vi.fn(),
     getMessageHandlers: () => messageHandlers,
     getStatusHandlers: () => statusHandlers,
     clearHandlers: () => {
@@ -40,6 +41,7 @@ const wsMock = vi.hoisted(() => {
 
 vi.mock("@/lib/WhoIsFakerWs", () => ({
   send: wsMock.send,
+  whoIsFakerWsClient: { disconnect: wsMock.disconnect },
   connect: wsMock.connect,
   onMessage: wsMock.onMessage,
   onStatus: wsMock.onStatus,
@@ -548,3 +550,15 @@ describe("game store integration", () => {
   });
 });
 
+
+it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
+  saveSessionToken("1234", "recoverable");
+  useGameStore.setState({connected:true,lobbyReady:true});
+  const cleanup=initGameSocket();cleanup();
+  expect(wsMock.disconnect).toHaveBeenCalledOnce();
+  expect(wsMock.getMessageHandlers()).toHaveLength(0);
+  expect(wsMock.getStatusHandlers()).toHaveLength(0);
+  expect(useGameStore.getState()).toMatchObject({connected:false,lobbyReady:false});
+  expect(getSessionToken("1234")).toBe("recoverable");
+  const next=initGameSocket();expect(wsMock.getMessageHandlers()).toHaveLength(1);next();
+});

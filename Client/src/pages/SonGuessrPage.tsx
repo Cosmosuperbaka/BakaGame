@@ -40,6 +40,7 @@ export default function SonGuessrPage() {
     handlePasswordJoin,
     handleCreateRoom,
     isInitialLoading,
+    pending,
   } = useLobbySession<SonGuessrRoomSummary>({
     gamePath: "/songuessr",
     rooms,
@@ -55,7 +56,9 @@ export default function SonGuessrPage() {
       path="/songuessr"
       title="Songuessr"
       rooms={rooms.map(toRoomView)}
+      disabled={pending}
       loading={isInitialLoading}
+      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
       userName={userName}
       onUserNameChange={setUserName}
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
@@ -74,6 +77,7 @@ export default function SonGuessrPage() {
           onCreate={handleCreateRoom}
         />
         <JoinPasswordDialog
+          pending={pending}
           roomName={joinTarget?.name ?? null}
           origin={joinOrigin.origin}
           password={joinPassword}

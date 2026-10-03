@@ -15,6 +15,7 @@ export interface JoinPasswordDialogProps {
   roomName: string | null;
   /** 触发卡片的位置，弹窗由此展开 */
   origin?: OriginPoint | null;
+  pending?: boolean;
   password: string;
   onPasswordChange: (password: string) => void;
   onCancel: () => void;
@@ -24,6 +25,7 @@ export interface JoinPasswordDialogProps {
 /** 大厅点开带锁房间时的密码输入。 */
 export function JoinPasswordDialog({
   roomName,
+  pending = false,
   origin,
   password,
   onPasswordChange,
@@ -41,10 +43,11 @@ export function JoinPasswordDialog({
           className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            onConfirm();
+            if (!pending) onConfirm();
           }}
         >
           <Input
+            disabled={pending}
             autoFocus
             type="password"
             aria-label="房间密码"
@@ -55,7 +58,7 @@ export function JoinPasswordDialog({
           />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
-            <Button type="submit">加入</Button>
+            <Button type="submit" disabled={pending}>{pending ? "加入中…" : "加入"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

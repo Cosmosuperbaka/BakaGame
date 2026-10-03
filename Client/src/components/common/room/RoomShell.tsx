@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type Ref } from "react";
+import { createRef, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { LucideIcon } from "lucide-react";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { roomEntranceMs } from "@/lib/Motion";
@@ -104,6 +104,11 @@ export function RoomShell({
   openDrawer?: string | null;
   onDrawerChange?: (key: string | null) => void;
 }) {
+  const leaveRef = useRef<HTMLButtonElement>(null);
+  const [triggerRefs] = useState(() => new Map<string, ReturnType<typeof createRef<HTMLButtonElement>>>());
+  for (const drawer of drawers) {
+    if (!triggerRefs.has(drawer.key)) triggerRefs.set(drawer.key, createRef<HTMLButtonElement>());
+  }
   const opened = drawers.find((drawer) => drawer.key === openDrawer) ?? null;
 
   // 进房编排只在房间页挂载后的一小段窗口里打开：窗口内挂载的栏依次就位（index.css 的 data-room-entering）；
@@ -126,6 +131,7 @@ export function RoomShell({
       {before}
       <RoomHeader
         onLeave={onLeave}
+        leaveRef={leaveRef}
         title={title}
         roomId={roomId}
         roomTag={roomTag}
@@ -134,6 +140,7 @@ export function RoomShell({
         connectionIssue={connectionIssue}
         toggles={drawers.map((drawer) => ({
           key: drawer.key,
+          triggerRef: triggerRefs.get(drawer.key),
           icon: drawer.icon,
           label: drawer.label,
           expanded: openDrawer === drawer.key,
@@ -155,6 +162,8 @@ export function RoomShell({
         {opened ? (
           <RoomDrawer
             key={opened.key}
+            triggerRef={triggerRefs.get(opened.key)}
+            fallbackFocusRef={leaveRef}
             open
             side={opened.side}
             title={opened.title}

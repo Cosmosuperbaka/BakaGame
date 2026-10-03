@@ -1,3 +1,4 @@
+import { usePhaseAction } from "./UsePhaseAction";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CircleHelp, Gavel, HelpCircle, Send } from "lucide-react";
@@ -37,6 +38,7 @@ export function BlankGuessButton() {
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
   const [confirming, setConfirming] = useState(false);
+  const { run, busy } = usePhaseAction();
 
   // 已在猜词阶段时入口收起，界面交给下面的输入组件。
   const canEnter =
@@ -46,13 +48,15 @@ export function BlankGuessButton() {
     phase !== "blankGuess";
 
   const handleEnter = useCallback(async () => {
+    await run(async () => {
     try {
       await sendCommand("game.enterBlankGuess");
       setConfirming(false);
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [sendCommand, addToast]);
+    });
+  }, [run, sendCommand, addToast]);
 
   if (!canEnter) return null;
 
@@ -79,7 +83,7 @@ export function BlankGuessButton() {
             <Button variant="ghost" onClick={() => setConfirming(false)}>
               再想想
             </Button>
-            <Button onClick={handleEnter} className="gap-2">
+            <Button loading={busy} onClick={handleEnter} className="gap-2">
               <HelpCircle className="h-4 w-4" />
               进入猜词
             </Button>
@@ -98,7 +102,7 @@ function BlankGuessInput() {
   const phaseTimedOutEndsAt = useGameStore((s) => s.phaseTimedOutEndsAt);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { run, busy: submitting } = usePhaseAction();
   const pushTimer = useRef<number | undefined>(undefined);
   const pendingReview = snapshot.status.blankGuessPendingReview ?? false;
 
@@ -120,15 +124,14 @@ function BlankGuessInput() {
       addToast("请输入至少一个词语", "error");
       return;
     }
-    setSubmitting(true);
+    await run(async () => {
     try {
       await sendCommand("game.submitBlankGuess", { words: [a, b].filter(Boolean) });
     } catch (e) {
       addToast((e as { message: string }).message, "error");
-    } finally {
-      setSubmitting(false);
     }
-  }, [wordA, wordB, sendCommand, addToast]);
+    });
+  }, [run, wordA, wordB, sendCommand, addToast]);
 
   // 阶段倒计时归零时，若已输入内容则自动提交
   useEffect(() => {
@@ -258,7 +261,7 @@ export function BlankGuessWaiting() {
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
-  const [reviewing, setReviewing] = useState(false);
+  const { run, busy: reviewing } = usePhaseAction();
 
   const status = snapshot.status;
   const guesser = snapshot.players.find((player) => player.id === status.blankGuessPlayerId);
@@ -268,16 +271,15 @@ export function BlankGuessWaiting() {
 
   const handleReview = useCallback(
     async (approve: boolean) => {
-      setReviewing(true);
+      await run(async () => {
       try {
         await sendCommand("game.reviewBlankGuess", { approve });
       } catch (e) {
         addToast((e as { message: string }).message, "error");
-      } finally {
-        setReviewing(false);
       }
+      });
     },
-    [sendCommand, addToast],
+    [run, sendCommand, addToast],
   );
 
   return (

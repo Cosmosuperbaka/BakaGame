@@ -1,4 +1,5 @@
-﻿import { useCallback } from "react";
+import { usePhaseAction } from "./UsePhaseAction";
+import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { Moon, Sword, FastForward, CheckCircle2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +14,8 @@ export function NightPhase() {
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const action = usePhaseAction();
+  const { run, busy } = action;
   const phaseResultPresentationPending = useWhoIsFakerStore(
     (state) => state.phaseResultPresentationPending,
   );
@@ -36,30 +39,36 @@ export function NightPhase() {
 
   const handleNightAction = useCallback(
     async (targetId?: string) => {
+      await run(async () => {
       try {
         await sendCommand("game.submitNightAction", { targetId: targetId ?? null });
       } catch (e) {
         addToast((e as { message: string }).message, "error");
       }
+      });
     },
-    [sendCommand, addToast]
+    [run, sendCommand, addToast]
   );
 
   const handleCancelNightAction = useCallback(async () => {
+    await run(async () => {
     try {
       await sendCommand("game.cancelNightAction", {});
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [sendCommand, addToast]);
+    });
+  }, [run, sendCommand, addToast]);
 
   const handleAdvance = useCallback(async () => {
+    await run(async () => {
     try {
       await sendCommand("game.advancePhase");
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [sendCommand, addToast]);
+    });
+  }, [run, sendCommand, addToast]);
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">
@@ -84,13 +93,14 @@ export function NightPhase() {
                 variants={listItem}
                 {...selectable}
                 className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-3.5 text-left transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+                disabled={busy}
                 onClick={() => handleNightAction(p.id)}
               >
                 <span className="truncate text-sm font-medium">{p.name}</span>
                 <Sword className="ml-2 h-4 w-4 shrink-0 text-destructive" />
               </motion.button>
             ))}
-          <AbstainOption onSelect={() => handleNightAction()} />
+          <AbstainOption disabled={busy} onSelect={() => handleNightAction()} />
         </motion.div>
       )}
 
@@ -121,6 +131,7 @@ export function NightPhase() {
             variant="ghost"
             size="sm"
             className="shrink-0 gap-1.5 text-xs"
+            disabled={busy}
             onClick={handleCancelNightAction}
           >
             <Undo2 className="h-3.5 w-3.5" />
@@ -133,7 +144,7 @@ export function NightPhase() {
         <div className="text-center pt-2">
           <Button
             onClick={handleAdvance}
-            disabled={phaseResultPresentationPending}
+            disabled={busy || phaseResultPresentationPending}
             size="lg"
             className="gap-2 px-6"
           >

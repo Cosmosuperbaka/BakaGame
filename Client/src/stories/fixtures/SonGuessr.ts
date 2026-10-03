@@ -119,9 +119,10 @@ export function seedUsername(name: string) {
 }
 
 /** 歌词宿主在原生排版与字体测量完成前保持隐藏；截图前等它就绪。 */
-export async function waitForLyrics(root: HTMLElement) {
+export async function waitForLyrics(root: HTMLElement, expectedHosts = 1) {
   await waitFor(() => {
     const hosts = [...root.querySelectorAll<HTMLElement>(".baka-lyric-host:not([hidden])")];
+    if (hosts.length !== expectedHosts) throw new Error(`歌词宿主数量错误：期望 ${expectedHosts}，实际 ${hosts.length}`);
     if (hosts.some((host) => host.dataset.ready !== "true")) throw new Error("歌词尚未完成排版");
   }, { timeout: 10_000 });
 }

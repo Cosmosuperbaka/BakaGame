@@ -27,6 +27,7 @@ vi.mock("@/contexts/SonGuessrContext", () => ({
 vi.mock("@/components/Toast", () => ({
   ToastContainer: () => null,
   SonGuessrToastContainer: () => null,
+  ToastViewport: () => null,
 }));
 vi.mock("@/components/VersionUpdateNotice", () => ({
   VersionUpdateNotice: () => null,
@@ -107,10 +108,7 @@ describe("application routing regressions", () => {
   it("handles dynamic chunk loading failure by triggering reload and suppressing error leak", async () => {
     const { retryLazyImport } = await import("@/lib/LazyImport");
     const reloadMock = vi.fn();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, reload: reloadMock },
-    });
+    vi.stubGlobal("location", { ...window.location, reload: reloadMock });
 
     sessionStorage.clear();
     const failingLoader = vi.fn().mockRejectedValue(new TypeError("Failed to fetch dynamically imported module"));
@@ -123,12 +121,6 @@ describe("application routing regressions", () => {
     // 验证第二次失败时抛出错误
     await expect(retryLazyImport(failingLoader, "test-chunk")).rejects.toThrow("Failed to fetch");
 
-    // pendingPromise 保持挂起不 reject
-    let rejected = false;
-    pendingPromise.catch(() => {
-      rejected = true;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(rejected).toBe(false);
+    await expect(pendingPromise).rejects.toThrow("Failed to fetch");
   });
 });

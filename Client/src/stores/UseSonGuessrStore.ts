@@ -522,5 +522,8 @@ export function initSonGuessrWs() {
     sonGuessrWsInitialized = false;
     unsubMsg();
     unsubStatus();
+    sonGuessrWs.disconnect();
+    resetSonGuessrStateSync();
+    useSonGuessrStore.setState({ connected: false, lobbyReady: false });
   };
 }

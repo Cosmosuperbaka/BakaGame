@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrowserRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import LandingPage from "./LandingPage";
 import { formatRelativeTime } from "@/lib/Time";
@@ -120,22 +120,23 @@ describe("LandingPage", () => {
     }
   });
 
-  it("handles game entry navigation clicks smoothly without throwing ReferenceError", async () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ["Who is Faker 开始游戏", "/whoisfaker", "卧底大厅"],
+    ["Songuessr 多人模式", "/songuessr", "猜歌大厅"],
+  ])("入口 %s 导航至对应大厅", async (button, path, destination) => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderLandingPage();
-
-    const fakerButton = screen.getByRole("button", { name: "Who is Faker 开始游戏" });
-    expect(fakerButton).toBeInTheDocument();
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(fakerButton);
-    vi.advanceTimersByTime(200);
-
-    const songButton = screen.getByRole("button", { name: "Songuessr 多人模式" });
-    expect(songButton).toBeInTheDocument();
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(songButton);
-    vi.advanceTimersByTime(200);
-
-    vi.useRealTimers();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<TooltipProvider><LandingPage /></TooltipProvider>} />
+          <Route path={path} element={<h1>{destination}</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: button }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(screen.getByRole("heading", { name: destination })).toBeInTheDocument();
   });
 });
-
-

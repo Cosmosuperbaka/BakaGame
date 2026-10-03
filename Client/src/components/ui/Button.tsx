@@ -49,7 +49,8 @@ export interface ButtonProps
  */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, disabled, loading = false, children, ...props }, ref) => {
-    const classes = cn(buttonVariants({ variant, size, className }))
+    const effectiveVariant = variant ?? "default";
+    const classes = cn(buttonVariants({ variant: effectiveVariant, size, className }))
     const isDisabled = Boolean(disabled || loading)
 
     if (asChild) {
@@ -66,11 +67,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     const feedback =
-      variant === "link"
+      effectiveVariant === "link"
         ? undefined
         : size === "icon"
           ? iconTappable
-          : variant === "default" || variant === "destructive"
+          : effectiveVariant === "default" || effectiveVariant === "destructive"
             ? pressableStrong
             : pressable
 

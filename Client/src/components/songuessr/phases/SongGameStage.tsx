@@ -11,6 +11,7 @@ import {
   UserCheck,
   X,
 } from "lucide-react";
+import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -109,7 +110,7 @@ export interface SongGameAreaProps {
   privateState: SonGuessrPrivateState;
   me?: SonGuessrPlayerView;
   isHost: boolean;
-  secondsLeft: number;
+  guessDeadlineAt?: number | null;
   volume: number;
   onVolumeChange: (value: number) => void;
   audioStatus: "loading" | "ready" | "error";
@@ -125,13 +126,18 @@ export interface SongGameAreaProps {
   audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
+export function SongGuessCountdown({ deadlineAt }: { deadlineAt?: number | null }) {
+  const secondsLeft = useSecondsLeft(deadlineAt);
+  return <CountdownBadge secondsLeft={secondsLeft} />;
+}
+
 export function GameStage(props: SongGameAreaProps) {
   const {
     snapshot,
     privateState,
     me,
     isHost,
-    secondsLeft,
+    guessDeadlineAt,
     audioStatus,
     audioPlaybackState,
     onPlayAudio,
@@ -228,7 +234,7 @@ export function GameStage(props: SongGameAreaProps) {
             </h3>
             <div className="flex items-center gap-2">
               {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
-                <CountdownBadge secondsLeft={secondsLeft} />
+                <SongGuessCountdown deadlineAt={guessDeadlineAt} />
               ) : null}
               {audioStatus === "loading" ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">

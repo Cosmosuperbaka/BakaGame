@@ -40,6 +40,7 @@ export default function WhoIsFakerPage() {
     handlePasswordJoin,
     handleCreateRoom,
     isInitialLoading,
+    pending,
   } = useLobbySession<RoomSummary>({
     gamePath: "/whoisfaker",
     rooms,
@@ -56,7 +57,9 @@ export default function WhoIsFakerPage() {
       title="Who is"
       logo={{ src: "/assets/Faker.png", alt: "Faker" }}
       rooms={rooms.map(toRoomView)}
+      disabled={pending}
       loading={isInitialLoading}
+      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
       userName={userName}
       onUserNameChange={setUserName}
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
@@ -75,6 +78,7 @@ export default function WhoIsFakerPage() {
           onCreate={handleCreateRoom}
         />
         <JoinPasswordDialog
+          pending={pending}
           roomName={joinTarget?.name ?? null}
           origin={joinOrigin.origin}
           password={joinPassword}

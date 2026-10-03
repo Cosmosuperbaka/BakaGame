@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
@@ -21,7 +21,11 @@ export function RoomDrawer({
   closeFrom,
   className,
   children,
+  triggerRef,
+  fallbackFocusRef,
 }: {
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+  fallbackFocusRef?: RefObject<HTMLButtonElement | null>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   side: "left" | "right";
@@ -33,7 +37,11 @@ export function RoomDrawer({
   children: ReactNode;
 }) {
   const offset = side === "left" ? "-100%" : "100%";
-  useCloseFrom(open, onOpenChange, closeFrom);
+  const restoreFallback = useRef(false);
+  useCloseFrom(open, (next) => {
+    restoreFallback.current = true;
+    onOpenChange(next);
+  }, closeFrom);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -43,7 +51,14 @@ export function RoomDrawer({
             <DialogPrimitive.Overlay forceMount asChild>
               <motion.div variants={backdrop} initial="initial" animate="animate" exit="exit" className="absolute inset-0 z-drawer bg-foreground/20" />
             </DialogPrimitive.Overlay>
-            <DialogPrimitive.Content forceMount asChild aria-describedby={undefined}>
+            <DialogPrimitive.Content forceMount asChild aria-describedby={undefined}
+              onOpenAutoFocus={() => { restoreFallback.current = false; }}
+              onCloseAutoFocus={triggerRef ? (event) => {
+                event.preventDefault();
+                const target = restoreFallback.current ? fallbackFocusRef?.current : triggerRef.current;
+                if (target?.isConnected) target.focus();
+              } : undefined}
+            >
               <motion.aside
                 initial={{ x: offset }}
                 animate={{ x: 0, transition: spring.swift }}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Check,
@@ -39,6 +39,10 @@ interface QrCheckResponse extends Record<string, unknown> {
 }
 
 export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
+  return <RoomAccountSettings key={snapshot.roomId} snapshot={snapshot} />;
+}
+
+function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [open, setOpen] = useState(false);
@@ -50,8 +54,22 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState<QrCreateResponse | null>(null);
   const [qrStatus, setQrStatus] = useState("正在准备登录二维码…");
-  const qrCheckingRef = useRef(false);
-  const qrAutoCreatedRef = useRef(false);
+  const qrCheckingRef = useRef<number | null>(null);
+  const loginGenerationRef = useRef(0);
+  const rememberFieldId = useId();
+  const rememberDescriptionId = useId();
+  const rememberRef = useRef(remember);
+
+  const cancelLogin = useCallback(() => {
+    loginGenerationRef.current += 1;
+    qrCheckingRef.current = null;
+    setBusy(false);
+    setQr(null);
+  }, []);
+
+  useEffect(() => () => {
+    loginGenerationRef.current += 1;
+  }, []);
 
   useEffect(() => {
     const sync = () => setStoredSession(getStoredSongMusicSession());
@@ -60,47 +78,42 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
   }, []);
 
   const completeLogin = useCallback((session: { cookie: string; account: SonGuessrMusicAccount }) => {
-    saveSongMusicSession(session, remember);
-    setStoredSession({ ...session, persistent: remember });
+    loginGenerationRef.current += 1;
+    saveSongMusicSession(session, rememberRef.current);
+    setStoredSession({ ...session, persistent: rememberRef.current });
     setEditing(false);
     setQr(null);
-    qrAutoCreatedRef.current = false;
     setQrStatus("登录成功");
     setNotice("网易云账号已加载到当前房间", "success");
-  }, [remember, setNotice]);
+  }, [setNotice]);
 
   const createQr = useCallback(async () => {
+    const generation = ++loginGenerationRef.current;
     setBusy(true);
     try {
       const result = await sendCommand<QrCreateResponse>("song.auth.qr.create");
+      if (generation !== loginGenerationRef.current) return;
       setQr(result);
       setQrStatus("请使用网易云音乐 App 扫码");
     } catch (error) {
+      if (generation !== loginGenerationRef.current) return;
       setQrStatus((error as { message?: string }).message ?? "二维码生成失败，请稍后重试");
       setNotice((error as { message?: string }).message ?? "二维码生成失败", "error");
     } finally {
-      setBusy(false);
+      if (generation === loginGenerationRef.current) setBusy(false);
     }
   }, [sendCommand, setNotice]);
 
   const showQr = !storedSession || editing;
 
-  useEffect(() => {
-    if (!open) {
-      qrAutoCreatedRef.current = false;
-      return;
-    }
-    if (showQr && !qr && !busy && !qrAutoCreatedRef.current) {
-      qrAutoCreatedRef.current = true;
-      void createQr();
-    }
-  }, [busy, createQr, open, qr, showQr]);
-
   const checkQr = useCallback(async () => {
-    if (!qr || qrCheckingRef.current) return;
-    qrCheckingRef.current = true;
+    if (!qr || qrCheckingRef.current === loginGenerationRef.current) return;
+    const generation = loginGenerationRef.current;
+    const qrKey = qr.key;
+    qrCheckingRef.current = generation;
     try {
-      const result = await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qr.key });
+      const result = await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qrKey });
+      if (generation !== loginGenerationRef.current) return;
       setQrStatus(result.message || "等待扫码");
       if (result.status === "expired") {
         setQr(null);
@@ -109,6 +122,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         completeLogin({ cookie: result.cookie, account: result.account });
       }
     } catch (error) {
+      if (generation !== loginGenerationRef.current) return;
       const appError = error as { code?: string; message?: string };
       if (appError.code === "MUSIC_LOGIN_RISK") {
         setQr(null);
@@ -117,7 +131,7 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
         setQrStatus(appError.message ?? "二维码状态检查失败");
       }
     } finally {
-      qrCheckingRef.current = false;
+      if (qrCheckingRef.current === generation) qrCheckingRef.current = null;
     }
   }, [completeLogin, qr, sendCommand]);
 
@@ -128,22 +142,26 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
   }, [checkQr, open, qr, showQr]);
 
   const refreshQr = () => {
-    qrAutoCreatedRef.current = true;
-    setQr(null);
+    cancelLogin();
+    setQrAutoCreated(true);
     void createQr();
   };
 
   const removeLogin = async () => {
+    cancelLogin();
+    const generation = loginGenerationRef.current;
+    setBusy(true);
     try {
       await sendCommand("song.auth.clear");
     } catch {
       // 本地状态仍需立即清除；房主离开时服务端也会销毁房间 Cookie。
     }
+    if (generation !== loginGenerationRef.current) return;
+    setBusy(false);
     clearStoredSongMusicSession();
     setStoredSession(null);
     setEditing(false);
     setQr(null);
-    qrAutoCreatedRef.current = false;
     setNotice("本机登录状态已移除", "success");
   };
 
@@ -167,7 +185,11 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
       <motion.button
         type="button"
         {...headerTappable}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (open) { cancelLogin(); setOpen(false); return; }
+          setOpen(true);
+          if (showQr && !qr && !busy) void createQr();
+        }}
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
       >
@@ -220,10 +242,10 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                     ) : null}
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditing(true); setQr(null); }}>
+                    <Button variant="outline" size="sm" className="flex-1" disabled={busy} onClick={() => { cancelLogin(); setEditing(true); }}>
                       更换账号
                     </Button>
-                    <Button variant="ghost" size="sm" className="gap-1.5 text-destructive" onClick={() => void removeLogin()}>
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-destructive" disabled={busy} onClick={() => void removeLogin()}>
                       <LogOut className="h-3.5 w-3.5" />移除登录
                     </Button>
                   </div>
@@ -245,13 +267,13 @@ export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnaps
                   </div>
                   <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5">
                     <div>
-                      <Label className="text-xs">保存登录状态</Label>
-                      <p className="mt-0.5 text-2xs text-muted-foreground">仅保存在当前浏览器，服务器不持久化账号信息</p>
+                      <Label htmlFor={rememberFieldId} className="text-xs">保存登录状态</Label>
+                      <p id={rememberDescriptionId} className="mt-0.5 text-2xs text-muted-foreground">仅保存在当前浏览器，服务器不持久化账号信息</p>
                     </div>
-                    <Switch checked={remember} onCheckedChange={setRemember} />
+                    <Switch id={rememberFieldId} aria-describedby={rememberDescriptionId} checked={remember} onCheckedChange={(value) => { rememberRef.current = value; setRemember(value); }} />
                   </div>
                   {storedSession ? (
-                    <Button variant="ghost" size="sm" className="w-full" onClick={() => setEditing(false)}>
+                    <Button variant="ghost" size="sm" className="w-full" onClick={() => { cancelLogin(); setEditing(false); }}>
                       返回当前账号
                     </Button>
                   ) : null}

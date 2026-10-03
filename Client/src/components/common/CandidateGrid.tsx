@@ -33,11 +33,13 @@ export function CandidateGrid({
   tone,
   nameWrap,
   onPick,
+  disabled,
 }: {
   candidates: Array<{ id: string; name: string }>;
   tone: "recommended" | "default";
   nameWrap: "truncate" | "wrap";
   onPick: (playerId: string) => void;
+  disabled?: boolean;
 }) {
   if (candidates.length === 0) {
     return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
@@ -56,6 +58,7 @@ export function CandidateGrid({
           type="button"
           variants={listItem}
           {...selectable}
+          disabled={disabled}
           onClick={() => onPick(candidate.id)}
           className={cn(
             "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color]",

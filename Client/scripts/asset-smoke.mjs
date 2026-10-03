@@ -1,14 +1,11 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { preview as createPreview } from "vite";
 import process from "node:process";
 import sharp from "sharp";
 
 const clientDir = process.cwd();
 const distDir = path.join(clientDir, "dist");
-const port = 4173;
-const baseUrl = `http://127.0.0.1:${port}`;
-
 async function walk(directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -19,31 +16,16 @@ async function walk(directory) {
   return result;
 }
 
-async function waitForPreview() {
-  const preview = spawn(
-    process.execPath,
-    [path.join(clientDir, "node_modules/vite/bin/vite.js"), "preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    { cwd: clientDir, stdio: "ignore", windowsHide: true },
-  );
-
-  try {
-    // 上限 30 秒：本机 vite.config 的图片预处理会让 preview 冷启动明显超过 7.5 秒，
-    // 预算过短会把「服务还没起来」误判成「服务起不来」。
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      try {
-        const response = await fetch(`${baseUrl}/`);
-        if (response.ok) return preview;
-      } catch {
-        // preview 尚未监听，继续等待。
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    throw new Error("Vite preview 未能在 30 秒内就绪");
-  } catch (error) {
-    preview.kill();
-    throw error;
-  }
-}
+// 只服务已有 dist：不加载会重建 .generated-public 的项目配置，也不读取 .env 或代理到后端。
+const preview = await createPreview({
+  root: clientDir,
+  configFile: false,
+  envFile: false,
+  build: { outDir: distDir },
+  preview: { host: "127.0.0.1", port: 0, strictPort: true },
+});
+const address = preview.httpServer.address();
+const baseUrl = `http://127.0.0.1:${address.port}`;
 
 async function assertAsset(urlPath, expectedType = "image/webp") {
   const response = await fetch(`${baseUrl}${urlPath}`);
@@ -58,7 +40,6 @@ async function assertAsset(urlPath, expectedType = "image/webp") {
   }
 }
 
-const preview = await waitForPreview();
 try {
   const files = await walk(distDir);
   const relativeFiles = files.map((file) => `/${path.relative(distDir, file).split(path.sep).join("/")}`);
@@ -122,6 +103,5 @@ try {
 
   console.log(`资源冒烟通过：${required.length} 个固定资源、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、${shellChecks.length} 个静态外壳`);
 } finally {
-  preview.kill();
-  await stat(distDir);
+  await preview.close();
 }

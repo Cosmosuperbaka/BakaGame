@@ -1,3 +1,4 @@
+import { usePhaseAction } from "./UsePhaseAction";
 import { useState, useCallback, useId } from "react";
 import { motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
@@ -33,6 +34,8 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
   const privateState = useGameStore((s) => s.privateState);
   const sendCommand = useGameStore((s) => s.sendCommand);
   const addToast = useGameStore((s) => s.addToast);
+  const action = usePhaseAction();
+  const { run, busy } = action;
   const isQuestioner = privateState?.isQuestioner ?? false;
 
   const { civilianWord, undercoverWord, blankHint } = wordDraft;
@@ -116,6 +119,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
       addToast("手动身份数量与房间配置不一致", "error");
       return;
     }
+    await run(async () => {
     try {
       await sendCommand("game.submitWords", {
         words: [civilianWord.trim(), undercoverWord.trim()],
@@ -125,7 +129,8 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
     } catch (e) {
       addToast((e as { message: string }).message, "error");
     }
-  }, [civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, manualRoleCountsValid, sendCommand, addToast]);
+    });
+  }, [run, civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, manualRoleCountsValid, sendCommand, addToast]);
 
   if (!isQuestioner) {
     return (
@@ -257,6 +262,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
         <Button
           className="w-full gap-2 h-10 mt-2"
           onClick={handleSubmit}
+          loading={busy}
           disabled={!isRandomRole && !manualRoleCountsValid}
         >
           <Send className="h-4 w-4" />

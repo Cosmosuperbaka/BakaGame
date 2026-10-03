@@ -108,3 +108,57 @@ describe("CCB 状态同步", () => {
     expect(deferred[0]!.options?.sessionToken).toBe("tok-original");
   });
 });
+it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", async () => {
+  let resolve!: (value: Record<string, unknown>) => void;
+  const ack = new Promise<Record<string, unknown>>((done) => { resolve = done; });
+  const send=vi.spyOn(ccbWs,"send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const controller=new AbortController();
+  const outcome=useCCBStore.getState().joinRoom("1234","玩家",undefined,controller.signal).then(()=>null,error=>error);
+  controller.abort();
+  resolve({source:"native",roomId:"1234",sessionToken:"late-token",snapshot,privateState:null});
+  expect(await outcome).toMatchObject({name:"AbortError"});
+  expect(send.mock.calls.map(([command])=>command)).toEqual(["ccb.room.join","ccb.room.leave"]);
+  expect(send.mock.calls[1][2]).toEqual({roomId:"1234",sessionToken:"late-token"});
+  expect(readCCBSession("1234")).toBeNull();
+  expect(useCCBStore.getState()).toMatchObject({roomId:null,sessionToken:null,snapshot:null});
+});
+it("加入前已取消的意图不发送网络命令",async()=>{
+  const send=vi.spyOn(ccbWs,"send");const controller=new AbortController();controller.abort();
+  const error=await useCCBStore.getState().joinRoom("1234","玩家",undefined,controller.signal).catch(error=>error);
+  expect(error).toMatchObject({name:"AbortError"});expect(send).not.toHaveBeenCalled();
+});
+it("临时恢复失败保留会话并向调用者拒绝，而非伪装成功",async()=>{
+  writeCCBSession("Oblivionis","recoverable");
+  const send=vi.spyOn(ccbWs,"send").mockRejectedValue({code:"DISCONNECTED",message:"连接已断开"});
+  const error=await useCCBStore.getState().reconnectRoom(" oblivionis ").catch(error=>error);
+  expect(error).toMatchObject({code:"DISCONNECTED"});expect(readCCBSession("Oblivionis")).toBe("recoverable");
+  expect(send).toHaveBeenCalledWith("ccb.room.reconnect",{roomId:"Oblivionis",sessionToken:"recoverable"},{timeout:0});
+});
+it("StrictMode 重挂载接管同房在途恢复，不重复恢复或离房",async()=>{
+  let resolveAck!:(value:Record<string,unknown>)=>void;
+  const ack=new Promise<Record<string,unknown>>(resolve=>{resolveAck=resolve;});
+  writeCCBSession("1234","old-token");
+  const send=vi.spyOn(ccbWs,"send").mockReturnValueOnce(ack);
+  const oldOwner=new AbortController();const newOwner=new AbortController();
+  const cancelled=useCCBStore.getState().reconnectRoom("1234",oldOwner.signal).catch(error=>error);
+  oldOwner.abort();const next=useCCBStore.getState().reconnectRoom("1234",newOwner.signal);
+  expect(send.mock.calls.map(([command])=>command)).toEqual(["ccb.room.reconnect"]);
+  resolveAck({source:"native",roomId:"1234",sessionToken:"new-token",snapshot,privateState:null});
+  expect(await cancelled).toMatchObject({name:"AbortError"});expect(await next).toBe(true);
+  expect(send).toHaveBeenCalledOnce();expect(readCCBSession("1234")).toBe("new-token");
+  expect(useCCBStore.getState().sessionToken).toBe("new-token");
+});
+it("取消后的旧离房尚未完成时，新加入必须等待旧会话释放",async()=>{
+  let resolveAck!:(value:Record<string,unknown>)=>void;let resolveLeave!:(value:Record<string,unknown>)=>void;
+  const ack=new Promise<Record<string,unknown>>(resolve=>{resolveAck=resolve;});
+  const leave=new Promise<Record<string,unknown>>(resolve=>{resolveLeave=resolve;});
+  const send=vi.spyOn(ccbWs,"send").mockReturnValueOnce(ack).mockReturnValueOnce(leave)
+    .mockResolvedValue({source:"native",roomId:"5678",sessionToken:"second-token",snapshot:{...snapshot,roomId:"5678"},privateState:null});
+  const controller=new AbortController();const cancelled=useCCBStore.getState().joinRoom("1234","旧意图",undefined,controller.signal).catch(error=>error);
+  controller.abort();const next=useCCBStore.getState().joinRoom("5678","新意图");
+  resolveAck({source:"native",roomId:"1234",sessionToken:"first-token",snapshot,privateState:null});
+  await vi.waitFor(()=>expect(send.mock.calls.map(([command])=>command)).toEqual(["ccb.room.join","ccb.room.leave"]));
+  resolveLeave({});expect(await cancelled).toMatchObject({name:"AbortError"});await next;
+  expect(send.mock.calls.map(([command])=>command)).toEqual(["ccb.room.join","ccb.room.leave","ccb.room.join"]);
+  expect(useCCBStore.getState()).toMatchObject({roomId:"5678",sessionToken:"second-token"});
+});
