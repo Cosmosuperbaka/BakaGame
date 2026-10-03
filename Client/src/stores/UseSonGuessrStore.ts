@@ -72,6 +72,8 @@ export const resetSonGuessrStateSync = () => {
   rawPrivateState = null;
 };
 
+const MAX_CHAT_MESSAGES = 200;
+
 const mergeChat = (
   existing: SonGuessrRoomSnapshot["chat"] = [],
   incoming: SonGuessrRoomSnapshot["chat"] = [],
@@ -83,7 +85,7 @@ const mergeChat = (
   for (const msg of incoming) {
     map.set(msg.id, msg);
   }
-  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
 };
 
 
@@ -139,7 +141,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       set({
         roomId: targetRoomId,
         sessionToken,
-        snapshot: nextSnapshot,
+        snapshot: nextSnapshot ? { ...nextSnapshot, chat: mergeChat([], nextSnapshot.chat) } : null,
         privateState: nextPrivate,
         roomClosedAt: null,
       });
@@ -350,12 +352,11 @@ export function initSonGuessrWs() {
           snapshotRevision = result.revision;
           rawSnapshot = result.state as SonGuessrRoomSnapshot;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          const nextSnapshot = currentSnapshot && currentSnapshot.roomId === rawSnapshot.roomId
-            ? {
-                ...rawSnapshot,
-                chat: mergeChat(currentSnapshot.chat, rawSnapshot.chat),
-              }
-            : rawSnapshot;
+          // 保留完整协议基线供补丁索引使用，仅展示快照合并并裁剪聊天。
+          const nextSnapshot = {
+            ...rawSnapshot,
+            chat: mergeChat(currentSnapshot?.roomId === rawSnapshot.roomId ? currentSnapshot.chat : [], rawSnapshot.chat),
+          };
 
           const currentPrivate = useSonGuessrStore.getState().privateState;
           const tokenToSave = currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
