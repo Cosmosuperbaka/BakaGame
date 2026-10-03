@@ -424,6 +424,8 @@ export default defineConfig(async () => {
       staticShellPlugin(),
     ],
     resolve: {
+      // 共享源码的运行依赖按客户端安装边界解析。
+      dedupe: ["@sinclair/typebox"],
       alias: [
         { find: '@bakagame/shared', replacement: path.resolve(import.meta.dirname, '../Server/src/shared/Index.ts') },
         { find: '@/types', replacement: path.resolve(import.meta.dirname, './src/types/Index.ts') },

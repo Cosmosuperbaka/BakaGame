@@ -159,3 +159,5 @@ VITE_SERVER_URL=http://localhost:4850
   同源反代 `Client/middleware.js` 因无法转发 WebSocket 请求已撤销，前端域名的 `/api/*`
   会被 SPA 兜底成 HTML。生产必须显式指向后端公开域名（跨域直连），详见
   [Deployment](Deployment.md)「当前请求链路与同源化边界」。
+
+共享源码的运行依赖由消费端显式声明；当前两端均声明 TypeBox。客户端 TypeScript paths 与 Vite/Vitest dedupe 将共享文件的 TypeBox 导入解析到 Client 安装，Storybook 复用 Vite 配置，不依赖 Server/node_modules，也不复制 schema。

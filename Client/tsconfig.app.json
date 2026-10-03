@@ -26,6 +26,8 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@bakagame/shared": ["../Server/src/shared/Index.ts"],
+      "@sinclair/typebox": ["./node_modules/@sinclair/typebox"],
+      "@sinclair/typebox/*": ["./node_modules/@sinclair/typebox/*"],
       "@/types": ["./src/types/Index.ts"],
       "@/*": ["./src/*"]
     }
