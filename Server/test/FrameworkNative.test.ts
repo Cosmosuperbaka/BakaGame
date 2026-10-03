@@ -47,6 +47,7 @@ describe("框架原生契约回归", () => {
     try {
       const response = await f.app.handle(new Request("http://localhost/health"));
       expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ error: { code: "INTERNAL_ERROR", message: "服务器内部错误", traceId: expect.any(String) } });
       await completed(); expect(f.operations.map(x => x.status)).toEqual([500]);
     } finally { await f.cleanup(); }
   });

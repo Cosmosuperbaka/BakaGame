@@ -117,12 +117,11 @@ export const sentryTunnelRoutes = ({
 
   return new Elysia({ name: "sentry-tunnel" }).post(
     "/api/monitoring/sentry",
-    async ({ request, set }) => {
+    async ({ request, set, server }) => {
       try {
-        const clientIp =
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-          request.headers.get("x-real-ip")?.trim() ||
-          "127.0.0.1";
+        // 只信任框架 transport peer；未经认证的转发头不能建立新的限流身份。
+        // 代理后的请求共享 peer 桶；无 socket 的 app.handle 请求共享 unknown 桶。
+        const clientIp = server?.requestIP(request)?.address ?? "unknown";
 
         if (!limiter.allow(clientIp)) {
           set.status = 429;

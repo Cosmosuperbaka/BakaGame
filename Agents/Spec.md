@@ -39,6 +39,7 @@
 - 网易云请求、Cookie、播放地址与真实接口测试查 [NeteaseMusicApi](NeteaseMusicApi.md) 的相关章节；歌词清洗与播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)。
 - Bangumi 请求、番剧筛选、曲目解析或图床修改查 [BangumiApi](BangumiApi.md) 的对应链路，遵守服务端边界和答案隐私。
 - 三款游戏 WebSocket 在 Elysia `.ws` 声明共享 TypeBox `body` 与统一封包 `response`。原生 validator 负责成功帧校验，业务 callback 不重复解析/校验；route-local 错误处理只在失败时诊断已有错误码并抢救有界 id/traceId，保留 ACK 关联和严格拒绝未知字段。JSON/二进制解码是校验前的非可信边界，不作为类型安全保证。
+- Origin 拒绝统一抛出专用 `FORBIDDEN_ORIGIN` 业务错误并由 HTTP 错误边界映射 403，不返回原生 Response 作为全局错误回调的混合类型；保持真实升级阻断和 trace/error 信封，并以实际 WS receive 推导回归防止锁定框架类型污染。
 - 动态 Schema 表的 union 通过 `schemaUnion` 保留同源 `Static` 与原生 Union 校验；不能仅以 `Static<typeof schema>` 正常就认定 Elysia App 推导正常。锁定版本的 `Module.Import` 对非 tuple union 会推导为 `never`，需同时以实际 `~Routes`/Eden 正负编译与 Value/TypeCompiler 运行验证，禁止用 `Any` 或手写第二份 DTO 掩盖。
 - 回复对象交给 Elysia `.send` 校验与序列化，不先转成字符串绕过 object response schema。统一响应 Schema 只声明 ACK/error/event 信封，业务 payload 尚为 opaque，不能把这称为完整事件的端到端类型安全。Eden 的 `.subscribe/.send` 可从保留 App 类型推导入站命令；现有重连、会话恢复、ACK 关联、去重和 StateSync 是业务协议职责，不能因引入 typed transport 丢弃。
 - 使用框架能力时仍须遵循本仓库现有架构、类型协议和代码组织方式。
@@ -197,6 +198,9 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
 - **停机回归证据边界**：`Server/test/IndexShutdown.test.ts` 通过完整真实 `Index.ts` 转译 VM 和模块边界替身验证预通知→SIGTERM、每阶段 await、重复 signal、资源失败不短路及 15 秒 unref 总看门狗；`Server/scripts/ShutdownSmoke.ts` 用临时存储、合成维护 token 与出口守卫验证真实服务的预通知、readiness、三款游戏广播和退出。Windows smoke 通过测试 preload 的 `process.emit` 调用已注册 listener，只能证明 listener 集成，不冒充操作系统实际信号投递；平台原生 SIGTERM 验收仍需在 Linux/容器环境执行。
 - **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
+
+- WS 校验失败诊断仅记录类型、长度与键数：任意属性名和无效 id/type/trace 也能承载敏感文本，不复制到 stdout、OTLP 或 Sentry。关联字段只在错误回包返还原请求方；正常已接受操作的 trace 保持日志索引。
+- 公开遥测及 Sentry 隧道的单来源预算只依据 Elysia/Bun `server.requestIP(request)` 的真实 peer；未经认证的 X-Forwarded-For/X-Real-IP 不参与分桶或授权。无 socket 的请求共用 unknown 桶；反向代理后的客户端共用代理 peer 桶，当前不声称为真实每用户 IP 限流。总预算仍独立保留；未来拆分代理来源须先明确认证信任边界。
 
 ### 10.5 Sentry 全栈异常托管与服务端隧道 (Sentry & Tunnel Gateway)
 - **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。

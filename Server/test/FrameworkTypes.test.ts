@@ -12,6 +12,12 @@ type Routes = ReturnType<typeof createApp>["app"]["~Routes"];
 type FakerBody = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["body"];
 type SongBody = Routes["api"]["songuessr"]["ws"]["subscribe"]["body"];
 type CCBBody = Routes["api"]["ccb"]["ws"]["subscribe"]["body"];
+type FakerResponse = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["response"][200];
+export type PacketKind = Assert<FakerResponse["type"] extends "ack" | "error" | "event" ? true : false>;
+export type AckId = Assert<Extract<FakerResponse, { type: "ack" }>["id"] extends string ? true : false>;
+export type ErrorCode = Assert<Extract<FakerResponse, { type: "error" }>["error"]["code"] extends string ? true : false>;
+// @ts-expect-error 事件 payload 尚未声明业务状态类型，不能冒充完整端到端安全。
+export type EventRoomId = Extract<FakerResponse, { type: "event" }>["payload"]["roomId"];
 type Ready = Routes["readyz"]["get"]["response"];
 export type ReadySuccess = Assert<Ready[200]["ready"] extends true ? true : false>;
 export type ReadyFailure = Assert<Ready[503]["ready"] extends false ? true : false>;

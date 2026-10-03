@@ -80,13 +80,9 @@ export const systemRoutes = ({
     .guard({ response: { 400: errorSchema, 404: errorSchema, 422: errorSchema, 500: errorSchema } })
     .post(
       "/api/monitoring/telemetry",
-      async ({ body, headers, set }) => {
-        const clientIp =
-          (typeof headers["x-forwarded-for"] === "string"
-            ? headers["x-forwarded-for"].split(",")[0]?.trim()
-            : undefined) ||
-          (typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"].trim() : undefined) ||
-          "127.0.0.1";
+      async ({ body, headers, set, request, server }) => {
+        // 真实 peer 是来源预算的唯一身份；自报 XFF/X-Real-IP 只可作非授权展示。
+        const clientIp = server?.requestIP(request)?.address ?? "unknown";
 
         if (!limiter.allow(clientIp)) {
           set.status = 429;

@@ -134,6 +134,18 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
         bodies.push(invalid);
         expect(await client.exchange(invalid, packet => packet.id === id)).toMatchObject({ type: "error", id, traceId, error: { code: expect.any(String) } });
       }
+      // 攻击者也可把秘密塞进字段名或无效信封身份；诊断只计数，回包关联仍保留。
+      const keySecret = `KEY_SECRET_MARKER_${crypto.randomUUID()}`;
+      const idSecret = `ID_SECRET_MARKER_${crypto.randomUUID()}`;
+      const typeSecret = `TYPE_SECRET_MARKER_${crypto.randomUUID()}`;
+      const traceSecret = `TRACE_SECRET_MARKER_${crypto.randomUUID()}`;
+      secrets.push(keySecret, idSecret, typeSecret, traceSecret);
+      for (const frame of [
+        JSON.stringify({ id: idSecret, type: protocol.subscribe, traceId: traceSecret, payload: {}, [keySecret]: true }),
+        JSON.stringify({ id: idSecret, type: typeSecret, traceId: traceSecret, payload: {} }),
+      ]) {
+        expect(await client.exchange(frame, packet => packet.id === idSecret)).toMatchObject({ type: "error", id: idSecret, traceId: traceSecret });
+      }
       // 合法 schema、预期业务拒绝：未创建的房间不触发上游 I/O，关联信息不能因隐私收敛丢失。
       const denied = exchangeEnvelope(protocol.join, { userName: "隔离玩家" }, { roomId: "9864" });
       const rejection = await denied.response;

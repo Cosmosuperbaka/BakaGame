@@ -283,7 +283,7 @@ const rejectDisallowedOrigin = (
     request?.headers?.get("origin") ??
     (headers as Record<string, string> | undefined)?.["origin"];
   if (isAllowedOrigin(origin, clientUrl)) return;
-  throw new Response("Forbidden", { status: 403 });
+  throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
 };
 
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
@@ -315,7 +315,7 @@ const openGameConnection = (
  * 请求因 `timeout: 0` 永不超时，页面只表现为卡住）。因此这里在解析失败路径上补一份
  * 类型与大小信息，让日志可定位输入边界。
  *
- * 只保留键名与键数；字符串与二进制正文一律省略，不记录截断样本。
+ * 只保留类型、长度与键数；任意键名同样可能承载秘密，不记录名称或截断样本。
  */
 const describeRawMessage = (raw: unknown): Record<string, unknown> => {
   if (typeof raw === "string") {
@@ -328,8 +328,7 @@ const describeRawMessage = (raw: unknown): Record<string, unknown> => {
   const keys = Object.keys(record);
   return {
     rawKind: "object",
-    keys: keys.slice(0, 24),
-    ...(keys.length > 24 ? { truncatedKeys: keys.length - 24 } : {}),
+    keyCount: keys.length,
   };
 };
 
@@ -402,9 +401,9 @@ const gameSocketError = (logger: EventLogger, serviceName: string, parse: (raw: 
     let failure: unknown = error;
     if (error instanceof ValidationError) {
       try { parse(input); } catch (diagnostic) { failure = diagnostic; }
-      // 仅记录类型与大小；畸形正文和凭据永不进入日志。
+      // 仅记录类型与大小；键名及任意信封字段也可能承载秘密，不复制到日志。
       logger.warn(`${serviceName} WS 消息解析失败`, {
-        ...describeRawMessage(input), rescuedId: identity?.id, rescuedType: identity?.type, traceId: identity?.traceId,
+        ...describeRawMessage(input),
       });
     }
     if (isAppError(failure)) return createErrorPacket(identity?.id ?? "unknown", failure.code, failure.message, undefined, identity?.traceId);
@@ -465,7 +464,7 @@ export const createApp = ({
       const { pathname } = new URL(request.url);
       if (!pathname.endsWith("/ws")) return;
       if (isAllowedOrigin(request.headers.get("origin"), env.clientUrl)) return;
-      throw new Response("Forbidden", { status: 403 });
+      throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
     })
     // ==================== 原生插件与全局中间件 ====================
     .use(
@@ -500,12 +499,11 @@ export const createApp = ({
     .onError(({ code, error, set, path, request }) => {
       const traceId = requests.get(request)?.traceId ?? crypto.randomUUID();
       set.headers["x-trace-id"] = traceId;
-      if (error instanceof Response) { set.status = error.status; return error; }
       let statusCode = 500;
       let errorCode = "INTERNAL_ERROR";
       let message = "服务器内部错误";
       if (isAppError(error)) {
-        statusCode = 400; errorCode = error.code; message = error.message;
+        statusCode = error.code === "FORBIDDEN_ORIGIN" ? 403 : 400; errorCode = error.code; message = error.message;
       } else if (code === "PARSE") {
         statusCode = 400; errorCode = "INVALID_JSON"; message = "请求必须为合法 JSON";
       } else if (String(code) === "VALIDATION" && (!(error instanceof ValidationError) || error.type !== "response")) {
