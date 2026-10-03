@@ -372,7 +372,7 @@ export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
     throw new AppError("INVALID_MESSAGE", "消息类型 type 必须为字符串");
   }
 
-  const schema = (SonGuessrMessageSchemas as Record<string, TSchema>)[type];
+  const schema = Object.hasOwn(SonGuessrMessageSchemas, type) ? (SonGuessrMessageSchemas as Record<string, TSchema>)[type] : undefined;
   if (!schema) {
     throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }

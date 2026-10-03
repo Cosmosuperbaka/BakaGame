@@ -121,6 +121,7 @@ test("describeError 完整保留调用栈与 Cause，且 redactData 对敏感凭
 
 test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async () => {
   const env: AppEnv = {
+    maintenanceToken: "test-maintenance-token",
     clientUrl: "http://localhost:5173",
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
@@ -206,6 +207,7 @@ const startTestServer = (options?: {
 }) => {
   const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-app-"));
   const env: AppEnv = {
+    maintenanceToken: "test-maintenance-token",
     clientUrl: "http://localhost:5173",
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
@@ -433,6 +435,7 @@ test("解析失败时保留信封身份并记录原始载荷形态", async () =>
 
 test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态", async () => {
   const env: AppEnv = {
+    maintenanceToken: "test-maintenance-token",
     clientUrl: "http://localhost:5173",
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
@@ -579,7 +582,7 @@ test("POST /api/system/notify-shutdown 本地调用成功，触发广播、探�
     // fail-closed 之后缺头的请求一律按来源不可信拒绝。
     const shutdownRes = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
       method: "POST",
-      headers: { "x-real-ip": "127.0.0.1" },
+      headers: { authorization: "Bearer test-maintenance-token" },
     });
     expect(shutdownRes.status).toBe(200);
     const shutdownBody = await shutdownRes.json();

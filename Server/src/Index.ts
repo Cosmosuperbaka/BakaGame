@@ -11,7 +11,7 @@ import {
   SERVER_HEARTBEAT_INTERVAL_MS,
 } from "./infrastructure/Sentry";
 import { WordBankRepository } from "./infrastructure/WordBankRepository";
-import { createApp } from "./transport/App";
+import { createServer } from "./application/CreateServer";
 
 // ==================== 服务启动 ====================
 
@@ -40,7 +40,7 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, sonGuessrService, ccbService } = createApp({
+const { app, dispose, sonGuessrService, ccbService } = createServer({
   env,
   whoIsFakerService,
   logger,
@@ -104,8 +104,10 @@ const server = app.listen({
 
 // ==================== 优雅停机 ====================
 
-const shutdown = async (signal?: string) => {
-  if (isShuttingDown) return;
+let shutdownTask: Promise<void> | undefined;
+const shutdown = (signal?: string): Promise<void> => {
+  if (shutdownTask) return shutdownTask;
+  shutdownTask = (async () => {
   isShuttingDown = true;
 
   logger.warn("收到停机信号，开始优雅停机", {
@@ -137,6 +139,7 @@ const shutdown = async (signal?: string) => {
 
   // 5. 优雅关闭 HTTP 与 WebSocket 监听端口并关闭存量套接字
   await app.stop(true);
+  await dispose();
 
   // 6. 排空并刷新未导出的 OTLP 遥测日志
   if (otlpExporter) {
@@ -150,6 +153,8 @@ const shutdown = async (signal?: string) => {
   clearTimeout(watchdog);
   logger.info("服务已完成优雅停机");
   process.exit(0);
+  })();
+  return shutdownTask;
 };
 
 const handleSignal = (signal: string) => {

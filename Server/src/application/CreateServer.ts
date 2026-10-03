@@ -1,0 +1,21 @@
+import { createApp, type AppDependencies } from "../transport/App";
+import { CCBService } from "./CCBService";
+import { SonGuessrService } from "./SonGuessrService";
+import { BangumiWorkerProvider } from "../infrastructure/BangumiWorkerProvider";
+import { BangumiProvider } from "../infrastructure/BangumiProvider";
+import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
+import { CCBCharacterWorkerProvider } from "../infrastructure/CCBCharacterWorkerProvider";
+import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
+
+/** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
+export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources">) {
+  const { env, logger } = options;
+  const local = new BangumiWorkerProvider({ songPath: env.bangumiSongDbPath!, characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl });
+  const song = new SonGuessrService({ eventLogger: logger, musicProvider: new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock }), bangumiProvider: new FallbackBangumiProvider({ local, remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }), logger }) });
+  const ccb = new CCBService({ data: new CCBCharacterWorkerProvider({ characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
+  return createApp({ ...options, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
+    const results = await Promise.allSettled([ccb.close(), local.close()]);
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+    if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
+  } });
+}

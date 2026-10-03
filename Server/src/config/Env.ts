@@ -15,6 +15,7 @@ export interface AppEnv {
   otelServiceName?: string;
   otelServiceNamespace?: string;
   otelDeploymentEnvironment?: string;
+  maintenanceToken?: string;
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
@@ -136,6 +137,7 @@ export const readEnv = (): AppEnv => {
     Bun.env.DEPLOYMENT_ENVIRONMENT ??
     Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT ??
     resourceAttrs["deployment.environment"] ??
+    Bun.env.NODE_ENV ??
     "production";
 
   const sentryDsn = Bun.env.SENTRY_DSN;
@@ -163,6 +165,7 @@ export const readEnv = (): AppEnv => {
     otelServiceName,
     otelServiceNamespace,
     otelDeploymentEnvironment,
+    maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     sentryDsn,
     sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),

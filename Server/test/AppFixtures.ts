@@ -8,7 +8,7 @@ const releases: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const release of releases.splice(0)) await release(); });
 
 // HTTP、信封与来源校验测试保留真实游戏服务，仅隔离本用例不应访问的外部数据。
-export function createTestApp(options: AppDependencies) {
+export function createTestApp(options: Omit<AppDependencies, "sonGuessrService" | "ccbService"> & Partial<Pick<AppDependencies, "sonGuessrService" | "ccbService">>) {
   const unused = async (): Promise<never> => { throw new AppError('TEST_IO_FORBIDDEN', '本测试不允许访问游戏数据源'); };
   const sonGuessrService = options.sonGuessrService ?? new SonGuessrService({
     eventLogger: options.logger,

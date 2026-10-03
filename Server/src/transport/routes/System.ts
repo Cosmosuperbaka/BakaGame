@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { safeEqualToken } from "../../domain/Rules";
 
 import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
@@ -52,6 +53,7 @@ export interface SystemRoutesDependencies {
   sonGuessrService?: SonGuessrService;
   ccbService?: CCBService;
   logger?: EventLogger;
+  maintenanceToken?: string;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
   rateLimiter?: TelemetryRateLimiter;
@@ -66,13 +68,16 @@ export const systemRoutes = ({
   isShuttingDown,
   onTriggerShutdown,
   rateLimiter,
+  maintenanceToken,
   sampleRate = 1.0,
 }: SystemRoutesDependencies) => {
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
   const limiter = rateLimiter ?? new TelemetryRateLimiter();
 
-  return new Elysia({ name: "system" })
+  const errorSchema = t.Object({ error: t.Object({ code: t.String(), message: t.String(), traceId: t.String() }) });
+  return new Elysia({ name: "system", normalize: false })
+    .guard({ response: { 400: errorSchema, 404: errorSchema, 422: errorSchema, 500: errorSchema } })
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers, set }) => {
@@ -88,12 +93,7 @@ export const systemRoutes = ({
           return { error: "Too Many Requests" };
         }
 
-        const payload = (body ?? {}) as {
-          traceId?: string;
-          level?: "info" | "warn" | "error" | "INFO" | "WARN" | "ERROR";
-          message?: string;
-          metadata?: Record<string, string | number | boolean | null>;
-        };
+        const payload = body;
 
         const rawTrace =
           payload.traceId ??
@@ -198,22 +198,20 @@ export const systemRoutes = ({
     )
     .get(
       "/readyz",
-      async ({ set }) => {
+      async ({ status }) => {
         if (isShuttingDown?.()) {
-          set.status = 503;
-          return {
+          return status(503, {
             status: "shutting_down" as const,
             ready: false,
-          };
+          });
         }
 
         const storageOk = fakerService ? await fakerService.checkStorageReadiness() : true;
         if (!storageOk) {
-          set.status = 503;
-          return {
+          return status(503, {
             status: "storage_degraded" as const,
             ready: false,
-          };
+          });
         }
 
         return {
@@ -226,6 +224,10 @@ export const systemRoutes = ({
           tags: ["System"],
           summary: "K8s / 反代就绪探针 (Readiness)",
           description: "检测持久化依赖就绪度与进程停机标志，未就绪或停机中返回 503 触发摘流。",
+        },
+        response: {
+          200: t.Object({ status: t.Literal("ok"), ready: t.Literal(true) }),
+          503: t.Object({ status: t.Union([t.Literal("shutting_down"), t.Literal("storage_degraded")]), ready: t.Literal(false) }),
         },
       },
     )
@@ -270,21 +272,11 @@ export const systemRoutes = ({
     .post(
       "/api/system/notify-shutdown",
       async ({ headers, set }) => {
-        const xForwardedFor =
-          typeof headers["x-forwarded-for"] === "string" ? headers["x-forwarded-for"] : undefined;
-        const xRealIp =
-          typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"].trim() : undefined;
-
-        // fail-closed：拿不到任何来源 IP 等于「来源不可信」，必须拒绝，
-        // 不能像以前那样让整个校验块落空、直接触发全服停机广播。
-        const forwardedIps = [
-          ...(xForwardedFor ? xForwardedFor.split(",").map((s) => s.trim()) : []),
-          ...(xRealIp ? [xRealIp] : []),
-        ].filter(Boolean);
-
-        if (forwardedIps.length === 0 || forwardedIps.some((ip) => !isPrivateLanHost(ip))) {
+        // 来源头不构成授权：反代和任意客户端均能提供它们。
+        const bearer = headers.authorization?.startsWith("Bearer ") ? headers.authorization.slice(7) : undefined;
+        if (!maintenanceToken || !bearer || !safeEqualToken(bearer, maintenanceToken)) {
           set.status = 403;
-          return { error: "Forbidden: 运维接口仅限本机内部调用" };
+          return { error: "Forbidden: 运维接口需要维护凭据" };
         }
 
         fakerService?.notifyShutdown();
@@ -306,7 +298,7 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "广播停机维护通知",
-          description: "向所有在线对局房间广播停机通知并摘除就绪状态，仅限本地回环或内网运维调用。",
+          description: "向所有在线对局房间广播停机通知并摘除就绪状态，需要独立维护令牌授权，不信任客户端来源头。",
         },
         response: {
           200: t.Object({

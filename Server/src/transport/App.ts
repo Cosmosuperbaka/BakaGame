@@ -1,18 +1,13 @@
 import { cors } from "@elysiajs/cors";
-import { Elysia } from "elysia";
+import { Elysia, ValidationError } from "elysia";
 
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
 import { CCBService } from "../application/CCBService";
-import { CCBCharacterWorkerProvider } from "../infrastructure/CCBCharacterWorkerProvider";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../domain/Model";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
-import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
-import { BangumiWorkerProvider } from "../infrastructure/BangumiWorkerProvider";
-import { BangumiProvider } from "../infrastructure/BangumiProvider";
-import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
@@ -28,8 +23,9 @@ export interface AppDependencies {
   env: AppEnv;
   whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
-  sonGuessrService?: SonGuessrService;
-  ccbService?: CCBService;
+  sonGuessrService: SonGuessrService;
+  ccbService: CCBService;
+  disposeResources?: () => Promise<void>;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
 }
@@ -321,7 +317,7 @@ const openGameConnection = (
  */
 const describeRawMessage = (raw: unknown): Record<string, unknown> => {
   if (typeof raw === "string") {
-    return { rawKind: "string", length: raw.length, sample: sanitizeLogText(raw, 300) };
+    return { rawKind: "string", length: raw.length, sample: "[原始消息已省略]" };
   }
   if (raw === null || typeof raw !== "object") return { rawKind: typeof raw };
   if (raw instanceof ArrayBuffer) return { rawKind: "ArrayBuffer", byteLength: raw.byteLength };
@@ -482,38 +478,20 @@ export const createApp = ({
   ccbService,
   isShuttingDown,
   onTriggerShutdown,
+  disposeResources,
 }: AppDependencies) => {
   const decoder = new TextDecoder();
   const fakerService = whoIsFakerService;
   if (!fakerService) {
     throw new Error("WhoIsFakerService dependency is required");
   }
-  const localBangumi = sonGuessrService ? undefined : new BangumiWorkerProvider({
-    songPath: env.bangumiSongDbPath!, characterPath: env.bangumiCharacterDbPath!,
-    enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl,
-  });
-  const songService =
-    sonGuessrService ??
-    new SonGuessrService({
-      eventLogger: logger,
-      musicProvider: new NeteaseMusicProvider({
-        logger,
-        enableGeneralUnblock: env.enableGeneralUnblock,
-      }),
-      bangumiProvider: new FallbackBangumiProvider({
-        local: localBangumi!,
-        remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }),
-        logger,
-      }),
-    });
-
-  const characterService = ccbService ?? new CCBService({
-    data: new CCBCharacterWorkerProvider({
-      characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath,
-      apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl,
-    }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret,
-  });
+  const songService = sonGuessrService;
+  const characterService = ccbService;
+  let disposal: Promise<void> | undefined;
+  const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
+  const requests = new WeakMap<Request, { traceId: string; startedAt: number }>();
   const app = new Elysia({
+    normalize: false,
     websocket: {
       // 部分 iOS WebKit 版本会在 permessage-deflate 协商后立即断开连接。
       // Bun 的协商配置是服务器级别，无法按 UA 稳定切换，因此全局关闭压缩。
@@ -522,7 +500,12 @@ export const createApp = ({
       maxPayloadLength: 256 * 1024,
     },
   })
-    .onStop(async () => { await characterService.close(); await localBangumi?.close(); })
+    .onStop(() => { void dispose().catch((error: unknown) => logger.error("服务资源释放失败", describeError(error))); })
+    .onRequest(({ request, set }) => {
+      const traceId = sanitizeLogText(request.headers.get("x-trace-id") ?? request.headers.get("x-request-id") ?? crypto.randomUUID(), 128);
+      requests.set(request, { traceId, startedAt: performance.now() });
+      set.headers["x-trace-id"] = traceId;
+    })
     // ==================== WebSocket 升级的 Origin 白名单（防跨站 WebSocket 劫持） ====================
     // 必须拦在 HTTP 层：`.ws()` 的 `upgrade` 钩子**返回值会被 Elysia 忽略**
     // （1.4.29 / 1.4.30 实测：返回 `{ status: 403 }` 或 `new Response(403)` 都拦不住，
@@ -533,7 +516,7 @@ export const createApp = ({
       const { pathname } = new URL(request.url);
       if (!pathname.endsWith("/ws")) return;
       if (isAllowedOrigin(request.headers.get("origin"), env.clientUrl)) return;
-      return new Response("Forbidden", { status: 403 });
+      throw new Response("Forbidden", { status: 403 });
     })
     // ==================== 原生插件与全局中间件 ====================
     .use(
@@ -551,103 +534,39 @@ export const createApp = ({
       }),
     )
     // ==================== 原生耗时与链路追踪派生 ====================
-    .derive(({ request }) => {
-      const traceId =
-        request?.headers?.get("x-trace-id") ??
-        request?.headers?.get("x-request-id") ??
-        crypto.randomUUID();
-      return {
-        traceId,
-        startedAt: performance.now(),
-      };
-    })
-    .onAfterHandle(({ request, path, set, startedAt, traceId }) => {
-      if (set.headers) {
-        set.headers["x-trace-id"] = traceId;
-      }
-      const durationMs = performance.now() - startedAt;
+    .derive(({ request }) => requests.get(request)!)
+    .onAfterResponse(({ request, response, set }) => {
+      const context = requests.get(request);
+      if (!context) return;
+      const statusCode = response instanceof Response ? response.status : Number(set.status ?? 200);
       logger.logOperation({
-        status: set.status ? Number(set.status) : 200,
-        durationMs,
+        status: statusCode,
+        durationMs: performance.now() - context.startedAt,
         identifier: request.headers.get("x-forwarded-for") ?? "127.0.0.1",
-        action: `HTTP ${request.method} ${path}`,
-        traceId,
+        action: `HTTP ${request.method} ${new URL(request.url).pathname}`,
+        traceId: context.traceId,
+        level: statusCode >= 500 ? "ERROR" : statusCode >= 400 ? "WARN" : "INFO",
       });
     })
-    // ==================== 全局错误生命周期处理 ====================
-    .onError(({ code, error, set, path, request, startedAt, traceId }) => {
-      const activeTraceId =
-        traceId ??
-        request?.headers?.get("x-trace-id") ??
-        request?.headers?.get("x-request-id") ??
-        crypto.randomUUID();
-
-      if (set.headers && activeTraceId) {
-        set.headers["x-trace-id"] = activeTraceId;
-      }
-      const durationMs = startedAt ? performance.now() - startedAt : 0;
-      let status = 500;
-      let errCode = "INTERNAL_ERROR";
-      let errMsg = "服务器内部错误";
-
-      // 业务代码直接抛出 Response（如 WS 升级被 Origin 拒绝）时原样透传：
-      // 否则会被当成未处理异常记成 500，既掩盖真实状态码，也把一次正常拒绝污染成错误日志。
-      if (error instanceof Response) {
-        const responseStatus = error.status;
-        logger.logOperation({
-          status: responseStatus,
-          durationMs,
-          identifier: request?.headers?.get("x-forwarded-for") ?? "127.0.0.1",
-          action: `HTTP ${request?.method ?? "GET"} ${path}`,
-          level: responseStatus >= 500 ? "ERROR" : "WARN",
-          traceId: activeTraceId,
-        });
-        return error;
-      }
-
+    .onError(({ code, error, set, path, request }) => {
+      const traceId = requests.get(request)?.traceId ?? crypto.randomUUID();
+      set.headers["x-trace-id"] = traceId;
+      if (error instanceof Response) { set.status = error.status; return error; }
+      let statusCode = 500;
+      let errorCode = "INTERNAL_ERROR";
+      let message = "服务器内部错误";
       if (isAppError(error)) {
-        status = 400;
-        set.status = 400;
-        errCode = error.code;
-        errMsg = error.message;
-      } else if (String(code) === "VALIDATION") {
-        status = 422;
-        set.status = 422;
-        errCode = "VALIDATION_ERROR";
-        errMsg = (error as { message?: string })?.message ?? "请求载荷格式错误";
+        statusCode = 400; errorCode = error.code; message = error.message;
+      } else if (code === "PARSE") {
+        statusCode = 400; errorCode = "INVALID_JSON"; message = "请求必须为合法 JSON";
+      } else if (String(code) === "VALIDATION" && (!(error instanceof ValidationError) || error.type !== "response")) {
+        statusCode = 422; errorCode = "VALIDATION_ERROR"; message = "请求载荷格式错误";
       } else if (code === "NOT_FOUND") {
-        status = 404;
-        set.status = 404;
-        errCode = "NOT_FOUND";
-        errMsg = "请求资源不存在";
-      } else {
-        set.status = 500;
+        statusCode = 404; errorCode = "NOT_FOUND"; message = "请求资源不存在";
       }
-
-      logger.logOperation({
-        status,
-        durationMs,
-        identifier: request?.headers?.get("x-forwarded-for") ?? "127.0.0.1",
-        action: `HTTP ${request?.method ?? "GET"} ${path}`,
-        level: status >= 500 ? "ERROR" : "WARN",
-        traceId: activeTraceId,
-      });
-
-      if (status >= 500) {
-        logger.error(`HTTP 500 异常 [${path}]`, {
-          ...describeError(error),
-          error: error instanceof Error ? error : new Error(String(error)),
-          traceId: activeTraceId,
-        });
-      }
-
-      return {
-        error: {
-          code: errCode,
-          message: errMsg,
-          traceId: activeTraceId,
-        },
-      };
+      set.status = statusCode;
+      if (statusCode >= 500) logger.error(`HTTP 500 异常 [${path}]`, { ...describeError(error), traceId });
+      return { error: { code: errorCode, message, traceId } };
     })
     // ==================== 系统 HTTP 业务模块 ====================
     .use(
@@ -658,6 +577,7 @@ export const createApp = ({
         logger,
         isShuttingDown,
         onTriggerShutdown,
+        maintenanceToken: env.maintenanceToken,
       }),
     )
     .use(
@@ -704,6 +624,7 @@ export const createApp = ({
 
   return {
     app,
+    dispose,
     whoIsFakerService: fakerService,
     sonGuessrService: songService,
     ccbService: characterService,

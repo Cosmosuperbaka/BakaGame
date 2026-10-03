@@ -13,10 +13,10 @@ export const createSwaggerPlugin = ({ serverUrl }: OpenApiOptions) =>
     documentation: {
       openapi: "3.1.0",
       info: {
-        title: "WhoIsFaker Backend HTTP API",
+        title: "BakaGame Backend HTTP API",
         version: "unversioned",
         description:
-          "WhoIsFaker 后端辅助 HTTP 接口文档。实时业务通信通过 WebSocket /api/whoisfaker/ws 完成。",
+          "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/ccb/ws。",
       },
       servers: [
         {

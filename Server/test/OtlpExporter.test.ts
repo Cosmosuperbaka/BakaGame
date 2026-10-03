@@ -118,7 +118,7 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
     eventLogger: logger,
   });
 
-  const { app } = createApp({
+  const { app, dispose } = createApp({
     env,
     whoIsFakerService,
     logger,
@@ -179,7 +179,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
-  const { app } = createApp({
+  const { app, dispose } = createApp({
     env,
     whoIsFakerService: new WhoIsFakerService({
       eventLogger: new EventLogger(),
@@ -292,7 +292,7 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
     eventLogger: logger,
   });
 
-  const { app } = createApp({
+  const { app, dispose } = createApp({
     env,
     whoIsFakerService,
     logger,
@@ -439,7 +439,7 @@ test("EventLogger.logOperation 正确接收并透传 traceId 至 enqueueSpan 及
   expect(capturedSpan.attributes["http.status_code"]).toBe(200);
 });
 
-test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async () => {
+test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
   const operations: Array<{ action: string; traceId?: string }> = [];
   const mockLogger = {
     logOperation: (entry: { action: string; traceId?: string }) => {
@@ -466,7 +466,7 @@ test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async 
     eventLogger: mockLogger,
   });
 
-  const { app } = createApp({
+  const { app, dispose } = createApp({
     env,
     whoIsFakerService,
     logger: mockLogger,
@@ -479,7 +479,8 @@ test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async 
     }),
   );
   expect(resSuccess.status).toBe(200);
-  const successOp = operations.find((o) => o.action.includes("/livez"));
+  await new Promise(resolve => setImmediate(resolve));
+    const successOp = operations.find((o) => o.action.includes("/livez"));
   expect(successOp).toBeTruthy();
   expect(successOp?.traceId).toBe("custom-trace-success-123");
 
@@ -490,9 +491,12 @@ test("App.ts HTTP 路由在 onAfterHandle 与 onError 中贯穿 traceId", async 
     }),
   );
   expect(resNotFound.status).toBe(404);
-  const notFoundOp = operations.find((o) => o.action.includes("/non-existent-path"));
+  await new Promise(resolve => setImmediate(resolve));
+    const notFoundOp = operations.find((o) => o.action.includes("/non-existent-path"));
   expect(notFoundOp).toBeTruthy();
   expect(notFoundOp?.traceId).toBe("custom-trace-404-456");
+    await dispose();
+    await whoIsFakerService.drainPendingWrites();
 });
 
 test("POST /api/monitoring/telemetry 滑动窗口限流与采样控制", async () => {
