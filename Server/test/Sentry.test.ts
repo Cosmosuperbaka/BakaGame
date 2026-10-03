@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach, spyOn } from "bun:test";
 import * as Sentry from "@sentry/bun";
 import type { AppEnv } from "../src/config/Env";
+import { resolve } from "node:path";
+import * as Release from "../src/infrastructure/Release";
 import {
   _resetServerSentryForTest,
   captureServerException,
@@ -10,7 +12,6 @@ import {
   flushServerSentry,
   initServerSentry,
   isServerSentryEnabled,
-  resolveServerRelease,
   captureServerLog,
   redactData,
   describeError,
@@ -21,8 +22,10 @@ import {
 // release 解析不依赖本机 Git/子进程权限；所有 SDK init 已由各例 mock。
 let gitSpy: ReturnType<typeof spyOn>;
 beforeEach(() => {
-  gitSpy = spyOn(Bun, "spawnSync").mockImplementation((() => ({
-    exitCode: 0, stdout: Buffer.from("abcdef1\n"), stderr: Buffer.alloc(0), success: true,
+  gitSpy = spyOn(Bun, "spawnSync").mockImplementation(((command: string[]) => ({
+    exitCode: 0,
+    stdout: Buffer.from(command.includes("--show-toplevel") ? resolve(import.meta.dir, "../..") : "abcdef1".padEnd(40, "0")),
+    stderr: Buffer.alloc(0), success: true,
   })) as any);
 });
 afterEach(() => { gitSpy.mockRestore(); });
@@ -47,21 +50,6 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   afterEach(() => {
     _resetServerSentryForTest();
-  });
-
-  describe("resolveServerRelease", () => {
-    it("按项目版本与 Git 短提交生成发布标识", () => {
-      const previous = process.env.SENTRY_RELEASE;
-      try {
-        process.env.SENTRY_RELEASE = "v2.0.0-rc1";
-        const release = resolveServerRelease();
-        expect(release).toMatch(/^V\d+\.\d+\.\d+（[0-9a-f]{7,}）$/);
-        expect(release).not.toBe("v2.0.0-rc1");
-      } finally {
-        if (previous === undefined) delete process.env.SENTRY_RELEASE;
-        else process.env.SENTRY_RELEASE = previous;
-      }
-    });
   });
 
   describe("initServerSentry & isServerSentryEnabled", () => {
@@ -342,8 +330,39 @@ describe("服务端遥测统一脱敏出口", () => {
   });
 });
 
-it("无 Git 元数据时 release 缺失保持可见，不伪造 canonical revision", () => {
-  const git = spyOn(Bun, "spawnSync").mockImplementation((() => { throw new Error("git unavailable"); }) as any);
-  try { expect(resolveServerRelease()).toBeUndefined(); }
-  finally { git.mockRestore(); }
+it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () => {
+  const originalRelease = Bun.env.SENTRY_RELEASE, originalNodeEnv = Bun.env.NODE_ENV;
+  const release = spyOn(Release, "resolveServerRelease").mockReturnValue(undefined);
+  const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    Bun.env.SENTRY_RELEASE = "arbitrary-legacy-producer";
+    Bun.env.NODE_ENV = "production";
+    initServerSentry(createMockEnv());
+    const options = init.mock.calls[0]![0]!;
+    expect(options.release).toBe(""); // 显式禁用 SDK 的 undefined 自动探测。
+    expect(options.environment).toBe("development"); // 不重新解析 NODE_ENV。
+    expect(warning).toHaveBeenCalledTimes(1);
+    expect(warning.mock.calls[0]![0]).toContain("发布证据缺失或无效");
+  } finally {
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE; else Bun.env.SENTRY_RELEASE = originalRelease;
+    if (originalNodeEnv === undefined) delete Bun.env.NODE_ENV; else Bun.env.NODE_ENV = originalNodeEnv;
+    release.mockRestore(); init.mockRestore(); warning.mockRestore();
+  }
+});
+
+it("Sentry 只消费 Env 的环境标记并保持 canonical 七位 release", () => {
+  const originalRelease = Bun.env.SENTRY_RELEASE;
+  const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+  try {
+    Bun.env.SENTRY_RELEASE = "v2.0.0-rc1";
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "test" }));
+    const options = init.mock.calls[0]![0]!;
+    expect(options.environment).toBe("test");
+    expect(options.release).toMatch(/^V\d+\.\d+\.\d+（abcdef1）$/);
+    expect(options.release).not.toBe(Bun.env.SENTRY_RELEASE);
+  } finally {
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE; else Bun.env.SENTRY_RELEASE = originalRelease;
+    init.mockRestore();
+  }
 });

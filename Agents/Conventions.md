@@ -164,6 +164,11 @@ VITE_SERVER_URL=http://localhost:4850
 
 ### 运行环境标记与资产验证隔离
 
-- 服务端遥测环境由 `readEnv` 统一解析：`DEPLOYMENT_ENVIRONMENT` → `OTEL_DEPLOYMENT_ENVIRONMENT` → `OTEL_RESOURCE_ATTRIBUTES` 的 `deployment.environment` → `NODE_ENV` → `production`。本地开发应显式设置 `NODE_ENV=development`（或 deployment 标记），测试使用 `test`；未配置保留生产缺省，不按操作系统猜测环境。
+- 服务端遥测环境仅由 `readEnv` 统一解析：`DEPLOYMENT_ENVIRONMENT` → `OTEL_DEPLOYMENT_ENVIRONMENT` → `OTEL_RESOURCE_ATTRIBUTES` 的 `deployment.environment` → `NODE_ENV` → `development`。生产必须显式注入 `production`，测试使用 `test`；未配置不假设生产，不按操作系统猜测环境，Sentry 与 OTLP 消费同一结果，SDK 不再另读 `NODE_ENV`。
+- 服务端 canonical release 为 `Vx.y.z（hash）`，hash 固定取完整 SHA 的前 7 位。源码仓库 Git/changelog 优先，无 Git 的容器使用部署生成且已忽略的 `Server/build/release.json`（稳定版本与完整 40 位 SHA）。没有有效发布证据时解析结果为 `undefined`，不硬编码版本、不采信任意 `SENTRY_RELEASE`/CI 字符串；SDK 初始化以显式空值关闭自动 release 探测并提示缺失。元数据生成、原子落盘与验收见 [Deployment](Deployment.md#发布元数据与遥测验收)。
 - 公共图片统一转换为 WebP；表情的 `/emojis/` 公共路径与 `/stickers/` 内容哈希路径保留，单次有界编码后复制同一产物，不重复编码动画。
 - Vite 与 Storybook 的构建配置会重建 `.generated-public`，同一工作区必须串行构建。资源冒烟只服务已有 `dist`，使用不加载项目配置、环境文件及后端代理的独立 preview，绑定回环随机端口；隔离副本的构建不共享主工作区生成目录。
+
+### 入站参数与规范化状态
+
+Song 自动筛选的局部输入与完整房间状态分别使用共享 `SongAutoFiltersInputSchema` / `SongAutoFiltersSchema`，类型由 Schema 的 `Static` 导出；服务端边界后补齐省略字段，客户端不得把局部输入当成完整快照。CCB 线路可空信封字段在解析边界归一为字段缺席，业务信封只使用可选字符串。双方 TypeScript 及协议边界回归必须同时通过。

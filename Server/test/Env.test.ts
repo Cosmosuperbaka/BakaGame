@@ -117,3 +117,39 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 });
+
+const deploymentKeys = ["DEPLOYMENT_ENVIRONMENT", "OTEL_DEPLOYMENT_ENVIRONMENT", "OTEL_RESOURCE_ATTRIBUTES", "NODE_ENV"] as const;
+
+it("遥测环境保留完整优先级，缺省 development，明确的 production/test 不被覆盖", () => {
+  const saved = Object.fromEntries(deploymentKeys.map(key => [key, Bun.env[key]]));
+  try {
+    for (const key of deploymentKeys) delete Bun.env[key];
+    expect(readEnv().otelDeploymentEnvironment).toBe("development");
+    Bun.env.NODE_ENV = "test";
+    expect(readEnv().otelDeploymentEnvironment).toBe("test");
+    Bun.env.NODE_ENV = "development";
+    expect(readEnv().otelDeploymentEnvironment).toBe("development");
+    Bun.env.NODE_ENV = "production";
+    expect(readEnv().otelDeploymentEnvironment).toBe("production");
+    Bun.env.OTEL_RESOURCE_ATTRIBUTES = "service.name=fixture,deployment.environment=resource%2Dstaging";
+    expect(readEnv().otelDeploymentEnvironment).toBe("resource-staging");
+    Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT = "otel-staging";
+    expect(readEnv().otelDeploymentEnvironment).toBe("otel-staging");
+    Bun.env.DEPLOYMENT_ENVIRONMENT = "production";
+    expect(readEnv().otelDeploymentEnvironment).toBe("production");
+    Bun.env.DEPLOYMENT_ENVIRONMENT = "preview";
+    expect(readEnv().otelDeploymentEnvironment).toBe("preview");
+    delete Bun.env.DEPLOYMENT_ENVIRONMENT;
+    expect(readEnv().otelDeploymentEnvironment).toBe("otel-staging");
+    delete Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT;
+    expect(readEnv().otelDeploymentEnvironment).toBe("resource-staging");
+    delete Bun.env.OTEL_RESOURCE_ATTRIBUTES;
+    expect(readEnv().otelDeploymentEnvironment).toBe("production");
+    delete Bun.env.NODE_ENV;
+    expect(readEnv().otelDeploymentEnvironment).toBe("development");
+  } finally {
+    for (const key of deploymentKeys) {
+      if (saved[key] === undefined) delete Bun.env[key]; else Bun.env[key] = saved[key];
+    }
+  }
+});

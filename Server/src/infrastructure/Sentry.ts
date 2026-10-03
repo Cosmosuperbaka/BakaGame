@@ -1,7 +1,6 @@
 import * as Sentry from "@sentry/bun";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { AppEnv } from "../config/Env";
+import { resolveServerRelease } from "./Release";
 
 const SENSITIVE_KEYS = new Set([
   "cookie",
@@ -82,46 +81,6 @@ export const _resetServerSentryForTest = (): void => {
   isInitialized = false;
 };
 
-const PROJECT_VERSION_FALLBACK = "1.3.2";
-
-const resolveLatestProjectVersion = (): string => {
-  try {
-    const changelogPath = resolve(import.meta.dir, "../../../Client/src/data/changelog.json");
-    const changelog = JSON.parse(readFileSync(changelogPath, "utf8")) as {
-      entries?: Array<{ version?: unknown }>;
-    };
-    const versions = (changelog.entries ?? [])
-    .map((entry) => entry.version)
-    .filter((version): version is string => typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version));
-    if (versions.length === 0) return PROJECT_VERSION_FALLBACK;
-    return versions.sort((a, b) => {
-    const left = a.split(".").map(Number);
-    const right = b.split(".").map(Number);
-    for (let index = 0; index < 3; index += 1) {
-      if (left[index] !== right[index]) return right[index] - left[index];
-    }
-    return 0;
-    })[0] ?? PROJECT_VERSION_FALLBACK;
-  } catch {
-    return PROJECT_VERSION_FALLBACK;
-  }
-};
-
-export const resolveServerRelease = (): string | undefined => {
-  try {
-    const proc = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]);
-    if (proc.exitCode === 0) {
-      const hash = proc.stdout.toString().trim();
-      if (hash) {
-        return `V${resolveLatestProjectVersion()}（${hash}）`;
-      }
-    }
-  } catch {
-    // 降级：无 git 环境或非 git 目录
-  }
-  return undefined;
-};
-
 const resolveSampleRate = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
@@ -133,11 +92,13 @@ export const initServerSentry = (env: AppEnv): void => {
   }
 
   const release = resolveServerRelease();
+  if (!release) console.warn("[Sentry] 发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog");
 
   Sentry.init({
     dsn: env.sentryDsn,
-    environment: env.otelDeploymentEnvironment || process.env.NODE_ENV || "production",
-    release,
+    environment: env.otelDeploymentEnvironment ?? "development",
+    // SDK 对 undefined 会自动读取 SENTRY_RELEASE/CI 字符串；空值显式禁止伪造回退。
+    release: release ?? "",
     tracesSampleRate: resolveSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
     integrations: [
       Sentry.httpIntegration(),

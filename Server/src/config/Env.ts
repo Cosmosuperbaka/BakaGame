@@ -138,7 +138,7 @@ export const readEnv = (): AppEnv => {
     Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT ??
     resourceAttrs["deployment.environment"] ??
     Bun.env.NODE_ENV ??
-    "production";
+    "development";
 
   const sentryDsn = Bun.env.SENTRY_DSN;
   let sentryAllowedProjectIds = (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")

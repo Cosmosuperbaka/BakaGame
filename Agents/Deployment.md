@@ -200,9 +200,19 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 
 1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
 2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致，所有 LFS raw URL 同样绑定此 SHA（不消费移动 main），按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
-3. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。容器必须通过运行环境显式注入该变量（只在 `.env` 内提供不足以供 `--no-env-file` helper 消费）；缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
-4. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
-5. 在总计 30 秒预算内检查本机 `/health`、`/livez`、`/readyz` 的 `ready:true` 与三款游戏订阅 ACK（不创建房间）。通过 `docker exec -i` 将目标 SHA 的只读 `DeploymentProbe.ts` 送入容器 Bun，不猜测挂载路径，不加载应用或 `.env`。失败打印容器末尾日志、作业失败，不报部署成功；重启后不自动二次重启或回滚，由运维依据日志与获验 SHA 恢复。
+3. 数据校验后、排空前生成获验修订的 release 元数据，流程及失败边界见下一节；宿主机不需要 Node/Bun。
+4. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。容器必须通过运行环境显式注入该变量（只在 `.env` 内提供不足以供 `--no-env-file` helper 消费）；缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
+5. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
+6. 在总计 30 秒预算内检查本机 `/health`、`/livez`、`/readyz` 的 `ready:true` 与三款游戏订阅 ACK（不创建房间）。通过 `docker exec -i` 将目标 SHA 的只读 `DeploymentProbe.ts` 送入容器 Bun，不猜测挂载路径，不加载应用或 `.env`。失败打印容器末尾日志、作业失败，不报部署成功；重启后不自动二次重启或回滚，由运维依据日志与获验 SHA 恢复。
+
+### 发布元数据与遥测验收
+
+- reset 获验 SHA 并核对 `COMMIT == DEPLOY_REV`、数据库校验完成后，维护通知/重启前生成 `Server/build/release.json`。只允许 schemaVersion、完整 40 位小写 revision 与 changelog 的最新稳定 semver 三个字段，不含环境变量、凭据或私有端点；现有 `.gitignore` 已忽略整个 `Server/build`。
+- 元数据逻辑由 `Server/src/infrastructure/Release.ts` 唯一维护：宿主用 `docker exec -i` 把该获验修订的源文件经 stdin 送入**已存在**的容器 Bun，以 `--no-env-file -` 运行；SHA 和该修订的公开 changelog JSON 作为两个参数传入。仅导入标准库，不加载应用/SDK，不要求宿主安装 Node/Bun，不猜测容器中的源码挂载路径。
+- 宿主先用 `mktemp` 在目标 build 目录创建临时文件，容器 stdout 写入该文件；退出成功后将其设为可读的 0644 并同目录 `mv` 原子替换。无效/缺失 SHA、损坏 JSON、无稳定版本、脚本异常或 3 秒截止均中止发布、不进入维护通知及容器重启，旧元数据不被截断，临时文件由失败分支/退出陷阱清理。Linux 宿主须通过现有环境自检提供 `cat/chmod/timeout`。
+- 运行时以模块位置定位 Server/仓库根，真实根 Git HEAD 与 changelog 优先，拒绝当前工作目录、父仓库及继承 GIT_DIR/GIT_WORK_TREE 导致的错误修订；无根 Git 时校验 metadata。生成后的 build 目录必须随 Server 的现有挂载/部署进入容器；无有效证据返回 `undefined` 并在 Sentry 启用时提示，不以硬编码旧版本或任意环境字符串冒充 release。canonical 格式为 `Vx.y.z（hash）`，完整 SHA 只在元数据保留，展示 hash 统一 7 位。
+- 环境解析优先级及 development 缺省见 [Conventions](Conventions.md#运行环境标记与资产验证隔离)，生产必须显式注入 production；Sentry 与 OTLP 使用同一标记。`Server/test/Release.test.ts` 执行真实 stdin 元数据脚本及从 workflow 提取的原子落盘阶段，Docker/sudo 在临时目录模拟，不重启真实容器；配套 Env/Sentry 测试均无真实遥测写入。
+- 本地修复不等于线上缺 release 流量已经消失。本轮父审只读样本显示缺 release 日志来自旧 SDK 10.73.0 producer，当前仓库 SDK 为 10.75.1；须另行获授权部署后，按 SDK、实例、environment 与 canonical release 复核新 producer，并区分历史日志。本文与本地测试不声称已替换生产实例或删除旧事件。
 
 ### 时间预算铁律
 
@@ -215,6 +225,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
 | 节点测速 | ≤ 7s |
 | 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；当前为从脚本开始起 115s 的绝对截止，包含此前耗时 |
+| release 元数据生成与原子落盘 | ≤ 3s（容器元数据脚本由 `timeout 3s` 约束） |
 | 客户端排空 | ≤ 3s |
 | 运维 Bearer 通知 | ≤ 3s |
 | 容器重启 | ≤ 5s |
