@@ -1,5 +1,5 @@
 import type { PlayerStatusTone } from "@/components/common/PlayerStatusPill";
-import type { PlayerRole, PrivateState, PublicPlayerView } from "@/types";
+import type { WhoIsFakerRole, WhoIsFakerPrivateState, PublicPlayerView } from "@/types";
 
 export interface StatusInfo {
   label: string;
@@ -8,8 +8,8 @@ export interface StatusInfo {
 
 export function buildKnownRoleMap(
   players: PublicPlayerView[],
-  privateState?: PrivateState | null,
-  revealedRoles?: Map<string, PlayerRole>,
+  privateState?: WhoIsFakerPrivateState | null,
+  revealedRoles?: Map<string, WhoIsFakerRole>,
 ) {
   const roles = new Map(
     (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role]),

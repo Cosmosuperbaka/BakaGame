@@ -1,6 +1,6 @@
 ﻿import { expect, test } from "bun:test";
 
-import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
 import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../src/domain/Model";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
@@ -40,10 +40,10 @@ const createTestRoom = async (
 };
 
 const snapshotOf = (connection: ReturnType<typeof createConnection>) =>
-  getLastEventPayload<RoomSnapshot>(connection, "room.snapshot")!;
+  getLastEventPayload<WhoIsFakerRoomSnapshot>(connection, "room.snapshot")!;
 
 const privateOf = (connection: ReturnType<typeof createConnection>) =>
-  getLastEventPayload<PrivateState>(connection, "game.privateState")!;
+  getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")!;
 
 test("房主转给机器人后移除该机器人，房主自动转移给仍在的玩家", async () => {
   const { service } = createTestContext();

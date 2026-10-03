@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { PHASE_RESULT_DISPLAY_MS } from "../src/config/Constants";
-import type { PrivateState, RoomSnapshot } from "../src/domain/Model";
-import type { ClientMessage, EventPacket, PlayerRole, StateSyncPayload } from "../src/shared/Index";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
+import type { WhoIsFakerClientMessage, EventPacket, WhoIsFakerRole, StateSyncPayload } from "../src/shared/Index";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createConnection, createTestContext, execute, type TestConnection } from "./Helpers";
 
@@ -24,7 +24,7 @@ const setupViews = async (connectionCount = 150) => {
       const event = payload as EventPacket;
       if (event.type !== "event" || !["room.snapshot", "game.privateState"].includes(event.event)) return;
       raw.push(event);
-      if (event.event === "game.privateState") client.sessionToken = (event.payload as PrivateState).sessionToken;
+      if (event.event === "game.privateState") client.sessionToken = (event.payload as WhoIsFakerPrivateState).sessionToken;
       if (encode) wire.push(...encoder.encode(payload, { calibration }) as EventPacket[]);
     };
     connection.record.send = payload => receive(payload);
@@ -37,9 +37,9 @@ const setupViews = async (connectionCount = 150) => {
   const clear = () => {
     for (const client of clients) { client.raw.length = 0; client.wire.length = 0; }
   };
-  const command = async (client: typeof clients[number], message: WithoutId<ClientMessage>) => {
+  const command = async (client: typeof clients[number], message: WithoutId<WhoIsFakerClientMessage>) => {
     clear();
-    return execute(service, client, { ...message, id: `view-cmd-${++commandId}` } as ClientMessage);
+    return execute(service, client, { ...message, id: `view-cmd-${++commandId}` } as WhoIsFakerClientMessage);
   };
   const host = connect(0);
   await command(host, { type: "room.create", payload: {
@@ -58,7 +58,7 @@ const setupViews = async (connectionCount = 150) => {
   for (const client of active) await command(client, { type: "player.setReady", payload: { ready: true } });
   await command(host, { type: "game.advancePhase", payload: {} });
   await command(host, { type: "game.assignQuestioner", payload: { playerId: host.record.playerId! } });
-  const manualRoles: Record<string, PlayerRole> = Object.fromEntries(active.map((client, index) => [
+  const manualRoles: Record<string, WhoIsFakerRole> = Object.fromEntries(active.map((client, index) => [
     client.record.playerId!, index === active.length - 1 ? "undercover" : "civilian",
   ]));
   await command(host, { type: "game.submitWords", payload: { words: ["苹果", "香蕉"], manualRoles } });
@@ -87,7 +87,7 @@ const setupViews = async (connectionCount = 150) => {
 
 const rawPayload = <T>(client: ViewClient, event: string): T =>
   client.raw.filter(packet => packet.event === event).at(-1)!.payload as T;
-const snapshot = (client: ViewClient) => rawPayload<RoomSnapshot>(client, "room.snapshot");
+const snapshot = (client: ViewClient) => rawPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
 const syncPayload = <T>(client: ViewClient, event: string) =>
   client.wire.filter(packet => packet.event === event).at(-1)!.payload as StateSyncPayload<T>;
 
@@ -104,7 +104,7 @@ const assertViews = (f: Awaited<ReturnType<typeof setupViews>>) => {
     expect(snapshot(client)).not.toBe(snapshot(f.hidden[0]));
     expect(snapshot(client).chat.some(message => message.channel === "ghost")).toBe(true);
   }
-  const states = f.clients.map(client => rawPayload<PrivateState>(client, "game.privateState"));
+  const states = f.clients.map(client => rawPayload<WhoIsFakerPrivateState>(client, "game.privateState"));
   expect(new Set(states).size).toBe(f.clients.length);
   expect(new Set(states.map(state => state.sessionToken)).size).toBe(f.clients.length);
   for (const [index, state] of states.entries()) {
@@ -145,7 +145,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   assertViews(f);
   expect(clones).toEqual({ publicClones: 2, privateClones: 150 });
   const fullStates = f.clients.map(client => {
-    const sync = syncPayload<RoomSnapshot>(client, "room.snapshot");
+    const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
     expect(sync.mode).toBe("full");
     return sync.mode === "full" ? sync.state : undefined;
   });
@@ -156,7 +156,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   expect(nextClones).toEqual({ publicClones: 2, privateClones: 150 });
   for (const [index, client] of f.clients.entries()) expect(snapshot(client)).not.toBe(firstViews[index]);
   const patches = f.clients.map(client => {
-    const sync = syncPayload<RoomSnapshot>(client, "room.snapshot");
+    const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
     expect(sync.mode).toBe("patch");
     return sync.mode === "patch" ? sync.operations : undefined;
   });
@@ -169,7 +169,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   // 允许对应 remove 补丁，但编码内容不能包含新 ghost 消息。
   for (const client of f.hidden) expect(JSON.stringify(client.wire)).not.toContain("亡者秘密");
   for (const client of f.visible) {
-    expect(syncPayload<RoomSnapshot>(client, "room.snapshot").mode).toBe("patch");
+    expect(syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot").mode).toBe("patch");
     expect(snapshot(client).chat.some(message => message.text === "亡者秘密")).toBe(true);
   }
 });
@@ -177,9 +177,9 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
 test("150连接无变化校准复用权限视图且全量修复丢失补丁，两个通道均保持最终真相", async () => {
   const f = await setupViews(); f.enableEncoding();
   await f.command(f.spectators[0], { type: "chat.send", payload: { text: "观战秘密" } });
-  const initial = f.clients.map(client => syncPayload<RoomSnapshot>(client, "room.snapshot"));
+  const initial = f.clients.map(client => syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot"));
   await f.command(f.active[1], { type: "chat.send", payload: { text: "遗漏的更新" } });
-  const updated = f.clients.map(client => syncPayload<RoomSnapshot>(client, "room.snapshot"));
+  const updated = f.clients.map(client => syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot"));
   const beforeCalibration = f.clients.map(snapshot);
   f.advanceNetwork(59_999); f.clear();
   await f.service.runHousekeeping(); assertViews(f);
@@ -190,13 +190,13 @@ test("150连接无变化校准复用权限视图且全量修复丢失补丁，�
   expect(clones).toEqual({ publicClones: 2, privateClones: 150 });
   const fullStates = f.clients.map((client, index) => {
     expect(client.wire).toHaveLength(2);
-    const sync = syncPayload<RoomSnapshot>(client, "room.snapshot");
-    const privateSync = syncPayload<PrivateState>(client, "game.privateState");
+    const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
+    const privateSync = syncPayload<WhoIsFakerPrivateState>(client, "game.privateState");
     expect(sync.mode).toBe("full"); expect(privateSync.mode).toBe("full");
     expect(sync.revision).toBe(updated[index].revision); expect(privateSync.revision).toBe(1);
     if (sync.mode !== "full" || privateSync.mode !== "full") throw new Error("校准缺少全量");
     expect(sync.state).toEqual(beforeCalibration[index]); expect(sync.state).toEqual(snapshot(client));
-    expect(privateSync.state).toEqual(rawPayload<PrivateState>(client, "game.privateState"));
+    expect(privateSync.state).toEqual(rawPayload<WhoIsFakerPrivateState>(client, "game.privateState"));
     const stale = initial[index];
     if (stale.mode !== "full") throw new Error("初始基线缺少全量");
     // 消费者故意丢弃中间补丁，当前全量无需旧基线便能恢复。
@@ -216,7 +216,7 @@ test("目标同步和阶段切换重新核算ghost权限，不跨发布缓存或
     await f.command(client, { type: "room.requestSync", payload: {} });
     expect(f.clients.filter(peer => peer.raw.length > 0)).toEqual([client]);
     expect(snapshot(client).chat.some(message => message.channel === "ghost")).toBe(f.visible.includes(client));
-    expect(rawPayload<PrivateState>(client, "game.privateState").playerId).toBe(client.record.playerId!);
+    expect(rawPayload<WhoIsFakerPrivateState>(client, "game.privateState").playerId).toBe(client.record.playerId!);
     expect(JSON.stringify(snapshot(client))).not.toContain(client.sessionToken);
     expect(snapshot(client)).not.toHaveProperty("globalWords");
   }

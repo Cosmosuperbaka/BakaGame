@@ -8,7 +8,7 @@ import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { ConnectionRecord } from "../src/domain/Model";
-import type { ClientMessage } from "../src/shared/Index";
+import type { WhoIsFakerClientMessage } from "../src/shared/Index";
 
 export interface TestConnection {
   record: ConnectionRecord;
@@ -75,7 +75,7 @@ export const createConnection = (service: WhoIsFakerService, id: string): TestCo
 export const execute = async (
   service: WhoIsFakerService,
   connection: TestConnection,
-  message: ClientMessage,
+  message: WhoIsFakerClientMessage,
 ) => service.execute(connection.record.id, message);
 
 // 从测试连接里筛出某一类事件，便于断言广播结果。

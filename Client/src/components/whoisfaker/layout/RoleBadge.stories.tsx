@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
-import type { PlayerRole } from "@/types";
+import type { WhoIsFakerRole } from "@/types";
 import { RoleBadge } from "./RoleBadge";
 
 const meta = {
@@ -16,7 +16,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = { name: "调试", tags: ["no-shot"] };
 
-const ROLES = Object.keys(ROLE_LABELS) as PlayerRole[];
+const ROLES = Object.keys(ROLE_LABELS) as WhoIsFakerRole[];
 
 function Row({ label, muted = false, children }: { label: string; muted?: boolean; children: ReactNode }) {
   return (

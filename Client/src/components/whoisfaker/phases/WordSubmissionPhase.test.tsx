@@ -2,12 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PrivateState, RoomSnapshot } from "@/types";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WordSubmissionPhase } from "./WordSubmissionPhase";
 
-const player = (id: string, name: string, isHost = false): RoomSnapshot["players"][number] => ({
+const player = (id: string, name: string, isHost = false): WhoIsFakerRoomSnapshot["players"][number] => ({
   id,
   name,
   score: 0,
@@ -20,7 +20,7 @@ const player = (id: string, name: string, isHost = false): RoomSnapshot["players
 });
 
 // 主持人之外四名参与者：一名卧底、一名白板，余下两名平民。
-const snapshot: RoomSnapshot = {
+const snapshot: WhoIsFakerRoomSnapshot = {
   roomId: "1234",
   name: "房间",
   visibility: "public",
@@ -42,7 +42,7 @@ const snapshot: RoomSnapshot = {
   chat: [],
 };
 
-const privateState: PrivateState = {
+const privateState: WhoIsFakerPrivateState = {
   playerId: "host",
   sessionToken: "session",
   isQuestioner: true,
@@ -62,7 +62,7 @@ describe("word submission", () => {
 
   beforeEach(() => {
     sendCommand.mockReset().mockResolvedValue({});
-    useGameStore.setState({ snapshot, privateState, sendCommand });
+    useWhoIsFakerStore.setState({ snapshot, privateState, sendCommand });
   });
 
   it("词语输入框与随机分配开关由可见标签命名", () => {

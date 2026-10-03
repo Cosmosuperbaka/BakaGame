@@ -1,6 +1,6 @@
 ﻿import { Clock3 } from "lucide-react";
 import { cn } from "@/lib/Utils";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { RoleBadge } from "./RoleBadge";
 
@@ -9,8 +9,8 @@ interface Props {
 }
 
 export function PrivilegedActionPreview({ mode }: Props) {
-  const snapshot = useGameStore((state) => state.snapshot);
-  const privateState = useGameStore((state) => state.privateState);
+  const snapshot = useWhoIsFakerStore((state) => state.snapshot);
+  const privateState = useWhoIsFakerStore((state) => state.privateState);
   const preview = privateState?.privilegedActionPreview;
 
   if (!snapshot || !privateState?.questionerView || !preview) return null;

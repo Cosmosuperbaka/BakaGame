@@ -4,7 +4,7 @@ import { Trophy, BookOpen, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/Motion";
 import { ABSTAIN_TARGET_ID } from "@/types";
@@ -51,10 +51,10 @@ function DisclosureHeader({
 }
 
 export function GameOverPhase() {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const summary = snapshot.summary;
   const [showVotes, setShowVotes] = useState(true);
   const [returning, setReturning] = useState(false);

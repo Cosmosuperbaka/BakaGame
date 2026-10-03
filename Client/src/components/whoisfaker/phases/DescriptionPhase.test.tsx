@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PrivateState, RoomSnapshot } from "@/types";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { DescriptionPhase } from "./DescriptionPhase";
 
-const snapshot: RoomSnapshot = {
+const snapshot: WhoIsFakerRoomSnapshot = {
   roomId: "1234",
   name: "测试房间",
   visibility: "public",
@@ -68,7 +68,7 @@ const snapshot: RoomSnapshot = {
   chat: [],
 };
 
-const privateState: PrivateState = {
+const privateState: WhoIsFakerPrivateState = {
   playerId: "player_2",
   sessionToken: "session_token",
   isQuestioner: false,
@@ -95,7 +95,7 @@ describe("DescriptionPhase", () => {
         },
       },
     };
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: snapshotWithTimer,
       privateState,
       sendCommand: sendCommandMock,
@@ -108,7 +108,7 @@ describe("DescriptionPhase", () => {
     fireEvent.change(input, { target: { value: "我的词语是红色的" } });
 
     // 触发阶段超时动作
-    useGameStore.getState().triggerPhaseTimeout();
+    useWhoIsFakerStore.getState().triggerPhaseTimeout();
 
     await waitFor(() => {
       expect(sendCommandMock).toHaveBeenCalledWith("game.submitDescription", {

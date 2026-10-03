@@ -4,7 +4,7 @@ import { GAME_COMMAND_TYPES } from "../src/application/handlers/GameCommandHandl
 import { PLAYER_COMMAND_TYPES } from "../src/application/handlers/PlayerCommandHandler";
 import { ROOM_COMMAND_TYPES } from "../src/application/handlers/RoomCommandHandler";
 import { TEST_COMMAND_TYPES } from "../src/application/handlers/TestCommandHandler";
-import type { ClientMessage } from "../src/shared/Index";
+import type { WhoIsFakerClientMessage } from "../src/shared/Index";
 
 const ALL_COMMAND_TYPES = [
   "lobby.subscribeRooms",
@@ -40,10 +40,10 @@ const ALL_COMMAND_TYPES = [
   "game.requestSupplement",
   "game.startPhaseTimer",
   "game.stopPhaseTimer",
-] as const satisfies readonly ClientMessage["type"][];
+] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 type MissingCommandType = Exclude<
-  ClientMessage["type"],
+  WhoIsFakerClientMessage["type"],
   (typeof ALL_COMMAND_TYPES)[number]
 >;
 const allCommandTypesCovered: MissingCommandType extends never ? true : never = true;

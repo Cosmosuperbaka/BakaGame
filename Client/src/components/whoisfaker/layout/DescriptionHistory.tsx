@@ -9,14 +9,14 @@ import {
   type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
 import { PlayerRow, type PlayerMarks, type PlayerRowProps } from "./PlayerList";
-import type { DescriptionRecord, PlayerRole, PublicPlayerView } from "@/types";
+import type { DescriptionRecord, WhoIsFakerRole, PublicPlayerView } from "@/types";
 
 /** 传给表格首列的 PlayerRow 上下文，由调用方统一组装 */
 export type DescriptionTableContext = Omit<
   PlayerRowProps,
   "player" | "embedded" | "actualRole" | "mark"
 > & {
-  actualRoleByPlayerId: Map<string, PlayerRole>;
+  actualRoleByPlayerId: Map<string, WhoIsFakerRole>;
   playerMarks: PlayerMarks;
 };
 

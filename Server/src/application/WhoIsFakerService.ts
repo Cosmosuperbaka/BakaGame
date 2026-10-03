@@ -4,18 +4,18 @@ import type {
   ChatMessage,
   ConnectionRecord,
   DescriptionRecord,
-  GamePhase,
+  WhoIsFakerPhase,
   GameRound,
   NightActionRecord,
   PhaseTimerState,
-  PlayerRecord,
-  PlayerRole,
-  PrivateState,
+  WhoIsFakerPlayerRecord,
+  WhoIsFakerRole,
+  WhoIsFakerPrivateState,
   PublicPlayerView,
   RoleConfig,
-  RoomRecord,
-  RoomSnapshot,
-  RoomSummary,
+  WhoIsFakerRoomRecord,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerRoomSummary,
   RoundWinner,
   SpeechMode,
   TieBreakStage,
@@ -51,7 +51,7 @@ import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
 import { SERVER_SHUTDOWN_MESSAGE } from "../shared/Index";
-import type { WhoIsFakerClientMessage, ClientMessage } from "../transport/WhoIsFakerProtocol";
+import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 
 
 
@@ -88,7 +88,7 @@ export interface WhoIsFakerServiceOptions {
 export class WhoIsFakerService {
   // ==================== 房间与状态机总控 ====================
 
-  private readonly rooms = new Map<string, RoomRecord>();
+  private readonly rooms = new Map<string, WhoIsFakerRoomRecord>();
   private readonly connectionRegistry: ConnectionRegistry;
   private readonly now: () => number;
   private readonly random: RandomSource;
@@ -217,7 +217,7 @@ export class WhoIsFakerService {
     await this.handlePlayerOffline(room, connection.playerId, "disconnect");
   }
 
-  async execute(connectionId: string, message: ClientMessage): Promise<unknown> {
+  async execute(connectionId: string, message: WhoIsFakerClientMessage): Promise<unknown> {
     // 所有命令都从这里进入，方便统一做连接上下文解析与后续审计。
     const connection = this.getConnection(connectionId);
     const handler = this.commandHandlers.find((candidate) =>
@@ -329,7 +329,7 @@ export class WhoIsFakerService {
     };
   }
 
-  getRoomSummaries(): RoomSummary[] {
+  getRoomSummaries(): WhoIsFakerRoomSummary[] {
     return [...this.rooms.values()]
       // 测试房间不出现在大厅列表，避免污染正式用户视线。
       .filter((room) => room.id !== ROOM_ID_TEST_MODE)
@@ -339,7 +339,7 @@ export class WhoIsFakerService {
 
   private async handleRoomCreate(
     connection: ConnectionRecord,
-    message: Extract<ClientMessage, { type: "room.create" }>,
+    message: Extract<WhoIsFakerClientMessage, { type: "room.create" }>,
   ) {
     // 创建房间时同时把当前连接绑定为房主与首个正式玩家。
     const roomId = ensureRoomId(message.payload.roomId);
@@ -348,7 +348,7 @@ export class WhoIsFakerService {
       throw new AppError("ROOM_ALREADY_EXISTS", "房间已存在");
     }
 
-    const room: RoomRecord = {
+    const room: WhoIsFakerRoomRecord = {
       id: roomId,
       settings: {
         name: normalizeName(message.payload.name),
@@ -411,7 +411,7 @@ export class WhoIsFakerService {
 
   private async handleRoomJoin(
     connection: ConnectionRecord,
-    message: Extract<ClientMessage, { type: "room.join" }>,
+    message: Extract<WhoIsFakerClientMessage, { type: "room.join" }>,
   ) {
     // 开局后新连接默认只能作为旁观者进入，避免临时插入正式席位打乱本局。
     const roomId = ensureRoomId(message.roomId ?? "");
@@ -458,7 +458,7 @@ export class WhoIsFakerService {
 
   private async handleRoomReconnect(
     connection: ConnectionRecord,
-    message: Extract<ClientMessage, { type: "room.reconnect" }>,
+    message: Extract<WhoIsFakerClientMessage, { type: "room.reconnect" }>,
   ) {
     // 重连不会创建新玩家，只会把会话重新挂回原连接。
     const room = this.getRoom(ensureRoomId(message.payload.roomId));
@@ -496,7 +496,7 @@ export class WhoIsFakerService {
 
   private async handleUpdateSettings(
     connection: ConnectionRecord,
-    payload: Extract<ClientMessage, { type: "room.updateSettings" }>["payload"],
+    payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"],
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
 
@@ -659,7 +659,7 @@ export class WhoIsFakerService {
     connection: ConnectionRecord,
     words: [string, string],
     blankHint?: string,
-    manualRoles?: Record<string, PlayerRole>,
+    manualRoles?: Record<string, WhoIsFakerRole>,
   ) {
     // 提交词语后，真正的身份分配与词语映射都在服务端一次性完成。
     const { room, player } = this.requireRoomPlayer(connection);
@@ -753,7 +753,7 @@ export class WhoIsFakerService {
         throw new AppError("PHASE_RESULT_PENDING", "阶段结果展示中，请稍候");
       }
       this.returnRoomToWaiting(room);
-      return { phase: "waiting" as GamePhase };
+      return { phase: "waiting" as WhoIsFakerPhase };
     }
 
     if (phase === "waiting") {
@@ -1033,7 +1033,7 @@ export class WhoIsFakerService {
     return { requested: true };
   }
 
-  private completeSupplementIfReady(room: RoomRecord): boolean {
+  private completeSupplementIfReady(room: WhoIsFakerRoomRecord): boolean {
     const round = room.round;
     const supplement = round?.supplement;
     if (!round || !supplement || supplement.donePlayers.length < supplement.requestedPlayerIds.length) {
@@ -1448,7 +1448,7 @@ export class WhoIsFakerService {
     return { stopped: true };
   }
 
-  private clearPhaseTimer(room: RoomRecord): void {
+  private clearPhaseTimer(room: WhoIsFakerRoomRecord): void {
     const existing = this.phaseTimerTimeoutByRoomId.get(room.id);
     if (existing) {
       clearTimeout(existing);
@@ -1462,7 +1462,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private restoreInterruptedTimer(room: RoomRecord, remainingMs: number): void {
+  private restoreInterruptedTimer(room: WhoIsFakerRoomRecord, remainingMs: number): void {
     const round = room.round;
     if (!round) return;
     this.clearPhaseTimer(room);
@@ -1487,7 +1487,7 @@ export class WhoIsFakerService {
     this.phaseTimerTimeoutByRoomId.set(room.id, timer);
   }
 
-  private startFallbackBlankGuessTimer(room: RoomRecord, durationSeconds = 60): void {
+  private startFallbackBlankGuessTimer(room: WhoIsFakerRoomRecord, durationSeconds = 60): void {
     const round = room.round;
     if (!round || round.phase !== "blankGuess") return;
     this.clearPhaseTimer(room);
@@ -1506,7 +1506,7 @@ export class WhoIsFakerService {
 
   private async handlePhaseTimeout(
     roomId: string,
-    expectedPhase: GamePhase,
+    expectedPhase: WhoIsFakerPhase,
     expectedSpeechMode?: SpeechMode,
     expectedTieBreakStage?: TieBreakStage,
   ) {
@@ -1693,7 +1693,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private async resolveFailedBlankGuess(room: RoomRecord, message: string) {
+  private async resolveFailedBlankGuess(room: WhoIsFakerRoomRecord, message: string) {
     const round = this.requireRound(room);
     const context = round.blankGuessContext;
     if (!context) return;
@@ -1795,7 +1795,7 @@ export class WhoIsFakerService {
     return { hostPlayerId: target.id };
   }
 
-  private async handleTestJumpToPhase(connection: ConnectionRecord, target: GamePhase) {
+  private async handleTestJumpToPhase(connection: ConnectionRecord, target: WhoIsFakerPhase) {
     // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
     const { room, player } = this.requireRoomPlayer(connection);
 
@@ -1807,7 +1807,7 @@ export class WhoIsFakerService {
 
     if (target === "waiting") {
       this.returnRoomToWaiting(room);
-      return { phase: "waiting" as GamePhase };
+      return { phase: "waiting" as WhoIsFakerPhase };
     }
 
     const activeIds = Object.values(room.players)
@@ -1998,7 +1998,7 @@ export class WhoIsFakerService {
       }
       case "gameOver":
         await this.finishRound(room, "good", "手动结束本局");
-        return { phase: "gameOver" as GamePhase };
+        return { phase: "gameOver" as WhoIsFakerPhase };
     }
 
     this.touchRoom(room);
@@ -2008,7 +2008,7 @@ export class WhoIsFakerService {
     return { phase: round.phase };
   }
 
-  private async handleTestSetMyRole(connection: ConnectionRecord, role: PlayerRole) {
+  private async handleTestSetMyRole(connection: ConnectionRecord, role: WhoIsFakerRole) {
     // 仅测试房间：强制替换当前玩家在本局中的角色分配。
     const { room, player } = this.requireRoomPlayer(connection);
 
@@ -2058,7 +2058,7 @@ export class WhoIsFakerService {
 
   /**
    * 测试房间：批量补入机器人玩家。
-   * 机器人是真实的 PlayerRecord，走与真人完全相同的规则校验，
+   * 机器人是真实的 WhoIsFakerPlayerRecord，走与真人完全相同的规则校验，
    * 只是没有连接、由 runBots 代为提交发言/投票/夜晚行动。
    */
   private async handleTestAddBot(connection: ConnectionRecord, count: number) {
@@ -2131,14 +2131,14 @@ export class WhoIsFakerService {
     return { removed: targets.map((bot) => bot.id) };
   }
 
-  private ensureTestRoom(room: RoomRecord) {
+  private ensureTestRoom(room: WhoIsFakerRoomRecord) {
     if (room.id !== ROOM_ID_TEST_MODE) {
       throw new AppError("FORBIDDEN", "仅测试房间允许管理机器人");
     }
   }
 
   /** 机器人取「机器人A」这类不重名的名字，便于在玩家列里区分。 */
-  private pickBotName(room: RoomRecord) {
+  private pickBotName(room: WhoIsFakerRoomRecord) {
     const used = new Set(Object.values(room.players).map((player) => player.name));
 
     for (const suffix of BOT_NAME_SUFFIXES) {
@@ -2158,13 +2158,13 @@ export class WhoIsFakerService {
     return `机器人${index}`;
   }
 
-  private broadcastPhaseAndPublish(room: RoomRecord) {
+  private broadcastPhaseAndPublish(room: WhoIsFakerRoomRecord) {
     // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
     this.requeuePendingDisconnects(room);
     this.publishRoomState(room);
   }
 
-  private async startRound(room: RoomRecord) {
+  private async startRound(room: WhoIsFakerRoomRecord) {
     this.clearPhaseTimer(room);
     room.roundCount = (room.roundCount ?? 0) + 1;
     // 每次开局都创建全新的 round 对象，避免上一局残留状态污染新局。
@@ -2201,7 +2201,7 @@ export class WhoIsFakerService {
     this.publishRoomState(room);
   }
 
-  private returnRoomToWaiting(room: RoomRecord) {
+  private returnRoomToWaiting(room: WhoIsFakerRoomRecord) {
     this.clearPhaseTimer(room);
     this.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
     room.round = undefined;
@@ -2215,7 +2215,7 @@ export class WhoIsFakerService {
     this.publishLobby();
   }
 
-  private async resolveVoting(room: RoomRecord, tieBreak: boolean) {
+  private async resolveVoting(room: WhoIsFakerRoomRecord, tieBreak: boolean) {
     // 这个方法只负责“投票结算”，真正的胜负判断交给后续统一淘汰流程。
     const round = this.requireRound(room);
     const votes = tieBreak ? round.tieBreak?.votes ?? [] : round.votes;
@@ -2280,7 +2280,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private async resolveNight(room: RoomRecord) {
+  private async resolveNight(room: WhoIsFakerRoomRecord) {
     // 夜晚结算会先产生淘汰结果，再决定是否插入白板猜词或直接结算胜负。
     const round = this.requireRound(room);
 
@@ -2329,7 +2329,7 @@ export class WhoIsFakerService {
     });
   }
 
-  private tryTransitionToFinaleBlankGuess(room: RoomRecord): boolean {
+  private tryTransitionToFinaleBlankGuess(room: WhoIsFakerRoomRecord): boolean {
     // 被淘汰不自动触发猜词：白板自己决定何时用掉这一次机会（game.enterBlankGuess）。
     // 这里只保留「残局触发」：其他阵营已满足胜负条件但白板仍存活时，
     // 在结算前强制补一次猜词。
@@ -2353,10 +2353,10 @@ export class WhoIsFakerService {
   }
 
   private async applyEliminationAndMove(
-    room: RoomRecord,
+    room: WhoIsFakerRoomRecord,
     eliminatedIds: string[],
     reason: string,
-    nextPhase: Exclude<GamePhase, "assigningQuestioner" | "wordSubmission">,
+    nextPhase: Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">,
   ) {
     // 所有“有人出局”的阶段都汇总到这里，统一做淘汰、白板插入和胜负判断。
     const round = this.requireRound(room);
@@ -2385,7 +2385,7 @@ export class WhoIsFakerService {
     round.nightActions = [];
   }
 
-  private async finishRound(room: RoomRecord, winner: RoundWinner, reason: string) {
+  private async finishRound(room: WhoIsFakerRoomRecord, winner: RoundWinner, reason: string) {
     this.clearPhaseTimer(room);
     // 结算时既要给分，也要冻结当局摘要，供房间页在局后复盘。
     const round = this.requireRound(room);
@@ -2476,7 +2476,7 @@ export class WhoIsFakerService {
   }
 
   private async handlePlayerOffline(
-    room: RoomRecord,
+    room: WhoIsFakerRoomRecord,
     playerId: string,
     reason: "disconnect" | "leave",
   ) {
@@ -2592,11 +2592,11 @@ export class WhoIsFakerService {
    * 空房是否应当自动关闭。测试房间要能在最后一人刷新页面后仍然存在，
    * 否则每次刷新都会丢掉正在调试的房间状态。
    */
-  private shouldAutoCloseWhenEmpty(room: RoomRecord) {
+  private shouldAutoCloseWhenEmpty(room: WhoIsFakerRoomRecord) {
     return room.id !== ROOM_ID_TEST_MODE;
   }
 
-  private async forceRemovePlayer(room: RoomRecord, playerId: string, reason: string) {
+  private async forceRemovePlayer(room: WhoIsFakerRoomRecord, playerId: string, reason: string) {
     // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
     const player = room.players[playerId];
     let preservedVotes: GameRound["votes"] | undefined;
@@ -2774,7 +2774,7 @@ export class WhoIsFakerService {
     });
   }
 
-  private async closeRoom(room: RoomRecord, reason: string) {
+  private async closeRoom(room: WhoIsFakerRoomRecord, reason: string) {
     this.clearPhaseTimer(room);
     // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
@@ -2802,7 +2802,7 @@ export class WhoIsFakerService {
     this.publishLobby();
   }
 
-  private buildRoomSummary(room: RoomRecord): RoomSummary {
+  private buildRoomSummary(room: WhoIsFakerRoomRecord): WhoIsFakerRoomSummary {
     const activeCount = Object.values(room.players).filter(
       (player) => player.membership === "active" && player.online,
     ).length;
@@ -2905,7 +2905,7 @@ export class WhoIsFakerService {
     ];
   }
 
-  private buildRoomSnapshot(room: RoomRecord): RoomSnapshot {
+  private buildRoomSnapshot(room: WhoIsFakerRoomRecord): WhoIsFakerRoomSnapshot {
     // 快照是前端渲染主数据源，尽量保证“一包就够渲染当前房间”。
     const speechState = room.round ? this.getCurrentSpeechState(room.round) : undefined;
 
@@ -2963,7 +2963,7 @@ export class WhoIsFakerService {
     };
   }
 
-  private buildPublicPlayers(room: RoomRecord): PublicPlayerView[] {
+  private buildPublicPlayers(room: WhoIsFakerRoomRecord): PublicPlayerView[] {
     return Object.values(room.players)
       .sort((left, right) => left.joinedAt - right.joinedAt)
       .map((player) => {
@@ -3004,7 +3004,7 @@ export class WhoIsFakerService {
       });
   }
 
-  private buildPrivateState(room: RoomRecord, player: PlayerRecord): PrivateState {
+  private buildPrivateState(room: WhoIsFakerRoomRecord, player: WhoIsFakerPlayerRecord): WhoIsFakerPrivateState {
     // 房间公共快照永远不包含秘密信息，私有视图单独按连接发放。
     const round = room.round;
     const state = round?.assignments[player.id];
@@ -3082,7 +3082,7 @@ export class WhoIsFakerService {
     };
   }
 
-  private canViewerAccessGhostChat(room: RoomRecord, player?: PlayerRecord): boolean {
+  private canViewerAccessGhostChat(room: WhoIsFakerRoomRecord, player?: WhoIsFakerPlayerRecord): boolean {
     if (
       !room.round ||
       !["description", "voting", "tieBreak", "night", "blankGuess"].includes(room.round.phase)
@@ -3100,11 +3100,11 @@ export class WhoIsFakerService {
     return false;
   }
 
-  private createRoomSnapshotViewSelector(room: RoomRecord, snapshot: RoomSnapshot) {
+  private createRoomSnapshotViewSelector(room: WhoIsFakerRoomRecord, snapshot: WhoIsFakerRoomSnapshot) {
     // 缓存只活在本次同步发布中；同权限连接共用只读投影，不能跨房间/阶段复用。
     const fullSnapshot = Object.freeze(snapshot);
-    let mainChatSnapshot: Readonly<RoomSnapshot> | undefined;
-    return (player?: PlayerRecord): Readonly<RoomSnapshot> => {
+    let mainChatSnapshot: Readonly<WhoIsFakerRoomSnapshot> | undefined;
+    return (player?: WhoIsFakerPlayerRecord): Readonly<WhoIsFakerRoomSnapshot> => {
       if (this.canViewerAccessGhostChat(room, player)) {
         return fullSnapshot;
       }
@@ -3116,7 +3116,7 @@ export class WhoIsFakerService {
     };
   }
 
-  private publishRoomState(room: RoomRecord, targetConnection?: ConnectionRecord) {
+  private publishRoomState(room: WhoIsFakerRoomRecord, targetConnection?: ConnectionRecord) {
     // 每次状态变化都同时推送公共快照与当前连接的私有视图。
     const snapshot = this.buildRoomSnapshot(room);
 
@@ -3150,7 +3150,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private publishRoomStateCalibration(room: RoomRecord) {
+  private publishRoomStateCalibration(room: WhoIsFakerRoomRecord) {
     const snapshot = this.buildRoomSnapshot(room);
     const selectSnapshot = this.createRoomSnapshotViewSelector(room, snapshot);
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
@@ -3173,13 +3173,13 @@ export class WhoIsFakerService {
     );
   }
 
-  private broadcastRoomEvent(room: RoomRecord, event: string, payload: unknown) {
+  private broadcastRoomEvent(room: WhoIsFakerRoomRecord, event: string, payload: unknown) {
     this.connectionRegistry.broadcastToRoom(room.id, createEvent(event, payload));
   }
 
   private attachConnection(
-    room: RoomRecord,
-    player: PlayerRecord,
+    room: WhoIsFakerRoomRecord,
+    player: WhoIsFakerPlayerRecord,
     connection: ConnectionRecord,
   ) {
     // 目标先校验；旧席位断线状态和新绑定在首次 await 前完成，防止并发建房/同名加入穿透。
@@ -3213,17 +3213,17 @@ export class WhoIsFakerService {
     return previousRoomUpdate;
   }
 
-  private getOnlineCount(room: RoomRecord) {
+  private getOnlineCount(room: WhoIsFakerRoomRecord) {
     return Object.values(room.players).filter((player) => player.online).length;
   }
 
-  private getActivePlayerIds(room: RoomRecord) {
+  private getActivePlayerIds(room: WhoIsFakerRoomRecord) {
     return Object.values(room.players)
       .filter((player) => player.membership === "active")
       .map((player) => player.id);
   }
 
-  private getConfigurableParticipantCount(room: RoomRecord) {
+  private getConfigurableParticipantCount(room: WhoIsFakerRoomRecord) {
     const activeIds = this.getActivePlayerIds(room);
     const hasOnlineSpectator = Object.values(room.players).some(
       (player) => player.membership === "spectator" && player.online,
@@ -3236,7 +3236,7 @@ export class WhoIsFakerService {
     return Math.max(activeIds.length - (activeIds.length > 0 ? 1 : 0), 0);
   }
 
-  private getParticipantCount(room: RoomRecord, questionerId?: string) {
+  private getParticipantCount(room: WhoIsFakerRoomRecord, questionerId?: string) {
     const activeIds = this.getActivePlayerIds(room);
 
     if (!questionerId) {
@@ -3252,7 +3252,7 @@ export class WhoIsFakerService {
     return Math.max(activeIds.filter((playerId) => playerId !== questionerId).length, 0);
   }
 
-  private getAssignableQuestionerCandidates(room: RoomRecord) {
+  private getAssignableQuestionerCandidates(room: WhoIsFakerRoomRecord) {
     return Object.values(room.players).filter(
       (player) =>
         player.online &&
@@ -3260,7 +3260,7 @@ export class WhoIsFakerService {
     );
   }
 
-  private hasValidQuestionerCandidate(room: RoomRecord) {
+  private hasValidQuestionerCandidate(room: WhoIsFakerRoomRecord) {
     return this.getAssignableQuestionerCandidates(room).some((candidate) =>
       isRoleConfigSatisfied(
         room.settings.roleConfig,
@@ -3282,14 +3282,14 @@ export class WhoIsFakerService {
     };
   }
 
-  private normalizeRoomRoleConfig(room: RoomRecord) {
+  private normalizeRoomRoleConfig(room: WhoIsFakerRoomRecord) {
     room.settings.roleConfig = this.clampRoleConfig(
       room.settings.roleConfig,
       this.getConfigurableParticipantCount(room),
     );
   }
 
-  private ensureAllReady(room: RoomRecord) {
+  private ensureAllReady(room: WhoIsFakerRoomRecord) {
     const everyoneReady = Object.values(room.players)
       .filter((player) => player.membership === "active")
       .every((player) => player.isReady);
@@ -3299,7 +3299,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private ensureMinimumPlayers(room: RoomRecord) {
+  private ensureMinimumPlayers(room: WhoIsFakerRoomRecord) {
     const activeCount = Object.values(room.players).filter(
       (player) => player.membership === "active",
     ).length;
@@ -3333,7 +3333,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private ensureCanVote(room: RoomRecord, voterId: string, targetId: string, tieBreak: boolean) {
+  private ensureCanVote(room: WhoIsFakerRoomRecord, voterId: string, targetId: string, tieBreak: boolean) {
     const round = this.requireRound(room);
     const voter = round.assignments[voterId];
     const target = round.assignments[targetId];
@@ -3365,7 +3365,7 @@ export class WhoIsFakerService {
     return aliveIds.every((playerId) => round.descriptionSubmittedBy.includes(playerId));
   }
 
-  private isTieBreakDescriptionComplete(room: RoomRecord) {
+  private isTieBreakDescriptionComplete(room: WhoIsFakerRoomRecord) {
     const round = this.requireRound(room);
     const candidates = round.tieBreak?.candidateIds ?? [];
 
@@ -3376,7 +3376,7 @@ export class WhoIsFakerService {
     );
   }
 
-  private isVotingComplete(room: RoomRecord, tieBreak: boolean) {
+  private isVotingComplete(room: WhoIsFakerRoomRecord, tieBreak: boolean) {
     const round = this.requireRound(room);
     const aliveIds = this.getAliveAssignedPlayerIds(room);
 
@@ -3390,7 +3390,7 @@ export class WhoIsFakerService {
     return aliveIds.every((playerId) => round.votes.some((vote) => vote.voterId === playerId));
   }
 
-  private isNightActionComplete(room: RoomRecord) {
+  private isNightActionComplete(room: WhoIsFakerRoomRecord) {
     const round = this.requireRound(room);
     const actorIds = Object.entries(round.assignments)
       .filter(
@@ -3404,13 +3404,13 @@ export class WhoIsFakerService {
     );
   }
 
-  private getAliveAssignedPlayerIds(room: RoomRecord) {
+  private getAliveAssignedPlayerIds(room: WhoIsFakerRoomRecord) {
     return Object.entries(this.requireRound(room).assignments)
       .filter(([, state]) => state.alive)
       .map(([playerId]) => playerId);
   }
 
-  private createDescriptionOrder(room: RoomRecord) {
+  private createDescriptionOrder(room: WhoIsFakerRoomRecord) {
     const round = this.requireRound(room);
     const order = shuffle(this.getAliveAssignedPlayerIds(room), this.random);
 
@@ -3445,7 +3445,7 @@ export class WhoIsFakerService {
   }
 
   private createDescription(
-    player: Pick<PlayerRecord, "id" | "name">,
+    player: Pick<WhoIsFakerPlayerRecord, "id" | "name">,
     text: string,
     kind: DescriptionRecord["kind"],
     cycle: number,
@@ -3485,12 +3485,12 @@ export class WhoIsFakerService {
     };
   }
 
-  private appendSystemMessage(room: RoomRecord, text: string) {
+  private appendSystemMessage(room: WhoIsFakerRoomRecord, text: string) {
     room.chat.push(this.createChatMessage("system", "系统", text, true, "main"));
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
 
-  private describePhaseChange(snapshot: RoomSnapshot, room: RoomRecord): string {
+  private describePhaseChange(snapshot: WhoIsFakerRoomSnapshot, room: WhoIsFakerRoomRecord): string {
     const phase = snapshot.status.phase;
     if (phase === "waiting") {
       return "已返回房间中";
@@ -3526,14 +3526,14 @@ export class WhoIsFakerService {
     return `已进入${phase}`;
   }
 
-  private getPhaseNoticeKey(snapshot: RoomSnapshot) {
+  private getPhaseNoticeKey(snapshot: WhoIsFakerRoomSnapshot) {
     const { phase, day, speechMode, tieBreakStage, supplementIndex } = snapshot.status;
     return [phase, day, speechMode, tieBreakStage, supplementIndex].join(":");
   }
 
   private async restorePlayerConnection(
-    room: RoomRecord,
-    player: PlayerRecord,
+    room: WhoIsFakerRoomRecord,
+    player: WhoIsFakerPlayerRecord,
     connection: ConnectionRecord,
     options: {
       appendMessage: string;
@@ -3581,7 +3581,7 @@ export class WhoIsFakerService {
    * 掉线不影响本阶段推进，暂停只会白等。这类玩家在下一个需要其操作的阶段
    * 由 requeuePendingDisconnects 重新入队。
    */
-  private shouldQueueDisconnectForDecision(round: GameRound, player: PlayerRecord) {
+  private shouldQueueDisconnectForDecision(round: GameRound, player: WhoIsFakerPlayerRecord) {
     if (player.membership !== "active") {
       return false;
     }
@@ -3635,7 +3635,7 @@ export class WhoIsFakerService {
    * 阶段推进后重新检查掉线玩家：上一阶段被放过的人，
    * 到了需要他操作的阶段就必须在这里补上暂停，否则会永远无人过问。
    */
-  private requeuePendingDisconnects(room: RoomRecord) {
+  private requeuePendingDisconnects(room: WhoIsFakerRoomRecord) {
     const round = room.round;
 
     if (!round || round.phase === "gameOver") {
@@ -3675,8 +3675,8 @@ export class WhoIsFakerService {
   }
 
   private getResumePhaseAfterForcedRemoval(
-    phase: GamePhase,
-  ): Exclude<GamePhase, "assigningQuestioner" | "wordSubmission"> {
+    phase: WhoIsFakerPhase,
+  ): Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission"> {
     if (
       phase === "description" ||
       phase === "voting" ||
@@ -3698,7 +3698,7 @@ export class WhoIsFakerService {
    * 出口，全房会永远停在这一阶段。所以离场时必须就地结束：残局条件已定的
    * 按该条件结算，否则退回发起猜词时的阶段继续游戏。
    */
-  private async resolveAbandonedBlankGuess(room: RoomRecord) {
+  private async resolveAbandonedBlankGuess(room: WhoIsFakerRoomRecord) {
     const round = room.round;
 
     if (round?.phase !== "blankGuess" || !round.blankGuessContext) {
@@ -3739,7 +3739,7 @@ export class WhoIsFakerService {
     this.appendSystemMessage(room, "白板已离场，本次猜词作废，游戏继续");
   }
 
-  private async maybeAbortRoundAfterRosterChange(room: RoomRecord) {
+  private async maybeAbortRoundAfterRosterChange(room: WhoIsFakerRoomRecord) {
     const round = room.round;
 
     if (!round || round.phase === "gameOver") {
@@ -3764,7 +3764,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private createPlayer(name: string, isBot: boolean): PlayerRecord {
+  private createPlayer(name: string, isBot: boolean): WhoIsFakerPlayerRecord {
     const normalized = normalizeName(name);
 
     if (!normalized) {
@@ -3794,7 +3794,7 @@ export class WhoIsFakerService {
     return `${prefix}_${this.idCounter.toString(36)}`;
   }
 
-  private touchRoom(room: RoomRecord) {
+  private touchRoom(room: WhoIsFakerRoomRecord) {
     room.updatedAt = this.now();
     room.lastActivityAt = this.now();
   }
@@ -3817,7 +3817,7 @@ export class WhoIsFakerService {
     return room;
   }
 
-  private requireRound(room: RoomRecord) {
+  private requireRound(room: WhoIsFakerRoomRecord) {
     if (!room.round) {
       throw new AppError("ROUND_NOT_STARTED", "当前房间尚未开始游戏");
     }
@@ -3840,7 +3840,7 @@ export class WhoIsFakerService {
     return { room, player };
   }
 
-  private ensureHost(room: RoomRecord, playerId: string) {
+  private ensureHost(room: WhoIsFakerRoomRecord, playerId: string) {
     if (room.hostPlayerId !== playerId) {
       throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
     }
@@ -3852,7 +3852,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private ensureUniqueName(room: RoomRecord, name: string, exceptPlayerId?: string) {
+  private ensureUniqueName(room: WhoIsFakerRoomRecord, name: string, exceptPlayerId?: string) {
     const normalized = normalizeName(name);
 
     if (
@@ -3865,7 +3865,7 @@ export class WhoIsFakerService {
   }
 
   private ensurePasswordMatch(
-    room: RoomRecord,
+    room: WhoIsFakerRoomRecord,
     password: string | null | undefined,
     connection: ConnectionRecord,
   ) {
@@ -3891,7 +3891,7 @@ export class WhoIsFakerService {
     return normalized;
   }
 
-  private reassignHost(room: RoomRecord) {
+  private reassignHost(room: WhoIsFakerRoomRecord) {
     const candidates = Object.values(room.players).filter(
       (player) => player.membership !== "kicked",
     );
@@ -3918,7 +3918,7 @@ export class WhoIsFakerService {
     }
   }
 
-  private async transferHostAfterDisconnect(room: RoomRecord) {
+  private async transferHostAfterDisconnect(room: WhoIsFakerRoomRecord) {
     const previousHostId = room.hostPlayerId;
     const previousHost = room.players[previousHostId];
 
@@ -3958,7 +3958,7 @@ export class WhoIsFakerService {
     this.publishLobby();
   }
 
-  private isRoundActive(room: RoomRecord) {
+  private isRoundActive(room: WhoIsFakerRoomRecord) {
     return Boolean(room.round && room.round.phase !== "gameOver");
   }
 
@@ -3973,7 +3973,7 @@ export class WhoIsFakerService {
    * 只补「阻塞推进」的提交，不代替出题人推进阶段：
    * 测试房间要能停在每个阶段观察 UI。
    */
-  private async runBots(room: RoomRecord) {
+  private async runBots(room: WhoIsFakerRoomRecord) {
     const round = room.round;
 
     if (!round || round.phase === "gameOver") {
@@ -4116,7 +4116,7 @@ export class WhoIsFakerService {
 
   /** 机器人投票：在合法目标里随机取一个，取不到就弃票。 */
   private pickBotVoteTarget(
-    room: RoomRecord,
+    room: WhoIsFakerRoomRecord,
     round: GameRound,
     botId: string,
     tieBreak: boolean,
@@ -4133,7 +4133,7 @@ export class WhoIsFakerService {
   }
 
   /** 机器人卧底的夜晚目标：随机一个非自己的存活玩家。 */
-  private pickBotNightTarget(room: RoomRecord, botId: string) {
+  private pickBotNightTarget(room: WhoIsFakerRoomRecord, botId: string) {
     const candidates = this.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
 
     if (candidates.length === 0) {

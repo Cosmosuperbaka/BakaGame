@@ -7,9 +7,9 @@ import {
   clearSessionToken,
 } from "@/lib/Storage";
 import type {
-  RoomSnapshot,
-  PrivateState,
-  RoomSummary,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerPrivateState,
+  WhoIsFakerRoomSummary,
   ServerMessage,
   EventPacket,
   DaybreakNotice,
@@ -26,11 +26,11 @@ export interface WhoIsFakerGameState {
   connected: boolean;
   /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
   lobbyReady: boolean;
-  rooms: RoomSummary[];
+  rooms: WhoIsFakerRoomSummary[];
   roomId: string | null;
   sessionToken: string | null;
-  snapshot: RoomSnapshot | null;
-  privateState: PrivateState | null;
+  snapshot: WhoIsFakerRoomSnapshot | null;
+  privateState: WhoIsFakerPrivateState | null;
   phaseResultPresentationPending: boolean;
   daybreakNotice: DaybreakNotice | null;
   toasts: ToastItem[];
@@ -43,15 +43,15 @@ export interface WhoIsFakerGameState {
 
   // Actions
   setConnected: (connected: boolean) => void;
-  setRooms: (rooms: RoomSummary[]) => void;
+  setRooms: (rooms: WhoIsFakerRoomSummary[]) => void;
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
   markRoomClosed: () => void;
   clearRoomClosed: () => void;
   triggerPhaseTimeout: () => void;
-  setSnapshot: (snapshot: RoomSnapshot | null) => void;
-  applyIncomingSnapshot: (snapshot: RoomSnapshot | null) => void;
-  setPrivateState: (privateState: PrivateState | null) => void;
+  setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
+  applyIncomingSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
+  setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
   showDaybreakNotice: (notice: DaybreakNotice) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
@@ -73,15 +73,14 @@ export interface WhoIsFakerGameState {
   sendCommand: (type: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
 
-export type GameState = WhoIsFakerGameState;
 
 let toastCounter = 0;
 let daybreakNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
-let syncedSnapshot: RoomSnapshot | null = null;
-let pendingGameOverSnapshot: RoomSnapshot | null = null;
+let syncedSnapshot: WhoIsFakerRoomSnapshot | null = null;
+let pendingGameOverSnapshot: WhoIsFakerRoomSnapshot | null = null;
 let phaseResultVisibleUntil = 0;
 let phaseResultTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -105,10 +104,10 @@ const clearPhaseResultPresentation = () => {
 const MAX_CHAT_MESSAGES = 200;
 
 const mergeChat = (
-  existing: RoomSnapshot["chat"] = [],
-  incoming: RoomSnapshot["chat"] = [],
-): RoomSnapshot["chat"] => {
-  const map = new Map<string, RoomSnapshot["chat"][number]>();
+  existing: WhoIsFakerRoomSnapshot["chat"] = [],
+  incoming: WhoIsFakerRoomSnapshot["chat"] = [],
+): WhoIsFakerRoomSnapshot["chat"] => {
+  const map = new Map<string, WhoIsFakerRoomSnapshot["chat"][number]>();
   for (const msg of existing) {
     map.set(msg.id, msg);
   }
@@ -118,7 +117,7 @@ const mergeChat = (
   return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
 };
 
-const isSameRound = (left: RoomSnapshot | null, right: RoomSnapshot) =>
+const isSameRound = (left: WhoIsFakerRoomSnapshot | null, right: WhoIsFakerRoomSnapshot) =>
   Boolean(
     left &&
     left.roomId === right.roomId &&
@@ -126,7 +125,7 @@ const isSameRound = (left: RoomSnapshot | null, right: RoomSnapshot) =>
     left.status.roundId === right.status.roundId,
   );
 
-const hasNewElimination = (previous: RoomSnapshot, next: RoomSnapshot) => {
+const hasNewElimination = (previous: WhoIsFakerRoomSnapshot, next: WhoIsFakerRoomSnapshot) => {
   const previousStatuses = new Map(
     previous.players.map((player) => [player.id, player.roundStatus]),
   );
@@ -146,7 +145,7 @@ let lastPlayerChannel: "main" | "ghost" | undefined;
 let lastRoomAndRoundKey: string | undefined;
 
 const computePlayerChannel = (
-  snapshot: RoomSnapshot | null,
+  snapshot: WhoIsFakerRoomSnapshot | null,
   playerId: string | null | undefined,
 ): "main" | "ghost" => {
   if (!snapshot || !playerId) return "main";
@@ -164,9 +163,9 @@ const computePlayerChannel = (
 };
 
 const applyChannelTransitions = (
-  snapshot: RoomSnapshot,
+  snapshot: WhoIsFakerRoomSnapshot,
   playerId: string | null | undefined,
-): RoomSnapshot => {
+): WhoIsFakerRoomSnapshot => {
   if (!playerId) return snapshot;
   const currentKey = `${snapshot.roomId}:${snapshot.status.roundId ?? snapshot.status.phase ?? "lobby"}`;
   const nextChannel = computePlayerChannel(snapshot, playerId);
@@ -175,7 +174,7 @@ const applyChannelTransitions = (
     lastRoomAndRoundKey = currentKey;
     lastPlayerChannel = nextChannel;
     if (nextChannel === "ghost") {
-      const notice: RoomSnapshot["chat"][number] = {
+      const notice: WhoIsFakerRoomSnapshot["chat"][number] = {
         id: `local-chan-init-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         playerId: "system",
         playerName: "系统",
@@ -194,7 +193,7 @@ const applyChannelTransitions = (
       nextChannel === "ghost"
         ? "已进入观战频道，发言仅对淘汰玩家与观战者可见"
         : "已返回公共聊天频道，所有玩家均可见发言";
-    const notice: RoomSnapshot["chat"][number] = {
+    const notice: WhoIsFakerRoomSnapshot["chat"][number] = {
       id: `local-chan-trans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       playerId: "system",
       playerName: "系统",
@@ -377,8 +376,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     const res = await ws.send<{
       roomId?: string;
       sessionToken: string;
-      snapshot?: RoomSnapshot;
-      privateState?: PrivateState;
+      snapshot?: WhoIsFakerRoomSnapshot;
+      privateState?: WhoIsFakerPrivateState;
     }>("room.create", params);
 
     const roomId = res.roomId ?? params.roomId;
@@ -392,8 +391,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
     const res = await ws.send<{
       roomId?: string;
       sessionToken: string;
-      snapshot?: RoomSnapshot;
-      privateState?: PrivateState;
+      snapshot?: WhoIsFakerRoomSnapshot;
+      privateState?: WhoIsFakerPrivateState;
     }>("room.join", { userName, password }, { roomId });
 
     const canonicalRoomId = res.roomId ?? roomId;
@@ -411,8 +410,8 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
       const res = await ws.send<{
         roomId?: string;
         sessionToken: string;
-        snapshot?: RoomSnapshot;
-        privateState?: PrivateState;
+        snapshot?: WhoIsFakerRoomSnapshot;
+        privateState?: WhoIsFakerPrivateState;
       }>("room.reconnect", { roomId, sessionToken: token });
 
       const canonicalRoomId = res.roomId ?? roomId;
@@ -473,7 +472,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => ({
   },
 }));
 
-export const useGameStore = useWhoIsFakerStore;
 
 export function initWhoIsFakerWs() {
   const unsubMsg = ws.onMessage((msg: ServerMessage) => {
@@ -483,7 +481,7 @@ export function initWhoIsFakerWs() {
 
     switch (evt.event) {
       case "lobby.rooms":
-        currentStore.setRooms(evt.payload as RoomSummary[]);
+        currentStore.setRooms(evt.payload as WhoIsFakerRoomSummary[]);
         break;
       case "room.snapshot":
         {
@@ -497,7 +495,7 @@ export function initWhoIsFakerWs() {
             break;
           }
           snapshotRevision = result.revision;
-          syncedSnapshot = result.state as RoomSnapshot;
+          syncedSnapshot = result.state as WhoIsFakerRoomSnapshot;
           currentStore.setSnapshot(syncedSnapshot);
         }
         break;
@@ -513,7 +511,7 @@ export function initWhoIsFakerWs() {
             break;
           }
           privateStateRevision = result.revision;
-          currentStore.setPrivateState(result.state as PrivateState);
+          currentStore.setPrivateState(result.state as WhoIsFakerPrivateState);
         }
         break;
       case "game.daybreak":

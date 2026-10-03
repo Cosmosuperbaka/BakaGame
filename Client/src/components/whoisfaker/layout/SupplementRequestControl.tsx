@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { spring, tappable } from "@/lib/Motion";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
 interface Props {
@@ -15,10 +15,10 @@ interface Props {
 }
 
 export function SupplementRequestControl({ canRequest, action }: Props) {
-  const snapshot = useGameStore((state) => state.snapshot)!;
-  const privateState = useGameStore((state) => state.privateState);
-  const sendCommand = useGameStore((state) => state.sendCommand);
-  const addToast = useGameStore((state) => state.addToast);
+  const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
+  const privateState = useWhoIsFakerStore((state) => state.privateState);
+  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
+  const addToast = useWhoIsFakerStore((state) => state.addToast);
   const ownAction = usePhaseAction();
   const { run, busy } = action ?? ownAction;
   const [open, setOpen] = useState(false);

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RoleBadge } from "@/components/whoisfaker/layout/RoleBadge";
-import type { PlayerRole } from "@/types";
+import type { WhoIsFakerRole } from "@/types";
 import { ScoreTable, type ScoreTableColumn } from "./ScoreTable";
 
 // 三个游戏的结算各自在房间页与阶段故事里出现；这里在接近手机内容宽度的框里看折行与对齐。
@@ -23,7 +23,7 @@ const ROLE_ROWS = [
   { name: "长名字的平民玩家会折成两行", role: "civilian", delta: 1, total: 7 },
   { name: "阿紫", role: "angel", delta: 2, total: 4 },
   { name: "小白", role: "blank", delta: 0, total: 0 },
-] satisfies Array<{ name: string; role: PlayerRole; delta: number; total: number }>;
+] satisfies Array<{ name: string; role: WhoIsFakerRole; delta: number; total: number }>;
 
 /** 谁是卧底的身份列：徽章左对齐，零分不补「+」，长拉丁名与长中文名都在名字列内断开。 */
 export const RoleColumn: Story = {

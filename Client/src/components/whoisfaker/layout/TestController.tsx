@@ -3,15 +3,15 @@ import { motion } from "framer-motion";
 import { FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable, spring } from "@/lib/Motion";
-import type { GamePhase, PlayerRole } from "@/types";
+import type { WhoIsFakerPhase, WhoIsFakerRole } from "@/types";
 
 /** 观察视角。测试房间通过真实的旁观/出题人指令切换，不再本地伪造。 */
 type TestPerspective = "player" | "questioner" | "spectator";
 
-const PHASES: GamePhase[] = [
+const PHASES: WhoIsFakerPhase[] = [
   "waiting",
   "assigningQuestioner",
   "wordSubmission",
@@ -23,15 +23,15 @@ const PHASES: GamePhase[] = [
   "gameOver",
 ];
 
-const ROLES: PlayerRole[] = ["civilian", "undercover", "angel", "blank"];
+const ROLES: WhoIsFakerRole[] = ["civilian", "undercover", "angel", "blank"];
 
 export function TestController() {
   const [open, setOpen] = useState(true);
 
-  const snapshot = useGameStore((s) => s.snapshot);
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot);
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const currentPhase = snapshot?.status.phase;
 
   // 所有控制都走真实指令，失败就报错，不再退回本地伪造状态：
@@ -48,12 +48,12 @@ export function TestController() {
   );
 
   const handleJumpPhase = useCallback(
-    (phase: GamePhase) => run("test.jumpToPhase", { phase }),
+    (phase: WhoIsFakerPhase) => run("test.jumpToPhase", { phase }),
     [run],
   );
 
   const handleSetRole = useCallback(
-    (role: PlayerRole) => run("test.setMyRole", { role }),
+    (role: WhoIsFakerRole) => run("test.setMyRole", { role }),
     [run],
   );
 

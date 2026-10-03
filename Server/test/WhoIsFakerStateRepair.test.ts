@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { ClientMessage } from "../src/shared/Index";
-import type { PrivateState, RoomSnapshot, RoomRecord, PlayerRole } from "../src/domain/Model";
+import type { WhoIsFakerClientMessage } from "../src/shared/Index";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot, WhoIsFakerRoomRecord, WhoIsFakerRole } from "../src/domain/Model";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
@@ -20,16 +20,16 @@ const setupRound = async (roomId = "8920", botCount = 0) => {
     participants.push(connection);
   }
   let id = 0;
-  const command = (connection: typeof questioner, message: WithoutId<ClientMessage>) =>
-    execute(service, connection, { ...message, id: `cmd-${++id}` } as ClientMessage);
+  const command = (connection: typeof questioner, message: WithoutId<WhoIsFakerClientMessage>) =>
+    execute(service, connection, { ...message, id: `cmd-${++id}` } as WhoIsFakerClientMessage);
   if (botCount) await command(questioner, { type: "test.addBot", payload: { count: botCount } });
   await command(questioner, { type: "room.updateSettings", payload: { roleConfig: { undercoverCount: 1, hasBlank: true, hasAngel: false } } });
   for (const c of [questioner, ...participants]) await command(c, { type: "player.setReady", payload: { ready: true } });
   await command(questioner, { type: "game.advancePhase", payload: {} });
   await command(questioner, { type: "game.assignQuestioner", payload: { playerId: questioner.record.playerId! } });
-  const manualRoles: Record<string, PlayerRole> = Object.fromEntries(getLastEventPayload<RoomSnapshot>(questioner, "room.snapshot")!.players.filter((p) => p.id !== questioner.record.playerId).map((p) => [p.id, p.id === participants[0].record.playerId ? "blank" : p.id === participants[1].record.playerId ? "undercover" : "civilian"]));
+  const manualRoles: Record<string, WhoIsFakerRole> = Object.fromEntries(getLastEventPayload<WhoIsFakerRoomSnapshot>(questioner, "room.snapshot")!.players.filter((p) => p.id !== questioner.record.playerId).map((p) => [p.id, p.id === participants[0].record.playerId ? "blank" : p.id === participants[1].record.playerId ? "undercover" : "civilian"]));
   await command(questioner, { type: "game.submitWords", payload: { words: ["苹果", "香蕉"], blankHint: "水果", manualRoles } });
-  const snapshot = () => getLastEventPayload<RoomSnapshot>(questioner, "room.snapshot")!;
+  const snapshot = () => getLastEventPayload<WhoIsFakerRoomSnapshot>(questioner, "room.snapshot")!;
   const describeAll = async () => {
     for (const c of participants) await command(c, { type: "game.submitDescription", payload: { text: "描述" } });
   };
@@ -85,7 +85,7 @@ for (const exit of ["reject", "reviewTimeout", "draftTimeout"] as const) {
     const f = await setupRound();
     await f.describeAll(); await f.advance();
     await f.command(f.participants[2], { type: "game.submitVote", payload: { targetId: f.participants[3].record.playerId! } });
-    const vote = getLastEventPayload<PrivateState>(f.participants[2], "game.privateState")!.myCurrentVoteTargetId;
+    const vote = getLastEventPayload<WhoIsFakerPrivateState>(f.participants[2], "game.privateState")!.myCurrentVoteTargetId;
     await f.command(f.questioner, { type: "game.requestSupplement", payload: { playerIds: [f.participants[2].record.playerId!, f.participants[3].record.playerId!] } });
     await f.startTimer(); f.advanceTime(10_000);
     await f.command(f.blank, { type: "game.enterBlankGuess", payload: {} });
@@ -101,7 +101,7 @@ for (const exit of ["reject", "reviewTimeout", "draftTimeout"] as const) {
     expect(f.snapshot().status.phase).toBe("voting");
     expect(f.snapshot().status.supplementIndex).toBeUndefined();
     expect(f.snapshot().status.phaseTimer).toBeUndefined();
-    expect(getLastEventPayload<PrivateState>(f.participants[2], "game.privateState")!.myCurrentVoteTargetId).toBe(vote);
+    expect(getLastEventPayload<WhoIsFakerPrivateState>(f.participants[2], "game.privateState")!.myCurrentVoteTargetId).toBe(vote);
   });
 }
 
@@ -116,8 +116,8 @@ for (const draft of [["", ""], ["苹果", ""], ["苹果", "苹果"], ["\u0000", 
     const success = draft[0] === "香蕉";
     expect(f.snapshot().status.phase).toBe(success ? "gameOver" : "description");
     expect(f.snapshot().status.blankGuessPlayerId).toBeUndefined();
-    expect(getLastEventPayload<PrivateState>(f.blank, "game.privateState")!.blankGuessUsed).toBe(true);
-    const room = (f.service as unknown as { rooms: Map<string, RoomRecord> }).rooms.get("8920")!;
+    expect(getLastEventPayload<WhoIsFakerPrivateState>(f.blank, "game.privateState")!.blankGuessUsed).toBe(true);
+    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
     expect(room.round!.blankGuessRecords).toHaveLength(1);
     expect(room.round!.blankGuessRecords[0].success).toBe(success);
     await f.service.runHousekeeping();
@@ -129,7 +129,7 @@ test("已投票离线玩家被点名补充即时待决，等待后仍可重连�
   const f = await setupRound(); await f.describeAll(); await f.advance();
   const offline = f.participants[2]; const playerId = offline.record.playerId!;
   await f.command(offline, { type: "game.submitVote", payload: { targetId: f.participants[3].record.playerId! } });
-  const sessionToken = getLastEventPayload<PrivateState>(offline, "game.privateState")!.sessionToken;
+  const sessionToken = getLastEventPayload<WhoIsFakerPrivateState>(offline, "game.privateState")!.sessionToken;
   await f.service.unregisterConnection(offline.record.id);
   expect(f.snapshot().status.pendingDisconnectPlayerId).toBeUndefined();
   await f.command(f.questioner, { type: "game.requestSupplement", payload: { playerIds: [playerId] } });
@@ -149,7 +149,7 @@ test("真正残局白板猜错并判错按延后赢家结算，计分与上下�
   await f.advance();
   expect(f.snapshot().status.phase).toBe("blankGuess");
   expect(f.snapshot().status.blankGuessReason).toBe("finale");
-  const room = (f.service as unknown as { rooms: Map<string, RoomRecord> }).rooms.get("8920")!;
+  const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
   expect(room.round!.blankGuessContext!.deferredWinner).toBe("good");
   await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
   expect(f.snapshot().status.blankGuessPendingReview).toBe(true);
@@ -206,7 +206,7 @@ for (const phase of ["description", "voting", "tieBreakDescription", "tieBreakVo
     } else if (phase === "voting") {
       await f.command(f.participants[2], { type: "game.submitVote", payload: { targetId: f.participants[3].record.playerId! } });
     }
-    const room = (f.service as unknown as { rooms: Map<string, RoomRecord> }).rooms.get("8920")!;
+    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
     const original = { phase: room.round!.phase, mode: room.round!.speechMode, tieBreak: structuredClone(room.round!.tieBreak), votes: structuredClone(room.round!.votes), actions: structuredClone(room.round!.nightActions) };
     await f.startTimer(); f.advanceTime(10_000);
     await f.command(f.blank, { type: "game.enterBlankGuess", payload: {} });
@@ -233,7 +233,7 @@ for (const phase of ["description", "supplement", "tieBreak"] as const) {
       for (const [i, c] of f.participants.entries()) await f.command(c, { type: "game.submitVote", payload: { targetId: f.participants[[0, 1, 3, 4].includes(i) ? 2 : 3].record.playerId! } });
       await f.advance();
     }
-    const room = (f.service as unknown as { rooms: Map<string, RoomRecord> }).rooms.get("8920")!;
+    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
     // 仅在隔离测试里模拟运行时名册缺席，锁定已有超时占位作者契约。
     delete room.players[victim];
     await f.startTimer(); f.advanceTime(60_001); await f.service.runHousekeeping();

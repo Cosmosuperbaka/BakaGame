@@ -2,12 +2,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { RoomSummary } from "@/types";
+import type { WhoIsFakerRoomSummary } from "@/types";
 import WhoIsFakerPage from "./WhoIsFakerPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();
 
-const mockRooms: RoomSummary[] = [
+const mockRooms: WhoIsFakerRoomSummary[] = [
   {
     roomId: "8629",
     name: "测试房间一",

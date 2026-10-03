@@ -14,7 +14,7 @@ import { DisconnectHandler } from "../layout/DisconnectHandler";
 import { PendingSpeech, SubmittedSpeech } from "../layout/PendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SupplementRequestControl } from "../layout/SupplementRequestControl";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { SpeechMode } from "@/types";
 
@@ -79,11 +79,11 @@ const clampToLimit = (text: string): string => {
 };
 
 export function DescriptionPhase() {
-  const snapshot = useGameStore((state) => state.snapshot)!;
-  const privateState = useGameStore((state) => state.privateState);
-  const sendCommand = useGameStore((state) => state.sendCommand);
-  const addToast = useGameStore((state) => state.addToast);
-  const phaseTimedOutEndsAt = useGameStore((state) => state.phaseTimedOutEndsAt);
+  const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
+  const privateState = useWhoIsFakerStore((state) => state.privateState);
+  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
+  const addToast = useWhoIsFakerStore((state) => state.addToast);
+  const phaseTimedOutEndsAt = useWhoIsFakerStore((state) => state.phaseTimedOutEndsAt);
   const [text, setText] = useState("");
 
   const phase = snapshot.status.phase;

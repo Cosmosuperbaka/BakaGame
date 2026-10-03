@@ -1,5 +1,5 @@
 import type { ConnectionRecord } from "../../domain/Model";
-import type { ClientMessage } from "../../shared/Index";
+import type { WhoIsFakerClientMessage } from "../../shared/Index";
 import {
   type CommandHandler,
   type CommandResult,
@@ -7,8 +7,8 @@ import {
   unsupportedCommand,
 } from "./CommandHandler";
 
-type Message<TType extends ClientMessage["type"]> = Extract<
-  ClientMessage,
+type Message<TType extends WhoIsFakerClientMessage["type"]> = Extract<
+  WhoIsFakerClientMessage,
   { type: TType }
 >;
 
@@ -23,7 +23,7 @@ export const ROOM_COMMAND_TYPES = [
   "room.kick",
   "room.transferHost",
   "chat.send",
-] as const satisfies readonly ClientMessage["type"][];
+] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 interface RoomCommandDependencies {
   subscribeRooms(connection: ConnectionRecord): CommandResult;

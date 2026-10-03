@@ -63,6 +63,8 @@
 - **严格锁定单一真相源标识**：领域模型（Model）、通信协议（Protocol）、状态管理（Store/Context）、持久化（Storage）与网络客户端中，严格维持全栈唯一的权威命名。
 - **彻底拔除同义别名导出**：坚决禁止为兼容历史拼写或过渡习惯而在契约层建立同义别名（例如：严禁 `SongGuessr*` 与 `SonGuessr*` 并存；严禁 `parseWhoIsFakerMessage` 与 `parseClientMessage` 并存；严禁 `useWhoIsFakerStore` 与 `useGameStore` 并存）。架构重构必须进行全局符号收敛，绝不保留过渡期别名。
 
+- 谁是卧底全栈标识统一为 `WhoIsFaker*` / `WHOISFAKER_*`：共享模型、入站消息、Store、测试与组件直接使用权威标识，不再导出或局部重命名为通用 `Game*` / `Room*` / `useGameStore`。跨游戏共用的 `ClientEnvelope`、`ChatMessage` 等基础契约不属于领域别名。
+
 ### 4.4 坚守现代运行基线与拔除废弃私有前缀 (Evergreen Baseline & Zero Legacy Prefixes/Hacks)
 - **锁定现代常青基线**：项目运行时与宿主环境严格对齐现代常青浏览器（Modern Evergreen Browsers）以及当前 LTS 运行环境（Bun / Node LTS）。
 - **杜绝手动 Polyfill 与 UA 嗅探**：坚决杜绝手动编写任何已由现代引擎原生实现的 Web 标准 Polyfill（如 Fetch、Promise、ResizeObserver 等），坚决禁止基于 `navigator.userAgent` 判断老旧浏览器版本的 Hack 分支。

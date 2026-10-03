@@ -12,12 +12,12 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { PrivateState, RoomSnapshot } from "@/types";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();
 
-const createMockSnapshot = (overrides: Partial<RoomSnapshot> = {}): RoomSnapshot => ({
+const createMockSnapshot = (overrides: Partial<WhoIsFakerRoomSnapshot> = {}): WhoIsFakerRoomSnapshot => ({
   roomId: "FAKER_ROOM",
   name: "卧底测试房",
   visibility: "public",
@@ -84,8 +84,8 @@ const createMockSnapshot = (overrides: Partial<RoomSnapshot> = {}): RoomSnapshot
 });
 
 const createMockPrivateState = (
-  overrides: Partial<PrivateState> = {},
-): PrivateState => ({
+  overrides: Partial<WhoIsFakerPrivateState> = {},
+): WhoIsFakerPrivateState => ({
   playerId: "player-1",
   sessionToken: "token-1",
   isQuestioner: false,
@@ -96,7 +96,7 @@ const createMockPrivateState = (
 });
 
 /** 把房间推到某一局的某个阶段；不传 roundId 表示回到局外的等待阶段。 */
-function setRoundPhase(phase: RoomSnapshot["status"]["phase"], roundId?: string) {
+function setRoundPhase(phase: WhoIsFakerRoomSnapshot["status"]["phase"], roundId?: string) {
   const base = createMockSnapshot();
   act(() => {
     useWhoIsFakerStore.setState({

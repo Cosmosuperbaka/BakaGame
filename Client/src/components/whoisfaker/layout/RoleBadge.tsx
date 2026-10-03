@@ -1,7 +1,7 @@
 import { PLAYER_BADGE_BASE } from "@/components/common/PlayerStatusPill";
 import { ROLE_COLORS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
-import type { PlayerRole } from "@/types";
+import type { WhoIsFakerRole } from "@/types";
 
 /**
  * 双字身份徽章，玩家栏、出题人的中盘预览与结算身份表共用。
@@ -12,7 +12,7 @@ export function RoleBadge({
   predicted = false,
   inset = false,
 }: {
-  role: PlayerRole;
+  role: WhoIsFakerRole;
   /** 本人的身份预测：淡色块表达“未确认”，读屏另读出「预测」 */
   predicted?: boolean;
   /** 放在 `bg-muted` 实色块上（预览卡片、结算表）时换成页面底，否则徽章与所在块同色 */

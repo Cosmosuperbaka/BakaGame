@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import type { RoomSnapshot } from "../src/domain/Model";
+import type { WhoIsFakerRoomSnapshot } from "../src/domain/Model";
 import {
   createConnection,
   createTestContext,
@@ -63,7 +63,7 @@ test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）"
   });
   expect((res60 as { phaseTimer: { durationSeconds: number } }).phaseTimer.durationSeconds).toBe(60);
 
-  const snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot");
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot");
   expect(snapshot?.status.phaseTimer?.durationSeconds).toBe(60);
 });
 
@@ -111,7 +111,7 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
     payload: {},
   });
 
-  let snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("assigningQuestioner");
 
   // 2. assigningQuestioner 阶段选择出题人不需要倒计时（应被拒绝）
@@ -131,7 +131,7 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
     payload: { playerId: hostPlayerId },
   });
 
-  snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("wordSubmission");
 
   // 3. wordSubmission 阶段出题不需要倒计时（应被拒绝）
@@ -208,7 +208,7 @@ test("权限校验：仅出题人（主持人）可设置与取消倒计时，�
     payload: {},
   });
 
-  const snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   const hostId = snapshot.hostPlayerId;
 
   // 指定房主为出题人
@@ -241,7 +241,7 @@ test("权限校验：仅出题人（主持人）可设置与取消倒计时，�
     payload: { durationSeconds: 120 },
   });
 
-  let currentSnapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let currentSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(currentSnapshot.status.phaseTimer?.durationSeconds).toBe(120);
 
   // 普通玩家尝试取消倒计时（应被拒绝）
@@ -260,7 +260,7 @@ test("权限校验：仅出题人（主持人）可设置与取消倒计时，�
     payload: {},
   });
 
-  currentSnapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  currentSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(currentSnapshot.status.phaseTimer).toBeUndefined();
 });
 
@@ -298,7 +298,7 @@ test("阶段自然推进时自动销毁倒计时，不会泄露到下一阶段",
     payload: {},
   });
 
-  let snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   const hostId = snapshot.hostPlayerId;
 
   await execute(context.service, connHost, {
@@ -319,7 +319,7 @@ test("阶段自然推进时自动销毁倒计时，不会泄露到下一阶段",
     type: "game.startPhaseTimer",
     payload: { durationSeconds: 180 },
   });
-  snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phaseTimer?.durationSeconds).toBe(180);
 
   // 手动推进到投票阶段
@@ -329,7 +329,7 @@ test("阶段自然推进时自动销毁倒计时，不会泄露到下一阶段",
     payload: {},
   });
 
-  snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("voting");
   // 倒计时已在阶段转换时自动销毁
   expect(snapshot.status.phaseTimer).toBeUndefined();
@@ -383,7 +383,7 @@ test("描述阶段超时自动补齐发言并推进至投票阶段", async () =>
     payload: {},
   });
 
-  const snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   const hostId = snapshot.hostPlayerId;
 
   // 房主出题
@@ -399,7 +399,7 @@ test("描述阶段超时自动补齐发言并推进至投票阶段", async () =>
     payload: { words: ["苹果", "香蕉"] },
   });
 
-  let currentSnapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let currentSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(currentSnapshot.status.phase).toBe("description");
 
   // 出题人开启 1 分钟倒计时
@@ -409,14 +409,14 @@ test("描述阶段超时自动补齐发言并推进至投票阶段", async () =>
     payload: { durationSeconds: 60 },
   });
 
-  currentSnapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  currentSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(currentSnapshot.status.phaseTimer?.durationSeconds).toBe(60);
 
   // 玩家2尚未提交发言，时间前进61秒触发超时
   context.advanceTime(61000);
   await context.service.runHousekeeping();
 
-  currentSnapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  currentSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   // 描述阶段应自动补齐“（超时未发言）”并推进到投票阶段
   expect(currentSnapshot.status.phase).toBe("voting");
   expect(currentSnapshot.status.phaseTimer).toBeUndefined();
@@ -452,7 +452,7 @@ test("投票阶段超时自动为未投票玩家提交弃票并结算", async ()
     payload: { phase: "voting" },
   });
 
-  let snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("voting");
 
   // 开启 1 分钟倒计时
@@ -466,7 +466,7 @@ test("投票阶段超时自动为未投票玩家提交弃票并结算", async ()
   context.advanceTime(61000);
   await context.service.runHousekeeping();
 
-  snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   // 全员弃票后无人出局，进入夜晚阶段
   expect(snapshot.status.phase).toBe("night");
   expect(snapshot.status.phaseTimer).toBeUndefined();
@@ -500,7 +500,7 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
     payload: { phase: "night" },
   });
 
-  let snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("night");
 
   // 开启倒计时
@@ -513,7 +513,7 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
   context.advanceTime(61000);
   await context.service.runHousekeeping();
 
-  snapshot = getLastEventPayload<RoomSnapshot>(connHost, "room.snapshot")!;
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   // 夜晚超时自动放弃行动并天亮进入描述阶段
   expect(snapshot.status.phase).toBe("description");
   expect(snapshot.status.phaseTimer).toBeUndefined();

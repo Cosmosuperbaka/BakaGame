@@ -9,7 +9,7 @@ import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components
 import { SettingsAccordion, SettingsChips } from "@/components/common/room/SettingsAccordion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useAutoSave } from "@/hooks/UseAutoSave";
-import type { RoleConfig, RoleLimits, RoomSnapshot } from "@/types";
+import type { RoleConfig, RoleLimits, WhoIsFakerRoomSnapshot } from "@/types";
 
 const notifyCopyFailed = () => useWhoIsFakerStore.getState().addToast("复制失败，请手动复制", "error");
 
@@ -105,7 +105,7 @@ export function WaitingPhase() {
 /* ── 房主视角 ────────────────────────────────────────────── */
 
 interface HostWaitingPanelProps {
-  snapshot: RoomSnapshot;
+  snapshot: WhoIsFakerRoomSnapshot;
   showProgress: boolean;
   readyCount: number;
   nonHostTotal: number;
@@ -175,7 +175,7 @@ function effectiveRoleConfig(config: RoleConfig, limits: RoleLimits): RoleConfig
 /* ── 行内设置表单（房主） ────────────────────────────────── */
 
 interface InlineSettingsProps {
-  snapshot: RoomSnapshot;
+  snapshot: WhoIsFakerRoomSnapshot;
   sendCommand: (type: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
 }
@@ -234,7 +234,7 @@ function InlineSettings({ snapshot, sendCommand, addToast }: InlineSettingsProps
 
 /* ── 只读设置预览（非房主） ─────────────────────────────── */
 
-function SettingsPreview({ snapshot }: { snapshot: RoomSnapshot }) {
+function SettingsPreview({ snapshot }: { snapshot: WhoIsFakerRoomSnapshot }) {
   const roleConfig = effectiveRoleConfig(snapshot.settings.roleConfig, snapshot.roleLimits);
 
   const items = [

@@ -9,18 +9,18 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Switch } from "@/components/ui/Switch";
 import { spring, tappable } from "@/lib/Motion";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { PlayerRole } from "@/types";
+import type { WhoIsFakerRole } from "@/types";
 
-const ROLE_SHORT_LABELS: Record<PlayerRole, string> = {
+const ROLE_SHORT_LABELS: Record<WhoIsFakerRole, string> = {
   civilian: "民",
   undercover: "卧",
   angel: "天",
   blank: "白",
 };
 
-const ROLE_FULL_LABELS: Record<PlayerRole, string> = {
+const ROLE_FULL_LABELS: Record<WhoIsFakerRole, string> = {
   civilian: "平民",
   undercover: "卧底",
   angel: "天使",
@@ -30,10 +30,10 @@ const ROLE_FULL_LABELS: Record<PlayerRole, string> = {
 type WordDraft = { civilianWord: string; undercoverWord: string; blankHint: string };
 
 export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraft: WordDraft; onWordDraftChange: (draft: WordDraft) => void }) {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const action = usePhaseAction();
   const { run, busy } = action;
   const isQuestioner = privateState?.isQuestioner ?? false;
@@ -58,22 +58,22 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
     (p) => p.membership === "active" && p.id !== snapshot.status.questionerPlayerId
   );
 
-  const [manualRoles, setManualRoles] = useState<Record<string, PlayerRole>>({});
+  const [manualRoles, setManualRoles] = useState<Record<string, WhoIsFakerRole>>({});
 
-  const availableRoles: PlayerRole[] = [
+  const availableRoles: WhoIsFakerRole[] = [
     "civilian",
     "undercover",
-    ...(hasAngel ? (["angel"] as PlayerRole[]) : []),
-    ...(hasBlank ? (["blank"] as PlayerRole[]) : []),
+    ...(hasAngel ? (["angel"] as WhoIsFakerRole[]) : []),
+    ...(hasBlank ? (["blank"] as WhoIsFakerRole[]) : []),
   ];
-  const requiredRoleCounts: Record<PlayerRole, number> = {
+  const requiredRoleCounts: Record<WhoIsFakerRole, number> = {
     civilian:
       participants.length - roleConfig.undercoverCount - (hasAngel ? 1 : 0) - (hasBlank ? 1 : 0),
     undercover: roleConfig.undercoverCount,
     angel: hasAngel ? 1 : 0,
     blank: hasBlank ? 1 : 0,
   };
-  const assignedRoleCounts = Object.values(manualRoles).reduce<Record<PlayerRole, number>>(
+  const assignedRoleCounts = Object.values(manualRoles).reduce<Record<WhoIsFakerRole, number>>(
     (counts, assignedRole) => ({
       ...counts,
       [assignedRole]: counts[assignedRole] + 1,
@@ -88,7 +88,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
     setIsRandomRole(randomRole);
     if (randomRole) return;
 
-    const initialRoles: Record<string, PlayerRole> = {};
+    const initialRoles: Record<string, WhoIsFakerRole> = {};
     participants.forEach((participant, index) => {
       if (index < roleConfig.undercoverCount) {
         initialRoles[participant.id] = "undercover";

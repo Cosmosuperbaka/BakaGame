@@ -20,19 +20,19 @@ import {
   PlayerGroupTitle,
   PlayerStatusPill,
 } from "@/components/common/PlayerStatusPill";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
 import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
 import type {
   DescriptionRecord,
-  GamePhase,
-  PlayerRole,
-  PrivateState,
+  WhoIsFakerPhase,
+  WhoIsFakerRole,
+  WhoIsFakerPrivateState,
   PublicPlayerView,
   RoleConfig,
 } from "@/types";
 
-export type PlayerMark = "unknown" | PlayerRole;
+export type PlayerMark = "unknown" | WhoIsFakerRole;
 export type PlayerMarks = Record<string, PlayerMark>;
 
 /** 身份选择器上的双字：真实身份沿用 `ROLE_LABELS`，只多一档「未知」 */
@@ -66,14 +66,14 @@ export interface PlayerListProps {
   hostPlayerId: string;
   myPlayerId?: string;
   isHost: boolean;
-  phase: GamePhase;
+  phase: WhoIsFakerPhase;
   allowSpectators: boolean;
   roleConfig: RoleConfig;
-  privateState?: PrivateState | null;
+  privateState?: WhoIsFakerPrivateState | null;
   playerMarks: PlayerMarks;
   onMarkChange: (playerId: string, mark: PlayerMark) => void;
   /** 结算后公开的身份，叠加在出题人视角之上 */
-  revealedRoles?: Map<string, PlayerRole>;
+  revealedRoles?: Map<string, WhoIsFakerRole>;
   /**
    * 展开发言历史时传入。
    * 发言单元格直接渲染进玩家行内，对齐由 DOM 结构保证，
@@ -112,8 +112,8 @@ export function PlayerList(props: PlayerListProps) {
     revealedRoles,
     history,
   } = props;
-  const sendCommand = useGameStore((state) => state.sendCommand);
-  const addToast = useGameStore((state) => state.addToast);
+  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
+  const addToast = useWhoIsFakerStore((state) => state.addToast);
   const waitingPhase = phase === "waiting";
   const me = players.find((player) => player.id === myPlayerId);
   const isSpectator = me?.membership === "spectator";
@@ -431,7 +431,7 @@ export interface PlayerRowProps {
   isHostViewer: boolean;
   waitingPhase: boolean;
   hideSpectatorStatus?: boolean;
-  actualRole?: PlayerRole;
+  actualRole?: WhoIsFakerRole;
   mark: PlayerMark;
   canMark: boolean;
   availableMarks: PlayerMark[];

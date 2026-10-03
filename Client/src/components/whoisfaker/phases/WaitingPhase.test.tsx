@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PrivateState, RoomSnapshot } from "@/types";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WaitingPhase } from "./WaitingPhase";
 
-const snapshot: RoomSnapshot = {
+const snapshot: WhoIsFakerRoomSnapshot = {
   roomId: "1234",
   name: "房间",
   visibility: "public",
@@ -51,7 +51,7 @@ const snapshot: RoomSnapshot = {
   chat: [],
 };
 
-const privateState: PrivateState = {
+const privateState: WhoIsFakerPrivateState = {
   playerId: "guest",
   sessionToken: "session",
   isQuestioner: false,
@@ -62,7 +62,7 @@ const privateState: PrivateState = {
 
 describe("waiting room sharing", () => {
   beforeEach(() => {
-    useGameStore.setState({ snapshot, privateState });
+    useWhoIsFakerStore.setState({ snapshot, privateState });
   });
 
   it("lets a non-host copy the room link", async () => {
@@ -87,7 +87,7 @@ describe("waiting room sharing", () => {
   });
 
   it("非房主在设置关闭揭露时展示死亡隐藏身份胶囊", () => {
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: {
         ...snapshot,
         settings: {
@@ -102,7 +102,7 @@ describe("waiting room sharing", () => {
 
   it("房主展开房间设置后可切换死亡时揭露身份开关", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: {
         ...snapshot,
         players: snapshot.players.map((p) =>
@@ -131,7 +131,7 @@ describe("waiting room sharing", () => {
   });
 
   it("房主设置字段由可见标签命名，密码占位文案随是否已有密码变化", () => {
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       privateState: { ...privateState, playerId: "host" },
       sendCommand: vi.fn().mockResolvedValue({}),
     });
@@ -154,14 +154,14 @@ describe("waiting room sharing", () => {
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
     unmount();
 
-    useGameStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
+    useWhoIsFakerStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
     render(<WaitingPhase />);
     fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
   });
 
   it("房主独自在房时开始按钮提示等待加入，不显示 0/0", () => {
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: { ...snapshot, players: snapshot.players.filter((p) => p.id === "host") },
       privateState: { ...privateState, playerId: "host" },
     });
@@ -172,7 +172,7 @@ describe("waiting room sharing", () => {
   it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
     let resolve: (value: Record<string, unknown>) => void = () => {};
     const sendCommand = vi.fn(() => new Promise<Record<string, unknown>>((r) => { resolve = r; }));
-    useGameStore.setState({ sendCommand });
+    useWhoIsFakerStore.setState({ sendCommand });
     render(<WaitingPhase />);
 
     fireEvent.click(screen.getByRole("button", { name: "准备" }));

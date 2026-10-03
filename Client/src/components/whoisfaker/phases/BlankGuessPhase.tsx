@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { duration, readoutSwap } from "@/lib/Motion";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { PendingSpeech } from "../layout/PendingSpeech";
 import type { BlankGuessReason } from "@/types";
@@ -33,10 +33,10 @@ const REASON_TEXT: Record<BlankGuessReason, string> = {
  * 因此点击后先确认，再由服务端把房间切进阻塞阶段。
  */
 export function BlankGuessButton() {
-  const privateState = useGameStore((s) => s.privateState);
-  const phase = useGameStore((s) => s.snapshot?.status.phase);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const phase = useWhoIsFakerStore((s) => s.snapshot?.status.phase);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const [confirming, setConfirming] = useState(false);
   const { run, busy } = usePhaseAction();
 
@@ -96,10 +96,10 @@ export function BlankGuessButton() {
 
 /** 白板本人的猜词界面。输入过程实时广播给全房。 */
 function BlankGuessInput() {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
-  const phaseTimedOutEndsAt = useGameStore((s) => s.phaseTimedOutEndsAt);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const phaseTimedOutEndsAt = useWhoIsFakerStore((s) => s.phaseTimedOutEndsAt);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
   const { run, busy: submitting } = usePhaseAction();
@@ -257,10 +257,10 @@ function GuessReadout({
  * 以及猜错时由主持人做一次裁定。
  */
 export function BlankGuessWaiting() {
-  const snapshot = useGameStore((s) => s.snapshot)!;
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const { run, busy: reviewing } = usePhaseAction();
 
   const status = snapshot.status;
@@ -339,8 +339,8 @@ export function BlankGuessWaiting() {
 
 /** 猜词阶段的分派：本人进输入界面，其余人看等待与裁定界面。 */
 export function BlankGuessStage() {
-  const myId = useGameStore((s) => s.privateState?.playerId);
-  const guesserId = useGameStore((s) => s.snapshot?.status.blankGuessPlayerId);
+  const myId = useWhoIsFakerStore((s) => s.privateState?.playerId);
+  const guesserId = useWhoIsFakerStore((s) => s.snapshot?.status.blankGuessPlayerId);
 
   return myId && myId === guesserId ? <BlankGuessInput /> : <BlankGuessWaiting />;
 }

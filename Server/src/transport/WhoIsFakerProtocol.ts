@@ -2,19 +2,18 @@ import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
 import {
-  GAME_PHASES,
-  PLAYER_ROLES,
+  WHOISFAKER_PHASES,
+  WHOISFAKER_ROLES,
   type ClientEnvelope,
-  type ClientMessage,
   type WhoIsFakerClientMessage,
   type DisconnectResolution,
-  type GamePhase,
-  type PlayerRole,
+  type WhoIsFakerPhase,
+  type WhoIsFakerRole,
   type RoleConfig,
   type RoomVisibility,
 } from "../shared/Index";
 
-export type { ClientEnvelope, ClientMessage, WhoIsFakerClientMessage };
+export type { ClientEnvelope, WhoIsFakerClientMessage };
 
 export const VisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
 export const BooleanSchema = t.Boolean();
@@ -35,8 +34,8 @@ export const DraftWordPairSchema = t.Tuple([
   t.String({ maxLength: 50 }),
   t.String({ maxLength: 50 }),
 ]);
-export const GamePhaseSchema = t.Union(GAME_PHASES.map((p) => t.Literal(p)));
-export const PlayerRoleSchema = t.Union(PLAYER_ROLES.map((r) => t.Literal(r)));
+export const GamePhaseSchema = t.Union(WHOISFAKER_PHASES.map((p) => t.Literal(p)));
+export const PlayerRoleSchema = t.Union(WHOISFAKER_ROLES.map((r) => t.Literal(r)));
 export const DisconnectResolutionSchema = t.Union([
   t.Literal("wait"),
   t.Literal("eliminate"),

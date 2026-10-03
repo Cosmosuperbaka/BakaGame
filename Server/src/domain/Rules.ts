@@ -8,11 +8,11 @@ import {
   type BlankGuessRecord,
   type GameRound,
   type NightActionRecord,
-  type PlayerRole,
+  type WhoIsFakerRole,
   type PlayerSide,
   type RoleConfig,
   type RoleLimits,
-  type RoomRecord,
+  type WhoIsFakerRoomRecord,
   type RoundPlayerState,
   type RoundWinner,
   type VoteRecord,
@@ -131,7 +131,7 @@ export const validateRoleConfig = (config: RoleConfig, playerCount: number): voi
   }
 };
 
-export const listPlayablePlayerIds = (room: RoomRecord): string[] =>
+export const listPlayablePlayerIds = (room: WhoIsFakerRoomRecord): string[] =>
   Object.values(room.players)
     .filter((player) => player.membership === "active")
     .map((player) => player.id);
@@ -154,7 +154,7 @@ export const assignRoles = (
   pair: [string, string],
   blankHint: string | undefined,
   random: RandomSource,
-  manualRoles?: Record<string, PlayerRole>,
+  manualRoles?: Record<string, WhoIsFakerRole>,
 ): {
   civilianWord: string;
   undercoverWord: string;

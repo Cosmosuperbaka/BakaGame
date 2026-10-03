@@ -1,13 +1,13 @@
 import type {
   ChatMessage,
   DescriptionRecord,
-  GamePhase,
-  PlayerRole,
+  WhoIsFakerPhase,
+  WhoIsFakerRole,
   PlayerSide,
-  PrivateState,
+  WhoIsFakerPrivateState,
   PublicPlayerView,
-  RoomSnapshot,
-  RoomSummary,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerRoomSummary,
   RoundSummary,
   VoteRecord,
 } from "@/types";
@@ -54,11 +54,11 @@ export const WIF_PEOPLE = {
 /** 本局参与者（不含主持人），顺序即入房顺序。 */
 const PARTICIPANTS: Person[] = [ME, PEACH, AZUMI, KANADE, KITA, LONG, YUZU, STONE];
 
-const ROLE_OF: Record<string, PlayerRole> = {
+const ROLE_OF: Record<string, WhoIsFakerRole> = {
   [ME.id]: "civilian", [PEACH.id]: "undercover", [AZUMI.id]: "civilian", [KANADE.id]: "angel",
   [KITA.id]: "blank", [LONG.id]: "civilian", [YUZU.id]: "undercover", [STONE.id]: "civilian",
 };
-const SIDE_OF: Record<PlayerRole, PlayerSide> = { civilian: "good", angel: "good", undercover: "undercover", blank: "blank" };
+const SIDE_OF: Record<WhoIsFakerRole, PlayerSide> = { civilian: "good", angel: "good", undercover: "undercover", blank: "blank" };
 
 export const WIF_WORDS = { civilianWord: "饺子", undercoverWord: "馄饨", blankHint: "一种面食" };
 /** 服务端存储的词对按 localeCompare 排序。 */
@@ -249,7 +249,7 @@ export function roundPlayers(stage: WifStage, summary?: RoundSummary): PublicPla
 // ==================== 私有视图 ====================
 
 /** 观战视角：出题人与旁观者都能看到全部身份与当前投票 / 夜间行动。 */
-function observerExtras(stage: WifStage): Partial<PrivateState> {
+function observerExtras(stage: WifStage): Partial<WhoIsFakerPrivateState> {
   if (at(stage) < at("day1")) return {};
   return {
     globalWords: WIF_WORDS,
@@ -261,7 +261,7 @@ function observerExtras(stage: WifStage): Partial<PrivateState> {
 }
 
 /** 参与者本人拿到的身份与词语。 */
-function roleExtras(person: Person, stage: WifStage): Partial<PrivateState> {
+function roleExtras(person: Person, stage: WifStage): Partial<WhoIsFakerPrivateState> {
   if (at(stage) < at("day1")) return {};
   const role = ROLE_OF[person.id];
   const words = role === "civilian" ? { word: WIF_WORDS.civilianWord }
@@ -278,7 +278,7 @@ function roleExtras(person: Person, stage: WifStage): Partial<PrivateState> {
 
 export type WifViewer = "host" | "me" | "spectator" | Person;
 
-export function wifPrivate(viewer: WifViewer, stage: WifStage, overrides: Partial<PrivateState> = {}): PrivateState {
+export function wifPrivate(viewer: WifViewer, stage: WifStage, overrides: Partial<WhoIsFakerPrivateState> = {}): WhoIsFakerPrivateState {
   const person = viewer === "host" ? HOST : viewer === "me" ? ME : viewer === "spectator" ? PASSERBY : viewer;
   const isQuestioner = person.id === HOST.id && at(stage) >= at("words");
   const observer = isQuestioner || person.id === PASSERBY.id;
@@ -322,7 +322,7 @@ export function wifChat(stage: WifStage = "over"): ChatMessage[] {
 
 // ==================== 房间快照 ====================
 
-const PHASE_OF: Record<WifStage, GamePhase> = {
+const PHASE_OF: Record<WifStage, WhoIsFakerPhase> = {
   waiting: "waiting", assigning: "assigningQuestioner", words: "wordSubmission",
   day1: "description", vote1: "voting", night1: "night",
   day2: "description", sup2: "description", vote2: "voting",
@@ -343,7 +343,7 @@ const SPEECH_OF: Partial<Record<WifStage, SpeechStage>> = {
   day1: "day1", day2: "day2", sup2: "sup2", tie2: "tie2", day3: "day3",
 };
 
-const SPEECH_MODE_OF: Partial<Record<SpeechStage, NonNullable<RoomSnapshot["status"]["speechMode"]>>> = {
+const SPEECH_MODE_OF: Partial<Record<SpeechStage, NonNullable<WhoIsFakerRoomSnapshot["status"]["speechMode"]>>> = {
   sup2: "supplement", tie2: "tieBreak",
 };
 
@@ -356,9 +356,9 @@ const BLANK_GUESS_WORDS: [string, string] = ["饺子", "汤圆"];
 function stageStatus(
   stage: WifStage,
   submitted: Partial<Record<SpeechStage, string[]>>,
-): RoomSnapshot["status"] {
+): WhoIsFakerRoomSnapshot["status"] {
   const phase = PHASE_OF[stage];
-  const status: RoomSnapshot["status"] = {
+  const status: WhoIsFakerRoomSnapshot["status"] = {
     phase, started: at(stage) >= at("assigning"), day: DAY_OF[stage],
     ...(at(stage) >= at("assigning") ? { roundId: "wif-round-3" } : {}),
     ...(at(stage) >= at("words") ? { questionerPlayerId: HOST.id } : {}),
@@ -455,11 +455,11 @@ export {
 };
 // ==================== 各节点快照 ====================
 
-type SnapshotPatch = Partial<RoomSnapshot>;
+type SnapshotPatch = Partial<WhoIsFakerRoomSnapshot>;
 
 /** 与服务端默认设置一致：8 人局，两个卧底，带天使与白板，出局公开身份。 */
-export function wifSettings(overrides: Partial<RoomSnapshot> = {}): RoomSnapshot {
-  const base: RoomSnapshot = {
+export function wifSettings(overrides: Partial<WhoIsFakerRoomSnapshot> = {}): WhoIsFakerRoomSnapshot {
+  const base: WhoIsFakerRoomSnapshot = {
     roomId: WIF_ROOM_ID, name: WIF_ROOM_NAME, visibility: "public", allowSpectators: true,
     hasPassword: false, hostPlayerId: HOST.id, testMode: false,
     roleLimits: { maxUndercoverCount: 3, canEnableAngel: true, canEnableBlank: true },
@@ -472,7 +472,7 @@ export function wifSettings(overrides: Partial<RoomSnapshot> = {}): RoomSnapshot
 }
 
 /** 按节点产出整局快照。玩家名单、发言、聊天与结算都取自同一条时间线。 */
-export function wifSnapshot(stage: WifStage, overrides: SnapshotPatch = {}): RoomSnapshot {
+export function wifSnapshot(stage: WifStage, overrides: SnapshotPatch = {}): WhoIsFakerRoomSnapshot {
   // 结算表与玩家栏的累计分取自同一份结算：覆写胜方时两处一起换。
   const summary = stage === "over" ? (overrides.summary ?? wifRoundSummary()) : undefined;
   const players = at(stage) >= at("assigning") ? roundPlayers(stage, summary) : waitingPlayers();
@@ -487,7 +487,7 @@ export function wifSnapshot(stage: WifStage, overrides: SnapshotPatch = {}): Roo
 }
 
 /** 房间页直接落在已入房状态：路由房间号、Store 房间号与快照房间号三者一致即不会发起入房请求。 */
-export function presetWifRoom(snapshot: RoomSnapshot, privateState: PrivateState) {
+export function presetWifRoom(snapshot: WhoIsFakerRoomSnapshot, privateState: WhoIsFakerPrivateState) {
   presetWhoIsFaker({
     connected: true, roomId: snapshot.roomId, sessionToken: privateState.sessionToken, snapshot, privateState,
   });
@@ -507,7 +507,7 @@ export function stubWifCommand(handler: (type: string, payload?: Record<string, 
 }
 // ==================== 大厅 ====================
 
-function lobbyRoom(roomId: string, name: string, overrides: Partial<RoomSummary> = {}): RoomSummary {
+function lobbyRoom(roomId: string, name: string, overrides: Partial<WhoIsFakerRoomSummary> = {}): WhoIsFakerRoomSummary {
   return {
     roomId, name, visibility: "public", allowSpectators: true, hasPassword: false,
     playerCount: 2, spectatorCount: 0, onlineCount: 2, phase: "waiting", testMode: false, ...overrides,
@@ -515,7 +515,7 @@ function lobbyRoom(roomId: string, name: string, overrides: Partial<RoomSummary>
 }
 
 /** 覆盖等待中 / 游戏中 / 私密带密码 / 禁观战 / 超长房间名与测试房。 */
-export const WIF_LOBBY_ROOMS: RoomSummary[] = [
+export const WIF_LOBBY_ROOMS: WhoIsFakerRoomSummary[] = [
   lobbyRoom(WIF_ROOM_ID, WIF_ROOM_NAME, { playerCount: 8, spectatorCount: 1, onlineCount: 9 }),
   lobbyRoom("2718", "第一局先熟悉规则", { phase: "description", playerCount: 7, spectatorCount: 2, onlineCount: 9 }),
   lobbyRoom("3141", "深夜卧底局", { visibility: "private", hasPassword: true, playerCount: 6, spectatorCount: 0, onlineCount: 6 }),

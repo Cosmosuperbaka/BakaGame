@@ -1,4 +1,4 @@
-import type { DescriptionRecord, PublicPlayerView, RoomSnapshot } from "@/types";
+import type { DescriptionRecord, PublicPlayerView, WhoIsFakerRoomSnapshot } from "@/types";
 
 /** 发言历史的一列。轮次、平票 PK 与补充发言各自独立编号。 */
 export interface DescriptionColumn {
@@ -25,7 +25,7 @@ export interface DescriptionColumnModel {
 }
 
 /** 计算应发言名单所需的快照状态字段 */
-export type SpeechStatus = RoomSnapshot["status"];
+export type SpeechStatus = WhoIsFakerRoomSnapshot["status"];
 
 /** 把发言记录归入所属列，并给出该记录的列键。 */
 function columnKeyOf(record: DescriptionRecord): string {

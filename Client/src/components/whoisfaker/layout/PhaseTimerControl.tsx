@@ -4,7 +4,7 @@ import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { countdownTickMs, dropIn, spring, urgentPulse } from "@/lib/Motion";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
 const DURATION_OPTIONS: SegmentedOption<string>[] = [
@@ -19,11 +19,11 @@ interface Props {
 }
 
 export function PhaseTimerControl({ className, onTimeout }: Props) {
-  const snapshot = useGameStore((s) => s.snapshot);
-  const privateState = useGameStore((s) => s.privateState);
-  const sendCommand = useGameStore((s) => s.sendCommand);
-  const addToast = useGameStore((s) => s.addToast);
-  const triggerPhaseTimeout = useGameStore((s) => s.triggerPhaseTimeout);
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot);
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const triggerPhaseTimeout = useWhoIsFakerStore((s) => s.triggerPhaseTimeout);
 
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
   const [starting, setStarting] = useState(false);

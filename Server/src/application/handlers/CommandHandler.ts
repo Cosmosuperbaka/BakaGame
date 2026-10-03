@@ -1,17 +1,17 @@
 import { AppError } from "../../domain/Errors";
 import type { ConnectionRecord } from "../../domain/Model";
-import type { ClientMessage } from "../../shared/Index";
+import type { WhoIsFakerClientMessage } from "../../shared/Index";
 
 export type CommandResult = unknown | Promise<unknown>;
 
 export interface CommandHandler {
-  canHandle(type: ClientMessage["type"]): boolean;
-  execute(connection: ConnectionRecord, message: ClientMessage): CommandResult;
+  canHandle(type: WhoIsFakerClientMessage["type"]): boolean;
+  execute(connection: ConnectionRecord, message: WhoIsFakerClientMessage): CommandResult;
 }
 
 export const ownsCommand = (
-  types: readonly ClientMessage["type"][],
-  type: ClientMessage["type"],
+  types: readonly WhoIsFakerClientMessage["type"][],
+  type: WhoIsFakerClientMessage["type"],
 ): boolean => types.includes(type);
 
 export const unsupportedCommand = (): never => {

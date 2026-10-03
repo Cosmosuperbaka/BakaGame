@@ -1,5 +1,5 @@
 import type { ConnectionRecord } from "../../domain/Model";
-import type { ClientMessage } from "../../shared/Index";
+import type { WhoIsFakerClientMessage } from "../../shared/Index";
 import {
   type CommandHandler,
   type CommandResult,
@@ -12,16 +12,16 @@ export const TEST_COMMAND_TYPES = [
   "test.setMyRole",
   "test.addBot",
   "test.removeBot",
-] as const satisfies readonly ClientMessage["type"][];
+] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 interface TestCommandDependencies {
   jumpToPhase(
     connection: ConnectionRecord,
-    phase: Extract<ClientMessage, { type: "test.jumpToPhase" }>["payload"]["phase"],
+    phase: Extract<WhoIsFakerClientMessage, { type: "test.jumpToPhase" }>["payload"]["phase"],
   ): CommandResult;
   setMyRole(
     connection: ConnectionRecord,
-    role: Extract<ClientMessage, { type: "test.setMyRole" }>["payload"]["role"],
+    role: Extract<WhoIsFakerClientMessage, { type: "test.setMyRole" }>["payload"]["role"],
   ): CommandResult;
   addBot(connection: ConnectionRecord, count: number): CommandResult;
   removeBot(

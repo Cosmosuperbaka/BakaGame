@@ -1,12 +1,12 @@
 import { AppError } from "../../domain/Errors";
 import type {
   ConnectionRecord,
-  PlayerRecord,
-  RoomRecord,
+  WhoIsFakerPlayerRecord,
+  WhoIsFakerRoomRecord,
 } from "../../domain/Model";
 import { normalizeName } from "../../domain/Rules";
 import type { LogEntry } from "../../infrastructure/EventLogger";
-import type { ClientMessage } from "../../shared/Index";
+import type { WhoIsFakerClientMessage } from "../../shared/Index";
 import {
   type CommandHandler,
   ownsCommand,
@@ -17,20 +17,20 @@ export const PLAYER_COMMAND_TYPES = [
   "player.rename",
   "player.setSpectator",
   "player.setReady",
-] as const satisfies readonly ClientMessage["type"][];
+] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 interface PlayerCommandDependencies {
   now(): number;
   requireRoomPlayer(connection: ConnectionRecord): {
-    room: RoomRecord;
-    player: PlayerRecord;
+    room: WhoIsFakerRoomRecord;
+    player: WhoIsFakerPlayerRecord;
   };
-  ensureUniqueName(room: RoomRecord, name: string, exceptPlayerId?: string): void;
-  isRoundActive(room: RoomRecord): boolean;
-  normalizeRoleConfig(room: RoomRecord): void;
-  touchRoom(room: RoomRecord): void;
+  ensureUniqueName(room: WhoIsFakerRoomRecord, name: string, exceptPlayerId?: string): void;
+  isRoundActive(room: WhoIsFakerRoomRecord): boolean;
+  normalizeRoleConfig(room: WhoIsFakerRoomRecord): void;
+  touchRoom(room: WhoIsFakerRoomRecord): void;
   log(entry: LogEntry): Promise<void>;
-  publishRoomState(room: RoomRecord): void;
+  publishRoomState(room: WhoIsFakerRoomRecord): void;
   publishLobby(): void;
 }
 

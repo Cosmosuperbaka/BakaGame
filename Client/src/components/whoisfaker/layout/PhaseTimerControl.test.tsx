@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PrivateState, RoomSnapshot } from "@/types";
-import { useWhoIsFakerStore as useGameStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseTimerControl } from "./PhaseTimerControl";
 
-const createBaseSnapshot = (phase: RoomSnapshot["status"]["phase"] = "description"): RoomSnapshot => ({
+const createBaseSnapshot = (phase: WhoIsFakerRoomSnapshot["status"]["phase"] = "description"): WhoIsFakerRoomSnapshot => ({
   roomId: "1234",
   name: "测试房间",
   visibility: "public",
@@ -55,7 +55,7 @@ const createBaseSnapshot = (phase: RoomSnapshot["status"]["phase"] = "descriptio
   chat: [],
 });
 
-const createPrivateState = (isQuestioner = true, playerId = "host_1"): PrivateState => ({
+const createPrivateState = (isQuestioner = true, playerId = "host_1"): WhoIsFakerPrivateState => ({
   playerId,
   sessionToken: "session_token",
   isQuestioner,
@@ -71,7 +71,7 @@ describe("PhaseTimerControl", () => {
 
   it("在出题阶段、等待阶段以及非主持人普通玩家视角下，无倒计时时不渲染任何内容", () => {
     // 1. 等待阶段（主持人）
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: createBaseSnapshot("waiting"),
       privateState: createPrivateState(true, "host_1"),
     });
@@ -79,7 +79,7 @@ describe("PhaseTimerControl", () => {
     expect(container.firstChild).toBeNull();
 
     // 2. 选择出题人阶段（房主）
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: createBaseSnapshot("assigningQuestioner"),
       privateState: createPrivateState(false, "host_1"),
     });
@@ -87,7 +87,7 @@ describe("PhaseTimerControl", () => {
     expect(container.firstChild).toBeNull();
 
     // 3. 出题阶段（主持人）
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: createBaseSnapshot("wordSubmission"),
       privateState: createPrivateState(true, "host_1"),
     });
@@ -95,7 +95,7 @@ describe("PhaseTimerControl", () => {
     expect(container.firstChild).toBeNull();
 
     // 4. 描述阶段（普通玩家）
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: createBaseSnapshot("description"),
       privateState: createPrivateState(false, "player_2"),
     });
@@ -105,7 +105,7 @@ describe("PhaseTimerControl", () => {
 
   it("支持的阶段中，主持人可以看到 1/2/3 分钟选择器并发送开启倒计时指令", async () => {
     const sendCommandMock = vi.fn().mockResolvedValue({});
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: createBaseSnapshot("description"),
       privateState: createPrivateState(true, "host_1"),
       sendCommand: sendCommandMock,
@@ -140,7 +140,7 @@ describe("PhaseTimerControl", () => {
       phase: "description",
     };
 
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: snapshotWithTimer,
       privateState: createPrivateState(true, "host_1"),
       sendCommand: sendCommandMock,
@@ -169,7 +169,7 @@ describe("PhaseTimerControl", () => {
       phase: "description",
     };
 
-    useGameStore.setState({
+    useWhoIsFakerStore.setState({
       snapshot: snapshotWithExpiredTimer,
       privateState: createPrivateState(false, "player_2"),
       phaseTimedOutEndsAt: null,
@@ -179,7 +179,7 @@ describe("PhaseTimerControl", () => {
 
     await waitFor(() => {
       expect(timeoutListener).toHaveBeenCalled();
-      expect(useGameStore.getState().phaseTimedOutEndsAt).toBe(endsAt);
+      expect(useWhoIsFakerStore.getState().phaseTimedOutEndsAt).toBe(endsAt);
     });
   });
 });

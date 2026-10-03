@@ -4,10 +4,10 @@ import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
-import type { RoomSummary } from "@/types";
+import type { WhoIsFakerRoomSummary } from "@/types";
 
 /** 谁是卧底的大厅只区分「等待中」与「游戏中」两态。 */
-const toRoomView = (room: RoomSummary): LobbyRoomView => ({
+const toRoomView = (room: WhoIsFakerRoomSummary): LobbyRoomView => ({
   roomId: room.roomId,
   name: room.name,
   hasPassword: room.hasPassword,
@@ -41,7 +41,7 @@ export default function WhoIsFakerPage() {
     handleCreateRoom,
     isInitialLoading,
     pending,
-  } = useLobbySession<RoomSummary>({
+  } = useLobbySession<WhoIsFakerRoomSummary>({
     gamePath: "/whoisfaker",
     rooms,
     ready: lobbyReady,

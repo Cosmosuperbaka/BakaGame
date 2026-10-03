@@ -31,7 +31,7 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
-import { isValidRoomId, type PlayerRole, type PublicPlayerView } from "@/types";
+import { isValidRoomId, type WhoIsFakerRole, type PublicPlayerView } from "@/types";
 
 export default function WhoIsFakerRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -237,7 +237,7 @@ export default function WhoIsFakerRoomPage() {
   // 结算后身份公开，与出题人视角合并成一张身份表交给玩家栏。
   const revealedRoles = useMemo(() => {
     if (snapshot?.status.phase !== "gameOver") return undefined;
-    const roles = new Map<string, PlayerRole>();
+    const roles = new Map<string, WhoIsFakerRole>();
     for (const entry of snapshot?.summary?.revealedRoles ?? []) roles.set(entry.playerId, entry.role);
     return roles.size > 0 ? roles : undefined;
   }, [snapshot?.status.phase, snapshot?.summary?.revealedRoles]);

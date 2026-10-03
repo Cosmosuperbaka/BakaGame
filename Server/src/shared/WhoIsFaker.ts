@@ -20,10 +20,8 @@ export const WHOISFAKER_PHASES = [
   "gameOver",
 ] as const;
 
-export const GAME_PHASES = WHOISFAKER_PHASES;
 
 export type WhoIsFakerPhase = (typeof WHOISFAKER_PHASES)[number];
-export type GamePhase = WhoIsFakerPhase;
 
 export const WHOISFAKER_ROLES = [
   "civilian",
@@ -32,10 +30,8 @@ export const WHOISFAKER_ROLES = [
   "blank",
 ] as const;
 
-export const PLAYER_ROLES = WHOISFAKER_ROLES;
 
 export type WhoIsFakerRole = (typeof WHOISFAKER_ROLES)[number];
-export type PlayerRole = WhoIsFakerRole;
 export type PlayerSide = "good" | "undercover" | "blank";
 export type DescriptionKind = "description" | "tieBreak" | "supplement";
 export type SpeechMode = "normal" | "supplement" | "tieBreak";
@@ -50,7 +46,7 @@ export interface PhaseTimerState {
   /** 倒计时结束的绝对毫秒时间戳 */
   endsAt: number;
   /** 倒计时所属的游戏阶段 */
-  phase: GamePhase;
+  phase: WhoIsFakerPhase;
   /** 触发时的发言模式（用于区分 normal / supplement / tieBreak） */
   speechMode?: SpeechMode;
   /** 触发时的平票PK阶段（用于区分 description / vote） */
@@ -95,7 +91,6 @@ export interface WhoIsFakerPlayerRecord {
   connectionId?: string;
 }
 
-export type PlayerRecord = WhoIsFakerPlayerRecord;
 
 // 每条描述都带上阶段类型与轮次，便于结算时回放。
 export interface DescriptionRecord {
@@ -135,7 +130,7 @@ export interface DaybreakNotice {
 // 夜晚阶段只允许平民和卧底提交动作。
 export interface NightActionRecord {
   actorId: string;
-  actorRole: Extract<PlayerRole, "civilian" | "undercover">;
+  actorRole: Extract<WhoIsFakerRole, "civilian" | "undercover">;
   targetId?: string;
 }
 
@@ -166,7 +161,7 @@ export interface VoteHistoryRecord {
 
 // 某个玩家在当前局内的运行时状态。
 export interface RoundPlayerState {
-  role: PlayerRole;
+  role: WhoIsFakerRole;
   side: PlayerSide;
   word?: string;
   alive: boolean;
@@ -189,7 +184,7 @@ export type BlankGuessReason = "active" | "eliminated" | "finale";
 export interface BlankGuessContext {
   playerId: string;
   reason: BlankGuessReason;
-  resumePhase?: Exclude<GamePhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
+  resumePhase?: Exclude<WhoIsFakerPhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
   /** 打断发言/投票等原阶段时暂存的剩余倒计时毫秒数，供裁定未通过恢复原阶段时还原。 */
   interruptedRemainingTimerMs?: number;
@@ -217,7 +212,7 @@ export interface RoundSummary {
   }>;
   revealedRoles: Array<{
     playerId: string;
-    role: PlayerRole;
+    role: WhoIsFakerRole;
   }>;
   descriptions: DescriptionRecord[];
   blankGuesses: BlankGuessRecord[];
@@ -233,7 +228,7 @@ export interface RoundSummary {
 // 单局游戏的全部运行态。
 export interface GameRound {
   id: string;
-  phase: GamePhase;
+  phase: WhoIsFakerPhase;
   speechMode?: SpeechMode;
   day: number;
   questionerPlayerId?: string;
@@ -288,14 +283,13 @@ export interface WhoIsFakerRoomRecord {
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
-  players: Record<string, PlayerRecord>;
+  players: Record<string, WhoIsFakerPlayerRecord>;
   chat: ChatMessage[];
   round?: GameRound;
   /** 房间内已开启的对局总轮数，1-based 计数。 */
   roundCount?: number;
 }
 
-export type RoomRecord = WhoIsFakerRoomRecord;
 
 // 大厅列表使用的轻量房间摘要。
 export interface WhoIsFakerRoomSummary {
@@ -307,11 +301,10 @@ export interface WhoIsFakerRoomSummary {
   playerCount: number;
   spectatorCount: number;
   onlineCount: number;
-  phase: GamePhase;
+  phase: WhoIsFakerPhase;
   testMode: boolean;
 }
 
-export type RoomSummary = WhoIsFakerRoomSummary;
 
 // 房间公共玩家视图，不包含秘密词语与隐藏身份。
 export interface PublicPlayerView {
@@ -330,7 +323,7 @@ export interface PublicPlayerView {
     | "dead"
     | "spectator"
     | "kicked";
-  revealedRole?: PlayerRole;
+  revealedRole?: WhoIsFakerRole;
   eliminatedAt?: number;
 }
 
@@ -349,7 +342,7 @@ export interface WhoIsFakerRoomSnapshot {
     revealRoleOnDeath?: boolean;
   };
   status: {
-    phase: GamePhase;
+    phase: WhoIsFakerPhase;
     /** 本局的唯一标识。局外为 undefined；换局必变，客户端据此清空跨局状态（如身份预测）。 */
     roundId?: string;
     speechMode?: SpeechMode;
@@ -389,13 +382,12 @@ export interface WhoIsFakerRoomSnapshot {
   summary?: RoundSummary;
 }
 
-export type RoomSnapshot = WhoIsFakerRoomSnapshot;
 
 // 每个连接单独收到的私有视图，用于承载秘密信息。
 export interface WhoIsFakerPrivateState {
   playerId: string;
   sessionToken: string;
-  role?: PlayerRole;
+  role?: WhoIsFakerRole;
   side?: PlayerSide;
   word?: string;
   angelWordOptions?: [string, string];
@@ -419,7 +411,7 @@ export interface WhoIsFakerPrivateState {
   myCurrentNightTargetId?: string;
   questionerView?: Array<{
     playerId: string;
-    role: PlayerRole;
+    role: WhoIsFakerRole;
     side: PlayerSide;
     alive: boolean;
   }>;
@@ -427,7 +419,6 @@ export interface WhoIsFakerPrivateState {
   privilegedActionPreview?: PrivilegedActionPreview;
 }
 
-export type PrivateState = WhoIsFakerPrivateState;
 
 // ==================== 谁是卧底客户端信封与消息 ====================
 
@@ -484,7 +475,7 @@ export type WhoIsFakerClientMessage =
       {
         words: [string, string];
         blankHint?: string;
-        manualRoles?: Record<string, PlayerRole>;
+        manualRoles?: Record<string, WhoIsFakerRole>;
       }
     >
   | ClientEnvelope<"game.advancePhase", Record<string, never>>
@@ -501,8 +492,8 @@ export type WhoIsFakerClientMessage =
     >
   | ClientEnvelope<"chat.send", { text: string }>
   | ClientEnvelope<"room.transferHost", { playerId: string }>
-  | ClientEnvelope<"test.jumpToPhase", { phase: GamePhase }>
-  | ClientEnvelope<"test.setMyRole", { role: PlayerRole }>
+  | ClientEnvelope<"test.jumpToPhase", { phase: WhoIsFakerPhase }>
+  | ClientEnvelope<"test.setMyRole", { role: WhoIsFakerRole }>
   | ClientEnvelope<"test.addBot", { count?: number }>
   | ClientEnvelope<"test.removeBot", { playerId?: string; count?: number }>
   | ClientEnvelope<"game.cancelVote", Record<string, never>>
@@ -511,5 +502,3 @@ export type WhoIsFakerClientMessage =
   | ClientEnvelope<"game.startPhaseTimer", { durationSeconds: number }>
   | ClientEnvelope<"game.stopPhaseTimer", Record<string, never>>;
 
-export type ClientMessage = WhoIsFakerClientMessage;
-export type FakerClientMessage = WhoIsFakerClientMessage;

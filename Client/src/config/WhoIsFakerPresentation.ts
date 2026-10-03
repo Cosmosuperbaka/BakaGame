@@ -1,7 +1,7 @@
-import type { GamePhase, PlayerRole, RoundWinner } from "@/types";
+import type { WhoIsFakerPhase, WhoIsFakerRole, RoundWinner } from "@/types";
 
 // 阶段中文名
-export const PHASE_LABELS: Record<GamePhase, string> = {
+export const PHASE_LABELS: Record<WhoIsFakerPhase, string> = {
   waiting: "等待中",
   assigningQuestioner: "指定主持人",
   wordSubmission: "出题阶段",
@@ -14,7 +14,7 @@ export const PHASE_LABELS: Record<GamePhase, string> = {
 };
 
 // 角色中文名
-export const ROLE_LABELS: Record<PlayerRole, string> = {
+export const ROLE_LABELS: Record<WhoIsFakerRole, string> = {
   civilian: "平民",
   undercover: "卧底",
   angel: "天使",
@@ -27,7 +27,7 @@ export const ROLE_LABELS: Record<PlayerRole, string> = {
  * 取值全部来自 `index.css` 的状态语义令牌，亮暗两侧由令牌自身切换，
  * 组件里不再逐处补 `dark:` 变体。
  */
-export const ROLE_COLORS: Record<PlayerRole, string> = {
+export const ROLE_COLORS: Record<WhoIsFakerRole, string> = {
   civilian: "text-info",
   undercover: "text-destructive",
   angel: "text-warning",
