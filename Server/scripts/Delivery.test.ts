@@ -54,12 +54,13 @@ test("环境白名单拒绝合成账号、遥测与代理，数据库落临时�
   expect(env.NETEASE_COOKIE).toBe(""); expect(env.HTTPS_PROXY).toBeUndefined(); expect(env.WORD_BANK_PATH).toBe(path.join(tmpdir(), "words.sqlite"));
 });
 
+// 与真实进程生命周期一致：15s 探活 + 最多 3s 停机，不能被 Bun 默认 5s 提前中断。
 test("合成健康进程响应带自有标记，停止后临时目录已回收", async () => {
   const server = await startIsolatedServer(await availablePort(), path.join(import.meta.dir, "fixtures/OwnedServer.ts"));
   try { await server.ready(); expect(await (await fetch(`${server.baseUrl}/__bakagame_test_owner`)).text()).toMatch(/^[0-9a-f-]{36}$/); }
   finally { await server.stop(); }
-  await expect(access(server.directory)).rejects.toThrow();
-});
+  await expect(access(server.directory)).rejects.toThrow("ENOENT");
+}, 20_000);
 
 test("子进程退出时旧健康实例不能造成假绿", async () => {
   const port = await availablePort();
