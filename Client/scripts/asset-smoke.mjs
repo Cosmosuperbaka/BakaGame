@@ -20,7 +20,7 @@ async function walk(directory) {
 const preview = await createPreview({
   root: clientDir,
   configFile: false,
-  envFile: false,
+  envDir: false,
   build: { outDir: distDir },
   preview: { host: "127.0.0.1", port: 0, strictPort: true },
 });
