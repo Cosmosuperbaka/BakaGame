@@ -150,6 +150,43 @@ describe('CCB 原生完整玩法', () => {
     expect(scores.find(score => score.playerId === mate.id)).toMatchObject({ partial: 0, quickGuess: 2 });
   });
 
+  for (const syncMode of [false, true]) for (const nonstopMode of [false, true]) {
+    for (const earlierMiss of [false, true]) test(`作品分按全队提交顺序而非个人索引或姓名（同步${syncMode}血战${nonstopMode}前错${earlierMiss}）`, async () => {
+      const h = harness(); const first = await h.create('Z'); const later = await h.join('A');
+      const other = syncMode ? await h.join('另一队') : null;
+      await h.configure(first, { syncMode, nonstopMode, globalPick: false });
+      await h.send(first, 'ccb.player.team', { team: 1 }); await h.send(later, 'ccb.player.team', { team: 1 });
+      await h.ready(later); if (other) await h.ready(other);
+      await h.send(first, 'ccb.game.start', {});
+      const advanceOther = async () => { if (other) await h.guess(other, 4); };
+      if (earlierMiss) { await h.guess(first, 3); await advanceOther(); }
+      await h.guess(first, 2); await advanceOther();
+      await h.guess(later, 2); await advanceOther();
+      await h.send(first, 'ccb.game.surrender', {});
+      if (other) await h.send(other, 'ccb.game.surrender', {});
+      const summary = h.snapshot(first).roundSummary!;
+      expect(summary.guesses.filter(guess => guess.partial).map(guess => guess.playerId)).toEqual([first.id!, later.id!]);
+      expect(summary.scores.find(score => score.playerId === first.id)).toMatchObject({ partial: 1, score: 1 });
+      expect(summary.scores.find(score => score.playerId === later.id)).toMatchObject({ partial: 0, score: 0 });
+    });
+    for (const winnerIsFirst of [false, true]) test(`先作品者本人猜中不转赠作品分，队友猜中保留贡献（同步${syncMode}血战${nonstopMode}本人${winnerIsFirst}）`, async () => {
+      const h = harness(); const first = await h.create('Z'); const later = await h.join('A');
+      const other = syncMode ? await h.join('另一队') : null;
+      await h.configure(first, { syncMode, nonstopMode, globalPick: false });
+      await h.send(first, 'ccb.player.team', { team: 1 }); await h.send(later, 'ccb.player.team', { team: 1 });
+      await h.ready(later); if (other) await h.ready(other);
+      await h.send(first, 'ccb.game.start', {});
+      await h.guess(first, 2); if (other) await h.guess(other, 4);
+      await h.guess(later, 2); if (other) await h.guess(other, 4);
+      const winner = winnerIsFirst ? first : later;
+      await h.guess(winner, 1); if (other) await h.send(other, 'ccb.game.surrender', {});
+      const scores = h.snapshot(first).roundSummary!.scores;
+      expect(scores.find(score => score.playerId === first.id)?.partial).toBe(winnerIsFirst ? 0 : 1);
+      expect(scores.find(score => score.playerId === later.id)?.partial).toBe(0);
+      expect(scores.find(score => score.playerId === winner.id)?.base).toBeGreaterThan(0);
+    });
+  }
+
   test('同步标签禁选同轮暂不遮蔽，轮结束后仍向共同发现者公开', async () => {
     const h = harness(); const host = await h.create(); const guest = await h.join('玩家');
     await h.configure(host, { syncMode: true, nonstopMode: true, tagBan: true }); await h.ready(guest); await h.send(host, 'ccb.game.start', {});

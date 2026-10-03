@@ -159,9 +159,9 @@ export function settleCCBRound(room: CCBRoom): void {
     if (player && !round.settings.nonstopMode) player.score += winner.detail.score;
   }
   for (const unit of round.units.values()) {
-    const hits = unit.memberIds.map(id => ({ id, position: round.guesses.filter(guess => guess.playerId === id).findIndex(guess => guess.partial) }))
+    const hits = unit.memberIds.map(id => ({ id, position: round.guesses.findIndex(guess => guess.playerId === id && guess.partial) }))
       .filter(hit => hit.position >= 0 && room.players.has(hit.id))
-      .sort((a, b) => a.position - b.position || room.players.get(a.id)!.name.localeCompare(room.players.get(b.id)!.name));
+      .sort((a, b) => a.position - b.position);
     const winner = hits[0];
     if (winner && !round.winners.some(correct => correct.playerId === winner.id)) {
       room.players.get(winner.id)!.score++;
