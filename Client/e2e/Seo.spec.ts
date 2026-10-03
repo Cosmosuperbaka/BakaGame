@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, getLoopback, isLoopbackUrl } from "./fixtures/Isolation";
 
 // 该用例验证 SEO 元信息是否正确注入：
 // 本项目是 SPA，静态外壳提供爬虫正文与元信息，启动后由 react-helmet-async
@@ -70,11 +70,11 @@ test.describe("页面 SEO 元信息", () => {
   // 而原始 HTML 里必须留有正文——两边都不能少。
   for (const [route, text] of [["/whoisfaker", "在线版谁是卧底"], ["/ccb", "在线猜动漫角色"]]) {
     test(`${route} 静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空`, async ({ page }) => {
-      const raw = await (await page.request.get(route)).text();
+      const raw = await (await getLoopback(page.request, route)).text();
       expect(raw).toContain(text);
       expect(raw).toContain('<div id="root"><main>');
 
-      await page.route("**/*.js", (request) => request.abort());
+      await page.route("**/*.js", (route) => isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback());
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await expect(page.locator("#root")).toBeEmpty();
     });

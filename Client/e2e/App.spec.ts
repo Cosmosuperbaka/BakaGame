@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
+import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
 async function expectActionAreaScrollable(page: Page) {
   const viewport = page
@@ -110,6 +111,7 @@ test("landing game entries stack cleanly and stay clear of the footer", async ({
 
 test("players in a room are prompted when a newer build is deployed", async ({ page }) => {
   await page.route("**/?version-check=*", async (route) => {
+    if (!isLoopbackUrl(route.request().url())) return route.fallback();
     await route.fulfill({
       contentType: "text/html",
       body: '<!doctype html><html><head><meta name="bakagame-build" content="newer-build"></head></html>',
@@ -296,7 +298,7 @@ test("stickers load from stable paths and long chat messages stay inside both pa
   await assertPageQuality();
 });
 
-test("two browser sessions can create and join the same server room", async ({ browser, page }) => {
+test("two browser sessions can create and join the same server room", async ({ isolatedContext, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `E2E 集成房间 ${unique}`;
   const hostName = `房主${unique}`;
@@ -318,9 +320,9 @@ test("two browser sessions can create and join the same server room", async ({ b
   await expectActionAreaScrollable(page);
 
   const roomId = page.url().split("/").at(-1);
-  const guestContext = await browser.newContext();
+  const guestContext = await isolatedContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/whoisfaker");
+  await guestPage.goto("http://127.0.0.1:5173/whoisfaker");
   await guestPage.getByPlaceholder("用户名").fill(guestName);
   await guestPage.getByRole("button", { name: new RegExp(roomName) }).click();
 
@@ -329,7 +331,7 @@ test("two browser sessions can create and join the same server room", async ({ b
   await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
-  await guestContext.close();
+  await closeIsolatedContext(guestContext);
 });
 
 test("empty description history keeps the player pane width after a direct voting jump", async ({ page }) => {
@@ -366,7 +368,7 @@ test("empty description history keeps the player pane width after a direct votin
   }).toBeLessThan(1);
 });
 
-test("a decisive vote shows the eliminated player before game over", async ({ browser, page }) => {
+test("a decisive vote shows the eliminated player before game over", async ({ isolatedContext, page }) => {
   // 本用例是本套件里最重的一条：5 个浏览器上下文跑完整的建房 → 分配身份 → 描述 → 投票 → 结算。
   // 游戏最少需要 4 名玩家，上下文数量已无法再减，只能靠并行加入与资源屏蔽提速。
   // CI 的 2 核 runner 比本地慢约 6 倍，180 秒预算实测三次全超（全部步骤都满足、
@@ -379,7 +381,7 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
   // 屏蔽图片/字体/音视频：本用例断言只依赖 DOM 结构与文本，CI 的 2 核 runner
   // 上 5 个页面重复加载这些静态资源是显著的纯开销。
   const trimHeavyAssets = (context: BrowserContext) => {
-    void context.route(/\.(png|jpe?g|gif|webp|avif|svg|woff2?|otf|ttf|mp3|mp4|webm)(\?.*)?$/, (route) => route.abort());
+    void context.route(/\.(png|jpe?g|gif|webp|avif|svg|woff2?|otf|ttf|mp3|mp4|webm)(\?.*)?$/, (route) => isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback());
   };
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -398,7 +400,7 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
     // 串行加载 4 个生产 bundle 在 CI 上光加入就要消耗 1 分钟以上。
     // map 保序，playerPages[i] 对应 playerNames[i]。
     const playerPages = await Promise.all(playerNames.map(async (playerName) => {
-      const context = await browser.newContext({ reducedMotion: "reduce" });
+      const context = await isolatedContext({ reducedMotion: "reduce" });
       playerContexts.push(context);
       trimHeavyAssets(context);
       const playerPage = await context.newPage();
@@ -491,11 +493,11 @@ test("a decisive vote shows the eliminated player before game over", async ({ br
     await expect(page.getByText("好人阵营胜利", { exact: true })).toBeVisible();
     await expect(page.getByLabel("已出局")).toHaveCount(1);
   } finally {
-    await Promise.all(playerContexts.map((context) => context.close()));
+    await Promise.all(playerContexts.map(closeIsolatedContext));
   }
 });
 
-test("two browser sessions can create and join a Songuessr room", async ({ browser, page }) => {
+test("two browser sessions can create and join a Songuessr room", async ({ isolatedContext, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `E2E 音乐房间 ${unique}`;
   const hostName = `歌房主${unique}`;
@@ -520,9 +522,9 @@ test("two browser sessions can create and join a Songuessr room", async ({ brows
   await expectActionAreaScrollable(page);
 
   const roomId = page.url().split("/").at(-1);
-  const guestContext = await browser.newContext();
+  const guestContext = await isolatedContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songuessr");
+  await guestPage.goto("http://127.0.0.1:5173/songuessr");
   await guestPage.getByPlaceholder("用户名").fill(guestName);
   await guestPage.getByRole("button", { name: new RegExp(roomName) }).click();
 
@@ -531,10 +533,27 @@ test("two browser sessions can create and join a Songuessr room", async ({ brows
   await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
-  await guestContext.close();
+  await closeIsolatedContext(guestContext);
 });
 
 test("Songuessr direct room URL creates the room and leaving returns cleanly", async ({ page }) => {
+  // 只替换必须访问真实网易云的二维码创建/轮询；房间与其余命令仍走隔离真实服务。
+  let qrCreates = 0;
+  await page.routeWebSocket((url) => isLoopbackUrl(url) && url.pathname === "/api/songuessr/ws", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => {
+      if (typeof message !== "string") { server.send(message); return; }
+      const command = JSON.parse(message) as { type: string; id: string };
+      let payload: unknown;
+      if (command.type === "song.auth.qr.create") {
+        qrCreates += 1;
+        payload = { key: "e2e-qr", qrImage: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" };
+      } else if (command.type === "song.auth.qr.check") {
+        payload = { status: "waiting", message: "隔离夹具等待扫码" };
+      } else { server.send(message); return; }
+      socket.send(JSON.stringify({ type: "ack", id: command.id, requestType: command.type, payload }));
+    });
+  });
   const roomId = String(1_000 + (Date.now() % 8_900));
   const userName = `直链玩家${Date.now().toString(36)}`;
 
@@ -547,7 +566,10 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   await expect(page.getByText(`${userName}的房间`, { exact: true })).toBeVisible();
   await expect(page.getByRole("slider", { name: "播放音量" })).toBeVisible();
   await page.getByRole("button", { name: /网易云账号/ }).click();
-  await expect(page.getByAltText("网易云登录二维码")).toBeVisible({ timeout: 15_000 });
+  const qrImage = page.getByAltText("网易云登录二维码");
+  await expect(qrImage).toBeVisible();
+  await expect.poll(() => qrImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  expect(qrCreates).toBe(1);
   await expect(page.getByText(/服务器不会保存账号信息/)).toBeVisible();
 
   await page.getByRole("button", { name: "离开房间" }).click();
@@ -555,7 +577,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   await expect(page.getByText(/会话.*失效|会话令牌无效/)).toHaveCount(0);
 });
 
-test("private Songuessr rooms stay listed and direct links request the password", async ({ browser, page }) => {
+test("private Songuessr rooms stay listed and direct links request the password", async ({ isolatedContext, page }) => {
   const unique = Date.now().toString(36);
   const roomName = `私密音乐房 ${unique}`;
   const password = `pw-${unique}`;
@@ -572,21 +594,21 @@ test("private Songuessr rooms stay listed and direct links request the password"
   await expect(page.getByText(roomName, { exact: true })).toBeVisible();
   const roomId = page.url().split("/").at(-1)!;
 
-  const guestContext = await browser.newContext();
+  const guestContext = await isolatedContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songuessr");
+  await guestPage.goto("http://127.0.0.1:5173/songuessr");
   await guestPage.getByPlaceholder("用户名").fill(`私密访客${unique}`);
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
-  await guestPage.goto(`http://localhost:5173/songuessr/room/${roomId}`);
+  await guestPage.goto(`http://127.0.0.1:5173/songuessr/room/${roomId}`);
   await expect(guestPage.getByRole("heading", { name: "输入房间密码" })).toBeVisible();
   await guestPage.getByPlaceholder("请输入密码").fill(password);
   await guestPage.getByRole("button", { name: "加入房间" }).click();
   await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
-  await guestContext.close();
+  await closeIsolatedContext(guestContext);
 });
 
-test("Songuessr test room exposes bots and guests can switch to spectator", async ({ browser, page }) => {
+test("Songuessr test room exposes bots and guests can switch to spectator", async ({ isolatedContext, page }) => {
   const unique = Date.now().toString(36);
   await page.goto("/songuessr/room/Oblivionis");
   await expect(page.getByRole("heading", { name: "设置用户名" })).toBeVisible();
@@ -598,13 +620,13 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
   await page.getByRole("button", { name: "添加一个测试人机" }).click();
   await expect(page.getByLabel("测试人机", { exact: true })).toHaveCount(1);
 
-  const guestContext = await browser.newContext();
+  const guestContext = await isolatedContext();
   const guestPage = await guestContext.newPage();
-  await guestPage.goto("http://localhost:5173/songuessr/room/Oblivionis");
+  await guestPage.goto("http://127.0.0.1:5173/songuessr/room/Oblivionis");
   await guestPage.getByPlaceholder("用户名").fill(`旁观访客${unique}`);
   await guestPage.getByRole("button", { name: "进入房间" }).click();
   await guestPage.getByRole("button", { name: "加入旁观" }).click();
   await expect(guestPage.getByRole("button", { name: "取消旁观" })).toBeVisible();
   await expect(page.getByText(`旁观访客${unique}`, { exact: true }).first()).toBeVisible();
-  await guestContext.close();
+  await closeIsolatedContext(guestContext);
 });

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
 async function useLocalCharacterImages(page: Page) {
   // SQLite 补全缓存也可能已有图片 URL；阻止这些可选图片绕过 WS 隔离回源。
@@ -7,9 +8,9 @@ async function useLocalCharacterImages(page: Page) {
     if (route.request().resourceType() === "image" && !["localhost", "127.0.0.1"].includes(url.hostname)) {
       return route.fulfill({ contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64") });
     }
-    return route.continue();
+    return route.fallback();
   });
-  await page.routeWebSocket("**/api/ccb/ws", (socket) => {
+  await page.routeWebSocket((url) => isLoopbackUrl(url) && url.pathname === "/api/ccb/ws", (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((message) => {
       if (typeof message !== "string") { server.send(message); return; }
@@ -55,9 +56,9 @@ async function expectViewportFits(page: Page) {
   }))).toEqual({ width: true, height: true });
 }
 
-test("增强房双浏览器连续两局、重连、聊天与三档布局", async ({ browser, page }, testInfo) => {
+test("增强房双浏览器连续两局、重连、聊天与三档布局", async ({ isolatedContext, page }, testInfo) => {
   test.setTimeout(process.env.CI ? 180_000 : 120_000);
-  const guestContext = await browser.newContext({ reducedMotion: "reduce" });
+  const guestContext = await isolatedContext({ reducedMotion: "reduce" });
   const guest = await guestContext.newPage();
   // 只替换可选头像补全；角色检索、出题、猜测及状态同步仍走真实 SQLite 与服务端。
   await Promise.all([useLocalCharacterImages(page), useLocalCharacterImages(guest)]);
@@ -170,6 +171,6 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     checkHost();
     checkGuest();
   } finally {
-    await guestContext.close();
+    await closeIsolatedContext(guestContext);
   }
 });

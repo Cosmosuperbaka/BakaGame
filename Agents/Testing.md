@@ -103,7 +103,18 @@ npx playwright test e2e/App.spec.ts
 - 客户端只使用 `Client/package-lock.json`，安装时运行 `npm ci`。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
-- 常规 Playwright 自动启动服务端与生产 `vite preview`：后端探活 `http://localhost:4850/health`，前端探活 `http://127.0.0.1:5173`，页面基址 `http://localhost:5173`。单独运行 Playwright 前先构建；`test:e2e` 已包含 build。歌词套件另用 Vite 5177。
+- 常规 Playwright 自动启动服务端与生产 `vite preview`：后端探活 `http://127.0.0.1:4850/health`，前端探活 `http://127.0.0.1:5173`，页面基址 `http://127.0.0.1:5173`。单独运行 Playwright 前先构建；`test:e2e` 已包含 build。歌词套件另用 Vite 5177。
+
+### 客户端 E2E 隔离边界
+
+- 常规浏览器回归先用 `node scripts/e2e-build.mjs` 构建，再执行 `playwright test`。入口跨平台调用已安装的 TypeScript/Vite，不经 shell 拼接；Vite `envDir: false` 禁止加载 `.env`，显式设置 `VITE_SENTRY_DSN` 为空、`VITE_SERVER_URL=http://127.0.0.1:4850`。`NODE_ENV` 与 mode 仍为 production，不绕过仅生产生效的行为。
+- App/CCB/SEO 统一导入 `e2e/fixtures/Isolation.ts`；默认 context 自动装守卫，额外参与者使用 `isolatedContext` fixture，不裸调 `browser.newContext`。创建页面前安装 HTTP/WS route，仅允许 localhost、IPv4 loopback 与 `::1`，外部连接 abort/close 且在 teardown 明确失败；默认和额外 context 均禁用 Service Worker。允许的 HTTP 请求由 `route.fetch({ maxRedirects: 0 })` 取回再 fulfill；带 Location 的 HTTP 重定向明确失败，不让浏览器在只拦首跳的路由机制下隐式外跳。
+- Edge/Chromium 的 Local Network Access 权限只授予隔离页面 `http://127.0.0.1:5173`，用于本地 WS 路由桥；所有默认及手动 context 均使用同一范围，不禁用浏览器安全，也不授权外部来源。
+- 页级合成夹具不得通过 `route.continue()` 绕过 context 守卫，未命中用 `fallback()`。CCB 可选图片只能本地合成 fulfill，WS 图片夹具只匹配 loopback，不能接通真实上游。原有页面异常、控制台及非预期 HTTP 错误质量断言保留。网易云登录二维码在浏览器边界仅替换创建/轮询 ACK，使用不可扫描的合成图片；房间命令透传真实隔离服务，保留可见、图片加载和恰好一次创建断言，不以开放真实出口让登录测试通过。
+- 隔离 context 通过 `closeIsolatedContext` 收尾：保持页级拒绝出口，再用框架 `unrouteAll({ behavior: "wait" })` 排空在途 HTTP handler，最后关闭目标。不使用 `ignoreErrors` 吞掉异常，不在 fulfill 后再次 abort。资源屏蔽/合成路由只匹配 loopback，未命中 fallback 至共享守卫（明确合成的可选外部角色图片除外）。
+- `APIRequestContext` 不受浏览器 route 拦截。SEO 原始 HTML 请求通过 `getLoopback` 校验目标并禁用自动重定向；新增 API 请求沿用这一显式边界，不允许直接请求外部 URL。
+- E2E 静态预览用 `node scripts/e2e-preview.mjs`：Vite `configFile: false`/`envDir: false`，禁用 proxy 与源文件生成插件，只服务 production dist；页面与就绪探测均显式使用 `127.0.0.1:5173`，不碰用户已有的 `localhost`/`::1` 服务。普通 dev/preview 配置保持不变。
+- `playwright test` 本身不会重建已有 dist；手工运行前也必须走上述隔离构建。服务端仍用 `bun --no-env-file run scripts/IsolatedServer.ts`，不复用真实服务。歌词独立套件按其既有专项入口执行，不以本段覆盖其隔离规则。
 
 ## 测试编写与维护
 

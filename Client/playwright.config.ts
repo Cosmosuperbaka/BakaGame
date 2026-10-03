@@ -14,7 +14,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: "http://127.0.0.1:5173",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -42,9 +42,10 @@ export default defineConfig({
     //
     // host/url 显式钉死 127.0.0.1：vite 对 `localhost` 在部分环境只绑 IPv6（::1），
     // 与 Playwright 的就绪探测可能落到不同协议栈（实测 Windows 上出现 404/超时）；
-    // 页面仍通过 baseURL 的 localhost 访问，浏览器会自动回退到 IPv4，不受影响。
+    // 页面 baseURL 也钉死 IPv4，不碰用户已有的 localhost/::1 实例。
+    // 专用入口 configFile:false/envDir:false，仅静态服务 dist，不加载 dev proxy/生成插件。
     {
-      command: "npm run preview -- --host 127.0.0.1 --port 5173 --strictPort",
+      command: "node scripts/e2e-preview.mjs",
       cwd: clientDir,
       url: "http://127.0.0.1:5173",
       reuseExistingServer: false,
