@@ -321,6 +321,23 @@ export const scoreRow: Variants = {
 };
 
 /**
+ * 贡献者行的浅底：这一局真正做出贡献的玩家（CCB 猜中者、猜歌首位答对者），
+ * 行落定后底色浮起并留作常驻档，读作「这几分是他挣的」而不是随后消失的提示。
+ * 取 `primary` 的浅底档（Design §3.1 的 `/10`）：与行悬停的 `accent/40` 不同层，
+ * 且是流内区块，只铺底色不加描边，避免整表读成一堆按钮。
+ */
+export const contributorWash = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: duration.base, ease: ease.out },
+} as const;
+
+/** 贡献者浅底起浮的时刻（秒）：这一行落定之后，与行内数字同时开始。 */
+export function contributorWashDelay(index: number, count: number, ranked: boolean): number {
+  return scoreRevealDelay(index, count, ranked) + scoreReveal.land;
+}
+
+/**
  * 阶段切换。新内容自后方推入、旧内容继续向前退出，
  * 两者尺度方向相反，形成前后层次而不是对称淡入淡出。
  * 收尾锁定整数缩放并交回 CSS 渲染，避免子像素残留造成文本抖动。
@@ -438,6 +455,27 @@ export const receiptMark = {
 export const receiptMarkFollow = {
   ...receiptMark,
   transition: { ...spring.impulse, delay: followDelay },
+} as const;
+
+/**
+ * 印章：结算答案卡落定后，一枚印落在卡上，「落定 + 盖章」的后半拍。
+ * 比 `receiptMark` 多出角度回正与按落方向的一点位移，读作被按下去而不是凭空弹出；
+ * 低阻尼的 `impulse` 让按下那一下有落力。只在结算这类一次性揭晓的时刻使用，不循环。
+ */
+export const sealDrop = {
+  initial: { opacity: 0, scale: 1.6, rotate: -12, y: -3 },
+  animate: { opacity: 1, scale: 1, rotate: -6, y: 0 },
+  transition: spring.impulse,
+} as const;
+
+/**
+ * 结算答案卡的落定：卡片以 `impulse` 回弹就位，印章晚 `followDelay` 再落下。
+ * 与 `receiptCard` 同一条语汇（先接住、再盖章），只是这里的「回执」是一局的答案。
+ */
+export const sealCard = {
+  initial: { opacity: 0, scale: 0.97 },
+  animate: { opacity: 1, scale: 1 },
+  transition: spring.impulse,
 } as const;
 
 /** 自右侧滑入的提示（Toast）：从屏幕边缘被推进来，退出沿原路回去。堆叠重排由组件的 `layout` 配 `spring.settle` 负责。 */

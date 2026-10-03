@@ -1,9 +1,12 @@
 import React from "react";
+import { motion } from "framer-motion";
 import { Film, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Seal } from "@/components/ui/Seal";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
+import { sealCard } from "@/lib/Motion";
 import {
   BANGUMI_TRACK_KIND_LABELS,
   detectExplicitTrackKind,
@@ -114,7 +117,15 @@ const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
 ];
 
 /** 多人模式的得分统计：服务端已按总分从高到低排好，首行加奖杯 */
-export function SongScoreTable({ scores }: { scores: SonGuessrRoundSummary["scores"] }) {
+export function SongScoreTable({
+  scores,
+  contributors,
+}: {
+  scores: SonGuessrRoundSummary["scores"];
+  /** 本轮答对的玩家：行落定后浮起浅底，与奖杯的扫光各说一件事 */
+  contributors: string[];
+}) {
+  const correctIds = new Set(contributors);
   return (
     <ScoreTable
       title="得分统计"
@@ -125,6 +136,7 @@ export function SongScoreTable({ scores }: { scores: SonGuessrRoundSummary["scor
         name: `${index === 0 ? "🏆 " : ""}${score.playerName}`,
         cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
         rollFrom: { score: score.score - score.delta },
+        contributor: correctIds.has(score.playerId),
         // 扫光跟着奖杯走；还没人得分时第一行只是排在最前，不算领先
         winner: index === 0 && score.score > 0,
       }))}
@@ -158,47 +170,54 @@ export function SongRoundResultPhase({
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <PhaseHeader icon={snapshot.settings.questionType === "anime" ? Film : Music2} title="答案揭晓" />
-      {snapshot.settings.questionType === "anime" && summary.anime ? (
-        <section className="space-y-4 rounded-md bg-muted p-4">
-          <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-            {summary.anime.imageUrl ? (
-              <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-sm" />
-            ) : (
-              <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background">
-                <Film className="h-9 w-9" />
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2>
-              <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
-              <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
-                {summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}
-                {summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}
-                {summary.anime.tags.slice(0, 5).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+      {/* 答案卡：整卡回弹落定，印章晚一拍落在右上；下方得分表在卡之外，两者各落各的 */}
+      <motion.section
+        initial={sealCard.initial}
+        animate={sealCard.animate}
+        transition={sealCard.transition}
+        className="relative space-y-4 rounded-md bg-muted p-4"
+      >
+        <Seal label="揭晓" className="absolute right-4 top-4" />
+        {snapshot.settings.questionType === "anime" && summary.anime ? (
+          <>
+            <div className="flex flex-col items-center gap-4 pr-16 text-center sm:flex-row sm:text-left">
+              {summary.anime.imageUrl ? (
+                <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-sm" />
+              ) : (
+                <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background">
+                  <Film className="h-9 w-9" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2>
+                <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
+                <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
+                  {summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}
+                  {summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}
+                  {summary.anime.tags.slice(0, 5).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="border-t border-border/60 pt-4">
-            <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
-              <Music2 className="h-3.5 w-3.5" />
-              <span>关联歌曲</span>
+            <div className="border-t border-border/60 pt-4">
+              <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
+                <Music2 className="h-3.5 w-3.5" />
+                <span>关联歌曲</span>
+              </div>
+              <SongSettlementDetails
+                song={summary.song}
+                trackKindBadge={
+                  <Badge variant="default">
+                    {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
+                  </Badge>
+                }
+              />
             </div>
-            <SongSettlementDetails
-              song={summary.song}
-              trackKindBadge={
-                <Badge variant="default">
-                  {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
-                </Badge>
-              }
-            />
-          </div>
-        </section>
-      ) : (
-        <section className="rounded-md bg-muted p-4">
+          </>
+        ) : (
           <SongSettlementDetails song={summary.song} />
-        </section>
-      )}
+        )}
+      </motion.section>
       {snapshot.solo ? (
         <SoloRoundOutcome
           correct={summary.correctPlayerIds.includes(privateState.playerId)}
@@ -206,7 +225,7 @@ export function SongRoundResultPhase({
           rounds={snapshot.roundNumber}
         />
       ) : (
-        <SongScoreTable scores={summary.scores} />
+        <SongScoreTable scores={summary.scores} contributors={summary.correctPlayerIds} />
       )}
       {isHost ? (
         <div className="flex justify-end gap-2">

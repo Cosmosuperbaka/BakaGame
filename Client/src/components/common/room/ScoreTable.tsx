@@ -1,7 +1,7 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { scoreRevealDelay, scoreRollDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
+import { contributorWash, contributorWashDelay, scoreRevealDelay, scoreRollDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -24,6 +24,8 @@ export interface ScoreTableRow {
   cells: Record<string, ReactNode>;
   /** 列 key → 滚动起点：这一列的数字在行落定后从起点逐位滚到终值（总分从赛前分滚起，CCB 的本局得分从 0 滚起） */
   rollFrom?: Record<string, number>;
+  /** 本局做出贡献（CCB 猜中、猜歌答对）：行落定后浮起常驻的浅底，让战报读得出这几分是谁挣的 */
+  contributor?: boolean;
   /** 第一名或获胜阵营：整表揭示完后有一道光扫过这一行，只播一次 */
   winner?: boolean;
 }
@@ -54,6 +56,23 @@ function WinnerSweep({ delay }: { delay: number }) {
 }
 
 /**
+ * 贡献者行的浅底。与扫光同样把定位落在首格里、宽度取滚动容器的 `100cqw` 横跨整行：
+ * `tr` 上的定位各浏览器不一致，格子只负责撑起行高与基线。`-z-10` 压在文字底下、底纸之上，
+ * 因此数字与名字仍按原色读，底色只交代「这几分是谁挣的」。区块 `isolate` 兜住层叠。
+ */
+function ContributorWash({ delay }: { delay: number }) {
+  return (
+    <motion.span
+      aria-hidden
+      className="pointer-events-none absolute inset-y-0 left-0 -z-10 w-[100cqw] bg-primary/10"
+      initial={contributorWash.initial}
+      animate={contributorWash.animate}
+      transition={{ ...contributorWash.transition, delay }}
+    />
+  );
+}
+
+/**
  * 三个游戏共用的结算得分表。区块标题经 `aria-labelledby` 作表格的可访问名，
  * 玩家名是行标题，明细收在名字下方；数值列不折行，余宽留给名字。
  * 各行逐行揭示（`scoreRow`），顺序见 `ranked`。
@@ -74,9 +93,12 @@ export function ScoreTable({
   const sweepDelay = winnerSweepDelay(rows.length);
   const body = rows.map((row, rowIndex) => {
     const rollDelay = scoreRollDelay(rowIndex, rows.length, ranked);
+    const washDelay = contributorWashDelay(rowIndex, rows.length, ranked);
+    const layered = row.contributor || row.winner;
     const cells = (
       <>
-        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.winner && "relative")}>
+        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", layered && "relative")}>
+          {row.contributor ? <ContributorWash delay={washDelay} /> : null}
           {row.winner ? <WinnerSweep delay={sweepDelay} /> : null}
           <span className="block font-medium [overflow-wrap:anywhere]">{row.name}</span>
           {row.detail?.length ? (

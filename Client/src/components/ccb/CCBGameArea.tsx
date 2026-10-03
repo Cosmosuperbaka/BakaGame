@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Flag, Image, Loader2, PenLine, RotateCcw, Search, Trophy } from "lucide-react";
-import type { CCBCharacterSummary, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
+import type { CCBCharacterSummary, CCBGuess, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
@@ -100,7 +100,9 @@ const CCB_SCORE_COLUMNS: ScoreTableColumn[] = [
 const byRank = (score: CCBScore) => score.rank ?? Number.MAX_SAFE_INTEGER;
 
 /** 结算得分表：按名次排列、自末行往上揭示；得分明细作名字下方的次行，窄屏不逐字换行。 */
-function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
+function CCBScoreTable({ scores, guesses }: { scores: CCBScore[]; guesses: CCBGuess[] }) {
+  // 本局猜中的人：命中作品只拿 partial 分，不算猜中，因此以 guesses 的 correct 为准而不是得分明细。
+  const contributors = new Set(guesses.filter((guess) => guess.correct).map((guess) => guess.playerId));
   return (
     <ScoreTable
       title="本局得分"
@@ -119,6 +121,7 @@ function CCBScoreTable({ scores }: { scores: CCBScore[] }) {
         ],
         cells: { rank: score.rank ?? "—", score: score.score },
         rollFrom: { score: 0 },
+        contributor: contributors.has(score.playerId),
         // 同步模式下同一轮猜中的并列第一
         winner: score.rank === 1,
       }))}
@@ -130,8 +133,8 @@ function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; 
   const summary = snapshot.roundSummary!;
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, busy } = useCCBAction();
-  return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} />
-    <CCBScoreTable scores={summary.scores} />
+  return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} sealed />
+    <CCBScoreTable scores={summary.scores} guesses={summary.guesses} />
     <CCBFeedbackTable guesses={summary.guesses} />
     {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
