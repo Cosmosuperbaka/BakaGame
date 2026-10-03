@@ -3,6 +3,69 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AppEnv } from "../config/Env";
 
+const SENSITIVE_KEYS = new Set([
+  "cookie",
+  "cookies",
+  "sessiontoken",
+  "token",
+  "password",
+  "authorization",
+  "secret",
+]);
+
+export const sanitizeLogText = (text: string, maxLength = 500): string => {
+  return redactLogText(text).replace(/[\r\n\x00-\x1f\x7f]/g, " ").slice(0, maxLength);
+};
+
+// 文本只清理可识别的凭据赋值；不可解析的入站正文应在边界不记录。
+export const redactLogText = (text: string): string => text
+  .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
+  .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
+  .replace(
+    /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
+    "$1***[REDACTED]",
+  );
+
+export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknown => {
+  const ancestors = new WeakSet<object>();
+  const visit = (value: unknown, level: number): unknown => {
+    if (typeof value === "string") return redactLogText(value);
+    if (value == null || typeof value !== "object") return value;
+    if (ancestors.has(value)) return "[CIRCULAR]";
+    if (level >= 5) return "[MAX_DEPTH_EXCEEDED]";
+    ancestors.add(value);
+    try {
+      if (Array.isArray(value)) return value.slice(0, maxProperties).map((item) => visit(item, level + 1));
+      // Error 的诊断字段不可枚举；cause 与自有字段仍走统一脱敏。
+      const source = value instanceof Error
+        ? { errorName: value.name, errorMessage: value.message, stack: value.stack,
+            ...("cause" in value ? { cause: value.cause } : {}), ...value }
+        : value;
+      const entries = Object.entries(source);
+      const result: Record<string, unknown> = {};
+      for (const [key, item] of entries.slice(0, maxProperties)) {
+        const normalizedKey = key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
+        const sensitive = SENSITIVE_KEYS.has(normalizedKey) || ["accesstoken", "refreshtoken"].includes(normalizedKey);
+        const safe = key === "sample" && typeof item === "string" ? "[OMITTED_RAW_PAYLOAD]" : sensitive
+          ? normalizedKey !== "password" && typeof item === "string" && item.length > 8
+            ? `${item.slice(0, 4)}***[REDACTED]` : "***[REDACTED]"
+          : visit(item, level + 1);
+        Object.defineProperty(result, key, { value: safe, enumerable: true, configurable: true });
+      }
+      if (entries.length > maxProperties) result._truncated = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
+      return result;
+    } finally {
+      ancestors.delete(value);
+    }
+  };
+  return visit(data, depth);
+};
+
+export const describeError = (error: unknown): Record<string, unknown> => {
+  if (error instanceof Error) return redactData(error) as Record<string, unknown>;
+  return { errorMessage: redactLogText(typeof error === "string" ? error : String(error)) };
+};
+
 let isInitialized = false;
 
 export const SERVER_HEARTBEAT_MONITOR_SLUG = "bakagame-server-heartbeat";
@@ -83,6 +146,32 @@ export const initServerSentry = (env: AppEnv): void => {
       Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
     ],
     enableLogs: true,
+    sendDefaultPii: false,
+    beforeSend(event) {
+      // 不截断事件根节点，保留异常栈、SDK 元数据和协议结构。
+      if (event.extra) event.extra = redactData(event.extra) as typeof event.extra;
+      if (event.contexts) event.contexts = redactData(event.contexts) as typeof event.contexts;
+      if (event.user) event.user = redactData(event.user) as typeof event.user;
+      if (event.tags) event.tags = redactData(event.tags) as typeof event.tags;
+      if (event.request) event.request = redactData(event.request) as typeof event.request;
+      if (event.message) event.message = redactLogText(event.message);
+      for (const exception of event.exception?.values ?? []) {
+        if (exception.value) exception.value = redactLogText(exception.value);
+        for (const frame of exception.stacktrace?.frames ?? []) {
+          if (frame.vars) frame.vars = redactData(frame.vars) as typeof frame.vars;
+          if (frame.filename) frame.filename = redactLogText(frame.filename);
+        }
+      }
+      for (const breadcrumb of event.breadcrumbs ?? []) {
+        if (breadcrumb.message) breadcrumb.message = redactLogText(breadcrumb.message);
+        if (breadcrumb.data) breadcrumb.data = redactData(breadcrumb.data) as typeof breadcrumb.data;
+      }
+      return event;
+    },
+    beforeSendLog(log) {
+      return { ...log, message: redactLogText(log.message),
+        attributes: redactData(log.attributes) as typeof log.attributes };
+    },
     // 忽略预期的客户端断开连接错误与同源反代网络波动
     ignoreErrors: [
       "WebSocket is not open",
@@ -100,14 +189,8 @@ type SentryLogLevel = "info" | "warning" | "error";
 
 const toSentryAttributes = (context?: Record<string, unknown>): Record<string, unknown> | undefined => {
   if (!context) return undefined;
-  return Object.fromEntries(
-    Object.entries(context).filter(([, value]) =>
-      value === null ||
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean",
-    ),
-  );
+  return Object.fromEntries(Object.entries(redactData(context) as Record<string, unknown>)
+    .map(([key, value]) => [key, value !== null && typeof value === "object" ? JSON.stringify(value) : value]));
 };
 
 export const captureServerLog = (
@@ -116,6 +199,7 @@ export const captureServerLog = (
   context?: Record<string, unknown>,
 ): void => {
   if (!isInitialized) return;
+  message = redactLogText(message);
   const attributes = toSentryAttributes(context);
   const logger = Sentry.logger;
   if (level === "error") logger.error(message, attributes as never);
@@ -229,7 +313,7 @@ export const captureServerException = (
       if (context.roomId && typeof context.roomId === "string") {
         scope.setTag("roomId", context.roomId);
       }
-      scope.setExtras(context);
+      scope.setExtras(redactData(context) as Record<string, unknown>);
     }
     Sentry.captureException(error);
   });
@@ -253,8 +337,8 @@ export const captureServerMessage = (
       if (context.roomId && typeof context.roomId === "string") {
         scope.setTag("roomId", context.roomId);
       }
-      scope.setExtras(context);
+      scope.setExtras(redactData(context) as Record<string, unknown>);
     }
-    Sentry.captureMessage(message, level);
+    Sentry.captureMessage(redactLogText(message), level);
   });
 };

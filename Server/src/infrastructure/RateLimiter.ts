@@ -17,24 +17,21 @@ export class SlidingWindowRateLimiter {
 
   public allow(key: string, now = Date.now()): boolean {
     const windowStart = now - this.windowMs;
+    // Map 按最后一次获准请求排序；每次最多回收 64 个已过期 key。
+    // 不淘汰仍有配额记录的 key，否则高基数攻击会绕过限流。
+    let inspected = 0;
+    for (const [expiredKey, timestamps] of this.windows) {
+      if (++inspected > 64 || timestamps.some((timestamp) => timestamp > windowStart)) break;
+      this.windows.delete(expiredKey);
+    }
     const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
     if (timestamps.length >= this.maxRequests) {
       this.windows.set(key, timestamps);
       return false;
     }
     timestamps.push(now);
+    this.windows.delete(key);
     this.windows.set(key, timestamps);
-
-    if (this.windows.size > 1000) {
-      for (const [k, ts] of this.windows.entries()) {
-        const valid = ts.filter((t) => t > windowStart);
-        if (valid.length === 0) {
-          this.windows.delete(k);
-        } else {
-          this.windows.set(k, valid);
-        }
-      }
-    }
 
     return true;
   }

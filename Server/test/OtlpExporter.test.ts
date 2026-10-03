@@ -1,13 +1,26 @@
-import { expect, test } from "bun:test";
-import { OtlpExporter, toUnixNanoString, type OtlpFetcher } from "../src/infrastructure/OtlpExporter";
+import { afterEach, expect, test } from "bun:test";
+import { OtlpExporter, OtlpShutdownError, toUnixNanoString, type OtlpFetcher, type OtlpExporterConfig } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createTestApp as createApp } from './AppFixtures';
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { AppEnv } from "../src/config/Env";
 
+const exporters: OtlpExporter[] = [];
+const createExporter = (config: OtlpExporterConfig = {}): OtlpExporter => {
+  const exporter = new OtlpExporter(config);
+  exporters.push(exporter);
+  return exporter;
+};
+afterEach(async () => {
+  for (const exporter of exporters.splice(0)) {
+    try { await exporter.shutdown(); }
+    catch (error) { if (!(error instanceof OtlpShutdownError)) throw error; }
+  }
+});
+
 test("OtlpExporter 未配置 endpoint 时处于静默禁用状态", async () => {
-  const exporter = new OtlpExporter();
+  const exporter = createExporter();
   expect(exporter.isEnabled).toBe(false);
 
   // enqueue 不抛出错误
@@ -24,24 +37,16 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
   let capturedBody: unknown = null;
   let capturedHeaders: Record<string, string> = {};
 
-  // 使用 Bun 原生微服务模拟 Grafana Cloud OTLP 网关
-  const mockGateway = Bun.serve({
-    port: 0,
-    fetch(req) {
-      capturedHeaders = {
-        authorization: req.headers.get("authorization") ?? "",
-        "content-type": req.headers.get("content-type") ?? "",
-      };
-      return req.json().then((json) => {
-        capturedBody = json;
-        return new Response(JSON.stringify({ partialSuccess: {} }), { status: 200 });
-      });
-    },
-  });
-
-  const endpoint = `http://127.0.0.1:${mockGateway.port}/otlp/v1/logs`;
-  const exporter = new OtlpExporter({
+  const fetcher: OtlpFetcher = async (_input, options) => {
+    const headers = new Headers(options?.headers);
+    capturedHeaders = { authorization: headers.get("authorization") ?? "", "content-type": headers.get("content-type") ?? "" };
+    capturedBody = JSON.parse(String(options?.body));
+    return new Response("{}");
+  };
+  const endpoint = "https://collector.example.com/otlp/v1/logs";
+  const exporter = createExporter({
     endpoint,
+    fetcher,
     headers: {
       Authorization: "Basic dGVzdC11c2VyOnRlc3QtcGFzc3dvcmQ=",
     },
@@ -63,7 +68,6 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
 
   await exporter.flush();
   await exporter.shutdown();
-  mockGateway.stop(true);
 
   expect(capturedHeaders.authorization).toBe("Basic dGVzdC11c2VyOnRlc3QtcGFzc3dvcmQ=");
   expect(capturedHeaders["content-type"]).toBe("application/json");
@@ -150,20 +154,19 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
 });
 
 test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志", async () => {
-  const exporter = new OtlpExporter({
-    endpoint: "http://127.0.0.1:9999/v1/logs",
+  let requests = 0;
+  const exporter = createExporter({
+    endpoint: "https://collector.example.com/v1/logs", now: () => 1700000000000,
+    fetcher: async () => { requests++; return new Response("503", { status: 503 }); },
   });
-
-  for (let i = 0; i < 550; i++) {
-    exporter.enqueue({
-      timestamp: 1700000000000 + i,
-      level: "INFO",
-      message: `日志条目 ${i}`,
-    });
-  }
-
-  const buffer = exporter.buffer as unknown[];
-  expect(buffer.length).toBeLessThanOrEqual(500);
+  exporter.enqueue({ timestamp: 1700000000000, level: "INFO", message: "backoff seed" });
+  expect(await exporter.flushLogs()).toBe(false);
+  for (let i = 0; i < 550; i++) exporter.enqueue({ timestamp: 1700000000000 + i, level: "INFO", message: `日志条目 ${i}` });
+  expect(exporter.buffer).toHaveLength(500);
+  expect(exporter.buffer[0].message).toBe("日志条目 50");
+  expect(exporter.getStats().droppedCount).toBe(51);
+  expect(requests).toBe(1);
+  await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 });
 
 test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", async () => {
@@ -214,19 +217,14 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
 
 test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元组 Resource", async () => {
   let capturedTraceBody: unknown = null;
-  const mockTraceGateway = Bun.serve({
-    port: 0,
-    async fetch(req) {
-      if (req.url.includes("/v1/traces")) {
-        capturedTraceBody = await req.json();
-        return new Response(JSON.stringify({ partialSuccess: {} }), { status: 200 });
-      }
-      return new Response(JSON.stringify({}), { status: 200 });
-    },
-  });
+  const fetcher: OtlpFetcher = async (input, options) => {
+    if (String(input).includes("/v1/traces")) capturedTraceBody = JSON.parse(String(options?.body));
+    return new Response("{}");
+  };
 
-  const exporter = new OtlpExporter({
-    endpoint: `http://127.0.0.1:${mockTraceGateway.port}/otlp`,
+  const exporter = createExporter({
+    endpoint: "https://collector.example.com/otlp",
+    fetcher,
     headers: { Authorization: "Basic dGVzdA==" },
     serviceName: "Bakagame-Server",
     serviceNamespace: "Bakagame",
@@ -245,7 +243,6 @@ test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元
 
   await exporter.flushSpans();
   await exporter.shutdown();
-  mockTraceGateway.stop(true);
 
   expect(capturedTraceBody).toBeTruthy();
   const body = capturedTraceBody as {
@@ -379,22 +376,12 @@ test("toUnixNanoString 兼容整型与高精度浮点毫秒并防止 BigInt Rang
 
 test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandledRejection", async () => {
   let capturedTrace: any = null;
-  const mockServer = Bun.serve({
-    port: 0,
-    fetch(req) {
-      // flush 会同时 POST /v1/traces 与 /v1/logs，两者共用同一个 mock。
-      // 若不加区分地捕获，两个请求的到达顺序不定：logs 后到就会把 capturedTrace
-      // 覆盖成 { resourceLogs }，导致下方读取 resourceSpans 报 undefined。
-      const isTraces = req.url.includes("/v1/traces");
-      return req.json().then((body) => {
-        if (isTraces) capturedTrace = body;
-        return new Response(JSON.stringify({}), { status: 200 });
-      });
+  const exporter = createExporter({
+    endpoint: "https://collector.example.com/otlp",
+    fetcher: async (input: string | URL | Request, options?: RequestInit) => {
+      if (String(input).includes("/v1/traces")) capturedTrace = JSON.parse(String(options?.body));
+      return new Response("{}");
     },
-  });
-
-  const exporter = new OtlpExporter({
-    endpoint: `http://127.0.0.1:${mockServer.port}/otlp`,
   });
 
   // 模拟从 EventLogger.logOperation 传入的浮点 startTime
@@ -414,9 +401,8 @@ test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandle
   });
 
   // 必须平稳 flush，不抛出 RangeError: Not an integer
-  await expect(exporter.flush()).resolves.toBeUndefined();
+  await expect(exporter.flush()).resolves.toMatchObject({ success: true, remaining: 0, sent: 2 });
   await exporter.shutdown();
-  mockServer.stop(true);
 
   expect(capturedTrace).toBeTruthy();
   const span = capturedTrace.resourceSpans[0].scopeSpans[0].spans[0];
@@ -581,7 +567,7 @@ test("OtlpExporter 遇到 503 响应不会清空丢弃日志，保留在缓冲�
     return new Response(JSON.stringify({ partialSuccess: {} }), { status: 200 });
   };
 
-  const exporter = new OtlpExporter({
+  const exporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/logs",
     fetcher: mockFetcher,
     now: () => virtualTime,
@@ -649,7 +635,7 @@ test("OtlpExporter 在网络异常与请求超时下安全重新入队，杜绝�
     return new Response(JSON.stringify({}), { status: 200 });
   };
 
-  const exporter = new OtlpExporter({
+  const exporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/logs",
     fetcher: mockFetcher,
     now: () => virtualTime,
@@ -695,7 +681,7 @@ test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录�
     return new Response("Service Unavailable", { status: 503 });
   };
 
-  const exporter = new OtlpExporter({
+  const exporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/logs",
     fetcher: mockFetcher,
     now: () => virtualTime,
@@ -733,40 +719,40 @@ test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录�
   expect(exporter.buffer[0].message).toBe("日志条目 60");
   expect(exporter.buffer[499].message).toBe("日志条目 559");
 
-  await exporter.shutdown();
+  await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 });
 
 test("sendHeartbeatTrace 在未配置端点、503、网络异常下返回 false，仅在 200 时返回 true", async () => {
   // 1. 未配置端点
-  const disabledExporter = new OtlpExporter();
+  const disabledExporter = createExporter();
   expect(await disabledExporter.sendHeartbeatTrace()).toBe(false);
   await disabledExporter.shutdown();
 
   // 2. 503 异常返回 false
   const failFetcher: OtlpFetcher = async () => new Response("503", { status: 503 });
-  const failExporter = new OtlpExporter({
+  const failExporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/traces",
     fetcher: failFetcher,
   });
   expect(await failExporter.sendHeartbeatTrace()).toBe(false);
   expect(failExporter.getStats().failureCount).toBe(1);
-  await failExporter.shutdown();
+  await expect(failExporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 
   // 3. 网络异常返回 false
   const errFetcher: OtlpFetcher = async () => {
     throw new Error("Network is down");
   };
-  const errExporter = new OtlpExporter({
+  const errExporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/traces",
     fetcher: errFetcher,
   });
   expect(await errExporter.sendHeartbeatTrace()).toBe(false);
   expect(errExporter.getStats().failureCount).toBe(1);
-  await errExporter.shutdown();
+  await expect(errExporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 
   // 4. 200 成功返回 true
   const okFetcher: OtlpFetcher = async () => new Response("{}", { status: 200 });
-  const okExporter = new OtlpExporter({
+  const okExporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/traces",
     fetcher: okFetcher,
   });
@@ -785,7 +771,7 @@ test("OtlpExporter 指数退避窗口（1s, 2s, 4s...最大 30s）计算与运�
     return new Response("503", { status: 503 });
   };
 
-  const exporter = new OtlpExporter({
+  const exporter = createExporter({
     endpoint: "http://127.0.0.1:9999/v1/logs",
     fetcher: mockFetcher,
     now: () => virtualTime,
@@ -828,7 +814,75 @@ test("OtlpExporter 指数退避窗口（1s, 2s, 4s...最大 30s）计算与运�
   expect(stats.consecutiveFailures).toBe(3);
   expect(stats.droppedCount).toBe(0);
 
-  await exporter.shutdown();
+  await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 });
 
 
+
+test("shutdown 绕过退避最后尝试并发幂等，停止接受新记录", async () => {
+  let attempts = 0;
+  const exporter = createExporter({ endpoint: "https://collector.example.com", now: () => 100,
+    fetcher: async () => new Response("{}", { status: ++attempts === 1 ? 503 : 200 }) });
+  exporter.enqueue({ timestamp: 100, level: "INFO", message: "shutdown log" });
+  expect(await exporter.flush()).toMatchObject({ success: false, remaining: 1 });
+  const first = exporter.shutdown();
+  expect(exporter.shutdown()).toBe(first);
+  exporter.enqueue({ timestamp: 100, level: "INFO", message: "ignored after shutdown" });
+  await first;
+  expect(attempts).toBe(2);
+  expect(exporter.buffer).toHaveLength(0);
+  expect((exporter as any).flushTimer).toBeNull();
+});
+
+test("shutdown 等待在途日志和 span，并排空请求期间新增的批次", async () => {
+  let release: (() => void) | undefined;
+  let attempts = 0;
+  const exporter = createExporter({ endpoint: "https://collector.example.com",
+    fetcher: async () => {
+      if (++attempts === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return new Response("{}");
+    } });
+  exporter.enqueue({ timestamp: 100, level: "INFO", message: "first" });
+  const flushing = exporter.flushLogs();
+  exporter.enqueue({ timestamp: 101, level: "INFO", message: "second" });
+  exporter.enqueueSpan({ name: "operation", startTime: 100, endTime: 101 });
+  let finished = false;
+  const closing = exporter.shutdown().then(() => { finished = true; });
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  release!();
+  await Promise.all([flushing, closing]);
+  expect(attempts).toBe(3);
+  expect(exporter.buffer).toHaveLength(0);
+  expect(exporter.getStats().successCount).toBe(3);
+});
+
+test("shutdown 永久失败返回可观察残留和统计，不无限重试", async () => {
+  const exporter = createExporter({ endpoint: "https://collector.example.com",
+    fetcher: async () => new Response("503", { status: 503 }) });
+  exporter.enqueue({ timestamp: 100, level: "ERROR", message: "retained" });
+  try {
+    await exporter.shutdown();
+    throw new Error("expected shutdown failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(OtlpShutdownError);
+    expect((error as OtlpShutdownError).result).toEqual({ success: false, attempted: 1, sent: 0, remaining: 1, dropped: 0 });
+    expect((error as OtlpShutdownError).stats.failureCount).toBe(1);
+  }
+  expect((exporter as any).flushTimer).toBeNull();
+});
+
+test("shutdown 对忽略 AbortSignal 的 fetcher 也有总预算并清理请求 timer", async () => {
+  let signal: AbortSignal | undefined;
+  const exporter = createExporter({ endpoint: "https://collector.example.com", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
+    signal = options?.signal ?? undefined;
+    return await new Promise<Response>(() => {});
+  } });
+  exporter.enqueue({ timestamp: 100, level: "INFO", message: "never resolves" });
+  const inFlight = exporter.flushLogs();
+  await expect(exporter.shutdown(0)).rejects.toBeInstanceOf(OtlpShutdownError);
+  expect(await inFlight).toBe(false);
+  expect(signal!.aborted).toBe(true);
+  expect((exporter as any).requests.size).toBe(0);
+  expect((exporter as any).flushTimer).toBeNull();
+});

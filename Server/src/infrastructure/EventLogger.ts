@@ -113,73 +113,7 @@ const getEventLevel = (entry: LogEntry): LogLevel => {
   }
 };
 
-const SENSITIVE_KEYS = new Set([
-  "cookie",
-  "cookies",
-  "sessiontoken",
-  "token",
-  "password",
-  "authorization",
-  "secret",
-]);
-
-export const sanitizeLogText = (text: string, maxLength = 500): string => {
-  return text.replace(/[\r\n\x00-\x1f\x7f]/g, " ").slice(0, maxLength);
-};
-
-export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknown => {
-  if (data == null) return data;
-  if (depth >= 5) return "[MAX_DEPTH_EXCEEDED]";
-  if (typeof data !== "object") return data;
-  if (Array.isArray(data)) {
-    return data.slice(0, maxProperties).map((item) => redactData(item, depth + 1, maxProperties));
-  }
-
-  const redacted: Record<string, unknown> = {};
-  const entries = Object.entries(data as Record<string, unknown>);
-  const limit = Math.min(entries.length, maxProperties);
-
-  for (let i = 0; i < limit; i++) {
-    const [key, value] = entries[i];
-    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
-      if (key.toLowerCase() === "password") {
-        redacted[key] = "***[REDACTED]";
-      } else if (typeof value === "string" && value.length > 8) {
-        redacted[key] = `${value.slice(0, 4)}***[REDACTED]`;
-      } else {
-        redacted[key] = "***[REDACTED]";
-      }
-    } else {
-      redacted[key] = redactData(value, depth + 1, maxProperties);
-    }
-  }
-
-  if (entries.length > maxProperties) {
-    redacted["_truncated"] = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
-  }
-
-  return redacted;
-};
-
-export const describeError = (error: unknown): Record<string, unknown> => {
-  if (error instanceof Error) {
-    const desc: Record<string, unknown> = {
-      errorName: error.name,
-      errorMessage: error.message,
-    };
-    if (error.stack) {
-      desc.stack = error.stack;
-    }
-    if ("cause" in error && error.cause) {
-      desc.cause = describeError(error.cause);
-    }
-    return desc;
-  }
-
-  return {
-    errorMessage: typeof error === "string" ? error : String(error),
-  };
-};
+export { redactData, redactLogText, describeError, sanitizeLogText } from "./Sentry";
 
 // 系统日志列格式化
 export const formatSystemLog = ({
@@ -253,6 +187,7 @@ export const formatLogEntry = (
 
 import type { OtlpExporter } from "./OtlpExporter";
 import {
+  redactData, redactLogText, sanitizeLogText,
   captureServerException,
   captureServerLog,
   captureServerMessage,
@@ -285,12 +220,14 @@ export class EventLogger {
     context?: Record<string, unknown>,
     createdAt = this.now(),
   ) {
+    message = redactLogText(message);
+    const safeContext = context ? redactData(context) as Record<string, unknown> : undefined;
     this.output[LEVEL_METHODS[level]](
       formatSystemLog({
         level,
         message,
         createdAt,
-        context,
+        context: safeContext,
       }),
     );
 
@@ -301,7 +238,7 @@ export class EventLogger {
         level,
         message,
         traceId,
-        attributes: context ? (redactData(context) as Record<string, unknown>) : undefined,
+        attributes: safeContext,
       });
 
       if (level === "ERROR" && traceId) {
@@ -310,7 +247,7 @@ export class EventLogger {
           name: message,
           startTime: createdAt - 1,
           endTime: createdAt,
-          attributes: context ? (redactData(context) as Record<string, unknown>) : undefined,
+          attributes: safeContext,
           status: "ERROR",
           statusMessage: message,
         });
@@ -320,13 +257,13 @@ export class EventLogger {
     if (level === "ERROR" && isServerSentryEnabled()) {
       const err = context?.error;
       if (err instanceof Error) {
-        captureServerException(err, context);
+        captureServerException(err, safeContext);
       } else {
-        captureServerMessage(message, "error", context);
+        captureServerMessage(message, "error", safeContext);
       }
     }
 
-    captureServerLog(message, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", context);
+    captureServerLog(message, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", safeContext);
   }
 
   info(message: string, context?: Record<string, unknown>) {

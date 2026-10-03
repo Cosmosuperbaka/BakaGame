@@ -41,6 +41,21 @@ export interface OtlpExporterStats {
   consecutiveFailures: number;
 }
 
+export interface OtlpFlushResult {
+  success: boolean;
+  attempted: number;
+  sent: number;
+  remaining: number;
+  dropped: number;
+}
+
+export class OtlpShutdownError extends Error {
+  constructor(readonly result: OtlpFlushResult, readonly stats: OtlpExporterStats) {
+    super(`OTLP shutdown did not drain: ${result.remaining} remaining, ${result.dropped} dropped`);
+    this.name = "OtlpShutdownError";
+  }
+}
+
 export const formatOtlpTraceId = (traceId?: string): string => {
   if (!traceId) {
     return crypto.randomUUID().replace(/-/g, "").toLowerCase();
@@ -98,6 +113,11 @@ export class OtlpExporter {
   private flushingLogsPromise: Promise<boolean> | null = null;
   private flushingSpansPromise: Promise<boolean> | null = null;
 
+  private shutdownPromise: Promise<void> | null = null;
+  private readonly requests = new Set<AbortController>();
+  private inFlightRecords = 0;
+  private sentRecords = 0;
+  private shutdownDeadline = Infinity;
   private nextRetryTime = 0;
   private readonly stats: OtlpExporterStats = {
     totalAttempts: 0,
@@ -231,16 +251,45 @@ export class OtlpExporter {
     return await this.flushSpans();
   }
 
-  async flushLogs(): Promise<boolean> {
+  // 注入 fetcher 也必须遵守期限；race 确保不响应 signal 的 mock 不会挂住停机。
+  private async post(endpoint: string, body: unknown): Promise<Response> {
+    const controller = new AbortController();
+    this.requests.add(controller);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    try {
+      const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(new Error("OTLP request aborted"));
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+      });
+      const timeoutMs = Math.max(0, Math.min(5000, this.shutdownDeadline - performance.now()));
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("OTLP request timed out"));
+        }, timeoutMs);
+      });
+      return await Promise.race([this.fetcher(endpoint, {
+        method: "POST", headers: this.headers, body: JSON.stringify(body), signal: controller.signal,
+      }), timeout, aborted]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) controller.signal.removeEventListener("abort", onAbort);
+      this.requests.delete(controller);
+    }
+  }
+
+  async flushLogs(force = false): Promise<boolean> {
     if (!this.logsEndpoint) return false;
     if (this.flushingLogsPromise) {
       await this.flushingLogsPromise;
     }
     if (this.logBuffer.length === 0) return true;
-    if (this.now() < this.nextRetryTime) return false;
+    if (!force && this.now() < this.nextRetryTime) return false;
 
     const batch = this.logBuffer;
     this.logBuffer = [];
+    this.inFlightRecords += batch.length;
 
     this.flushingLogsPromise = (async (): Promise<boolean> => {
       this.stats.totalAttempts++;
@@ -273,14 +322,10 @@ export class OtlpExporter {
           },
         ];
 
-        const response = await this.fetcher(this.logsEndpoint!, {
-          method: "POST",
-          headers: this.headers,
-          body: JSON.stringify({ resourceLogs }),
-          signal: AbortSignal.timeout(5000),
-        });
+        const response = await this.post(this.logsEndpoint!, { resourceLogs });
 
         if (response.ok) {
+          this.sentRecords += batch.length;
           this.stats.successCount++;
           this.stats.consecutiveFailures = 0;
           this.nextRetryTime = 0;
@@ -293,23 +338,25 @@ export class OtlpExporter {
         this.handleFailure(batch, "logs");
         return false;
       } finally {
-        this.flushingLogsPromise = null;
+        this.inFlightRecords -= batch.length;
       }
     })();
 
-    return await this.flushingLogsPromise;
+    try { return await this.flushingLogsPromise; }
+    finally { this.flushingLogsPromise = null; }
   }
 
-  async flushSpans(): Promise<boolean> {
+  async flushSpans(force = false): Promise<boolean> {
     if (!this.tracesEndpoint) return false;
     if (this.flushingSpansPromise) {
       await this.flushingSpansPromise;
     }
     if (this.spanBuffer.length === 0) return true;
-    if (this.now() < this.nextRetryTime) return false;
+    if (!force && this.now() < this.nextRetryTime) return false;
 
     const batch = this.spanBuffer;
     this.spanBuffer = [];
+    this.inFlightRecords += batch.length;
 
     this.flushingSpansPromise = (async (): Promise<boolean> => {
       this.stats.totalAttempts++;
@@ -344,14 +391,10 @@ export class OtlpExporter {
           },
         ];
 
-        const response = await this.fetcher(this.tracesEndpoint!, {
-          method: "POST",
-          headers: this.headers,
-          body: JSON.stringify({ resourceSpans }),
-          signal: AbortSignal.timeout(5000),
-        });
+        const response = await this.post(this.tracesEndpoint!, { resourceSpans });
 
         if (response.ok) {
+          this.sentRecords += batch.length;
           this.stats.successCount++;
           this.stats.consecutiveFailures = 0;
           this.nextRetryTime = 0;
@@ -364,24 +407,60 @@ export class OtlpExporter {
         this.handleFailure(batch, "spans");
         return false;
       } finally {
-        this.flushingSpansPromise = null;
+        this.inFlightRecords -= batch.length;
       }
     })();
 
-    return await this.flushingSpansPromise;
+    try { return await this.flushingSpansPromise; }
+    finally { this.flushingSpansPromise = null; }
   }
 
-  async flush(): Promise<void> {
+  private result(attemptsBefore: number, sentBefore: number): OtlpFlushResult {
+    const remaining = this.logBuffer.length + this.spanBuffer.length + this.inFlightRecords;
+    return { success: remaining === 0, attempted: this.stats.totalAttempts - attemptsBefore,
+      sent: this.sentRecords - sentBefore, remaining, dropped: this.stats.droppedCount };
+  }
+
+  async flush(): Promise<OtlpFlushResult> {
+    const attemptsBefore = this.stats.totalAttempts;
+    const sentBefore = this.sentRecords;
     await Promise.all([this.flushLogs(), this.flushSpans()]);
+    return this.result(attemptsBefore, sentBefore);
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(timeoutMs = 10_000): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
     this.isShuttingDown = true;
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.flush();
+    const attemptsBefore = this.stats.totalAttempts;
+    const sentBefore = this.sentRecords;
+    const budget = Number.isFinite(timeoutMs) ? Math.max(0, timeoutMs) : 10_000;
+    this.shutdownDeadline = performance.now() + budget;
+    this.shutdownPromise = (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const drain = async () => {
+          // 先等运行期请求归还 batch，再有界绕过退避做一次最终尝试。
+          await Promise.all([this.flushingLogsPromise, this.flushingSpansPromise]);
+          if (performance.now() < this.shutdownDeadline) {
+            await Promise.all([this.flushLogs(true), this.flushSpans(true)]);
+          }
+        };
+        await Promise.race([drain(), new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            for (const request of this.requests) request.abort();
+            resolve();
+          }, budget);
+        })]);
+        const result = this.result(attemptsBefore, sentBefore);
+        if (!result.success) throw new OtlpShutdownError(result, this.getStats());
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    })();
+    return this.shutdownPromise;
   }
 }
-

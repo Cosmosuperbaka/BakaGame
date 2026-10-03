@@ -11,9 +11,21 @@ import {
   initServerSentry,
   isServerSentryEnabled,
   resolveServerRelease,
+  captureServerLog,
+  redactData,
+  describeError,
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
 } from "../src/infrastructure/Sentry";
+
+// release 解析不依赖本机 Git/子进程权限；所有 SDK init 已由各例 mock。
+let gitSpy: ReturnType<typeof spyOn>;
+beforeEach(() => {
+  gitSpy = spyOn(Bun, "spawnSync").mockImplementation((() => ({
+    exitCode: 0, stdout: Buffer.from("abcdef1\n"), stderr: Buffer.alloc(0), success: true,
+  })) as any);
+});
+afterEach(() => { gitSpy.mockRestore(); });
 
 const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
   clientUrl: "http://localhost:5173",
@@ -39,10 +51,16 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   describe("resolveServerRelease", () => {
     it("按项目版本与 Git 短提交生成发布标识", () => {
-      process.env.SENTRY_RELEASE = "v2.0.0-rc1";
-      const release = resolveServerRelease();
-      expect(release).toMatch(/^V\d+\.\d+\.\d+（[0-9a-f]{7,}）$/);
-      expect(release).not.toBe("v2.0.0-rc1");
+      const previous = process.env.SENTRY_RELEASE;
+      try {
+        process.env.SENTRY_RELEASE = "v2.0.0-rc1";
+        const release = resolveServerRelease();
+        expect(release).toMatch(/^V\d+\.\d+\.\d+（[0-9a-f]{7,}）$/);
+        expect(release).not.toBe("v2.0.0-rc1");
+      } finally {
+        if (previous === undefined) delete process.env.SENTRY_RELEASE;
+        else process.env.SENTRY_RELEASE = previous;
+      }
     });
   });
 
@@ -257,4 +275,75 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       closeSpy.mockRestore();
     });
   });
+});
+
+
+describe("服务端遥测统一脱敏出口", () => {
+  afterEach(() => { _resetServerSentryForTest(); });
+
+  it("递归保留 Error 诊断、共享引用与循环 cause，同时屏蔽原始 sample", () => {
+    const error = new Error("upstream token=dummy-private-token");
+    error.cause = error;
+    const shared = { password: "dummy-password", roomId: "room-safe" };
+    const cleaned = redactData({ error, left: shared, right: shared,
+      sample: '{"cookie":"dummy-cookie"', url: "https://example.com/?token=dummy-query&song=1" }) as any;
+    expect(cleaned.error.errorName).toBe("Error");
+    expect(cleaned.error.stack).toContain("Error:");
+    expect(cleaned.error.cause).toBe("[CIRCULAR]");
+    expect(cleaned.left).toEqual(cleaned.right);
+    expect(cleaned.left.roomId).toBe("room-safe");
+    for (const secret of ["dummy-private-token", "dummy-password", "dummy-cookie", "dummy-query"])
+      expect(JSON.stringify(cleaned)).not.toContain(secret);
+    expect(cleaned.url).toContain("song=1");
+    expect(describeError(error).cause).toBe("[CIRCULAR]");
+  });
+
+  it("原生 beforeSend / beforeSendLog 清理非 wrapper 事件且保留完整异常栈结构", async () => {
+    let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
+    const init = spyOn(Sentry, "init").mockImplementation((input) => { options = input; return undefined; });
+    try {
+      initServerSentry(createMockEnv());
+      const frames = Array.from({ length: 40 }, (_, i) => ({ function: `frame${i}`, lineno: i,
+        filename: "https://example.com/module?password=dummy-query", vars: { sessionToken: "dummy-session-long" } }));
+      const event: any = { event_id: "dummy-event", extra: { nested: { password: "dummy-password", cookie: "dummy-cookie-long" } },
+        exception: { values: [{ type: "Error", value: "authorization: Bearer dummy-bearer-value", stacktrace: { frames } }] },
+        breadcrumbs: [{ category: "http", data: { cookie: "dummy-cookie-long" }, message: "password=dummy-password" }] };
+      const result = await options!.beforeSend!(event, {});
+      expect((result as any).exception.values[0].stacktrace.frames).toHaveLength(40);
+      expect((result as any).exception.values[0].stacktrace.frames[39].function).toBe("frame39");
+      expect((result as any).event_id).toBe("dummy-event");
+      for (const secret of ["dummy-password", "dummy-cookie-long", "dummy-session-long", "dummy-bearer-value", "dummy-query"])
+        expect(JSON.stringify(result)).not.toContain(secret);
+      const log = options!.beforeSendLog!({ level: "warn", message: "token=dummy-log-token", attributes: { nested: { password: "dummy-password" } } });
+      expect(log!.level).toBe("warn");
+      expect(JSON.stringify(log)).not.toContain("dummy-log-token");
+      expect(JSON.stringify(log)).not.toContain("dummy-password");
+    } finally { init.mockRestore(); }
+  });
+
+  it("wrapper 日志和 extras 在 SDK 调用前已清理；异常本体交由 beforeSend 保留分组", () => {
+    const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    const logs = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
+    let extras: Record<string, unknown> | undefined;
+    const scope = { setTag: () => scope, setExtras: (input: Record<string, unknown>) => { extras = input; return scope; } };
+    const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: any) => fn(scope)) as any);
+    const exception = spyOn(Sentry, "captureException").mockImplementation(() => "");
+    try {
+      initServerSentry(createMockEnv());
+      const context = { password: "dummy-password", nested: { cookie: "dummy-cookie-long" }, traceId: "trace-safe" };
+      captureServerLog("password=dummy-password", "error", context);
+      expect(JSON.stringify(logs.mock.calls)).not.toContain("dummy-password");
+      const error = new Error("failure");
+      captureServerException(error, context);
+      expect(exception).toHaveBeenCalledWith(error);
+      expect(JSON.stringify(extras)).not.toContain("dummy-cookie-long");
+      expect(extras!.traceId).toBe("trace-safe");
+    } finally { init.mockRestore(); logs.mockRestore(); scoped.mockRestore(); exception.mockRestore(); }
+  });
+});
+
+it("无 Git 元数据时 release 缺失保持可见，不伪造 canonical revision", () => {
+  const git = spyOn(Bun, "spawnSync").mockImplementation((() => { throw new Error("git unavailable"); }) as any);
+  try { expect(resolveServerRelease()).toBeUndefined(); }
+  finally { git.mockRestore(); }
 });
