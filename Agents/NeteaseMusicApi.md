@@ -124,7 +124,8 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
 - **全局音乐解灰 (General Unblock)**：默认开启（支持通过环境变量 `ENABLE_GENERAL_UNBLOCK=true|false` 或 provider 选项 `enableGeneralUnblock` 控制）。针对网易云官方未提供播放地址（`!url`）、返回试听片段（`freeTrialInfo != null`）或返回 404 等受限状态的歌曲，自动触发多级跨平台音源解灰（优先调用 API 模块的 `song_url_match`，回退至 `song_url_v1` 携带 `unblock: "true"`，未显式注入外部 mock API 时回退调用内置 `@neteasecloudmusicapienhanced/unblockmusic-utils` 的 `matchID`），取得的音频地址经 HTTPS 规范化后写入缓存，确保无 VIP 凭据或版权受限歌曲也能正常获取完整音频。
 - **解灰音源必须显式指定 `source`，并校验结果不是「伪解灰」**。包内 `matchID` 不传 `source` 时按 `unblockmusic-utils/modules` 目录的字母序尝试，`bugpk` 恰好排在最前；它对没有自有音源的歌曲会返回网易云官方外链 `/song/media/outer/url?id=X.mp3`，字符串非空所以被判为「解灰成功」，还会短路掉后面真正可用的音源。该外链对受限歌曲只会 302 到下载页 HTML（`content-type: text/html`），播放器必然报错。因此 `unblockSongAudio` 固定按 `UNBLOCK_SOURCE_ORDER`（`unm` 最前、`bugpk` 最后）逐个音源调用，并拒收一切指回 `music.163.com/song/media/outer/url` 的结果，继续尝试下一个音源；全部失败才抛 `SONG_UNAVAILABLE`。改动音源顺序或新增音源时必须保留该校验。典型症状：服务端日志打出「网易云歌曲解灰成功」而客户端随即上报 `song.game.audioFailed`。
-副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
+- **验证「这首歌能不能播」必须看总量或时长，不能只看 HTTP 200/206**。实测无 Cookie 拉取 `requiresVip` 会员曲：未解灰时同样返回 `206 + audio/mpeg`，但总量恒约 481 KB，正是 **30 秒 @128 kbps 的试听片段**（按整曲时长折算等效码率只有 13~19 kbps）；解灰成功后才拿到 320 kbps 整曲，总字节与 `durationMs` 严格自洽。因此「`audioUrl` 非空」「Range 请求 206」「`content-type` 是 audio」三条都**不能**作为可播放判据，唯一判据是**总字节 ÷ 时长**落在正常码率区间。推论：`isRestricted` 必须继续依赖 `freeTrialInfo != null`，不得因为「反正有 url」就跳过解灰；VIP 曲目对非会员账号的解灰能力是真实有效的，不是伪成功。
+- 副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
 
 ### 服务端缓存策略
 
