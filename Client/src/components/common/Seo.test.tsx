@@ -141,4 +141,16 @@ describe("Seo", () => {
       expect(JSON.parse(scripts[0].textContent ?? "").name).toBe("第二个");
     });
   });
+  it("页面切换到无结构化数据时移除旧 JSON-LD", async () => {
+    const first = renderSeo({
+      description: "描述",
+      path: "/",
+      structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "旧页面" },
+    });
+    await waitFor(() => expect(document.getElementById("bakagame-structured-data")).not.toBeNull());
+    first.result.unmount();
+    renderSeo({ description: "房间", path: "/whoisfaker/room/demo", indexable: false });
+    await waitFor(() => expect(document.getElementById("bakagame-structured-data")).toBeNull());
+  });
+
 });

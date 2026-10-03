@@ -54,9 +54,12 @@ export function Seo({ path, description, image, keywords, indexable = true, stru
   // 会落到 <body> 里，位置不可控。JSON-LD 必须稳定落在 <head>，因此手动管理。
   // 构建期静态外壳已写入同 id 的脚本，这里按 id 复用并覆盖内容，不会产生重复标签。
   useEffect(() => {
-    if (!structuredDataJson) return;
-
     const existing = document.getElementById(STRUCTURED_DATA_ID);
+    if (!structuredDataJson) {
+      existing?.remove();
+      return;
+    }
+
     const script = (existing as HTMLScriptElement | null) ?? document.createElement("script");
     script.id = STRUCTURED_DATA_ID;
     script.type = "application/ld+json";
