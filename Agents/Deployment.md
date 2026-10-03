@@ -32,7 +32,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
 不得把 Bun 服务端口直接暴露到公网。
 
-公开遥测 `/api/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的应用内单来源预算，
+公开遥测 `/api/monitoring/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的应用内单来源预算，
 只使用 Bun `server.requestIP(request)` 的传输 peer；不信任客户端自报的
 `X-Forwarded-For` / `X-Real-IP`。经反向代理时全体客户端共享代理 peer 桶，
 无 socket 的请求共享 unknown 桶；当前没有 authenticated-forwarding，不能称为每玩家 IP 限流。
