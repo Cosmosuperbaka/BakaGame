@@ -1,3 +1,4 @@
+import { schemaUnion } from "../shared/SchemaUnion";
 import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
@@ -314,7 +315,7 @@ export const SonGuessrMessageSchemas = {
   ),
 };
 
-export const SonGuessrClientMessageSchema = t.Union(
+export const SonGuessrClientMessageSchema = schemaUnion(
   Object.values(SonGuessrMessageSchemas),
 );
 

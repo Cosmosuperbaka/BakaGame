@@ -1,3 +1,4 @@
+import { schemaUnion } from "../shared/SchemaUnion";
 import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
@@ -34,8 +35,8 @@ export const DraftWordPairSchema = t.Tuple([
   t.String({ maxLength: 50 }),
   t.String({ maxLength: 50 }),
 ]);
-export const GamePhaseSchema = t.Union(WHOISFAKER_PHASES.map((p) => t.Literal(p)));
-export const PlayerRoleSchema = t.Union(WHOISFAKER_ROLES.map((r) => t.Literal(r)));
+export const GamePhaseSchema = schemaUnion(WHOISFAKER_PHASES.map((p) => t.Literal(p)));
+export const PlayerRoleSchema = schemaUnion(WHOISFAKER_ROLES.map((r) => t.Literal(r)));
 export const DisconnectResolutionSchema = t.Union([
   t.Literal("wait"),
   t.Literal("eliminate"),
@@ -312,7 +313,7 @@ export const WhoIsFakerMessageSchemas = {
   "game.stopPhaseTimer": createMessageSchema("game.stopPhaseTimer", EmptyPayloadSchema),
 };
 
-export const WhoIsFakerClientMessageSchema = t.Union(
+export const WhoIsFakerClientMessageSchema = schemaUnion(
   Object.values(WhoIsFakerMessageSchemas),
 );
 

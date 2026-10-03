@@ -390,7 +390,7 @@ const handleGameMessage = async <TMessage extends { id: string; type: string; tr
 const decodeGameFrame = (_ws: unknown, incoming: unknown): ReturnType<typeof JSON.parse> => {
   const text = typeof incoming === "string" ? incoming : incoming instanceof Uint8Array ? new TextDecoder().decode(incoming) : undefined;
   if (text === undefined) return undefined;
-  // parse 在 body validator 之前运行；这里的类型断言不替代或跳过框架校验。
+  // JSON.parse 的非可信返回值只存在于解码边界；其后仍由原生 body validator 校验。
   try { return JSON.parse(text); } catch { return undefined; }
 };
 

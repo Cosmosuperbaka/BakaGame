@@ -1,3 +1,4 @@
+import { schemaUnion } from "./SchemaUnion";
 import { Type as t, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { ChatMessage, RoomVisibility } from './Model';
@@ -166,7 +167,7 @@ const createCCBMessageSchema = <K extends CCBCommand>(type: K) => t.Object({
 export const CCBMessageSchemas = Object.fromEntries(
   (Object.keys(CCBPayloadSchemas) as CCBCommand[]).map((type) => [type, createCCBMessageSchema(type)]),
 ) as { [K in CCBCommand]: ReturnType<typeof createCCBMessageSchema<K>> };
-export const CCBClientMessageSchema = t.Union(Object.values(CCBMessageSchemas));
+export const CCBClientMessageSchema = schemaUnion(Object.values(CCBMessageSchemas));
 export type CCBClientWireMessage = Static<typeof CCBClientMessageSchema>;
 export function normalizeCCBEnvelope(input: CCBClientWireMessage): CCBClientMessage {
   const message = { ...input };
