@@ -20,7 +20,7 @@ import {
 } from "@/stories/fixtures/SonGuessr";
 import { SongRoundResultPhase, SongScoreTable, SongSettlementDetails } from "./SongRoundResultPhase";
 
-const { host, me } = SONG_PEOPLE;
+const { host, long, me } = SONG_PEOPLE;
 const hostView = roundResultPlayers().find((player) => player.id === host.id);
 
 // 房间页已覆盖歌曲结算（房主 / 玩家）；这里补充番剧、单人未答对与进行中的按钮状态。
@@ -93,5 +93,5 @@ export const Settlement: Story = {
 
 export const Scores: Story = {
   name: "得分统计 · 长名字",
-  render: () => <SongScoreTable scores={SONG_ROUND_SCORES} />,
+  render: () => <SongScoreTable scores={SONG_ROUND_SCORES} contributors={[host.id, long.id]} />,
 };
