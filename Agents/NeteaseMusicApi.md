@@ -155,7 +155,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 - **结算阶段**：进入 `roundResult` 阶段后，由 `roundSummary` 透传答案歌曲的 `audioUrl` 与 `chorus`。客户端自动从副歌起点（`chorus.startTime`，缺失时为 0）起播，播放至副歌终点（`chorus.endTime`，缺失时为整曲结束）。结算卡片保持简洁紧凑，不展示副歌时间徽章与播放/暂停控制按钮；客户端全局常驻单例 `<audio>` 并在切台与前台恢复时自动同步音量，防止切台原生重播或音量失控。
 - 若浏览器的自动播放策略拦截开始播放，显示手动播放/重播后备按钮，不得恢复原生音频进度控件。
 - 音频加载必须监听至少 `canplay`、`loadeddata` 和 `error`，并设置超时与重试入口；不能只依赖 `canplaythrough`。
-- 音频资源必须使用 HTTPS、支持 Range，并在浏览器端满足 CORS 要求。
+- 音频资源必须使用 HTTPS 且支持 Range。**`<audio>` 元素严禁声明 `crossOrigin`**：声明后浏览器会按 CORS 模式拉取媒体，而解灰音源（kuwo 等）不返回 `Access-Control-Allow-Origin`，请求直接被判 `net::ERR_FAILED`（症状：服务端日志打出「解灰成功」而客户端立刻 `song.game.audioFailed`，网络面板里该请求瞬间 failed）。不声明 `crossOrigin` 的媒体元素本就不受 CORS 约束，且全站没有任何 Web Audio / `createMediaElementSource` 用法，因此该属性纯属多余。注意网易云官方 CDN 带 ACAO，官方歌曲即使声明了也照常播放——不要据此认为该属性是必需的。守卫测试见 `Client/src/pages/SonGuessrRoomPage.test.tsx` 对 audio 节点的断言。
 
 ## 测试要求
 

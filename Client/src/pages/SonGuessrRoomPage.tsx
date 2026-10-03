@@ -119,6 +119,10 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     [sendCommand, setNotice],
   );
 
+  // 严禁给这个 audio 加 crossOrigin：解灰音源（kuwo 等）不返回 Access-Control-Allow-Origin，
+  // 一旦声明 crossOrigin="anonymous"，浏览器就会按 CORS 模式拉取媒体、直接判 net::ERR_FAILED，
+  // 症状是「服务端解灰成功但客户端立刻 audioFailed」；官方歌曲的网易云 CDN 带 ACAO 所以看不出问题。
+  // 全站没有任何 Web Audio / createMediaElementSource 用法，不需要该属性。
   const audioNode = (
     <audio
       ref={(node) => {
@@ -128,7 +132,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       className="hidden"
       preload="auto"
       playsInline
-      crossOrigin="anonymous"
     />
   );
 

@@ -525,6 +525,17 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(audio).not.toHaveAttribute("autoplay");
   });
 
+  it("audio 节点不得声明 crossOrigin，否则无 ACAO 的解灰音源会被 CORS 直接拦掉", () => {
+    const { container } = renderRoomPage();
+
+    const audio = container.querySelector("audio");
+    expect(audio).toBeInTheDocument();
+    // 声明 crossOrigin 后浏览器会按 CORS 模式拉取媒体；kuwo 等解灰音源不返回
+    // Access-Control-Allow-Origin，请求直接 net::ERR_FAILED，
+    // 表现为「服务端解灰成功但客户端立刻 audioFailed」。全站无 Web Audio 用法，不需要该属性。
+    expect(audio).not.toHaveAttribute("crossorigin");
+  });
+
   it("听歌猜番结算展示关联歌曲、曲目类型和过滤后的作品标签", () => {
     renderRoomPage();
 
