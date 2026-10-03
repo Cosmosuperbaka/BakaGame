@@ -143,7 +143,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
 
   const refreshQr = () => {
     cancelLogin();
-    setQrAutoCreated(true);
     void createQr();
   };
 

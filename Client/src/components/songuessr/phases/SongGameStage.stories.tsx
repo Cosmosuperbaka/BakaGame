@@ -28,7 +28,7 @@ import { AttemptList, GameStage, SongGameArea } from "./SongGameStage";
 const { host, me, peach, azumi } = SONG_PEOPLE;
 const meView = playingPlayers().find((player) => player.id === me.id);
 
-/** 倒计时只看是否存在截止时间，秒数由 `secondsLeft` 决定；这里取固定值保证截图稳定。 */
+/** 倒计时基于共享回合截止时间，使用固定故事时钟保证截图稳定。 */
 const DEADLINE = STORY_EPOCH + 60_000;
 
 const ANIME_ATTEMPTS = {
@@ -48,7 +48,7 @@ const meta = {
     privateState: guesserPrivate(DEADLINE),
     me: meView,
     isHost: false,
-    secondsLeft: 42,
+    guessDeadlineAt: DEADLINE,
     volume: 0.65,
     onVolumeChange: fn(),
     audioStatus: "ready",
@@ -80,7 +80,7 @@ export const AudioPreparing: Story = {
   args: { audioStatus: "loading", privateState: guesserPrivate(DEADLINE, { canGuess: false }) },
 };
 
-export const TimerUrgent: Story = { name: "倒计时告急", args: { secondsLeft: 8 } };
+export const TimerUrgent: Story = { name: "倒计时告急", args: { guessDeadlineAt: DEADLINE } };
 
 export const GivingUp: Story = { name: "正在投降", args: { isPending: pendingOn("song.game.giveUp") } };
 
