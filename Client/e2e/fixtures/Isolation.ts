@@ -34,7 +34,7 @@ export const test = base.extend<IsolationFixtures>({
     try {
       await provide(context);
     } finally {
-      assertNoEgress();
+      await closeIsolatedContext(context);
     }
   },
   page: async ({ context }, provide) => {
@@ -42,7 +42,7 @@ export const test = base.extend<IsolationFixtures>({
     try { await provide(page); } finally { await closeIsolatedContext(context); }
   },
   isolatedContext: async ({ browser }, provide) => {
-    const contexts: Array<{ context: BrowserContext; assertNoEgress: () => void }> = [];
+    const contexts: BrowserContext[] = [];
     try {
       await provide(async (options = {}) => {
         const context = await browser.newContext({ ...options, serviceWorkers: "block" });
@@ -50,7 +50,7 @@ export const test = base.extend<IsolationFixtures>({
           await context.grantPermissions(["local-network-access"], { origin: "http://127.0.0.1:5173" });
           const assertNoEgress = await installLoopbackGuard(context);
           guards.set(context, assertNoEgress);
-          contexts.push({ context, assertNoEgress });
+          contexts.push(context);
           return context;
         } catch (error) {
           await context.close();
@@ -58,11 +58,9 @@ export const test = base.extend<IsolationFixtures>({
         }
       });
     } finally {
-      try {
-        for (const item of contexts) await closeIsolatedContext(item.context);
-      } finally {
-        for (const item of contexts) item.assertNoEgress();
-      }
+      const results = await Promise.allSettled(contexts.map(closeIsolatedContext));
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Isolated context cleanup failed");
     }
   },
 });
