@@ -64,7 +64,7 @@ export function LobbyPage({
       initial={arriving ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: duration.base, ease: ease.out }}
-      className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background"
+      className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto"
     >
       <Seo path={path} />
       <header className="border-b border-border/40 px-6 pb-4 pt-6 md:pt-8">

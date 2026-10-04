@@ -127,7 +127,7 @@ export function RoomShell({
   }, []);
 
   return (
-    <div data-room-entering={entering || undefined} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+    <div data-room-entering={entering || undefined} className="flex h-full min-h-0 flex-col overflow-hidden">
       {before}
       <RoomHeader
         onLeave={onLeave}

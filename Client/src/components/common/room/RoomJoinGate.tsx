@@ -40,7 +40,7 @@ export function RoomJoinGate({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 items-center justify-center overflow-hidden">
       {children}
       {!needsName && !needsPassword ? (
         <motion.div
