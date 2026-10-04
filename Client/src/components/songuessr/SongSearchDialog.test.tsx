@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongSearchDialog } from "./SongSearchDialog";
+
+const originalStoreState = useSonGuessrStore.getState();
 
 describe("SongSearchDialog", () => {
   let searchMusic: ReturnType<typeof vi.fn>;
@@ -13,6 +15,18 @@ describe("SongSearchDialog", () => {
       searchMusic: searchMusic as unknown as SonGuessrStore["searchMusic"],
       setNotice: vi.fn(),
     });
+  });
+
+  afterEach(() => {
+    try {
+      cleanup();
+    } finally {
+      // setState 的普通 action 替换不属于 vi.restoreAllMocks 的还原范围。
+      useSonGuessrStore.setState(originalStoreState, true);
+    }
+    expect(useSonGuessrStore.getState()).toBe(originalStoreState);
+    expect(useSonGuessrStore.getState().searchMusic).toBe(originalStoreState.searchMusic);
+    expect(useSonGuessrStore.getState().setNotice).toBe(originalStoreState.setNotice);
   });
 
   it("在操作区内嵌显示搜索结果并提交所选歌曲", async () => {

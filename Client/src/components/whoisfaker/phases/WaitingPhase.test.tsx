@@ -1,10 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WaitingPhase } from "./WaitingPhase";
+
+const initialStoreState = useWhoIsFakerStore.getState();
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
 const snapshot: WhoIsFakerRoomSnapshot = {
   roomId: "1234",
@@ -62,7 +65,23 @@ const privateState: WhoIsFakerPrivateState = {
 
 describe("waiting room sharing", () => {
   beforeEach(() => {
-    useWhoIsFakerStore.setState({ snapshot, privateState });
+    useWhoIsFakerStore.setState({ ...initialStoreState, snapshot, privateState }, true);
+  });
+
+  afterEach(() => {
+    try {
+      cleanup();
+    } finally {
+      useWhoIsFakerStore.setState(initialStoreState, true);
+      if (originalClipboardDescriptor) {
+        Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
+    expect(Object.getOwnPropertyDescriptor(navigator, "clipboard")).toEqual(originalClipboardDescriptor);
+    expect(useWhoIsFakerStore.getState()).toBe(initialStoreState);
+    expect(useWhoIsFakerStore.getState().sendCommand).toBe(initialStoreState.sendCommand);
   });
 
   it("lets a non-host copy the room link", async () => {

@@ -40,6 +40,14 @@ const POPULARITY_OPTIONS: SegmentedOption<string>[] = POPULARITY_LEVELS.map((val
   label: value === 0 ? "不限" : `${value}+`,
 }));
 
+// 阶段切换会直接卸载等待设置树，旧 props 的 enabled 来不及变为 false。
+// 三类设置共用发送边界：防抖、卸载刷新和飞行中后续草稿都以当前房间阶段为准。
+async function saveWaitingSettings(roomId: string, payload: Record<string, unknown>) {
+  const state = useSonGuessrStore.getState();
+  if (state.snapshot?.roomId !== roomId || state.snapshot.phase !== "waiting") return;
+  await state.sendCommand("song.room.updateSettings", payload);
+}
+
 export function SongQuestionSettings({
   snapshot,
   solo = false,
@@ -105,7 +113,7 @@ export function SongQuestionSettings({
       autoFilters: { playlist, artists, minPopularity },
       animeAutoFilters: animeFilters,
     },
-    (payload) => sendCommand("song.room.updateSettings", payload),
+    (payload) => saveWaitingSettings(snapshot.roomId, payload),
     {
       enabled: snapshot.phase === "waiting",
       onError: (error) =>
@@ -317,7 +325,6 @@ export function SongGameSettings({
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
 }) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
   const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
@@ -335,7 +342,7 @@ export function SongGameSettings({
       showGuessTimer,
       bloodMode,
     },
-    (payload) => sendCommand("song.room.updateSettings", payload),
+    (payload) => saveWaitingSettings(snapshot.roomId, payload),
     {
       enabled: snapshot.phase === "waiting",
       onError: (error) =>
@@ -370,7 +377,6 @@ export function SongRoomSettings({
 }: {
   snapshot: SonGuessrRoomSnapshot;
 }) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [name, setName] = useState(snapshot.name);
   const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
@@ -384,7 +390,7 @@ export function SongRoomSettings({
       password: isPrivate ? password || undefined : "",
       allowSpectators,
     },
-    (payload) => sendCommand("song.room.updateSettings", payload),
+    (payload) => saveWaitingSettings(snapshot.roomId, payload),
     {
       enabled:
         snapshot.phase === "waiting" &&

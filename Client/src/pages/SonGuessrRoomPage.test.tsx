@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,6 +27,10 @@ import type {
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
 
 const initialStoreState = useSonGuessrStore.getState();
+const mediaMethods = ["load", "play", "pause"] as const;
+const originalMediaDescriptors = new Map(
+  mediaMethods.map((method) => [method, Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, method)]),
+);
 
 const createMockSnapshot = (
   overrides: Partial<SonGuessrRoomSnapshot> = {},
@@ -125,9 +129,9 @@ function renderSoloPage() {
 
 describe("SonGuessrRoomPage 页面级集成测试", () => {
   beforeEach(() => {
-    window.HTMLMediaElement.prototype.load = vi.fn();
-    window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
-    window.HTMLMediaElement.prototype.pause = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
 
     useSonGuessrStore.setState({
       ...initialStoreState,
@@ -139,9 +143,23 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
   });
 
   afterEach(() => {
-    useSonGuessrStore.setState(initialStoreState, true);
-    window.sessionStorage.removeItem("songuessr_solo_room");
-    vi.restoreAllMocks();
+    try {
+      // 先卸载真实组件，避免清理媒体或待提交草稿时调用已恢复的真实动作。
+      cleanup();
+    } finally {
+      useSonGuessrStore.setState(initialStoreState, true);
+      window.sessionStorage.removeItem("songuessr_solo_room");
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+
+    for (const method of mediaMethods) {
+      expect(Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, method)).toEqual(
+        originalMediaDescriptors.get(method),
+      );
+    }
+    expect(useSonGuessrStore.getState()).toBe(initialStoreState);
+    expect(useSonGuessrStore.getState().sendCommand).toBe(initialStoreState.sendCommand);
   });
 
   it("渲染等待阶段完整快照（房间名、房主控制区、规则配置与玩家列表）", () => {
@@ -434,35 +452,167 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByText(/夜空中最亮的星 · 逃跑计划/)).toBeInTheDocument();
   });
 
-  it("非 waiting 阶段自动保存严格被抑制阻断", () => {
+  it.each([
+    { nextPhase: "waiting", expectedSaves: 1 },
+    { nextPhase: "playing", expectedSaves: 0 },
+  ] as const)("真实设置草稿在防抖窗内进入 $nextPhase 后保存次数为 $expectedSaves", async ({ nextPhase, expectedSaves }) => {
+    vi.useFakeTimers();
     const sendCommandSpy = vi.fn().mockResolvedValue({});
-    useSonGuessrStore.setState({
-      sendCommand: sendCommandSpy,
-    });
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
 
     renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    expect(duration).toHaveValue("60");
+    fireEvent.change(duration, { target: { value: "90" } });
+    fireEvent.blur(duration);
+    expect(duration).toHaveValue("90");
 
-    // 切换到 playing 阶段
-    act(() => {
-      useSonGuessrStore.setState({
-        snapshot: createMockSnapshot({
-          phase: "playing",
-          currentRound: {
-            roundNumber: 1,
-            submitterPlayerId: "player-1",
-            audioUrl: "https://audio.example.com/star.mp3",
-            lyricClip: { startTime: 0, endTime: 0, lines: [] },
-          },
-        }),
-        privateState: createMockPrivateState({ canGuess: true }),
-      });
+    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+    // 同一真实输入在 400ms 防抖完成前必须尚未保存，两分支刺激保持一致。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(399);
     });
+    expect(settingsCalls()).toHaveLength(0);
 
-    // 在非 waiting 阶段，updateSettings 指令绝对不会被触发
-    const updateSettingsCalls = sendCommandSpy.mock.calls.filter(
-      (call) => call[0] === "song.room.updateSettings",
-    );
-    expect(updateSettingsCalls).toHaveLength(0);
+    if (nextPhase === "playing") {
+      act(() => {
+        useSonGuessrStore.setState({
+          snapshot: createMockSnapshot({
+            phase: "playing",
+            currentRound: {
+              roundNumber: 1,
+              submitterPlayerId: "player-1",
+              audioUrl: "https://audio.example.com/star.mp3",
+              lyricClip: { startTime: 0, endTime: 0, lines: [] },
+            },
+          }),
+          privateState: createMockPrivateState({ canGuess: true }),
+        });
+      });
+      expect(screen.queryByRole("textbox", { name: "每次猜测时限（秒）" })).not.toBeInTheDocument();
+      expect(settingsCalls()).toHaveLength(0);
+    }
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(settingsCalls()).toHaveLength(expectedSaves);
+    if (expectedSaves === 1) {
+      expect(settingsCalls()[0]).toEqual([
+        "song.room.updateSettings",
+        {
+          lyricsLineCount: 4,
+          showLyrics: true,
+          maxGuessesPerRound: 5,
+          guessDurationSeconds: 90,
+          showGuessTimer: true,
+          bloodMode: false,
+        },
+      ]);
+    }
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(settingsCalls()).toHaveLength(expectedSaves);
+  });
+
+  it.each([
+    { panel: "题目设置", nextPhase: "waiting", expectedSaves: 1 },
+    { panel: "题目设置", nextPhase: "playing", expectedSaves: 0 },
+    { panel: "房间设置", nextPhase: "waiting", expectedSaves: 1 },
+    { panel: "房间设置", nextPhase: "playing", expectedSaves: 0 },
+  ] as const)("$panel 的真实草稿在399ms进入 $nextPhase 后保存次数为 $expectedSaves", async ({ panel, nextPhase, expectedSaves }) => {
+    vi.useFakeTimers();
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: panel }));
+    if (panel === "题目设置") {
+      expect(screen.getByRole("radio", { name: "手动出题" })).toBeChecked();
+      fireEvent.click(screen.getByRole("radio", { name: "自动出题" }));
+      expect(screen.getByRole("radio", { name: "自动出题" })).toBeChecked();
+    } else {
+      const name = screen.getByRole("textbox", { name: "房间名称" });
+      fireEvent.change(name, { target: { value: "新房间名称" } });
+      expect(name).toHaveValue("新房间名称");
+    }
+    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+    await act(async () => { await vi.advanceTimersByTimeAsync(399); });
+    expect(settingsCalls()).toHaveLength(0);
+    if (nextPhase === "playing") {
+      act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) }); });
+      // 卸载刷新不能在防抖截止前偷发一次，之后推进时间也不得补发。
+      expect(settingsCalls()).toHaveLength(0);
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(settingsCalls()).toHaveLength(expectedSaves);
+    if (expectedSaves === 1) {
+      expect(settingsCalls()[0]).toEqual([
+        "song.room.updateSettings",
+        panel === "题目设置"
+          ? { questionType: "song", questionMode: "automatic", autoRotateSubmitter: false,
+              autoFilters: { playlist: undefined, artists: [], minPopularity: 0 }, animeAutoFilters: {} }
+          : { name: "新房间名称", visibility: "public", password: "", allowSpectators: true },
+      ]);
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(settingsCalls()).toHaveLength(expectedSaves);
+  });
+
+  it.each([
+    { currentRoomId: "TEST_ROOM", expectedSaves: 1 },
+    { currentRoomId: "NEXT_ROOM", expectedSaves: 0 },
+  ])("待保存设置卸载时当前房间为 $currentRoomId，保存次数为 $expectedSaves", async ({ currentRoomId, expectedSaves }) => {
+    vi.useFakeTimers();
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+    const { unmount } = renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    fireEvent.change(duration, { target: { value: "90" } });
+    fireEvent.blur(duration);
+    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+    await act(async () => { await vi.advanceTimersByTimeAsync(399); });
+    expect(settingsCalls()).toHaveLength(0);
+    if (currentRoomId !== "TEST_ROOM") {
+      act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ roomId: currentRoomId }) }); });
+    }
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(801); });
+    expect(settingsCalls()).toHaveLength(expectedSaves);
+    if (expectedSaves === 1) {
+      expect(settingsCalls()[0]).toEqual([
+        "song.room.updateSettings",
+        { lyricsLineCount: 4, showLyrics: true, maxGuessesPerRound: 5,
+          guessDurationSeconds: 90, showGuessTimer: true, bloodMode: false },
+      ]);
+    }
+  });
+
+  it("设置保存飞行中再编辑，进入playing后ACK不得补发旧草稿", async () => {
+    vi.useFakeTimers();
+    let resolveSave!: () => void;
+    const pendingSave = new Promise<void>((resolve) => { resolveSave = resolve; });
+    const sendCommandSpy = vi.fn().mockReturnValueOnce(pendingSave).mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    fireEvent.change(duration, { target: { value: "90" } });
+    fireEvent.blur(duration);
+    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(settingsCalls()).toHaveLength(1);
+    expect(settingsCalls()[0]?.[1]).toEqual({ lyricsLineCount: 4, showLyrics: true,
+      maxGuessesPerRound: 5, guessDurationSeconds: 90, showGuessTimer: true, bloodMode: false });
+    fireEvent.change(duration, { target: { value: "120" } });
+    fireEvent.blur(duration);
+    act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) }); });
+    expect(settingsCalls()).toHaveLength(1);
+    await act(async () => { resolveSave(); await vi.advanceTimersByTimeAsync(1_200); });
+    expect(settingsCalls()).toHaveLength(1);
   });
 
   it("断线状态展示与房间被关闭自动退出到大厅", () => {
