@@ -491,6 +491,15 @@ export const isAlbumNameMatch = (
 ): boolean => albumNameScore(albumName, trackTitle, animeNames) > 0;
 
 /**
+ * 歌手名作为检索词的长度上限。
+ *
+ * Bangumi 的 `artist` 常是整串声优列表（角色歌专辑条目动辄列七八个人名），
+ * 拼进检索词后网易云什么都搜不到 —— 超过这个长度就只用番剧名去搜。
+ * （补录 artist 之后才暴露：旧库全为 NULL，等于一直在走番剧名那条路。）
+ */
+const MAX_ARTIST_QUERY_LENGTH = 32;
+
+/**
  * 专辑型条目的类型关键词：用于拼「番剧名 + 角色曲」这类检索词。
  */
 const ALBUM_KIND_KEYWORDS: readonly string[] = [
@@ -2129,13 +2138,16 @@ export class SonGuessrService {
     for (const track of candidates) {
       if (budget.search <= 0 || budget.detail <= 0) break;
       const queries: string[] = [];
-      if (track.artist) {
-        queries.push(`${track.title} ${track.artist}`);
-      } else {
-        if (anime.name) queries.push(`${track.title} ${anime.name}`);
-        if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
-        queries.push(track.title);
-      }
+      // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
+      // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
+      // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
+      const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
+        ? track.artist.trim()
+        : "";
+      if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
+      if (anime.name) queries.push(`${track.title} ${anime.name}`);
+      if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
+      queries.push(track.title);
       // 仅凭歌手名检索时，Bangumi 与网易云的歌手写法差异会让原版漏召回，
       // 只剩翻唱版可匹配。追加番剧名与曲名宽检索，保证原版进入候选池，
       // 再由 scoreAnimeSongCandidate 的原版优先排序决定最终结果。
@@ -2452,13 +2464,16 @@ export class SonGuessrService {
     for (const track of anime.musicTracks) {
       if (budget.search <= 0) break;
       const queries: string[] = [];
-      if (track.artist) {
-        queries.push(`${track.title} ${track.artist}`);
-      } else {
-        if (anime.name) queries.push(`${track.title} ${anime.name}`);
-        if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
-        queries.push(track.title);
-      }
+      // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
+      // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
+      // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
+      const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
+        ? track.artist.trim()
+        : "";
+      if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
+      if (anime.name) queries.push(`${track.title} ${anime.name}`);
+      if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
+      queries.push(track.title);
       const broadQueries = [
         anime.name ? `${track.title} ${anime.name}` : "",
         anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
