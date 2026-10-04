@@ -320,6 +320,23 @@ const NON_ORIGINAL_VERSION_PATTERN = new RegExp(
 const DRAMA_TRACK_PATTERN =
   /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|\bdrama\s*(?:cd|part|track)\b|ミニドラマ|ボイスドラマ|短編ドラマ|台詞|セリフ/iu;
 /**
+ * 纯编号音轨名（`M-815` / `Track 01` / `BGM 12`）。原声带里的曲目常只有编号，
+ * 玩家听到的是一段配乐而不是一首歌。实测事故：《Dragon Ball Z ヒット曲集》被专辑路径
+ * 匹配到《动画〈龙珠Z〉背景音乐原声带》，取回的第一轨就是 `M-815`（钢琴 BGM）。
+ */
+const TRACK_NUMBER_TITLE_PATTERN =
+  /^\s*(?:m|track|inst|bgm|音轨|音軌|トラック)[\s\-_#.]*\d{1,4}\s*$/iu;
+/**
+ * 专辑名里能证明「这是动画的盘」的发行上下文。
+ *
+ * 用于番剧级兜底：**专辑名含番剧名**本身不足以证明归属 —— 泛用名会撞车。
+ * 实测事故：动画《Rebirth》(2020) 的主题歌是《Reバース GO!》，但按番剧名检索召回了
+ * 同名的《Rebirth》(AMAST&MEDEM)，其专辑名就叫《Rebirth》；1983 年的《爱丽丝梦游仙境》
+ * 更被 2013 年的粤语同名歌顶掉。真正的动画盘几乎总带这类发行标记。
+ */
+const ANIME_RELEASE_CONTEXT_PATTERN =
+  /アニメ|animation|サウンドトラック|soundtrack|\bost\b|オリジナル|原声|原聲|主題歌|主题歌|テーマソング|キャラクターソング|キャラソン|特典|ソング集|ボーカル|vocal|ベスト|best|音楽|音乐|アルバム|album|コレクション|collection|コンプリート|complete|劇伴|cd|盤|盘/iu;
+/**
  * 器乐改编 / 二次演奏标记：管弦、交响、钢琴、八音盒等。它们与原唱原版
  * 完全不是同一次录音，即使曲名一模一样也必须排在原版之后。
  *
@@ -637,7 +654,9 @@ export const isUnplayableAlbumTrack = (title: string): boolean =>
  * 「放出来玩家无从猜起」的硬缺陷，必须在**所有路径**的验证阶段一律否决。
  */
 export const isNonVocalTrack = (title: string): boolean =>
-  DRAMA_TRACK_PATTERN.test(title) || NO_VOCAL_VERSION_PATTERN.test(title);
+  DRAMA_TRACK_PATTERN.test(title)
+  || NO_VOCAL_VERSION_PATTERN.test(title)
+  || TRACK_NUMBER_TITLE_PATTERN.test(title);
 
 /**
  * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
@@ -2502,7 +2521,11 @@ export class SonGuessrService {
     const otherTrackTitles = anime.musicTracks.map((entry) => entry.title);
     const belongsToAnime = (candidate: SongSearchResult): boolean => {
       const album = candidate.album ?? "";
-      if (animeNames.some((name) => album.includes(name))) return true;
+      // 专辑名含番剧名**还不够**：番剧名撞车的外文歌/同名歌，专辑名往往也叫同一个名字。
+      // 必须再有一层发行上下文（动画 / 原声带 / 主题歌 / 角色歌 …）才算证据。
+      if (animeNames.some((name) => album.includes(name)) && ANIME_RELEASE_CONTEXT_PATTERN.test(album)) {
+        return true;
+      }
       return otherTrackTitles.some((title) => isSongTitleMatch(candidate.title, title));
     };
     return shuffle([...collected.values()].filter(belongsToAnime), this.random);

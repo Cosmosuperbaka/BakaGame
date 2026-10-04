@@ -3110,12 +3110,70 @@ describe("SonGuessr 非歌音轨否决", () => {
     await expect(animeSoloRound(musicProvider, bonusCdProvider([drama]))).rejects.toThrow();
   });
 
+  test("原声带里的纯编号轨（M-815 / Track 01）一律否决", () => {
+    // 实测事故：《Dragon Ball Z ヒット曲集》被专辑路径匹配到《动画〈龙珠Z〉背景音乐原声带》，
+    // 取回的第一轨是钢琴 BGM《M-815》—— 玩家听到的是配乐，不是歌。
+    expect(isNonVocalTrack("M-815")).toBe(true);
+    expect(isNonVocalTrack("Track 01")).toBe(true);
+    expect(isNonVocalTrack("BGM 12")).toBe(true);
+    expect(isNonVocalTrack("God knows...")).toBe(false);
+    expect(isNonVocalTrack("WE GOTTA POWER")).toBe(false);
+  });
+
   test("专辑路径的粗筛比全路径否决更严，两条否定互不冲突", () => {
     expect(isUnplayableAlbumTrack("ふわふわ時間『StudioMix』(Instrumental)")).toBe(true);
     expect(isUnplayableAlbumTrack("ドラマ")).toBe(true);
     // 现场版在专辑路径被剔除（不是可出的原曲），但在全路径只降权、不出局。
     expect(isUnplayableAlbumTrack("God knows... (Live)")).toBe(true);
     expect(isNonVocalTrack("God knows... (Live)")).toBe(false);
+  });
+});
+
+describe("SonGuessr 番剧级兜底归属证据", () => {
+  const soloRound = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "anime-level-solo");
+    await createRoom(service, solo, { roomId: "8890", name: "猜番单人", userName: "独狼", solo: true });
+    await execute(service, solo, {
+      id: "anime-level-settings",
+      type: "song.room.updateSettings",
+      roomId: "8890",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8890", payload: {} });
+    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+  };
+  /** 曲目名在网易云根本不存在，逼着走到番剧级兜底。 */
+  const unreachableTrack = {
+    getSubject: async () => ({
+      ...anime,
+      musicTracks: [{ title: "无此曲XYZ", artist: "未知歌手", kind: "theme" }],
+    }),
+    searchSubjects: async () => [anime],
+  } as unknown as BangumiDataProvider;
+  const sameNameSong = (album: string) => ({
+    ...songs.answer,
+    id: "same-name",
+    title: "Rebirth",
+    artist: "AMAST&MEDEM",
+    album,
+    audioUrl: "https://audio/same-name.mp3",
+  });
+
+  test("专辑名只是番剧名、没有任何发行上下文时不认归属", async () => {
+    // 动画《Rebirth》(2020) 的主题歌是《Reバース GO!》，按番剧名检索却召回了同名的
+    // 《Rebirth》(AMAST&MEDEM)—— 它的专辑名就叫《Rebirth》，撞的是番剧名本身。
+    // 《爱丽丝梦游仙境》(1983) 同理被 2013 年的粤语同名歌顶掉。
+    const song = sameNameSong("答案番剧");
+    const musicProvider: MusicProvider = { ...provider, search: async () => [song], getSong: async () => song };
+    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow();
+  });
+
+  test("专辑名带动画发行上下文时照旧认归属", async () => {
+    const song = sameNameSong("答案番剧 オリジナルサウンドトラック");
+    const musicProvider: MusicProvider = { ...provider, search: async () => [song], getSong: async () => song };
+    const snapshot = await soloRound(musicProvider, unreachableTrack);
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/same-name.mp3");
   });
 });
 
