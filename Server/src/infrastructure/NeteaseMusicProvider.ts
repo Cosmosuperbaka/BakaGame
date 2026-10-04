@@ -2165,7 +2165,10 @@ export class NeteaseMusicProvider implements MusicProvider {
         const response = await this.call(["album"], { id }, cookie);
         const body = responseBody(response);
         const album = asRecord(body.album ?? body);
-        return asArray(album.songs ?? asRecord(body.data).songs)
+        // 曲目在**顶层** `body.songs`。`body.album.songs` 虽然存在，但在单曲 / 同名专辑上
+        // 常是**空数组**——用 `??` 读它会拿到 `[]` 而不会回退到顶层，专辑路径会整条失效。
+        // 实测《風がそよぐ場所》：album.songs 长度 0、顶层 songs 长度 2。
+        return asArray(body.songs ?? album.songs ?? asRecord(body.data).songs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
       },

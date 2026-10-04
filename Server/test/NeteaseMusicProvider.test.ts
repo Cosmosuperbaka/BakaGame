@@ -83,6 +83,41 @@ describe("NeteaseMusicProvider", () => {
     await expect(provider.getSongPopularity("1")).resolves.toBe(123_456);
   });
 
+  test("专辑检索取回专辑，曲目必须从顶层 songs 读取", async () => {
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        cloudsearch: async ({ type }: { type: number }) => ({
+          body: {
+            result: type === 10
+              ? { albums: [{ id: 55_900, name: "風がそよぐ場所", artist: { id: 1, name: "小松未歩" }, size: 2 }] }
+              : { songs: [] },
+          },
+        }),
+        // 真实响应形态：曲目在**顶层** `songs`，而 `album.songs` 是同名 / 单曲专辑上的
+        // **空数组**。实现若写成 `album.songs ?? body.songs`，`??` 不会回退，专辑路径会
+        // 静默拿到空列表（实测事故：`getAlbumSongs` 对《風がそよぐ場所》返回 0 条，
+        // 而顶层其实有 2 条）。这条用例钉死读取顺序。
+        album: async () => ({
+          body: {
+            songs: [
+              { id: 591_324, name: "風がそよぐ場所", ar: [{ name: "小松未歩" }], al: { name: "風がそよぐ場所" }, dt: 261_960 },
+              { id: 591_325, name: "elephant", ar: [{ name: "小松未歩" }], al: { name: "風がそよぐ場所" }, dt: 240_000 },
+            ],
+            album: { id: 55_900, name: "風がそよぐ場所", songs: [] },
+          },
+        }),
+      }),
+    });
+
+    await expect(provider.searchAlbums("風がそよぐ場所")).resolves.toEqual([
+      expect.objectContaining({ id: "55900", name: "風がそよぐ場所", artist: "小松未歩", songCount: 2 }),
+    ]);
+    await expect(provider.getAlbumSongs("55900")).resolves.toEqual([
+      expect.objectContaining({ id: "591324", title: "風がそよぐ場所", artist: "小松未歩" }),
+      expect.objectContaining({ id: "591325", title: "elephant" }),
+    ]);
+  });
+
   test("解析多时间戳 LRC 并补齐结束时间", () => {
     expect(parseLrc("[00:01.00][00:03.500]第一句\n[00:05.00]第二句")).toEqual([
       { time: 1_000, endTime: 3_500, text: "第一句" },
