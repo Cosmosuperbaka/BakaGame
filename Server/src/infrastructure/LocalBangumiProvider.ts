@@ -4,8 +4,11 @@ import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import { isBangumiCreditsEntry } from "../shared/Index";
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
+import { BangumiMeilisearch } from "./BangumiMeilisearch";
+import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
 
 export interface BangumiDataProvider {
+  initialize?: () => Promise<void>;
   searchSubjects(keyword: string, limit?: number, filters?: AnimeAutoFilters): Promise<BangumiSubjectSearchResult[]>;
   getSubject(subjectId: string): Promise<BangumiSubjectDetails>;
   chooseRandomSubject(filters?: AnimeAutoFilters, random?: () => number): Promise<BangumiSubjectDetails>;
@@ -118,11 +121,12 @@ export interface LocalBangumiProviderOptions {
   enrichmentPath?: string;
   imageBase?: string;
   apiBase?: string;
+  meilisearch?: CCBMeilisearchOptions;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
-export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher">;
+export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & { meilisearch?: Omit<CCBMeilisearchOptions, "client"> };
 
 /** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
 const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
@@ -136,6 +140,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   private readonly imageCache = new Map<string, string>();
   private readonly imageMissUntil = new Map<string, number>();
+  private readonly search?: BangumiMeilisearch;
+  private readonly searchReady: Promise<void>;
 
   constructor(options: LocalBangumiProviderOptions) {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
@@ -157,6 +163,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       `);
       this.enrichment = enrichment;
     }
+    this.search = options.meilisearch ? new BangumiMeilisearch(options.meilisearch) : undefined;
+    this.searchReady = this.search ? this.search.initialize(this.song, options.songPath) : Promise.resolve();
   }
 
   /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
@@ -236,6 +244,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     return this.resolveEntityImage("character", characterId);
   }
 
+  async initialize(): Promise<void> {
+    await this.searchReady;
+  }
+
   async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}) {
     const q = keyword.trim();
     const clauses = ["type = 2"];
@@ -243,6 +255,15 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (filters.startYear) { clauses.push("date >= ?"); args.push(`${filters.startYear}-01-01`); }
     if (filters.endYear) { clauses.push("date < ?"); args.push(`${filters.endYear + 1}-01-01`); }
     let rows: SubjectRow[];
+    if (this.search) {
+      await this.searchReady;
+      const ids = await this.search.searchSubjects(q, Math.min(50, Math.max(1, limit)), filters);
+      if (!ids.length) return [];
+      const placeholders = ids.map(() => "?").join(",");
+      const found = this.song.query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`).all(...ids) as SubjectRow[];
+      const byId = new Map(found.map((row) => [Number(row.id), row]));
+      return ids.flatMap((id) => { const row = byId.get(id); return row ? [toResult(row, this.imageBase)] : []; });
+    }
     if (q) {
       rows = this.song.query(`SELECT s.* FROM subject_search f JOIN subjects s ON s.id=f.rowid WHERE subject_search MATCH ? AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`).all(`${q.replace(/["*]/g, " ")}*`, ...args, q, q, `${q}%`, `${q}%`, Math.min(50, Math.max(1, limit))) as SubjectRow[];
     } else {

@@ -27,7 +27,7 @@ export interface AppEnv {
   enableGeneralUnblock?: boolean;
   ccbOriginalServerUrl?: string;
   ccbOriginalAesSecret?: string;
-  ccbMeilisearchKey?: string;
+  meilisearchKey?: string;
 }
 
 // ==================== 环境变量解析 ====================
@@ -176,7 +176,7 @@ export const readEnv = (): AppEnv => {
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
     ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
-    ccbMeilisearchKey: Bun.env.CCB_MEILISEARCH_KEY?.trim() || undefined,
+    meilisearchKey: Bun.env.MEILISEARCH_KEY?.trim() || undefined,
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
       : true,

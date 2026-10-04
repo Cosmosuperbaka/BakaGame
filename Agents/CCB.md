@@ -181,7 +181,8 @@
   `name`/`aliases` 是唯一搜索字段；类型、标签、元标签、日期、评分、评分人数、排名和
   `nsfw` 只作为过滤或排序字段。
 - Worker 初始化会校验服务健康状态、创建/校正两个索引的字段设置，并在文档数量不一致时
-  从本地 SQLite 按批次重建。未配置 `CCB_MEILISEARCH_KEY` 的本地/测试夹具保持显式本地模式；生产必须提供
+  从本地 SQLite 按批次重建。CCB 与 SonGuessr 共用同一 Meilisearch 实例和 `MEILISEARCH_KEY`，番剧索引名为
+  `bangumi_subjects`。未配置 `MEILISEARCH_KEY` 的本地/测试夹具保持显式本地模式；生产必须提供
   可用的 Meilisearch，不能在运行期静默切换到另一套排序逻辑。
 - 搜索回归以 Bangumi API 的过滤表达式和固定语料为参照，命中 ID 集合及顺序相似度必须达到
   99.9%，精确名称、别名、类型和 NSFW 边界样例要求完全一致。

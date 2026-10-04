@@ -206,9 +206,9 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 
 ### 发布链路与失败边界
 
-CCB 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
+CCB 与 SonGuessr 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
 可从容器内访问 `127.0.0.1:7700`；单独的默认桥接容器的 `localhost` 不指向另一个容器。
-Meilisearch 的 master key 与服务端 `CCB_MEILISEARCH_KEY` 必须一致，原版房的
+Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版房的
 `CCB_ORIGINAL_AES_SECRET` 独立配置。现有部署流水线只重启 `BakaGame`，不安装或启动搜索服务；
 前提未满足时不得发布该搜索配置。
 

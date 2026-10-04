@@ -17,6 +17,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     let value: unknown;
     if (request.method === "init") {
       provider = new LocalBangumiProvider(request.options);
+      await provider.initialize();
       value = true;
     } else if (!provider) {
       throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 数据尚未就绪");
