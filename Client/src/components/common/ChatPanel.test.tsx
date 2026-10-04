@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./ChatPanel";
 import { STICKER_PREFIX } from "@/lib/Stickers";
@@ -10,7 +10,7 @@ describe("ChatPanel (Common)", () => {
     { id: "p-other", name: "对手" },
   ];
 
-  it("系统消息/阶段提醒渲染为纯文本无背景样式", () => {
+  it("系统消息/阶段提醒展示原文，不作为玩家气泡或署名", () => {
     const messages: ChatMessage[] = [
       {
         id: "sys-1",
@@ -22,7 +22,7 @@ describe("ChatPanel (Common)", () => {
       },
     ];
 
-    const { container } = render(
+    render(
       <ChatPanel
         messages={messages}
         players={mockPlayers}
@@ -33,14 +33,13 @@ describe("ChatPanel (Common)", () => {
 
     const systemMsg = screen.getByText("游戏开始：第 1 轮出题阶段");
     expect(systemMsg).toBeInTheDocument();
-    // 验证系统消息没有嵌套带灰色背景的 span 胶囊
-    expect(systemMsg.tagName.toLowerCase()).toBe("div");
-    expect(systemMsg.className).toContain("text-center");
-    expect(systemMsg.className).toContain("text-xs");
-    expect(container.querySelector(".rounded-full.bg-muted\\/40")).toBeNull();
+    expect(systemMsg).toBeVisible();
+    expect(screen.queryByTestId("chat-message-bubble")).not.toBeInTheDocument();
+    expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
-  it("频道说明固定为消息流第一行，不另起标题条", () => {
+  it("频道可见范围说明先于玩家消息展示，不作为聊天正文", () => {
     const messages: ChatMessage[] = [
       {
         id: "m-1",
@@ -63,13 +62,15 @@ describe("ChatPanel (Common)", () => {
     );
 
     const notice = screen.getByText("聊天仅增强版玩家可见");
-    // 说明排在所有消息之前、位于滚动视口内，而不是栏顶标题条、气泡或输入区
     const bubble = screen.getByTestId("chat-message-bubble");
-    expect(notice.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(notice.closest("[data-radix-scroll-area-viewport]")).not.toBeNull();
+    expect(notice).toBeVisible();
+    expect(bubble).toHaveTextContent("原版那边好像断了一下");
+    expect(notice.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(bubble).queryByText("聊天仅增强版玩家可见")).not.toBeInTheDocument();
   });
 
-  it("正确区分本人与他人的消息气泡左右布局", () => {
+  it("保留本人和他人消息的发送者、正文与时间顺序", () => {
     const messages: ChatMessage[] = [
       {
         id: "m-1",
@@ -101,17 +102,15 @@ describe("ChatPanel (Common)", () => {
     const bubbles = screen.getAllByTestId("chat-message-bubble");
     expect(bubbles).toHaveLength(2);
 
-    // 本人消息：靠右侧布局与 primary 背景
     expect(bubbles[0]).toHaveTextContent("这是我的消息");
-    expect(bubbles[0].className).toContain("bg-primary");
-
-    // 他人消息：靠左侧布局与 muted 弱底色（明度低于面板，不刺眼）
     expect(bubbles[1]).toHaveTextContent("这是对方的消息");
-    expect(bubbles[1].className).toContain("bg-muted");
-    expect(bubbles[1].className).not.toContain("bg-card");
+    expect(screen.getByText("我", { exact: true })).toBeVisible();
+    expect(screen.getByText("对手", { exact: true })).toBeVisible();
+    expect(bubbles[0].compareDocumentPosition(bubbles[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("支持 Ghost 幽灵通道的虚线与弱化样式", () => {
+  it("幽灵私密频道保留双方发言并展示可见范围说明", () => {
     const messages: ChatMessage[] = [
       {
         id: "m-ghost-1",
@@ -138,16 +137,24 @@ describe("ChatPanel (Common)", () => {
         messages={messages}
         players={mockPlayers}
         myPlayerId="p-me"
+        notice="幽灵频道：仅出局玩家可见"
         onSendMessage={vi.fn()}
       />,
     );
 
     const bubbles = screen.getAllByTestId("chat-message-bubble");
-    expect(bubbles[0].className).toContain("border-dashed");
-    expect(bubbles[1].className).toContain("border-dashed");
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]).toHaveTextContent("幽灵本尊发言");
+    expect(bubbles[1]).toHaveTextContent("其他幽灵发言");
+    expect(screen.getByText("我", { exact: true })).toBeVisible();
+    expect(screen.getByText("对手", { exact: true })).toBeVisible();
+    expect(screen.getByText("幽灵频道：仅出局玩家可见")).toBeVisible();
+    for (const bubble of bubbles) {
+      expect(within(bubble).queryByText("幽灵频道：仅出局玩家可见")).not.toBeInTheDocument();
+    }
   });
 
-  it("渲染合法的表情包贴纸并在点击表情时发送", () => {
+  it("合法表情包消息展示可访问图片与稳定资源路径", () => {
     const messages: ChatMessage[] = [
       {
         id: "m-sticker",
@@ -200,10 +207,12 @@ describe("ChatPanel (Common)", () => {
     expect(sendButton).not.toBeDisabled();
 
     fireEvent.click(sendButton);
-    expect(handleSend).toHaveBeenCalledWith("你好世界");
+    await waitFor(() => expect(handleSend).toHaveBeenCalledExactlyOnceWith("你好世界"));
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(sendButton).toBeDisabled();
   });
 
-  it("在正文中正确识别并高亮 @提及 成员", () => {
+  it("正文保留提及成员与上下文，不把提及误作输入候选", () => {
     const messages: ChatMessage[] = [
       {
         id: "m-mention",
@@ -226,7 +235,39 @@ describe("ChatPanel (Common)", () => {
 
     expect(screen.getByText("@我")).toBeInTheDocument();
     const bubble = screen.getByTestId("chat-message-bubble");
-    // 被提及本人时有光圈轮廓
-    expect(bubble.className).toContain("ring-1 ring-primary/40");
+    expect(bubble).toHaveTextContent("你好 @我 来看这个！");
+    expect(within(bubble).getByText("@我")).toBeVisible();
+    expect(screen.queryByRole("listbox", { name: "提及玩家" })).not.toBeInTheDocument();
+  });
+  it("输入提及只提供其他成员，选择候选后发送完整消息", async () => {
+    const handleSend = vi.fn().mockResolvedValue(undefined);
+    render(<ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "你好 @" } });
+    const candidates = screen.getByRole("listbox", { name: "提及玩家" });
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(within(candidates).getByRole("option", { name: "对手" })).toBeVisible());
+    expect(within(candidates).queryByRole("option", { name: "我" })).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("你好 @对手 ");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(handleSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(handleSend).toHaveBeenCalledExactlyOnceWith("你好 @对手"));
+  });
+
+  it("频道消息与系统提示混合时，只有玩家消息形成气泡", () => {
+    const messages: ChatMessage[] = [
+      { id: "private-1", playerId: "p-other", playerName: "对手", text: "幽灵讨论", channel: "ghost", createdAt: 1, system: false },
+      { id: "private-system", playerId: "system", playerName: "系统", text: "第 2 天开始", createdAt: 2, system: true },
+    ];
+    render(<ChatPanel messages={messages} players={mockPlayers} myPlayerId="p-me"
+      notice="幽灵频道：仅出局玩家可见" onSendMessage={vi.fn()} />);
+    expect(screen.getByText("第 2 天开始")).toBeVisible();
+    const bubbles = screen.getAllByTestId("chat-message-bubble");
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]).toHaveTextContent("幽灵讨论");
+    expect(within(bubbles[0]).queryByText("第 2 天开始")).not.toBeInTheDocument();
+    expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
   });
 });
