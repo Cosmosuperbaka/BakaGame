@@ -476,8 +476,7 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
 });
 
 test("主动猜词猜错后，主持人判错则离开猜词并清理待裁定状态", async () => {
-  // finale 路径带 deferredWinner：改为「猜错先挂起等裁定」之后，
-  // 这条路要仍然能走到原本该有的胜负结果，而不是停在待裁定。
+  // 此夹具触发主动猜词而非残局：判错后恢复原阶段，清理待裁定标记。
   const { service } = createTestContext();
   const { host } = await createTestRoom(service, 4);
 
