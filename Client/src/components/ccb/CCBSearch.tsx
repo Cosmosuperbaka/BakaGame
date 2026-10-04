@@ -29,11 +29,12 @@ export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], onS
     try {
       const store = useCCBStore.getState();
       if (mode === "character") {
-        const result = await store.sendCommand("ccb.character.search", { keyword: keyword.trim() });
-        if (request === generation.current) { setCharacters(result.results); setSubjects([]); }
+        // 走 store 封装：同一串关键词在复用窗口内不会重复请求上游。
+        const results = await store.searchCharacters(keyword.trim());
+        if (request === generation.current) { setCharacters(results); setSubjects([]); }
       } else {
-        const result = await store.sendCommand("ccb.subject.search", { keyword: keyword.trim() });
-        if (request === generation.current) { setSubjects(result.results); setCharacters([]); }
+        const results = await store.searchSubjects(keyword.trim());
+        if (request === generation.current) { setSubjects(results); setCharacters([]); }
       }
       if (request === generation.current) setSearched(true);
     } catch (failure) { if (request === generation.current) setError(ccbErrorMessage(failure)); }
@@ -44,8 +45,8 @@ export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], onS
     const request = ++generation.current;
     setLoading(true); setError("");
     try {
-      const result = await useCCBStore.getState().sendCommand("ccb.subject.characters", { subjectId: subject.id });
-      if (request === generation.current) { setCharacters(result.results); setSelectedSubject(subject); }
+      const results = await useCCBStore.getState().loadSubjectCharacters(subject.id);
+      if (request === generation.current) { setCharacters(results); setSelectedSubject(subject); }
     } catch (failure) { if (request === generation.current) setError(ccbErrorMessage(failure)); }
     finally { if (request === generation.current) setLoading(false); }
   };

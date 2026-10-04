@@ -2,8 +2,29 @@ import { create } from "zustand";
 import type { CCBCommand, CCBPayload, CCBPrivateState, CCBRoomEnterResult, CCBRoomSnapshot, CCBRoomSummary, CCBSource, ServerMessage } from "@bakagame/shared";
 import { ccbWs, sendCCB, type CCBResponse } from "@/lib/CCBWs";
 import { normalizeCCBRoomId, readCCBSession, removeCCBSession, writeCCBSession } from "@/lib/CCBSession";
+import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
+
+/**
+ * CCB 只读查询的结果复用窗口，语义见 `lib/QueryReuse`。
+ *
+ * 覆盖「搜角色 / 搜作品 / 取某作品的登场角色」三条：翻看候选时来回比对、
+ * 切换作品再切回来，都会重复提交同一串输入。
+ */
+const ccbCharacterSearchCache =
+  createQueryReuseCache<CCBResponse<"ccb.character.search">["results"]>(keywordQueryKey);
+const ccbSubjectSearchCache =
+  createQueryReuseCache<CCBResponse<"ccb.subject.search">["results"]>(keywordQueryKey);
+const ccbSubjectCharactersCache =
+  createQueryReuseCache<CCBResponse<"ccb.subject.characters">["results"]>(keywordQueryKey);
+
+/** 清空 CCB 复用窗口；测试用它隔离用例，运行期无需调用（查询结果与房间无关）。 */
+export function clearCCBQueryCache() {
+  ccbCharacterSearchCache.clear();
+  ccbSubjectSearchCache.clear();
+  ccbSubjectCharactersCache.clear();
+}
 
 export interface CCBStore {
   connected: boolean; lobbyReady: boolean; originalAvailable: boolean;
@@ -18,6 +39,14 @@ export interface CCBStore {
   leaveRoom: () => Promise<void>;
   resetRoom: (closed?: boolean) => void;
   sendCommand: <T extends CCBCommand>(command: T, payload: CCBPayload<T>) => Promise<CCBResponse<T>>;
+  /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
+  searchCharacters: (keyword: string) => Promise<CCBResponse<"ccb.character.search">["results"]>;
+  /** 搜作品；同一关键词在复用窗口内不会重复请求上游。 */
+  searchSubjects: (keyword: string) => Promise<CCBResponse<"ccb.subject.search">["results"]>;
+  /** 取某作品的登场角色；切走再切回同一作品时复用上次结果。 */
+  loadSubjectCharacters: (
+    subjectId: CCBPayload<"ccb.subject.characters">["subjectId"],
+  ) => Promise<CCBResponse<"ccb.subject.characters">["results"]>;
 }
 
 let snapshotRevision: number | undefined;
@@ -161,6 +190,21 @@ export const useCCBStore = create<CCBStore>((set, get) => {
       return sendCCB(command, payload, { roomId: roomId ?? undefined, sessionToken: sessionToken ?? undefined,
         timeout: serverTimedCommands.has(command) ? 0 : undefined });
     },
+    searchCharacters: (keyword) =>
+      ccbCharacterSearchCache.run(keyword, async () => {
+        const { results } = await get().sendCommand("ccb.character.search", { keyword });
+        return results;
+      }),
+    searchSubjects: (keyword) =>
+      ccbSubjectSearchCache.run(keyword, async () => {
+        const { results } = await get().sendCommand("ccb.subject.search", { keyword });
+        return results;
+      }),
+    loadSubjectCharacters: (subjectId) =>
+      ccbSubjectCharactersCache.run(String(subjectId), async () => {
+        const { results } = await get().sendCommand("ccb.subject.characters", { subjectId });
+        return results;
+      }),
   };
 });
 

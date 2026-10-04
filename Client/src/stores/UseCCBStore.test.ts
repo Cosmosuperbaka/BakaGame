@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCCBSettings, type CCBRoomSnapshot } from "@bakagame/shared";
 import { ccbWs } from "@/lib/CCBWs";
-import { handleCCBMessage, initCCBWs, resetCCBStateSync, useCCBStore } from "./UseCCBStore";
+import { clearCCBQueryCache, handleCCBMessage, initCCBWs, resetCCBStateSync, useCCBStore } from "./UseCCBStore";
 import { readCCBSession, writeCCBSession } from "@/lib/CCBSession";
 
 const snapshot: CCBRoomSnapshot = {
@@ -52,6 +52,27 @@ describe("CCB 状态同步", () => {
     await store.sendCommand("ccb.game.imageHint", {});
     await store.sendCommand("ccb.character.image", { characterId: 1 });
     expect(send.mock.calls.map(([, , options]) => options?.timeout)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("CCB 只读查询在复用窗口内复用结果，同键不重复请求上游", async () => {
+    // 复用窗口是模块级状态，先清干净再断言调用序列。
+    clearCCBQueryCache();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({ results: [] });
+    const store = useCCBStore.getState();
+
+    await store.searchCharacters("初音");
+    await store.searchCharacters(" 初音 ");
+    await store.searchSubjects("某作品");
+    await store.searchSubjects("某作品");
+    await store.loadSubjectCharacters(123);
+    await store.loadSubjectCharacters(123);
+
+    // 六次调用只产生三次上游请求：同一输入（含首尾空白差异）命中同一份结果。
+    expect(send.mock.calls.map(([command]) => command)).toEqual([
+      "ccb.character.search",
+      "ccb.subject.search",
+      "ccb.subject.characters",
+    ]);
   });
 
   it("使用服务端原始基线应用聊天补丁", () => {
