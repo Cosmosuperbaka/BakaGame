@@ -423,6 +423,25 @@ export const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean
 };
 
 /**
+ * 上游偶发失败时重试一次。
+ *
+ * **只重试瞬态失败**：限流（`MUSIC_API_RATE_LIMITED`）与队列拥塞（`MUSIC_API_BUSY`）下
+ * 立即重试只会再撞一次冷却，直接放弃让上层换下一首。
+ * 实测小众番剧抽样里 25 条无候选中有 8 条是专辑检索抛错造成的，重试能把大部分救回来。
+ */
+const ALBUM_RETRY_DELAY_MS = 1_200;
+const retryOnce = async <T>(task: () => Promise<T>): Promise<T> => {
+  try {
+    return await task();
+  } catch (error) {
+    const code = error instanceof AppError ? error.code : "";
+    if (code === "MUSIC_API_RATE_LIMITED" || code === "MUSIC_API_BUSY") throw error;
+    await new Promise((resolve) => setTimeout(resolve, ALBUM_RETRY_DELAY_MS));
+    return task();
+  }
+};
+
+/**
  * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱。
  * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
  */
@@ -2151,7 +2170,7 @@ export class SonGuessrService {
     budget.search -= 1;
     let albums: SongAlbumSearchResult[];
     try {
-      albums = await provider.searchAlbums(track.title, ALBUM_SEARCH_LIMIT, cookie);
+      albums = await retryOnce(() => provider.searchAlbums!(track.title, ALBUM_SEARCH_LIMIT, cookie));
     } catch (error) {
       if (!isUnusableSongCandidate(error)) throw error;
       return [];
@@ -2171,7 +2190,7 @@ export class SonGuessrService {
     budget.search -= 1;
     let songs: SongSearchResult[];
     try {
-      songs = await provider.getAlbumSongs(album.id, cookie);
+      songs = await retryOnce(() => provider.getAlbumSongs!(album.id, cookie));
     } catch (error) {
       if (!isUnusableSongCandidate(error)) throw error;
       return [];
