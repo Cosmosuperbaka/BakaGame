@@ -382,33 +382,24 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
 const ANIME_SCOPED_BONUS = 3;
 
 /**
- * 「专辑型」曲目 kind：这些关联条目的标题**就是一张专辑的名字**，而不是某首歌的名字。
+ * 「非音乐」曲目 kind：条目本身是广播剧 / 电台 / 朗读，走专辑路径会把分轨对白当歌出题。
  *
- * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑、印象曲集、OST、精选集、同人专辑），
- * 条目名形如《マジンブーン オリジナルサウンドトラック2》《キラッとプリ☆チャン♪
- * ソングコレクション》。拿这种名字去检索单曲必然一无所获 —— 实测小众番剧抽样里
- * character / image / theme 三类共 30 条**全部零候选**，就是被这一条卡住的。
+ * 其余 kind 一律允许专辑兜底（**黑名单制**，不是白名单）：实测看似「单曲型」的
+ * `opening` / `ending` 条目里同样塞着整张角色歌 CD
+ * （《B-PROJECT～絶頂＊エモーション～ キャラクターソングCD 2》、
+ * 《TVアニメ「恋する天使アンジェリーク」キャラクターソング VOL.19》），
+ * 按白名单把它们排除掉，这些条目就永远零候选 —— 第一版白名单正是这么错的。
  *
- * 刻意排除三类：
- * - `opening` / `ending` / `insert` / `remix` / `single`：条目本身就是单曲名，走专辑路径只会
- *   搜到无关的同名专辑；
- * - `drama` / `radio` / `reading`：条目是广播剧 / 电台 / 朗读，属于**非音乐**内容，
- *   专辑路径会把分轨对白当成歌出题。
+ * 「单曲名撞上别人同名专辑」的风险由两道闸门压住：① 只在常规检索**完全无候选**时
+ * 才走这条路；② 专辑名必须与条目名对得上（`isAlbumNameMatch`，全等或互相包含）。
  */
-const ALBUM_LIKE_TRACK_KINDS: ReadonlySet<BangumiMusicTrackKind> = new Set<BangumiMusicTrackKind>([
-  "theme",
-  "ost",
-  "character",
-  "image",
-  "vocal",
-  "vocaloid",
-  "doujin",
-  "arrange",
-  "collection",
-  "artistAlbum",
+const NON_MUSIC_TRACK_KINDS: ReadonlySet<BangumiMusicTrackKind> = new Set<BangumiMusicTrackKind>([
+  "drama",
+  "radio",
+  "reading",
 ]);
 
-const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean => ALBUM_LIKE_TRACK_KINDS.has(kind);
+export const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean => !NON_MUSIC_TRACK_KINDS.has(kind);
 
 /** 专辑检索取回的候选专辑数。 */
 const ALBUM_SEARCH_LIMIT = 10;
@@ -420,7 +411,7 @@ const ALBUM_SEARCH_LIMIT = 10;
  * 实测两个毫不相关的短名（《角色歌合辑》与《另一部番 OST》）长度接近，按比例会被
  * 误判为同一张专辑，于是「搜 OST」滑到另一部番的 OST，把别家的歌出成题。
  */
-const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean => {
+export const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean => {
   const normalizedAlbum = normalizeSongTitle(albumName);
   const normalizedTitle = normalizeSongTitle(trackTitle);
   if (!normalizedAlbum || !normalizedTitle) return false;
@@ -434,7 +425,7 @@ const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean => {
  * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱。
  * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
  */
-const isUnplayableAlbumTrack = (title: string): boolean =>
+export const isUnplayableAlbumTrack = (title: string): boolean =>
   NON_ORIGINAL_VERSION_PATTERN.test(title)
   || COVER_MARKER_PATTERN.test(title)
   || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title);
