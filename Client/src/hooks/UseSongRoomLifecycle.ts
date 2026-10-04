@@ -16,12 +16,41 @@ import {
   getStoredSongMusicSession,
   saveSongMusicSession,
   SONGUESSR_MUSIC_SESSION_CHANGED,
+  type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
 import type { SonGuessrMusicAccount } from "@/types";
 
 const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
 const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * 把本机凭据装载进房间的退避重试节奏。
+ *
+ * 这一步要等网易云校验凭据，属于上游决定耗时的操作：单发一次失败时，房间徽标会一直停在
+ * 「本机已登录」，直到下一次与凭据无关的快照变化（房间活动，空闲房间则是 60 秒全量校准）
+ * 才重新触发。固定退避把这种情况收敛到秒级，同时重试次数有界，不会放大上游压力。
+ */
+const MUSIC_SESSION_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
+
+/** 上游抖动与传输层失败值得重试；会话失效、非房主这类业务拒绝重试也不会变好。 */
+const TRANSIENT_MUSIC_SESSION_ERROR_CODES = new Set([
+  "MUSIC_API_RATE_LIMITED",
+  "MUSIC_API_FAILED",
+  "TIMEOUT",
+  "DISCONNECTED",
+  "NOT_CONNECTED",
+]);
+
+const isTransientMusicSessionError = (error: { code?: string }): boolean =>
+  error.code === undefined || TRANSIENT_MUSIC_SESSION_ERROR_CODES.has(error.code);
+
+/** 同一房间、席位与凭据只允许一个装载事务；`settled` 表示已经落定，不再重复上传。 */
+interface MusicSessionTask {
+  key: string;
+  cancelled: boolean;
+  settled: boolean;
+}
 
 export const isLongRunningCommand = (type: string): boolean =>
   (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
@@ -63,13 +92,63 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const leavingRef = useRef(false);
   const entryRef = useRef<AbortController | null>(null);
   const [mountTime] = useState(() => Date.now());
-  const mountedMusicSessionRef = useRef<string | null>(null);
+  const musicSessionTaskRef = useRef<MusicSessionTask | null>(null);
   const inFlightCommandsRef = useRef<Set<string>>(new Set());
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     sendCommandRef.current = sendCommand;
   }, [sendCommand]);
+
+  /** 终止当前装载事务：在途请求与待执行的退避都作废，下一次快照变化可重新发起。 */
+  const cancelMusicSessionUpload = useCallback(() => {
+    const task = musicSessionTaskRef.current;
+    if (task) task.cancelled = true;
+    musicSessionTaskRef.current = null;
+  }, []);
+
+  const uploadMusicSession = useCallback(
+    async (task: MusicSessionTask, storedSession: StoredSongMusicSession) => {
+      for (let attempt = 0; ; attempt += 1) {
+        if (task.cancelled) return;
+        try {
+          const result = await sendCommand<{ account: SonGuessrMusicAccount }>(
+            "song.auth.useCookie",
+            { cookie: storedSession.cookie },
+          );
+          if (task.cancelled) return;
+          task.settled = true;
+          if (!result?.account) return;
+          saveSongMusicSession(
+            { cookie: storedSession.cookie, account: result.account },
+            storedSession.persistent,
+          );
+          return;
+        } catch (error) {
+          if (task.cancelled) return;
+          const appError = error as { code?: string; message?: string };
+          if (appError.code === "MUSIC_SESSION_INVALID") {
+            cancelMusicSessionUpload();
+            clearStoredSongMusicSession();
+            setNotice("网易云登录状态已失效，请重新扫码登录", "error");
+            return;
+          }
+          const delay = MUSIC_SESSION_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isTransientMusicSessionError(appError)) {
+            // 重试用尽或确定性拒绝：交回给下一次快照变化（房间活动或周期校准）再装一次。
+            cancelMusicSessionUpload();
+            return;
+          }
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, delay);
+          });
+        }
+      }
+    },
+    [cancelMusicSessionUpload, sendCommand, setNotice],
+  );
+
+  useEffect(() => () => cancelMusicSessionUpload(), [cancelMusicSessionUpload]);
 
   const isPending = useCallback(
     (type: string) => Boolean(pendingCommands[type]),
@@ -265,7 +344,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   useEffect(() => {
     if (!connected) {
-      mountedMusicSessionRef.current = null;
+      cancelMusicSessionUpload();
       return;
     }
     if (
@@ -274,41 +353,30 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       snapshot.roomId !== roomId ||
       snapshot.hostPlayerId !== privateState.playerId
     ) {
-      mountedMusicSessionRef.current = null;
+      cancelMusicSessionUpload();
       return;
     }
     const storedSession = getStoredSongMusicSession();
     if (!storedSession) {
-      mountedMusicSessionRef.current = null;
+      cancelMusicSessionUpload();
       return;
     }
     const mountKey = `${snapshot.roomId}:${privateState.playerId}:${storedSession.cookie}`;
-    if (mountedMusicSessionRef.current === mountKey) return;
-    mountedMusicSessionRef.current = mountKey;
-    void sendCommand<{ account: SonGuessrMusicAccount }>("song.auth.useCookie", { cookie: storedSession.cookie })
-      .then((result) => {
-        if (!result?.account) return;
-        saveSongMusicSession(
-          { cookie: storedSession.cookie, account: result.account },
-          storedSession.persistent,
-        );
-      })
-      .catch((error) => {
-        mountedMusicSessionRef.current = null;
-        const appError = error as { code?: string; message?: string };
-        if (appError.code === "MUSIC_SESSION_INVALID") {
-          clearStoredSongMusicSession();
-          setNotice("网易云登录状态已失效，请重新扫码登录", "error");
-        }
-      });
+    const active = musicSessionTaskRef.current;
+    // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
+    if (active?.key === mountKey && (active.settled || !active.cancelled)) return;
+    cancelMusicSessionUpload();
+    const task: MusicSessionTask = { key: mountKey, cancelled: false, settled: false };
+    musicSessionTaskRef.current = task;
+    void uploadMusicSession(task, storedSession);
   }, [
+    cancelMusicSessionUpload,
     connected,
     musicSessionRevision,
     privateState,
     roomId,
-    sendCommand,
-    setNotice,
     snapshot,
+    uploadMusicSession,
   ]);
 
   const handleConfirmName = async () => {
@@ -344,7 +412,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     } catch (error) {
       const appError = error as { code?: string; message?: string };
       if (appError.code === "MUSIC_SESSION_INVALID") {
-        mountedMusicSessionRef.current = null;
+        cancelMusicSessionUpload();
         clearStoredSongMusicSession();
         setNotice("网易云登录状态已失效，请重新扫码登录", "error");
         return;

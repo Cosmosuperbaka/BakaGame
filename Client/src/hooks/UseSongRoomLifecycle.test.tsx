@@ -4,7 +4,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { getSongSoloRoomId, getSonGuessrSessionToken, saveSongSoloRoomId, saveSonGuessrSessionToken, saveUsername } from "@/lib/Storage";
-import { songSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
+import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
+import { SONG_ACCOUNTS, songSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
 import { useSongRoomLifecycle } from "./UseSongRoomLifecycle";
 
 const { navigate, waitConnection, send, randomId } = vi.hoisted(() => ({
@@ -128,5 +129,93 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
     expect(join.mock.calls[0]).toEqual(["1234", "新玩家", undefined, expect.any(AbortSignal)]);
     expect(join.mock.calls[1]).toEqual(["1234", "新玩家", "fixture-password", join.mock.calls[0][3]]);
     expect(h.result.current.joining).toBe(false);
+  });
+});
+
+describe("保存凭据的房间装载重试（真实 hook / 假定时器）", () => {
+  const HOST_ID = "player-host";
+  const hostReceipt = (roomId = "1234") => ({
+    roomId,
+    sessionToken: "fixture-token",
+    snapshot: songSnapshot({ roomId, hostPlayerId: HOST_ID }),
+    privateState: songPrivate({ playerId: HOST_ID, sessionToken: "fixture-token" }),
+  });
+  const flush = async (ms = 0) => {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  };
+  const uploadCalls = () => send.mock.calls.filter(([type]) => type === "song.auth.useCookie");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    saveSongMusicSession({ cookie: "MUSIC_U=fixture", account: SONG_ACCOUNTS.vip }, true);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("上游抖动会退避重试，落定后不再重复", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return hostReceipt();
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        if (uploads === 1) throw { code: "MUSIC_API_RATE_LIMITED", message: "网易云接口触发限流退避" };
+        return { account: SONG_ACCOUNTS.vip };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    expect(uploads).toBe(1);
+
+    await flush(1_000);
+    expect(uploads).toBe(2);
+    expect(uploadCalls()).toHaveLength(2);
+
+    // 成功后不再有任何后续装载，哪怕快照继续变化。
+    await flush(30_000);
+    expect(uploads).toBe(2);
+    h.unmount();
+  });
+
+  it("会话失效清除本机凭据且不重试", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return hostReceipt();
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        throw { code: "MUSIC_SESSION_INVALID", message: "网易云登录状态已失效" };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    expect(uploads).toBe(1);
+    expect(getStoredSongMusicSession()).toBeNull();
+    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith("网易云登录状态已失效，请重新扫码登录", "error");
+
+    await flush(30_000);
+    expect(uploads).toBe(1);
+    h.unmount();
+  });
+
+  it("非房主这类确定性拒绝不重试，交给下一次快照变化", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return hostReceipt();
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        throw { code: "NOT_HOST", message: "只有房主可以操作" };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    expect(uploads).toBe(1);
+
+    await flush(30_000);
+    expect(uploads).toBe(1);
+    h.unmount();
   });
 });
