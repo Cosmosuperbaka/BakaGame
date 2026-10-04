@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures/Isolation";
 import type { SongLyricsFixtureProps } from "./fixtures/SongLyrics";
 import type { SongLyricLine } from "../src/types/Index";
 

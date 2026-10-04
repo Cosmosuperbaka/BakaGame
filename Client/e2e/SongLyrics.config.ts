@@ -16,7 +16,8 @@ export default defineConfig({
   webServer: {
     cwd: path.resolve(import.meta.dirname, ".."),
     command: "npx vite --config e2e/SongLyrics.vite.ts --host 127.0.0.1 --port 5177 --strictPort",
-    url: "http://127.0.0.1:5177/e2e/fixtures/SongLyrics.html",
+    // HTML 可先于真实生产 CSS 编译完成；就绪探针等待这个必要资源，而非让首例承担冷编译。
+    url: "http://127.0.0.1:5177/src/index.css",
     reuseExistingServer: !process.env.CI,
   },
 });

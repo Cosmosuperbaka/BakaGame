@@ -1,5 +1,5 @@
 import { test as base, type BrowserContext, type BrowserContextOptions } from "@playwright/test";
-import { installLoopbackGuard } from "./LoopbackGuard";
+import { installLoopbackGuard, isLoopbackUrl } from "./LoopbackGuard";
 export { expect } from "@playwright/test";
 export { getLoopback, isLoopbackUrl } from "./LoopbackGuard";
 
@@ -28,13 +28,19 @@ async function closeAllIsolatedContexts(contexts: BrowserContext[]) {
   if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Isolated context cleanup failed");
 }
 
+async function grantLoopbackAccess(context: BrowserContext, baseURL?: string) {
+  const origin = new URL(baseURL ?? "http://127.0.0.1:5173").origin;
+  if (!isLoopbackUrl(origin)) throw new Error("Isolated base URL must be loopback");
+  await context.grantPermissions(["local-network-access"], { origin });
+}
+
 type IsolationFixtures = {
   isolatedContext: (options?: BrowserContextOptions) => Promise<BrowserContext>;
 };
 
 export const test = base.extend<IsolationFixtures>({
-  context: async ({ context }, provide) => {
-    await context.grantPermissions(["local-network-access"], { origin: "http://127.0.0.1:5173" });
+  context: async ({ context, baseURL }, provide) => {
+    await grantLoopbackAccess(context, baseURL);
     const assertNoEgress = await installLoopbackGuard(context);
     guards.set(context, assertNoEgress);
     try {
@@ -47,13 +53,13 @@ export const test = base.extend<IsolationFixtures>({
     const page = await context.newPage();
     try { await provide(page); } finally { await closeIsolatedContext(context); }
   },
-  isolatedContext: async ({ browser }, provide) => {
+  isolatedContext: async ({ browser, baseURL }, provide) => {
     const contexts: BrowserContext[] = [];
     try {
       await provide(async (options = {}) => {
         const context = await browser.newContext({ ...options, serviceWorkers: "block" });
         try {
-          await context.grantPermissions(["local-network-access"], { origin: "http://127.0.0.1:5173" });
+          await grantLoopbackAccess(context, baseURL);
           const assertNoEgress = await installLoopbackGuard(context);
           guards.set(context, assertNoEgress);
           contexts.push(context);
