@@ -459,7 +459,7 @@ export function seedSoloRoom() {
 function lobbyRoom(roomId: string, name: string, overrides: Partial<SonGuessrRoomSummary> = {}): SonGuessrRoomSummary {
   const room: SonGuessrRoomSummary = {
     roomId, name, visibility: "public", allowSpectators: true, hasPassword: false,
-    playerCount: 2, spectatorCount: 0, onlineCount: 2, phase: "waiting", ...overrides,
+    playerCount: 2, spectatorCount: 0, onlineCount: 2, phase: "waiting", questionType: "song", ...overrides,
   };
   return { ...room, onlineCount: room.playerCount + room.spectatorCount };
 }
@@ -468,7 +468,7 @@ function lobbyRoom(roomId: string, name: string, overrides: Partial<SonGuessrRoo
 export const SONG_LOBBY_ROOMS: SonGuessrRoomSummary[] = [
   lobbyRoom(SONG_ROOM_ID, `${HOST.name}的房间`, { playerCount: 6, spectatorCount: 1 }),
   lobbyRoom("2718", "周五夜听歌会", { phase: "playing", visibility: "private", hasPassword: true, playerCount: 5, spectatorCount: 3 }),
-  lobbyRoom("3141", "动画主题曲专场", { phase: "roundResult", playerCount: 4, spectatorCount: 2 }),
+  lobbyRoom("3141", "动画主题曲专场", { phase: "roundResult", questionType: "anime", playerCount: 4, spectatorCount: 2 }),
   lobbyRoom("5920", "只听华语老歌", { allowSpectators: false, playerCount: 3 }),
   lobbyRoom("8086", "名称很长的房间用于检查截断：周末一起猜一猜那些年单曲循环过的歌", { phase: "submittingSong", playerCount: 12, spectatorCount: 10 }),
 ];

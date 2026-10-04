@@ -13,6 +13,10 @@ export type SonGuessrPhase = (typeof SONGUESSR_PHASES)[number];
 export const MAX_SONGUESSR_COOKIE_LENGTH = 16_384;
 
 export type SongQuestionType = "song" | "anime";
+export const SONG_QUESTION_TYPE_LABELS: Record<SongQuestionType, string> = {
+  song: "听歌识曲",
+  anime: "听歌识番",
+};
 export type SongQuestionMode = "manual" | "automatic";
 
 import type { SongAutoFilters, SongAutoFiltersInput } from "./SonGuessrFilters";
@@ -377,6 +381,7 @@ export interface SonGuessrRoomSummary {
   spectatorCount: number;
   onlineCount: number;
   phase: SonGuessrPhase;
+  questionType: SongQuestionType;
 }
 
 export interface SonGuessrRoomSnapshot {

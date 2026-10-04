@@ -876,6 +876,27 @@ describe("SonGuessrService", () => {
     await joinRoom(service, guest, "玩家", "1234", "secret");
   });
 
+  test("大厅房间摘要包含题目类型且随设置更新实时同步", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "host");
+    await createRoom(service, host, { name: "初始识曲房" });
+
+    expect(service.getRoomSummaries()).toEqual([
+      expect.objectContaining({ name: "初始识曲房", questionType: "song" }),
+    ]);
+
+    await execute(service, host, {
+      id: "switch-to-anime",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime" },
+    });
+
+    expect(service.getRoomSummaries()).toEqual([
+      expect.objectContaining({ name: "初始识曲房", questionType: "anime" }),
+    ]);
+  });
+
   test("密码尝试超过上限后连正确密码也拒绝，其它连接不受影响，窗口过后恢复", async () => {
     let now = 1_000_000;
     const service = new SonGuessrService({ musicProvider: provider, now: () => now });

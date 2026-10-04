@@ -12,6 +12,7 @@ const mockRooms: SonGuessrRoomSummary[] = [
     roomId: "8629",
     name: "绫地喰喰的房间",
     phase: "playing",
+    questionType: "anime",
     playerCount: 2,
     spectatorCount: 3,
     onlineCount: 5,
@@ -23,6 +24,7 @@ const mockRooms: SonGuessrRoomSummary[] = [
     roomId: "1234",
     name: "日常听歌房",
     phase: "waiting",
+    questionType: "song",
     playerCount: 5,
     spectatorCount: 0,
     onlineCount: 5,
@@ -100,6 +102,8 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
     const first = screen.getByRole("button", { name: /绫地喰喰的房间/ });
     const second = screen.getByRole("button", { name: /日常听歌房/ });
+    expect(within(first).getByText("听歌识番")).toBeInTheDocument();
+    expect(within(second).getByText("听歌识曲")).toBeInTheDocument();
     expect(within(first).getByLabelText("需要密码")).toBeInTheDocument();
     expect(within(second).queryByLabelText("需要密码")).not.toBeInTheDocument();
     expect(first).toHaveAttribute("tabindex", "0");

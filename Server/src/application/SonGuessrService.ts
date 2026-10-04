@@ -3384,6 +3384,7 @@ export class SonGuessrService {
       spectatorCount,
       onlineCount: activeCount + spectatorCount,
       phase: room.phase,
+      questionType: room.settings.questionType,
     };
   }
 

@@ -4,9 +4,9 @@ import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
-import type { SonGuessrRoomSummary } from "@/types";
+import { SONG_QUESTION_TYPE_LABELS, type SonGuessrRoomSummary } from "@/types";
 
-/** 猜歌的大厅只区分「等待中」与「游戏中」两态。 */
+/** 猜歌的大厅区分「等待中」与「游戏中」两态，并标注「听歌识曲」或「听歌识番」。 */
 const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
   roomId: room.roomId,
   name: room.name,
@@ -15,6 +15,7 @@ const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
   allowSpectators: room.allowSpectators,
   playerCount: room.playerCount,
   spectatorCount: room.spectatorCount,
+  tag: (room.questionType && SONG_QUESTION_TYPE_LABELS[room.questionType]) ?? "听歌识曲",
 });
 
 export default function SonGuessrPage() {
