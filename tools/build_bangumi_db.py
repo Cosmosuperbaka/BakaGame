@@ -24,6 +24,11 @@ EXTRA_SUBJECTS_PATH = Path(__file__).resolve().parents[1] / "Server/src/shared/C
 INFOBOX_NAME_KEYS = ("中文名", "简体中文名", "繁體中文名", "繁体中文名", "姓名", "名称", "名字", "本名")
 INFOBOX_GENDER_KEYS = ("性别", "性別", "gender")
 INFOBOX_ALIAS_KEYS = ("别名", "別名")
+# 音乐条目 infobox 里「艺术家」的候选键。归档 dump 的音乐条目把演唱者写在这个字段里
+# （``|艺术家= Sound Horizon``），而 music_subjects / subject_music_relations 两张表
+# 都**没有**别的艺术家来源：不解析它，曲目就带着空 artist 落库，出题打分的
+# 「歌手交集 +4 / 无交集 -3」整条失效，原版优先退化成只看曲名与专辑名。
+INFOBOX_ARTIST_KEYS = ("艺术家", "藝術家", "アーティスト", "歌手", "Vocal", "vocal")
 # Bangumi 的性别只有 male / female 两种取值，其余一律归一到 '?'，
 # 与 CCB 的反馈判定（非 male/female 即 '?'）保持同一口径。
 GENDER_MAP = {
@@ -281,6 +286,32 @@ def first_matching(singles: dict[str, str], keys) -> str:
     return ""
 
 
+def parse_music_infobox_artist(infobox: str) -> str:
+    """从音乐条目（type=3）自己的 infobox 里取「艺术家」。
+
+    取值形态有两类，都要覆盖：
+
+    - 单值：``|艺术家= Sound Horizon``
+    - 多值块：``|艺术家={\\r\\n[YOASOBI]\\r\\n[Ayase]\\r\\n}`` —— 多艺人时走 blocks，
+      单看 singles 会漏（实测只认 singles 时多艺人条目全部落空）。
+
+    返回空串表示该条目确实没有艺术家信息（构建时落成 NULL，不做任何编造）。
+    """
+    if not infobox:
+        return ""
+    singles, blocks = parse_infobox(infobox)
+    single = first_matching(singles, INFOBOX_ARTIST_KEYS)
+    if single:
+        return single
+    for key in INFOBOX_ARTIST_KEYS:
+        values = blocks.get(key)
+        if values:
+            joined = "、".join(value for value in (clean_infobox_value(v) for v in values) if value)
+            if joined:
+                return joined
+    return ""
+
+
 def parse_character_infobox(infobox: str) -> tuple[str, str, list[str]]:
     """返回 (中文名, 归一性别, 别名列表)。"""
     singles, blocks = parse_infobox(infobox)
@@ -513,16 +544,23 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             aliases.extend(alias_blocks.get("别名", []))
             aliases = json.dumps(aliases, ensure_ascii=False)
             char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases, item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat, int(item.get("rank", 0) or 0)))
+        # 音乐条目的艺术家只在条目自身的 infobox 里（两张音乐表都没有该列）。
+        # 预先按 music_id 解析一次，避免每条反向关系都重跑一遍 infobox 解析。
+        music_artists = {
+            item["id"]: parse_music_infobox_artist(item.get("infobox", ""))
+            for item in subjects.values() if item.get("type") == 3
+        }
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:
                 title = b_item.get("name_cn") or b_item.get("name") or ""
+                artist = music_artists.get(b_item.get("id")) or None
                 relation_type = int(rel.get("relation_type", 0) or 0)
                 # 关联类型码语义（用真实数据集全量核对）：3003 片头曲、3004 片尾曲、
                 # 3005 插入歌、3002 角色歌、3006 印象曲、3001 主题歌/原声带。
                 # 旧映射把 3002~3005 整体错位一格，导致片头曲被标成 ED、角色歌被标成 OP。
                 kind = {3001: "theme", 3002: "character", 3003: "opening", 3004: "ending", 3005: "insert", 3006: "image"}.get(relation_type, track_kind(title))
-                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, None, kind))
+                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, artist, kind))
         for item in subjects.values():
             if item.get("type") != 2: continue
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):

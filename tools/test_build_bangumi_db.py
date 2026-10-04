@@ -128,6 +128,18 @@ def test_parse_character_infobox() -> None:
     check("多中文名可搜索", aliases, ["简体名", "单值别名"])
 
 
+def test_parse_music_infobox_artist() -> None:
+    print("音乐条目艺术家解析")
+    check("单值键", subject.parse_music_infobox_artist("{{Infobox Single\r\n|艺术家= Sound Horizon\r\n}}"), "Sound Horizon")
+    check("日文键", subject.parse_music_infobox_artist("{{Infobox Album\r\n|アーティスト= Vaundy\r\n}}"), "Vaundy")
+    check("歌手键", subject.parse_music_infobox_artist("{{Infobox Single\r\n|歌手= 中山エミリ\r\n}}"), "中山エミリ")
+    # 多艺人时值是块形态，只认 singles 会整条漏掉（实测 YOASOBI 这类多演唱者条目）。
+    check("多值块", subject.parse_music_infobox_artist("{{Infobox Album\r\n|艺术家={\r\n[YOASOBI]\r\n[Ayase]\r\n}\r\n}}"), "YOASOBI、Ayase")
+    check("内链清洗", subject.parse_music_infobox_artist("{{Infobox Album\r\n|艺术家= [[KOTOKO]]\r\n}}"), "KOTOKO")
+    check("无艺术家字段", subject.parse_music_infobox_artist("{{Infobox Album\r\n|发售日期= 2020\r\n}}"), "")
+    check("空 infobox", subject.parse_music_infobox_artist(""), "")
+
+
 def test_load_character_tags() -> None:
     print("load_character_tags（上游 id_tags.js 的裸数字键）")
     with tempfile.TemporaryDirectory() as tmp:
@@ -208,14 +220,21 @@ def make_dump(root: Path) -> None:
             {"id": 3154, "type": 4, "name": "STEINS;GATE", "name_cn": "命运石之门", "date": "2009-10-15", "score": 8.9, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {}},
             # type=1（书籍）用于验证声优过滤：这条关联必须被排除
             {"id": 999, "type": 1, "name": "小説版", "name_cn": "小说版", "date": "2007-01-01", "score": 7.0, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {}},
-            {"id": 77, "type": 3, "name": "COLORS", "name_cn": "COLORS", "score": 9.0, "rank": 1},
+            # 音乐条目的艺术家只写在自身 infobox 里（音乐表没有该列），
+            # 反向关系落库时必须把它带上，否则出题打分的歌手信号整条失效。
+            {"id": 77, "type": 3, "name": "COLORS", "name_cn": "COLORS", "score": 9.0, "rank": 1,
+             "infobox": "{{Infobox Single\r\n|艺术家= 島谷ひとみ\r\n}}"},
             # nsfw 作品**只从角色库剔除**，歌曲库保持全集（范围决定见 build 里的注释）。
             # 一条动画、一条游戏 —— 后者正是「成人向游戏标题进反馈」那条合规问题的来源。
             {"id": 556, "type": 2, "name": "nsfwアニメ", "name_cn": "成人向动画", "date": "2016-01-01", "score": 7.1, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {"done": 5}, "nsfw": True},
             {"id": 557, "type": 4, "name": "nsfwゲーム", "name_cn": "成人向游戏", "date": "2016-02-01", "score": 7.2, "tags": [], "meta_tags": [], "infobox": "", "summary": "", "favorite": {}, "nsfw": True},
         ],
     )
-    write_jsonlines(root / "subject-relations.jsonlines", [])
+    # 动画 ↔ 音乐的反向关联：用来验证「曲目落库时把音乐条目的艺术家带上」。
+    write_jsonlines(
+        root / "subject-relations.jsonlines",
+        [{"subject_id": 8, "related_subject_id": 77, "relation_type": 3003, "order": 0}],
+    )
     write_jsonlines(
         root / "character.jsonlines",
         [
@@ -368,6 +387,13 @@ def test_build_end_to_end() -> None:
         # 是另一个产品决定，不在本次范围内。所以这里是 2（8 与 nsfw 的 556）而不是 1。
         check("song 表未受影响（含 nsfw 动画）", song.execute("SELECT count(*) FROM subjects").fetchone()[0], 2)
         check("music 表未受影响", song.execute("SELECT count(*) FROM music_subjects").fetchone()[0], 1)
+        # 曲目必须带上音乐条目 infobox 里的艺术家：出题打分的「歌手交集 ±4/3」全靠它，
+        # 空着会让原版优先退化成只看曲名与专辑名（旧库实测 3 万条曲目里 0 条带 artist）。
+        check(
+            "曲目带艺术家落库",
+            song.execute("SELECT title, artist, kind FROM subject_music_relations WHERE subject_id = 8 AND music_id = 77").fetchall(),
+            [("COLORS", "島谷ひとみ", "opening")],
+        )
         song.close()
 
 
@@ -397,6 +423,7 @@ def test_build_guard() -> None:
 
 def main() -> int:
     test_parse_character_infobox()
+    test_parse_music_infobox_artist()
     test_load_character_tags()
     test_load_extra_tags()
     test_build_end_to_end()
