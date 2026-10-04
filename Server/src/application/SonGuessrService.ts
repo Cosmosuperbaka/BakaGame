@@ -290,7 +290,7 @@ export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string):
     && minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO;
 };
 
-const normalizedArtists = (value: string) =>
+export const normalizedArtists = (value: string) =>
   new Set(
     value
       .split(/\s*(?:,|，|、|&|＆|\/|／|;|；|\bx\b|\bfeat(?:uring)?\.?\b|\bwith\b)\s*/iu)
@@ -2158,7 +2158,15 @@ export class SonGuessrService {
     }
     // 专辑名必须与条目名对得上：网易云的专辑检索很宽松，副标题里的关键词都能命中，
     // 不设这道门禁会滑到「搜 OST 命中另一部番的 OST」。
-    const album = albums.find((entry) => isAlbumNameMatch(entry.name, track.title));
+    const nameMatches = albums.filter((entry) => isAlbumNameMatch(entry.name, track.title));
+    // 同名专辑常常有别人的版本，优先选艺术家与 Bangumi 记录对得上的那张（数据集补录
+    // artist 之后这条才真正可用）；都对不上时退回第一张，让后续验证阶段去筛。
+    const trackArtists = track.artist ? normalizedArtists(track.artist) : new Set<string>();
+    const album = nameMatches.find((entry) => {
+      if (trackArtists.size === 0 || !entry.artist) return false;
+      const albumArtists = normalizedArtists(entry.artist);
+      return [...trackArtists].some((name) => albumArtists.has(name));
+    }) ?? nameMatches[0];
     if (!album || budget.search <= 0) return [];
     budget.search -= 1;
     let songs: SongSearchResult[];
