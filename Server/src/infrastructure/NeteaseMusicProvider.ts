@@ -29,6 +29,7 @@ import {
 } from "./NeteaseMusicLyricVocabulary";
 import type {
   SongDetails,
+  SongAlbumSearchResult,
   SongArtistSearchResult,
   SongEncyclopedia,
   SonGuessrMusicAccount,
@@ -58,6 +59,10 @@ export interface MusicProvider {
   getPlaylistSongs?(playlistId: string, cookie?: string): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
   searchArtists?(keyword: string, limit?: number, cookie?: string): Promise<SongArtistSearchResult[]>;
   getArtistSongs?(artistId: string, cookie?: string): Promise<SongSearchResult[]>;
+  /** 按关键词检索专辑（供「专辑型 Bangumi 条目」取曲目用，见 `SongAlbumSearchResult`）。 */
+  searchAlbums?(keyword: string, limit?: number, cookie?: string): Promise<SongAlbumSearchResult[]>;
+  /** 取整张专辑的曲目。 */
+  getAlbumSongs?(albumId: string, cookie?: string): Promise<SongSearchResult[]>;
 }
 
 export interface NeteaseMusicProviderOptions {
@@ -440,6 +445,9 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
   const album = asRecord(song.al ?? song.album);
   const privilege = asRecord(song.privilege);
   const fee = readNumber(song.fee ?? privilege.fee);
+  // 版本关系（1=原唱 / 2=翻唱）只有详情接口稳定返回，检索结果里通常缺席。
+  // 必须原样带出去：它是「原版优先」排序在验证阶段唯一能用的硬信号。
+  const originCover = asRecord(song.originSongSimpleData);
   return {
     id,
     title,
@@ -448,6 +456,8 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
     pictureUrl: normalizeHttpsUrl(album.picUrl ?? album.pic),
     durationMs: readNumber(song.dt ?? song.duration),
     requiresVip: fee === 1,
+    originCoverType: readNumber(song.originCoverType),
+    originSongId: readString(originCover.songId),
   };
 };
 
@@ -2031,6 +2041,71 @@ export class NeteaseMusicProvider implements MusicProvider {
         }, cookie);
         const body = responseBody(response);
         return asArray(body.songs ?? asRecord(body.data).songs ?? body.hotSongs)
+          .map(normalizeSong)
+          .filter((song): song is SongSearchResult => Boolean(song));
+      },
+    );
+  }
+
+  /**
+   * 按关键词检索专辑。
+   *
+   * 用途：Bangumi 的 character / image / theme / ost 等关联条目经常是**整张专辑**
+   * （条目名就是专辑名，如《マジンブーン オリジナルサウンドトラック2》），
+   * 拿专辑名当歌名走单曲检索必然一无所获 —— 必须「先搜专辑、再取专辑曲目」。
+   */
+  async searchAlbums(keyword: string, limit = 10, cookie?: string): Promise<SongAlbumSearchResult[]> {
+    const normalized = keyword.trim();
+    if (!normalized) return [];
+    const normalizedLimit = Math.max(1, Math.min(limit, 30));
+    return this.cached(
+      this.cacheKey("album-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
+      SEARCH_CACHE_TTL_MS,
+      async () => {
+        // cloudsearch 的 type 枚举：1 单曲 / 10 专辑 / 100 歌手 / 1000 歌单。
+        const response = await this.call(["cloudsearch", "search"], {
+          keywords: normalized,
+          limit: normalizedLimit,
+          type: 10,
+        }, cookie);
+        const body = responseBody(response);
+        const result = asRecord(body.result);
+        return asArray(result.albums ?? result.album)
+          .map((value): SongAlbumSearchResult | undefined => {
+            const album = asRecord(value);
+            const id = readString(album.id);
+            const name = readString(album.name);
+            if (!id || !name) return undefined;
+            const artist = asRecord(album.artist);
+            const artistName = readString(artist.name) ?? artistNames(album);
+            return {
+              id,
+              name,
+              artist: artistName || undefined,
+              pictureUrl: normalizeHttpsUrl(album.picUrl ?? album.pic),
+              songCount: readNumber(album.size ?? album.songSize),
+            };
+          })
+          .filter((album): album is SongAlbumSearchResult => album !== undefined);
+      },
+    );
+  }
+
+  /**
+   * 取整张专辑的曲目。`/api/v1/album/{id}` 一次返回专辑元信息与全部曲目。
+   * 专辑曲目里可能夹着纯音乐、伴奏与翻唱版本，一律交给上层验证阶段筛。
+   */
+  async getAlbumSongs(albumId: string, cookie?: string): Promise<SongSearchResult[]> {
+    const id = albumId.trim();
+    if (!/^\d+$/.test(id)) return [];
+    return this.cached(
+      this.cacheKey("album-songs", undefined, id),
+      COLLECTION_CACHE_TTL_MS,
+      async () => {
+        const response = await this.call(["album"], { id }, cookie);
+        const body = responseBody(response);
+        const album = asRecord(body.album ?? body);
+        return asArray(album.songs ?? asRecord(body.data).songs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
       },

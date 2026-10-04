@@ -225,6 +225,26 @@ export interface SongSearchResult {
   requiresVip?: boolean;
   /** 网易云接口中的热度/播放热度字段；部分接口会对超大值做模糊化处理。 */
   popularity?: number;
+  /**
+   * 网易云自标的版本关系：`1` = 原唱，`2` = 翻唱，`0` / 缺席 = 未标注。
+   *
+   * 这是判定「这首到底是不是原版」的**唯一可靠信号** —— 文本维度（曲名、专辑名）
+   * 在翻唱面前完全失效：翻唱常把曲名与专辑名都照抄原曲（实测《裸の勇者》里 Vaundy
+   * 原版与柯奇翻版的曲名、专辑名一字不差）。实测事故见 `Agents/BangumiApi.md`
+   * 「原版优先排序」。
+   *
+   * 注意：只有歌曲**详情**接口（`/api/v3/song/detail`）稳定返回该字段，检索结果不带，
+   * 因此它只能用于候选验证阶段，进不了检索阶段的排序。
+   */
+  originCoverType?: number;
+  /**
+   * 翻唱曲目所指向的原曲 ID（网易云随详情返回 `originSongSimpleData.songId`）。
+   *
+   * 有了它就能在「原版压根没进候选池」时直接回指原版（实测：Bangumi 存中文译名
+   * 《你所不知道的故事》时，按译名检索只召回中文重填词的翻唱，原版
+   * 《君の知らない物語》永远进不了池子），而不必依赖检索词补全。
+   */
+  originSongId?: string;
 }
 
 export interface SongPlaylistInfo {
@@ -237,6 +257,22 @@ export interface SongArtistSearchResult {
   id: string;
   name: string;
   avatarUrl?: string;
+}
+
+/**
+ * 专辑检索结果。
+ *
+ * 存在的理由：Bangumi 的 character / image / theme / ost 等关联条目经常指向**整张专辑**
+ * （条目名就是专辑名，如《マジンボーン オリジナルサウンドトラック2》《キラッとプリ☆チャン♪
+ * ソングコレクション》），拿专辑名当歌名去检索单曲必然一无所获。这类条目必须走
+ * 「先按名搜专辑、再取专辑曲目」的路径才能拿到真正可出的歌。
+ */
+export interface SongAlbumSearchResult {
+  id: string;
+  name: string;
+  artist?: string;
+  pictureUrl?: string;
+  songCount?: number;
 }
 
 export interface SongEncyclopedia {

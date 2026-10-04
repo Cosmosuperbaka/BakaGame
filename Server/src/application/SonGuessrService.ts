@@ -51,6 +51,7 @@ import type {
   SongAutoFilters,
   SongAutoFiltersInput,
   SongSearchResult,
+  SongAlbumSearchResult,
   SongLyricClip,
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
@@ -237,6 +238,29 @@ const stripSongVersionInfo = (value: string) => {
 const normalizeSongTitle = (value: string) =>
   normalizeSongText(stripSongVersionInfo(value));
 
+/**
+ * 「候选名是期望名的截断」这一方向的匹配门槛。
+ *
+ * 反方向（候选名**包含**期望名，如 `曲名 - 番剧名`、`曲名 (TV Size)`）是合法常态，
+ * 保持宽松即可；但反过来，候选只是期望名的一小段时，实测全是误匹配事故：
+ * Bangumi《いつだってYELL》（忍者乱太郎 ED）匹配上 2026 年毫无关系的《Yell》，
+ * 《ぼくらは小さな悪魔》匹配上《ぼくら》。要求截断名既够长、又占原名足够比例。
+ */
+export const MIN_TRUNCATED_TITLE_LENGTH = 4;
+export const MIN_TRUNCATED_TITLE_RATIO = 0.6;
+
+/**
+ * 曲名里的「多曲并列」分隔符：双 A 面单曲、合作曲会把两首歌写进同一个条目名。
+ *
+ * Bangumi 记 `メグメル／だんご大家族`（《CLANNAD》双 A 面单曲），网易云候选只是其中
+ * 一首《だんご大家族》 —— 两者指同一张单曲、同一首可出的歌。这类并列必须先拆段再比对，
+ * 否则会被「截断门槛」误判成「候选只是原名的一小段」而拒掉。
+ */
+const TITLE_SEGMENT_SEPARATOR_PATTERN = /[\/／・&＆+＋、,，;；]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
+
+const splitTitleSegments = (value: string): string[] =>
+  value.split(TITLE_SEGMENT_SEPARATOR_PATTERN).map(normalizeSongTitle).filter(Boolean);
+
 export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string): boolean => {
   // 版权署名 / 制作委员会条目不是歌曲。若放任其参与子串匹配，
   // `©BanG Dream! Project` 会因包含 `banGdream` 而与《Bang Dream!》误判为同一首，
@@ -246,11 +270,23 @@ export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string):
   const normExpected = normalizeSongTitle(expectedTitle);
   if (!normCandidate || !normExpected) return false;
   if (normCandidate === normExpected) return true;
-  const minLen = Math.min(normCandidate.length, normExpected.length);
-  if (minLen >= 2 && (normCandidate.includes(normExpected) || normExpected.includes(normCandidate))) {
-    return true;
+  // 多曲并列：条目名或候选名拆段后任一段完全一致，即视为同一首。
+  const expectedSegments = splitTitleSegments(expectedTitle);
+  if (expectedSegments.length > 1) {
+    const candidateSegments = new Set(splitTitleSegments(candidateTitle));
+    if (expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))) {
+      return true;
+    }
   }
-  return false;
+  const minLen = Math.min(normCandidate.length, normExpected.length);
+  if (minLen < 2) return false;
+  // 候选名更长：`曲名 - 番剧名` / `曲名 (TV Size)` 这类合法形态，照旧放行。
+  if (normCandidate.includes(normExpected)) return true;
+  // 候选名更短：只接受「截断得不多」的情形（见上面的门槛注释）。
+  const maxLen = Math.max(normCandidate.length, normExpected.length);
+  return normExpected.includes(normCandidate)
+    && minLen >= MIN_TRUNCATED_TITLE_LENGTH
+    && minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO;
 };
 
 const normalizedArtists = (value: string) =>
@@ -344,6 +380,105 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
  * 反超，同时又不会盖过「歌手与 Bangumi 记录有交集 +4」这条更硬的证据。
  */
 const ANIME_SCOPED_BONUS = 3;
+
+/**
+ * 「专辑型」曲目 kind：这些关联条目的标题**就是一张专辑的名字**，而不是某首歌的名字。
+ *
+ * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑、印象曲集、OST、精选集、同人专辑），
+ * 条目名形如《マジンブーン オリジナルサウンドトラック2》《キラッとプリ☆チャン♪
+ * ソングコレクション》。拿这种名字去检索单曲必然一无所获 —— 实测小众番剧抽样里
+ * character / image / theme 三类共 30 条**全部零候选**，就是被这一条卡住的。
+ *
+ * 刻意排除三类：
+ * - `opening` / `ending` / `insert` / `remix` / `single`：条目本身就是单曲名，走专辑路径只会
+ *   搜到无关的同名专辑；
+ * - `drama` / `radio` / `reading`：条目是广播剧 / 电台 / 朗读，属于**非音乐**内容，
+ *   专辑路径会把分轨对白当成歌出题。
+ */
+const ALBUM_LIKE_TRACK_KINDS: ReadonlySet<BangumiMusicTrackKind> = new Set<BangumiMusicTrackKind>([
+  "theme",
+  "ost",
+  "character",
+  "image",
+  "vocal",
+  "vocaloid",
+  "doujin",
+  "arrange",
+  "collection",
+  "artistAlbum",
+]);
+
+const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean => ALBUM_LIKE_TRACK_KINDS.has(kind);
+
+/** 专辑检索取回的候选专辑数。 */
+const ALBUM_SEARCH_LIMIT = 10;
+
+/**
+ * 专辑名与条目名是否指向同一张专辑。
+ *
+ * 判据是「全等，或一方包含另一方且短名够长」。**不能只看长度比例** ——
+ * 实测两个毫不相关的短名（《角色歌合辑》与《另一部番 OST》）长度接近，按比例会被
+ * 误判为同一张专辑，于是「搜 OST」滑到另一部番的 OST，把别家的歌出成题。
+ */
+const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean => {
+  const normalizedAlbum = normalizeSongTitle(albumName);
+  const normalizedTitle = normalizeSongTitle(trackTitle);
+  if (!normalizedAlbum || !normalizedTitle) return false;
+  if (normalizedAlbum === normalizedTitle) return true;
+  const shorter = normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
+  const longer = shorter === normalizedAlbum ? normalizedTitle : normalizedAlbum;
+  return shorter.length >= 4 && longer.includes(shorter);
+};
+
+/**
+ * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱。
+ * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
+ */
+const isUnplayableAlbumTrack = (title: string): boolean =>
+  NON_ORIGINAL_VERSION_PATTERN.test(title)
+  || COVER_MARKER_PATTERN.test(title)
+  || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title);
+
+/**
+ * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
+ * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、器乐改编、伴奏等
+ * 版本混排时优先选中原版，避免「原版存在却抽到翻唱」。
+ */
+/**
+ * 候选是否具备「就是这首歌」的准入证据。
+ *
+ * 只回答一个问题：**这个候选有没有资格作为「Bangumi 记录的那首歌」进入验证队列？**
+ * 判定刻意与分数解耦 —— 两者回答的不是同一件事：准入看身份（是不是这首歌），
+ * 排序（`scoreAnimeSongCandidate`）看版本（是不是原版）。
+ *
+ * 规则：
+ * 1. 曲名完全一致 → 有资格。此时**不看歌手**：翻唱常把曲名照抄（靠 `originCoverType`
+ *    在验证阶段让位），Bangumi 与网易云的歌手写法差异也常导致交集为空，用歌手否掉
+ *    会让真正的原版连被验证的机会都没有；
+ * 2. 专辑名与原曲目名完全一致 → 有资格（即使曲名完全对不上）：Bangumi 会把**整张原声带**
+ *    挂成一条关联曲目，此时条目名就是专辑名，官方曲目与条目名毫无文字交集。实测事故是
+ *    帝玖管弦乐团的《交响组曲「君の名は。」》靠曲名命中顶掉了官方原声带；
+ * 3. 曲名只部分命中 → 必须另有独立证据（歌手交集 / 番剧上下文命中）；
+ * 4. 其余情况（曲名完全对不上、专辑名也对不上）→ 无资格；
+ * 5. 非原唱标记的降权**不参与**准入：唯一候选是翻唱 / 改编时仍要能降级出题
+ *    （既有语义「仅能召回翻唱版时仍可出题」），否则会退化成「该番剧没有可播放的关联歌曲」。
+ *
+ * 被第 3 条挡掉的正是实测的错配事故：《いつだってYELL》（忍者乱太郎 ED）被 2026 年
+ * 无关的《Yell》顶掉、《ぼくらは小さな悪魔》被《ぼくら》顶掉，两者都只靠曲名部分命中
+ * 就出了题。宁可这一首出不了题（上层会换下一首），也不能让玩家听到一首无关的歌。
+ */
+export const hasAnimeSongEvidence = (
+  candidate: SongSearchResult,
+  track: BangumiMusicTrack,
+  options: { animeScoped?: boolean } = {},
+): boolean => {
+  const titleScore = songTitleSimilarity(candidate.title, track.title);
+  if (titleScore >= 2) return true;
+  // 专辑名与原曲目名完全一致（见规则 2）。
+  if (isSongAlbumMatch(candidate.album, track.title)) return true;
+  if (titleScore < 1) return false;
+  return artistOverlap(candidate, track) === true || Boolean(options.animeScoped);
+};
 
 /**
  * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
@@ -1782,6 +1917,11 @@ export class SonGuessrService {
     // 年份错配（同名不同曲）的兜底，优先级低于「近期重复过的正确歌曲」：
     // 宁可重听一首真正属于这部番的歌，也不放一首完全无关的同名新歌。
     let fallbackYear: { song: SongDetails; track: BangumiMusicTrack } | undefined;
+    // 翻唱兜底，优先级最低：翻唱是**别人的演唱录音**，连「同名不同曲」都不如
+    // （后者至少是同一首歌）。只有在整池候选全是翻唱时才认它，避免无歌可出。
+    let fallbackCover: { song: SongDetails; track: BangumiMusicTrack } | undefined;
+    // 已经由翻唱回指过的原曲 ID，防止两个翻唱互相指向、反复插队。
+    const originRetryIds = new Set<string>();
     // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
     // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
@@ -1813,26 +1953,38 @@ export class SonGuessrService {
         anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
       ].filter(Boolean);
       const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
-      if (matched.candidates.length === 0) continue;
 
       // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
       // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
       const ranked = matched.candidates
-        .map((candidate, index) => ({
-          candidate,
-          index,
-          score: scoreAnimeSongCandidate(candidate, track, {
-            animeScoped: matched.animeScopedIds.has(candidate.id),
-          }),
-        }))
+        .map((candidate, index) => {
+          const options = { animeScoped: matched.animeScopedIds.has(candidate.id) };
+          return {
+            candidate,
+            index,
+            score: scoreAnimeSongCandidate(candidate, track, options),
+            // 弱候选的准入门槛用「证据分」而非排序分：非原唱标记的降权只在排序里生效，
+            // 唯一候选是翻唱 / 改编时仍要能降级出题（见 hasAnimeSongEvidence）。
+            evidenced: hasAnimeSongEvidence(candidate, track, options),
+          };
+        })
+        .filter((entry) => entry.evidenced)
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map((entry) => entry.candidate);
-      // 不再按会员状态预剔除候选：会员专享曲由 `getSong` 的解灰链路取回完整音频，
-      // 取不到时抛 `SONG_UNAVAILABLE`，由下面的 catch 换下一个版本。
-      const pool = ranked;
+      // 常规检索一无所获（或整池都是弱候选）时换一条路：这条关联条目可能压根不是
+      // 一首歌，而是**整张专辑**（见 `ALBUM_LIKE_TRACK_KINDS`）。此时按条目名去搜
+      // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
+      let pool: SongSearchResult[] = ranked;
+      if (pool.length === 0 && isAlbumLikeTrackKind(track.kind)) {
+        pool = await this.resolveAlbumTrackCandidates(provider, track, cookie, budget);
+      }
+      // 两条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
+      if (pool.length === 0) continue;
 
       let attempts = 0;
-      for (const candidate of pool) {
+      // 用索引循环而非 for...of：翻唱自带原曲 ID，需要把原版插到队首交给下一次迭代验证。
+      for (let index = 0; index < pool.length; index += 1) {
+        const candidate = pool[index];
         if (budget.detail <= 0 || attempts >= ANIME_TRACK_DETAIL_ATTEMPTS) break;
         attempts += 1;
         // 热度不达标就无法出题，先用一次廉价的红心数查询判掉，
@@ -1861,6 +2013,33 @@ export class SonGuessrService {
           song,
           track: { ...track, kind: this.refineTrackKind(track.kind, song) },
         } satisfies { song: SongDetails; track: BangumiMusicTrack };
+        // 翻唱让位：网易云自标 `originCoverType === 2` 的版本是**别人的演唱录音**。
+        // 文本维度在它面前全失效（翻唱常把曲名与专辑名照抄原曲，实测《裸の勇者》原版
+        // 与翻唱曲名、专辑名一字不差），只有这个字段能把它认出来。
+        // 与年份错配同理：让位且**不占** `ANIME_TRACK_DETAIL_ATTEMPTS`，否则成批
+        // 排在前面的翻唱会把验证名额吃光，真正的原版连被验证的机会都没有。
+        if (song.originCoverType === 2) {
+          // 翻唱自带原曲 ID —— 原版常常压根没进候选池（实测：Bangumi 存中文译名
+          // 《你所不知道的故事》时，按译名检索只召回中文重填词的翻唱，日文原版
+          // 《君の知らない物語》永远进不了池子）。直接把它插到队首，下一次迭代即验证原版。
+          const originalId = song.originSongId;
+          if (
+            originalId
+            && originalId !== candidate.id
+            && !originRetryIds.has(originalId)
+            && !pool.some((entry) => entry.id === originalId)
+          ) {
+            originRetryIds.add(originalId);
+            pool.splice(index + 1, 0, {
+              id: originalId,
+              title: track.title,
+              artist: track.artist ?? "",
+            });
+          }
+          if (!fallbackCover) fallbackCover = resolved;
+          attempts -= 1;
+          continue;
+        }
         // 同名不同曲：曲名（与专辑名）完全一致，发行年份却与番剧差了一二十年。
         // 发行年只有歌曲详情里有，所以这条只能在验证阶段剔除，把机会让给年份合理的候选。
         // **错配候选不占用 `ANIME_TRACK_DETAIL_ATTEMPTS`**：同名新歌往往成批排在前面
@@ -1888,6 +2067,13 @@ export class SonGuessrService {
     // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
     if (fallbackYear) {
       return fallbackYear;
+    }
+
+    // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
+    // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
+    // 出题总比让整部番剧出不了题好。
+    if (fallbackCover) {
+      return fallbackCover;
     }
 
     throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
@@ -1932,6 +2118,52 @@ export class SonGuessrService {
       }
     }
     return { candidates: [...merged.values()], animeScopedIds };
+  }
+
+  /**
+   * 「专辑型条目」的兜底解析：按条目名搜专辑，取名称对得上的那张专辑的曲目。
+   *
+   * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑 / 印象曲集 / OST / 精选集），
+   * 条目名就是专辑名。这类条目按曲名检索必然无候选，按专辑名却能直接搜到；
+   * 命中的专辑里的歌全部属于这部番，可以出题 —— 猜番模式下玩家猜的是番剧名，
+   * 曲目名只用于结算展示，因此不必强求曲名与条目名一致。
+   *
+   * 仍然剔除专辑里的伴奏 / 纯音乐 / 现场 / 翻唱分轨（见 `isUnplayableAlbumTrack`），
+   * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
+   */
+  private async resolveAlbumTrackCandidates(
+    provider: MusicProvider,
+    track: BangumiMusicTrack,
+    cookie: string | undefined,
+    budget: { search: number },
+  ): Promise<SongSearchResult[]> {
+    // 供应商不支持专辑能力时静默跳过（接口方法都是可选的）。
+    if (!provider.searchAlbums || !provider.getAlbumSongs) return [];
+    if (budget.search <= 0) return [];
+    budget.search -= 1;
+    let albums: SongAlbumSearchResult[];
+    try {
+      albums = await provider.searchAlbums(track.title, ALBUM_SEARCH_LIMIT, cookie);
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+      return [];
+    }
+    // 专辑名必须与条目名对得上：网易云的专辑检索很宽松，副标题里的关键词都能命中，
+    // 不设这道门禁会滑到「搜 OST 命中另一部番的 OST」。
+    const album = albums.find((entry) => isAlbumNameMatch(entry.name, track.title));
+    if (!album || budget.search <= 0) return [];
+    budget.search -= 1;
+    let songs: SongSearchResult[];
+    try {
+      songs = await provider.getAlbumSongs(album.id, cookie);
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+      return [];
+    }
+    return shuffle(
+      songs.filter((song) => !isUnplayableAlbumTrack(song.title)),
+      this.random,
+    );
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
