@@ -395,6 +395,12 @@ describe("SonGuessrService", () => {
     expect(isSongTitleMatch("TAKE ME HIGHER (コロムビア・カヴァー・ヴァージョン)", "石原立也")).toBe(false);
     expect(isSongTitleMatch("战斗! 原始回归", "轻音少女")).toBe(false);
     expect(isSongTitleMatch("A", "B")).toBe(false);
+    // 反向子串（候选是原名的截断）必须收紧：实测《いつだってYELL》匹配上 2026 年
+    // 无关的《Yell》、《ぼくらは小さな悪魔》匹配上《ぼくら》，都因此把无关歌出了题。
+    expect(isSongTitleMatch("Yell", "いつだってYELL")).toBe(false);
+    expect(isSongTitleMatch("ぼくら", "ぼくらは小さな悪魔")).toBe(false);
+    // 反向子串里「截断得不多」的仍要放行，避免误伤版本后缀差异。
+    expect(isSongTitleMatch("Shooting Star", "Shooting Star 完整版")).toBe(true);
   });
 
   test("听歌猜番拒绝歌名与曲目不匹配的异形歌曲", async () => {
@@ -3033,6 +3039,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "secret base ~君がくれたもの~",
       artist: "ZONE",
       album: "secret base ~君がくれたもの~",
+      audioUrl: "https://audio/original.mp3",
     };
     const cover = {
       ...songs.answer,
@@ -3040,6 +3047,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "secret base ~君がくれたもの~ (secret base ~你所赠予之物~)",
       artist: "先生と牛 / 银子 / 悼子Qrel",
       album: "secret base ~君がくれたもの~ 翻唱合集",
+      audioUrl: "https://audio/cover.mp3",
     };
     const bangumiProvider = {
       getSubject: async () => ({
@@ -3166,6 +3174,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "答案歌 (翻唱)",
       artist: "翻唱歌手",
       album: "翻唱专辑",
+      audioUrl: "https://audio/cover-only.mp3",
     };
     const bangumiProvider = {
       getSubject: async () => ({
@@ -3191,6 +3200,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "答案歌",
       artist: "ZONE",
       album: "答案歌",
+      audioUrl: "https://audio/original-broad.mp3",
     };
     const cover = {
       ...songs.answer,
@@ -3198,6 +3208,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "答案歌 (Cover)",
       artist: "某翻唱者",
       album: "翻唱合集",
+      audioUrl: "https://audio/cover-broad.mp3",
     };
     // 只按「曲名+番剧名」能召回原版，按「曲名+Bangumi 歌手名」只能召回翻唱。
     const musicProvider: MusicProvider = {
@@ -3227,6 +3238,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "答案歌 交响组曲",
       artist: "某管弦乐团",
       album: "管弦乐企划",
+      audioUrl: "https://audio/arrangement.mp3",
     };
     const official = {
       ...songs.answer,
@@ -3234,6 +3246,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       title: "完全不同的曲名",
       artist: "原唱乐队",
       album: "答案歌",
+      audioUrl: "https://audio/official-album.mp3",
     };
     const musicProvider: MusicProvider = {
       ...provider,
@@ -3250,6 +3263,176 @@ describe("SonGuessrService 猜番原版优先", () => {
 
     const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
     expect(snapshot.currentRound?.audioUrl).toBe(official.audioUrl);
+  });
+
+  test("翻唱即使曲名与专辑完全照抄也让位给原版", async () => {
+    // 翻唱常把曲名与专辑名照抄原曲（实测《裸の勇者》：Vaundy 原版与柯奇翻版的
+    // 曲名、专辑名一字不差），文本维度全部并列，只有 `originCoverType` 能认出来。
+    const cover = {
+      ...songs.answer,
+      id: "identical-cover",
+      title: "答案歌",
+      artist: "同一位歌手",
+      album: "答案歌",
+      audioUrl: "https://audio/identical-cover.mp3",
+      originCoverType: 2,
+    };
+    const original = {
+      ...songs.answer,
+      id: "identical-original",
+      title: "答案歌",
+      artist: "同一位歌手",
+      album: "答案歌",
+      audioUrl: "https://audio/identical-original.mp3",
+      originCoverType: 1,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "答案歌", artist: "同一位歌手", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 翻唱排在前面，且两者打分完全相同，只能靠版本标记区分。
+      search: async () => [cover, original],
+      getSong: async (id) => (id === "identical-cover" ? cover : original),
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+
+  test("原版未进候选池时凭翻唱自带的原曲 ID 拉回原版", async () => {
+    // 实测《你所不知道的故事》：Bangumi 存的是中文译名，按译名检索只召回到中文重填词的
+    // 翻唱，日文原版《君の知らない物語》压根进不了候选池。翻唱详情里带着
+    // `originSongSimpleData.songId` 直接指向原曲，必须据此把原版拉回来。
+    const cover = {
+      ...songs.answer,
+      id: "cover-translated",
+      title: "你所不知道的故事",
+      artist: "某翻唱者",
+      album: "你所不知道的故事",
+      audioUrl: "https://audio/cover-translated.mp3",
+      originCoverType: 2,
+      originSongId: "original-bakemonogatari",
+    };
+    const original = {
+      ...songs.answer,
+      id: "original-bakemonogatari",
+      title: "君の知らない物語",
+      artist: "supercell",
+      album: "君の知らない物語",
+      audioUrl: "https://audio/original-bakemonogatari.mp3",
+      originCoverType: 1,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "你所不知道的故事", artist: "supercell", kind: "ending" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 检索只能召回到翻唱；原版只能靠翻唱自带的原曲 ID 取回。
+      search: async () => [cover],
+      getSong: async (id) => (id === "original-bakemonogatari" ? original : cover),
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+
+  test("曲名只部分命中且无任何其它证据的弱候选不再出题", async () => {
+    // 实测《夢を信じて》（勇者斗恶龙）的原版就在网易云，前 5 名却全是翻唱 / 加速改编版，
+    // 它们只靠曲名部分命中就拿到了出题资格。这类候选必须被准入证据挡掉：
+    // 宁可这一首出不了题（上层会换下一首），也不能让玩家听到一首无关的歌。
+    const weak = {
+      ...songs.answer,
+      id: "weak-partial",
+      title: "夢を信じて (アニメ「ドラゴンクエスト」より)",
+      artist: "某翻唱者",
+      album: "アニメトランスBEST",
+      audioUrl: "https://audio/weak-partial.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "夢を信じて", artist: "徳永英明", kind: "ending" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 带番剧名的检索召不回任何东西，因此弱候选拿不到「番剧上下文命中」这条证据。
+      search: async (keyword) =>
+        keyword.includes(anime.name) || keyword.includes(anime.nameCn) ? [] : [weak],
+      getSong: async () => weak,
+    };
+
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+  });
+
+  test("专辑型关联条目改走「搜专辑 → 取专辑曲目」", async () => {
+    // Bangumi 把角色歌合辑 / OST 挂成整张专辑条目，条目名就是专辑名，拿它当歌名检索
+    // 必然一无所获（实测小众番剧抽样里 character / image / theme 三类 30 条全部零候选）。
+    const albumTrack = {
+      ...songs.answer,
+      id: "album-track",
+      title: "角色歌 A",
+      artist: "角色声优",
+      album: "角色歌合辑",
+      audioUrl: "https://audio/album-track.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 单曲检索按专辑名一无所获；专辑检索能命中同名专辑，再取回专辑曲目。
+      search: async () => [],
+      searchAlbums: async () => [{ id: "album-1", name: "角色歌合辑", artist: "角色声优" }],
+      getAlbumSongs: async () => [albumTrack],
+      getSong: async () => albumTrack,
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe(albumTrack.audioUrl);
+  });
+
+  test("专辑路径回落到条目名不符的其它专辑时不出题", async () => {
+    // 网易云的专辑检索很宽松（副标题里的关键词都能命中），必须要求专辑名与条目名
+    // 对得上，否则「搜 OST」会滑到另一部番的 OST，把别家的歌出成题。
+    const otherAlbumTrack = {
+      ...songs.answer,
+      id: "other-album-track",
+      title: "别家的歌",
+      artist: "别的歌手",
+      album: "另一部番 OST",
+      audioUrl: "https://audio/other-album-track.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [],
+      searchAlbums: async () => [{ id: "album-other", name: "另一部番 OST" }],
+      getAlbumSongs: async () => [otherAlbumTrack],
+      getSong: async () => otherAlbumTrack,
+    };
+
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
   });
 });
 
