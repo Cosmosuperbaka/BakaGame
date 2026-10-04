@@ -117,7 +117,9 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 - **触发条件**：常规检索的候选池为空、且条目 kind 不是非音乐类，才走 `resolveAlbumTrackCandidates`（`provider.searchAlbums` + `getAlbumSongs`）。猜番模式下玩家猜的是番剧名，曲目名只用于结算展示，所以专辑里的歌都可以出题；
 - **kind 用黑名单制，不是白名单**：只有 `drama` / `radio` / `reading`（广播剧 / 电台 / 朗读）被排除，其余一律允许兜底。第一版按白名单只放开 character / image / theme 等「专辑型」，结果实测 `opening` / `ending` 条目里同样塞着整张角色歌 CD，那些条目永远零候选 —— **不要按「看起来像单曲」推断条目形态**；
 - **专辑名必须与条目名对得上**（`isAlbumNameMatch`：全等，或一方包含另一方且短名 ≥ 4 字符）。判据**不能只看长度比例** —— 实测《角色歌合辑》与《另一部番 OST》长度接近，按比例会被误判成同一张专辑，于是「搜 OST」滑到另一部番的 OST；
-- 专辑里曲名带伴奏 / 纯音乐 / 现场 / 翻唱标记的分轨（`isUnplayableAlbumTrack`）直接剔除，OST 与角色歌合辑常把 off vocal 一并收录。
+- 专辑里曲名带伴奏 / 纯音乐 / 现场 / 翻唱标记的分轨（`isUnplayableAlbumTrack`）直接剔除，OST 与角色歌合辑常把 off vocal 一并收录；
+- **曲目要读顶层 `body.songs`**：`/api/v1/album/{id}` 的 `album.songs` 在同名 / 单曲专辑上是**空数组**，写成 `album.songs ?? body.songs` 会因为 `??` 不回退而静默拿到空列表 —— 实测《風がそよぐ場所》顶层 2 条、`album.songs` 0 条，整条专辑路径因此失效（探针里 searchAlbums 明明命中）。`NeteaseMusicProvider.test.ts` 有回归用例钉死读取顺序；
+- **同名专辑优先选艺术家对得上的那张**（数据集补录 artist 之后这条才可用），都对不上时退回第一张交给验证阶段筛。
 
 **同名不同曲必须用发行年兜底（必须遵守）**：文本维度对「曲名与专辑名都撞车」的同名歌无能为力，因此 `resolveAnimeSong` 在候选验证阶段还要做一次年份校验（`isReleaseYearOffTarget`，容差 `MAX_RELEASE_YEAR_DRIFT = 10` 年、对称）：`|候选发行年 − 番剧首播年| > 10` 即视为错配，记为 `fallbackYear` 并继续找。四条不变量：
 
