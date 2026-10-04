@@ -92,7 +92,7 @@
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
 - 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。
-- 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的分形噪点（SVG `feTurbulence`），基础层把它铺在 `body` 与实底表面类 `bg-background`、`bg-panel`、`bg-card`、`bg-muted`、`bg-popover`、`bg-secondary` 上。亮色为暖褐斑点，表面平均压暗约 5%；暗色为暖白斑点，提亮约 10% 至 17%。带透明度的写法（淡色块 `bg-muted/40`、状态浅底、`floating-surface`、`bg-card/95`）不单独铺纹理：半透明层透出下层纹理，就近浮层与区内遮罩的模糊再把它抹平，因而比面板更素净；弹窗主体 `bg-popover` 是实底，照常铺纹理。`accent` 只作悬停与高亮，也不铺纹理。调用处不在实底表面上另写背景图或渐变，否则会盖掉纹理；新增实底表面令牌时同步加入该选择器。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
+- 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的有机分形纸浆纤维（SVG `feTurbulence`），基础层把它铺在 `body` 与实底表面类 `bg-background`、`bg-panel`、`bg-card`、`bg-muted`、`bg-popover`、`bg-secondary` 上。采用 5 八度分形（基频 `0.0375 0.075`），自然覆盖宏观纸浆絮团到微观纸齿；亮色为温润暖褐纤维（Alpha 峰值约 5.5%，平均压暗约 1% 至 1.5%），暗色为柔和暖象牙白微纤维（Alpha 峰值约 3.2%，平均提亮仅约 1%，无电视雪花感）。带透明度的写法（淡色块 `bg-muted/40`、状态浅底、`floating-surface`、`bg-card/95`）不单独铺纹理：半透明层透出下层纹理，就近浮层与区内遮罩的模糊再把它抹平，因而比面板更素净；弹窗主体 `bg-popover` 是实底，照常铺纹理。`accent` 只作悬停与高亮，也不铺纹理。调用处不在实底表面上另写背景图或渐变，否则会盖掉纹理；新增实底表面令牌时同步加入该选择器。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
 - 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的分段按钮与 ghost 小按钮用 `hover:bg-background`。状态色的悬停预览见 §3.1 的 `/5`。
 
 ## 4. 字体与文案

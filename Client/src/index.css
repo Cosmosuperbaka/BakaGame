@@ -185,9 +185,10 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
-  /* 纸纹理：160px 平铺的分形噪点，由基础层铺在实底表面上，见 Design §3.2。
-     亮色为暖褐色斑点，表面平均压暗约 5%；上方文字令牌的对比度按铺纹理后标定，调整强度须重新核对。 */
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.12 0.264 0 0 0 -0.108'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* 纸纹理：160px 平铺的有机分形纸浆纤维（SVG feTurbulence），由基础层铺在实底表面上，见 Design §3.2。
+     亮色为暖褐纸浆纤维与微观纸齿，透光温润（Alpha 峰值约 5.5%，平均压暗约 1% 至 1.5%）；
+     上方文字令牌的对比度按铺纹理后标定，调整强度须重新核对。 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0375 0.075' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.26 0 0 0 0 0.16 0.065 0 0 0 -0.01'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 }
@@ -250,8 +251,8 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
-  /* 暗色纸纹理改用暖白斑点，表面平均提亮约 10% 至 17%。 */
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.9 0 0 0 0 0.8 0.176 0 0 0 -0.072'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* 暗色纸纹理改用柔和暖象牙白纸浆微纤维，静谧深邃无雪花感（Alpha 峰值约 3.2%，平均提亮仅约 1%）。 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0375 0.075' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.92 0 0 0 0 0.88 0 0 0 0 0.82 0.040 0 0 0 -0.008'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 /**
