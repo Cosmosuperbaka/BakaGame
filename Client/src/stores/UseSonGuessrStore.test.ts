@@ -42,7 +42,11 @@ import {
   saveSessionToken,
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
-import { initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
+import {
+  clearSonGuessrQueryCache,
+  initSonGuessrWs,
+  useSonGuessrStore,
+} from "./UseSonGuessrStore";
 
 const initialState = useSonGuessrStore.getState();
 
@@ -93,6 +97,8 @@ describe("Songuessr store integration", () => {
     wsMock.connect.mockReset();
     wsMock.messageHandlers = [];
     wsMock.statusHandlers = [];
+    // 查询复用窗口是模块级状态，用例之间必须隔离，否则第二个用例会直接命中上一个的结果。
+    clearSonGuessrQueryCache();
     useSonGuessrStore.setState(initialState, true);
   });
 
@@ -398,6 +404,70 @@ describe("Songuessr store integration", () => {
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.music.search",
       { keyword: "晴天" },
+      { roomId: "5678", sessionToken: "search-token" },
+    );
+  });
+
+  it("相同关键词在复用窗口内只发一次上游命令", async () => {
+    const results = [{ id: "song-1", title: "晴天", artist: "周杰伦" }];
+    wsMock.send.mockResolvedValue({ results });
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+
+    await expect(useSonGuessrStore.getState().searchMusic("晴天")).resolves.toEqual(results);
+    // 猜歌时「换个写法再搜一遍」很常见：归一化后必须命中同一份结果，不再二次往返。
+    await expect(useSonGuessrStore.getState().searchMusic("  晴天 ")).resolves.toEqual(results);
+
+    expect(wsMock.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("同键并发只发一次请求，不同关键词各自回源", async () => {
+    wsMock.send.mockResolvedValue({ results: [] });
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+
+    await Promise.all([
+      useSonGuessrStore.getState().searchMusic("甲"),
+      useSonGuessrStore.getState().searchMusic("甲"),
+    ]);
+    expect(wsMock.send).toHaveBeenCalledTimes(1);
+
+    await useSonGuessrStore.getState().searchMusic("乙");
+    expect(wsMock.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("搜索失败不进入复用缓存，下一次调用仍会回源", async () => {
+    wsMock.send.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ results: [] });
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+
+    await expect(useSonGuessrStore.getState().searchMusic("丙")).rejects.toThrow("boom");
+    await expect(useSonGuessrStore.getState().searchMusic("丙")).resolves.toEqual([]);
+    expect(wsMock.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("歌手搜索与歌单解析同样复用结果，不重复请求上游", async () => {
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+
+    wsMock.send.mockResolvedValue({ results: [{ id: "artist-1", name: "周杰伦" }] });
+    await useSonGuessrStore.getState().searchArtist("周杰伦");
+    await useSonGuessrStore.getState().searchArtist(" 周杰伦 ");
+    expect(wsMock.send).toHaveBeenCalledTimes(1);
+
+    wsMock.send.mockResolvedValue({ playlist: { id: "123", name: "我喜欢", songCount: 2 } });
+    await useSonGuessrStore.getState().resolvePlaylist("https://music.163.com/playlist?id=123");
+    await useSonGuessrStore.getState().resolvePlaylist("  https://music.163.com/playlist?id=123  ");
+    expect(wsMock.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("番剧搜索在复用窗口内只发一次请求", async () => {
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+    wsMock.send.mockResolvedValue({ results: [{ id: "subject-1", name: "Test Anime" }] });
+
+    await useSonGuessrStore.getState().searchBangumi("测试番剧");
+    await useSonGuessrStore.getState().searchBangumi("测试番剧");
+
+    expect(wsMock.send).toHaveBeenCalledTimes(1);
+    expect(wsMock.send).toHaveBeenCalledWith(
+      "song.bangumi.search",
+      { keyword: "测试番剧" },
       { roomId: "5678", sessionToken: "search-token" },
     );
   });

@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import {
+  createQueryReuseCache,
+  exactQueryKey,
+  keywordQueryKey,
+} from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import type {
   ChatMessage,
@@ -7,6 +12,8 @@ import type {
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
   SonGuessrRoomSummary,
+  SongArtistSearchResult,
+  SongPlaylistInfo,
   SongSearchResult,
   BangumiSubjectSearchResult,
 } from "@/types";
@@ -18,6 +25,20 @@ import {
 } from "@/lib/Storage";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import { consumeStateSync } from "@/lib/StateSync";
+
+
+const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
+const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
+const artistSearchCache = createQueryReuseCache<SongArtistSearchResult[]>(keywordQueryKey);
+const playlistResolveCache = createQueryReuseCache<SongPlaylistInfo>(exactQueryKey);
+
+/** 清空全部复用窗口；测试用它隔离用例，运行期无需调用（查询结果与房间无关）。 */
+export function clearSonGuessrQueryCache() {
+  musicSearchCache.clear();
+  bangumiSearchCache.clear();
+  artistSearchCache.clear();
+  playlistResolveCache.clear();
+}
 
 export interface SonGuessrStore {
   connected: boolean;
@@ -50,6 +71,9 @@ export interface SonGuessrStore {
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
   searchBangumi: (keyword: string) => Promise<BangumiSubjectSearchResult[]>;
+  searchArtist: (keyword: string) => Promise<SongArtistSearchResult[]>;
+  /** 解析歌单链接或 ID；同一输入在复用窗口内不会重复请求上游。 */
+  resolvePlaylist: (value: string) => Promise<SongPlaylistInfo>;
   sendCommand: <T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload?: Record<string, unknown>,
@@ -277,29 +301,57 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     }
   },
 
-  searchMusic: async (keyword) => {
-    const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
-      "song.music.search",
-      { keyword },
-      {
-        roomId: get().roomId ?? undefined,
-        sessionToken: get().sessionToken ?? undefined,
-      },
-    );
-    return result.results ?? [];
-  },
+  searchMusic: (keyword) =>
+    musicSearchCache.run(keyword, async () => {
+      const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
+        "song.music.search",
+        { keyword },
+        {
+          roomId: get().roomId ?? undefined,
+          sessionToken: get().sessionToken ?? undefined,
+        },
+      );
+      return result.results ?? [];
+    }),
 
-  searchBangumi: async (keyword) => {
-    const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
-      "song.bangumi.search",
-      { keyword },
-      {
-        roomId: get().roomId ?? undefined,
-        sessionToken: get().sessionToken ?? undefined,
-      },
-    );
-    return result.results ?? [];
-  },
+  searchBangumi: (keyword) =>
+    bangumiSearchCache.run(keyword, async () => {
+      const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
+        "song.bangumi.search",
+        { keyword },
+        {
+          roomId: get().roomId ?? undefined,
+          sessionToken: get().sessionToken ?? undefined,
+        },
+      );
+      return result.results ?? [];
+    }),
+
+  searchArtist: (keyword) =>
+    artistSearchCache.run(keyword, async () => {
+      const result = await sonGuessrWs.send<{ results?: SongArtistSearchResult[] }>(
+        "song.music.artist.search",
+        { keyword },
+        {
+          roomId: get().roomId ?? undefined,
+          sessionToken: get().sessionToken ?? undefined,
+        },
+      );
+      return result.results ?? [];
+    }),
+
+  resolvePlaylist: (value) =>
+    playlistResolveCache.run(value, async () => {
+      const result = await sonGuessrWs.send<{ playlist: SongPlaylistInfo }>(
+        "song.music.playlist.resolve",
+        { value },
+        {
+          roomId: get().roomId ?? undefined,
+          sessionToken: get().sessionToken ?? undefined,
+        },
+      );
+      return result.playlist;
+    }),
 
   sendCommand: async (type, payload = {}, options) => {
     const { roomId, sessionToken } = get();

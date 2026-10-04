@@ -16,7 +16,6 @@ import type {
   AnimeAutoFilters,
   SongArtistFilter,
   SongArtistSearchResult,
-  SongPlaylistInfo,
   SonGuessrRoomSnapshot,
 } from "@/types";
 
@@ -55,7 +54,8 @@ export function SongQuestionSettings({
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
 }) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const searchArtist = useSonGuessrStore((state) => state.searchArtist);
+  const resolvePlaylistQuery = useSonGuessrStore((state) => state.resolvePlaylist);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
   const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
@@ -79,11 +79,10 @@ export function SongQuestionSettings({
     if (resolvingPlaylist) return;
     setResolvingPlaylist(true);
     try {
-      const result = await sendCommand<{ playlist: SongPlaylistInfo }>("song.music.playlist.resolve", {
-        value: playlistDraft,
-      });
-      setPlaylist(result.playlist);
-      setNotice(`已读取歌单：${result.playlist.name}（${result.playlist.songCount} 首）`, "success");
+      // 走 store 封装：同一份链接在复用窗口内不会重复请求上游。
+      const result = await resolvePlaylistQuery(playlistDraft);
+      setPlaylist(result);
+      setNotice(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
     } catch (error) {
       setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
     } finally {
@@ -96,8 +95,8 @@ export function SongQuestionSettings({
     if (!keyword) return;
     setSearchingArtists(true);
     try {
-      const result = await sendCommand<{ results: SongArtistSearchResult[] }>("song.music.artist.search", { keyword });
-      setArtistResults(result.results);
+      const result = await searchArtist(keyword);
+      setArtistResults(result);
     } catch (error) {
       setNotice((error as { message?: string }).message ?? "搜索歌手失败", "error");
     } finally {
