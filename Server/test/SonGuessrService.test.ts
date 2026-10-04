@@ -3175,6 +3175,15 @@ describe("SonGuessr 番剧级兜底归属证据", () => {
     const snapshot = await soloRound(musicProvider, unreachableTrack);
     expect(snapshot.currentRound?.audioUrl).toBe("https://audio/same-name.mp3");
   });
+
+  test("番剧级兜底不再放宽年代：同名却差了一代的歌不得出题", async () => {
+    // 《あした天気になあれ》(1984) 被 2026 年的 CeVIO 合成音同名曲顶掉：
+    // 「标题命中该番另一条目」+「年份错配兜底」两道放宽叠在一起才放过它。
+    // 兜底路径已经放宽了「哪首歌」，不能再放宽「年代」。
+    const song = { ...sameNameSong("答案番剧 オリジナルサウンドトラック"), releaseYear: 1980 };
+    const musicProvider: MusicProvider = { ...provider, search: async () => [song], getSong: async () => song };
+    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow();
+  });
 });
 
 describe("SonGuessr 曲名门禁与截断门槛一致性", () => {

@@ -2261,9 +2261,11 @@ export class SonGuessrService {
       }
       // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
       if (pool.length === 0) continue;
-      // 只有「常规检索」路径才允许翻唱兜底：专辑 / 番剧级兜底已经把「哪首歌」放宽了，
-      // 不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）。
-      const allowCoverFallback = pool === ranked;
+      // 只有「常规检索」路径才允许放宽身份：专辑 / 番剧级兜底已经把「哪首歌」放宽了，
+      // 不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）；
+      // 同理也不该再放宽「年代」——实测《あした天気になあれ》(1984) 被 2026 年的
+      // CeVIO 合成音同名曲顶掉，正是靠「标题命中该番另一条目 + 年份兜底」两道放宽叠出来的。
+      const allowLooseFallback = pool === ranked;
 
       let attempts = 0;
       // 用索引循环而非 for...of：翻唱自带原曲 ID，需要把原版插到队首交给下一次迭代验证。
@@ -2327,7 +2329,7 @@ export class SonGuessrService {
               artist: track.artist ?? "",
             });
           }
-          if (allowCoverFallback && !fallbackCover) fallbackCover = resolved;
+          if (allowLooseFallback && !fallbackCover) fallbackCover = resolved;
           attempts -= 1;
           continue;
         }
@@ -2338,7 +2340,7 @@ export class SonGuessrService {
         // 而原版挂在「动画名 - 曲名」的专辑下只有 2 分），若让它们吃掉 3 个验证名额，
         // 排在后面的原版连被验证的机会都没有。整体仍受 detail 预算约束，不会无界回源。
         if (isReleaseYearOffTarget(song.releaseYear, anime.year)) {
-          if (!fallbackYear) fallbackYear = resolved;
+          if (allowLooseFallback && !fallbackYear) fallbackYear = resolved;
           attempts -= 1;
           continue;
         }
