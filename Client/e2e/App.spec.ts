@@ -338,9 +338,11 @@ test("two browser sessions can create and join the same server room", async ({ i
 test("empty description history keeps the player pane width after a direct voting jump", async ({ page }) => {
   const unique = Date.now().toString(36);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/whoisfaker/room/Oblivionis");
+  // 直链用小写房号：测试房号大小写不敏感，客户端必须归一成服务端的规范房号后再入房。
+  await page.goto("/whoisfaker/room/oblivionis");
   await page.getByPlaceholder("用户名").fill(`历史测试${unique}`);
   await page.getByRole("button", { name: "进入房间" }).click();
+  await expect(page.getByText("#Oblivionis")).toBeVisible();
 
   const addBot = page.getByRole("button", { name: "添加一个测试人机" });
   await page.getByRole("button", { name: "等待中", exact: true }).click();

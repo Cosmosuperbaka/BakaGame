@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import { getSavedUsername, normalizeRoomId, saveUsername } from "@/lib/Storage";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
@@ -34,7 +34,10 @@ import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { isValidRoomId, type WhoIsFakerRole, type PublicPlayerView } from "@/types";
 
 export default function WhoIsFakerRoomPage() {
-  const { roomId } = useParams<{ roomId: string }>();
+  const { roomId: routeRoomId } = useParams<{ roomId: string }>();
+  // 路由房号可能是测试房的大小写变体，先归一为服务端规范房号；快照比对与入房命令
+  // 都依赖它，否则小写直链拿到的快照房号与路由参数不等，页面会一直停在入房加载态。
+  const roomId = normalizeRoomId(routeRoomId ?? "");
   const navigate = usePageNavigate();
   const connected = useWhoIsFakerStore((s) => s.connected);
   const storeRoomId = useWhoIsFakerStore((s) => s.roomId);
@@ -351,7 +354,7 @@ export default function WhoIsFakerRoomPage() {
   const seoNode = (
     <Seo
       description="Who is Faker 谁是卧底房间已就绪，立即进房狂飙演技抓卧底！"
-      path={`/whoisfaker/room/${roomId ?? ""}`}
+      path={`/whoisfaker/room/${roomId}`}
       indexable={false}
     />
   );
@@ -360,7 +363,7 @@ export default function WhoIsFakerRoomPage() {
   if (joining || needsName || !snapshot || snapshot.roomId !== roomId) {
     return (
       <RoomJoinGate
-        roomId={roomId ?? ""}
+        roomId={roomId}
         needsName={needsName}
         needsPassword={false}
         nameDraft={nameDraft}

@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -25,8 +25,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const receipt = () => ({ roomId: "1234", sessionToken: "fixture-token", snapshot: { ...wifSnapshot("waiting"), roomId: "1234" }, privateState: wifPrivate(WIF_PEOPLE.host, "waiting") });
-function mount(strict = false) {
-  const router = <MemoryRouter initialEntries={["/whoisfaker/room/1234"]}><Routes><Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} /></Routes></MemoryRouter>;
+function mount(strict = false, roomId = "1234") {
+  const router = <MemoryRouter initialEntries={[`/whoisfaker/room/${roomId}`]}><Routes><Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} /></Routes></MemoryRouter>;
   return render(strict ? <StrictMode>{router}</StrictMode> : router);
 }
 beforeEach(() => {
@@ -89,5 +89,30 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     expect(send).toHaveBeenCalledTimes(1); expect(navigate).not.toHaveBeenCalled();
     act(() => useWhoIsFakerStore.getState().markRoomClosed());
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/whoisfaker", { replace: true })); view.unmount();
+  });
+  it("测试房小写直链按规范房号入房并离开加载态", async () => {
+    send.mockImplementation(async (type: string) => {
+      if (type === "room.leave") return undefined;
+      if (type !== "room.join") throw new Error(`测试禁止命令 ${type}`);
+      return { ...receipt(), roomId: "Oblivionis", snapshot: { ...wifSnapshot("waiting"), roomId: "Oblivionis" } };
+    });
+    const view = mount(false, "oblivionis");
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("Oblivionis"));
+    await waitFor(() => expect(screen.queryByText("正在加入房间...")).toBeNull());
+    expect(send).toHaveBeenCalledExactlyOnceWith("room.join", { userName: "玩家", password: undefined }, { roomId: "Oblivionis" });
+    expect(navigate).not.toHaveBeenCalled(); view.unmount();
+  });
+  it("测试房小写直链刷新按规范房号恢复会话", async () => {
+    saveSessionToken("Oblivionis", "saved-token");
+    send.mockImplementation(async (type: string) => {
+      if (type === "room.leave") return undefined;
+      if (type !== "room.reconnect") throw new Error(`测试禁止命令 ${type}`);
+      return { ...receipt(), roomId: "Oblivionis", snapshot: { ...wifSnapshot("waiting"), roomId: "Oblivionis" } };
+    });
+    const view = mount(false, "oblivionis");
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("Oblivionis"));
+    await waitFor(() => expect(screen.queryByText("正在加入房间...")).toBeNull());
+    expect(send).toHaveBeenCalledExactlyOnceWith("room.reconnect", { roomId: "Oblivionis", sessionToken: "saved-token" });
+    expect(navigate).not.toHaveBeenCalled(); view.unmount();
   });
 });

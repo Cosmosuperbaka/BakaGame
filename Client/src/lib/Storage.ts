@@ -5,7 +5,12 @@ const SESSION_PREFIX = "wif_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
 const SOLO_ROOM_KEY = "songuessr_solo_room";
 
-function normalizeSessionRoomId(roomId: string): string {
+/**
+ * 房号规范化：去掉首尾空白，测试房号统一成服务端使用的规范大小写。
+ * 服务端 `ensureRoomId` 做同一件事，会话键与房间页都必须用规范化结果，
+ * 否则小写直链（如 /whoisfaker/room/oblivionis）拿到的快照房号与路由参数不等。
+ */
+export function normalizeRoomId(roomId: string): string {
   const normalized = roomId.trim();
   return normalized.toLowerCase() === TEST_ROOM_ID.toLowerCase()
     ? TEST_ROOM_ID
@@ -13,11 +18,11 @@ function normalizeSessionRoomId(roomId: string): string {
 }
 
 function getSessionKey(roomId: string): string {
-  return SESSION_PREFIX + normalizeSessionRoomId(roomId);
+  return SESSION_PREFIX + normalizeRoomId(roomId);
 }
 
 function getSongSessionKey(roomId: string): string {
-  return SONG_SESSION_PREFIX + normalizeSessionRoomId(roomId);
+  return SONG_SESSION_PREFIX + normalizeRoomId(roomId);
 }
 
 function getSessionStorage(): Storage | null {

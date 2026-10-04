@@ -6,6 +6,7 @@ import {
   getSavedUsername,
   getSessionToken,
   getSonGuessrSessionToken,
+  normalizeRoomId,
   saveSessionToken,
   saveSonGuessrSessionToken,
   saveUsername,
@@ -15,6 +16,13 @@ describe("storage utilities", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+  });
+
+  it("canonicalizes the test room id for routing and sessions", () => {
+    expect(normalizeRoomId(" oblivionis ")).toBe("Oblivionis");
+    expect(normalizeRoomId("OBLIVIONIS")).toBe("Oblivionis");
+    expect(normalizeRoomId(" 1234 ")).toBe("1234");
+    expect(normalizeRoomId("")).toBe("");
   });
 
   it("keeps usernames across tabs but scopes session tokens to the current tab", () => {
