@@ -100,13 +100,24 @@ test("SonGuessr 协议解析听歌猜番搜索与游戏命令", () => {
   });
 
   expect(parseSonGuessrMessage({
+    id: "bangumi-songs",
+    type: "song.bangumi.songs",
+    roomId: "1234",
+    sessionToken: "token",
+    payload: { subjectId: "10380" },
+  })).toMatchObject({
+    type: "song.bangumi.songs",
+    payload: { subjectId: "10380" },
+  });
+
+  expect(parseSonGuessrMessage({
     id: "submit-anime",
     type: "song.game.submitAnime",
     roomId: "1234",
-    payload: { subjectId: "10380" },
+    payload: { subjectId: "10380", songId: "228228" },
   })).toMatchObject({
     type: "song.game.submitAnime",
-    payload: { subjectId: "10380" },
+    payload: { subjectId: "10380", songId: "228228" },
   });
 
   expect(parseSonGuessrMessage({

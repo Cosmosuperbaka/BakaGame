@@ -229,6 +229,13 @@ export const SonGuessrMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
+  "song.bangumi.songs": createMessageSchema(
+    "song.bangumi.songs",
+    t.Object(
+      { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
+      { additionalProperties: false },
+    ),
+  ),
   "song.game.start": createMessageSchema("song.game.start", EmptyPayloadSchema),
   "song.game.chooseSubmitter": createMessageSchema(
     "song.game.chooseSubmitter",
@@ -253,7 +260,10 @@ export const SonGuessrMessageSchemas = {
   "song.game.submitAnime": createMessageSchema(
     "song.game.submitAnime",
     t.Object(
-      { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
+      {
+        subjectId: t.String({ minLength: 1, maxLength: 32 }),
+        songId: t.Optional(t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" })),
+      },
       { additionalProperties: false },
     ),
   ),

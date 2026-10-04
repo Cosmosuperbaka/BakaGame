@@ -264,6 +264,96 @@ describe("SonGuessrService", () => {
     expect(snapshot.roundSummary?.attempts.map((attempt) => attempt.guessedAnime?.id)).toEqual([wrongAnime.id, anime.id]);
   });
 
+  test("听歌猜番手动出题支持查询匹配歌曲并指定关联曲出题", async () => {
+    const multiTrackAnime: BangumiSubjectDetails = {
+      ...anime,
+      id: "anime-multi",
+      name: "双曲番",
+      nameCn: "双曲番",
+      musicTracks: [
+        { title: "答案歌", artist: "测试歌手", kind: "opening" },
+        { title: "第二首曲目", artist: "测试歌手", kind: "ending" },
+      ],
+    };
+    const secondSong: SongDetails = {
+      ...songs.answer,
+      id: "song-second",
+      title: "第二首曲目",
+      artist: "测试歌手",
+      album: "双曲番 ED",
+    };
+    const customMusicProvider = {
+      ...provider,
+      search: async (keyword: string) => {
+        if (keyword.includes("第二首曲目")) return [secondSong];
+        return [songs.answer];
+      },
+      getSong: async (id: string) => (id === "song-second" ? secondSong : songs.answer),
+    } as unknown as MusicProvider;
+    const customBangumiProvider = {
+      getSubject: async (id: string) => (id === "anime-multi" ? multiTrackAnime : anime),
+      searchSubjects: async () => [multiTrackAnime],
+    } as unknown as BangumiDataProvider;
+
+    const service = new SonGuessrService({
+      musicProvider: customMusicProvider,
+      bangumiProvider: customBangumiProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "host");
+    const guest = connection(service, "guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家2");
+    await execute(service, host, {
+      id: "settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionType: "anime", questionMode: "manual" },
+    });
+    await execute(service, guest, {
+      id: "guest-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+
+    // 1. 查询该番剧匹配成功的所有歌曲候选
+    const queryResult = await execute<{ results: Array<{ song: SongSearchResult; track: BangumiMusicTrack }> }>(service, host, {
+      id: "query-songs",
+      type: "song.bangumi.songs",
+      roomId: "1234",
+      payload: { subjectId: "anime-multi" },
+    });
+    expect(queryResult.results).toHaveLength(2);
+    expect(queryResult.results.map((r) => r.song.id)).toEqual(["answer", "song-second"]);
+
+    // 2. 出题人自主选择第二首歌作为目标关联曲出题
+    await execute(service, host, {
+      id: "submit-with-song",
+      type: "song.game.submitAnime",
+      roomId: "1234",
+      payload: { subjectId: "anime-multi", songId: "song-second" },
+    });
+
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("playing");
+    expect(snapshot.currentRound?.audioUrl).toBe(secondSong.audioUrl);
+  });
+
+
   test("听歌猜番自动出题沿用 Bangumi 筛选并跳过无主题曲条目", async () => {
     const noMusicAnime: BangumiSubjectDetails = { ...wrongAnime, id: "anime-no-music", musicTracks: [] };
     const requestedFilters: unknown[] = [];

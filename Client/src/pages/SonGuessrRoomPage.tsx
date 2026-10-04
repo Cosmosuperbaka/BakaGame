@@ -197,9 +197,13 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             openSearch={setSearchMode}
             searchMode={searchMode}
             closeSearch={() => setSearchMode(null)}
-            onSelectSearchSong={async (songId, mode) => {
+            onSelectSearchSong={async (songId, mode, extraId) => {
               if (snapshot.settings.questionType === "anime") {
-                await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", { subjectId: songId });
+                const payload: { subjectId: string; songId?: string } = { subjectId: songId };
+                if (mode === "submit" && extraId) {
+                  payload.songId = extraId;
+                }
+                await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", payload);
               } else {
                 await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
               }

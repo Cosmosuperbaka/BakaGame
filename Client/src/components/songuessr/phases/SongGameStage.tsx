@@ -120,7 +120,7 @@ export interface SongGameAreaProps {
   openSearch: (mode: "submit" | "guess") => void;
   searchMode: "submit" | "guess" | null;
   closeSearch: () => void;
-  onSelectSearchSong: (songId: string, mode: "submit" | "guess") => Promise<void>;
+  onSelectSearchSong: (songId: string, mode: "submit" | "guess", extraId?: string) => Promise<void>;
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
   audioRef?: React.RefObject<HTMLAudioElement | null>;
@@ -360,7 +360,8 @@ export function SongGameArea(props: SongGameAreaProps) {
         title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"}
         description="番剧信息只会在回合结束后公开。"
         actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"}
-        onSelect={(subject: BangumiSubjectSearchResult) => props.onSelectSearchSong(subject.id, props.searchMode!)}
+        mode={props.searchMode}
+        onSelect={(subject: BangumiSubjectSearchResult, songId?: string) => props.onSelectSearchSong(subject.id, props.searchMode!, songId)}
       />
     ) : props.searchMode ? (
       <SongSearchDialog

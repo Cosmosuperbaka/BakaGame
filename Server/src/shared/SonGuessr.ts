@@ -158,6 +158,11 @@ export interface BangumiSubjectDetails extends BangumiSubjectSearchResult {
   musicTracks: BangumiMusicTrack[];
 }
 
+export interface BangumiSongCandidate {
+  track: BangumiMusicTrack;
+  song: SongSearchResult;
+}
+
 export interface AnimeAutoFilters {
   startYear?: number;
   endYear?: number;
@@ -463,10 +468,11 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.music.playlist.resolve", { value: string }>
   | ClientEnvelope<"song.music.artist.search", { keyword: string }>
   | ClientEnvelope<"song.bangumi.search", { keyword: string }>
+  | ClientEnvelope<"song.bangumi.songs", { subjectId: string }>
   | ClientEnvelope<"song.game.start", Record<string, never>>
   | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
   | ClientEnvelope<"song.game.submitSong", { songId: string }>
-  | ClientEnvelope<"song.game.submitAnime", { subjectId: string }>
+  | ClientEnvelope<"song.game.submitAnime", { subjectId: string; songId?: string }>
   | ClientEnvelope<"song.game.audioReady", { roundNumber: number }>
   | ClientEnvelope<"song.game.audioFailed", { roundNumber: number }>
   | ClientEnvelope<"song.game.guess", { songId: string }>

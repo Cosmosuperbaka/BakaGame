@@ -35,3 +35,56 @@ it("当前请求失败退出加载并显示可重试错误",async()=>{
   fireEvent.change(screen.getByPlaceholderText("输入番剧名称"),{target:{value:"失败"}});await act(async()=>vi.advanceTimersByTimeAsync(350));
   expect(screen.queryByRole("status")).toBeNull();expect(notice).toHaveBeenCalledExactlyOnceWith("搜索失败","error");
 });
+it("出题模式下选择番剧后展示关联歌曲列表并支持指定曲目出题",async()=>{
+  const subject={ id:"sub-1", name:"Test Anime", nameCn:"测试动画" };
+  const candidate={
+    song:{ id:"song-99", title:"测试OP", artist:"歌手A", album:"单曲", duration:90 },
+    track:{ title:"测试OP", artist:"歌手A", kind:"opening" as const },
+  };
+  const onSelect=vi.fn().mockResolvedValue(undefined);
+  const onOpenChange=vi.fn();
+  useSonGuessrStore.setState({
+    searchBangumi:vi.fn().mockResolvedValue([subject]),
+    resolveAnimeSongs:vi.fn().mockResolvedValue([candidate]),
+  });
+  render(<BangumiSearchDialog {...props} mode="submit" onSelect={onSelect} onOpenChange={onOpenChange} />);
+  fireEvent.change(screen.getByPlaceholderText("输入番剧名称"),{target:{value:"测试"}});
+  await act(async()=>vi.advanceTimersByTimeAsync(350));
+  expect(screen.getByText("测试动画")).toBeInTheDocument();
+
+  // 点击番剧，进入第二步
+  fireEvent.click(screen.getByRole("button",{name:"添加"}));
+  await act(async()=>Promise.resolve());
+
+  expect(screen.getByText("选择目标关联曲")).toBeInTheDocument();
+  expect(screen.getByText("测试OP")).toBeInTheDocument();
+  expect(screen.getByText("OP")).toBeInTheDocument();
+  expect(screen.getByText("歌手A · 单曲")).toBeInTheDocument();
+
+  // 点击选择该歌曲出题
+  fireEvent.click(screen.getByRole("button",{name:"添加"}));
+  await act(async()=>Promise.resolve());
+
+  expect(onSelect).toHaveBeenCalledWith(subject,"song-99");
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+it("出题模式下支持更换番剧返回搜索结果",async()=>{
+  const subject={ id:"sub-1", name:"Test Anime", nameCn:"测试动画" };
+  useSonGuessrStore.setState({
+    searchBangumi:vi.fn().mockResolvedValue([subject]),
+    resolveAnimeSongs:vi.fn().mockResolvedValue([]),
+  });
+  render(<BangumiSearchDialog {...props} mode="submit" />);
+  fireEvent.change(screen.getByPlaceholderText("输入番剧名称"),{target:{value:"测试"}});
+  await act(async()=>vi.advanceTimersByTimeAsync(350));
+
+  fireEvent.click(screen.getByRole("button",{name:"添加"}));
+  await act(async()=>Promise.resolve());
+
+  expect(screen.getByText("该番剧未匹配到可播放的关联歌曲")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"更换番剧"}));
+
+  expect(screen.getByPlaceholderText("输入番剧名称")).toBeInTheDocument();
+  expect(screen.getByText("测试动画")).toBeInTheDocument();
+});
+

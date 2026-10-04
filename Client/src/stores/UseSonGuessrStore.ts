@@ -16,6 +16,7 @@ import type {
   SongPlaylistInfo,
   SongSearchResult,
   BangumiSubjectSearchResult,
+  BangumiSongCandidate,
 } from "@/types";
 import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
 import {
@@ -29,6 +30,7 @@ import { consumeStateSync } from "@/lib/StateSync";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
 const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
+const bangumiSongsCache = createQueryReuseCache<BangumiSongCandidate[]>(exactQueryKey);
 const artistSearchCache = createQueryReuseCache<SongArtistSearchResult[]>(keywordQueryKey);
 const playlistResolveCache = createQueryReuseCache<SongPlaylistInfo>(exactQueryKey);
 
@@ -36,6 +38,7 @@ const playlistResolveCache = createQueryReuseCache<SongPlaylistInfo>(exactQueryK
 export function clearSonGuessrQueryCache() {
   musicSearchCache.clear();
   bangumiSearchCache.clear();
+  bangumiSongsCache.clear();
   artistSearchCache.clear();
   playlistResolveCache.clear();
 }
@@ -71,6 +74,7 @@ export interface SonGuessrStore {
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
   searchBangumi: (keyword: string) => Promise<BangumiSubjectSearchResult[]>;
+  resolveAnimeSongs: (subjectId: string) => Promise<BangumiSongCandidate[]>;
   searchArtist: (keyword: string) => Promise<SongArtistSearchResult[]>;
   /** 解析歌单链接或 ID；同一输入在复用窗口内不会重复请求上游。 */
   resolvePlaylist: (value: string) => Promise<SongPlaylistInfo>;
@@ -319,6 +323,19 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
         "song.bangumi.search",
         { keyword },
+        {
+          roomId: get().roomId ?? undefined,
+          sessionToken: get().sessionToken ?? undefined,
+        },
+      );
+      return result.results ?? [];
+    }),
+
+  resolveAnimeSongs: (subjectId) =>
+    bangumiSongsCache.run(subjectId, async () => {
+      const result = await sonGuessrWs.send<{ results?: BangumiSongCandidate[] }>(
+        "song.bangumi.songs",
+        { subjectId },
         {
           roomId: get().roomId ?? undefined,
           sessionToken: get().sessionToken ?? undefined,
