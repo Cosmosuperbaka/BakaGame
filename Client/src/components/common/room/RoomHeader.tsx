@@ -74,7 +74,7 @@ export function RoomHeader({
   // 单人模式没有对应的大厅卡片，不命名，免得返回主页时房名脱离整页单独淡出。
   const titleName = useSharedElementName("room-title", roomId ? undefined : false);
   return (
-    <header data-room-part="header" className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 bg-background px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
+    <header data-room-part="header" className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-2">
         <Button ref={leaveRef} variant="ghost" size="icon" onClick={onLeave} className="shrink-0" aria-label="离开房间">
           <ArrowLeft className="h-5 w-5" />

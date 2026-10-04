@@ -185,10 +185,10 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
-  /* 纸纹理：160px 平铺的温润微纸齿（SVG feTurbulence），仅应用于整页底层背景 body，见 Design §3.2。
-     亮色为细腻纸浆纤维微触感（baseFrequency 0.10，Alpha 峰值约 7.2%，均值约 3.2%），清晰可辨且无任何大面积波状污渍；
+  /* 纸纹理：160px 平铺的道林纸微细纸齿（SVG feTurbulence），仅应用于整页底层背景 body，见 Design §3.2。
+     亮色为超微观哑光微纸齿（baseFrequency 0.75，Alpha 峰值约 5.0%，均值约 2.0%），极其平整细腻，无任何中频粗斑与污渍；
      上方文字令牌的对比度按铺纹理后标定，调整强度须重新核对。 */
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.10' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.26 0 0 0 0 0.16 0.08 0 0 0 -0.008'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.24 0 0 0 0 0.15 0.08 0 0 0 -0.03'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 }
@@ -251,8 +251,8 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
-  /* 暗色纸纹理改用极淡柔和暖象牙白微纸齿，深邃静谧无雪花感（baseFrequency 0.10，Alpha 峰值约 4.5%，平均提亮约 2.0%）。 */
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.10' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.92 0 0 0 0 0.88 0 0 0 0 0.82 0.05 0 0 0 -0.005'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* 暗色纸纹理改用极淡柔和暖象牙白微纸齿，深邃静谧无雪花感（baseFrequency 0.75，Alpha 峰值约 4.0%，平均提亮约 1.5%）。 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.90 0 0 0 0 0.82 0.06 0 0 0 -0.02'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 /**

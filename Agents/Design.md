@@ -92,7 +92,7 @@
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
 - 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。
-- 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的温润微纸齿（SVG `feTurbulence`），基础层仅把它铺在整页底层画布 `body` 上。采用 3 八度分形微纸齿（基频 `0.10`），160px 严密无缝拼接，无大面积波状云斑或水渍感；亮色为温润细腻的纸浆微触感（Alpha 峰值约 7.2%，平均压暗约 3.2%），暗色为极淡暖象牙白微纸齿（Alpha 峰值约 4.5%，平均提亮约 2.0%，无电视雪花感）。所有业务表面类（卡片 `bg-card`、面板 `bg-panel`、按钮 `bg-secondary`、淡色块 `bg-muted/40`、弹窗 `bg-popover` 等）均保持纯净实底，不铺纹理，确保按钮、文字与表单控件清晰锐利、零杂质。整页外壳容器（`LandingPage`、`RoomShell`、`LobbyPage` 等）不设不透明底色遮挡 `body`。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
+- 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的道林纸微细纸齿（SVG `feTurbulence`），基础层仅把它铺在整页底层画布 `body` 上。采用 3 八度超微观哑光微纸齿（基频 `0.75`），160px 严密无缝拼接，彻底消除任何中低频粗斑、斑疹或波状水渍感；亮色为超微观哑光微纸齿（Alpha 峰值约 5.0%，平均压暗约 2.0%），暗色为极淡暖象牙白微纸齿（Alpha 峰值约 4.0%，平均提亮约 1.5%，无电视雪花感）。所有业务表面类（卡片 `bg-card`、面板 `bg-panel`、按钮 `bg-secondary`、淡色块 `bg-muted/40`、弹窗 `bg-popover` 等）均保持纯净实底，不铺纹理，确保按钮、文字与表单控件清晰锐利、零杂质。整页外壳容器与房间顶栏（`LandingPage`、`RoomShell`、`RoomHeader`、`LobbyPage` 等）不设不透明底色遮挡 `body`。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
 - 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的分段按钮与 ghost 小按钮用 `hover:bg-background`。状态色的悬停预览见 §3.1 的 `/5`。
 
 ## 4. 字体与文案
