@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -76,7 +76,7 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
   });
 
-  it("正常渲染房间列表卡片，且列表项外壳具备实底不透明背景类", () => {
+  it("按房间展示阶段、人数、观战与密码语义", () => {
     useSonGuessrStore.setState({ rooms: mockRooms });
     renderPage();
 
@@ -98,22 +98,13 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(roomTwo).toHaveTextContent("5玩家");
     expect(roomTwo).toHaveTextContent("0旁观");
 
-    const digitElements = screen.getAllByText(/^[0-9]+$/);
-    for (const digit of digitElements) {
-      if (digit.textContent === "8629" || digit.textContent === "1234" || digit.textContent === "2") {
-        continue;
-      }
-      expect(digit).toHaveClass("w-[2ch]");
-      expect(digit).toHaveClass("text-right");
-      expect(digit).toHaveClass("tabular-nums");
-    }
+    const first = screen.getByRole("button", { name: /绫地喰喰的房间/ });
+    const second = screen.getByRole("button", { name: /日常听歌房/ });
+    expect(within(first).getByLabelText("需要密码")).toBeInTheDocument();
+    expect(within(second).queryByLabelText("需要密码")).not.toBeInTheDocument();
+    expect(first).toHaveAttribute("tabindex", "0");
+    expect(second).toHaveAttribute("tabindex", "0");
+    expect(first).not.toHaveAttribute("aria-disabled", "true");
 
-    // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
-    const roomOneName = screen.getByText("绫地喰喰的房间");
-    const cardElement = roomOneName.closest('[role="button"]');
-    expect(cardElement).toBeInTheDocument();
-    const motionWrapper = cardElement?.parentElement;
-    expect(motionWrapper).toHaveClass("bg-card");
-    expect(motionWrapper).toHaveClass("rounded-md");
   });
 });

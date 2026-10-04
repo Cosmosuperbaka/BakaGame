@@ -1,3 +1,4 @@
+import { assertLobbyRendering } from "./fixtures/LobbyRendering";
 import type { BrowserContext, Page } from "@playwright/test";
 import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
@@ -629,4 +630,43 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
   await expect(guestPage.getByRole("button", { name: "取消旁观" })).toBeVisible();
   await expect(page.getByText(`旁观访客${unique}`, { exact: true }).first()).toBeVisible();
   await closeIsolatedContext(guestContext);
+});
+
+
+test("大厅卡片在亮暗移动桌面均不透光、人数等宽对齐且不溢出", async ({ page }) => {
+  const assertQuality = installPageQualityGuards(page);
+  await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/songuessr\/ws/, socket => {
+    socket.onMessage(message => {
+      const command = JSON.parse(String(message)) as { id: string; type: string };
+      if (command.type !== "song.lobby.subscribeRooms") throw new Error(`Unexpected fixture command: ${command.type}`);
+      socket.send(JSON.stringify({ type: "ack", id: command.id, requestType: command.type, payload: {} }));
+      socket.send(JSON.stringify({ type: "event", event: "song.lobby.rooms", payload: [
+        { roomId: "8629", name: "长房间名称与人数排版浏览器验收".repeat(3), phase: "playing", playerCount: 2, spectatorCount: 13, onlineCount: 15, visibility: "public", hasPassword: true, allowSpectators: true },
+        { roomId: "1234", name: "等待房", phase: "waiting", playerCount: 15, spectatorCount: 0, onlineCount: 15, visibility: "public", hasPassword: false, allowSpectators: false },
+      ] }));
+    });
+  });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(theme => localStorage.setItem("bakagame-theme", theme), theme);
+      await page.goto("/songuessr");
+      await page.evaluate(theme => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
+      const card = page.getByRole("button", { name: /长房间名称与人数排版浏览器验收/ });
+      await expect(card).toBeVisible();
+      await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
+      await card.hover();
+      await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
+      await expect(card).toHaveText("长房间名称与人数排版浏览器验收".repeat(3) + "房间号: 8629游戏中可观战2玩家13旁观");
+    }
+  }
+  // 故意破坏实际渲染，验证同一个检查能检出透明背景与溢出；不以类名存在作为通过条件。
+  const card = page.getByRole("button", { name: /长房间名称与人数排版浏览器验收/ });
+  const transparency = await page.addStyleTag({ content: "* { background-color: transparent !important; }" });
+  await expect.poll(() => assertLobbyRendering(card).then(() => "passed", (error: Error) => error.message)).toBe("Lobby card background is translucent");
+  await transparency.evaluate(element => element.parentNode?.removeChild(element));
+  await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
+  await page.addStyleTag({ content: '[role="button"] { background-color: white !important; min-width: 2000px !important; }' });
+  await expect.poll(() => assertLobbyRendering(card).then(() => "passed", (error: Error) => error.message)).toBe("Lobby card overflows its viewport");
+  await assertQuality();
 });
