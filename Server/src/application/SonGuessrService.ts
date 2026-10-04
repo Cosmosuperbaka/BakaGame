@@ -59,6 +59,7 @@ import type {
   BangumiMusicTrack,
   BangumiMusicTrackKind,
   AnimeAutoFilters,
+  BangumiSongCandidate,
 } from "../shared/Index";
 
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
@@ -406,20 +407,153 @@ export const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean => !N
 const ALBUM_SEARCH_LIMIT = 10;
 
 /**
- * 专辑名与条目名是否指向同一张专辑。
- *
- * 判据是「全等，或一方包含另一方且短名够长」。**不能只看长度比例** ——
- * 实测两个毫不相关的短名（《角色歌合辑》与《另一部番 OST》）长度接近，按比例会被
- * 误判为同一张专辑，于是「搜 OST」滑到另一部番的 OST，把别家的歌出成题。
+ * 专辑名里的通用词：不承载「这是哪部作品」的信息，不能作为匹配依据。
+ * 判重时必须先剔除，否则同系列的两张专辑（《X 角色歌集》与《Y 角色歌集》）会因为
+ * 共享「角色歌集」而被判成同一张。
  */
-export const isAlbumNameMatch = (albumName: string, trackTitle: string): boolean => {
+const ALBUM_GENERIC_TOKENS: ReadonlySet<string> = new Set([
+  "tv", "tvアニメ", "アニメ", "アニメーション", "剧场版", "劇場版", "映画", "ova", "oad",
+  "character", "キャラクター", "キャラクターソング", "キャラソン", "角色歌", "角色曲",
+  "soundtrack", "サウンドトラック", "オリジナルサウンドトラック", "ost", "原声", "原声带", "原声集",
+  "album", "アルバム", "mini", "ミニアルバム", "collection", "コレクション", "best", "ベスト",
+  "song", "songs", "ソング", "ソングス", "music", "ミュージック", "vocal", "ボーカル",
+  "theme", "テーマ", "主题歌", "主題歌", "opening", "ending", "オープニング", "エンディング",
+  "vol", "シリーズ", "series", "disc", "cd", "特典", "初回", "限定", "盤", "编", "篇",
+]);
+
+/** 把名称拆成有区分度的词元（归一化 → 按分隔符切分 → 去通用词、纯数字与单字）。 */
+const albumNameTokens = (value: string): string[] =>
+  value
+    .normalize("NFKC")
+    .toLowerCase()
+    .split(/[\s/／・,，、＆&+＋\-–—_:：'"'"'"'"「」『』【】()（）[\]]+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !/^\d+$/u.test(token) && !ALBUM_GENERIC_TOKENS.has(token));
+
+/** 名称里的数字词元（归一化去掉前导零）：专辑系列号靠它区分。 */
+const nameDigits = (value: string): Set<string> =>
+  new Set((value.normalize("NFKC").match(/\d+/gu) ?? []).map((digits) => String(Number(digits))));
+
+/**
+ * 专辑名与条目名的相似度分（0 表示不是同一张专辑）。
+ *
+ * 为什么不能只用「全等 / 包含」：网易云的专辑名与 Bangumi 条目名经常对不齐 ——
+ * 条目《TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03》
+ * 在网易云叫《TVアニメ『ひみつのアイプリ リング編』VERSEIN SONG 03》（少了
+ * 「キャラクターソングミニアルバム」、多了「リング編」、「VERSEIN」还没空格）。
+ * 只用全等/包含会把这类**真的同一张专辑**全部判死，条目永远零候选。
+ *
+ * 分档：
+ * - 100：归一化后全等（最稳）；
+ * - 60：互相包含且短名 ≥ 4 字符（原有的宽松档）；
+ * - 10+：专辑名含**番剧名**（任一形态）**且**与条目名共享一个 ≥ 4 字符的特征词元
+ *   ——「作品名 + 特征词」双命中才认，单靠共享「角色歌集」这类通用词不算（已剔除）；
+ *   同系列专辑只差一个序号，因此**数字词元命中额外 +20**，避免抽到隔壁那张
+ *   （VERSE IN SONG **02** 与 **03** 的差别全在序号上）。
+ */
+export const albumNameScore = (
+  albumName: string,
+  trackTitle: string,
+  animeNames: readonly string[] = [],
+): number => {
   const normalizedAlbum = normalizeSongTitle(albumName);
   const normalizedTitle = normalizeSongTitle(trackTitle);
-  if (!normalizedAlbum || !normalizedTitle) return false;
-  if (normalizedAlbum === normalizedTitle) return true;
+  if (!normalizedAlbum || !normalizedTitle) return 0;
+  if (normalizedAlbum === normalizedTitle) return 100;
   const shorter = normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
   const longer = shorter === normalizedAlbum ? normalizedTitle : normalizedAlbum;
-  return shorter.length >= 4 && longer.includes(shorter);
+  if (shorter.length >= 4 && longer.includes(shorter)) return 60;
+
+  const albumTokens = new Set(albumNameTokens(albumName));
+  const shared = albumNameTokens(trackTitle).filter((token) => albumTokens.has(token));
+  if (!shared.some((token) => token.length >= 4)) return 0;
+  const hasAnimeName = animeNames
+    .filter(Boolean)
+    .some((name) => {
+      const normalizedName = normalizeSongTitle(name);
+      return Boolean(normalizedName) && normalizedAlbum.includes(normalizedName);
+    });
+  if (!hasAnimeName) return 0;
+
+  const albumDigits = nameDigits(albumName);
+  const digitHit = [...nameDigits(trackTitle)].some((digits) => albumDigits.has(digits)) ? 20 : 0;
+  return 10 + shared.length * 5 + digitHit;
+};
+
+/**
+ * 专辑名与条目名是否指向同一张专辑（`albumNameScore` 的布尔形态）。
+ * 判定细节见 `albumNameScore`，保留这个包装是为了让调用点读起来仍是「是否匹配」。
+ */
+export const isAlbumNameMatch = (
+  albumName: string,
+  trackTitle: string,
+  animeNames: readonly string[] = [],
+): boolean => albumNameScore(albumName, trackTitle, animeNames) > 0;
+
+/**
+ * 专辑型条目的类型关键词：用于拼「番剧名 + 角色曲」这类检索词。
+ */
+const ALBUM_KIND_KEYWORDS: readonly string[] = [
+  "キャラクターソング",
+  "キャラソン",
+  "オリジナルサウンドトラック",
+  "サウンドトラック",
+  "オープニングテーマ",
+  "エンディングテーマ",
+  "主題歌",
+  "テーマソング",
+  "ボーカルアルバム",
+  "イメージアルバム",
+  "ミュージックコレクション",
+  "ソングコレクション",
+  "ドラマ",
+  "ベスト",
+];
+
+/** 去掉「TVアニメ『番剧名』」「アニメ「番剧名」」这类包裹，只留专辑自身的名字。 */
+const stripAnimeWrapper = (title: string, animeNames: readonly string[]): string => {
+  let result = title;
+  for (const name of animeNames) {
+    if (!name) continue;
+    for (const wrapper of [
+      `TVアニメ『${name}』`, `TVアニメ「${name}」`, `アニメ『${name}』`, `アニメ「${name}」`,
+      `TVアニメ ${name}`, `TV动画《${name}》`, `动画《${name}》`, `『${name}』`, `「${name}」`,
+    ]) {
+      result = result.split(wrapper).join(" ");
+    }
+  }
+  return result
+    .replace(/^(?:TVアニメ|TV动画|アニメ|劇場版|映画)\s*/u, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+};
+
+/**
+ * 专辑型条目的检索词序列（按优先级）。
+ *
+ * 只用条目名检索是不够的 —— Bangumi 条目名与网易云的命名差得很远，实测：
+ * - 《TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03》
+ *   按条目名搜专辑返回 **0 张**，换成番剧名「ひみつのアイプリ」立刻搜到同系列专辑；
+ * - 《「クラスターエッジ」キャラクターコレクション》连番剧的日文片假名都搜不到，
+ *   而番剧的**原名** `CLUSTER EDGE` 能搜出该番的《ココロのつぼみ》《FLY HIGH》。
+ *
+ * 因此按「条目名 → 剥掉番剧名包裹后的余部 → 番剧名 + 类型关键词 → 番剧名」逐级放宽。
+ */
+export const buildAlbumQueries = (track: BangumiMusicTrack, anime: BangumiSubjectDetails): string[] => {
+  const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
+  const queries: string[] = [];
+  const push = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && !queries.includes(trimmed)) queries.push(trimmed);
+  };
+  push(track.title);
+  push(stripAnimeWrapper(track.title, animeNames));
+  const kindKeyword = ALBUM_KIND_KEYWORDS.find((keyword) => track.title.includes(keyword));
+  if (kindKeyword) {
+    for (const name of animeNames) push(`${name} ${kindKeyword}`);
+  }
+  for (const name of animeNames) push(name);
+  return queries;
 };
 
 /**
@@ -907,6 +1041,8 @@ export class SonGuessrService {
         return this.searchArtists(connection, message.payload.keyword);
       case "song.bangumi.search":
         return this.searchBangumi(connection, message.payload.keyword);
+      case "song.bangumi.songs":
+        return this.getAnimeSongs(connection, message.payload.subjectId);
       case "song.game.start":
         return this.startGame(connection);
       case "song.game.chooseSubmitter":
@@ -914,7 +1050,7 @@ export class SonGuessrService {
       case "song.game.submitSong":
         return this.submitSong(connection, message.payload.songId);
       case "song.game.submitAnime":
-        return this.submitAnime(connection, message.payload.subjectId);
+        return this.submitAnime(connection, message.payload.subjectId, message.payload.songId);
       case "song.game.audioReady":
         return this.audioReady(connection, message.payload.roundNumber);
       case "song.game.audioFailed":
@@ -1429,6 +1565,15 @@ export class SonGuessrService {
     return { results: await provider.searchSubjects(keyword, 20) };
   }
 
+  private async getAnimeSongs(connection: ConnectionRecord, subjectId: string) {
+    this.requireRoomPlayer(connection);
+    const provider = this.options.bangumiProvider;
+    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+    const anime = await provider.getSubject(subjectId);
+    const results = await this.resolveAnimeMatchedSongs(anime, connection);
+    return { results };
+  }
+
   /**
    * 客户端可直接触发的音乐类命令的统一前置闸门：正式成员才可调用 + 按连接配额。
    *
@@ -1889,7 +2034,7 @@ export class SonGuessrService {
     return { roundNumber };
   }
 
-  private async submitAnime(connection: ConnectionRecord, subjectId: string) {
+  private async submitAnime(connection: ConnectionRecord, subjectId: string, songId?: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.settings.questionType !== "anime") {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
@@ -1901,7 +2046,9 @@ export class SonGuessrService {
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     const submitterId = player.id;
     const anime = await provider.getSubject(subjectId);
-    const resolved = await this.resolveAnimeSong(room, anime);
+    const resolved = songId
+      ? await this.resolveSpecifiedAnimeSong(room, anime, songId)
+      : await this.resolveAnimeSong(room, anime);
     if (
       room.phase !== "submittingSong" ||
       room.pendingSubmitterPlayerId !== submitterId ||
@@ -1918,6 +2065,32 @@ export class SonGuessrService {
       this.publishRoom(room);
     }
     return { roundNumber };
+  }
+
+  private async resolveSpecifiedAnimeSong(
+    room: SonGuessrRoomRecord,
+    anime: BangumiSubjectDetails,
+    songId: string,
+  ): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
+    const provider = this.options.musicProvider;
+    const cookie = room.musicSession?.cookie;
+    let song: SongDetails;
+    try {
+      song = await provider.getSong(songId, cookie);
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+      throw new AppError("BANGUMI_NO_MUSIC", "所选歌曲无法播放或获取音频失败");
+    }
+    const matchedTrack = anime.musicTracks.find((t) => isSongTitleMatch(song.title, t.title))
+      ?? (song.album ? anime.musicTracks.find((t) => isAlbumNameMatch(song.album!, t.title)) : undefined)
+      ?? anime.musicTracks.find((t) => t.artist && song.artist.includes(t.artist))
+      ?? anime.musicTracks[0]
+      ?? { title: song.title, artist: song.artist, kind: "theme" as BangumiMusicTrackKind };
+    const trackKind = this.refineTrackKind(matchedTrack.kind, song);
+    return {
+      song,
+      track: { ...matchedTrack, kind: trackKind },
+    };
   }
 
   private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
@@ -2003,10 +2176,17 @@ export class SonGuessrService {
       // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
       let pool: SongSearchResult[] = ranked;
       if (pool.length === 0 && isAlbumLikeTrackKind(track.kind)) {
-        pool = await this.resolveAlbumTrackCandidates(provider, track, cookie, budget);
+        pool = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
       }
-      // 两条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
+      // 最后一道兜底：条目级解析全部失败时，用番剧名检索该番的歌（见 resolveAnimeLevelCandidates）。
+      if (pool.length === 0) {
+        pool = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
+      }
+      // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
       if (pool.length === 0) continue;
+      // 只有「常规检索」路径才允许翻唱兜底：专辑 / 番剧级兜底已经把「哪首歌」放宽了，
+      // 不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）。
+      const allowCoverFallback = pool === ranked;
 
       let attempts = 0;
       // 用索引循环而非 for...of：翻唱自带原曲 ID，需要把原版插到队首交给下一次迭代验证。
@@ -2063,7 +2243,7 @@ export class SonGuessrService {
               artist: track.artist ?? "",
             });
           }
-          if (!fallbackCover) fallbackCover = resolved;
+          if (allowCoverFallback && !fallbackCover) fallbackCover = resolved;
           attempts -= 1;
           continue;
         }
@@ -2147,46 +2327,59 @@ export class SonGuessrService {
     return { candidates: [...merged.values()], animeScopedIds };
   }
 
-  /**
-   * 「专辑型条目」的兜底解析：按条目名搜专辑，取名称对得上的那张专辑的曲目。
-   *
-   * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑 / 印象曲集 / OST / 精选集），
-   * 条目名就是专辑名。这类条目按曲名检索必然无候选，按专辑名却能直接搜到；
-   * 命中的专辑里的歌全部属于这部番，可以出题 —— 猜番模式下玩家猜的是番剧名，
-   * 曲目名只用于结算展示，因此不必强求曲名与条目名一致。
-   *
-   * 仍然剔除专辑里的伴奏 / 纯音乐 / 现场 / 翻唱分轨（见 `isUnplayableAlbumTrack`），
-   * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
-   */
+
+/**
+ * 「专辑型条目」的兜底解析：多检索词搜专辑，取最匹配那张的曲目。
+ *
+ * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑 / 印象曲集 / OST / 精选集），
+ * 条目名就是专辑名。这类条目按曲名检索必然无候选，按专辑名却能直接搜到；
+ * 命中的专辑里的歌全部属于这部番，可以出题 —— 猜番模式下玩家猜的是番剧名，
+ * 曲目名只用于结算展示，因此不必强求曲名与条目名一致。
+ *
+ * 仍然剔除专辑里的伴奏 / 纯音乐 / 现场 / 翻唱分轨（见 `isUnplayableAlbumTrack`），
+ * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
+ */
   private async resolveAlbumTrackCandidates(
     provider: MusicProvider,
     track: BangumiMusicTrack,
+    anime: BangumiSubjectDetails,
     cookie: string | undefined,
     budget: { search: number },
   ): Promise<SongSearchResult[]> {
     // 供应商不支持专辑能力时静默跳过（接口方法都是可选的）。
     if (!provider.searchAlbums || !provider.getAlbumSongs) return [];
-    if (budget.search <= 0) return [];
-    budget.search -= 1;
-    let albums: SongAlbumSearchResult[];
-    try {
-      albums = await retryOnce(() => provider.searchAlbums!(track.title, ALBUM_SEARCH_LIMIT, cookie));
-    } catch (error) {
-      if (!isUnusableSongCandidate(error)) throw error;
-      return [];
+    const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
+
+    const collected: SongAlbumSearchResult[] = [];
+    for (const query of buildAlbumQueries(track, anime)) {
+      if (budget.search <= 0) break;
+      budget.search -= 1;
+      try {
+        collected.push(...await retryOnce(() => provider.searchAlbums!(query, ALBUM_SEARCH_LIMIT, cookie)));
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)) throw error;
+      }
     }
-    // 专辑名必须与条目名对得上：网易云的专辑检索很宽松，副标题里的关键词都能命中，
-    // 不设这道门禁会滑到「搜 OST 命中另一部番的 OST」。
-    const nameMatches = albums.filter((entry) => isAlbumNameMatch(entry.name, track.title));
-    // 同名专辑常常有别人的版本，优先选艺术家与 Bangumi 记录对得上的那张（数据集补录
-    // artist 之后这条才真正可用）；都对不上时退回第一张，让后续验证阶段去筛。
+    if (collected.length === 0) return [];
+
+    const unique = new Map<string, SongAlbumSearchResult>();
+    for (const album of collected) if (!unique.has(album.id)) unique.set(album.id, album);
     const trackArtists = track.artist ? normalizedArtists(track.artist) : new Set<string>();
-    const album = nameMatches.find((entry) => {
-      if (trackArtists.size === 0 || !entry.artist) return false;
-      const albumArtists = normalizedArtists(entry.artist);
+    const artistHit = (album: SongAlbumSearchResult): boolean => {
+      if (trackArtists.size === 0 || !album.artist) return false;
+      const albumArtists = normalizedArtists(album.artist);
       return [...trackArtists].some((name) => albumArtists.has(name));
-    }) ?? nameMatches[0];
+    };
+    const album = [...unique.values()]
+      .map((entry) => ({ entry, score: albumNameScore(entry.name, track.title, animeNames) }))
+      .filter((item) => item.score > 0)
+      // 同名专辑常有别人的版本，艺术家与 Bangumi 记录对得上的优先（数据集补录 artist
+      // 之后这条才真正可用）；其余按名称相似度，序号命中因此能压过隔壁那张。
+      .sort((left, right) =>
+        Number(artistHit(right.entry)) - Number(artistHit(left.entry)) || right.score - left.score)
+      .at(0)?.entry;
     if (!album || budget.search <= 0) return [];
+
     budget.search -= 1;
     let songs: SongSearchResult[];
     try {
@@ -2199,6 +2392,144 @@ export class SonGuessrService {
       songs.filter((song) => !isUnplayableAlbumTrack(song.title)),
       this.random,
     );
+  }
+
+  /**
+   * 番剧级兜底：条目级解析全部失败时，用番剧名检索单曲，只要歌确实属于这部番就出题。
+   *
+   * 为什么需要：Bangumi 的条目名可能既不是歌名、也与网易云的命名对不上
+   * （《「クラスターエッジ」キャラクターコレクション》搜专辑一张都搜不到，但用番剧
+   * **原名** `CLUSTER EDGE` 能搜出该番的《ココロのつぼみ》《FLY HIGH》）。
+   *
+   * 只保留两种能证明「属于本番」的候选：
+   * - 专辑名含番剧名（任一形态）；
+   * - 歌名与该番任一 Bangumi 曲目标题一致（跨条目互证）。
+   *
+   * 因此可能出到该番的**其它**曲目而非条目指名的那张专辑，这是有意的取舍：猜番模式下
+   * 玩家猜的是番剧名，出一首确实属于该番的歌远好于整条出不了题。
+   */
+  private async resolveAnimeLevelCandidates(
+    provider: MusicProvider,
+    anime: BangumiSubjectDetails,
+    cookie: string | undefined,
+    budget: { search: number },
+  ): Promise<SongSearchResult[]> {
+    const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
+    if (animeNames.length === 0) return [];
+    const collected = new Map<string, SongSearchResult>();
+    for (const name of animeNames) {
+      if (budget.search <= 0) break;
+      budget.search -= 1;
+      try {
+        const found = await retryOnce(() => provider.search(name, ANIME_SONG_SEARCH_LIMIT, cookie));
+        for (const candidate of found) if (!collected.has(candidate.id)) collected.set(candidate.id, candidate);
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)) throw error;
+      }
+    }
+    const otherTrackTitles = anime.musicTracks.map((entry) => entry.title);
+    const belongsToAnime = (candidate: SongSearchResult): boolean => {
+      const album = candidate.album ?? "";
+      if (animeNames.some((name) => album.includes(name))) return true;
+      return otherTrackTitles.some((title) => isSongTitleMatch(candidate.title, title));
+    };
+    return shuffle([...collected.values()].filter(belongsToAnime), this.random);
+  }
+
+  private async resolveAnimeMatchedSongs(
+    anime: BangumiSubjectDetails,
+    connection: ConnectionRecord,
+  ): Promise<BangumiSongCandidate[]> {
+    const provider = this.options.musicProvider;
+    const { room } = this.requireRoomPlayer(connection);
+    const cookie = room.musicSession?.cookie;
+    if (anime.musicTracks.length === 0) return [];
+
+    const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
+    const results: BangumiSongCandidate[] = [];
+    const seenSongIds = new Set<string>();
+
+    for (const track of anime.musicTracks) {
+      if (budget.search <= 0) break;
+      const queries: string[] = [];
+      if (track.artist) {
+        queries.push(`${track.title} ${track.artist}`);
+      } else {
+        if (anime.name) queries.push(`${track.title} ${anime.name}`);
+        if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
+        queries.push(track.title);
+      }
+      const broadQueries = [
+        anime.name ? `${track.title} ${anime.name}` : "",
+        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+        track.title,
+      ].filter((query) => query && !queries.includes(query));
+      queries.push(...broadQueries);
+
+      const scopeQueries = [
+        anime.name ? `${track.title} ${anime.name}` : "",
+        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+      ].filter(Boolean);
+
+      let matchedCandidates: SongSearchResult[] = [];
+      try {
+        const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
+        matchedCandidates = matched.candidates
+          .map((candidate, index) => {
+            const options = { animeScoped: matched.animeScopedIds.has(candidate.id) };
+            return {
+              candidate,
+              index,
+              score: scoreAnimeSongCandidate(candidate, track, options),
+              evidenced: hasAnimeSongEvidence(candidate, track, options),
+            };
+          })
+          .filter((entry) => entry.evidenced)
+          .sort((left, right) => right.score - left.score || left.index - right.index)
+          .map((entry) => entry.candidate);
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)) throw error;
+      }
+
+      if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
+        try {
+          matchedCandidates = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
+        } catch (error) {
+          if (!isUnusableSongCandidate(error)) throw error;
+        }
+      }
+
+      for (const song of matchedCandidates) {
+        if (!seenSongIds.has(song.id)) {
+          seenSongIds.add(song.id);
+          const explicitKind = detectExplicitTrackKind(`${song.title} ${song.album ?? ""}`);
+          results.push({
+            track: explicitKind ? { ...track, kind: explicitKind } : track,
+            song,
+          });
+          if (!isAlbumLikeTrackKind(track.kind)) break;
+        }
+      }
+    }
+
+    if (results.length === 0 && budget.search > 0) {
+      try {
+        const animeLevelSongs = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
+        for (const song of animeLevelSongs) {
+          if (!seenSongIds.has(song.id)) {
+            seenSongIds.add(song.id);
+            results.push({
+              track: { title: song.title, artist: song.artist, kind: "theme" },
+              song,
+            });
+          }
+        }
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)) throw error;
+      }
+    }
+
+    return results;
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {

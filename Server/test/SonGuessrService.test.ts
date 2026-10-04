@@ -4,6 +4,8 @@ import {
   ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
   AUTO_SONG_CANDIDATE_LIMIT,
+  albumNameScore,
+  buildAlbumQueries,
   createSongLyricClip,
   isReleaseYearOffTarget,
   isSongTitleMatch,
@@ -401,6 +403,50 @@ describe("SonGuessrService", () => {
     expect(isSongTitleMatch("ぼくら", "ぼくらは小さな悪魔")).toBe(false);
     // 反向子串里「截断得不多」的仍要放行，避免误伤版本后缀差异。
     expect(isSongTitleMatch("Shooting Star", "Shooting Star 完整版")).toBe(true);
+  });
+
+  test("专辑名相似度认命名差异，但不认同番的其它专辑", () => {
+    const animeNames = ["ひみつのアイプリ", "秘密的偶像公主"];
+    const trackTitle = "TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03";
+    // 网易云的命名：少「キャラクターソングミニアルバム」、多「リング編」、「VERSEIN」还没空格。
+    // 实测按条目名搜专辑返回 0 张，必须靠「番剧名 + 特征词」认出来（否则该条目永远零候选）。
+    const sameSeries = "TVアニメ『ひみつのアイプリ リング編』VERSEIN SONG 03";
+    expect(albumNameScore(sameSeries, trackTitle, animeNames)).toBeGreaterThan(0);
+    // 同系列只差一个序号的邻张，分数必须更低 —— 否则会抽到隔壁那张的歌。
+    const sibling = "TVアニメ『ひみつのアイプリ リング編』キャラクターソングミニアルバム VERSE IN SONG 02";
+    expect(albumNameScore(sibling, trackTitle, animeNames))
+      .toBeLessThan(albumNameScore(sameSeries, trackTitle, animeNames));
+    // 全等最高，互相包含次之（原有宽松档保留）。
+    expect(albumNameScore("勇者", "勇者")).toBe(100);
+    expect(albumNameScore("君の名は。 オリジナルサウンドトラック", "君の名は。")).toBeGreaterThan(0);
+    // 番剧名对不上的其它作品专辑：只共享「キャラクターソング集」这种通用词也不算。
+    expect(albumNameScore("TVアニメ『别部番』キャラクターソング集", "TVアニメ『本番』キャラクターソング集", ["本番"])).toBe(0);
+    // 不含番剧名的同名短专辑不该被认（旧的长度比例判据会误判）。
+    expect(albumNameScore("另一部番 OST", "角色歌合辑", animeNames)).toBe(0);
+  });
+
+  test("专辑型条目的检索词覆盖番剧名与类型关键词", () => {
+    const anime = { name: "ひみつのアイプリ", nameCn: "秘密的偶像公主" } as BangumiSubjectDetails;
+    const queries = buildAlbumQueries(
+      { title: "TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03", kind: "character" },
+      anime,
+    );
+    // 条目名原样
+    expect(queries).toContain("TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03");
+    // 剥掉番剧名包裹后的余部（网易云的专辑名多接近这一形态）
+    expect(queries).toContain("キャラクターソングミニアルバム VERSE IN SONG 03");
+    // 番剧名 + 类型关键词、以及裸番剧名（实测只有它能搜到该系列专辑）
+    expect(queries).toContain("ひみつのアイプリ キャラクターソング");
+    expect(queries).toContain("ひみつのアイプリ");
+    expect(queries).toContain("秘密的偶像公主");
+
+    const cluster = buildAlbumQueries(
+      { title: "「クラスターエッジ」キャラクターコレクション", kind: "character" },
+      { name: "CLUSTER EDGE", nameCn: "克拉斯特学院" } as BangumiSubjectDetails,
+    );
+    // 番剧的日文片假名搜不到任何东西，但原名 / 中文名能搜出该番的歌
+    expect(cluster).toContain("CLUSTER EDGE");
+    expect(cluster).toContain("克拉斯特学院");
   });
 
   test("听歌猜番拒绝歌名与曲目不匹配的异形歌曲", async () => {
