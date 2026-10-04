@@ -70,6 +70,34 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
+  it("生产部署禁用 CCB 增强版主页入口，只留「即将上线」占位", () => {
+    vi.stubEnv("DEV", false);
+    renderLandingPage();
+
+    const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
+    // 卡片保留原尺寸与结构，但整卡不可用：没有任何可点击的入口，三个子模式都是占位格
+    expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
+    expect(within(ccbEntry).getByText("即将上线")).toBeInTheDocument();
+    expect(within(ccbEntry).queryByRole("button")).not.toBeInTheDocument();
+    for (const mode of ["多人模式", "排位赛", "锦标赛"]) {
+      expect(within(ccbEntry).getByText(mode)).toBeInTheDocument();
+    }
+
+    // 另外两个游戏的入口不受影响
+    expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeEnabled();
+    expect(
+      within(screen.getByTestId("game-entry-songuessr")).getByRole("button", { name: /多人模式/ }),
+    ).toBeEnabled();
+  });
+
+  it("开发环境保留 CCB 增强版的多人模式入口", () => {
+    vi.stubEnv("DEV", true);
+    renderLandingPage();
+
+    const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
+    expect(within(ccbEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+  });
+
   it("renders categorized changelog in modal and omits absent categories", async () => {
     const user = userEvent.setup();
     renderLandingPage();
@@ -120,7 +148,10 @@ describe("LandingPage", () => {
     }
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
 
   it.each([
     ["Who is Faker 开始游戏", "/whoisfaker", "卧底大厅"],
