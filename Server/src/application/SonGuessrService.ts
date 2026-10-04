@@ -22,9 +22,10 @@ import {
 import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
-import type {
-  MusicLoginSession,
-  MusicProvider,
+import {
+  musicIpScope,
+  type MusicLoginSession,
+  type MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
@@ -729,9 +730,9 @@ export class SonGuessrService {
   /**
    * 按连接统计的音乐上游调用配额。
    *
-   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64 / 触发限流后冷却 5s→60s），
+   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64 / 触发限流后冷却 60s→600s），
    * 没有按连接的配额时，一个人打满队列会让上游返回 405 并进入全局冷却，
-   * 结果是全服所有房间在这一分钟里搜歌、出题一起报错。
+   * 结果是全服所有房间在这段时间里搜歌、出题一起报错。
    */
   private readonly musicLimiter = new SlidingWindowRateLimiter({
     windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
@@ -827,7 +828,23 @@ export class SonGuessrService {
 
   async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
     const connection = this.connections.getConnection(connectionId);
+    // 玩家级伪装 IP 归属：同一连接的匿名请求复用同一个 CN IP，不同玩家各持一个，
+    // 避免全服匿名请求共享同一份网易云限流配额（见 NeteaseMusicProvider 的 musicIpScope）。
+    return musicIpScope.run(`player:${connectionId}`, async () =>
+      this.dispatchCommand(connection, message),
+    );
+  }
 
+  /**
+   * 命令分发表。
+   *
+   * 独立成方法是为了让整条命令处理链都跑在 `musicIpScope` 请求作用域里：
+   * 作用域只能在最外层建立，下游 provider 才可能在任意调用深度读到玩家身份。
+   */
+  private async dispatchCommand(
+    connection: ConnectionRecord,
+    message: SonGuessrClientMessage,
+  ): Promise<unknown> {
     switch (message.type) {
       case "song.lobby.subscribeRooms":
         connection.lobbySubscribed = true;

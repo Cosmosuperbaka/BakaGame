@@ -18,6 +18,7 @@ import {
   parseTTML,
   parseYrc,
   mergeTranslations,
+  musicIpScope,
   randomChineseIp,
   readChinaIpRanges,
   sanitizeLyrics,
@@ -1281,6 +1282,124 @@ describe("NeteaseMusicProvider", () => {
     expect(requests.every((params) => params.randomCNIP === true)).toBe(true);
   });
 
+  test("匿名请求按玩家作用域各持一个 IP，同一玩家在作用域内稳定复用", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    // 历史实现把全部匿名请求压在同一个 "anonymous" scope 上：一个人把配额打平，
+    // 全服跟着 405。玩家作用域让每个连接各持一个出口。
+    await musicIpScope.run("player:conn-a", async () => {
+      await provider.search("甲一");
+      await provider.search("甲二");
+    });
+    await musicIpScope.run("player:conn-b", () => provider.search("乙一"));
+
+    expect(requests[0]?.realIP).toBe(requests[1]?.realIP);
+    expect(requests[0]?.realIP).not.toBe(requests[2]?.realIP);
+  });
+
+  test("带房主凭证的请求不受玩家作用域影响，仍沿用凭证自己的 IP", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    // 凭证与出口 IP 绑定：同一份房主 cookie 无论从哪个玩家的作用域发出都必须用同一个 IP，
+    // 否则登录态会按异地登录判定失效。
+    await musicIpScope.run("player:conn-a", () =>
+      provider.search("凭证甲", 20, "MUSIC_U=host-a"),
+    );
+    await musicIpScope.run("player:conn-b", () =>
+      provider.search("凭证乙", 20, "MUSIC_U=host-a"),
+    );
+
+    expect(requests[0]?.realIP).toBe(requests[1]?.realIP);
+  });
+
+  for (const upstreamCode of [406, 429, 503]) {
+    test(`上游返回 ${upstreamCode} 时与 405 同等进入限流退避`, async () => {
+      let virtualTime = 1_000;
+      let calls = 0;
+      const provider = new NeteaseMusicProvider({
+        now: () => virtualTime,
+        random: { nextFloat: () => 0 },
+        minRequestIntervalMs: 0,
+        rateLimitCooldownMs: 30,
+        maxRateLimitCooldownMs: 30,
+        loadApi: async () => ({
+          cloudsearch: async () => {
+            calls += 1;
+            return calls === 1
+              ? { body: { code: upstreamCode, message: "操作频繁，请稍候再试" } }
+              : { body: { result: { songs: [] } } };
+          },
+        }),
+      });
+
+      // 实测登录二维码接口返回的正是 406；只认 405 会让整条扫码链路既不退避也不提示。
+      await expect(provider.search("首次限流")).rejects.toMatchObject({
+        code: "MUSIC_API_RATE_LIMITED",
+        message: "操作频繁，请稍候再试",
+        details: { upstreamCode },
+      });
+      await expect(provider.search("冷却期内")).rejects.toMatchObject({
+        code: "MUSIC_API_RATE_LIMITED",
+      });
+      expect(calls).toBe(1);
+
+      virtualTime += 50;
+      await expect(provider.search("冷却结束")).resolves.toEqual([]);
+      expect(calls).toBe(2);
+    });
+  }
+
+  test("触发限流后刷新该作用域的伪装 IP，退避结束的请求换一个出口", async () => {
+    let virtualTime = 1_000;
+    let calls = 0;
+    const requests: Array<Record<string, unknown>> = [];
+    const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 30,
+      loadApi: async () => ({
+        cloudsearch: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          calls += 1;
+          return calls === 1
+            ? { body: { code: 405, message: "操作频繁，请稍候再试" } }
+            : { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await musicIpScope.run("player:conn-a", async () => {
+      await expect(provider.search("触发限流")).rejects.toMatchObject({
+        code: "MUSIC_API_RATE_LIMITED",
+      });
+      virtualTime += 50;
+      await expect(provider.search("恢复")).resolves.toEqual([]);
+    });
+
+    // 同一个玩家作用域，但限流之后必须换出口：否则退避一结束就撞回同一个已计满的 IP。
+    expect(requests[0]?.realIP).toBeDefined();
+    expect(requests[0]?.realIP).not.toBe(requests[1]?.realIP);
+  });
+
   test("随机中国 IP 生成必然落在包内 CN 网段且不携带日志副作用", () => {
     const ranges = readChinaIpRanges();
     expect(ranges.length).toBeGreaterThan(4000);
@@ -1461,8 +1580,10 @@ describe("NeteaseMusicProvider", () => {
     const active = provider.search("活动请求");
     await firstStarted;
     const queued = provider.search("陈旧请求");
+    // 本地排队超时必须与上游限流分开编码：这里全程没有发生任何 405/406，
+    // 只是本进程把自己堵住了，报成「限流」会让线上排查方向完全跑偏。
     await expect(queued).rejects.toMatchObject({
-      code: "MUSIC_API_RATE_LIMITED",
+      code: "MUSIC_API_BUSY",
       message: "网易云请求等待超时，请稍后重试",
     });
     expect(calls).toBe(1);

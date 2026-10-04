@@ -36,6 +36,7 @@ const MUSIC_SESSION_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 /** 上游抖动与传输层失败值得重试；会话失效、非房主这类业务拒绝重试也不会变好。 */
 const TRANSIENT_MUSIC_SESSION_ERROR_CODES = new Set([
   "MUSIC_API_RATE_LIMITED",
+  "MUSIC_API_BUSY",
   "MUSIC_API_FAILED",
   "TIMEOUT",
   "DISCONNECTED",

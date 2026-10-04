@@ -1,4 +1,5 @@
 import { AppError } from "../domain/Errors";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -239,10 +240,69 @@ const DEFAULT_CACHE_MAX_ENTRIES = 512;
 const DEFAULT_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
-const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
-const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
+/**
+ * 限流退避起点。实测网易云的限流窗口是**分钟级**（生产日志中的恢复点 179s / 231s / 237s / 1452s），
+ * 而 5 秒起步会让「冷却一结束就重试」变成撞墙循环：strikes=1 之后 5.2~7.0s 就升到 2 级，
+ * 20 秒内把冷却推到 60 秒 —— 本意是止损，实际把一次限流放大成近一分钟的全服不可用。
+ * 起点直接对齐实测窗口下界。
+ */
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
+/** 退避上限：覆盖实测最长恢复窗口的一半以上，避免长限流期间被反复唤醒、等级空转。 */
+const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 600_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
+/**
+ * 网易云「操作频繁」的响应码集合。
+ *
+ * - `405` 歌曲类接口的通用限流；
+ * - `406` **登录链路限流**：实测 `login_qr_key` 第 20 次触发，文案与 405 完全一致
+ *   （「操作频繁，请稍候再试」）。只认 405 会漏判整条扫码链路 —— 表现为房主扫码时
+ *   一直撞墙、既不退避也不提示。
+ * - `429` / `503` 同一语义的其它表现形式（文档记录 503 即「IP 高频错误」）。
+ *
+ * 判定必须同时覆盖 `body.code` 与 HTTP status：Enhanced API 的不同端点可能 resolve 一个
+ * 带 code 的 body，也可能 reject 一个带 status 的错误。
+ */
+const RATE_LIMIT_CODES: ReadonlySet<number> = new Set([405, 406, 429, 503]);
+
+const isRateLimitCode = (code: number | undefined) =>
+  code !== undefined && RATE_LIMIT_CODES.has(code);
+
+/**
+ * 不该继续尝试后备端点的「全局性失败」。
+ *
+ * 这两种错误与具体端点无关：换一个兼容接口再排一次队，要么同样被上游拒绝，
+ * 要么只是把本地队列堵得更久。只有其余失败（端点缺失、参数不被接受等）才值得换端点重试。
+ */
+const NON_RETRYABLE_API_ERROR_CODES: ReadonlySet<string> = new Set([
+  "MUSIC_API_RATE_LIMITED",
+  "MUSIC_API_BUSY",
+]);
+
+/**
+ * 玩家级 IP 归属。
+ *
+ * 匿名请求没有 cookie 可以区分身份，历史上全部落在同一个 `"anonymous"` scope 上，
+ * 于是所有玩家的请求共享同一个伪装 IP、也就共享同一份限流配额 —— 一个人把配额打满，
+ * 全服跟着 405（生产日志里 48 分钟 2527 次搜索正是这么累积出来的）。
+ *
+ * 应用层在处理每条 WS 命令时把连接标识放进这个作用域，这里就能让不同玩家的匿名请求
+ * 各自持有独立 IP。用 `AsyncLocalStorage` 而不是给十几个 provider 方法加参数：
+ * 调用链很深（execute → search/getSong/getPlaylistSongs → call → scheduleRequest），
+ * 逐个透传签名会把「玩家身份」这一件事扩散到每一层。
+ */
+export const musicIpScope = new AsyncLocalStorage<string>();
+
+/** 匿名（无 cookie、且不在玩家作用域内）请求的 IP 归属，主要覆盖预热与后台任务。 */
+const IP_SCOPE_ANONYMOUS = "anonymous";
+
+/**
+ * 伪装出口 IP 的缓存上限。
+ *
+ * 每个玩家一个 scope，房间多、进出频繁时条目会持续增长；超限按插入顺序淘汰最老的。
+ * 256 足以覆盖同时在线规模，被淘汰的玩家下次请求重新分配一个 IP 即可（无正确性影响）。
+ */
+const IP_SCOPE_MAX_ENTRIES = 256;
 /**
  * 登录态校验结果的复用窗口。
  *
@@ -2565,13 +2625,17 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async prepareAnonymousSession(api: ApiModule) {
     if (this.anonymousCookie || typeof api.register_anonimous !== "function") return;
     try {
-      const response = await this.scheduleRequest(() =>
-        (api.register_anonimous as ApiFunction)({
-          crypto: "weapi",
-          cookie: {},
-          randomCNIP: this.randomCNIP,
-          ...(this.randomCNIP ? { realIP: this.ipForCookie() } : {}),
-        }));
+      // 匿名令牌是全进程共享的匿名身份，固定挂在匿名 scope 上，不落进任何玩家的桶。
+      const response = await this.scheduleRequest(
+        () =>
+          (api.register_anonimous as ApiFunction)({
+            crypto: "weapi",
+            cookie: {},
+            randomCNIP: this.randomCNIP,
+            ...(this.randomCNIP ? { realIP: this.ensureScopeIp(IP_SCOPE_ANONYMOUS) } : {}),
+          }),
+        IP_SCOPE_ANONYMOUS,
+      );
       this.anonymousCookie = responseCookie(response);
     } catch (error) {
       this.logger?.warn("注册网易云匿名令牌未成功，继续以无凭据模式运行", describeError(error));
@@ -2588,6 +2652,8 @@ export class NeteaseMusicProvider implements MusicProvider {
     loginScope?: string,
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
+    // 在调度前定好 IP 归属：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
+    const ipScope = this.resolveIpScope(cookie, loginScope);
     let hasEndpoint = false;
     let lastErrorResponse: ApiResponse | undefined;
     let lastError: unknown;
@@ -2596,10 +2662,19 @@ export class NeteaseMusicProvider implements MusicProvider {
       if (typeof fn === "function") {
         hasEndpoint = true;
         try {
-          const response = await this.scheduleRequest(() =>
-            (fn as ApiFunction)(
-              this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie, loginScope),
-            ),
+          const response = await this.scheduleRequest(
+            () =>
+              (fn as ApiFunction)(
+                this.withCookie(
+                  params,
+                  cookie,
+                  randomCNIP,
+                  includeAnonymousCookie,
+                  loginScope,
+                  ipScope,
+                ),
+              ),
+            ipScope,
           );
           // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
           // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
@@ -2609,7 +2684,7 @@ export class NeteaseMusicProvider implements MusicProvider {
           return response;
         } catch (error) {
           lastError = error;
-          if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") {
+          if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) {
             throw error;
           }
           if ("body" in asRecord(error)) lastErrorResponse = error as ApiResponse;
@@ -2647,7 +2722,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       );
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
-      if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") throw error;
+      if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) throw error;
       this.logger?.warn("网易云可选接口调用降级", {
         endpoints: names,
         error: describeError(error),
@@ -2771,9 +2846,15 @@ export class NeteaseMusicProvider implements MusicProvider {
     for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
   }
 
-  private scheduleRequest<T>(task: () => Promise<T>): Promise<T> {
+  /**
+   * 排队执行一次上游请求。
+   *
+   * `ipScope` 是本次请求使用的伪装出口 IP 的归属标识：限流一旦发生，就刷新该 scope 的 IP，
+   * 让下一次请求换一个出口重试（详见 `rotateScopeIp`）。
+   */
+  private scheduleRequest<T>(task: () => Promise<T>, ipScope?: string): Promise<T> {
     if (this.now() < this.cooldownUntil) {
-      return Promise.reject(this.busyError());
+      return Promise.reject(this.rateLimitError());
     }
     if (this.queue.size >= this.maxQueuedRequests) {
       return Promise.reject(this.busyError("网易云请求排队过多，请稍后重试"));
@@ -2806,17 +2887,17 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.pendingRejections.delete(id);
 
       if (this.now() < this.cooldownUntil) {
-        throw this.busyError();
+        throw this.rateLimitError();
       }
       try {
         const result = await task();
         if (this.isRateLimitError(result)) {
-          this.enterRateLimitCooldown(result);
+          this.enterRateLimitCooldown(result, ipScope);
         }
         return result;
       } catch (error) {
         if (this.isRateLimitError(error)) {
-          this.enterRateLimitCooldown(error);
+          this.enterRateLimitCooldown(error, ipScope);
         }
         throw error;
       }
@@ -2825,9 +2906,17 @@ export class NeteaseMusicProvider implements MusicProvider {
     return Promise.race([executionPromise, timeoutPromise]);
   }
 
-  private enterRateLimitCooldown(error: unknown) {
+  /**
+   * 进入限流退避。
+   *
+   * `ipScope` 是触发本次限流的请求所属的 IP 归属。网易云按请求方声称的 IP 计算配额
+   * （实测：同参数继续打仍全 406，仅更换伪装 IP 即立刻恢复），因此这里顺手刷新该 scope 的 IP，
+   * 让退避结束后的下一次请求从新出口发出，而不是继续撞在同一个已经计满的 IP 上。
+   */
+  private enterRateLimitCooldown(error: unknown, ipScope?: string) {
     const body = responseBody(error);
     this.lastRateLimitMessage = responseMessage(body, this.lastRateLimitMessage);
+    this.rotateScopeIp(ipScope);
     const now = this.now();
     if (now - this.lastRateLimitAt > this.maxRateLimitCooldownMs) {
       this.rateLimitStrikes = 0;
@@ -2854,16 +2943,31 @@ export class NeteaseMusicProvider implements MusicProvider {
       cooldownDurationMs: duration,
       cooldownUntil: new Date(this.cooldownUntil).toISOString(),
       droppedQueuedRequests: rejections.length,
+      rotatedScope: ipScope,
       reason: this.lastRateLimitMessage,
     });
 
-    const busy = this.busyError(this.lastRateLimitMessage);
+    const rejected = this.rateLimitError(this.lastRateLimitMessage);
     for (const reject of rejections) {
-      reject(busy);
+      reject(rejected);
     }
   }
 
-  private busyError(message = this.lastRateLimitMessage) {
+  /**
+   * 本地队列拥塞（排队过多 / 等待超时）。
+   *
+   * 与上游限流是两回事：成因是本进程的并发与队列参数，排查方向也完全不同。
+   * 历史上两者复用 `MUSIC_API_RATE_LIMITED`，线上看到「限流」时无法区分
+   * 是网易云真的拒绝了，还是本地把自己堵死了 —— 必须分开编码。
+   */
+  private busyError(message: string) {
+    return new AppError("MUSIC_API_BUSY", message, {
+      retryAfterMs: Math.max(0, this.queueTimeoutMs),
+    });
+  }
+
+  /** 上游限流（含冷却期内的快速拒绝），也可用于拒绝已在队列中、但冷却已开始的请求。 */
+  private rateLimitError(message = this.lastRateLimitMessage) {
     return new AppError("MUSIC_API_RATE_LIMITED", message, {
       upstreamCode: 405,
       retryAfterMs: Math.max(0, this.cooldownUntil - this.now()),
@@ -2881,7 +2985,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         : "网易云音乐接口请求失败，请稍后重试",
     );
     return new AppError(
-      code === 405 ? "MUSIC_API_RATE_LIMITED" : "MUSIC_API_FAILED",
+      isRateLimitCode(code) ? "MUSIC_API_RATE_LIMITED" : "MUSIC_API_FAILED",
       message,
       { upstreamCode: code },
     );
@@ -2889,23 +2993,56 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private isRateLimitError(error: unknown) {
     const body = responseBody(error);
-    return responseCode(body) === 405 || readNumber(asRecord(error).status) === 405;
+    return isRateLimitCode(responseCode(body)) || isRateLimitCode(readNumber(asRecord(error).status));
   }
 
   private ipForCookie(
     cookie?: string | Record<string, unknown>,
     loginScope?: string,
   ) {
-    // 只有**显式属于某个扫码会话**的请求才走会话 IP：会话建立后 cookie 会从
-    // 「设备字典」换成「MUSIC_U=...」，若继续按 cookie 内容取 scope，
-    // 登录前后会落到两个不同 IP，登录态一建立就漂移。
-    //
-    // 旧实现在这里无条件优先全局 qrLoginScope，等于让任意一个用户处于扫码等待期时，
-    // 全进程所有房间、所有凭证的请求都被强行带上那个会话的 IP —— 凭证与出口 IP 的
-    // 绑定关系被整体破坏。因此改成必须由调用方显式传入会话 scope。
-    if (loginScope) return this.ensureScopeIp(loginScope);
-    const scope = this.cookieScope(cookie);
-    return this.ensureScopeIp(scope);
+    return this.ensureScopeIp(this.resolveIpScope(cookie, loginScope));
+  }
+
+  /**
+   * 解析一次请求应当使用的 IP 归属，优先级从高到低：
+   *
+   * 1. `loginScope` —— 扫码登录会话。整条链路（创建二维码 → 轮询 → 设备上报 → 状态校验）
+   *    必须共用同一个 IP，否则登录态一建立就漂移。只有**显式属于某个扫码会话**的请求才走它：
+   *    旧实现无条件优先全局 qrLoginScope，等于任意一个用户处于扫码等待期时，全进程所有房间、
+   *    所有凭证的请求都被强行带上那个会话的 IP，凭证与出口 IP 的绑定被整体破坏。
+   * 2. `host:<cookie 摘要>` —— 带房主凭证的请求，沿用登录时固化的那个 IP。
+   * 3. `player:<连接标识>` —— 匿名请求按玩家分桶，互不占用对方的限流配额。
+   * 4. `anonymous` —— 预热、缓存刷新等没有玩家上下文的兜底。
+   */
+  private resolveIpScope(
+    cookie?: string | Record<string, unknown>,
+    loginScope?: string,
+  ) {
+    if (loginScope) return loginScope;
+    if (this.hasCookie(cookie)) return this.cookieScope(cookie);
+    return musicIpScope.getStore() ?? IP_SCOPE_ANONYMOUS;
+  }
+
+  /** cookie 参数是否真的带了凭证；空串与空对象一律按匿名处理，避免落进房主那一桶。 */
+  private hasCookie(cookie?: string | Record<string, unknown>) {
+    if (typeof cookie === "string") return cookie.trim().length > 0;
+    if (cookie && typeof cookie === "object") return Object.keys(cookie).length > 0;
+    return false;
+  }
+
+  /**
+   * 刷新一个 scope 的伪装 IP。
+   *
+   * 只删缓存、不在这里生成新 IP：下一次请求会按 scope 重新分配，退避期间就不必空转，
+   * 没被再次用到的 scope 也不会留下无效条目。
+   *
+   * 注意这里**不做房主/玩家的区分**：刷新只发生在限流之后，此时该 scope 的配额已经被计满，
+   * 继续用同一个 IP 只会持续 405。房主凭证的 IP 由 `bindSessionIp` 固化的语义在限流兜底时
+   * 让位给可用性（变更缘由见 `Agents/NeteaseMusicApi.md`）。
+   */
+  private rotateScopeIp(scope?: string) {
+    if (!scope) return;
+    this.ipByScope.delete(scope);
   }
 
   // 同一份 cookie 原文必须映射到同一个 IP：Enhanced API 会把 cookie 对象补上随机的
@@ -2917,16 +3054,18 @@ export class NeteaseMusicProvider implements MusicProvider {
         ? stableStringify(cookie)
         : "";
     return cookieStr
-      ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
-      : "anonymous";
+      ? `host:${createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)}`
+      : IP_SCOPE_ANONYMOUS;
   }
 
+  // 每个 scope 只分配一次 IP、之后持续复用；超限按插入顺序淘汰最老的。
+  // IP 被替换的唯一入口是 `rotateScopeIp`（限流兜底），正常路径下同一 scope 不会漂移。
   private ensureScopeIp(scope: string) {
     const existing = this.ipByScope.get(scope);
     if (existing) return existing;
     const ip = randomChineseIp(this.chinaIpRanges, this.random);
     this.ipByScope.set(scope, ip);
-    if (this.ipByScope.size > 128) {
+    if (this.ipByScope.size > IP_SCOPE_MAX_ENTRIES) {
       const oldest = this.ipByScope.keys().next().value;
       if (oldest !== undefined) this.ipByScope.delete(oldest);
     }
@@ -2939,14 +3078,18 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
     loginScope?: string,
+    ipScope?: string,
   ): Record<string, unknown> {
     const requestCookie = cookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
+    // scope 由调用方在调度前算好并透传：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
+    const scope = ipScope ?? this.resolveIpScope(cookie, loginScope);
     return {
       ...params,
       // 始终显式传入 cookie，阻止 Enhanced API 从进程环境变量 NETEASE_COOKIE 偷读旧凭据。
       cookie: requestCookie ?? {},
-      // 同一登录态使用稳定伪装 IP，减少单一出口的限流聚集，也避免请求间频繁漂移触发风控。
-      ...(randomCNIP ? { realIP: this.ipForCookie(cookie, loginScope) } : {}),
+      // 伪装 IP 按 scope 稳定：同一玩家、同一凭证在各自作用域内复用同一个 IP，不同玩家各持一个，
+      // 避免全部请求把配额挤在同一个出口上。
+      ...(randomCNIP ? { realIP: this.ensureScopeIp(scope) } : {}),
       randomCNIP,
     };
   }
