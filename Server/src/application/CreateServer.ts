@@ -11,7 +11,11 @@ import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources">) {
   const { env, logger } = options;
   const local = new BangumiWorkerProvider({ songPath: env.bangumiSongDbPath!, characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl });
-  const song = new SonGuessrService({ eventLogger: logger, musicProvider: new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock }), bangumiProvider: new FallbackBangumiProvider({ local, remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }), logger }) });
+  const music = new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock });
+  // 音乐链路预热不阻塞启动：第一位带着本机凭据进房的玩家不该替整个进程垫付接口包冷加载与首个上游建连。
+  // 失败只会记一条告警，后续请求仍按惰性加载自行重试。
+  void music.warmUp();
+  const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: new FallbackBangumiProvider({ local, remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }), logger }) });
   const ccb = new CCBService({ data: new CCBCharacterWorkerProvider({ characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
   return createApp({ ...options, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
     const results = await Promise.allSettled([ccb.close(), local.close()]);

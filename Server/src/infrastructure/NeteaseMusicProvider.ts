@@ -238,6 +238,16 @@ const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
 const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
+/**
+ * 登录态校验结果的复用窗口。
+ *
+ * 房间接入（`song.auth.useCookie`）与开局复验都要读同一份账号状态，而玩家反复进出房间时
+ * 凭据并没有变化。网易云文档明确要求登录成功后复用凭据、不要高频重复调用登录接口，
+ * 因此成功校验的结果在短时间内复用；校验失败不入缓存，下一次请求照常回源。
+ */
+const LOGIN_STATUS_REUSE_TTL_MS = 60_000;
+/** 登录态复用缓存的条目上限；每个玩家一份，超出按 LRU 淘汰。 */
+const LOGIN_STATUS_CACHE_MAX_ENTRIES = 64;
 
 /**
  * 解灰音源优先级。包内 `matchID` 不传 `source` 时按 modules 目录的字母序尝试，`bugpk` 恰好排在最前，
@@ -1654,6 +1664,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
   private readonly cache: LRUCache<string, CacheEntry>;
+  private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
   private readonly refreshers = new Map<string, { ttlMs: number; loader: () => Promise<unknown> }>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
@@ -1708,6 +1719,10 @@ export class NeteaseMusicProvider implements MusicProvider {
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
       maxSize: Math.max(1, options.cacheMaxBytes ?? DEFAULT_CACHE_MAX_BYTES),
       sizeCalculation: (entry) => entry.size,
+    });
+    this.loginStatusCache = new LRUCache<string, MusicLoginSession>({
+      max: LOGIN_STATUS_CACHE_MAX_ENTRIES,
+      ttl: LOGIN_STATUS_REUSE_TTL_MS,
     });
     this.maxConcurrentRequests = Math.max(
       1,
@@ -2183,6 +2198,16 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getLoginStatus(cookieValue: string, loginScope?: string): Promise<MusicLoginSession> {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
+    const cacheKey = this.cacheKey("login-status", cookie);
+    const reused = this.loginStatusCache.get(cacheKey);
+    // 复用期内直接返回同一份校验结果；校验失败不写缓存，所以失效的凭据下一次仍会回源。
+    if (reused) return { cookie: reused.cookie, account: { ...reused.account } };
+    const session = await this.verifyLoginStatus(cookie, loginScope);
+    this.loginStatusCache.set(cacheKey, session);
+    return { cookie: session.cookie, account: { ...session.account } };
+  }
+
+  private async verifyLoginStatus(cookie: string, loginScope?: string): Promise<MusicLoginSession> {
     // 该校验请求必须携带与登录同源的 IP：历史实现显式关闭 randomCNIP 导致校验请求无 realIP，
     // 网易云按出口 IP 比对后判定为异地调用，正是「设备还在但凭证反复失效」的直接触发点。
     const response = await this.call(
@@ -2353,7 +2378,23 @@ export class NeteaseMusicProvider implements MusicProvider {
     };
   }
 
-  private async loadApi(): Promise<ApiModule> {
+  /**
+   * 预热音乐上游：在进程启动阶段就加载 API 模块并注册匿名令牌。
+   *
+   * 冷进程第一次触碰音乐链路时要顺序支付「动态导入接口包（实测约 1.1 s）+ 注册匿名令牌 +
+   * 首个上游请求的 DNS/TCP 建连」，解析器冷启动时实测可达 12 s。保存了本机凭据的玩家一进房间
+   * 就会触发 `song.auth.useCookie`，等于替整个进程垫付这笔冷启动，房间徽标也就长时间停在
+   * 「本机已登录」。预热失败不阻断业务：只记告警，调用方照旧走惰性加载并重试。
+   */
+  async warmUp(): Promise<void> {
+    try {
+      await this.loadApi();
+    } catch (error) {
+      this.logger?.warn("网易云上游预热失败，将在首次请求时重试", describeError(error));
+    }
+  }
+
+  private loadApi(): Promise<ApiModule> {
     if (!this.apiPromise) {
       this.apiPromise = (async () => {
         const api = this.options.loadApi
@@ -2361,7 +2402,11 @@ export class NeteaseMusicProvider implements MusicProvider {
           : await import("@neteasecloudmusicapienhanced/api") as ApiModule;
         await this.prepareAnonymousSession(api);
         return api;
-      })();
+      })().catch((error: unknown) => {
+        // 拒绝的 Promise 绝不能留在字段上：预热期的一次抖动会把整个进程的音乐链路永久钉死。
+        this.apiPromise = undefined;
+        throw error;
+      });
     }
     return this.apiPromise;
   }
