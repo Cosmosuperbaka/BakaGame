@@ -7,6 +7,7 @@ import {
   albumNameScore,
   buildAlbumQueries,
   createSongLyricClip,
+  hasAnimeSongEvidence,
   isNonVocalTrack,
   isReleaseYearOffTarget,
   isSongTitleMatch,
@@ -25,7 +26,7 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
-import type { BangumiMusicTrack, BangumiSongCandidate } from "../src/shared/SonGuessr";
+import type { BangumiMusicTrack, SongSearchResult } from "../src/shared/SonGuessr";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
@@ -334,7 +335,7 @@ describe("SonGuessrService", () => {
     });
 
     // 1. 查询该番剧匹配成功的所有歌曲候选
-    const queryResult = await execute<{ results: BangumiSongCandidate[] }>(service, host, {
+    const queryResult = await execute<{ results: Array<{ song: SongSearchResult; track: BangumiMusicTrack }> }>(service, host, {
       id: "query-songs",
       type: "song.bangumi.songs",
       roomId: "1234",
@@ -3115,6 +3116,33 @@ describe("SonGuessr 非歌音轨否决", () => {
     // 现场版在专辑路径被剔除（不是可出的原曲），但在全路径只降权、不出局。
     expect(isUnplayableAlbumTrack("God knows... (Live)")).toBe(true);
     expect(isNonVocalTrack("God knows... (Live)")).toBe(false);
+  });
+});
+
+describe("SonGuessr 曲名门禁与截断门槛一致性", () => {
+  const track = (title: string, artist = ""): BangumiMusicTrack =>
+    ({ title, artist, kind: "opening" }) as BangumiMusicTrack;
+  const candidate = (title: string, artist = "", album = ""): SongSearchResult =>
+    ({ id: "cand", title, artist, album }) as unknown as SongSearchResult;
+
+  test("候选名只是长条目名里的一小截时，不给准入分", () => {
+    // 实测事故：Bangumi 把《TVアニメ Free! キャラクターソング・デュエットシングル Vol.1》
+    // 挂成关联曲目，网易云在「Free! + 角色歌」的检索里召回毫不相关的外文歌《Free》(Bling047)。
+    // 它靠「被包含」拿 1 分 + 番剧上下文命中凑够证据 —— 两处口径必须都用同一道截断门槛。
+    const cd = track("TVアニメ Free! キャラクターソング・デュエットシングル Vol.1", "島崎信長");
+    expect(isSongTitleMatch("Free", cd.title)).toBe(false);
+    expect(hasAnimeSongEvidence(candidate("Free", "Bling047", "Free"), cd, { animeScoped: true })).toBe(false);
+  });
+
+  test("双 A 面单曲拆段命中仍然准入", () => {
+    const single = track("メグメル／だんご大家族", "茶太");
+    expect(hasAnimeSongEvidence(candidate("だんご大家族", "茶太"), single)).toBe(true);
+  });
+
+  test("曲名全等与「曲名 - 番剧名」这类更长的候选照旧准入", () => {
+    const theme = track("ここにいたこと", "AKB48");
+    expect(hasAnimeSongEvidence(candidate("ここにいたこと"), theme)).toBe(true);
+    expect(hasAnimeSongEvidence(candidate("ここにいたこと (TV Size)"), theme)).toBe(true);
   });
 });
 

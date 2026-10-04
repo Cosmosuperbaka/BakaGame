@@ -344,6 +344,26 @@ const songTitleSimilarity = (candidateTitle: string, expectedTitle: string): num
   const normExpected = normalizeSongTitle(expectedTitle);
   if (!normCandidate || !normExpected) return 0;
   if (normCandidate === normExpected) return 2;
+  // 候选名只是「长条目名里的一小截」时不给分 —— 必须复用 `isSongTitleMatch` 的截断门槛。
+  // 实测事故：Bangumi 把《TVアニメ Free! キャラクターソング・デュエットシングル Vol.1》
+  // 挂成关联曲目，网易云在「Free! + 角色歌」的检索里召回了毫不相关的外文歌
+  // 《Free》(Bling047)：它靠「被包含」拿到 1 分，再靠「番剧上下文命中」凑够证据出了题。
+  // `isSongTitleMatch` 早就有这道门槛，而准入判定走的是本函数 —— 两处口径必须一致。
+  if (
+    normExpected.includes(normCandidate)
+    && (normCandidate.length < MIN_TRUNCATED_TITLE_LENGTH
+      || normCandidate.length / normExpected.length < MIN_TRUNCATED_TITLE_RATIO)
+  ) {
+    // 双 A 面单曲例外：条目名拆段后整段完全一致仍是同一首（见 isSongTitleMatch）。
+    const expectedSegments = splitTitleSegments(expectedTitle);
+    if (expectedSegments.length > 1) {
+      const candidateSegments = new Set(splitTitleSegments(candidateTitle));
+      if (expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))) {
+        return 1;
+      }
+    }
+    return 0;
+  }
   return normCandidate.includes(normExpected) || normExpected.includes(normCandidate) ? 1 : 0;
 };
 
