@@ -22,6 +22,12 @@ export function closeIsolatedContext(context: BrowserContext): Promise<void> {
   return operation;
 }
 
+async function closeAllIsolatedContexts(contexts: BrowserContext[]) {
+  const results = await Promise.allSettled(contexts.map(closeIsolatedContext));
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Isolated context cleanup failed");
+}
+
 type IsolationFixtures = {
   isolatedContext: (options?: BrowserContextOptions) => Promise<BrowserContext>;
 };
@@ -58,9 +64,7 @@ export const test = base.extend<IsolationFixtures>({
         }
       });
     } finally {
-      const results = await Promise.allSettled(contexts.map(closeIsolatedContext));
-      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Isolated context cleanup failed");
+      await closeAllIsolatedContexts(contexts);
     }
   },
 });
