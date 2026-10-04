@@ -5,6 +5,7 @@ import {
   AUTO_ANIME_CANDIDATE_LIMIT,
   AUTO_SONG_CANDIDATE_LIMIT,
   createSongLyricClip,
+  isReleaseYearOffTarget,
   isSongTitleMatch,
   resolveRecentSongWindow,
   SonGuessrService,
@@ -3056,6 +3057,106 @@ describe("SonGuessrService 猜番原版优先", () => {
 
     const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
     expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+  });
+
+  test("年份容差边界：十年内放行，超出即视为同名不同曲", () => {
+    expect(isReleaseYearOffTarget(2002, 2002)).toBe(false);
+    // 恰好 10 年：KOTOKO 的 2012 特典盘与 2002 原版是同一录音，必须放行
+    expect(isReleaseYearOffTarget(2012, 2002)).toBe(false);
+    expect(isReleaseYearOffTarget(2013, 2002)).toBe(true);
+    // 早得离谱同样剔除（同名老歌错配），容差是对称的
+    expect(isReleaseYearOffTarget(1991, 2002)).toBe(true);
+    // 任一端年份未知时不拿未知当否定
+    expect(isReleaseYearOffTarget(undefined, 2002)).toBe(false);
+    expect(isReleaseYearOffTarget(2023, undefined)).toBe(false);
+  });
+
+  test("同名不同曲：与番剧差一代的同名新歌让位给原版", async () => {
+    // 实测 TV 动画《拜托了老师》(2002) 的 OP `Shooting Star` 被 2023 年 XG 的同名
+    // 《SHOOTING STAR》顶掉：两者曲名与专辑名完全相同、打分并列（各 4 分），
+    // 热门新歌靠检索顺序胜出，玩家听到的是一首完全无关的歌。
+    // 发行年只在歌曲详情里返回，因此只能在候选验证阶段剔除。
+    const unrelated = {
+      ...songs.answer,
+      id: "xg-shooting-star",
+      title: "SHOOTING STAR",
+      artist: "XG",
+      album: "SHOOTING STAR",
+      audioUrl: "https://audio/xg-shooting-star.mp3",
+      releaseYear: 2023,
+    };
+    const original = {
+      ...songs.answer,
+      id: "kotoko-shooting-star",
+      title: "Shooting Star",
+      artist: "KOTOKO",
+      album: "おねがい☆ティーチャー - Shooting Star / 空の森で",
+      audioUrl: "https://audio/kotoko-shooting-star.mp3",
+      releaseYear: 2002,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        year: 2002,
+        musicTracks: [{ title: "Shooting Star", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 同名新歌排在原版之前，模拟网易云的检索顺序
+      search: async () => [unrelated, original],
+      getSong: async (id) => (id === "xg-shooting-star" ? unrelated : original),
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/kotoko-shooting-star.mp3");
+  });
+
+  test("同名歌发行年未知时，靠番剧上下文命中胜出", async () => {
+    // 年份校验的盲区：同名歌的详情里可能根本没有发行年（实测 GX.MARK 的
+    // `releaseYear` 为 undefined），此时「未知放行」会让它顶掉原版。
+    // 兜底信号是「候选是否出现在『曲名 + 番剧名』的检索结果里」——别人家的同名
+    // 原创只在裸曲名检索里出现，而番剧原版总跟着番剧名一起被召回。
+    const unrelated = {
+      ...songs.answer,
+      id: "same-name-unknown-year",
+      title: "Shooting Star",
+      artist: "GX.MARK",
+      album: "Shooting Star",
+      audioUrl: "https://audio/unrelated.mp3",
+      releaseYear: undefined,
+    };
+    const original = {
+      ...songs.answer,
+      id: "kotoko-original",
+      title: "Shooting Star",
+      artist: "KOTOKO",
+      album: "おねがい☆ティーチャー - Shooting Star / 空の森で",
+      audioUrl: "https://audio/kotoko.mp3",
+      releaseYear: 2002,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        year: 2002,
+        musicTracks: [{ title: "Shooting Star", kind: "opening" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 带番剧名的检索只召回原版（真实场景里别人家的同名原创不会跟着番剧名出现）；
+      // 裸曲名检索才把同名歌混进来，且排在原版之前。
+      search: async (keyword) =>
+        keyword.includes(anime.name) || keyword.includes(anime.nameCn)
+          ? [original]
+          : [unrelated, original],
+      getSong: async (id) => (id === "kotoko-original" ? original : unrelated),
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/kotoko.mp3");
   });
 
   test("仅能召回翻唱版时仍可出题，不因缺少原版而失败", async () => {

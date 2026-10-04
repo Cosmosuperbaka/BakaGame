@@ -337,6 +337,15 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
 };
 
 /**
+ * 候选出现在「曲名 + 番剧名 / 中文名」检索结果里的加分。
+ *
+ * 取 3 是针对实测的错配场景定的：别人家的同名原创常拿满「曲名 + 专辑名」4 分，
+ * 而番剧原版的专辑名多为「番剧名 - 曲名」这类形态、只拿曲名 2 分；加 3 后原版 5 分
+ * 反超，同时又不会盖过「歌手与 Bangumi 记录有交集 +4」这条更硬的证据。
+ */
+const ANIME_SCOPED_BONUS = 3;
+
+/**
  * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
  * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、器乐改编、伴奏等
  * 版本混排时优先选中原版，避免「原版存在却抽到翻唱」。
@@ -344,6 +353,7 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
 export const scoreAnimeSongCandidate = (
   candidate: SongSearchResult,
   track: BangumiMusicTrack,
+  options: { animeScoped?: boolean } = {},
 ): number => {
   let score = songTitleSimilarity(candidate.title, track.title);
   if (isSongAlbumMatch(candidate.album, track.title)) score += 2;
@@ -354,6 +364,11 @@ export const scoreAnimeSongCandidate = (
   for (const [pattern, weight] of NON_ORIGINAL_MARKERS) {
     if (pattern.test(descriptiveText) && !pattern.test(expectedText)) score -= weight;
   }
+  // 番剧上下文命中：候选出现在「曲名 + 番剧名/中文名」的检索结果里，是该曲目确实
+  // 属于这部番的强证据。**同名不同曲**（实测《拜托了老师》2002 的 OP 被 2023 年 XG
+  // 的同名《SHOOTING STAR》顶掉）里，别人家的同名原创只会在裸曲名检索里出现，
+  // 而原版总跟着番剧名一起被召回 —— 这一条正是把两者区分开的免费信号。
+  if (options.animeScoped) score += ANIME_SCOPED_BONUS;
   return score;
 };
 
@@ -471,6 +486,33 @@ export const ANIME_TRACK_DETAIL_ATTEMPTS = 3;
 const ANIME_TRACK_LOOKUP_LIMIT = 24;
 /** 关联曲目检索每次取回的结果数：过小会漏掉原版，过大只是白解析。 */
 const ANIME_SONG_SEARCH_LIMIT = 24;
+/**
+ * 候选歌曲发行年与番剧首播年的最大允许偏差（年）。
+ *
+ * 番剧的 OP/ED 通常与番剧同年、或前后一两年发行；而**同名不同曲**的错配往往差
+ * 十几二十年。实测 TV 动画《拜托了老师》(2002) 的 OP `Shooting Star` 被 2023 年
+ * XG 的同名《SHOOTING STAR》顶掉 —— 两者曲名与专辑名完全相同、打分并列（各 4 分），
+ * 热门新歌靠检索顺序胜出，玩家听到的是一首完全无关的歌。
+ *
+ * 取 10 是刻意宽松的上界：既挡住跨代错配，又保留「若干年后的纪念盘/精选集」这类
+ * 同一首歌的合法再版（实测 KOTOKO 的 2012 特典盘与 2002 原版是同一录音，偏差正好
+ * 10 年，用 `>` 判定因此不会被误杀）。
+ */
+export const MAX_RELEASE_YEAR_DRIFT = 10;
+
+/**
+ * 候选歌曲是否与番剧年份错配 —— 同名不同曲的判据。
+ *
+ * 发行年只在歌曲详情里返回，所以这条判定只能发生在候选验证阶段，进不了检索阶段的
+ * 排序（详见 `resolveAnimeSong` 的验证循环）。任一端年份缺失时一律放行，不拿未知当否定。
+ */
+export const isReleaseYearOffTarget = (
+  releaseYear: number | undefined,
+  animeYear: number | undefined,
+): boolean => {
+  if (releaseYear === undefined || animeYear === undefined) return false;
+  return Math.abs(releaseYear - animeYear) > MAX_RELEASE_YEAR_DRIFT;
+};
 
 const direction = (guess?: number, answer?: number): SongGuessDirection => {
   if (guess === undefined || answer === undefined) return "unknown";
@@ -1737,6 +1779,9 @@ export class SonGuessrService {
     const cookie = room.musicSession?.cookie;
     const recentSongIds = new Set(room.recentSongIds ?? []);
     let fallbackRecent: { song: SongDetails; track: BangumiMusicTrack } | undefined;
+    // 年份错配（同名不同曲）的兜底，优先级低于「近期重复过的正确歌曲」：
+    // 宁可重听一首真正属于这部番的歌，也不放一首完全无关的同名新歌。
+    let fallbackYear: { song: SongDetails; track: BangumiMusicTrack } | undefined;
     // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
     // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
@@ -1762,13 +1807,24 @@ export class SonGuessrService {
       queries.push(...broadQueries);
 
       // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
-      const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget);
-      if (matched.length === 0) continue;
+      // 带番剧名的检索词单独标出来：命中它们的候选是「确实属于本番」的强证据。
+      const scopeQueries = [
+        anime.name ? `${track.title} ${anime.name}` : "",
+        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+      ].filter(Boolean);
+      const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
+      if (matched.candidates.length === 0) continue;
 
       // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
       // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
-      const ranked = matched
-        .map((candidate, index) => ({ candidate, index, score: scoreAnimeSongCandidate(candidate, track) }))
+      const ranked = matched.candidates
+        .map((candidate, index) => ({
+          candidate,
+          index,
+          score: scoreAnimeSongCandidate(candidate, track, {
+            animeScoped: matched.animeScopedIds.has(candidate.id),
+          }),
+        }))
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map((entry) => entry.candidate);
       // 不再按会员状态预剔除候选：会员专享曲由 `getSong` 的解灰链路取回完整音频，
@@ -1805,6 +1861,17 @@ export class SonGuessrService {
           song,
           track: { ...track, kind: this.refineTrackKind(track.kind, song) },
         } satisfies { song: SongDetails; track: BangumiMusicTrack };
+        // 同名不同曲：曲名（与专辑名）完全一致，发行年份却与番剧差了一二十年。
+        // 发行年只有歌曲详情里有，所以这条只能在验证阶段剔除，把机会让给年份合理的候选。
+        // **错配候选不占用 `ANIME_TRACK_DETAIL_ATTEMPTS`**：同名新歌往往成批排在前面
+        // （实测 XG / chuLa / Anna Yvette 等同名版本都是「曲名 + 专辑名」双命中得 4 分，
+        // 而原版挂在「动画名 - 曲名」的专辑下只有 2 分），若让它们吃掉 3 个验证名额，
+        // 排在后面的原版连被验证的机会都没有。整体仍受 detail 预算约束，不会无界回源。
+        if (isReleaseYearOffTarget(song.releaseYear, anime.year)) {
+          if (!fallbackYear) fallbackYear = resolved;
+          attempts -= 1;
+          continue;
+        }
         if (recentSongIds.has(resolved.song.id)) {
           if (!fallbackRecent) fallbackRecent = resolved;
           continue;
@@ -1815,6 +1882,12 @@ export class SonGuessrService {
 
     if (fallbackRecent) {
       return fallbackRecent;
+    }
+
+    // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
+    // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
+    if (fallbackYear) {
+      return fallbackYear;
     }
 
     throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
@@ -1831,27 +1904,34 @@ export class SonGuessrService {
     track: BangumiMusicTrack,
     cookie: string | undefined,
     budget: { search: number },
-  ): Promise<SongSearchResult[]> {
+    /** 带番剧名/中文名的检索词：命中它们的候选标记为「番剧上下文命中」。 */
+    scopeQueries: readonly string[] = [],
+  ): Promise<{ candidates: SongSearchResult[]; animeScopedIds: Set<string> }> {
     const searches = await Promise.all(queries.map(async (query) => {
-      if (budget.search <= 0) return [];
+      if (budget.search <= 0) return { query, results: [] as SongSearchResult[] };
       budget.search -= 1;
       try {
-        return await provider.search(query, ANIME_SONG_SEARCH_LIMIT, cookie);
+        return { query, results: await provider.search(query, ANIME_SONG_SEARCH_LIMIT, cookie) };
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
-        return [];
+        return { query, results: [] as SongSearchResult[] };
       }
     }));
 
     const merged = new Map<string, SongSearchResult>();
-    for (const results of searches) {
+    const animeScopedIds = new Set<string>();
+    for (const { query, results } of searches) {
+      // 标记必须做在「已合并」判断**之前**：候选可能先在裸曲名检索里进池、
+      // 之后才在带番剧名的检索里出现，那一次出现才是「属于本番」的证据。
+      const scoped = scopeQueries.includes(query);
       for (const candidate of results) {
+        if (scoped) animeScopedIds.add(candidate.id);
         if (merged.has(candidate.id)) continue;
         if (!isSongCandidateMatch(candidate, track.title)) continue;
         merged.set(candidate.id, candidate);
       }
     }
-    return [...merged.values()];
+    return { candidates: [...merged.values()], animeScopedIds };
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
