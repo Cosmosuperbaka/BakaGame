@@ -177,21 +177,21 @@ describe("game store integration", () => {
   });
 
 
-  it("keeps the room session while a reconnect request fails transiently", async () => {
+  it("临时重连失败保留重试凭据但拒绝调用方，不伪装入房成功", async () => {
     saveSessionToken("2346", "live-token");
     wsMock.send.mockRejectedValue({ code: "DISCONNECTED" });
 
-    await expect(useWhoIsFakerStore.getState().reconnectRoom("2346")).resolves.toBe(true);
+    await expect(useWhoIsFakerStore.getState().reconnectRoom("2346")).rejects.toMatchObject({ code: "DISCONNECTED" });
     expect(getSessionToken("2346")).toBe("live-token");
     expect(useWhoIsFakerStore.getState()).toMatchObject({
-      roomId: "2346",
-      sessionToken: "live-token",
+      roomId: null,
+      sessionToken: null,
       roomClosedAt: null,
     });
   });
 
   it("subscribes and restores the active session after socket reconnection", async () => {
-    wsMock.send.mockResolvedValue({});
+    wsMock.send.mockResolvedValue({ roomId: "3456", sessionToken: "live-token" });
     useWhoIsFakerStore.getState().joinRoomState("3456", "live-token");
     const dispose = initGameSocket();
 

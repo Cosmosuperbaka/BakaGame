@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createRoomEntry } from "@/lib/RoomEntry";
 import type {
   ChatMessage,
   EventPacket,
@@ -41,9 +42,9 @@ export interface SonGuessrStore {
     allowSpectators: boolean;
     userName: string;
     solo?: boolean;
-  }) => Promise<void>;
-  joinRoom: (roomId: string, userName: string, password?: string) => Promise<void>;
-  reconnectRoom: (roomId: string) => Promise<boolean>;
+  }, signal?: AbortSignal) => Promise<void>;
+  joinRoom: (roomId: string, userName: string, password?: string, signal?: AbortSignal) => Promise<void>;
+  reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   clearRoomClosed: () => void;
   resetRoomState: () => void;
   leaveRoom: () => Promise<void>;
@@ -57,6 +58,16 @@ export interface SonGuessrStore {
   ) => Promise<T>;
 }
 
+type RoomEntryReceipt = {
+  roomId: string;
+  sessionToken: string;
+  snapshot?: SonGuessrRoomSnapshot;
+  privateState?: SonGuessrPrivateState;
+  previousToken?: string | null;
+};
+
+let connectionGeneration = 0;
+let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
@@ -129,14 +140,12 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
       const currentSnapshot = get().snapshot;
       const currentPrivate = get().privateState;
-      const nextSnapshot =
-        (currentSnapshot?.roomId === targetRoomId ? currentSnapshot : undefined) ??
-        payloadSnapshot ??
-        null;
-      const nextPrivate =
-        (get().roomId === targetRoomId ? currentPrivate : undefined) ??
-        payloadPrivateState ??
-        null;
+      const incomingSnapshot = payloadSnapshot ?? rawSnapshot;
+      const incomingPrivate = payloadPrivateState ?? rawPrivateState;
+      const nextSnapshot = incomingSnapshot?.roomId === targetRoomId
+        ? incomingSnapshot : currentSnapshot?.roomId === targetRoomId ? currentSnapshot : null;
+      const nextPrivate = incomingPrivate?.sessionToken === sessionToken
+        ? incomingPrivate : get().roomId === targetRoomId ? currentPrivate : null;
 
       set({
         roomId: targetRoomId,
@@ -146,6 +155,23 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         roomClosedAt: null,
       });
     };
+
+    const entry = roomEntry = createRoomEntry<RoomEntryReceipt>({
+      generation: () => connectionGeneration,
+      begin: resetSonGuessrStateSync,
+      apply: (receipt) => applyRoomEnter(receipt.roomId, receipt.sessionToken, receipt.snapshot, receipt.privateState),
+      discard: async (receipt) => {
+        try { await sonGuessrWs.send("song.room.leave", {}, { roomId: receipt.roomId, sessionToken: receipt.sessionToken }); }
+        finally {
+          const token = getSonGuessrSessionToken(receipt.roomId);
+          if (token === receipt.sessionToken || (receipt.previousToken && token === receipt.previousToken)) clearSonGuessrSessionToken(receipt.roomId);
+          resetSonGuessrStateSync();
+          const current = get();
+          if (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken) current.resetRoomState();
+          else if (get().roomId === null) current.resetRoomState();
+        }
+      },
+    });
 
     return {
       connected: false,
@@ -178,69 +204,36 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         await sonGuessrWs.send("song.lobby.subscribeRooms");
       },
 
-      createRoom: async (params) => {
-        const res = await sonGuessrWs.send<{
-          roomId?: string;
-          sessionToken: string;
-          snapshot?: SonGuessrRoomSnapshot;
-          privateState?: SonGuessrPrivateState;
-        }>("song.room.create", params);
+      createRoom: (params, signal) => entry.enter(async () => {
+        const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.create", params);
+        return { ...res, roomId: res.roomId ?? params.roomId };
+      }, signal),
 
-        const targetRoomId = res.roomId ?? params.roomId;
-        applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
-      },
+      joinRoom: (roomId, userName, password, signal) => entry.enter(async () => {
+        const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.join", { userName, password }, { roomId });
+        return { ...res, roomId: res.roomId ?? roomId };
+      }, signal),
 
-      joinRoom: async (roomId, userName, password) => {
-        const res = await sonGuessrWs.send<{
-          roomId?: string;
-          sessionToken: string;
-          snapshot?: SonGuessrRoomSnapshot;
-          privateState?: SonGuessrPrivateState;
-        }>("song.room.join", { userName, password }, { roomId });
-
-        const targetRoomId = res.roomId ?? roomId;
-        applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
-      },
-
-      reconnectRoom: async (roomId) => {
+      reconnectRoom: (roomId, signal) => {
         const token = getSonGuessrSessionToken(roomId);
-        if (!token) return false;
-
-        try {
-          const res = await sonGuessrWs.send<{
-            roomId?: string;
-            sessionToken: string;
-            snapshot?: SonGuessrRoomSnapshot;
-            privateState?: SonGuessrPrivateState;
-          }>("song.room.reconnect", { roomId, sessionToken: token });
-
-          const targetRoomId = res.roomId ?? roomId;
-          applyRoomEnter(targetRoomId, res.sessionToken, res.snapshot, res.privateState);
-          return true;
-        } catch (error) {
-          if (!isPermanentRoomError(error)) {
-            set({ roomId, sessionToken: token, roomClosedAt: null });
-            return true;
+        if (!token) return Promise.resolve(false);
+        return entry.restore(`${roomId}:${token}`, async () => {
+          const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.reconnect", { roomId, sessionToken: token });
+          return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
+        }, (error) => {
+          if (!isPermanentRoomError(error)) return false;
+          if (getSonGuessrSessionToken(roomId) === token) clearSonGuessrSessionToken(roomId);
+          const current = get();
+          if (current.roomId === roomId && current.sessionToken === token) {
+            current.resetRoomState();
+            set({ roomClosedAt: Date.now() });
           }
-          clearSonGuessrSessionToken(roomId);
-          resetSonGuessrStateSync();
-          set({
-            roomId: null,
-            sessionToken: null,
-            snapshot: null,
-            privateState: null,
-            roomClosedAt: null,
-          });
           const code = (error as { code?: string } | null)?.code;
-          const message =
-            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-              ? "会话已失效，请重新加入"
-              : code === "PLAYER_KICKED"
-                ? "你已被移出房间"
-                : "房间已解散或不存在";
+          const message = code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+            ? "会话已失效，请重新加入" : code === "PLAYER_KICKED" ? "你已被移出房间" : "房间已解散或不存在";
           get().setNotice(message, "error");
-          return false;
-        }
+          return true;
+        }, signal);
       },
 
       clearRoomClosed: () => set({ roomClosedAt: null }),
@@ -257,7 +250,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       },
 
   leaveRoom: async () => {
-    const { roomId, sessionToken } = get();
+    entry.cancel();    const { roomId, sessionToken } = get();
     if (!roomId) return;
     try {
       await sonGuessrWs.send("song.room.leave", {}, { roomId, sessionToken: sessionToken ?? undefined });
@@ -351,6 +344,7 @@ export function initSonGuessrWs() {
           }
           snapshotRevision = result.revision;
           rawSnapshot = result.state as SonGuessrRoomSnapshot;
+          if (roomEntry.isPending()) break;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
           // 保留完整协议基线供补丁索引使用，仅展示快照合并并裁剪聊天。
           const nextSnapshot = {
@@ -359,7 +353,7 @@ export function initSonGuessrWs() {
           };
 
           const currentPrivate = useSonGuessrStore.getState().privateState;
-          const tokenToSave = currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
+          const tokenToSave = roomEntry.isPending() ? null : currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
           if (tokenToSave && nextSnapshot.roomId) {
             saveSonGuessrSessionToken(nextSnapshot.roomId, tokenToSave);
           }
@@ -382,9 +376,10 @@ export function initSonGuessrWs() {
           }
           privateStateRevision = result.revision;
           rawPrivateState = result.state as SonGuessrPrivateState;
+          if (roomEntry.isPending()) break;
           const nextPrivateState = rawPrivateState;
           const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          if (nextPrivateState.sessionToken && currentSnapshot?.roomId) {
+          if (!roomEntry.isPending() && nextPrivateState.sessionToken && currentSnapshot?.roomId) {
             saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
             useSonGuessrStore.setState({
               roomId: currentSnapshot.roomId,
@@ -413,6 +408,7 @@ export function initSonGuessrWs() {
         break;
       }
       case "song.room.closed": {
+        roomEntry.cancel();
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
@@ -428,6 +424,7 @@ export function initSonGuessrWs() {
         break;
       }
       case "song.room.kicked": {
+        roomEntry.cancel();
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
@@ -444,6 +441,7 @@ export function initSonGuessrWs() {
       }
       case "session.replaced":
       case "song.session.replaced": {
+        roomEntry.cancel();
         const payload = evt.payload as { roomId?: string };
         const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
         if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
@@ -461,6 +459,7 @@ export function initSonGuessrWs() {
         break;
       }
       case "server.shutdown": {
+        roomEntry.cancel();
         const payload = evt.payload as { message?: string } | undefined;
         const message = payload?.message || SERVER_SHUTDOWN_MESSAGE;
         const closedRoomId = useSonGuessrStore.getState().roomId;
@@ -480,6 +479,7 @@ export function initSonGuessrWs() {
   });
 
   const unsubStatus = sonGuessrWs.onStatus((connected) => {
+    if (!connected) connectionGeneration += 1;
     useSonGuessrStore.setState(connected ? { connected } : { connected, lobbyReady: false });
     const store = useSonGuessrStore.getState();
 
@@ -488,30 +488,8 @@ export function initSonGuessrWs() {
       privateStateRevision = undefined;
       sonGuessrWs.send("song.lobby.subscribeRooms").catch(() => {});
       if (store.roomId && store.sessionToken) {
-        sonGuessrWs.send("song.room.reconnect", {
-          roomId: store.roomId,
-          sessionToken: store.sessionToken,
-        }).catch((error) => {
-          if (!isPermanentRoomError(error)) return;
-          const roomId = useSonGuessrStore.getState().roomId;
-          if (!roomId) return;
-          clearSonGuessrSessionToken(roomId);
-          useSonGuessrStore.setState({
-            roomId: null,
-            sessionToken: null,
-            snapshot: null,
-            privateState: null,
-            roomClosedAt: Date.now(),
-          });
-          const code = (error as { code?: string } | null)?.code;
-          const message =
-            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-              ? "会话已失效，请重新加入"
-              : code === "PLAYER_KICKED"
-                ? "你已被移出房间"
-                : "房间已解散或不存在";
-          useSonGuessrStore.getState().setNotice(message, "error");
-        });
+        saveSonGuessrSessionToken(store.roomId, store.sessionToken);
+        void store.reconnectRoom(store.roomId).catch(() => {});
       }
     }
   });
@@ -523,6 +501,7 @@ export function initSonGuessrWs() {
     sonGuessrWsInitialized = false;
     unsubMsg();
     unsubStatus();
+    connectionGeneration += 1;
     sonGuessrWs.disconnect();
     resetSonGuessrStateSync();
     useSonGuessrStore.setState({ connected: false, lobbyReady: false });

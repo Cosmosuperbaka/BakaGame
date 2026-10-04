@@ -46,7 +46,7 @@ export default function WhoIsFakerRoomPage() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const roomClosedAt = useWhoIsFakerStore((s) => s.roomClosedAt);
-  const alreadyInRoom = storeRoomId === roomId && snapshot !== null;
+  const alreadyInRoom = storeRoomId === roomId && snapshot?.roomId === roomId;
 
   const handleSendChatMessage = useCallback(
     async (text: string) => {
@@ -79,6 +79,7 @@ export default function WhoIsFakerRoomPage() {
   const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [mountTime] = useState(() => Date.now());
+  const entryRef = useRef<AbortController | null>(null);
 
   // 挂载与卸载时清理残留的 roomClosedAt
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function WhoIsFakerRoomPage() {
   // 都必须立刻退回大厅，否则加入流程中被关闭会一直停在加载态。
   useEffect(() => {
     if (roomClosedAt && roomClosedAt >= mountTime) {
+      entryRef.current?.abort();
       useWhoIsFakerStore.getState().clearRoomClosed();
       navigate("/whoisfaker", { replace: true });
     }
@@ -105,13 +107,15 @@ export default function WhoIsFakerRoomPage() {
 
   /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
   const enterWithName = useCallback(
-    async (name: string) => {
-      if (!roomId) return;
+    async (name: string, signal: AbortSignal) => {
+      if (!roomId || signal.aborted) return;
       setJoining(true);
       try {
-        await joinRoom(roomId, name);
+        await joinRoom(roomId, name, undefined, signal);
+        if (signal.aborted) return;
         setJoining(false);
       } catch (e) {
+        if (signal.aborted) return;
         const err = e as { code?: string; message?: string };
         if (err.code === "ROOM_NOT_FOUND") {
           try {
@@ -121,9 +125,11 @@ export default function WhoIsFakerRoomPage() {
               visibility: "public",
               allowSpectators: true,
               userName: name,
-            });
+            }, signal);
+            if (signal.aborted) return;
             setJoining(false);
           } catch (createErr) {
+            if (signal.aborted) return;
             addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
             navigate("/whoisfaker");
           }
@@ -136,53 +142,63 @@ export default function WhoIsFakerRoomPage() {
     [roomId, joinRoom, createRoom, addToast, navigate],
   );
 
-  // 进入房间：等待连接、尝试重连/加入/创建
+  // 入房事务归属路由房间，而非 snapshot；取消后的 ACK 释放由 Store 负责。
   useEffect(() => {
-    if (!roomId) return;
+    const entry = new AbortController();
+    entryRef.current = entry;
+    const { signal } = entry;
+    const cleanup = () => {
+      entry.abort();
+      if (entryRef.current === entry) entryRef.current = null;
+    };
+    if (!roomId || alreadyInRoom) return cleanup;
 
-    if (alreadyInRoom) return;
-
-    // 房间号非法就不必连服务器、更不必先问名字，直接退回大厅。
     if (!isValidRoomId(roomId)) {
       addToast("房间号无效，请检查链接", "error");
       navigate("/whoisfaker", { replace: true });
-      return;
+      return cleanup;
     }
 
     useWhoIsFakerStore.getState().clearRoomClosed();
-    let cancelled = false;
     const tryEnter = async () => {
       setJoining(true);
       try {
         await waitForConnection(8000);
       } catch {
-        if (cancelled) return;
+        if (signal.aborted) return;
         addToast("连接服务器超时，请刷新重试", "error");
         navigate("/whoisfaker");
         return;
       }
-      if (cancelled) return;
+      if (signal.aborted) return;
 
-      const ok = await reconnectRoom(roomId);
-      if (ok) { if (!cancelled) setJoining(false); return; }
-      if (cancelled) return;
+      let restored: boolean;
+      try {
+        restored = await reconnectRoom(roomId, signal);
+      } catch (error) {
+        if (signal.aborted) return;
+        addToast((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
+        navigate("/whoisfaker");
+        return;
+      }
+      if (signal.aborted) return;
+      if (restored) { setJoining(false); return; }
       const closedAt = useWhoIsFakerStore.getState().roomClosedAt;
       if (closedAt !== null && closedAt >= mountTime) return;
 
       const name = getSavedUsername();
       if (!name) {
-        // 停在房间页把弹窗交给用户，别让分享链接直接把人弹回大厅。
         setJoining(false);
         setNameDraft("");
         setNeedsName(true);
         return;
       }
-
-      if (!cancelled) await enterWithName(name);
+      await enterWithName(name, signal);
+      if (signal.aborted) return;
     };
 
-    tryEnter();
-    return () => { cancelled = true; };
+    void tryEnter();
+    return cleanup;
   }, [roomId, mountTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleConfirmName = useCallback(async () => {
@@ -193,7 +209,10 @@ export default function WhoIsFakerRoomPage() {
     }
     saveUsername(name);
     setNeedsName(false);
-    await enterWithName(name);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(name, signal);
+    if (signal.aborted) return;
   }, [nameDraft, addToast, enterWithName]);
 
   // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，过渡拍下的旧页就成了加入中的转圈，
@@ -204,6 +223,7 @@ export default function WhoIsFakerRoomPage() {
     return () => void useWhoIsFakerStore.getState().leaveRoom();
   }, [exiting]);
   const handleLeave = useCallback(() => {
+    entryRef.current?.abort();
     setExiting(true);
     navigate("/whoisfaker");
   }, [navigate]);
@@ -337,7 +357,7 @@ export default function WhoIsFakerRoomPage() {
   );
 
   // 加载中、等待加入，或等用户填名字
-  if (joining || needsName || !snapshot) {
+  if (joining || needsName || !snapshot || snapshot.roomId !== roomId) {
     return (
       <RoomJoinGate
         roomId={roomId ?? ""}
@@ -349,7 +369,7 @@ export default function WhoIsFakerRoomPage() {
         passwordDraft=""
         onPasswordDraftChange={() => {}}
         onConfirmPassword={() => {}}
-        onExit={() => navigate("/whoisfaker")}
+        onExit={handleLeave}
       >
         {seoNode}
       </RoomJoinGate>

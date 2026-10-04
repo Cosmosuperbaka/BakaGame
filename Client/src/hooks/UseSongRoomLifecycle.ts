@@ -61,6 +61,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   const sendCommandRef = useRef(sendCommand);
   const leavingRef = useRef(false);
+  const entryRef = useRef<AbortController | null>(null);
   const [mountTime] = useState(() => Date.now());
   const mountedMusicSessionRef = useRef<string | null>(null);
   const inFlightCommandsRef = useRef<Set<string>>(new Set());
@@ -85,13 +86,16 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   }, [longRunningPending]);
 
   const enterWithName = useCallback(
-    async (name: string, password?: string) => {
+    async (name: string, signal: AbortSignal, password?: string) => {
+      if (signal.aborted) return;
       setJoining(true);
       try {
-        await joinRoom(roomId, name, password);
+        await joinRoom(roomId, name, password, signal);
+        if (signal.aborted) return;
         setNeedsPassword(false);
         setJoining(false);
       } catch (error) {
+        if (signal.aborted) return;
         const appError = error as { code?: string; message?: string };
         if (appError.code === "ROOM_NOT_FOUND") {
           try {
@@ -101,10 +105,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
               visibility: "public",
               allowSpectators: true,
               userName: name,
-            });
+            }, signal);
+            if (signal.aborted) return;
             setJoining(false);
             return;
           } catch (createError) {
+            if (signal.aborted) return;
             setNotice((createError as { message?: string }).message ?? "创建房间失败", "error");
           }
         } else if (appError.code === "PASSWORD_INCORRECT" || appError.code === "PASSWORD_REQUIRED") {
@@ -123,7 +129,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   );
 
   const createSoloRoom = useCallback(
-    async (targetRoomId: string) => {
+    async (targetRoomId: string, signal: AbortSignal) => {
+      if (signal.aborted) return;
       await createRoom({
         roomId: targetRoomId,
         name: "单人模式",
@@ -131,19 +138,23 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         allowSpectators: false,
         userName: getSavedUsername() || "单人玩家",
         solo: true,
-      });
+      }, signal);
+      if (signal.aborted) return;
       saveSongSoloRoomId(targetRoomId);
     },
     [createRoom],
   );
 
   const enterSoloRoom = useCallback(
-    async (targetRoomId: string) => {
+    async (targetRoomId: string, signal: AbortSignal) => {
+      if (signal.aborted) return;
       try {
-        await createSoloRoom(targetRoomId);
+        await createSoloRoom(targetRoomId, signal);
+        if (signal.aborted) return;
         setJoining(false);
         return;
       } catch (error) {
+        if (signal.aborted) return;
         if ((error as { code?: string }).code !== "ROOM_EXISTS") {
           setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
           navigate("/", { replace: true });
@@ -151,11 +162,14 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         }
       }
       const nextRoomId = randomRoomId();
-      setSoloRoomId(nextRoomId);
       try {
-        await createSoloRoom(nextRoomId);
+        await createSoloRoom(nextRoomId, signal);
+        if (signal.aborted) return;
+        // ACK 落定后才切换路由身份，避免 roomId effect 清理取消本次重试。
+        setSoloRoomId(nextRoomId);
         setJoining(false);
       } catch (error) {
+        if (signal.aborted) return;
         setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
         navigate("/", { replace: true });
       }
@@ -171,35 +185,54 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   }, []);
 
   useEffect(() => {
-    if (!roomId || alreadyInRoom) return;
+    const entry = new AbortController();
+    entryRef.current = entry;
+    leavingRef.current = false;
+    const { signal } = entry;
+    const cleanup = () => {
+      entry.abort();
+      if (entryRef.current === entry) entryRef.current = null;
+    };
+    // 只按房间身份清理；snapshot/ACK 更新不能取消已成功接入的会话。
+    if (!roomId || alreadyInRoom) return cleanup;
     if (!isValidRoomId(roomId)) {
       setNotice("房间号无效，请检查链接", "error");
       navigate(exitPath, { replace: true });
-      return;
+      return cleanup;
     }
 
     useSonGuessrStore.getState().clearRoomClosed();
-    let cancelled = false;
     const tryEnter = async () => {
       setJoining(true);
       try {
         await sonGuessrWs.waitForConnection(8_000);
       } catch {
-        if (!cancelled) {
-          setNotice("连接服务器超时，请刷新重试", "error");
-          navigate(exitPath, { replace: true });
-        }
+        if (signal.aborted) return;
+        setNotice("连接服务器超时，请刷新重试", "error");
+        navigate(exitPath, { replace: true });
         return;
       }
-      if (cancelled) return;
-      if (await reconnectRoom(roomId)) {
-        if (!cancelled) setJoining(false);
+      if (signal.aborted) return;
+      let restored: boolean;
+      try {
+        restored = await reconnectRoom(roomId, signal);
+      } catch (error) {
+        if (signal.aborted) return;
+        // 临时恢复失败不是“没有可恢复会话”，不能继续自动创建。
+        setNotice((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
+        navigate(exitPath, { replace: true });
+        return;
+      }
+      if (signal.aborted) return;
+      if (restored) {
+        setJoining(false);
         return;
       }
       const closedAt = useSonGuessrStore.getState().roomClosedAt;
-      if (cancelled || (closedAt !== null && closedAt >= mountTime)) return;
+      if (closedAt !== null && closedAt >= mountTime) return;
       if (solo) {
-        await enterSoloRoom(roomId);
+        await enterSoloRoom(roomId, signal);
+        if (signal.aborted) return;
         return;
       }
       const savedName = getSavedUsername();
@@ -209,16 +242,16 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         setNeedsName(true);
         return;
       }
-      await enterWithName(savedName);
+      await enterWithName(savedName, signal);
+      if (signal.aborted) return;
     };
     void tryEnter();
-    return () => {
-      cancelled = true;
-    };
+    return cleanup;
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!roomClosedAt || roomClosedAt < mountTime || leavingRef.current) return;
+    entryRef.current?.abort();
     useSonGuessrStore.getState().clearRoomClosed();
     if (solo) clearSongSoloRoomId();
     navigate(exitPath, { replace: true });
@@ -286,13 +319,19 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     }
     saveUsername(name);
     setNeedsName(false);
-    await enterWithName(name);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(name, signal);
+    if (signal.aborted) return;
   };
 
   const handleConfirmPassword = async () => {
     if (!pendingJoinName || !passwordDraft.trim()) return;
     setNeedsPassword(false);
-    await enterWithName(pendingJoinName, passwordDraft);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(pendingJoinName, signal, passwordDraft);
+    if (signal.aborted) return;
   };
 
   const runCommand = async (type: string, payload: Record<string, unknown> = {}, success?: string) => {
@@ -330,6 +369,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   }, [exiting]);
 
   const leave = () => {
+    entryRef.current?.abort();
     leavingRef.current = true;
     if (solo) clearSongSoloRoomId();
     setExiting(true);

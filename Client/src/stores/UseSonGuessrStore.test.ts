@@ -253,21 +253,21 @@ describe("Songuessr store integration", () => {
   });
 
 
-  it("keeps the Songuessr session while reconnecting after a temporary disconnect", async () => {
+  it("临时重连失败保留猜歌凭据但拒绝调用方，不伪装成功", async () => {
     saveSonGuessrSessionToken("2346", "live-song-token");
     wsMock.send.mockRejectedValue({ code: "TIMEOUT" });
 
-    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).resolves.toBe(true);
+    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).rejects.toMatchObject({ code: "TIMEOUT" });
     expect(getSonGuessrSessionToken("2346")).toBe("live-song-token");
     expect(useSonGuessrStore.getState()).toMatchObject({
-      roomId: "2346",
-      sessionToken: "live-song-token",
+      roomId: null,
+      sessionToken: null,
       roomClosedAt: null,
     });
   });
 
   it("subscribes to the lobby and restores the active room after reconnecting", async () => {
-    wsMock.send.mockResolvedValue({});
+    wsMock.send.mockResolvedValue({ roomId: "3456", sessionToken: "live-token" });
     useSonGuessrStore.setState({ roomId: "3456", sessionToken: "live-token" });
     const dispose = initSonGuessrWs();
 
@@ -458,7 +458,7 @@ describe("Songuessr store integration", () => {
         }
         wsMock.statusHandlers[0](false);
         wsMock.statusHandlers[0](true);
-        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(0);
         const latest = start + 75;
         // 重连全量与本地增量重叠；重复/乱序全量不能积累历史或丢弃本地更新。
         emit({ type: "event", event: "song.room.snapshot", payload: { mode: "full", revision: cycle + 2, state: { ...snapshot, chat: chatRange(latest - 200, 200).reverse() } } });
