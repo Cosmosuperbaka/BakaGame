@@ -23,6 +23,7 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
+import type { BangumiMusicTrack, BangumiSongCandidate } from "../src/shared/SonGuessr";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
@@ -109,11 +110,11 @@ const connection = (service: SonGuessrService, id: string): TestConnection => {
   return { record, sent };
 };
 
-const execute = (
+const execute = <T = unknown>(
   service: SonGuessrService,
   client: TestConnection,
   message: SonGuessrClientMessage,
-) => service.execute(client.record.id, message);
+): Promise<T> => service.execute(client.record.id, message) as Promise<T>;
 
 const lastEvent = <T>(client: TestConnection, event: string): T =>
   client.sent.filter((item) => item.type === "event" && item.event === event).at(-1)!.payload as T;
@@ -331,7 +332,7 @@ describe("SonGuessrService", () => {
     });
 
     // 1. 查询该番剧匹配成功的所有歌曲候选
-    const queryResult = await execute<{ results: Array<{ song: SongSearchResult; track: BangumiMusicTrack }> }>(service, host, {
+    const queryResult = await execute<{ results: BangumiSongCandidate[] }>(service, host, {
       id: "query-songs",
       type: "song.bangumi.songs",
       roomId: "1234",
@@ -3569,6 +3570,80 @@ describe("SonGuessrService 猜番原版优先", () => {
     };
 
     await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+  });
+
+  const resolveInternals = (musicProvider: MusicProvider) => {
+    const service = new SonGuessrService({
+      musicProvider,
+      bangumiProvider: {} as BangumiDataProvider,
+      random: { nextInt: () => 0 },
+    });
+    return service as unknown as {
+      resolveAlbumTrackCandidates: (
+        provider: MusicProvider,
+        track: { title: string; kind: BangumiMusicTrack["kind"] },
+        anime: BangumiSubjectDetails,
+        cookie: string | undefined,
+        budget: { search: number },
+      ) => Promise<unknown>;
+      resolveAnimeLevelCandidates: (
+        provider: MusicProvider,
+        anime: BangumiSubjectDetails,
+        cookie: string | undefined,
+        budget: { search: number },
+      ) => Promise<unknown>;
+    };
+  };
+
+  /**
+   * 并发探针：每个上游调用都会卡在闸门上，直到最后一个检索词发出才放行。
+   * 并发时「最后一个请求发出」早于「第一个请求返回」；串行则必然相反。
+   */
+  const expectParallelCalls = async (expected: number, invoke: (onCall: () => Promise<void>) => Promise<void>) => {
+    let started = 0;
+    const startedWhenSettled: number[] = [];
+    let open = () => {};
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const onCall = async () => {
+      started += 1;
+      if (started === expected) open();
+      await Promise.race([gate, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
+      startedWhenSettled.push(started);
+    };
+    await invoke(onCall);
+    expect(started).toBe(expected);
+    // 并发：最早返回的那个请求落地时，所有检索词都已发出；串行时它落地才发了第 1 个。
+    expect(Math.min(...startedWhenSettled)).toBe(expected);
+  };
+
+  test("专辑路径的多个检索词并发回源", async () => {
+    // 自动出题是实时链路，专辑路径一次要发 3~6 个检索词（条目名 / 剥壳名 / 番剧名 + 类型词 / 番剧名）。
+    // 串行会把出题等待按检索词数量线性放大，玩家开局要干等好几轮网络往返。
+    const albumTrack = { title: "角色歌合辑", kind: "character" as const };
+    const queries = buildAlbumQueries(albumTrack, anime);
+    expect(queries.length).toBeGreaterThan(1);
+
+    await expectParallelCalls(queries.length, async (onCall) => {
+      const musicProvider: MusicProvider = {
+        ...provider,
+        searchAlbums: async () => { await onCall(); return []; },
+        getAlbumSongs: async () => [],
+      };
+      await resolveInternals(musicProvider)
+        .resolveAlbumTrackCandidates(musicProvider, albumTrack, anime, undefined, { search: 20 });
+    });
+  });
+
+  test("番剧级兜底的番剧原名与中文名并发回源", async () => {
+    let probe: () => Promise<void> = async () => {};
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => { await probe(); return []; },
+    };
+    await expectParallelCalls(2, async (onCall) => {
+      probe = onCall;
+      await resolveInternals(musicProvider).resolveAnimeLevelCandidates(musicProvider, anime, undefined, { search: 20 });
+    });
   });
 });
 

@@ -2362,16 +2362,19 @@ export class SonGuessrService {
     if (!provider.searchAlbums || !provider.getAlbumSongs) return [];
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
-    const collected: SongAlbumSearchResult[] = [];
-    for (const query of buildAlbumQueries(track, anime)) {
-      if (budget.search <= 0) break;
+    // 同一条目的多个检索词之间没有依赖，**必须并行回源**（与 searchAnimeTrackCandidates 一致）：
+    // 串行发会把专辑路径变成 3~6 次顺序等待，自动出题的等待时间直接翻倍。
+    const searches = await Promise.all(buildAlbumQueries(track, anime).map(async (query) => {
+      if (budget.search <= 0) return [] as SongAlbumSearchResult[];
       budget.search -= 1;
       try {
-        collected.push(...await retryOnce(() => provider.searchAlbums!(query, ALBUM_SEARCH_LIMIT, cookie)));
+        return await retryOnce(() => provider.searchAlbums!(query, ALBUM_SEARCH_LIMIT, cookie));
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
+        return [] as SongAlbumSearchResult[];
       }
-    }
+    }));
+    const collected: SongAlbumSearchResult[] = searches.flat();
     if (collected.length === 0) return [];
 
     const unique = new Map<string, SongAlbumSearchResult>();
@@ -2428,16 +2431,20 @@ export class SonGuessrService {
   ): Promise<SongSearchResult[]> {
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
     if (animeNames.length === 0) return [];
-    const collected = new Map<string, SongSearchResult>();
-    for (const name of animeNames) {
-      if (budget.search <= 0) break;
+    // 同样并行回源（见 resolveAlbumTrackCandidates 的说明）：番剧名与中文名之间无依赖。
+    const searches = await Promise.all(animeNames.map(async (name) => {
+      if (budget.search <= 0) return [] as SongSearchResult[];
       budget.search -= 1;
       try {
-        const found = await retryOnce(() => provider.search(name, ANIME_SONG_SEARCH_LIMIT, cookie));
-        for (const candidate of found) if (!collected.has(candidate.id)) collected.set(candidate.id, candidate);
+        return await retryOnce(() => provider.search(name, ANIME_SONG_SEARCH_LIMIT, cookie));
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
+        return [] as SongSearchResult[];
       }
+    }));
+    const collected = new Map<string, SongSearchResult>();
+    for (const found of searches) {
+      for (const candidate of found) if (!collected.has(candidate.id)) collected.set(candidate.id, candidate);
     }
     const otherTrackTitles = anime.musicTracks.map((entry) => entry.title);
     const belongsToAnime = (candidate: SongSearchResult): boolean => {
