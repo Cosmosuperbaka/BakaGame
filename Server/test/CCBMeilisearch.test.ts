@@ -28,7 +28,7 @@ function createClient() {
 describe("CCB Meilisearch 搜索契约", () => {
   test("角色搜索保留 Meilisearch 命中顺序并使用 Bangumi 排序过滤口径", async () => {
     const { client, requests } = createClient();
-    const search = new CCBMeilisearch({ url: "http://search.invalid", client });
+    const search = new CCBMeilisearch({ client });
 
     expect((await search.searchCharacters("牧濑", 20)).ids).toEqual([2]);
     expect(requests[0]).toEqual({ index: "ccb_characters", query: "牧濑", options: { limit: 20, filter: ["nsfw = false"] } });
@@ -39,7 +39,7 @@ describe("CCB Meilisearch 搜索契约", () => {
 
   test("作品搜索按类型 OR、NSFW AND 组成过滤表达式", async () => {
     const { client, requests } = createClient();
-    const search = new CCBMeilisearch({ url: "http://search.invalid", client });
+    const search = new CCBMeilisearch({ client });
 
     expect((await search.searchSubjects("作品", 20, [1, 2, 4, 6])).ids).toEqual([11]);
     expect(requests[0]).toEqual({

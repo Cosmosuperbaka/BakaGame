@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { Meilisearch, type Index, type SearchResponse } from "meilisearch";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { Meilisearch, MeilisearchApiError, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
 
 export interface CCBCharacterSearchDocument {
   [key: string]: unknown;
@@ -29,9 +31,7 @@ export interface CCBSubjectSearchDocument {
 }
 
 export interface CCBMeilisearchOptions {
-  url: string;
   apiKey?: string;
-  timeoutMs?: number;
   client?: Meilisearch;
 }
 
@@ -42,7 +42,12 @@ export interface CCBSearchResult {
 
 const CHARACTER_INDEX = "ccb_characters";
 const SUBJECT_INDEX = "ccb_subjects";
+const METADATA_INDEX = "ccb_search_metadata";
+const INDEX_SCHEMA_VERSION = 1;
 const BATCH_SIZE = 1_000;
+const INTERNAL_SEARCH_URL = "http://127.0.0.1:7700";
+const SEARCH_TIMEOUT_MS = 5_000;
+const INDEX_TASK_TIMEOUT_MS = 600_000;
 
 export const CCB_CHARACTER_RANKING_RULES = [
   "exactness", "words", "typo", "proximity", "attribute", "sort",
@@ -65,30 +70,43 @@ export class CCBMeilisearch {
   private readonly client: Meilisearch;
   private readonly characters: IndexWithDocuments<CCBCharacterSearchDocument>;
   private readonly subjects: IndexWithDocuments<CCBSubjectSearchDocument>;
+  private readonly metadata: Index<{ [key: string]: unknown; id: string; revision: string }>;
 
   constructor(options: CCBMeilisearchOptions) {
     this.client = options.client ?? new Meilisearch({
-      host: options.url,
+      host: INTERNAL_SEARCH_URL,
       apiKey: options.apiKey,
-      timeout: options.timeoutMs ?? 5_000,
+      timeout: SEARCH_TIMEOUT_MS,
     });
     this.characters = this.client.index<CCBCharacterSearchDocument>(CHARACTER_INDEX) as IndexWithDocuments<CCBCharacterSearchDocument>;
     this.subjects = this.client.index<CCBSubjectSearchDocument>(SUBJECT_INDEX) as IndexWithDocuments<CCBSubjectSearchDocument>;
+    this.metadata = this.client.index(METADATA_INDEX);
   }
 
-  async initialize(db: Database): Promise<void> {
+  async initialize(db: Database, sourcePath: string): Promise<void> {
     await this.client.health();
     await this.configureIndex(this.characters, CCB_CHARACTER_RANKING_RULES, ["name", "aliases"], ["nsfw"], ["comment", "collect"]);
     await this.configureIndex(this.subjects, CCB_SUBJECT_RANKING_RULES, ["name", "aliases"], ["tag", "meta_tag", "date", "score", "rating_count", "rank", "type", "nsfw"], ["date", "score", "rating_count", "page_rank", "heat", "rank"]);
+    await this.ensureIndex(this.metadata);
 
+    const revision = `${INDEX_SCHEMA_VERSION}:${await fingerprint(sourcePath)}`;
     const characterCount = Number((db.query("SELECT count(*) AS count FROM characters").get() as { count: number }).count);
     const subjectCount = Number((db.query("SELECT count(*) AS count FROM subjects").get() as { count: number }).count);
     const [characterStats, subjectStats] = await Promise.all([this.characters.getStats(), this.subjects.getStats()]);
-    if (characterStats.numberOfDocuments !== characterCount) {
+    let indexedRevision: string | undefined;
+    try {
+      indexedRevision = (await this.metadata.getDocument("dataset")).revision;
+    } catch (error) {
+      if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "document_not_found") throw error;
+    }
+    if (indexedRevision !== revision || characterStats.numberOfDocuments !== characterCount) {
       await this.replaceCharacters(db);
     }
-    if (subjectStats.numberOfDocuments !== subjectCount) {
+    if (indexedRevision !== revision || subjectStats.numberOfDocuments !== subjectCount) {
       await this.replaceSubjects(db);
+    }
+    if (indexedRevision !== revision) {
+      await waitForIndexTask(this.metadata.addDocuments([{ id: "dataset", revision }], { primaryKey: "id" }));
     }
   }
 
@@ -110,22 +128,27 @@ export class CCBMeilisearch {
   }
 
   async updateCharacter(document: CCBCharacterSearchDocument): Promise<void> {
-    await this.characters.updateDocuments([document], { primaryKey: "id" }).waitTask();
+    await waitForIndexTask(this.characters.updateDocuments([document], { primaryKey: "id" }));
   }
 
   private async configureIndex<T extends Record<string, unknown>>(
     index: Index<T>, rankingRules: string[], searchableAttributes: string[], filterableAttributes: string[], sortableAttributes: string[],
   ): Promise<void> {
+    await this.ensureIndex(index);
+    await waitForIndexTask(index.updateSettings({ rankingRules, searchableAttributes, filterableAttributes, sortableAttributes }));
+  }
+
+  private async ensureIndex<T extends Record<string, unknown>>(index: Index<T>): Promise<void> {
     try {
       await index.fetchInfo();
-    } catch {
-      await this.client.createIndex(index.uid, { primaryKey: "id" }).waitTask();
+    } catch (error) {
+      if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "index_not_found") throw error;
+      await waitForIndexTask(this.client.createIndex(index.uid, { primaryKey: "id" }));
     }
-    await index.updateSettings({ rankingRules, searchableAttributes, filterableAttributes, sortableAttributes }).waitTask();
   }
 
   private async replaceCharacters(db: Database): Promise<void> {
-    await this.characters.deleteAllDocuments().waitTask();
+    await waitForIndexTask(this.characters.deleteAllDocuments());
     const rows = db.query("SELECT id,name,name_cn,aliases,comments,collects FROM characters ORDER BY id").all() as Array<Record<string, unknown>>;
     await this.addBatches(this.characters, rows.map((row) => ({
       id: Number(row.id), name: String(row.name), aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
@@ -134,7 +157,7 @@ export class CCBMeilisearch {
   }
 
   private async replaceSubjects(db: Database): Promise<void> {
-    await this.subjects.deleteAllDocuments().waitTask();
+    await waitForIndexTask(this.subjects.deleteAllDocuments());
     const columns = new Set((db.query("PRAGMA table_info(subjects)").all() as Array<{ name: string }>).map((column) => column.name));
     const rank = columns.has("rank") ? "rank" : "0 AS rank";
     const aliases = columns.has("aliases") ? "aliases" : "name_cn AS aliases";
@@ -149,13 +172,24 @@ export class CCBMeilisearch {
 
   private async addBatches<T extends Record<string, unknown>>(index: Index<T>, documents: T[]): Promise<void> {
     for (let offset = 0; offset < documents.length; offset += BATCH_SIZE) {
-      await index.addDocuments(documents.slice(offset, offset + BATCH_SIZE), { primaryKey: "id" }).waitTask();
+      await waitForIndexTask(index.addDocuments(documents.slice(offset, offset + BATCH_SIZE), { primaryKey: "id" }));
     }
   }
 
   private toResult<T extends { id: number }>(result: SearchResponse<T>): CCBSearchResult {
     return { ids: result.hits.map((hit) => Number(hit.id)), estimatedTotalHits: result.estimatedTotalHits ?? result.hits.length };
   }
+}
+
+async function fingerprint(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function waitForIndexTask(task: EnqueuedTaskPromise): Promise<void> {
+  const result = await task.waitTask({ timeout: INDEX_TASK_TIMEOUT_MS });
+  if (result.status !== "succeeded") throw new Error(`CCB 搜索索引任务失败: ${result.error?.code ?? result.status}`);
 }
 
 function uniqueStrings(...values: Array<string | string[]>): string[] {

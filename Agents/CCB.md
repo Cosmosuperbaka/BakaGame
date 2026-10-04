@@ -171,8 +171,8 @@
 
 ### 搜索索引与 Bangumi API 口径
 
-- CCB 的角色和作品搜索使用服务端配置的 `CCB_MEILISEARCH_URL` 对应的 Meilisearch，
-  客户端统一通过 `meilisearch` JavaScript SDK 访问。SQLite 只保存详情和关系，
+- CCB 的角色和作品搜索由服务端 Worker 使用 `meilisearch` JavaScript SDK 访问同网络空间
+  `127.0.0.1:7700` 的内部 Meilisearch，客户端仍通过 CCB WebSocket 请求。SQLite 只保存详情和关系，
   不再作为生产搜索排序器；Meilisearch 返回的命中顺序必须原样用于详情回填。
 - 索引排序规则与 Bangumi server 的 `internal/search` 一致：先按
   `exactness → words → typo → proximity → attribute → sort`，角色随后按
@@ -181,7 +181,7 @@
   `name`/`aliases` 是唯一搜索字段；类型、标签、元标签、日期、评分、评分人数、排名和
   `nsfw` 只作为过滤或排序字段。
 - Worker 初始化会校验服务健康状态、创建/校正两个索引的字段设置，并在文档数量不一致时
-  从本地 SQLite 按批次重建。未配置 URL 的测试夹具保持显式本地模式；生产配置必须提供
+  从本地 SQLite 按批次重建。未配置 `CCB_MEILISEARCH_KEY` 的本地/测试夹具保持显式本地模式；生产必须提供
   可用的 Meilisearch，不能在运行期静默切换到另一套排序逻辑。
 - 搜索回归以 Bangumi API 的过滤表达式和固定语料为参照，命中 ID 集合及顺序相似度必须达到
   99.9%，精确名称、别名、类型和 NSFW 边界样例要求完全一致。

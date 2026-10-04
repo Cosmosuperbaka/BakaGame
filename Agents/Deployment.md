@@ -206,6 +206,12 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 
 ### 发布链路与失败边界
 
+CCB 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
+可从容器内访问 `127.0.0.1:7700`；单独的默认桥接容器的 `localhost` 不指向另一个容器。
+Meilisearch 的 master key 与服务端 `CCB_MEILISEARCH_KEY` 必须一致，原版房的
+`CCB_ORIGINAL_AES_SECRET` 独立配置。现有部署流水线只重启 `BakaGame`，不安装或启动搜索服务；
+前提未满足时不得发布该搜索配置。
+
 1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
 2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致，所有 LFS raw URL 同样绑定此 SHA（不消费移动 main），按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
 3. 数据校验后、排空前生成获验修订的 release 元数据，流程及失败边界见下一节；宿主机不需要 Node/Bun。

@@ -2,9 +2,36 @@ import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 
 import { readEnv } from "../src/config/Env";
+import { createServer } from "../src/application/CreateServer";
 import { AppError } from "../src/domain/Errors";
 
 describe("readEnv 环境变量与启动断言", () => {
+  it("搜索与原版房使用独立密钥，旧 URL 和超时配置不再生效", () => {
+    const keys = ["AES_SECRET", "CCB_ORIGINAL_AES_SECRET", "CCB_MEILISEARCH_KEY", "CCB_MEILISEARCH_URL", "CCB_MEILISEARCH_TIMEOUT_MS"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      Bun.env.AES_SECRET = "unused";
+      Bun.env.CCB_ORIGINAL_AES_SECRET = "original-secret";
+      Bun.env.CCB_MEILISEARCH_KEY = "search-secret";
+      Bun.env.CCB_MEILISEARCH_URL = "http://example.invalid";
+      Bun.env.CCB_MEILISEARCH_TIMEOUT_MS = "invalid";
+      expect(readEnv()).toMatchObject({ ccbOriginalAesSecret: "original-secret", ccbMeilisearchKey: "search-secret" });
+      Bun.env.CCB_MEILISEARCH_KEY = "  other-search-secret  ";
+      expect(readEnv().ccbMeilisearchKey).toBe("other-search-secret");
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
+  it("生产服务缺少搜索密钥时拒绝以本地搜索启动", () => {
+    const options = { env: { ...readEnv(), otelDeploymentEnvironment: "production", ccbMeilisearchKey: undefined } } as Parameters<typeof createServer>[0];
+    expect(() => createServer(options)).toThrow(AppError);
+    expect(() => createServer(options)).toThrow(/CCB_MEILISEARCH_KEY/);
+  });
+
   it("对非法端口号抛出 CONFIG_ERROR 快速失败", () => {
     const originalPort = Bun.env.SERVER_PORT;
     try {

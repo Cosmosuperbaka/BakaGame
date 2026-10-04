@@ -76,7 +76,8 @@ export class CCBCharacterWorkerProvider implements CCBDataProvider {
     if (this.pending.size >= 64) return Promise.reject(new AppError("CCB_RATE_LIMITED", "角色查询排队过多，请稍后重试"));
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.abort(new AppError("CCB_QUERY_TIMEOUT", "角色资料查询超时")), payload.method === "importDirectory" || payload.method === "close" ? 60_000 : 20_000);
+      const timeout = payload.method === "init" ? 900_000 : payload.method === "importDirectory" || payload.method === "close" ? 60_000 : 20_000;
+      const timer = setTimeout(() => this.abort(new AppError("CCB_QUERY_TIMEOUT", "角色资料查询超时")), timeout);
       this.pending.set(id, { resolve, reject, timer });
       this.worker.postMessage({ ...payload, id });
     });

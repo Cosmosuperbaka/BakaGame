@@ -40,7 +40,7 @@ test.skipIf(!sourceAvailable)('真实原版与增强客户端在本地同房同�
   const address = http.address();
   if (!address || typeof address === 'string') throw new Error('本地监听失败');
   const url = `http://127.0.0.1:${address.port}`;
-  const service = new CCBOriginalService({ data, serverUrl: url, aesSecret: process.env.AES_SECRET || 'My-Secret-Key' });
+  const service = new CCBOriginalService({ data, serverUrl: url, aesSecret: process.env.CCB_ORIGINAL_AES_SECRET || 'My-Secret-Key' });
   const tokens = new Map<string, string>();
   const execute = async (id: string, message: CCBClientMessage): Promise<unknown> => {
     const result = await service.execute(id, { ...message, sessionToken: tokens.get(id) });

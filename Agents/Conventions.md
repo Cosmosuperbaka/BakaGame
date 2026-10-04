@@ -143,15 +143,16 @@ SERVER_URL=http://localhost:4850
 SERVER_PORT=4850
 BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_URL=
-CCB_MEILISEARCH_URL=http://127.0.0.1:7700
 CCB_MEILISEARCH_KEY=
-CCB_MEILISEARCH_TIMEOUT_MS=5000
+CCB_ORIGINAL_AES_SECRET=
 ```
 
 `BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。图片在服务端按配置重写；镜像为空时的行为见 [BangumiApi](BangumiApi.md#配置)，生产镜像要求见 [Deployment](Deployment.md)。
 
-`CCB_MEILISEARCH_URL`、`CCB_MEILISEARCH_KEY` 和 `CCB_MEILISEARCH_TIMEOUT_MS` 仅由 CCB Worker 使用；
-配置 URL 后服务启动会校验 Meilisearch 健康状态并维护 `ccb_characters`、`ccb_subjects` 索引。
+`CCB_MEILISEARCH_KEY` 仅用于 CCB 内部搜索，生产环境必填；Meilisearch 的 master key 必须设为相同值，
+并与本服务共享 `127.0.0.1:7700` 网络空间（独立容器不能直接使用各自的 `localhost`）。搜索连接地址
+和 5 秒请求超时由代码固定，不向客户端暴露。启动会校验 Meilisearch 健康状态并维护搜索索引；
+未设置搜索密钥仅供本地开发和隔离测试使用本地搜索。`CCB_ORIGINAL_AES_SECRET` 仅供原版兼容房使用。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash
