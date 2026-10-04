@@ -90,7 +90,7 @@ def setup_character(db: sqlite3.Connection):
       );
       CREATE TABLE subjects (
         id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
-        name_cn TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
+        name_cn TEXT NOT NULL, aliases TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
         -- 原版 `details.raw_tags`：全类型、未过滤的 {标签: 票数}。
         -- 原版的 `details.tags`（只对动画(2)/游戏(4)填充、且剔除含 "20" 的年份型标签）
         -- 由它 + 类型在运行时导出 —— 存两份会制造漂移。
@@ -101,7 +101,7 @@ def setup_character(db: sqlite3.Connection):
         -- 热度：出题时按它降序取前 `topNSubjects` 个候选作品（原版 `POST /v0/search/subjects`
         -- 的 `sort: "heat"`）。dump 没有热度字段，用收藏分布 `favorite` 五个桶求和近似
         -- —— 与歌库的 `heat` 同一个口径。
-        heat INTEGER NOT NULL
+        heat INTEGER NOT NULL, rank INTEGER NOT NULL
       );
       CREATE TABLE character_subject_relations (
         character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
@@ -287,7 +287,19 @@ def parse_character_infobox(infobox: str) -> tuple[str, str, list[str]]:
     name_cn = first_matching(singles, INFOBOX_NAME_KEYS)
     gender = normalize_gender(first_matching(singles, INFOBOX_GENDER_KEYS))
     aliases: list[str] = []
+    # Bangumi server 的 character search 会把所有中文名字段和别名字段
+    # 都交给 GetWikiValues；name_cn 只是详情里的一个首选值。保留其它
+    # 中文名字段，避免同时存在「中文名」和「简体中文名」时搜索结果漂移。
+    for key in INFOBOX_NAME_KEYS:
+        value = singles.get(key)
+        value = clean_infobox_value(value) if value else ""
+        if value and value != name_cn and value not in aliases:
+            aliases.append(value)
     for key in INFOBOX_ALIAS_KEYS:
+        alias = singles.get(key)
+        alias = clean_infobox_value(alias) if alias else ""
+        if alias and alias not in aliases:
+            aliases.append(alias)
         for alias in blocks.get(key, []):
             if alias and alias not in aliases:
                 aliases.append(alias)
@@ -491,7 +503,16 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             # 但 **nsfw 一律不进角色库** —— 进了就会出现在反馈的登场作品里。
             if item["id"] in nsfw_subject_ids:
                 continue
-            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat))
+            singles, alias_blocks = parse_infobox(item.get("infobox", ""))
+            aliases = [item.get("name_cn", "")]
+            # 与 subject search 的 extractAliases/GetWikiValues 保持一致：
+            # 别名既可能是数组块，也可能是普通单值字段。
+            alias_value = singles.get("别名")
+            if alias_value:
+                aliases.append(clean_infobox_value(alias_value))
+            aliases.extend(alias_blocks.get("别名", []))
+            aliases = json.dumps(aliases, ensure_ascii=False)
+            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases, item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat, int(item.get("rank", 0) or 0)))
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:

@@ -16,7 +16,13 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   // 失败只会记一条告警，后续请求仍按惰性加载自行重试。
   void music.warmUp();
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: new FallbackBangumiProvider({ local, remote: new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl }), logger }) });
-  const ccb = new CCBService({ data: new CCBCharacterWorkerProvider({ characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
+  const ccb = new CCBService({ data: new CCBCharacterWorkerProvider({
+    characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath,
+    apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl,
+    meilisearch: env.ccbMeilisearchUrl ? {
+      url: env.ccbMeilisearchUrl, apiKey: env.ccbMeilisearchKey, timeoutMs: env.ccbMeilisearchTimeoutMs,
+    } : undefined,
+  }), eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
   return createApp({ ...options, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
     const results = await Promise.allSettled([ccb.close(), local.close()]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);

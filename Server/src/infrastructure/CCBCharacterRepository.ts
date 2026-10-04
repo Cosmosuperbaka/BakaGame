@@ -4,6 +4,7 @@ import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtr
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
 import { CCBEnrichment } from "./CCBEnrichment";
 import { deriveCCBCharacter, resolveCCBSubjectTypes } from "./CCBCharacterDerivation";
+import { CCBMeilisearch } from "./CCBMeilisearch";
 
 interface CharacterRow { id: number; name: string; name_cn: string; gender: string; aliases: string; summary: string; comments: number; collects: number }
 interface SubjectRow { id: number; type: number; name: string; name_cn: string; date: string; raw_tags: string; meta_tags: string; score: number; rating_count: number; heat: number; relation_type?: number }
@@ -22,18 +23,33 @@ export class CCBCharacterRepository implements CCBDataProvider {
   private readonly enrichment: CCBEnrichment;
   private readonly now: () => number;
   private readonly directoryImports = new Map<number, Promise<CCBDirectoryResult>>();
+  private readonly search?: CCBMeilisearch;
+  private readonly ready: Promise<void>;
   private closed = false;
 
   constructor(options: CCBDataOptions) {
     this.db = new Database(options.characterPath, { readonly: true });
     try { this.enrichment = new CCBEnrichment(options); } catch (error) { this.db.close(); throw error; }
     this.now = options.now ?? Date.now;
+    this.search = options.meilisearch ? new CCBMeilisearch(options.meilisearch) : undefined;
+    this.ready = this.search?.initialize(this.db) ?? Promise.resolve();
   }
+
+  async initialize(): Promise<void> { await this.ready; }
 
   async searchCharacters(keyword: string, limit = 20): Promise<CCBCharacterSummary[]> {
     this.assertOpen();
+    await this.ready;
     const query = keyword.trim().slice(0, 80);
     const count = boundedLimit(limit);
+    if (this.search) {
+      const result = await this.search.searchCharacters(query, count);
+      if (!result.ids.length) return [];
+      const placeholders = result.ids.map(() => "?").join(",");
+      const rows = this.db.query(`SELECT * FROM characters WHERE id IN (${placeholders})`).all(...result.ids) as CharacterRow[];
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSummary(row)] : []; });
+    }
     const pattern = like(query);
     let rows: CharacterRow[];
     if (!query) {
@@ -75,9 +91,18 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async searchSubjects(keyword: string, limit = 20, types = [1, 2, 4, 6]): Promise<CCBSubjectSummary[]> {
     this.assertOpen();
+    await this.ready;
     const selected = validTypes(types);
     if (!selected.length) return [];
     const query = keyword.trim().slice(0, 80);
+    if (this.search) {
+      const result = await this.search.searchSubjects(query, boundedLimit(limit), selected);
+      if (!result.ids.length) return [];
+      const placeholders = result.ids.map(() => "?").join(",");
+      const rows = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders})`).all(...result.ids) as SubjectRow[];
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [toSubject(row)] : []; });
+    }
     const pattern = like(query);
     const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND type IN (${selected.map(() => "?").join(",")})
       AND (name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR id=?)
@@ -87,6 +112,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async getSubjectCharacters(subjectId: number, limit = 50): Promise<CCBCharacterSummary[]> {
     this.assertOpen();
+    await this.ready;
     if (!positiveId(subjectId)) throw new AppError("CCB_SUBJECT_NOT_FOUND", "作品不存在");
     const rows = this.db.query(`SELECT c.* FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
       JOIN subjects s ON s.id=r.subject_id WHERE r.subject_id=? AND r.relation_type IN (1,2) AND s.nsfw=0
@@ -96,6 +122,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async getRawCharacter(id: number): Promise<CCBRawCharacter> {
     this.assertOpen();
+    await this.ready;
     if (!positiveId(id)) throw new AppError("CCB_CHARACTER_NOT_FOUND", "本地角色资料不存在");
     const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
     if (!row) throw new AppError("CCB_CHARACTER_NOT_FOUND", "本地角色资料不存在");
@@ -133,6 +160,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async chooseRandomCharacter(settings: CCBSettings, random = Math.random): Promise<CCBCharacterView> {
     this.assertOpen();
+    await this.ready;
     const roll = (size: number) => Math.min(size - 1, Math.max(0, Math.floor(random() * size)));
     let subjectId: number;
     if (settings.useIndex) {
@@ -174,6 +202,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async importDirectory(indexId: number): Promise<CCBDirectoryResult> {
     this.assertOpen();
+    await this.ready;
     if (!positiveId(indexId)) throw new AppError("CCB_DIRECTORY_INVALID", "目录编号无效");
     const running = this.directoryImports.get(indexId);
     if (running) return structuredClone(await running);
@@ -196,14 +225,17 @@ export class CCBCharacterRepository implements CCBDataProvider {
 
   async resolveCharacterImage(id: number): Promise<string | undefined> {
     this.assertOpen();
+    await this.ready;
     if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id)) return undefined;
-    return this.enrichment.resolveCharacterImage(id);
+    const imageUrl = await this.enrichment.resolveCharacterImage(id);
+    if (this.search) await this.syncCharacterIndex(id);
+    return imageUrl;
   }
 
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await Promise.allSettled(this.directoryImports.values());
+    await Promise.allSettled([this.ready, ...this.directoryImports.values()]);
     await this.enrichment.close();
     this.db.close();
   }
@@ -211,6 +243,17 @@ export class CCBCharacterRepository implements CCBDataProvider {
   private toSummary(row: CharacterRow): CCBCharacterSummary {
     const supplement = this.enrichment.readCharacter(row.id);
     return { id: row.id, name: supplement.name ?? row.name, nameCn: supplement.nameCn ?? (row.name_cn || row.name), imageUrl: this.enrichment.readImage(row.id) };
+  }
+
+  private async syncCharacterIndex(id: number): Promise<void> {
+    const row = this.db.query("SELECT id,name,name_cn,aliases,comments,collects FROM characters WHERE id=?").get(id) as CharacterRow | null;
+    if (!row || !this.search) return;
+    const supplement = this.enrichment.readCharacter(id);
+    await this.search.updateCharacter({
+      id: row.id, name: supplement.name ?? row.name,
+      aliases: [...new Set([supplement.nameCn ?? row.name_cn, ...supplement.aliases ?? JSON.parse(row.aliases) as string[]].filter(Boolean))],
+      comment: row.comments, collect: row.collects, nsfw: false,
+    });
   }
 
   private assertOpen(): void {

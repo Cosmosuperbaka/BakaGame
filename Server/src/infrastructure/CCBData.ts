@@ -1,4 +1,5 @@
 import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
 export interface CCBRawAppearance {
@@ -45,6 +46,7 @@ export interface CCBDataOptions {
   imageBase?: string;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   now?: () => number;
+  meilisearch?: CCBMeilisearchOptions;
 }
 
-export type CCBDataInit = Omit<CCBDataOptions, "fetcher" | "now">;
+export type CCBDataInit = Omit<CCBDataOptions, "fetcher" | "now" | "meilisearch"> & { meilisearch?: Omit<CCBMeilisearchOptions, "client"> };
