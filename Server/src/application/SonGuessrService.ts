@@ -302,9 +302,23 @@ export const normalizedArtists = (value: string) =>
 /** 明确指向翻唱、改编或非原唱的标记（标题、专辑与标签通用）。 */
 const COVER_MARKER_PATTERN =
   /翻唱|翻錄|翻录|カバー|커버|\bcover(?:ed|s|ing)?\b|重唱|再唱|自翻|试唱|試唱|模仿|リミックス|カヴァー/iu;
-/** 非原唱演绎版本标记：伴奏、纯音乐、现场、不同歌手演唱等。 */
-const NON_ORIGINAL_VERSION_PATTERN =
-  /伴奏|純伴奏|纯伴奏|纯音乐|純音樂|off\s*vocal|インスト|karaoke|カラオケ|伴唱|和声伴奏|live|现场|現場|演唱会|演唱會|acoustic|不插电|不插電|demo|试听|試聽/iu;
+/** 没有人声的版本标记：伴奏、纯音乐、卡拉 OK —— 这类音轨根本无法当题面。 */
+const NO_VOCAL_VERSION_PATTERN =
+  /伴奏|純伴奏|纯伴奏|纯音乐|纯音楽|純音樂|純音楽|off\s*vocal|インスト|karaoke|カラオケ|伴唱|和声伴奏|ボーカルレス|\binstrumental\b/iu;
+/** 非原唱演绎版本标记：无人声版本 + 现场 / 不插电 / demo 等演绎形态。 */
+const NON_ORIGINAL_VERSION_PATTERN = new RegExp(
+  `${NO_VOCAL_VERSION_PATTERN.source}|live|现场|現場|演唱会|演唱會|acoustic|不插电|不插電|demo|试听|試聽`,
+  "iu",
+);
+/**
+ * 台词 / 广播剧音轨标记。这类「曲目」里没有人唱歌，放进题面等于放一段对白，
+ * 玩家根本无从猜起。实测事故：Bangumi 把《サイコパス2 第5巻 特典CD》与
+ * 《コードギアス…Sound Episode 1》挂成关联曲目，而网易云对应专辑里排在前面的
+ * 正是「ドラマ」「短編ドラマ…」这类台词轨，曲名门禁靠「专辑名 == 条目名」放行。
+ * 注意「ドラマチック / ドラマティック」（dramatic）是正常曲名，必须排除。
+ */
+const DRAMA_TRACK_PATTERN =
+  /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|\bdrama\s*(?:cd|part|track)\b|ミニドラマ|ボイスドラマ|短編ドラマ|台詞|セリフ/iu;
 /**
  * 器乐改编 / 二次演奏标记：管弦、交响、钢琴、八音盒等。它们与原唱原版
  * 完全不是同一次录音，即使曲名一模一样也必须排在原版之后。
@@ -585,13 +599,25 @@ const retryOnce = async <T>(task: () => Promise<T>): Promise<T> => {
 };
 
 /**
- * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱。
+ * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱 / 台词。
  * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
  */
 export const isUnplayableAlbumTrack = (title: string): boolean =>
   NON_ORIGINAL_VERSION_PATTERN.test(title)
   || COVER_MARKER_PATTERN.test(title)
-  || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title);
+  || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title)
+  || DRAMA_TRACK_PATTERN.test(title);
+
+/**
+ * 该曲名是否属于**根本没有歌声**的音轨（台词轨 / 伴奏 / 纯音乐 / 卡拉 OK）。
+ *
+ * 与 `isUnplayableAlbumTrack` 的区别：后者只在专辑路径做「选哪首」的粗筛，
+ * 且包含的现场 / 不插电 / demo / 器乐改编等标记只是**版本不同**，仍有人声、
+ * 仍可出题（所以 `scoreAnimeSongCandidate` 只降权不剔除）。这里只认
+ * 「放出来玩家无从猜起」的硬缺陷，必须在**所有路径**的验证阶段一律否决。
+ */
+export const isNonVocalTrack = (title: string): boolean =>
+  DRAMA_TRACK_PATTERN.test(title) || NO_VOCAL_VERSION_PATTERN.test(title);
 
 /**
  * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
@@ -2228,6 +2254,13 @@ export class SonGuessrService {
           continue;
         }
         if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
+        // 台词轨 / 伴奏 / 纯音乐一律否决，且**不占验证名额**：特典 CD 里它们常成批
+        // 排在前面，若让它们吃掉 ANIME_TRACK_DETAIL_ATTEMPTS，真正的歌连被验证的机会都没有。
+        // 宁可这部番出不了题，也不能放一段对白让玩家猜。
+        if (isNonVocalTrack(song.title)) {
+          attempts -= 1;
+          continue;
+        }
         const resolved = {
           song,
           track: { ...track, kind: this.refineTrackKind(track.kind, song) },

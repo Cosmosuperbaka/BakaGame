@@ -7,8 +7,10 @@ import {
   albumNameScore,
   buildAlbumQueries,
   createSongLyricClip,
+  isNonVocalTrack,
   isReleaseYearOffTarget,
   isSongTitleMatch,
+  isUnplayableAlbumTrack,
   resolveRecentSongWindow,
   SonGuessrService,
 } from "../src/application/SonGuessrService";
@@ -2989,6 +2991,109 @@ describe("SonGuessrService", () => {
     expect(lastEvent<{ message: string }>(client, "server.shutdown")?.message).toBe(
       SERVER_SHUTDOWN_MESSAGE,
     );
+  });
+});
+
+describe("SonGuessr 非歌音轨否决", () => {
+  // 实测事故：Bangumi 把整张特典 CD 挂成关联曲目，网易云对应专辑里排在前面的
+  // 是台词轨；曲名门禁靠「专辑名 == 条目名」放行，于是题目放出一段对白。
+  test("台词 / 广播剧音轨一律否决", () => {
+    expect(isNonVocalTrack("ドラマ")).toBe(true);
+    expect(isNonVocalTrack("短編ドラマ「戻らない夏の日」 STAGE 0.515 「招かれざる皇子」")).toBe(true);
+    expect(isNonVocalTrack("ボイスドラマ 第1話")).toBe(true);
+    expect(isNonVocalTrack("Sound Drama CD Vol.2")).toBe(true);
+    // 「ドラマチック / ドラマティック」是正常曲名，不能被误杀。
+    expect(isNonVocalTrack("ドラマチック・ナイト")).toBe(false);
+    expect(isNonVocalTrack("ドラマティックに恋したい")).toBe(false);
+    expect(isNonVocalTrack("君の知らない物語")).toBe(false);
+  });
+
+  test("无人声的伴奏 / 纯音乐 / 卡拉 OK 一律否决", () => {
+    expect(isNonVocalTrack("ふわふわ時間『StudioMix』(Instrumental)")).toBe(true);
+    expect(isNonVocalTrack("desire (off vocal)")).toBe(true);
+    expect(isNonVocalTrack("残酷な天使のテーゼ (カラオケ)")).toBe(true);
+    expect(isNonVocalTrack("純音楽 version")).toBe(true);
+  });
+
+  test("有人声的版本（现场 / 不插电 / 器乐改编）不在否决范围，交由排序降权", () => {
+    expect(isNonVocalTrack("God knows... (Live)")).toBe(false);
+    expect(isNonVocalTrack("secret base ~君がくれたもの~ (Acoustic ver.)")).toBe(false);
+    expect(isNonVocalTrack("交响组曲「君の名は。」")).toBe(false);
+  });
+
+  /** 单人房间自动出题，直接走番剧题库路径，观察最终选中的音频。 */
+  const animeSoloRound = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random: { nextInt: () => 0 } });
+    const solo = connection(service, "anime-nonvocal-solo");
+    await createRoom(service, solo, { roomId: "8889", name: "猜番单人", userName: "独狼", solo: true });
+    await execute(service, solo, {
+      id: "anime-nonvocal-settings",
+      type: "song.room.updateSettings",
+      roomId: "8889",
+      payload: { questionType: "anime" },
+    });
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "8889", payload: {} });
+    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+  };
+
+  /** Bangumi 把整张特典 CD 挂成关联曲目，CD 里第一条就是台词轨。 */
+  const bonusCdProvider = (results: SongDetails[]) => ({
+    getSubject: async () => ({
+      ...anime,
+      musicTracks: [{ title: "サイコパス2 第5巻 特典CD", kind: "theme" }],
+    }),
+    searchSubjects: async () => [anime],
+  } as unknown as BangumiDataProvider);
+
+  test("台词轨与正歌同池时，正歌胜出", async () => {
+    const drama = {
+      ...songs.answer,
+      id: "drama",
+      title: "ドラマ",
+      artist: "V.A.",
+      album: "サイコパス2 第5巻 特典CD",
+      audioUrl: "https://audio/drama.mp3",
+    };
+    const real = {
+      ...songs.answer,
+      id: "real",
+      title: "名前のない怪物",
+      artist: "EGOIST",
+      album: "サイコパス2 第5巻 特典CD",
+      audioUrl: "https://audio/real.mp3",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [drama, real],
+      getSong: async (id) => (id === "drama" ? drama : real),
+    };
+    const snapshot = await animeSoloRound(musicProvider, bonusCdProvider([drama, real]));
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/real.mp3");
+  });
+
+  test("池里只有台词轨时宁可出不了题，也不放一段对白", async () => {
+    const drama = {
+      ...songs.answer,
+      id: "drama-only",
+      title: "ドラマ",
+      artist: "V.A.",
+      album: "サイコパス2 第5巻 特典CD",
+      audioUrl: "https://audio/drama.mp3",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [drama],
+      getSong: async () => drama,
+    };
+    await expect(animeSoloRound(musicProvider, bonusCdProvider([drama]))).rejects.toThrow();
+  });
+
+  test("专辑路径的粗筛比全路径否决更严，两条否定互不冲突", () => {
+    expect(isUnplayableAlbumTrack("ふわふわ時間『StudioMix』(Instrumental)")).toBe(true);
+    expect(isUnplayableAlbumTrack("ドラマ")).toBe(true);
+    // 现场版在专辑路径被剔除（不是可出的原曲），但在全路径只降权、不出局。
+    expect(isUnplayableAlbumTrack("God knows... (Live)")).toBe(true);
+    expect(isNonVocalTrack("God knows... (Live)")).toBe(false);
   });
 });
 
