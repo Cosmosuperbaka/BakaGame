@@ -11,7 +11,7 @@ import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components
 import { cn } from "@/lib/Utils";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
+import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import type {
   AnimeAutoFilters,
   SongArtistFilter,
@@ -74,6 +74,7 @@ export function SongQuestionSettings({
   const popularityLabelId = useId();
   const rankingLabelId = useId();
   const songPopularityLabelId = useId();
+  const trackKindsLabelId = useId();
 
   const resolvePlaylist = async () => {
     if (resolvingPlaylist) return;
@@ -309,6 +310,58 @@ export function SongQuestionSettings({
                 options={POPULARITY_OPTIONS}
                 onValueChange={(value) => setAnimeFilters((f) => ({ ...f, songMinPopularity: toPopularityLevel(value) }))}
               />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p id={trackKindsLabelId} className="text-sm font-medium leading-none text-muted-foreground">歌曲类型筛选（多选）</p>
+                {!(animeFilters.trackKinds ? animeFilters.trackKinds.length === ALL_BANGUMI_TRACK_KINDS.length : true) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-2xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setAnimeFilters((f) => ({ ...f, trackKinds: [...ALL_BANGUMI_TRACK_KINDS] }))}
+                  >
+                    全选
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby={trackKindsLabelId}>
+                {ALL_BANGUMI_TRACK_KINDS.map((kind) => {
+                  const currentSelected = new Set(animeFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
+                  const selected = currentSelected.has(kind);
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setAnimeFilters((f) => {
+                          const next = new Set(f.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
+                          if (next.has(kind)) {
+                            next.delete(kind);
+                          } else {
+                            next.add(kind);
+                          }
+                          const list = Array.from(next);
+                          return {
+                            ...f,
+                            trackKinds: list.length > 0 ? list : [...ALL_BANGUMI_TRACK_KINDS],
+                          };
+                        });
+                      }}
+                      className={cn(
+                        "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                        selected
+                          ? "border-primary/40 bg-primary/10 font-medium text-primary shadow-2xs"
+                          : "border-border/60 bg-background text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                      )}
+                    >
+                      {BANGUMI_TRACK_KIND_LABELS[kind]}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
