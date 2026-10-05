@@ -56,8 +56,9 @@ type SearchItem<T> = { kind: "back"; key: string; back: SearchBack } | { kind: "
  * 面板随焦点进出：输入框（或右侧按钮）获得焦点且有内容可显示时展开，焦点离开、按 Esc 或点外面就收起，不设关闭按钮；
  * 再次聚焦时旧结果原样回来。点整行即选中，上下键移动高亮、回车选中，没有高亮时回车走 `onSubmit`。
  * 选中后面板不自己收起：调用处提交成功后清空结果，面板随之退场；提交失败时结果还在，可以换一个再选。
- * 面板走 Portal，所在区域滚动或裁切（游戏区、弹窗）都不会截断它；宽度跟输入框一致，窄屏上输入框被按钮挤窄时至少取 20rem
- * （不超出视口），由碰撞避让推回屏内；下方空间不够时翻到上方。
+ * 输入框窄于 14rem 时，右侧按钮整组换到下一行并均分整宽，不把输入框挤得只剩几个字。
+ * 面板走 Portal，所在区域滚动或裁切（游戏区、弹窗）都不会截断它；锚定整条搜索栏，宽度与之一致，按钮换行后面板也落在按钮之下、
+ * 不盖住它们。窄屏上至少取 20rem（不超出视口），由碰撞避让推回屏内；下方空间不够时翻到上方。
  */
 export function SearchCombobox<T>({
   value,
@@ -131,21 +132,22 @@ export function SearchCombobox<T>({
 
   return (
     <Popover.Root open={open} onOpenChange={(next) => { if (!next) setEngaged(false); }}>
-      <div
-        ref={rootRef}
-        className={cn("flex min-w-0 gap-2", className)}
-        onFocus={() => setEngaged(true)}
-        onBlur={(event) => {
-          const next = event.relatedTarget;
-          if (next instanceof Node && rootRef.current?.contains(next)) return;
-          setEngaged(false);
-        }}
-      >
-        <Popover.Anchor asChild>
+      <Popover.Anchor asChild>
+        <div
+          ref={rootRef}
+          className={cn("flex min-w-0 flex-wrap gap-2", className)}
+          onFocus={() => setEngaged(true)}
+          onBlur={(event) => {
+            const next = event.relatedTarget;
+            if (next instanceof Node && rootRef.current?.contains(next)) return;
+            setEngaged(false);
+          }}
+        >
           <div
             data-disabled={disabled || undefined}
             className={cn(
-              "field-frame flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md bg-background px-3",
+              // 输入框与按钮组的放大比悬殊：同一行时余宽几乎全归输入框；按钮组换行后独占一行，按钮再均分。
+              "field-frame flex h-10 min-w-0 grow-[999] basis-56 items-center gap-2 rounded-md bg-background px-3",
               disabled && "opacity-50",
             )}
           >
@@ -177,20 +179,20 @@ export function SearchCombobox<T>({
             />
             {busy ? <Spinner className="text-muted-foreground" /> : null}
           </div>
-        </Popover.Anchor>
-        {actions ? (
-          // 按下搜索按钮不让按钮抢焦点，焦点留在（或回到）输入框：光标不丢，面板也不会因为失焦先收起再展开。
-          <div
-            className="flex shrink-0 gap-2"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              inputRef.current?.focus();
-            }}
-          >
-            {actions}
-          </div>
-        ) : null}
-      </div>
+          {actions ? (
+            // 按下搜索按钮不让按钮抢焦点，焦点留在（或回到）输入框：光标不丢，面板也不会因为失焦先收起再展开。
+            <div
+              className="flex grow gap-2 [&>*]:grow"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                inputRef.current?.focus();
+              }}
+            >
+              {actions}
+            </div>
+          ) : null}
+        </div>
+      </Popover.Anchor>
       <AnimatePresence>
         {open ? (
           <Popover.Portal forceMount>
