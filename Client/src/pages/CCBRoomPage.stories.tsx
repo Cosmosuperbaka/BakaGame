@@ -29,12 +29,13 @@ function dropFocus() {
 /**
  * 反馈表的角色图片是懒加载，离视口过远时浏览器不会开始加载，截图脚本等待图片解码会一直挂起。
  * 逐张滚到可见处等它加载完，再把游戏区滚回顶部，截图仍是刚进入页面时的画面。
+ * 未渲染的图片（窄屏反馈表收起的头像）永远不会开始加载，直接跳过。
  */
 async function loadLazyImages(canvasElement: HTMLElement) {
   const main = canvasElement.querySelector("main");
   if (!main) return;
   for (const image of main.querySelectorAll("img")) {
-    if (image.complete) continue;
+    if (image.complete || !image.getClientRects().length) continue;
     image.scrollIntoView({ block: "center" });
     await waitFor(() => { if (!image.complete) throw new Error("图片尚未加载"); });
   }

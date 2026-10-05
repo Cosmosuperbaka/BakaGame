@@ -114,10 +114,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
       await expectViewportFits(guest);
       const feedback = guest.getByRole("region", { name: "猜测反馈" });
       await feedback.scrollIntoViewIfNeeded();
-      // 角色名独占组标题行，表头取两字（Design §238）后六列的最小内容宽度是 400px；容器宽 = 视口 − 428
-      // （两侧 px-3、307px 玩家栏与间距、游戏区边框、舞台 p-8），故 832 是零横滚的精确分界，824 起溢出 3px。
-      // 832 以下（含 768 的 md 双栏）横向滚动是这段宽度的既定形态：数值列横移，角色名贴住可视区。
-      if (viewport.width < 832) {
+      // 一次猜测一行（Design 数据表格一节）：去头像后最小内容宽度约 531px。1024 及更宽（1280 聊天栏刚常驻的一小段除外）
+      // 不横滚；900 及以下横向滚动是这段宽度的既定形态：角色列贴住左缘，数值与标签横移。
+      if (viewport.width <= 900) {
         await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
         await feedback.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
         await expect.poll(() => feedback.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);

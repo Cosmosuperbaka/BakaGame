@@ -83,7 +83,7 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
     {privateState.canGuess ? <CCBSearch allowSubjects={snapshot.settings.subjectSearch} bannedIds={privateState.bannedCharacterIds} onSelect={async (character) => Boolean(await run("ccb.game.guess", { characterId: character.id }))} /> : !privateState.answer && !waitingSync ? <p role="status" className="text-sm text-muted-foreground">本局已结束行动，等待结算</p> : null}
     {privateState.hints.length ? <div className="space-y-2 rounded-md bg-muted p-3">{privateState.hints.map((hint, index) => <p key={index} className="text-sm">提示 {index + 1}：{hint}</p>)}</div> : null}
     {privateState.imageHintAvailable ? <div className="space-y-3"><Button variant="outline" disabled={busy} onClick={async () => { const result = await run("ccb.game.imageHint", {}); if (result) setImage({ dataUrl: result.dataUrl, level: privateState.imageHintLevel }); }}><Image />{image ? "更新图片提示" : "查看图片提示"}</Button>{image ? <img src={image.dataUrl} alt={`第 ${image.level} 级图片提示`} className="max-h-48 max-w-full rounded-md object-contain" /> : null}</div> : null}
-    <CCBFeedbackTable guesses={privateState.guesses} />
+    <CCBFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
     <div className="flex justify-end gap-2"><CancelRound snapshot={snapshot} playerId={privateState.playerId} />{privateState.canSurrender ? <Button variant="outline" disabled={busy} onClick={(event) => { origin.capture(event); setSurrenderOpen(true); }}><Flag />放弃本局</Button> : null}</div>
     <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}><DialogContent><DialogHeader><DialogTitle>放弃本局</DialogTitle><DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setSurrenderOpen(false)}>继续猜测</Button><Button variant="destructive" loading={busy} onClick={async () => { if (await run("ccb.game.surrender", {})) setSurrenderOpen(false); }}>确认放弃</Button></DialogFooter></DialogContent></Dialog>
   </div>;
@@ -135,7 +135,7 @@ function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; 
   const { run, busy } = useCCBAction();
   return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} sealed />
     <CCBScoreTable scores={summary.scores} guesses={summary.guesses} />
-    <CCBFeedbackTable guesses={summary.guesses} />
+    <CCBFeedbackTable guesses={summary.guesses} showRound={snapshot.settings.syncMode} />
     {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
   </div>;
