@@ -2,8 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, waitFor, within } from "storybook/test";
 import CCBRoomPage from "./CCBRoomPage";
 import { presetCCB } from "@/stories/StorePresets";
+import { useCCBStore } from "@/stores/UseCCBStore";
 import {
-  CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbGuessingRoom,
+  CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbGuessingRoom,
   ccbOriginalRoom, ccbPreparingRoom, ccbSettledRoom, ccbSyncWaitingRoom, ccbWaitingGuestRoom, ccbWaitingHostRoom,
   presetSavedUsername, type CCBRoomScenario,
 } from "@/stories/fixtures/CCB";
@@ -94,6 +95,25 @@ export const AnsweringGuesser: Story = {
 export const GuessingPlayer: Story = {
   name: "猜测阶段 · 玩家",
   beforeEach: () => inRoom(ccbGuessingRoom("player")),
+};
+
+/** 搜索结果浮在反馈表之上；两个已猜过的角色在全局去重下标为「已被选择」。 */
+export const GuessingSearch: Story = {
+  name: "猜测阶段 · 搜索结果",
+  beforeEach: () => {
+    const scenario = ccbGuessingRoom("player");
+    inRoom({ ...scenario, privateState: { ...scenario.privateState, bannedCharacterIds: [CCB_CHARACTERS.nijika.id] } });
+    const { nijika, hitori, ryo, ikuyo, kikuri } = CCB_CHARACTERS;
+    useCCBStore.setState({
+      searchCharacters: async () => [hitori, nijika, ryo, ikuyo, kikuri].map(({ id, name, nameCn, imageUrl }) => ({ id, name, nameCn, imageUrl })),
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByRole("combobox", { name: "搜索角色" }), "结束乐队");
+    await userEvent.click(canvas.getByRole("button", { name: "搜角色" }));
+    await screen.findByRole("listbox", { name: "搜索角色结果" });
+  },
 };
 
 export const GuessingSpectator: Story = {

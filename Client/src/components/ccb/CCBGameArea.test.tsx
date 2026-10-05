@@ -152,7 +152,7 @@ describe("CCB 操作区", () => {
     snapshot.players[0] = { ...snapshot.players[0], status: "playing", syncCompleted: true };
     render(<CCBGameArea snapshot={snapshot} privateState={privateState()} />);
     expect(screen.getByText("本轮已完成，等待其他玩家")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "搜索角色" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "搜索角色" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查看图片提示" })).not.toBeInTheDocument();
   });
 

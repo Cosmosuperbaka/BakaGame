@@ -44,9 +44,10 @@ function watchQuality(page: Page) {
 
 async function chooseCharacter(page: Page, name: string) {
   const search = page.getByRole("region", { name: "角色搜索" });
-  await search.getByRole("textbox", { name: "搜索角色", exact: true }).fill(name);
-  await search.getByRole("button", { name: "搜索", exact: true }).click();
-  await search.getByRole("button", { name: new RegExp(name) }).first().click();
+  await search.getByRole("combobox", { name: "搜索角色", exact: true }).fill(name);
+  await search.getByRole("button", { name: "搜角色", exact: true }).click();
+  // 结果面板走 Portal，不在搜索区的 DOM 子树里。
+  await page.getByRole("listbox", { name: "搜索角色结果" }).getByRole("option", { name: new RegExp(name) }).first().click();
 }
 
 async function expectViewportFits(page: Page) {

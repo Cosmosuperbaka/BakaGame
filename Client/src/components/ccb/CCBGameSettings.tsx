@@ -10,7 +10,7 @@ import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { ccbPresets } from "./CCBPresets";
-import { CCBSearch } from "./CCBSearch";
+import { CCBSubjectSearch } from "./CCBSearch";
 
 const CATEGORIES = ["", "全部", "游戏", "书籍", "三次元", "TV", "Galgame", "WEB", "OVA", "剧场版", "动态漫画", "其他"];
 const SOURCES = ["", "原创", "漫画改", "游戏改", "小说改"];
@@ -135,8 +135,8 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
                 ))}
               </div>
             ) : null}
-            <CCBSearch subjectsOnly allowSubjects disabled={draft.addedSubjects.length >= MAX_ADDED_SUBJECTS}
-              onSelect={(subject) => change("addedSubjects", [...new Set([...draft.addedSubjects, subject.id])])} />
+            <CCBSubjectSearch addedIds={draft.addedSubjects} disabled={draft.addedSubjects.length >= MAX_ADDED_SUBJECTS}
+              onAdd={(subject) => change("addedSubjects", [...new Set([...draft.addedSubjects, subject.id])])} />
           </div>
         </div>
       </SettingsAccordion>
