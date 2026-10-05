@@ -1,17 +1,20 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn, userEvent, within } from "storybook/test";
+import { fn, screen, userEvent, within } from "storybook/test";
 import { STORY_EPOCH } from "@/stories/fixtures/Common";
 import {
   ANIME_ANSWER,
   ANIME_SEARCH_RESULTS,
+  ANIME_SONG_CANDIDATES,
   guesserPrivate,
   noPending,
+  pending,
   pendingOn,
   playingPlayers,
   playingSnapshot,
   SONG_ATTEMPTS,
   SONG_PEOPLE,
   SONG_ROOM_ATTEMPTS,
+  SONG_SEARCH_RESULTS,
   SONG_STAGE_FRAME,
   songAttempt,
   songLyricClip,
@@ -55,9 +58,6 @@ const meta = {
     audioPlaybackState: "idle",
     onPlayAudio: fn(),
     onRetryAudio: fn(),
-    openSearch: fn(),
-    searchMode: null,
-    closeSearch: fn(),
     onSelectSearchSong: fn(async () => {}),
     run: fn(async () => {}),
     isPending: noPending,
@@ -157,7 +157,7 @@ export const SubmittingAnime: Story = {
     privateState: songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }),
     me: submittingSnapshot().players.find((player) => player.id === peach.id),
     isHost: false,
-  },
+  },  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
 };
 
 export const RomanLyrics: Story = {
@@ -167,6 +167,7 @@ export const RomanLyrics: Story = {
 
 export const AttemptResults: Story = {
   name: "猜测记录 · 全部结果类型",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   render: () => (
     <div className="space-y-5">
       <AttemptList attempts={[...SONG_ROOM_ATTEMPTS, SONG_ATTEMPTS.meGaveUp]} title="全房猜测" showPlayerName />
@@ -177,24 +178,64 @@ export const AttemptResults: Story = {
 
 // ==================== 游戏区外壳 ====================
 
-/** 测试房间号：游戏区底部叠加测试控制器，同时展开内嵌搜索面板。 */
+/** 测试房间号：游戏区底部叠加测试控制器；猜番搜索结果浮在猜测记录之上，不把内容往下挤。 */
 export const GameAreaTestMode: Story = {
   name: "游戏区 · 测试房 · 猜番搜索",
+  tags: ["overlay"],
   args: {
     snapshot: animeSnapshot(),
-    searchMode: "guess",
+    privateState: guesserPrivate(DEADLINE, { visibleAttempts: [ANIME_ATTEMPTS.meWrong] }),
   },
   beforeEach: () => stubSongActions({ searchBangumi: () => Promise.resolve(ANIME_SEARCH_RESULTS) }),
   render: (args) => (
-    <div className="flex h-[52rem] w-[36rem] flex-col overflow-hidden rounded-md border bg-panel">
+    <div className="flex h-[52rem] w-[36rem] max-w-full flex-col overflow-hidden rounded-md border bg-panel">
       <SongGameArea {...args} snapshot={{ ...args.snapshot, roomId: ROOM_ID_TEST_MODE, testMode: true }} />
     </div>
   ),
   parameters: { bare: true },
   play: async ({ canvasElement }) => {
     await waitForLyrics(canvasElement);
-    const canvas = within(canvasElement);
-    await userEvent.type(canvas.getByPlaceholderText("输入番剧名称"), "夏空");
-    await canvas.findAllByRole("button", { name: "猜这部" });
+    await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索番剧" }), "夏空");
+    await screen.findByRole("listbox", { name: "搜索番剧结果" });
+  },
+};
+
+/** 猜歌搜索：结果浮在猜测记录之上；本回合猜错过的歌保留在列表里并标「已猜过」。 */
+export const SongSearchResults: Story = {
+  name: "猜歌搜索 · 结果",
+  tags: ["overlay"],
+  args: { privateState: guesserPrivate(DEADLINE, { visibleAttempts: [SONG_ATTEMPTS.meWrong] }) },
+  beforeEach: () => stubSongActions({ searchMusic: () => Promise.resolve(SONG_SEARCH_RESULTS) }),
+  play: async ({ canvasElement }) => {
+    await waitForLyrics(canvasElement);
+    await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索歌曲" }), "夏夜");
+    await screen.findByRole("listbox", { name: "搜索歌曲结果" });
+  },
+};
+
+export const SongSearchPending: Story = {
+  name: "猜歌搜索 · 查询中",
+  tags: ["overlay"],
+  beforeEach: () => stubSongActions({ searchMusic: () => pending() }),
+  play: async ({ canvasElement }) => {
+    await waitForLyrics(canvasElement);
+    await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索歌曲" }), "夏夜");
+    await screen.findByText("正在查询网易云音乐");
+  },
+};
+
+/** 出题选番：点番剧进入关联曲列表，顶上一行可更换番剧。 */
+export const SubmittingAnimeSongs: Story = {
+  name: "出题阶段 · 选番 · 关联曲",
+  tags: ["overlay"],
+  args: SubmittingAnime.args,
+  beforeEach: () => stubSongActions({
+    searchBangumi: () => Promise.resolve(ANIME_SEARCH_RESULTS),
+    resolveAnimeSongs: () => Promise.resolve(ANIME_SONG_CANDIDATES),
+  }),
+  play: async ({ canvasElement }) => {
+    await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索番剧" }), "夏空");
+    await userEvent.click(await screen.findByRole("option", { name: new RegExp(ANIME_SEARCH_RESULTS[0]!.nameCn) }));
+    await screen.findByRole("option", { name: /更换番剧/ });
   },
 };

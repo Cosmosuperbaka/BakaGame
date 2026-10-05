@@ -1,6 +1,7 @@
 import { waitFor } from "storybook/test";
 import type {
   BangumiMusicTrack,
+  BangumiSongCandidate,
   BangumiSubjectSearchResult,
   ChatMessage,
   SongGuessAttempt,
@@ -31,7 +32,7 @@ export const SONG_ROOM_ROUTER = { route: `/songuessr/room/${SONG_ROOM_ID}`, path
 export const SONG_SOLO_ROUTER = { route: "/songuessr/solo", path: "/songuessr/solo" };
 
 /** 与房间页游戏区一致的面板外壳；宽度取桌面三栏布局下游戏区的实际宽度。 */
-export const SONG_STAGE_FRAME = "w-[36rem] overflow-hidden rounded-md border bg-panel p-6 md:p-8";
+export const SONG_STAGE_FRAME = "w-[36rem] max-w-full overflow-hidden rounded-md border bg-panel p-6 md:p-8";
 /** 与房间页左侧玩家栏一致的面板外壳。 */
 export const SONG_PLAYER_PANEL = "h-[36rem] w-[16rem] overflow-hidden rounded-md border bg-panel";
 
@@ -86,7 +87,7 @@ export function presetSongRoom(snapshot: SonGuessrRoomSnapshot, privateState: So
   presetSonGuessr({ connected: true, roomId: snapshot.roomId, sessionToken: privateState.sessionToken, snapshot, privateState });
 }
 
-type SongStoreActions = Pick<SonGuessrStore, "searchMusic" | "searchBangumi" | "sendCommand" | "joinRoom">;
+type SongStoreActions = Pick<SonGuessrStore, "searchMusic" | "searchBangumi" | "resolveAnimeSongs" | "sendCommand" | "joinRoom">;
 
 /** 替换 Store 上的网络动作；预览层在下一个故事前会整体重置 Store，替换不会外溢。 */
 export function stubSongActions(actions: Partial<SongStoreActions>) {
@@ -299,6 +300,13 @@ export const ANIME_SEARCH_RESULTS: BangumiSubjectSearchResult[] = [
 ];
 
 export const ANIME_TRACK: BangumiMusicTrack = { title: "夏空メロディー", artist: "コトノハ", kind: "opening" };
+
+/** 出题时选中《夏空旋律》后匹配到的关联曲：OP、ED 与一首插曲。 */
+export const ANIME_SONG_CANDIDATES: BangumiSongCandidate[] = [
+  { track: ANIME_TRACK, song: { id: "song-summer-sky-op", title: "夏空メロディー", artist: "コトノハ", album: "TVアニメ「夏空メロディー」オープニングテーマ", pictureUrl: cover("空", 195) } },
+  { track: { title: "またね、ひこうき雲", artist: "葉月ゆら", kind: "ending" }, song: { id: "song-summer-sky-ed", title: "またね、ひこうき雲", artist: "葉月ゆら", album: "夏空メロディー ED", pictureUrl: cover("雲", 30) } },
+  { track: { title: "放課後サイダー", artist: "コトノハ", kind: "insert" }, song: { id: "song-summer-sky-in", title: "放課後サイダー", artist: "コトノハ", requiresVip: true } },
+];
 
 export const ANIME_SONG_DETAILS: RevealedSong = {
   id: "song-summer-sky-op", title: "夏空メロディー", artist: "コトノハ", album: "TVアニメ「夏空メロディー」オープニングテーマ",

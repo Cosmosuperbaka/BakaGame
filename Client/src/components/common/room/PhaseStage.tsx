@@ -13,7 +13,6 @@ export function PhaseStage({
   phaseKey,
   children,
   before,
-  after,
   overlays,
   reserveBottom = false,
   onPhaseSettled,
@@ -23,8 +22,6 @@ export function PhaseStage({
   children: ReactNode;
   /** 阶段内容之上、不随阶段切换的区块（如倒计时控制） */
   before?: ReactNode;
-  /** 阶段内容之后、不随阶段切换的区块（如搜索弹窗） */
-  after?: ReactNode;
   /** 滚动区之外、游戏区内的浮层（测试控制器、揭词背板等） */
   overlays?: ReactNode;
   /** 底部固定控件存在时为滚动内容留出空间 */
@@ -56,7 +53,6 @@ export function PhaseStage({
               {children}
             </motion.div>
           </AnimatePresence>
-          {after}
         </div>
       </ScrollArea>
       {overlays}

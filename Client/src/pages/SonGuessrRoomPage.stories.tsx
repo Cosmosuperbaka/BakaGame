@@ -165,9 +165,8 @@ export const SubmittingSearch: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "选择歌曲" }));
-    await userEvent.type(canvas.getByPlaceholderText("输入歌名、歌手或专辑"), "夜行ラジオ");
-    await canvas.findAllByRole("button", { name: "设为答案" });
+    await userEvent.type(canvas.getByRole("combobox", { name: "搜索歌曲" }), "夜行ラジオ");
+    await screen.findByRole("listbox", { name: "搜索歌曲结果" });
   },
 };
 

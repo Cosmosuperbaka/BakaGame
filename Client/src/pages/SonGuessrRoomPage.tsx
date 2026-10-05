@@ -91,7 +91,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     sendCommand,
   });
 
-  const [searchMode, setSearchMode] = useState<"submit" | "guess" | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
 
   const handleSendChatMessage = useCallback(
@@ -194,9 +193,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             audioPlaybackState={audioPlaybackState}
             onPlayAudio={() => void playAudio()}
             onRetryAudio={retryAudio}
-            openSearch={setSearchMode}
-            searchMode={searchMode}
-            closeSearch={() => setSearchMode(null)}
             onSelectSearchSong={async (songId, mode, extraId) => {
               if (snapshot.settings.questionType === "anime") {
                 const payload: { subjectId: string; songId?: string } = { subjectId: songId };

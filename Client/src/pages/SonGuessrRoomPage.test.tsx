@@ -272,7 +272,8 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     });
 
     expect(screen.getByRole("heading", { name: "轮到你出题" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择歌曲" })).toBeInTheDocument();
+    // 出题人直接看到搜索框，不再先点一个按钮展开。
+    expect(screen.getByRole("combobox", { name: "搜索歌曲" })).toBeEnabled();
 
     // 2. 流转至猜歌阶段 (playing)
     act(() => {
@@ -300,7 +301,9 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     expect(screen.getByRole("heading", { name: "听歌猜曲" })).toBeInTheDocument();
     expect(screen.getByTestId("baka-song-lyric-container")).toHaveTextContent("夜空中最亮的星");
-    expect(screen.getByRole("button", { name: /提交猜测（剩余 4 次）/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "提交猜测" })).toHaveTextContent("剩余 4 次猜测");
+    // 搜索栏独立于歌词卡，放在歌词容器之外。
+    expect(screen.getByTestId("baka-song-lyric-container")).not.toContainElement(screen.getByRole("combobox", { name: "搜索歌曲" }));
 
     // 3. 流转至答案揭晓结算阶段 (roundResult)
     act(() => {
@@ -347,7 +350,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByRole("button", { name: "返回等待阶段" })).toBeInTheDocument();
   });
 
-  it("猜歌互动：打开猜测弹窗并展示反馈结果与得分更新", () => {
+  it("猜歌互动：猜测栏常驻并展示反馈结果与得分更新", () => {
     renderRoomPage();
 
     act(() => {
@@ -374,11 +377,10 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
       });
     });
 
-    const guessButton = screen.getByRole("button", { name: /提交猜测（剩余 3 次）/ });
-    fireEvent.click(guessButton);
-
-    // 弹出搜歌/猜歌对话框
-    expect(screen.getByText("提交你的猜测")).toBeInTheDocument();
+    // 猜测栏常驻在歌词卡下方：搜索框可用，次数与投降按钮同在一栏。
+    const guessBar = screen.getByRole("region", { name: "提交猜测" });
+    expect(guessBar).toHaveTextContent("剩余 3 次猜测");
+    expect(within(guessBar).getByRole("combobox", { name: "搜索歌曲" })).toBeEnabled();
 
     // 玩家猜对后服务端推送更新快照与私有状态
     act(() => {

@@ -21,13 +21,11 @@ import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
-import { BangumiSearchDialog } from "@/components/songuessr/BangumiSearchDialog";
-import { SongSearchDialog } from "@/components/songuessr/SongSearchDialog";
+import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import { AnimeAutoFilterSummary, SongAutoFilterSummary } from "@/components/songuessr/settings/SongSettingsPanels";
 import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
 import type {
-  BangumiSubjectSearchResult,
   SongGuessAttempt,
   SongGuessDirection,
   SonGuessrPlayerView,
@@ -117,9 +115,6 @@ export interface SongGameAreaProps {
   audioPlaybackState: "idle" | "playing" | "completed";
   onPlayAudio: () => void;
   onRetryAudio: () => void;
-  openSearch: (mode: "submit" | "guess") => void;
-  searchMode: "submit" | "guess" | null;
-  closeSearch: () => void;
   onSelectSearchSong: (songId: string, mode: "submit" | "guess", extraId?: string) => Promise<void>;
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
@@ -137,12 +132,11 @@ export function GameStage(props: SongGameAreaProps) {
     privateState,
     me,
     isHost,
-    guessDeadlineAt,
     audioStatus,
     audioPlaybackState,
     onPlayAudio,
     onRetryAudio,
-    openSearch,
+    onSelectSearchSong,
     run,
     isPending,
     audioRef,
@@ -203,11 +197,20 @@ export function GameStage(props: SongGameAreaProps) {
         {privateState.canSubmitSong ? (
           <>
             <p className="text-sm text-muted-foreground">
-              {snapshot.settings.questionType === "anime" ? "搜索一部有主题曲的番剧。" : "搜索一首可播放的网易云音乐歌曲。"}
+              {snapshot.settings.questionType === "anime"
+                ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
+                : "搜索一首可播放的网易云音乐歌曲，点一下即设为答案。"}
+              歌曲信息只会在回合结束后公开。
             </p>
-            <Button size="lg" className="min-w-[120px] gap-2" onClick={() => openSearch("submit")}>
-            {snapshot.settings.questionType === "anime" ? <Film className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}选择{snapshot.settings.questionType === "anime" ? "番剧" : "歌曲"}
-            </Button>
+            {snapshot.settings.questionType === "anime" ? (
+              <AnimeSearch
+                mode="submit"
+                className="w-full"
+                onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
+              />
+            ) : (
+              <SongSearch mode="submit" className="w-full" onSelect={(song) => onSelectSearchSong(song.id, "submit")} />
+            )}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -232,32 +235,27 @@ export function GameStage(props: SongGameAreaProps) {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
             </h3>
-            <div className="flex items-center gap-2">
-              {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
-                <SongGuessCountdown deadlineAt={guessDeadlineAt} />
-              ) : null}
-              {audioStatus === "loading" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">
-                  <Spinner className="text-primary" />
-                </Button>
-              ) : audioStatus === "error" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onRetryAudio} aria-label="重新加载音频">
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              ) : audioPlaybackState === "playing" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频播放中">
-                  <Spinner className="text-primary" />
-                </Button>
-              ) : audioPlaybackState === "completed" ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="播放音频">
-                  <Play className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
+            {audioStatus === "loading" ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频加载中">
+                <Spinner className="text-primary" />
+              </Button>
+            ) : audioStatus === "error" ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onRetryAudio} aria-label="重新加载音频">
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            ) : audioPlaybackState === "playing" ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="音频播放中">
+                <Spinner className="text-primary" />
+              </Button>
+            ) : audioPlaybackState === "completed" ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="播放音频">
+                <Play className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           {snapshot.settings.questionMode === "automatic" ? (
             snapshot.settings.questionType === "anime"
@@ -283,49 +281,27 @@ export function GameStage(props: SongGameAreaProps) {
               本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
             </div>
           ) : null}
-          {me?.membership === "spectator" ? (
-            <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>
-          ) : privateState.canGuess || privateState.canGiveUp ? (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {privateState.canGuess ? (
-                <Button className="flex-1 gap-2" onClick={() => openSearch("guess")}>
-                  <Play className="h-4 w-4" />提交{snapshot.settings.questionType === "anime" ? "番剧猜测" : "猜测"}（剩余 {privateState.remainingGuesses} 次）
-                </Button>
-              ) : (
-                <p className="flex-1 py-2 text-center text-sm text-muted-foreground">
-                  音频准备中，请稍候...
-                </p>
-              )}
-              {privateState.canGiveUp ? (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={isPending?.("song.game.giveUp")}
-                  loading={isPending?.("song.game.giveUp")}
-                  onClick={() => void run("song.game.giveUp")}
-                >
-                  {isPending?.("song.game.giveUp") ? (
-                    "正在放弃..."
-                  ) : (
-                    <>
-                      <Flag className="h-4 w-4" />投降
-                    </>
-                  )}
-                </Button>
-              ) : null}
-            </div>
-          ) : hasGivenUp ? (
-            <p className="text-center text-sm text-muted-foreground">
-              {snapshot.solo ? "你已放弃本回合" : "你已放弃本回合，等待其他玩家"}
-            </p>
-          ) : !privateState.isSubmitter ? (
-            <p className="text-center text-sm text-muted-foreground">
-              {privateState.remainingGuesses > 0 && me?.roundStatus !== "finished" && me?.roundStatus !== "correct"
-                ? "音频准备中，请稍候..."
-                : "本轮操作已完成"}
-            </p>
-          ) : null}
         </section>
+        {me?.membership === "spectator" ? (
+          <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>
+        ) : privateState.canGuess || privateState.canGiveUp ? (
+          <GuessBar
+            {...props}
+            guessedIds={privateState.visibleAttempts
+              .filter((attempt) => attempt.playerId === privateState.playerId)
+              .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? [])}
+          />
+        ) : hasGivenUp ? (
+          <p className="text-center text-sm text-muted-foreground">
+            {snapshot.solo ? "你已放弃本回合" : "你已放弃本回合，等待其他玩家"}
+          </p>
+        ) : !privateState.isSubmitter ? (
+          <p className="text-center text-sm text-muted-foreground">
+            {privateState.remainingGuesses > 0 && me?.roundStatus !== "finished" && me?.roundStatus !== "correct"
+              ? "音频准备中，请稍候..."
+              : "本轮操作已完成"}
+          </p>
+        ) : null}
         <AttemptList
           attempts={privateState.visibleAttempts}
           title={canObserveAllAttempts ? "全房猜测" : "我的猜测"}
@@ -351,34 +327,54 @@ export function GameStage(props: SongGameAreaProps) {
   return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
 }
 
-export function SongGameArea(props: SongGameAreaProps) {
-  const search =
-    props.searchMode && props.snapshot.settings.questionType === "anime" ? (
-      <BangumiSearchDialog
-        open
-        onOpenChange={(open) => { if (!open) props.closeSearch(); }}
-        title={props.searchMode === "submit" ? "选择本回合番剧" : "提交你的番剧猜测"}
-        description="番剧信息只会在回合结束后公开。"
-        actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这部"}
-        mode={props.searchMode}
-        onSelect={(subject: BangumiSubjectSearchResult, songId?: string) => props.onSelectSearchSong(subject.id, props.searchMode!, songId)}
-      />
-    ) : props.searchMode ? (
-      <SongSearchDialog
-        open
-        onOpenChange={(open) => { if (!open) props.closeSearch(); }}
-        title={props.searchMode === "submit" ? "选择本回合答案" : "提交你的猜测"}
-        description={props.searchMode === "submit" ? "歌曲信息只会在回合结束后公开。" : "每次错误猜测会提供年代、热度、语种与标签反馈。"}
-        actionLabel={props.searchMode === "submit" ? "设为答案" : "猜这首"}
-        onSelect={(song) => props.onSelectSearchSong(song.id, props.searchMode!)}
-      />
-    ) : null;
+/**
+ * 猜测栏：搜索框与投降按钮独立成行，放在歌词卡之下，不和歌词挤在同一块里。
+ * 上方一行是剩余次数与限时；音频还没就绪时搜索框禁用，投降仍可用。
+ */
+function GuessBar({ snapshot, privateState, guessDeadlineAt, onSelectSearchSong, run, isPending, guessedIds }: SongGameAreaProps & { guessedIds: string[] }) {
+  const givingUp = isPending?.("song.game.giveUp") ?? false;
+  const anime = snapshot.settings.questionType === "anime";
+  return (
+    <section aria-label="提交猜测" className="space-y-2">
+      <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{privateState.canGuess ? `剩余 ${privateState.remainingGuesses} 次猜测` : "音频准备中，请稍候..."}</span>
+        {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
+          <SongGuessCountdown deadlineAt={guessDeadlineAt} />
+        ) : null}
+      </div>
+      <div className="flex gap-2">
+        {anime ? (
+          <AnimeSearch
+            mode="guess"
+            className="flex-1"
+            disabled={!privateState.canGuess}
+            guessedIds={guessedIds}
+            onSelect={(subject) => onSelectSearchSong(subject.id, "guess")}
+          />
+        ) : (
+          <SongSearch
+            mode="guess"
+            className="flex-1"
+            disabled={!privateState.canGuess}
+            guessedIds={guessedIds}
+            onSelect={(song) => onSelectSearchSong(song.id, "guess")}
+          />
+        )}
+        {privateState.canGiveUp ? (
+          <Button variant="outline" className="h-10 shrink-0" loading={givingUp} onClick={() => void run("song.game.giveUp")}>
+            {givingUp ? "正在放弃..." : <><Flag />投降</>}
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
 
+export function SongGameArea(props: SongGameAreaProps) {
   return (
     <PhaseStage
       phaseKey={props.snapshot.phase}
       reserveBottom={props.snapshot.testMode}
-      after={search}
       overlays={props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} /> : null}
     >
       <GameStage {...props} />
