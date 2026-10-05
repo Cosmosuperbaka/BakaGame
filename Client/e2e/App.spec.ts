@@ -680,7 +680,8 @@ test("大厅卡片在亮暗移动桌面均不透光、人数等宽对齐且不�
       await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
       await card.hover();
       await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
-      await expect(card).toHaveText("长房间名称与人数排版浏览器验收".repeat(3) + "房间号: 8629游戏中可观战2玩家13旁观");
+      // 猜歌大厅在房名后标注题型（未带 questionType 的房间按「听歌识曲」）。
+      await expect(card).toHaveText("长房间名称与人数排版浏览器验收".repeat(3) + "听歌识曲房间号: 8629游戏中可观战2玩家13旁观");
     }
   }
   // 故意破坏实际渲染，验证同一个检查能检出透明背景与溢出；不以类名存在作为通过条件。
