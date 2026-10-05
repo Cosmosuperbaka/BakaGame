@@ -201,7 +201,7 @@
 | `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲 |
 | `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
 | `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片 |
-| `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽）自下顶上；拖动中连续刷新（音量百分比）起点更贴近终值 |
+| `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽）自下顶上；拖动中连续刷新（音量百分比）起点更贴近终值；步进器数值按增减方向取 `y` 的正负，新值顺着方向顶上来 |
 | `toastItem` / `bannerRise` / `dropIn` | 提示自右缘推入、横幅自底部升起、状态条自上方落下 |
 | `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
 | `systemNotice` | 聊天系统提示从中线纵向展开 |

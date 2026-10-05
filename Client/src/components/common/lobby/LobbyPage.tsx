@@ -99,7 +99,7 @@ export function LobbyPage({
               value={userName}
               onChange={(event) => onUserNameChange(event.target.value)}
               placeholder="输入用户名"
-              className="h-8 min-w-0 flex-1 border-border/70 bg-card shadow-2xs sm:w-36 sm:flex-none"
+              className="h-8 min-w-0 flex-1 bg-card sm:w-36 sm:flex-none"
               maxLength={nameMaxLength}
             />
             <Button size="sm" onClick={onCreate} disabled={disabled} className="shrink-0 gap-1.5 text-sm shadow-2xs">

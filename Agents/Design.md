@@ -87,7 +87,7 @@
 | 页面底 | `bg-background` | 页面底色；实色块或状态浅底上的内嵌小块（票数、身份标签、票型明细行、封面与图片占位、歌词框）；自成一段的流内区块（搜索分区、主持人限时栏）；聊天输入托盘 |
 | 面板 | `bg-panel` | 三块主面板；面板内的区内遮罩统一 `bg-panel/90 backdrop-blur-sm`（揭词背板、天亮提示） |
 | 实色块 | `bg-muted`（无描边）、`bg-card` | `bg-muted` 承载面板内的主要内容块（阶段分区、结算表、答案卡、提示、投票选项）与页面上的计数角标；`bg-card` 是页面上的卡片（大厅房间卡片及其骨架、大厅输入框） |
-| 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、步进输入框、身份分配轨道、搜索结果列表）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章 |
+| 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、身份分配轨道、搜索结果列表）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章 |
 | 浮层 | `floating-surface`、`bg-popover`、`bg-card/95` | 就近浮层、弹窗主体、全局浮动提醒，见 §3；状态提示 `Toast` 例外，外层取不透明的 `bg-background`，见 §3.1 |
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。以 `divide-background` 或 `border-background` 分行的表格与折叠标题，悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
@@ -141,11 +141,11 @@
 - 关闭弹窗、覆盖面板与内嵌面板统一用 `CloseButton`：ghost 图标钮、`text-muted-foreground`，默认可访问名「关闭」，能说得更具体时用 `aria-label` 改写（如「关闭搜索」）。需要 Radix 的关闭语义时包在 `Close asChild` 里；业务组件不再另拼 `X` 图标按钮。
 - 加载指示统一用 `Spinner`，尺寸与颜色由调用处的 `size-*`、`text-*` 给出。它对读屏隐藏，进行中的含义由外层 `role="status"`、按钮的 `aria-busy` 或并排文字表达；按钮的提交态优先用 `Button` 的 `loading`。不手写 `animate-spin` 或边框圆环，动效约束见 [Animation](Animation.md)。
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
-- 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
+- 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。可输入区域（`Input`、`SelectTrigger`、`SettingStepper`、搜索框）的外框统一用 `index.css` 的 `field-frame`：`bg-background` 配 `shadow-2xs`，悬停只加深描边，聚焦或展开时描边转主色并向外晕开 3px 浅光；外框可以是包着输入框与按钮的容器，经 `:has` 命中内部聚焦。调用处只改高度、内边距与底色（大厅取 `bg-card`），不再叠加描边色、阴影或过渡。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。挂在名称或单元格旁的微型标记用 `size="xs"`（11px，与 `PlayerStatusPill` 同级）：尚未上线的入口用 `upcoming`，受限的条目（会员专享）用 `restricted`。调用处不覆写底色、描边、字重、字号或文字色，字号只由 `size` 给出，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。谁是卧底的身份不走 `Badge`：玩家栏、出题人的中盘预览与结算表一律用 `RoleBadge`（§7.3）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。业务里的下拉选择统一用 `common/room/SettingFields` 的 `SettingSelect`：标签可见，并通过 `htmlFor` 与触发器关联，不只写 `aria-label`；没有可选项时禁用，并用占位项在框内说明原因，不留空白框。两三个互斥且需始终可见的选项用 `SegmentedControl`；工具条等密集区域取 `size="sm"`（与 `Button size="sm"` 同高），不手拼按钮组模拟分段，选中态也不用主色实底按钮表达（四档的热度筛选同样走分段）。旁边已有可见标签时，标签写成带 `id` 的文字并经 `aria-labelledby` 命名单选组，不另写一份 `aria-label`；`Label` 只用于有 `htmlFor` 目标的单个控件，不给控件组当标题。分段的值是字符串，数值选项回写时按档位查回原值，不直接 `Number()` 把任意数字放进设置。
-- 有上下限的整数设置用 `SettingStepper`：加减按钮立即生效，手动输入只在失焦或回车时夹到范围内再提交。单位经 `unit` 以「（秒）」的形式接在标签后，并计入输入框的可访问名；不接在按钮组外，按钮组各行等宽，同一面板里的加减按钮才能上下对齐。行内允许折行：手机上标签与按钮组放不下时，按钮组整组折到标签下方靠右（`flex-wrap` 加 `ml-auto`），不让 `min-w-0` 的标签列被挤成逐字断行。
+- 有上下限的整数设置用 `SettingStepper`：减键、数值、加键收在同一个 `field-frame` 外框里（`w-30`），加减键是外框内的半格，悬停铺满半格、按下只让图标下沉；加减按钮与输入框内的上下方向键立即生效，手动输入只在失焦或回车时夹到范围内再提交，数值变化时新值顺着增减方向轻轻顶上来（`readoutTick`）。单位经 `unit` 以「（秒）」的形式接在标签后，并计入输入框的可访问名；不接在按钮组外，按钮组各行等宽，同一面板里的加减按钮才能上下对齐。行内允许折行：手机上标签与按钮组放不下时，按钮组整组折到标签下方靠右（`flex-wrap` 加 `ml-auto`），不让 `min-w-0` 的标签列被挤成逐字断行。
 - 房间名称、房间密码这类单行文本设置用 `SettingTextField`：标签在上并以 `htmlFor` 命名输入框，二者以 `grid gap-1.5` 排布，占位文案必填。业务组件不再手写 `useId` 加 `Label` 加 `Input` 的组合。私密房间的密码框按 `hasPassword` 给占位文案：已有密码时提示留空保留当前密码，还没有时提示设置密码；私密房间必须有密码，此时留空不会保存，占位文案不能暗示留空也行。三个游戏的等待页措辞一致：标签「房间密码」，占位「留空则保留当前密码」/「设置房间密码」；进房输入密码的弹窗是另一类任务，占位「请输入密码」。没有密码机制的房间（CCB 原版房）不复用「私密房间」：开关改称「不在大厅显示」，开启即私密，说明常驻并经 `aria-describedby` 关联，不出现密码框；建房弹窗用 `privacy="unlisted"` 切换这一含义，换服务器时开关回到关闭。服务器不允许关的选项（原版的允许旁观）开关显示为开并禁用，显示值与提交值一致。
 - 开关设置用 `SettingSwitchRow`（标签、可选说明与右侧开关成一行），等待页的整组折叠设置用 `SettingsAccordion`，非房主看到的只读摘要用 `SettingsChips`。前两者的 `icon` 只收 `LucideIcon` 组件，尺寸与弱化色在组件内统一（折叠标题 `h-4 w-4`、开关行 `h-3.5 w-3.5`，均为 `text-muted-foreground`）；调用处不传预先写好样式的图标元素。三个游戏同名的折叠组用同一图标：「猜测设置」`Search`、「房间设置」`Settings`。房间设置的私密与旁观开关带图标：私密开关随状态取 `Lock` / `Globe`（原版 CCB 的「不在大厅显示」开启时取 `EyeOff`，它没有密码，不用锁），「允许旁观」取 `Users`。
 - 行内折叠（答案卡的角色简介、反馈表的游戏专属标签）用 `ui/Collapsible`，不写原生 `<details>`。标题字号跟随所在区域的正文：默认 `text-sm`，text-xs 的密集区域取 `size="sm"`，箭头随之收小，折叠标题不比周围内容更醒目。收起时内容卸载，`aria-controls` 只在展开时指向内容区。
@@ -224,7 +224,7 @@
 ## 8. 交互状态
 
 - 可点击元素有可见的悬停、键盘聚焦、禁用或进行中状态；按压与过渡遵循 [Animation](Animation.md)。
-- 键盘聚焦指示全站只有一种：`index.css` 基础层对可交互元素（链接、按钮、表单控件、`role` 为按钮/标签/开关/滑块/选项等、`tabindex` 非负的元素）的 `:focus-visible` 画 2px `--ring` 实线 outline，贴边绘制；视觉隐藏的原生单选由外层 `label` 承担。用 outline 不用 `ring` 阴影，高对比度模式下仍可见。组件不再写 `focus-visible:ring-*` 或 `outline-none`，只按需声明偏移：圆形控件（开关、滑块）用 `focus-visible:outline-offset-2` 外移；贴着滚动区或裁切容器边缘的整行（玩家行、浮层动作、横向滚动的标签栏）用 `focus-visible:-outline-offset-2` 内收。以背景高亮表达焦点的列表项（`SelectItem`）保留 `outline-none`。
+- 键盘聚焦指示全站只有一种：`index.css` 基础层对可交互元素（链接、按钮、表单控件、`role` 为按钮/标签/开关/滑块/选项等、`tabindex` 非负的元素）的 `:focus-visible` 画 2px `--ring` 实线 outline，贴边绘制；视觉隐藏的原生单选由外层 `label` 承担。用 outline 不用 `ring` 阴影，高对比度模式下仍可见。组件不再写 `focus-visible:ring-*` 或 `outline-none`，只按需声明偏移：圆形控件（开关、滑块）用 `focus-visible:outline-offset-2` 外移；贴着滚动区或裁切容器边缘的整行（玩家行、浮层动作、横向滚动的标签栏）用 `focus-visible:-outline-offset-2` 内收。以背景高亮表达焦点的列表项（`SelectItem`）保留 `outline-none`。`field-frame` 外框是第二种合法形态：聚焦由主色描边加浅色晕光表达，outline 置为透明，只在强制色彩模式下显形。
 - 禁用态：原生表单控件用 `disabled:` 变体；Radix 以 `data-disabled` 标记禁用的原语（`Slider`）不触发 `:disabled`，改写 `data-[disabled]:` 并放在根节点上，让整条控件一起变淡。控件旁的文字标签不会跟着变淡：设置字段（`SettingSwitchRow`、`SettingStepper`、`SettingSelect`）禁用时由组件把标签与图标一并降到 `opacity-50`，与控件同档；字段说明保持原色，它往往就是禁用的原因（如「8 人开启」），并经 `aria-describedby` 挂到控件上，读屏停在控件上就能听到。
 - 异步操作防重复提交，并用按钮状态、加载指示或 Toast 反馈。
 - 确认、投票、夜间行动等结果由服务端状态驱动，不仅依赖本地临时样式。

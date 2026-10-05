@@ -264,6 +264,39 @@
   @apply rounded-md border bg-background/95 backdrop-blur-md;
 }
 
+/**
+ * 可输入区域的外框：输入框、下拉触发器、步进器与搜索框共用，见 Design §6。
+ * 悬停只加深描边；聚焦或展开时描边换成主色，并向外晕开一圈浅光，两层都随令牌缓动，不硬切。
+ * 外框可以是输入框本身，也可以是包着输入框与按钮的容器（`:has` 命中内部聚焦）；容器内的输入框不再画自己的聚焦环。
+ * 透明 outline 只在强制色彩模式下显形，替代全局聚焦环，高对比度下仍能看到焦点。
+ */
+@utility field-frame {
+  --field-glow: 0 0 0 0 transparent;
+  border-width: 1px;
+  border-color: var(--color-input);
+  box-shadow: var(--shadow-2xs), var(--field-glow);
+  transition-property: border-color, box-shadow, background-color, color;
+  transition-duration: var(--motion-duration-base);
+  transition-timing-function: var(--motion-ease-out);
+  &:hover:not(:disabled, [data-disabled]) {
+    border-color: color-mix(in oklab, var(--color-foreground) 22%, var(--color-input));
+  }
+  &:is(:focus-visible, [data-state="open"], :has(:is(input, textarea):focus-visible)) {
+    --field-glow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 20%, transparent);
+    border-color: color-mix(in oklab, var(--color-primary) 75%, var(--color-input));
+    outline: 2px solid transparent;
+  }
+  & :is(input, textarea):focus-visible {
+    outline: 2px solid transparent;
+  }
+  &:is([aria-invalid="true"], :has([aria-invalid="true"])) {
+    border-color: var(--color-destructive);
+  }
+  &:is([aria-invalid="true"], :has([aria-invalid="true"])):is(:focus-visible, :has(:focus-visible)) {
+    --field-glow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 18%, transparent);
+  }
+}
+
 html {
   font-size: 120%;
 }

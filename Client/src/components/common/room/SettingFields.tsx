@@ -1,10 +1,12 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
+import { motion, useAnimationControls } from "framer-motion";
 import { Minus, Plus, type LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
+import { useValueChange } from "@/hooks/UseValueChange";
+import { iconTappable, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 // 等待页设置面板共用的字段行：标签与控件显式关联，说明经 aria-describedby 挂到控件上，读屏能读出每个开关与输入的名称和说明。
@@ -43,11 +45,33 @@ export function SettingSwitchRow({
   );
 }
 
+/** 步进器里的加减键：悬停铺满所在半格，按下只让图标下沉，外框不跟着缩放。 */
+function StepButton({ label, icon: Icon, disabled, onClick }: {
+  label: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button type="button" aria-label={label} disabled={disabled} onClick={onClick}
+      initial="rest" whileHover={disabled ? undefined : "hover"} whileTap={disabled ? undefined : "press"}
+      className="flex w-9 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 group-data-disabled/stepper:opacity-100">
+      <motion.span variants={STEP_ICON} transition={iconTappable.transition} className="flex">
+        <Icon className="h-3.5 w-3.5" />
+      </motion.span>
+    </motion.button>
+  );
+}
+
+/** 加减键图标的手势幅度沿用 iconTappable，只是落在图标上。 */
+const STEP_ICON = { rest: { scale: 1 }, hover: iconTappable.whileHover, press: iconTappable.whileTap };
+
 /**
- * 数值步进：按钮立即生效；手动输入只在失焦或回车时提交并夹到范围内，
- * 输入 2026 这类多位数时不会在第一位就被夹成下限。
- * 单位跟在标签后面，不接在按钮组外：按钮组各行等宽，同一面板里的加减按钮才能上下对齐。
- * 手机上标签与按钮组一行放不下时，按钮组整组折到标签下方靠右，标签不被挤成逐字断行。
+ * 数值步进：减键、数值、加键收在同一个外框里，悬停与聚焦反馈和 `Input` 一致（`field-frame`）。
+ * 按钮与输入框内的上下方向键立即生效；手动输入只在失焦或回车时提交并夹到范围内，
+ * 输入 2026 这类多位数时不会在第一位就被夹成下限。数值变化时新值顺着增减方向轻轻顶上来。
+ * 单位跟在标签后面，不接在外框外：外框各行等宽，同一面板里的步进器才能上下对齐。
+ * 手机上标签与步进器一行放不下时，步进器整体折到标签下方靠右，标签不被挤成逐字断行。
  */
 export function SettingStepper({
   label,
@@ -88,6 +112,25 @@ export function SettingStepper({
     if (draft.trim() === "" || !Number.isFinite(parsed)) setDraft(String(value));
     else commit(parsed);
   };
+  const change = useValueChange(value);
+  const readout = useAnimationControls();
+  useEffect(() => {
+    if (!change) return;
+    const direction = change.to > change.from ? 1 : -1;
+    void readout.start({
+      opacity: [readoutTick.initial.opacity, 1],
+      y: [direction * readoutTick.initial.y, 0],
+      scale: [readoutTick.initial.scale, 1],
+      transition: readoutTick.transition,
+    });
+  }, [change, readout]);
+  const handleKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") commitDraft();
+    else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      commit(value + (event.key === "ArrowUp" ? step : -step));
+    }
+  };
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <div className="min-w-0">
@@ -97,27 +140,23 @@ export function SettingStepper({
         </Label>
         {description ? <p id={descriptionId} className="mt-1 text-2xs text-muted-foreground">{description}</p> : null}
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="icon" className="h-9 w-9" aria-label={`减少${label}`}
-          disabled={disabled || value <= minimum} onClick={() => commit(value - step)}>
-          <Minus className="h-3 w-3" />
-        </Button>
-        <Input
+      <div data-disabled={disabled || undefined}
+        className={cn("group/stepper field-frame ml-auto flex h-9 w-30 shrink-0 overflow-hidden rounded-md bg-background", disabled && "opacity-50")}>
+        <StepButton label={`减少${label}`} icon={Minus} disabled={disabled || value <= minimum} onClick={() => commit(value - step)} />
+        <motion.input
           id={id}
           type="text"
           inputMode="numeric"
           aria-describedby={description ? descriptionId : undefined}
           value={draft}
           disabled={disabled}
+          animate={readout}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitDraft}
-          onKeyDown={(event) => { if (event.key === "Enter") commitDraft(); }}
-          className="h-9 w-16 bg-muted/40 px-1 text-center text-base font-medium tabular-nums shadow-inner"
+          onKeyDown={handleKey}
+          className="min-w-0 flex-1 bg-transparent text-center text-sm font-medium tabular-nums disabled:cursor-not-allowed"
         />
-        <Button variant="outline" size="icon" className="h-9 w-9" aria-label={`增加${label}`}
-          disabled={disabled || value >= maximum} onClick={() => commit(value + step)}>
-          <Plus className="h-3 w-3" />
-        </Button>
+        <StepButton label={`增加${label}`} icon={Plus} disabled={disabled || value >= maximum} onClick={() => commit(value + step)} />
       </div>
     </div>
   );
