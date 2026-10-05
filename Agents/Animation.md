@@ -49,6 +49,7 @@
   - 过渡期间页面不响应点击，时长即冻结时长：整页约 0.42s（`spring.swift`），带共享元素约 0.6s（`spring.settle`）。
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
 - 选中指示器（`Tabs`、`SegmentedControl` 的底块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
+- 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
 - 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
 
 ### 2.5 禁止写死数值
@@ -124,6 +125,7 @@
 | `tappable` | 密集列表中的行内小控件，只按压不悬停缩放 |
 | `iconTappable` | 图标按钮，配合底色变化 |
 | `headerTappable` | 顶栏紧凑入口与整行折叠标题，只按压不悬停缩放，免得整行文字随指针晃动 |
+| `optionTappable` | 浮层列表里的整行候选（搜索结果），幅度比 `tappable` 小得多：行宽接近浮层宽度，只读出「按下了」 |
 | `selectable` | 选项卡片，按压时同时收缩与轻微下压 |
 
 `Button` 已按变体内置分级反馈，`size="icon"` 不分变体自动取 `iconTappable`，其上不得再叠加缩放或手动展开预设。`link` 变体只保留下划线，不做尺度变化。

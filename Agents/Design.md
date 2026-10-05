@@ -39,7 +39,7 @@
 | `--z-index-dropdown` | `40` | `z-dropdown` | 常规页面级下拉菜单、未凌驾于模态框之上的弹出选项 |
 | `--z-index-overlay` | `50` | `z-overlay` | 全局暗色遮罩（`DialogOverlay`、全屏 Backdrop 模糊层） |
 | `--z-index-modal` | `60` | `z-modal` | 对话框主体（`DialogContent`）、核心弹出模态卡片 |
-| `--z-index-popover` | `70` | `z-popover` | 允许凌驾于模态框之上的下拉列表（`SelectContent`、`Tooltip`、右键上下文菜单） |
+| `--z-index-popover` | `70` | `z-popover` | 允许凌驾于模态框之上的下拉列表（`SelectContent`、`Tooltip`、`SearchCombobox` 结果面板、右键上下文菜单） |
 | `--z-index-toast` | `100` | `z-toast` | 顶层通知消息（`Toast`）、新版本更新公告栏（`VersionUpdateNotice`） |
 
 
@@ -142,6 +142,7 @@
 - 加载指示统一用 `Spinner`，尺寸与颜色由调用处的 `size-*`、`text-*` 给出。它对读屏隐藏，进行中的含义由外层 `role="status"`、按钮的 `aria-busy` 或并排文字表达；按钮的提交态优先用 `Button` 的 `loading`。不手写 `animate-spin` 或边框圆环，动效约束见 [Animation](Animation.md)。
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
 - 文本、密码等输入复用 `Input`，必须提供业务占位文案，并保留清晰的聚焦、禁用和错误反馈。可输入区域（`Input`、`SelectTrigger`、`SettingStepper`、搜索框）的外框统一用 `index.css` 的 `field-frame`：`bg-background` 配 `shadow-2xs`，悬停只加深描边，聚焦或展开时描边转主色并向外晕开 3px 浅光；外框可以是包着输入框与按钮的容器，经 `:has` 命中内部聚焦。调用处只改高度、内边距与底色（大厅取 `bg-card`），不再叠加描边色、阴影或过渡。能落到具体字段的校验失败给该输入加 `aria-invalid`（`Input` 描边随之转 `destructive`），并用 `aria-describedby` 关联错误文案；服务端返回、归不到单个字段的失败只给文案，不标红字段。
+- 搜索统一用 `common/SearchCombobox`：输入框与右侧的搜索按钮排成一行（按钮与输入框同为 `h-10`），结果面板走 Portal 浮在下方内容之上，不把操作区往下挤，也不被所在区域的滚动或裁切截断。面板随焦点进出：输入框聚焦且有内容可显示时展开，失焦、Esc 或点外面就收起，不设关闭按钮；按下右侧搜索按钮不抢走输入框的焦点。候选是整行可点的选项，点一下即选中，不在行尾另放「选择」按钮；上下键移动高亮、回车选中。行内容用 `SearchOptionContent`（缩略图、主名、副名、行尾标记），不可选的候选保留在列表里并弱化，行尾说明原因（「已被选择」）。查询中、无结果与失败经 `status` 显示在面板顶部的一行里，失败以 `role="alert"` 播报；二级列表（作品下的角色、番剧下的关联曲）经 `back` 在顶上给一行可选中的返回。面板宽度跟随输入框，窄屏上至少 20rem 并由碰撞避让推回视口内。
 - 模态任务使用现有 `Dialog`，包含明确标题、必要说明和底部操作；取消操作在前，确认操作在后。
 - 简短状态或分类使用 `Badge` 或紧凑状态标签，不把普通按钮实现成状态徽章，也不把可点击的操作做成徽章：可移除的筛选项用 `Button variant="secondary" size="sm"` 加 `X` 图标。`Badge` 按用途选变体：`default` / `secondary` / `destructive` 是实底强调标记；`outline` 是稀疏的内容标签（年份、筛选条件、答案卡上的角色标签）；密集的标签列表（CCB 反馈表）用实底常规字重的 `muted` 配 `size="sm"`，其中命中的线索用 `matched`，靠描边而不只靠颜色区分，不再逐个加对勾撑宽表格；卡片上的次要信息用常规字重的 `subtle`，进行中用 `active`，不可用用虚线描边的 `unavailable`；骨架屏里的徽章占位用 `placeholder`，与真实徽章同高同圆角。挂在名称或单元格旁的微型标记用 `size="xs"`（11px，与 `PlayerStatusPill` 同级）：尚未上线的入口用 `upcoming`，受限的条目（会员专享）用 `restricted`。调用处不覆写底色、描边、字重、字号或文字色，字号只由 `size` 给出，只加布局类（`shrink-0` 等）与内容排版（数字用 `font-mono`）。谁是卧底的身份不走 `Badge`：玩家栏、出题人的中盘预览与结算表一律用 `RoleBadge`（§7.3）。
 - 二元配置使用 `Switch`，枚举选项使用 `Select` 或 `Tabs`，长内容区域使用 `ScrollArea`。`TabsList` 与内容之间的间距写在标签栏上（`mb-4` 等），`TabsContent` 不写外边距：切换时退场内容被抽出文档流按边框盒定位，外边距会让它错开一截。业务里的下拉选择统一用 `common/room/SettingFields` 的 `SettingSelect`：标签可见，并通过 `htmlFor` 与触发器关联，不只写 `aria-label`；没有可选项时禁用，并用占位项在框内说明原因，不留空白框。两三个互斥且需始终可见的选项用 `SegmentedControl`；工具条等密集区域取 `size="sm"`（与 `Button size="sm"` 同高），不手拼按钮组模拟分段，选中态也不用主色实底按钮表达（四档的热度筛选同样走分段）。旁边已有可见标签时，标签写成带 `id` 的文字并经 `aria-labelledby` 命名单选组，不另写一份 `aria-label`；`Label` 只用于有 `htmlFor` 目标的单个控件，不给控件组当标题。分段的值是字符串，数值选项回写时按档位查回原值，不直接 `Number()` 把任意数字放进设置。

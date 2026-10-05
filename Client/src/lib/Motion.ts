@@ -218,6 +218,12 @@ export const headerTappable = {
   transition: spring.snap,
 } as const;
 
+/** 浮层列表里的整行候选（搜索结果）：行宽接近浮层宽度，幅度比 tappable 小得多，只读出「按下了」 */
+export const optionTappable = {
+  whileTap: { scale: 0.985 },
+  transition: spring.snap,
+} as const;
+
 /**
  * 选项卡片类按压：按下时同时收缩与轻微下压，
  * 让“选中”读作把卡片按进面板，而不是整块缩放。
