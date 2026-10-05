@@ -1018,6 +1018,32 @@ describe("NeteaseMusicProvider", () => {
     await expect(provider.uploadDeviceInfo("   ")).resolves.toBe(false);
   });
 
+  test("uploadDeviceInfo 只走原生 deviceinfo_center_upload 模块", async () => {
+    const calls: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        deviceinfo_center_upload: async (params: Record<string, unknown>) => {
+          calls.push("deviceinfo_center_upload");
+          expect(params.deviceName).toBe("BakaGame");
+          return { body: { code: 200, data: {} } };
+        },
+      }),
+    });
+
+    await expect(provider.uploadDeviceInfo("MUSIC_U=only-native")).resolves.toBe(true);
+    expect(calls).toEqual(["deviceinfo_center_upload"]);
+  });
+
+  test("接口包缺少 deviceinfo_center_upload 时静默降级，不回退包内 util 自拼请求", async () => {
+    // 回归护栏：旧实现会在模块缺失时直接 import 包的 `util/request` + `util/option` 自拼 EAPI，
+    // 属于「直接导入传递依赖」。移除该回退后再遇到缺模块必须干净返回 false。
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({}),
+    });
+
+    await expect(provider.uploadDeviceInfo("MUSIC_U=no-native-module")).resolves.toBe(false);
+  });
+
   test("扫码接口被网易云风控拦截时不向客户端暴露提醒链接", async () => {
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({

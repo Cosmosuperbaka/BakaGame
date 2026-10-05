@@ -162,7 +162,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 - 出题歌曲详情：`song_detail`、时间轴歌词、播放地址、可选歌曲百科以及副歌时间（`song_chorus`）。
 - 猜测歌曲：只读取元数据，不请求歌词或音频。
 - 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。创建二维码与扫码轮询采用官方 PC 客户端契约（`os: "pc"`, `channel: "netease"`, `appver: "3.1.29.205117"`, `User-Agent: NeteaseMusicDesktop/...`），并携带自定义 `deviceName`（默认 `BakaGame`）。**整条链路（`login_qr_key` → `login_qr_create` → `login_qr_check` → `deviceinfo_center_upload` → `login_status`）必须共用同一个出口 IP**，详见上文「凭证与出口 IP 必须绑定」。
-- 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。
+- 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。上报**只调用接口包的原生 `deviceinfo_center_upload` 模块**（自 API `4.41.0` 起提供，与官方 PC 端行为一致）。**不得**为兼容旧版本而直接 `import` 包内 `util/request`、`util/option` 自拼 EAPI 请求——那属于「直接导入传递依赖」，上游一改内部目录即整条失效，还会绕开 provider 的限流队列与出口 IP 归属；缺模块时按上报失败静默降级即可。
 
 播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
 - **全局音乐解灰 (General Unblock)**：默认开启（支持通过环境变量 `ENABLE_GENERAL_UNBLOCK=true|false` 或 provider 选项 `enableGeneralUnblock` 控制）。针对网易云官方未提供播放地址（`!url`）、返回试听片段（`freeTrialInfo != null`）或返回 404 等受限状态的歌曲，自动触发多级跨平台音源解灰（优先调用 API 模块的 `song_url_match`，回退至 `song_url_v1` 携带 `unblock: "true"`；只使用 API 包公开接口，不直接导入其传递依赖），取得的音频地址经 HTTPS 规范化后写入缓存，确保无 VIP 凭据或版权受限歌曲也能正常获取完整音频。

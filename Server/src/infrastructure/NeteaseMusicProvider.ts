@@ -2298,6 +2298,11 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!cookie) return false;
     const name = deviceName.trim() || this.deviceName;
     try {
+      // 设备名上报只走 Enhanced API 的原生 `deviceinfo_center_upload` 模块。历史上该模块在
+      // 4.40.x 尚不存在，这里于是回退到直接 import 包内 `util/request.js` + `util/option.js`
+      // 自拼 EAPI 请求——那属于「直接导入传递依赖」：上游一改内部目录就整条失效，还会绕开本
+      // provider 的限流队列与出口 IP 归属。API 包自 4.41.0 起自带同名模块，行为与自拼请求等价，
+      // 回退路径已无必要，移除以免重新引入隐式依赖。
       const response = await this.callOptional(
         ["deviceinfo_center_upload"],
         { deviceName: name },
@@ -2306,27 +2311,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         false,
         loginScope,
       );
-      if (response) return true;
-      if (this.options.loadApi) {
-        return false;
-      }
-      const requestModule = await import("@neteasecloudmusicapienhanced/api/util/request.js");
-      const request = (requestModule.default ?? requestModule) as (...args: unknown[]) => Promise<unknown>;
-      const createOptionModule = await import("@neteasecloudmusicapienhanced/api/util/option.js");
-      const createOption = (createOptionModule.default ?? createOptionModule) as (...args: unknown[]) => unknown;
-      await request(
-        "/api/deviceinfo/center/upload",
-        { deviceName: name },
-        createOption(
-          {
-            cookie: `${cookie}; os=pc`,
-            ...(this.randomCNIP ? { realIP: this.ipForCookie(cookie, loginScope) } : {}),
-            randomCNIP: this.randomCNIP,
-          },
-          "eapi",
-        ),
-      );
-      return true;
+      return Boolean(response);
     } catch (error) {
       this.logger?.warn("上报网易云设备名称未成功，保持原设备名运行", describeError(error));
       return false;
@@ -2997,13 +2982,6 @@ export class NeteaseMusicProvider implements MusicProvider {
   private isRateLimitError(error: unknown) {
     const body = responseBody(error);
     return isRateLimitCode(responseCode(body)) || isRateLimitCode(readNumber(asRecord(error).status));
-  }
-
-  private ipForCookie(
-    cookie?: string | Record<string, unknown>,
-    loginScope?: string,
-  ) {
-    return this.ensureScopeIp(this.resolveIpScope(cookie, loginScope));
   }
 
   /**
