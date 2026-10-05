@@ -417,6 +417,32 @@ export const collapsible: Variants = {
   },
 };
 
+/** 选中指示器（标签页、分段控件的底块）在选项之间滑动 */
+export const indicatorSlide: Transition = spring.swift;
+
+/** 标签页内容切换的横向位移（像素）：只够读出方向，不让整块内容横穿面板。 */
+export const tabShift = 14;
+
+/**
+ * 标签页内容切换。`custom` 是切换方向（1 往后、-1 往前、0 未知）：
+ * 新内容从目标标签所在一侧滑入，旧内容向另一侧让出，与底块同向移动；方向未知时只交叉淡化。
+ * 退出项由 AnimatePresence 的 popLayout 抽出文档流，两块内容在同一位置交叉，面板高度不跳。
+ */
+export const tabSwap: Variants = {
+  initial: (direction: number) => ({ opacity: 0, x: direction * tabShift }),
+  animate: {
+    opacity: 1,
+    x: 0,
+    transition: { ...spring.swift, opacity: { duration: duration.quick, ease: ease.out } },
+  },
+  exit: (direction: number) => ({
+    opacity: 0,
+    x: -direction * tabShift,
+    pointerEvents: "none",
+    transition: { duration: duration.quick, ease: ease.inOut, opacity: { duration: duration.instant, ease: ease.inOut } },
+  }),
+};
+
 // ==================== 具名小动作 ====================
 // 只在一两处出现、但同样必须有名字的动作。组件里只引用，不再内联幅度。
 

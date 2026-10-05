@@ -39,6 +39,7 @@ import {
 import changelogData from "@/data/changelog.json";
 import commitHistory from "virtual:commit-history";
 import { formatRelativeTime } from "@/lib/Time";
+import { cn } from "@/lib/Utils";
 
 interface ChangelogData {
   entries: ChangelogEntry[];
@@ -466,6 +467,9 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
   );
 }
 
+/** 版本信息弹窗的面板：两个标签同一固定高度，内部滚动。 */
+const INFO_PANEL = "scrollbar-hidden h-[min(58vh,34rem)] overflow-y-auto overscroll-contain";
+
 export default function LandingPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
@@ -563,29 +567,31 @@ export default function LandingPage() {
             <DialogTitle>{versionLabel}</DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="changelog">
-            <TabsList className="w-full">
+            <TabsList className="mb-4 w-full">
               <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
             </TabsList>
-            {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态 */}
-            <TabsContent value="changelog" className="scrollbar-hidden mt-4 max-h-[55vh] overflow-y-auto">
+            {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态。
+                两个面板同高：切换标签时弹窗不跟着伸缩，内容在原地横向交叉。 */}
+            <TabsContent value="changelog" className={INFO_PANEL}>
               {entries.length > 0 ? (
-                <div className="space-y-5">
+                <ol className="space-y-6">
                   {entries.map((entry) => (
-                    <div key={entry.version} className="space-y-2">
-                      <div className="flex items-baseline gap-2">
+                    <li key={entry.version} className="grid gap-2 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-4">
+                      {/* 宽屏版本号在左栏随滚动吸顶，读完一段长日志仍知道是哪个版本 */}
+                      <div className="flex items-baseline gap-2 sm:sticky sm:top-0 sm:flex-col sm:gap-0.5 sm:self-start">
                         <strong className="text-base">V{entry.version}</strong>
                         <span className="text-xs text-muted-foreground">{entry.date}</span>
                       </div>
                       <ChangelogBody content={entry.content} />
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               ) : (
                 <div className="py-6 text-center text-sm text-muted-foreground">暂无更新日志</div>
               )}
             </TabsContent>
-            <TabsContent value="commits" className="scrollbar-hidden mt-4 max-h-[55vh] overflow-y-auto pr-1">
+            <TabsContent value="commits" className={cn(INFO_PANEL, "pr-1")}>
               <CommitTimeline commits={commitHistory.commits} />
             </TabsContent>
           </Tabs>

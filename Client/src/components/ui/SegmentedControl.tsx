@@ -1,6 +1,8 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { spring, tappable } from "@/lib/Motion"
+import { SlidingIndicator } from "@/components/ui/SlidingIndicator"
+import { useIndicatorRect } from "@/hooks/UseIndicatorRect"
+import { tappable } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 export interface SegmentedOption<T extends string> {
@@ -28,7 +30,7 @@ const SIZES = {
 
 /**
  * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供；
- * 选中底块以 layoutId 在选项之间滑动，与 Tabs 的指示器是同一个观感。
+ * 选中底块与 Tabs 是同一个 `SlidingIndicator`：按量到的选中项位置滑动，所在弹窗缩放开合时不跟着飘。
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -41,13 +43,17 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   const groupId = React.useId()
   const sizing = SIZES[size]
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  const rect = useIndicatorRect(rootRef, "[data-checked]", value)
   return (
     <div
+      ref={rootRef}
       role="radiogroup"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={cn("inline-flex w-full items-center rounded-md bg-muted text-muted-foreground", sizing.root, className)}
+      className={cn("relative inline-flex w-full items-center rounded-md bg-muted text-muted-foreground", sizing.root, className)}
     >
+      <SlidingIndicator rect={rect} />
       {options.map((option) => {
         const checked = option.value === value
         return (
@@ -57,6 +63,7 @@ export function SegmentedControl<T extends string>({
             // 视觉隐藏的原生 radio 才是聚焦停靠点；label 只承载按压动画，
             // 不显式排除的话会被 framer-motion 因 whileTap 自动加上 tabIndex=0。
             tabIndex={-1}
+            data-checked={checked || undefined}
             className={cn(
               "relative flex h-full flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors",
               sizing.item,
@@ -73,14 +80,6 @@ export function SegmentedControl<T extends string>({
               onChange={() => onValueChange(option.value)}
               className="sr-only"
             />
-            {checked ? (
-              <motion.span
-                layoutId={`segmented-${groupId}`}
-                transition={spring.swift}
-                // 与 Tabs 选中块一致：暗色下改用 secondary，否则与 muted 轨道几乎同色。
-                className="absolute inset-0 rounded-md bg-background shadow-sm dark:bg-secondary"
-              />
-            ) : null}
             <span className="relative">{option.label}</span>
           </motion.label>
         )
