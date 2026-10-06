@@ -4,7 +4,7 @@ import CCBRoomPage from "./CCBRoomPage";
 import { presetCCB } from "@/stories/StorePresets";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import {
-  CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbGuessingRoom,
+  CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbChoosingSetterRoom, ccbGuessingRoom,
   ccbOriginalRoom, ccbPreparingRoom, ccbSettledRoom, ccbSyncWaitingRoom, ccbWaitingGuestRoom, ccbWaitingHostRoom,
   presetSavedUsername, type CCBRoomScenario,
 } from "@/stories/fixtures/CCB";
@@ -76,6 +76,16 @@ export const SettingsPanels: Story = {
     }
     dropFocus();
   },
+};
+
+export const ChoosingSetterHost: Story = {
+  name: "指定出题人 · 房主",
+  beforeEach: () => inRoom(ccbChoosingSetterRoom("host")),
+};
+
+export const ChoosingSetterGuest: Story = {
+  name: "指定出题人 · 玩家",
+  beforeEach: () => inRoom(ccbChoosingSetterRoom("guest")),
 };
 
 export const Preparing: Story = {

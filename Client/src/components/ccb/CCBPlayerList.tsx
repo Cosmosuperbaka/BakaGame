@@ -30,7 +30,7 @@ const statuses: Record<CCBPlayer["status"], CCBStatus> = {
  */
 function resolveCCBStatus(player: CCBPlayer, snapshot: CCBRoomSnapshot): CCBStatus | null {
   if (player.membership === "spectator") return null;
-  if (snapshot.phase === "waiting") return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
+  if (snapshot.phase === "waiting" || snapshot.phase === "choosingSetter") return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
   if (snapshot.setterPlayerId === player.id) return { label: "出题", tone: "questioner" };
   return statuses[player.status];
 }

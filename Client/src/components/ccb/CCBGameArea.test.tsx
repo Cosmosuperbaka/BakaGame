@@ -27,22 +27,33 @@ const privateState = (changes: Partial<CCBPrivateState> = {}): CCBPrivateState =
 afterEach(() => { useCCBStore.getState().resetRoom(); vi.restoreAllMocks(); });
 
 describe("CCB 操作区", () => {
-  it("手动出题使用服务端候选权限，不受随机出题准备状态限制", async () => {
+  it("指定出题人模式由房主开始后进入选人阶段，候选只取服务端名单", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
     useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
-    const view = render(<CCBGameArea snapshot={room()} privateState={privateState({ canStart: false })} />);
-    expect(screen.getByRole("button", { name: "随机出题" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "手动出题" }));
-    expect(send).toHaveBeenCalledWith("ccb.game.chooseSetter", { playerId: "host" }, expect.any(Object));
-    view.rerender(<CCBGameArea snapshot={room()} privateState={privateState({ canStart: false, setterCandidateIds: [] })} />);
-    expect(screen.getByRole("button", { name: "手动出题" })).toBeDisabled();
-    // 可访问名来自可见标签；没有候选时下拉框一并禁用，框内说明原因而不是留空。
-    expect(screen.getByText("指定出题人").tagName).toBe("LABEL");
-    expect(screen.getByRole("combobox", { name: "指定出题人" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "指定出题人" })).toHaveTextContent("暂无可选出题人");
-    view.rerender(<CCBGameArea snapshot={room()} privateState={privateState({ canStart: false, setterCandidateIds: ["host"] })} />);
-    expect(screen.getByRole("button", { name: "手动出题" })).toBeEnabled();
+    const [host] = room().players;
+    const guest = { ...host, id: "guest", name: "桃子" };
+    const watcher = { ...host, id: "watcher", name: "路人", membership: "spectator" as const };
+    const manual = { ...createDefaultCCBSettings(2026), answerMode: "manual" as const };
+    const view = render(<CCBGameArea snapshot={room({ settings: manual, players: [host, guest, watcher] })} privateState={privateState()} />);
+    // 房主没有准备按钮；出题人不必准备，候选非空就能开始。
+    expect(screen.queryByRole("button", { name: "准备" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "开始并指定出题人" }));
+    expect(send).toHaveBeenCalledWith("ccb.game.start", {}, expect.objectContaining({ timeout: 0 }));
+
+    view.rerender(<CCBGameArea snapshot={room({ phase: "choosingSetter", settings: manual, players: [host, guest, watcher] })} privateState={privateState({ setterCandidateIds: ["host", "watcher"] })} />);
+    await screen.findByRole("heading", { name: "指定出题人" });
+    expect(screen.getByText("旁观玩家")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /桃子/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /路人/ }));
+    expect(send).toHaveBeenCalledWith("ccb.game.chooseSetter", { playerId: "watcher" }, expect.any(Object));
+    await user.click(screen.getByRole("button", { name: "返回等待" }));
+    expect(send).toHaveBeenCalledWith("ccb.game.cancel", {}, expect.any(Object));
+
+    // 其他人只看到等待说明。
+    view.rerender(<CCBGameArea snapshot={room({ phase: "choosingSetter", settings: manual, players: [host, guest, watcher] })} privateState={privateState({ playerId: "guest", setterCandidateIds: [] })} />);
+    expect(screen.getByText("等待房主指定本局出题人")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /路人/ })).not.toBeInTheDocument();
   });
 
   it("公开玩家栏保留次数、同步提交与完整进度信息", () => {
@@ -135,14 +146,22 @@ describe("CCB 操作区", () => {
     ));
   });
 
-  it("准备与随机出题使用真实命令", async () => {
+  it("玩家准备、房主随机出题开始使用真实命令", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
     useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
-    render(<CCBGameArea snapshot={room()} privateState={privateState()} />);
+    const [host] = room().players;
+    const players = [host, { ...host, id: "guest", name: "桃子" }];
+    const view = render(<CCBGameArea snapshot={room({ players })} privateState={privateState({ playerId: "guest", canStart: false })} />);
     await user.click(screen.getByRole("button", { name: "准备" }));
     expect(send).toHaveBeenCalledWith("ccb.player.ready", { ready: true }, expect.objectContaining({ roomId: "1234" }));
-    await user.click(screen.getByRole("button", { name: "随机出题" }));
+    expect(screen.queryByRole("button", { name: "开始游戏" })).not.toBeInTheDocument();
+
+    view.rerender(<CCBGameArea snapshot={room({ players })} privateState={privateState({ canStart: false })} />);
+    expect(screen.queryByRole("button", { name: "准备" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "等待玩家准备 (0/1)" })).toBeDisabled();
+    view.rerender(<CCBGameArea snapshot={room({ players: [host, { ...players[1], ready: true }] })} privateState={privateState()} />);
+    await user.click(screen.getByRole("button", { name: "开始游戏" }));
     expect(send).toHaveBeenCalledWith("ccb.game.start", {}, expect.objectContaining({ timeout: 0 }));
   });
 

@@ -1,9 +1,10 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { BookOpen, Download, Search, Swords, Upload, X } from "lucide-react";
-import { parseCCBSettings, type CCBSettings } from "@bakagame/shared";
+import { parseCCBSettings, type CCBAnswerMode, type CCBSettings } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { SettingSelect, SettingStepper, SettingSwitchRow } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
@@ -20,6 +21,10 @@ const META_TAGS = [
   { label: "作品来源", values: SOURCES, all: "全部来源" },
   { label: "作品题材", values: GENRES, all: "全部题材" },
 ] as const;
+const ANSWER_MODE_OPTIONS: SegmentedOption<CCBAnswerMode>[] = [
+  { value: "random", label: "随机出题" },
+  { value: "manual", label: "指定出题人" },
+];
 /** 玩法配置文件的大小上限：正常配置只有几 KB，拒绝异常大的文件。 */
 const SETTINGS_FILE_LIMIT = 100_000;
 const MAX_ADDED_SUBJECTS = 500;
@@ -61,7 +66,8 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
     setDirectoryNotice(`已同步 ${result.subjectIds.length} 部作品${result.missingSubjectIds.length ? `，缺失 ${result.missingSubjectIds.length} 部` : ""}`);
   };
   const applyPreset = (name: string) => {
-    const next = structuredClone(presets[name]);
+    // 预设只换玩法规则，出题方式是房主对这间房的选择，原样保留。
+    const next = { ...structuredClone(presets[name]), answerMode: draft.answerMode };
     setDraft(next); setPresetName(name); setFileError(""); setDirectoryNotice("");
     if (next.useIndex && next.indexId) void syncDirectory(next.indexId);
   };
@@ -89,6 +95,12 @@ export function CCBGameSettings({ settings, waiting }: { settings: CCBSettings; 
     <div className="space-y-5">
       <SettingsAccordion icon={BookOpen} title="题目设置" open={questionOpen} onOpenChange={setQuestionOpen}>
         <div className="space-y-4">
+          <div className="space-y-1.5">
+            <SegmentedControl aria-label="出题方式" value={draft.answerMode} options={ANSWER_MODE_OPTIONS} onValueChange={(value) => change("answerMode", value)} />
+            <p className="text-2xs text-muted-foreground">
+              {draft.answerMode === "manual" ? "开始后由房主指定一位出题人，出题人与队友本局观战。" : "开始后从下面的范围里随机抽一位角色。"}
+            </p>
+          </div>
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-40 flex-1">
               <SettingSelect label="玩法预设" value={presetName} onChange={(name) => { if (name) applyPreset(name); }}

@@ -260,7 +260,7 @@ function seated(patches: Record<string, Partial<CCBPlayer>> = {}, active: Partia
     : ccbPlayer(member, { score: TOTALS[member.id], ...active, ...patches[member.id] }));
 }
 
-/** 房主刚建好房间：桃子未准备，路人甲旁观，房主可以指定任意在线玩家出题。 */
+/** 房主刚建好房间：桃子未准备，路人甲旁观；随机出题要等桃子准备好才能开始。候选名单只在选人阶段下发。 */
 export function ccbWaitingHostRoom(settings: CCBSettings = ccbSettings()): CCBRoomScenario {
   return {
     snapshot: ccbSnapshot({
@@ -268,7 +268,21 @@ export function ccbWaitingHostRoom(settings: CCBSettings = ccbSettings()): CCBRo
       players: seated({ [PEACH.id]: { ready: false } }, { ready: true, score: 0 }),
       chat: [...joined(SEATED), chatLine(HOST, "先用默认设置来一把，熟悉了再加难度", 50), chatLine(PEACH, "等我看一眼规则再准备", 58)],
     }),
-    privateState: ccbPrivateState({ playerId: HOST.id, setterCandidateIds: SEATED.map((member) => member.id) }),
+    privateState: ccbPrivateState({ playerId: HOST.id }),
+  };
+}
+
+/** 指定出题人模式下房主点了开始：旁观的路人甲排在推荐组，Kanade 断线不在候选里。 */
+export function ccbChoosingSetterRoom(viewer: "host" | "guest"): CCBRoomScenario {
+  return {
+    snapshot: ccbSnapshot({
+      phase: "choosingSetter", roundNumber: 2, settings: ccbSettings({ answerMode: "manual" }),
+      players: seated({ [KANADE.id]: { online: false }, [AZUMI.id]: { team: 1 }, [LONG.id]: { team: 1 } }, { ready: true }),
+      chat: [...joined(SEATED), chatLine(HOST, "这局我来点一个人出题", 400)],
+    }),
+    privateState: viewer === "host"
+      ? ccbPrivateState({ playerId: HOST.id, setterCandidateIds: SEATED.filter((member) => member !== KANADE).map((member) => member.id) })
+      : ccbPrivateState(),
   };
 }
 

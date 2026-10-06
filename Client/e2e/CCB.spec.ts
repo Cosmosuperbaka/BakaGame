@@ -80,7 +80,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.goto(roomUrl);
     await guest.getByRole("textbox", { name: "用户名" }).fill(guestName);
     await guest.getByRole("button", { name: "加入房间", exact: true }).click();
-    await expect(guest.getByRole("heading", { name: "等待玩家准备" })).toBeVisible();
+    await expect(guest.getByRole("heading", { name: "等待开始" })).toBeVisible();
     await expect(page.getByTitle(guestName)).toBeVisible();
 
     // 设置改成等待页内折叠面板加防抖自动保存：没有保存按钮，改动直达服务端。
@@ -91,13 +91,21 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await actionLimit.fill("0");
     await actionLimit.press("Enter");
     await expect(guest.getByText("不限行动时间", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "随机出题", exact: true })).toBeDisabled();
+    // 房主不准备；随机出题要等其他人都准备好。
+    await expect(page.getByRole("button", { name: "准备", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "等待玩家准备 (0/1)", exact: true })).toBeDisabled();
 
     const chat = "联机聊天".repeat(75);
     await page.getByPlaceholder("请输入文本").fill(chat);
     await page.getByRole("button", { name: "发送消息" }).click();
     await expect(guest.getByTestId("chat-message-bubble").filter({ hasText: chat })).toBeVisible();
-    await page.getByRole("button", { name: "手动出题", exact: true }).click();
+    // 出题方式在题目设置里；指定出题人时开始游戏先进入选人阶段，出题人不必准备。
+    await page.getByRole("button", { name: "题目设置", exact: true }).click();
+    await page.getByRole("radiogroup", { name: "出题方式" }).getByText("指定出题人", { exact: true }).click();
+    await expect(page.getByRole("radio", { name: "指定出题人", exact: true })).toBeChecked();
+    await page.getByRole("button", { name: "开始并指定出题人", exact: true }).click();
+    await expect(guest.getByText("等待房主指定本局出题人")).toBeVisible();
+    await page.getByRole("button", { name: hostName, exact: true }).click();
     await expect(page.getByRole("heading", { name: "选择本局答案" })).toBeVisible();
     await chooseCharacter(page, "后藤一里");
     await page.getByRole("textbox", { name: "文本提示 1", exact: true }).fill("吉他手");
@@ -145,12 +153,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(page.getByRole("heading", { name: "本局揭晓" })).toBeVisible();
     await expect(guest.getByRole("table", { name: "本局得分" })).toContainText("快速 2");
     await page.getByRole("button", { name: "返回等待房间" }).click();
-    await expect(guest.getByRole("heading", { name: "等待玩家准备" })).toBeVisible();
-    const ready = guest.getByRole("button", { name: "准备", exact: true });
-    if (await ready.isVisible()) await ready.click();
-    await page.getByRole("combobox", { name: "指定出题人" }).click();
-    await page.getByRole("option", { name: guestName, exact: true }).click();
-    await page.getByRole("button", { name: "手动出题", exact: true }).click();
+    await expect(guest.getByRole("heading", { name: "等待开始" })).toBeVisible();
+    await page.getByRole("button", { name: "开始并指定出题人", exact: true }).click();
+    await page.getByRole("button", { name: guestName, exact: true }).click();
     await expect(guest.getByRole("heading", { name: "选择本局答案" })).toBeVisible();
     await chooseCharacter(guest, "伊地知虹夏");
     await guest.getByRole("button", { name: "确认答案并开始" }).click();
@@ -166,7 +171,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(page).toHaveURL(/\/ccb$/);
     await page.getByRole("button", { name: "创建房间", exact: true }).click();
     await page.getByRole("button", { name: "创建", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "等待玩家准备" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "等待玩家加入" })).toBeVisible();
     await page.getByRole("button", { name: "离开房间" }).click();
     checkHost();
     checkGuest();

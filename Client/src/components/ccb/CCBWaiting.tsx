@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, EyeOff, Globe, Lock, Play, Settings, Users } from "lucide-react";
+import { Check, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -12,12 +12,12 @@ import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { ccbRoomPath } from "@/lib/CCBSession";
 import { CCBGameSettings } from "./CCBGameSettings";
-import { CCBSetterPicker } from "./CCBSetterPicker";
 
 /** 非房主看到的只读设置摘要。 */
 function settingsChips(snapshot: CCBRoomSnapshot): string[] {
   const { settings } = snapshot;
   return [
+    settings.answerMode === "manual" ? "指定出题人" : "随机出题",
     settings.syncMode ? "同步模式" : "普通模式",
     settings.nonstopMode ? "血战模式" : "首位猜中结束",
     `${settings.maxAttempts} 次机会`,
@@ -26,15 +26,20 @@ function settingsChips(snapshot: CCBRoomSnapshot): string[] {
 }
 
 /**
- * CCB 等待页。房主在折叠面板里直接改设置，防抖自动保存；
- * 非房主只看设置摘要与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
+ * CCB 等待页，与另外两个游戏同一结构：房主在折叠面板里直接改设置（防抖自动保存），底部只有开始按钮，
+ * 房主没有准备态；其他玩家看设置摘要与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
+ * 出题方式在设置里：随机出题要等其他人都准备；指定出题人点开始后进入选人阶段，出题人不必准备。
  */
 export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
-  const activePlayers = snapshot.players.filter((player) => player.membership === "active");
-  const readyCount = activePlayers.filter((player) => player.ready).length;
-  const { run, busy } = useCCBAction();
+  // 准备进度只算房主以外的参与者，与另外两个游戏同口径。
+  const others = snapshot.players.filter((player) => player.membership === "active" && player.id !== snapshot.hostPlayerId);
+  const readyCount = others.filter((player) => player.ready).length;
+  const manual = snapshot.settings.answerMode === "manual";
+  const { run, pending } = useCCBAction();
+  const starting = pending.has("ccb.game.start");
+  const readying = pending.has("ccb.player.ready");
   const [roomOpen, setRoomOpen] = useState(false);
 
   // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。
@@ -71,14 +76,14 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
-      <PhaseHeader icon={Play} title="等待玩家准备" />
+      <PhaseHeader icon={Gamepad2} title={isHost ? "等待玩家加入" : "等待开始"} />
 
       <RoomLinkShare
         path={ccbRoomPath(snapshot.roomId)}
         onCopyError={() => useCCBStore.getState().setNotice("复制失败，请手动复制", "error")}
       />
 
-      <ReadyProgress ready={readyCount} total={activePlayers.length} variant={isHost ? "host" : "guest"} />
+      {others.length ? <ReadyProgress ready={readyCount} total={others.length} variant={isHost ? "host" : "guest"} /> : null}
 
       {isHost ? (
         <div className="space-y-3">
@@ -127,25 +132,22 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
         <SettingsChips items={settingsChips(snapshot)} />
       )}
 
-      <div className="flex flex-wrap justify-center gap-2">
-        {me?.membership === "active" ? (
-          <Button
-            variant={me.ready ? "secondary" : "default"}
-            disabled={busy}
-            onClick={() => void run("ccb.player.ready", { ready: !me.ready })}
-          >
-            <Check />{me.ready ? "取消准备" : "准备"}
+      {isHost ? (
+        <Button size="lg" className="w-full text-base" disabled={starting || !privateState.canStart} loading={starting}
+          onClick={() => void run("ccb.game.start", {})}>
+          {starting ? "正在开始游戏..."
+            : privateState.canStart ? (manual ? "开始并指定出题人" : "开始游戏")
+              : others.length === 0 ? "等待玩家加入"
+                : manual ? "暂无可选出题人" : `等待玩家准备 (${readyCount}/${others.length})`}
+        </Button>
+      ) : me?.membership === "active" ? (
+        <div className="flex justify-center">
+          <Button variant={me.ready ? "outline" : "default"} size="lg" className="min-w-[120px] gap-2" disabled={readying} loading={readying}
+            onClick={() => void run("ccb.player.ready", { ready: !me.ready })}>
+            {readying ? (me.ready ? "正在取消..." : "正在准备...") : me.ready ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
           </Button>
-        ) : null}
-        {isHost ? (
-          <Button disabled={busy || !privateState.canStart} loading={busy} onClick={() => void run("ccb.game.start", {})}>
-            <Play />随机出题
-          </Button>
-        ) : null}
-      </div>
-
-      {isHost ? <div className="space-y-4 border-t pt-5"><CCBSetterPicker snapshot={snapshot} privateState={privateState} /></div>
-        : <p className="text-center text-xs text-muted-foreground">准备完成后由房主开始</p>}
+        </div>
+      ) : null}
     </div>
   );
 }

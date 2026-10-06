@@ -14,7 +14,7 @@ import { CCBSearch } from "./CCBSearch";
 import { CCBAnswerCard } from "./CCBAnswerCard";
 import { CCBFeedbackTable } from "./CCBFeedbackTable";
 import { CCBWaiting } from "./CCBWaiting";
-import { CCBSetterPicker } from "./CCBSetterPicker";
+import { CCBChoosingSetter } from "./CCBChoosingSetter";
 
 /**
  * 单次行动倒计时；没有截止时刻时不显示。
@@ -38,6 +38,7 @@ export function CCBGameArea({ snapshot, privateState }: { snapshot: CCBRoomSnaps
 
 function CCBPhase({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   if (snapshot.phase === "waiting") return <CCBWaiting snapshot={snapshot} privateState={privateState} />;
+  if (snapshot.phase === "choosingSetter") return <CCBChoosingSetter snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "settled" && snapshot.roundSummary) return <CCBSettlement snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "answering") return <CCBSetter snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "preparing") return <div className="space-y-4 text-center"><PhaseHeader icon={Loader2} title="正在准备题目" /><p className="text-sm text-muted-foreground">题目就绪后会自动开始</p><Countdown deadline={snapshot.phaseDeadlineAt} /><CancelRound snapshot={snapshot} playerId={privateState.playerId} /></div>;
@@ -136,7 +137,6 @@ function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; 
   return <div className="space-y-5"><PhaseHeader icon={Trophy} title="本局揭晓" /><CCBAnswerCard answer={summary.answer} sealed />
     <CCBScoreTable scores={summary.scores} guesses={summary.guesses} />
     <CCBFeedbackTable guesses={summary.guesses} showRound={snapshot.settings.syncMode} />
-    {isHost && snapshot.source === "original" ? <CCBSetterPicker snapshot={snapshot} privateState={privateState} /> : null}
     {isHost ? <Button className="w-full" disabled={busy} loading={busy} onClick={() => void run("ccb.game.next", {})}><RotateCcw />{snapshot.source === "original" ? "开始下一局" : "返回等待房间"}</Button> : <p className="text-center text-sm text-muted-foreground">等待房主开始下一局</p>}
   </div>;
 }
