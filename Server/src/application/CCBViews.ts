@@ -41,15 +41,23 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
   const inGame = room.phase === 'guessing' && Boolean(unit) && player.status === 'playing';
   const canGuess = inGame && Boolean(!unit!.ended && (!round!.settings.syncMode || !unit!.completed));
   const participants = ccbParticipants(room);
+  // 能当出题人的：在线、且他出题后（连同队友一起观战）还留得下猜题者。逐人重算参与者是 O(n²)，
+  // 而私有状态每次广播要给每个连接各算一遍，所以只给房主、且只在手动出题的等待与选人阶段算。
+  const isHost = player.id === room.hostPlayerId;
+  const needsCandidates = isHost && (room.phase === 'choosingSetter' || (room.phase === 'waiting' && room.settings.answerMode === 'manual'));
+  const setterCandidates = needsCandidates
+    ? [...room.players.values()].filter(candidate => candidate.online && ccbParticipants(room, candidate.id).length > 0) : [];
   const usedCharacterIds = new Set(round?.guesses.filter(guess => guess.playerId === player.id).map(guess => guess.character.id));
   return {
     playerId: player.id, canGuess,
     canSurrender: inGame && !unit!.ended,
-    canStart: room.phase === 'waiting' && player.id === room.hostPlayerId && participants.length > 0 &&
-      participants.every(member => member.id === room.hostPlayerId || member.ready),
+    // 随机出题要其他参与者都准备；手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
+    canStart: room.phase === 'waiting' && isHost && participants.length > 0 &&
+      (room.settings.answerMode === 'manual'
+        ? setterCandidates.length > 0
+        : participants.every(member => member.id === room.hostPlayerId || member.ready)),
     canSetAnswer: room.phase === 'answering' && player.id === room.setterPlayerId,
-    setterCandidateIds: room.phase === 'waiting' && player.id === room.hostPlayerId
-      ? [...room.players.values()].filter(candidate => candidate.online && ccbParticipants(room, candidate.id).length > 0).map(candidate => candidate.id) : [],
+    setterCandidateIds: room.phase === 'choosingSetter' && isHost ? setterCandidates.map(candidate => candidate.id) : [],
     guesses: visibleGuesses(room, player, observing),
     answer: round && observing ? round.answer : null,
     hints: round && inGame ? round.hints.filter((_, index) => round.settings.useHints[index]! > 0 && remaining <= round.settings.useHints[index]!) : [],

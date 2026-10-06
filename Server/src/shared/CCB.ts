@@ -18,11 +18,17 @@ export const CCBSettingsSchema = t.Object({
   commonTags: t.Boolean(), useHints: t.Array(integer(0, 100), { maxItems: 3 }),
   useImageHint: integer(0, 100), globalPick: t.Boolean(), tagBan: t.Boolean(),
   syncMode: t.Boolean(), nonstopMode: t.Boolean(),
+  /** 出题方式：`random` 开始即随机抽题；`manual` 开始后进入选出题人阶段，由房主指定出题人。 */
+  answerMode: t.Union([t.Literal('random'), t.Literal('manual')]),
 }, strict);
 export type CCBSettings = Static<typeof CCBSettingsSchema>;
+export type CCBAnswerMode = CCBSettings['answerMode'];
+/** 导入设置文件。出题方式晚于文件格式加入，旧文件缺这一项时按随机出题补齐。 */
 export function parseCCBSettings(value: unknown): CCBSettings {
-  if (!Value.Check(CCBSettingsSchema, value)) throw new Error('设置文件格式不正确');
-  return value;
+  const filled = value && typeof value === 'object' && !Array.isArray(value) && !('answerMode' in value)
+    ? { ...value, answerMode: 'random' } : value;
+  if (!Value.Check(CCBSettingsSchema, filled)) throw new Error('设置文件格式不正确');
+  return filled;
 }
 export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSettings => ({
   startYear: year - 5, endYear: year, topNSubjects: 20, useSubjectPerYear: false,
@@ -30,9 +36,11 @@ export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSe
   mainCharacterOnly: true, characterNum: 6, maxAttempts: 10, timeLimit: 60,
   subjectSearch: true, subjectTagNum: 4, characterTagNum: 4, commonTags: true,
   useHints: [], useImageHint: 0, globalPick: false, tagBan: false, syncMode: false, nonstopMode: false,
+  answerMode: 'random',
 });
 export type CCBSource = 'native' | 'original';
-export type CCBPhase = 'waiting' | 'preparing' | 'answering' | 'guessing' | 'settled';
+/** `choosingSetter`：手动出题时房主开始后、指定出题人之前的独立阶段。 */
+export type CCBPhase = 'waiting' | 'choosingSetter' | 'preparing' | 'answering' | 'guessing' | 'settled';
 export interface CCBCharacterSummary { id: number; name: string; nameCn: string; imageUrl?: string }
 export interface CCBAppearance { id: number; name: string; nameCn: string; year: number; rating: number; ratingCount: number }
 export type CCBComparisonAppearance = Pick<CCBAppearance, 'id' | 'name' | 'nameCn'>;

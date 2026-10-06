@@ -9,20 +9,42 @@ const keep = (h: ReturnType<typeof ccbTestHarness>) => { active.push(h); return 
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 房间与提示边界', () => {
-  test('未准备的出题人可以被选择，候选权限独立于随机开局并排除无法留下猜题者的队伍', async () => {
+  test('手动出题开始后进入选人阶段：出题人不必准备，候选排除无法留下猜题者的队伍，取消保留准备', async () => {
     const h = keep(ccbTestHarness()); const host = await h.create(); const setter = await h.join('尚未准备');
     expect(h.privateState(host).canStart).toBe(false);
+    await h.configure(host, { answerMode: 'manual' });
+    // 手动出题不要求其他人准备，等待阶段也不提前下发候选名单。
+    expect(h.privateState(host).canStart).toBe(true); expect(h.privateState(host).setterCandidateIds).toEqual([]);
+    await expect(h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! })).rejects.toMatchObject({ code: 'INVALID_PHASE' });
+    await expect(h.send(setter, 'ccb.game.start', {})).rejects.toMatchObject({ code: 'NOT_HOST' });
+    await h.send(host, 'ccb.game.start', {});
+    expect(h.snapshot(host).phase).toBe('choosingSetter');
     expect(h.privateState(host).setterCandidateIds).toContain(setter.id!);
     expect(h.privateState(setter).setterCandidateIds).toEqual([]);
+    // 选人阶段不能改队伍与设置；取消回到等待，准备状态原样保留。
+    await expect(h.send(setter, 'ccb.player.team', { team: 1 })).rejects.toMatchObject({ code: 'INVALID_PHASE' });
+    await h.send(host, 'ccb.game.cancel', {}); expect(h.snapshot(host).phase).toBe('waiting');
     await h.send(host, 'ccb.player.team', { team: 1 }); await h.send(setter, 'ccb.player.team', { team: 1 });
-    expect(h.privateState(host).setterCandidateIds).toEqual([]);
-    await expect(h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! })).rejects.toMatchObject({ code: 'NO_PARTICIPANTS' });
-    expect(h.snapshot(host).setterPlayerId).toBeNull();
-    await h.send(host, 'ccb.player.team', { team: null });
+    expect(h.privateState(host).canStart).toBe(false);
+    await h.send(host, 'ccb.player.team', { team: null }); await h.send(host, 'ccb.game.start', {});
+    await expect(h.send(host, 'ccb.game.chooseSetter', { playerId: 'missing' })).rejects.toMatchObject({ code: 'PLAYER_NOT_FOUND' });
     await h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    expect(h.snapshot(host).phase).toBe('answering');
     expect(h.privateState(host).setterCandidateIds).toEqual([]); expect(h.privateState(setter).canSetAnswer).toBe(true);
     await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
     expect(h.privateState(host).canGuess).toBe(true); expect(h.privateState(setter).canGuess).toBe(false);
+  });
+
+  test('房主没有准备态：准备指令对房主无效，转让后新房主视同已准备、卸任者需重新准备', async () => {
+    const h = keep(ccbTestHarness()); const host = await h.create(); const guest = await h.join('玩家');
+    await h.send(host, 'ccb.player.ready', { ready: false });
+    expect(h.snapshot(host).players.find(item => item.id === host.id)?.ready).toBe(true);
+    await h.send(host, 'ccb.room.transferHost', { playerId: guest.id! });
+    const players = h.snapshot(guest).players;
+    expect(players.find(item => item.id === guest.id)?.ready).toBe(true);
+    expect(players.find(item => item.id === host.id)?.ready).toBe(false);
+    expect(h.privateState(guest).canStart).toBe(false);
+    await h.ready(host); expect(h.privateState(guest).canStart).toBe(true);
   });
 
   test('额外游戏作品命中获得作品分，外部标签反馈不泄漏答案未命中标签', async () => {
@@ -98,7 +120,7 @@ describe('CCB 房间与提示边界', () => {
 
   test('房间空置宽限后清理，出题超时回到等待且服务器关闭通知到达客户端', async () => {
     const h = keep(ccbTestHarness()); const host = await h.create(); const setter = await h.join('出题人');
-    await h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! }); h.advance(120_000);
+    await h.chooseSetter(host, setter.id!); h.advance(120_000);
     expect(h.snapshot(host).phase).toBe('waiting'); expect(h.snapshot(host).setterPlayerId).toBeNull();
     h.service.notifyShutdown(); expect(host.sent.some(packet => packet.event === 'server.shutdown')).toBe(true);
     h.service.unregisterConnection(host.record.id); h.service.unregisterConnection(setter.record.id);
@@ -119,7 +141,7 @@ describe('CCB 房间与提示边界', () => {
       const h = keep(ccbTestHarness()); const setter = await h.create();
       const players = await Promise.all([h.join('甲'),h.join('乙'),h.join('丙'),h.join('丁')]);
       await h.configure(setter, { nonstopMode: true });
-      await h.send(setter, 'ccb.game.chooseSetter', { playerId: setter.id! }); await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+      await h.chooseSetter(setter, setter.id!); await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
       for (const [index, player] of players.entries()) {
         if (index < winnerCount) { await h.guess(player, 3); await h.guess(player, 1); }
         else await h.send(player, 'ccb.game.surrender', {});

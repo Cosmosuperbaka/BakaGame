@@ -50,6 +50,11 @@ export interface CCBOriginalSession {
   players: CCBOriginalPlayer[];
   settings: CCBSettings;
   phase: CCBPhase;
+  /**
+   * 手动出题时房主点开始后进入选出题人阶段，原版协议没有这一阶段，只在本服务端记录：
+   * 值是进入前的阶段，取消时退回去；上游一推进阶段（开始出题、开局、结束）就清掉。
+   */
+  choosingSetterFrom?: 'waiting' | 'settled';
   roomName: string;
   isPublic: boolean;
   setterId: string | null;

@@ -61,8 +61,15 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
   const configure = (host: CCBTestClient, patch: Partial<CCBSettings>) => send(host, 'ccb.room.settings', { settings: { ...createDefaultCCBSettings(2026), timeLimit: 0, ...patch } });
   const ready = async (...clients: CCBTestClient[]) => { for (const client of clients) await send(client, 'ccb.player.ready', { ready: true }); };
   const guess = (client: CCBTestClient, id: number) => send(client, 'ccb.game.guess', { characterId: id });
+  /** 手动出题：把出题方式切到手动（保留现有设置）、开始进入选人阶段，再指定出题人。 */
+  const chooseSetter = async (host: CCBTestClient, setterId: string) => {
+    const settings = snapshot(host).settings;
+    if (settings.answerMode !== 'manual') await send(host, 'ccb.room.settings', { settings: { ...settings, answerMode: 'manual' } });
+    if (snapshot(host).phase !== 'choosingSetter') await send(host, 'ccb.game.start', {});
+    return send(host, 'ccb.game.chooseSetter', { playerId: setterId });
+  };
   const advance = (milliseconds: number) => { clock += milliseconds; service.runHousekeeping(); };
-  return { service, data, connect, send, snapshot, privateState, create, join, configure, ready, guess, advance, getCalls, now: () => clock };
+  return { service, data, connect, send, snapshot, privateState, create, join, configure, ready, guess, chooseSetter, advance, getCalls, now: () => clock };
 }
 
 export function deferred<T>() {

@@ -154,14 +154,19 @@ export class CCBOriginalService {
       case 'ccb.player.team': return send('updatePlayerTeam', { team: message.payload.team === null ? null : String(message.payload.team) });
       case 'ccb.player.spectate': return send('updatePlayerTeam', { team: message.payload.spectator ? '0' : null });
       case 'ccb.player.ready': {
-        if (this.me(session).ready === message.payload.ready) return {};
+        // 房主没有准备态，开局只看其他玩家，与增强房一致。
+        if (this.me(session).isHost || this.me(session).ready === message.payload.ready) return {};
         await originalConfirmedEvent(session.socket, 'updatePlayers', () => this.me(session).ready === message.payload.ready,
           () => session.socket.emit('toggleReady', { roomId: session.roomId }));
         return {};
       }
-      case 'ccb.room.settings':
+      case 'ccb.room.settings': {
         this.requireHost(session); validateCCBSettings(message.payload.settings);
+        // 出题方式不经上游：先记在本服务端同房的所有会话上，上游回推设置时沿用这一项。
+        const { answerMode } = message.payload.settings;
+        for (const peer of this.sessions.values()) if (peer.roomId === session.roomId) peer.settings = { ...peer.settings, answerMode };
         return send('updateGameSettings', { settings: toOriginalSettings(message.payload.settings) });
+      }
       case 'ccb.room.update': {
         this.requireHost(session);
         if (!message.payload.allowSpectators) this.unsupported('原版房间不支持禁止观战');
@@ -170,16 +175,27 @@ export class CCBOriginalService {
       }
       case 'ccb.room.kick': this.requireHost(session); return send('kickPlayer', { playerId: message.payload.playerId });
       case 'ccb.room.transferHost': this.requireHost(session); return send('transferHost', { newHostId: message.payload.playerId });
-      case 'ccb.game.chooseSetter':
+      case 'ccb.game.chooseSetter': {
         this.requireHost(session);
+        if (session.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
         await send('enterManualMode');
-        return send('setAnswerSetter', { setterId: message.payload.playerId });
+        const result = await send('setAnswerSetter', { setterId: message.payload.playerId });
+        // 上游确认出题人后会推 waitForAnswer 切到出题阶段；还没到的话先退出选人阶段，免得停在这里。
+        if (session.phase === 'choosingSetter') this.leaveChoosingSetter(session);
+        this.publish(session);
+        return result;
+      }
       case 'ccb.game.start':
-      case 'ccb.game.next': return this.start(session);
+      case 'ccb.game.next':
+        if (session.settings.answerMode === 'manual') return this.enterChoosingSetter(session);
+        return this.start(session);
       case 'ccb.game.setAnswer': return this.setAnswer(session, message.payload.characterId, message.payload.hints);
       case 'ccb.game.guess': return this.guess(session, message.payload.characterId);
       case 'ccb.game.surrender': return send('enterObserverMode');
-      case 'ccb.game.cancel': return this.unsupported('原版服务器没有取消出题或中止对局的指令，可重新指定出题人');
+      case 'ccb.game.cancel':
+        // 选人阶段只在本服务端，可以退回；进入出题后原版服务器没有取消指令。
+        if (session.phase === 'choosingSetter') { this.requireHost(session); this.leaveChoosingSetter(session); this.publish(session); return {}; }
+        return this.unsupported('原版服务器没有取消出题或中止对局的指令，可重新指定出题人');
       default: return this.unsupported('当前原版房间不支持此操作');
     }
   }
@@ -193,7 +209,9 @@ export class CCBOriginalService {
     const socket = (this.options.socketFactory || createCCBOriginalSocket)(this.options.serverUrl!);
     const session: CCBOriginalSession = {
       token: `ccb_original_${this.sourceKey}_${randomUUID()}`, connectionId: connection.id, roomId, alias: target.roomId, name, socket,
-      confirmed: false, revoked: false, players: [], settings: createDefaultCCBSettings(), phase: 'waiting',
+      // 出题方式只记在本服务端：同房已有会话的话沿用它的取值，后来者不会被默认值带回随机出题。
+      confirmed: false, revoked: false, players: [], phase: 'waiting',
+      settings: { ...createDefaultCCBSettings(), answerMode: this.peerAnswerMode(roomId) },
       roomName: '', isPublic: true, setterId: null, roundNumber: 0, syncRound: 1, roundKey: null,
       answer: null, hints: [], guesses: [], bannedTags: new Map(), winners: [], roundSummary: null,
       deadlineAt: null, queue: Promise.resolve(),
@@ -306,6 +324,26 @@ export class CCBOriginalService {
     if (!operation) return;
     if (session.phase === 'preparing') session.phase = operation.phase;
     delete session.preparation;
+  }
+
+  /** 手动出题：开局条件与随机出题相同，满足后进入本服务端的选出题人阶段。 */
+  private enterChoosingSetter(session: CCBOriginalSession): unknown {
+    this.requireHost(session);
+    if (!originalPrivateState(session).canStart) throw new AppError('CCB_CANNOT_START', '请等待玩家准备或本局结束');
+    session.choosingSetterFrom = session.phase === 'settled' ? 'settled' : 'waiting';
+    session.phase = 'choosingSetter';
+    this.publish(session);
+    return {};
+  }
+
+  private peerAnswerMode(roomId: string): CCBSettings['answerMode'] {
+    for (const peer of this.sessions.values()) if (peer.roomId === roomId && peer.confirmed) return peer.settings.answerMode;
+    return 'random';
+  }
+
+  private leaveChoosingSetter(session: CCBOriginalSession): void {
+    if (session.phase === 'choosingSetter') session.phase = session.choosingSetterFrom ?? 'waiting';
+    delete session.choosingSetterFrom;
   }
 
   private async start(session: CCBOriginalSession): Promise<unknown> {
@@ -498,9 +536,12 @@ export class CCBOriginalService {
       if (session.confirmed && !session.players.some(player => player.id === session.socket.id)) this.revoke(session, '已离开原版房间', true, true);
     });
     on('roomNameUpdated', payload => { session.roomName = originalString(payload.roomName); });
-    on('updateGameSettings', payload => { this.cancelPreparation(session); session.settings = originalSettings(payload.settings); });
-    on('waitForAnswer', payload => { this.cancelPreparation(session); session.setterId = originalString(payload.answerSetterId); session.phase = 'answering'; });
-    on('waitForAnswerCanceled', () => { this.cancelPreparation(session); session.setterId = null; session.phase = 'waiting'; });
+    on('updateGameSettings', payload => { this.cancelPreparation(session); session.settings = originalSettings(payload.settings, session.settings.answerMode); });
+    on('waitForAnswer', payload => {
+      this.cancelPreparation(session); delete session.choosingSetterFrom;
+      session.setterId = originalString(payload.answerSetterId); session.phase = 'answering';
+    });
+    on('waitForAnswerCanceled', () => { this.cancelPreparation(session); delete session.choosingSetterFrom; session.setterId = null; session.phase = 'waiting'; });
     on('gameStart', payload => this.gameStarted(session, payload));
     on('guessHistoryUpdate', payload => this.updateHistory(session, payload.guesses));
     on('resetTimer', payload => { session.deadlineAt = originalNumber(payload.deadlineAt) || null; });
@@ -523,7 +564,7 @@ export class CCBOriginalService {
     });
     on('gameEnded', payload => {
       if (!session.answer && session.roundKey === null) return;
-      this.cancelPreparation(session);
+      this.cancelPreparation(session); delete session.choosingSetterFrom;
       this.updateHistory(session, payload.guesses);
       session.phase = 'settled'; session.deadlineAt = null;
       if (!session.answer) throw new AppError('CCB_ORIGINAL_PROTOCOL', '缺少本局答案');
@@ -541,7 +582,7 @@ export class CCBOriginalService {
   private gameStarted(session: CCBOriginalSession, payload: Record<string, unknown>): void {
     const characterKey = createHash('sha256').update(JSON.stringify(payload.character)).digest('hex');
     const answer = decodeOriginalCharacter(payload.character, this.options.aesSecret!);
-    const settings = originalSettings(payload.settings);
+    const settings = originalSettings(payload.settings, session.settings.answerMode);
     if (!this.chats.has(session.roomId)) this.chats.set(session.roomId, { generation: randomUUID(), chat: [], seenRoundKeys: new LRUCache({ max: 256 }) });
     const chat = this.chats.get(session.roomId)!;
     const previous = chat.round;
@@ -560,9 +601,9 @@ export class CCBOriginalService {
     chat.seenRoundKeys.set(characterKey, round.number);
     const key = round.id;
     const isNew = session.roundKey !== key;
-    session.settings = originalSettings(payload.settings);
+    session.settings = settings;
     session.answer = answer;
-    this.cancelPreparation(session);
+    this.cancelPreparation(session); delete session.choosingSetterFrom;
     session.phase = 'guessing'; session.setterId = null;
     session.players = originalPlayers(payload.players, session.phase, session.syncRound);
     if (typeof payload.isPublic === 'boolean') session.isPublic = payload.isPublic;

@@ -29,10 +29,13 @@ export function originalPrivateState(session: CCBOriginalSession): CCBPrivateSta
   ).map(guess => guess.character.id))] : [];
   return {
     playerId, canGuess, canSurrender: session.phase === 'guessing' && !!me && !watching && !ownCorrect,
+    // 手动出题开始后先进入本服务端的选人阶段，出题人不必准备，与增强房同口径。
     canStart: !!me?.isHost && ['waiting', 'settled'].includes(session.phase)
-      && session.players.every(player => player.isHost || player.ready || !player.online),
+      && (session.settings.answerMode === 'manual'
+        ? session.players.some(player => !player.isHost && player.online)
+        : session.players.every(player => player.isHost || player.ready || !player.online)),
     canSetAnswer: session.phase === 'answering' && session.setterId === playerId,
-    setterCandidateIds: session.confirmed && session.socket.connected && me?.isHost && ['waiting', 'settled'].includes(session.phase)
+    setterCandidateIds: session.confirmed && session.socket.connected && me?.isHost && session.phase === 'choosingSetter'
       ? session.players.filter(player => player.online).map(player => player.id) : [],
     guesses, answer: watching || ended ? session.answer : null,
     hints: session.hints.filter((_, index) => session.settings.useHints[index] > 0

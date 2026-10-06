@@ -108,6 +108,8 @@ export class CCBRooms {
   transfer(room: CCBRoom, actor: CCBPlayerRecord, id: string): void {
     this.requireHost(room, actor); const target = this.member(room, id);
     if (!target.online || target.membership !== 'active') throw new AppError('INVALID_PLAYER', '请选择在线参与玩家');
+    // 房主没有准备态：新房主视同已准备，卸任的房主回到未准备，需要自己再点准备。
+    actor.ready = false; target.ready = true;
     room.hostPlayerId = id; delete room.hostDeadlineAt; this.system(room, `${target.name} 成为房主`);
   }
   /** 私密即有密码：切到私密时必须带新密码或已有密码；留空保留原密码；公开房清除密码。 */

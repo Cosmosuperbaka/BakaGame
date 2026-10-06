@@ -117,7 +117,7 @@ describe('CCB 会话与异步边界', () => {
 
   test('手动出题人断线自动取消，重新选人后可继续开局', async () => {
     const h = harness(); const host = await h.create(); const setter = await h.join('出题人');
-    await h.send(host, 'ccb.game.chooseSetter', { playerId: setter.id! }); h.service.unregisterConnection(setter.record.id);
+    await h.chooseSetter(host, setter.id!); h.service.unregisterConnection(setter.record.id);
     expect(h.snapshot(host).phase).toBe('waiting'); expect(h.snapshot(host).setterPlayerId).toBeNull();
     await h.configure(host, {}); await h.send(host, 'ccb.game.start', {}); expect(h.snapshot(host).phase).toBe('guessing');
   });
@@ -125,7 +125,7 @@ describe('CCB 会话与异步边界', () => {
   test('唯一猜题人刷新不会判负，恢复后继续同局并可猜中', async () => {
     const h = harness(); const host = await h.create(); const guest = await h.join('猜题人');
     await h.configure(host, {});
-    await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.chooseSetter(host, host.id!);
     await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
     await h.guess(guest, 3);
     h.service.unregisterConnection(guest.record.id);
@@ -140,7 +140,7 @@ describe('CCB 会话与异步边界', () => {
 
   test('最后一个离线猜题人过期清除后结束对局', async () => {
     const h = harness(); const host = await h.create(); const guest = await h.join('猜题人');
-    await h.configure(host, {}); await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.configure(host, {}); await h.chooseSetter(host, host.id!);
     await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
     h.service.unregisterConnection(guest.record.id); h.advance(180_000);
     expect(h.snapshot(host).phase).toBe('settled'); expect(h.snapshot(host).roundSummary!.winners).toEqual([]);

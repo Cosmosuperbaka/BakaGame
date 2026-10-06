@@ -93,10 +93,14 @@ export function toOriginalCharacter(character: CCBCharacterView): Record<string,
 export const encodeOriginalCharacter = (character: CCBCharacterView, secret: string): string =>
   CryptoJS.AES.encrypt(JSON.stringify(toOriginalCharacter(character)), secret).toString();
 
-export function originalSettings(value: unknown): CCBSettings {
+/**
+ * 上游设置转为本地设置。出题方式只在本服务端记录（原版协议没有这一项），
+ * 每次收到上游设置都沿用会话里已有的取值，不被默认值冲掉。
+ */
+export function originalSettings(value: unknown, answerMode: CCBSettings['answerMode'] = 'random'): CCBSettings {
   const raw = originalObject(value);
   const defaults = createDefaultCCBSettings();
-  const result = { ...defaults };
+  const result = { ...defaults, answerMode };
   const numericKeys = ['startYear', 'endYear', 'topNSubjects', 'characterNum', 'maxAttempts', 'timeLimit',
     'subjectTagNum', 'characterTagNum', 'useImageHint'] as const;
   for (const key of numericKeys) result[key] = raw[key] === null && key === 'timeLimit' ? 0 : originalNumber(raw[key], defaults[key]);
@@ -110,7 +114,8 @@ export function originalSettings(value: unknown): CCBSettings {
   return result;
 }
 
-export const toOriginalSettings = (settings: CCBSettings): Record<string, unknown> => ({
+/** 本地设置转为上游格式；出题方式是本服务端的扩展，不发给原版服务器。 */
+export const toOriginalSettings = ({ answerMode: _answerMode, ...settings }: CCBSettings): Record<string, unknown> => ({
   ...settings, timeLimit: settings.timeLimit || null,
   addedSubjects: settings.addedSubjects.map(id => ({ id })),
 });

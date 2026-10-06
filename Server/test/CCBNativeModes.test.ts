@@ -68,7 +68,7 @@ describe('CCB 原生完整玩法', () => {
   test('指定出题人与其队友临时观战，队伍保留并在下一局恢复参与', async () => {
     const h = harness(); const host = await h.create(); const mate = await h.join('队友'); const guest = await h.join('猜题者');
     await h.configure(host, { useHints: [8] }); await h.send(host, 'ccb.player.team', { team: 1 }); await h.send(mate, 'ccb.player.team', { team: 1 });
-    await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.chooseSetter(host, host.id!);
     expect(h.privateState(host).canSetAnswer).toBe(true);
     await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: ['手动线索'] });
     expect(h.privateState(host).answer?.id).toBe(1); expect(h.privateState(mate).answer?.id).toBe(1);
@@ -76,7 +76,9 @@ describe('CCB 原生完整玩法', () => {
     await expect(h.guess(mate, 1)).rejects.toMatchObject({ code: 'CANNOT_GUESS' });
     await h.guess(guest, 1);
     expect(h.snapshot(host).roundSummary!.scores.find(item => item.playerId === host.id)?.setter).toBe(-7);
-    await h.send(host, 'ccb.game.next', {}); await h.ready(mate, guest); await h.send(host, 'ccb.game.start', {});
+    // 出题方式是房间设置，下一局仍是手动出题；切回随机出题后整队恢复参与。
+    await h.send(host, 'ccb.game.next', {}); expect(h.snapshot(host).settings.answerMode).toBe('manual');
+    await h.configure(host, { useHints: [8] }); await h.ready(mate, guest); await h.send(host, 'ccb.game.start', {});
     expect(h.privateState(host).canGuess).toBe(true); expect(h.privateState(mate).canGuess).toBe(true);
     expect(h.snapshot(host).players.find(item => item.id === mate.id)?.team).toBe(1);
   });
@@ -203,7 +205,7 @@ describe('CCB 原生完整玩法', () => {
     const winner = await h.join('猜中者'); const loser = await h.join('未猜中者');
     await h.configure(setter, { nonstopMode: true });
     await h.send(setter, 'ccb.player.team', { team: 1 }); await h.send(mate, 'ccb.player.team', { team: 1 });
-    await h.send(setter, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    await h.chooseSetter(setter, setter.id!);
     await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
     await h.guess(winner, 3); await h.guess(winner, 1); await h.send(loser, 'ccb.game.surrender', {});
     expect(h.snapshot(setter).roundSummary!.scores.find(score => score.playerId === setter.id)).toMatchObject({ setter: 2, reason: '难度适中' });
@@ -214,7 +216,7 @@ describe('CCB 原生完整玩法', () => {
     const h = harness(); const setter = await h.create(); const winner = await h.join('猜中者');
     const loser = await h.join('未猜中者'); const offline = await h.join('离线者');
     await h.configure(setter, { nonstopMode: true });
-    await h.send(setter, 'ccb.game.chooseSetter', { playerId: setter.id! });
+    await h.chooseSetter(setter, setter.id!);
     await h.send(setter, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
     await h.guess(winner, 3); await h.guess(winner, 1);
     h.service.unregisterConnection(offline.record.id);

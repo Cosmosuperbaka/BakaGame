@@ -57,7 +57,9 @@ export class CCBNativeService {
         this.state.requireHost(room, player); this.state.requireWaiting(room); validateCCBSettings(message.payload.settings);
         room.settings = structuredClone(message.payload.settings); break;
       case 'ccb.room.update': await this.state.update(room, player, message.payload); break;
-      case 'ccb.player.ready': this.state.requireWaiting(room); player.ready = message.payload.ready; break;
+      // 房主没有准备态：开局权在房主手里，准备与否对他没有意义，界面也不显示准备按钮。
+      case 'ccb.player.ready':
+        this.state.requireWaiting(room); if (player.id !== room.hostPlayerId) player.ready = message.payload.ready; break;
       case 'ccb.player.team': this.state.requireWaiting(room); player.team = message.payload.team; break;
       case 'ccb.player.spectate':
         this.state.requireWaiting(room);
@@ -78,7 +80,8 @@ export class CCBNativeService {
       case 'ccb.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId) };
       case 'ccb.game.start': await this.start(room, player); break;
       case 'ccb.game.chooseSetter': {
-        this.state.requireHost(room, player); this.state.requireWaiting(room);
+        this.state.requireHost(room, player);
+        if (room.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
         const setter = this.state.member(room, message.payload.playerId);
         if (!setter.online) throw new AppError('PLAYER_OFFLINE', '出题人已离线');
         if (!ccbParticipants(room, setter.id).length) throw new AppError('NO_PARTICIPANTS', '出题人及其队友不能参与猜测，请保留其他猜题者');
@@ -88,6 +91,8 @@ export class CCBNativeService {
       case 'ccb.game.setAnswer': await this.setAnswer(room, player, message.payload.characterId, message.payload.hints); break;
       case 'ccb.game.cancel':
         this.state.requireHost(room, player);
+        // 选出题人阶段还没开局，退回等待只换阶段，大家的准备状态原样保留。
+        if (room.phase === 'choosingSetter') { room.phase = 'waiting'; break; }
         if (room.phase !== 'answering' && room.phase !== 'preparing') throw new AppError('INVALID_PHASE', '当前没有等待中的出题任务');
         this.state.resetWaiting(room); break;
       case 'ccb.game.guess': await this.guess(room, player, message.payload.characterId); break;
@@ -101,10 +106,12 @@ export class CCBNativeService {
     return {};
     } finally { this.state.publish(room); this.schedule(room); }
   }
+  /** 开始游戏：随机出题直接抽题开局；手动出题进入选出题人阶段，由房主在那里指定出题人。 */
   private async start(room: CCBRoom, player: CCBPlayerRecord): Promise<void> {
     this.state.requireHost(room, player); this.state.requireWaiting(room);
     if (!ccbPrivateState(room, player).canStart) throw new AppError('PLAYERS_NOT_READY', '至少一名猜题玩家在线，且其他参与者准备后才能开始');
     validateCCBSettings(room.settings);
+    if (room.settings.answerMode === 'manual') { room.phase = 'choosingSetter'; return; }
     room.phase = 'preparing'; room.phaseDeadlineAt = this.now() + 30000;
     const preparationId = crypto.randomUUID(); room.preparationId = preparationId;
     this.state.publish(room); this.schedule(room);
