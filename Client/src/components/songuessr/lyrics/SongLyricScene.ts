@@ -25,6 +25,7 @@ export class SongLyricScene {
   private pausedTimer: number | null = null;
   private lastFrame: number | null = null;
   private animations: Animation[] = [];
+  private switchTimer: number | null = null;
   private readonly host: HTMLElement;
 
   constructor(host: HTMLElement) {
@@ -126,6 +127,11 @@ export class SongLyricScene {
     // 从屏幕上当前真正显示的位置取起点，快速重播也能接住尚未结束的过渡。
     const from = elements.map((element) => getComputedStyle(element).transform);
     this.cancelAnimations();
+    // 先挂上过渡再切总览：明暗、模糊与逐字遮罩随缩放一起补间（index.css 的 baka-overview-switching），结束后摘掉，不拖慢播放中的逐帧高亮。
+    if (this.ready && !this.reducedMotion.matches) {
+      this.element.classList.add("baka-overview-switching");
+      this.switchTimer = window.setTimeout(() => this.endSwitching(), lyricOverview.timing.duration);
+    }
     this.overview = overview;
     this.element.classList.toggle("baka-overview-mode", overview);
     this.element.style.transform = overview ? `scale(${lyricOverview.scale})` : "none";
@@ -143,6 +149,13 @@ export class SongLyricScene {
   private cancelAnimations() {
     for (const animation of this.animations) animation.cancel();
     this.animations = [];
+    this.endSwitching();
+  }
+
+  private endSwitching() {
+    if (this.switchTimer !== null) window.clearTimeout(this.switchTimer);
+    this.switchTimer = null;
+    this.element.classList.remove("baka-overview-switching");
   }
 
   private onMotionChange = () => {

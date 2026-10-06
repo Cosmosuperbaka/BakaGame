@@ -634,19 +634,47 @@ img {
   background-color: var(--color-foreground);
 }
 
+/*
+ * 逐字遮罩的两档透明度由内核逐帧写在行上；注册为数值后才能补间，总览把它们推到 1（遮罩等于不存在），
+ * 不把 mask-image 换成 none：遮罩的有无不能插值，未唱到的字会在切换那一帧直接全亮，读作一次闪烁。
+ */
+@property --bright-mask-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@property --dark-mask-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
 .baka-lyric-player.baka-overview-mode [class*="lyricLine"],
 .baka-lyric-player.baka-overview-mode [class*="lyricMainLine"],
 .baka-lyric-player.baka-overview-mode [class*="lyricSubLine"],
 .baka-lyric-player.baka-overview-mode [class*="bgWrapper"] {
   opacity: 1 !important;
-  filter: none !important;
+  filter: blur(0) !important;
 }
 
 .baka-lyric-player.baka-overview-mode span {
-  -webkit-mask-image: none !important;
-  mask-image: none !important;
   --bright-mask-alpha: 1 !important;
   --dark-mask-alpha: 1 !important;
+}
+
+/*
+ * 只在进出总览的那一段（`baka-overview-switching`，时长与缩放同为 lyricOverview.timing）补间明暗、模糊与遮罩，
+ * 与整体缩放一起走完；播放中内核逐帧改这些值，常驻过渡会让逐字高亮拖在声音后面。
+ */
+.baka-lyric-player.baka-overview-switching [class*="lyricLine"],
+.baka-lyric-player.baka-overview-switching [class*="lyricMainLine"],
+.baka-lyric-player.baka-overview-switching [class*="lyricSubLine"],
+.baka-lyric-player.baka-overview-switching [class*="bgWrapper"],
+.baka-lyric-player.baka-overview-switching span {
+  transition-property: opacity, filter, --bright-mask-alpha, --dark-mask-alpha !important;
+  transition-duration: var(--motion-duration-slow) !important;
+  transition-timing-function: var(--motion-ease-emphasized) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
