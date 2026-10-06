@@ -37,8 +37,9 @@ import {
 // 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
 // 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
 import changelogData from "@/data/changelog.json";
+import { REPOSITORY_URL } from "@/data/PageMeta";
 import commitHistory from "virtual:commit-history";
-import { formatRelativeTime } from "@/lib/Time";
+import { formatAbsoluteTime, formatRelativeTime } from "@/lib/Time";
 import { cn } from "@/lib/Utils";
 
 interface ChangelogData {
@@ -164,7 +165,7 @@ interface ExternalLink {
 
 const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: faQq },
-  { href: "https://github.com/Cosmosuperbaka/BakaGame", label: "GitHub 仓库", icon: faGithub },
+  { href: REPOSITORY_URL, label: "GitHub 仓库", icon: faGithub },
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
@@ -449,15 +450,26 @@ function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
           />
           <div className="flex items-baseline justify-between gap-3">
             <span className="min-w-0 text-sm break-words">{commit.message}</span>
-            <span
+            {/* 相对时间说不出是哪一天，悬停给出确切时刻，用于判断自己是不是旧版本 */}
+            <time
               className="shrink-0 text-xs text-muted-foreground"
+              dateTime={commit.date}
+              title={formatAbsoluteTime(commit.date)}
               suppressHydrationWarning
             >
               {formatRelativeTime(commit.date)}
-            </span>
+            </time>
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono select-all">{commit.hash}</span>
+            {/* 哈希即入口：点进去是这次提交在仓库里的完整改动 */}
+            <a
+              href={`${REPOSITORY_URL}/commit/${commit.hash}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono transition-colors hover:text-foreground"
+            >
+              {commit.hash}
+            </a>
             <span aria-hidden="true">·</span>
             <span className="truncate">{commit.author}</span>
           </div>
@@ -571,7 +583,8 @@ export default function LandingPage() {
               <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
             </TabsList>
-            {/* 两份数据都在构建期定型，打开弹窗即可用，不存在加载中状态。
+            {/* 两份数据都在构建期定型（提交历史取自 GitHub 接口，取不到时降级为本地 git 历史），
+                打开弹窗即可用，不存在加载中状态。
                 两个面板同高：切换标签时弹窗不跟着伸缩，内容在原地横向交叉。 */}
             <TabsContent value="changelog" className={INFO_PANEL}>
               {entries.length > 0 ? (

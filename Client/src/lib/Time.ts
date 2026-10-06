@@ -1,14 +1,20 @@
 ﻿const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "always" });
 
+/** 解析时间串；非法输入返回 null，调用方原样回退。 */
+function parseInstant(dateStr: string): Date | null {
+  const raw = dateStr.trim();
+  // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
+  const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
+  return Number.isNaN(then.getTime()) ? null : then;
+}
+
 /**
  * 格式化相对时间。
  * 基于原生 Intl.RelativeTimeFormat 实现自然中文表达，消除手写日历除法偏差。
  */
 export function formatRelativeTime(dateStr: string): string {
-  const raw = dateStr.trim();
-  // 纯日期缺时区，补零点按本地时间解析，避免被当成 UTC 而偏移一天。
-  const then = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
-  if (Number.isNaN(then.getTime())) return dateStr;
+  const then = parseInstant(dateStr);
+  if (!then) return dateStr;
 
   const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
   // 时钟偏差或未来时间戳，显示刚刚。
@@ -29,4 +35,22 @@ export function formatRelativeTime(dateStr: string): string {
   if (months < 12) return rtf.format(-months, "month");
 
   return rtf.format(-Math.floor(months / 12), "year");
+}
+
+/**
+ * 格式化绝对时间，用相对时间的悬停提示。
+ * 「3 天前」说不出到底是哪一天，排查「我这边是不是旧版本」时需要确切时刻。
+ */
+export function formatAbsoluteTime(dateStr: string): string {
+  const then = parseInstant(dateStr);
+  if (!then) return dateStr;
+
+  return then.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
