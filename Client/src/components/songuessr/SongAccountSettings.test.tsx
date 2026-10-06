@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -34,6 +34,8 @@ const authorizedResponse = {
   account: { nickname: "夹具账号", vipStatus: "nonVip" as const },
 };
 const initialStore = useSonGuessrStore.getState();
+/** 展开后的内容区：标题行收起时的摘要也会写昵称与会员状态，断言只看正文。 */
+const panel = () => within(document.getElementById(screen.getByRole("button", { name: /网易云账号/ }).getAttribute("aria-controls")!)!);
 
 describe("SongAccountSettings", () => {
   let sendCommand: ReturnType<typeof vi.fn>;
@@ -81,9 +83,22 @@ describe("SongAccountSettings", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
 
-    expect(screen.getByText("非会员")).toBeInTheDocument();
-    expect(screen.getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")).toBeInTheDocument();
+    expect(panel().getByText("非会员")).toBeInTheDocument();
+    expect(panel().getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")).toBeInTheDocument();
     expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("更换账号时直接生成新二维码，不需要再点刷新", async () => {
+    saveSongMusicSession({ cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } }, true);
+    render(<SongAccountSettings snapshot={snapshot(true)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+    expect(sendCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "更换账号" }));
+
+    expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create");
+    expect(await screen.findByAltText("网易云登录二维码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回当前账号" })).toBeInTheDocument();
   });
 
   // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，
@@ -188,7 +203,7 @@ describe("SongAccountSettings", () => {
       expect(getStoredSongMusicSession()).toEqual(previousSession);
       expect(setNotice).not.toHaveBeenCalled();
       expect(screen.queryByText("夹具账号")).not.toBeInTheDocument();
-      if (boundary === "return-to-account") expect(screen.getByText("原账号")).toBeInTheDocument();
+      if (boundary === "return-to-account") expect(panel().getByText("原账号")).toBeInTheDocument();
     },
   );
 

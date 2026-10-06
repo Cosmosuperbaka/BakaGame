@@ -1,18 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  Check,
-  LogOut,
-  QrCode,
-  RefreshCw,
-  ShieldCheck,
-  UserRound,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeftRight, LogOut, QrCode, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { Label } from "@/components/ui/Label";
+import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Spinner } from "@/components/ui/Spinner";
-import { Switch } from "@/components/ui/Switch";
+import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
@@ -20,10 +13,23 @@ import {
   SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { headerTappable } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
+
+/** 标题行右侧的连接状态：圆点颜色与头像角上的状态点同一份。 */
+const CONNECTIONS = {
+  room: { label: "房间已连接", tone: "bg-success/10 text-success", dot: "bg-success" },
+  local: { label: "本机已登录", tone: "bg-warning/10 text-warning", dot: "bg-warning" },
+  none: { label: "未登录", tone: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/50" },
+} as const;
+
+const VIP_TONES = {
+  vip: { label: "网易云会员", tone: "bg-success/10 text-success", description: "" },
+  nonVip: { label: "非会员", tone: "bg-warning/10 text-warning", description: "非会员账号也能出题，会员专享歌曲会自动匹配可用音源。" },
+  unknown: { label: "会员状态未知", tone: "bg-muted text-muted-foreground", description: "暂时无法读取会员状态，选歌时以网易云实际权限为准。" },
+} as const;
 
 interface QrCreateResponse extends Record<string, unknown> {
   key: string;
@@ -56,8 +62,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const [qrStatus, setQrStatus] = useState("正在准备登录二维码…");
   const qrCheckingRef = useRef<number | null>(null);
   const loginGenerationRef = useRef(0);
-  const rememberFieldId = useId();
-  const rememberDescriptionId = useId();
   const rememberRef = useRef(remember);
 
   const cancelLogin = useCallback(() => {
@@ -164,130 +168,130 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     setNotice("本机登录状态已移除", "success");
   };
 
-  const vipStatus = storedSession?.account.vipStatus;
-  const vipLabel = vipStatus === "vip"
-    ? "网易云会员"
-    : vipStatus === "nonVip"
-      ? "非会员"
-      : "会员状态未知";
-  const vipExpireLabel = storedSession?.account.vipExpireTime
+  const account = storedSession?.account;
+  const vip = VIP_TONES[account?.vipStatus ?? "unknown"];
+  const vipExpireLabel = account?.vipExpireTime
     ? `有效期至 ${new Intl.DateTimeFormat("zh-CN", {
         year: "numeric",
         month: "numeric",
         day: "numeric",
         timeZone: "Asia/Shanghai",
-      }).format(new Date(storedSession.account.vipExpireTime))}`
+      }).format(new Date(account.vipExpireTime))}`
     : undefined;
+  const connection = snapshot.musicAccountReady ? CONNECTIONS.room : storedSession ? CONNECTIONS.local : CONNECTIONS.none;
+
+  const toggle = (next: boolean) => {
+    if (!next) { cancelLogin(); setOpen(false); return; }
+    setOpen(true);
+    if (showQr && !qr && !busy) void createQr();
+  };
+  // 更换账号直接给出新二维码，不让人再点一次刷新。
+  const switchAccount = () => {
+    cancelLogin();
+    setEditing(true);
+    void createQr();
+  };
+  const backToAccount = () => { cancelLogin(); setEditing(false); };
 
   return (
-    <div className="overflow-hidden rounded-md border">
-      <motion.button
-        type="button"
-        {...headerTappable}
-        onClick={() => {
-          if (open) { cancelLogin(); setOpen(false); return; }
-          setOpen(true);
-          if (showQr && !qr && !busy) void createQr();
-        }}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
-      >
-        <UserRound className="h-4 w-4 text-muted-foreground" />
-        <span className="flex-1 text-left">网易云账号</span>
-        <span className={cn(
-          "rounded-md px-2 py-0.5 text-2xs font-medium",
-          snapshot.musicAccountReady
-            ? "bg-success/10 text-success"
-            : "bg-muted text-muted-foreground",
-        )}>
-          {snapshot.musicAccountReady ? "房间已连接" : storedSession ? "本机已登录" : "未登录"}
+    <SettingsAccordion
+      icon={UserRound}
+      title="网易云账号"
+      open={open}
+      onOpenChange={toggle}
+      summary={account ? [account.nickname, vip.label] : ["登录后全房共用此账号取歌"]}
+      badge={(
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-medium", connection.tone)}>
+          <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", connection.dot)} />
+          {connection.label}
         </span>
-        <DisclosureChevron open={open} className="text-muted-foreground" />
-      </motion.button>
-
-      <CollapsibleRegion open={open}>
-            <div className="space-y-4 border-t px-4 py-4">
-              {storedSession && !editing ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 rounded-md bg-muted p-3">
-                    {storedSession.account.avatarUrl ? (
-                      <img src={storedSession.account.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-background">
-                        <UserRound className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="break-words text-sm font-medium">{storedSession.account.nickname}</div>
-                      <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Check className="h-3 w-3 text-success" />
-                        {snapshot.musicAccountReady ? "全房音乐请求正在使用此账号" : "等待加载到当前房间"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className={cn(
-                    "rounded-md border px-3 py-2 text-xs",
-                    vipStatus === "vip"
-                      ? "border-success/40 bg-success/10 text-success"
-                      : vipStatus === "nonVip"
-                        ? "border-warning/40 bg-warning/10 text-warning"
-                        : "bg-muted/40 text-muted-foreground",
-                  )}>
-                    <div className="font-medium">{vipLabel}{vipExpireLabel ? ` · ${vipExpireLabel}` : ""}</div>
-                    {vipStatus === "nonVip" ? (
-                      <p className="mt-1">非会员账号也能出题，会员专享歌曲会自动匹配可用音源。</p>
-                    ) : vipStatus === "unknown" || !vipStatus ? (
-                      <p className="mt-1">暂时无法读取会员状态，选歌时以网易云实际权限为准。</p>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" disabled={busy} onClick={() => { cancelLogin(); setEditing(true); }}>
-                      更换账号
-                    </Button>
-                    <Button variant="ghost" size="sm" className="gap-1.5 text-destructive" disabled={busy} onClick={() => void removeLogin()}>
-                      <LogOut className="h-3.5 w-3.5" />移除登录
-                    </Button>
-                  </div>
+      )}
+    >
+      {/* 账号与二维码两态各自按高度收放，一个收起时另一个撑开，切换时面板高度连续变化。 */}
+      <CollapsibleRegion open={!showQr && Boolean(account)}>
+        {account ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="relative shrink-0">
+                {account.avatarUrl ? (
+                  <img src={account.avatarUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
+                ) : (
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+                    <UserRound className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  </span>
+                )}
+                <span aria-hidden="true" className={cn("absolute right-0 bottom-0 h-3 w-3 rounded-full ring-2 ring-panel", connection.dot)} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium" title={account.nickname}>{account.nickname}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {snapshot.musicAccountReady ? "全房音乐请求正在使用此账号" : "等待加载到当前房间"}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex flex-col items-center gap-3 text-center">
-                    {qr ? (
-                      <img src={qr.qrImage} alt="网易云登录二维码" className="h-44 w-44 rounded-md border bg-white p-2" />
-                    ) : (
-                      <div className="flex h-44 w-44 items-center justify-center rounded-md border bg-muted">
-                        {busy ? <Spinner className="size-6 text-muted-foreground" /> : <QrCode className="h-8 w-8 text-muted-foreground" />}
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground">{qrStatus}</p>
-                    <Button variant="outline" size="sm" className="gap-1.5" onClick={refreshQr} disabled={busy}>
-                      <RefreshCw className="h-3.5 w-3.5" />刷新二维码
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2.5">
-                    <div>
-                      <Label htmlFor={rememberFieldId} className="text-xs">保存登录状态</Label>
-                      <p id={rememberDescriptionId} className="mt-0.5 text-2xs text-muted-foreground">仅保存在当前浏览器，服务器不持久化账号信息</p>
-                    </div>
-                    <Switch id={rememberFieldId} aria-describedby={rememberDescriptionId} checked={remember} onCheckedChange={(value) => { rememberRef.current = value; setRemember(value); }} />
-                  </div>
-                  {storedSession ? (
-                    <Button variant="ghost" size="sm" className="w-full" onClick={() => { cancelLogin(); setEditing(false); }}>
-                      返回当前账号
-                    </Button>
-                  ) : null}
-                </div>
-              )}
+              </div>
             </div>
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+              <div className={cn("min-w-0 flex-1", vip.description && "basis-40")}>
+                <div className="text-sm">会员状态</div>
+                {vip.description ? <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{vip.description}</p> : null}
+              </div>
+              <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium", vip.tone)}>
+                {vip.label}{vipExpireLabel ? <span className="font-normal opacity-80"> · {vipExpireLabel}</span> : null}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1 gap-1.5" disabled={busy} onClick={switchAccount}>
+                <ArrowLeftRight className="h-3.5 w-3.5" />更换账号
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-destructive hover:text-destructive" disabled={busy} onClick={() => void removeLogin()}>
+                <LogOut className="h-3.5 w-3.5" />移除登录
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </CollapsibleRegion>
 
-      <div className="flex gap-2 border-t bg-muted/40 px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
-        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-        <p>
-          隐私说明：服务器不会保存账号信息。账号信息仅保存在登录者浏览器，
-          在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或主动移除登录时销毁。
-        </p>
-      </div>
-    </div>
+      <CollapsibleRegion open={showQr}>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-md border bg-white sm:mx-0">
+              <AnimatePresence initial={false}>
+                {qr ? (
+                  <motion.img key={qr.key} src={qr.qrImage} alt="网易云登录二维码" variants={readoutSwap} initial="initial" animate="animate" exit="exit"
+                    className="absolute inset-0 h-full w-full p-2" />
+                ) : (
+                  <motion.span key="placeholder" variants={readoutSwap} initial="initial" animate="animate" exit="exit"
+                    className="absolute inset-0 flex items-center justify-center bg-muted">
+                    {busy ? <Spinner className="size-6 text-muted-foreground" /> : <QrCode className="h-8 w-8 text-muted-foreground" aria-hidden="true" />}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+            <div className="min-w-0 basis-44 flex-1 space-y-3">
+              <ol className="space-y-1 text-xs leading-relaxed text-muted-foreground">
+                <li>1. 打开网易云音乐 App</li>
+                <li>2. 用「扫一扫」扫描左侧二维码</li>
+                <li>3. 在手机上确认登录</li>
+              </ol>
+              <p aria-live="polite" className="text-sm">{qrStatus}</p>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={refreshQr} disabled={busy}>
+                <RefreshCw className="h-3.5 w-3.5" />刷新二维码
+              </Button>
+            </div>
+          </div>
+          <SettingSwitchRow label="保存登录状态" description="仅保存在当前浏览器，服务器不持久化账号信息"
+            checked={remember} onCheckedChange={(value) => { rememberRef.current = value; setRemember(value); }} />
+          {account ? (
+            <Button variant="ghost" size="sm" className="w-full" onClick={backToAccount}>返回当前账号</Button>
+          ) : null}
+        </div>
+      </CollapsibleRegion>
+
+      <p className="mt-4 flex gap-2 border-t pt-4 text-2xs leading-relaxed text-muted-foreground">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+        <span>
+          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或主动移除登录时销毁。
+        </span>
+      </p>
+    </SettingsAccordion>
   );
 }

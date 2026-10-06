@@ -19,15 +19,18 @@ const notifyCopyFailed = () => useSonGuessrStore.getState().setNotice("复制失
 
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
- * 单人模式没有房间设置。
+ * 单人模式没有房间设置。房主与单人模式在最上方多一组「网易云账号」（`account`），与设置组同一列间距。
  */
-function SongSettingsGroups({ snapshot, solo = false, readOnly = false }: { snapshot: SonGuessrRoomSnapshot; solo?: boolean; readOnly?: boolean }) {
+function SongSettingsGroups({ snapshot, solo = false, readOnly = false, account = false }: {
+  snapshot: SonGuessrRoomSnapshot; solo?: boolean; readOnly?: boolean; account?: boolean;
+}) {
   const [questionOpen, setQuestionOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
   const summary = songSettingsSummary(snapshot);
   return (
     <SettingsStack>
+      {account ? <SongAccountSettings snapshot={snapshot} /> : null}
       <SettingsAccordion icon={Music2} title="题目设置" summary={summary.question} readOnly={readOnly}
         open={questionOpen} onOpenChange={setQuestionOpen}>
         <SongQuestionSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
@@ -60,8 +63,7 @@ export function SongSoloWaitingPanel({
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Headphones} title="准备开始" />
-      <SongAccountSettings snapshot={snapshot} />
-      <SongSettingsGroups snapshot={snapshot} solo />
+      <SongSettingsGroups snapshot={snapshot} solo account />
       <Button
         size="lg"
         disabled={!snapshot.musicAccountReady || isStarting}
@@ -108,9 +110,7 @@ export function SongHostWaitingPanel({
 
       {showProgress ? <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" /> : null}
 
-      <SongAccountSettings snapshot={snapshot} />
-
-      <SongSettingsGroups snapshot={snapshot} />
+      <SongSettingsGroups snapshot={snapshot} account />
 
       <Button
         size="lg"
