@@ -71,3 +71,37 @@ export const MissingPassword: Story = {
     dropFocus();
   },
 };
+
+/** CCB 建房：「兼容原版」开启后私密开关改称「不在大厅显示」，允许旁观锁定为开。 */
+function CompatibleDemo(props: CreateRoomDialogProps) {
+  const [original, setOriginal] = useState(true);
+  return (
+    <CreateRoomDemo
+      {...props}
+      nameMaxLength={original ? 30 : 32}
+      roomMode={{
+        label: "兼容原版",
+        description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
+        checked: original,
+        onCheckedChange: setOriginal,
+      }}
+      privacy={original ? "unlisted" : "password"}
+      spectatorsDisabledReason={original ? "原版房间不允许禁止观战" : undefined}
+    />
+  );
+}
+
+export const OriginalCompatible: Story = {
+  name: "兼容原版 · 开启",
+  render: (args) => <CompatibleDemo {...args} />,
+};
+
+export const OriginalUnavailable: Story = {
+  name: "兼容原版 · 不可用",
+  args: {
+    roomMode: {
+      label: "兼容原版", description: "开启后建在原版服务器上。", checked: false, onCheckedChange: fn(),
+      disabledReason: "原版服务器暂未接入，请使用增强房。",
+    },
+  },
+};

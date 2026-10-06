@@ -1,17 +1,21 @@
-﻿import { useId, useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { Label } from "@/components/ui/Label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/Dialog";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { OriginPoint } from "@/lib/Motion";
 
-export interface ServerOption {
-  value: string;
+/**
+ * 房间类型开关（CCB 的「兼容原版」）：开启后房间建在另一种服务器上，下面的私密、旁观与名称上限随之切换含义。
+ * 说明常驻，写明开启后的差别；不可用时开关禁用，说明换成原因。
+ */
+export interface RoomModeSwitch {
   label: string;
-  /** 不可用原因；给出时该分段禁用并显示原因。 */
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
   disabledReason?: string;
 }
 
@@ -31,10 +35,8 @@ export interface CreateRoomDialogProps {
   nameMaxLength?: number;
   /** 触发按钮位置，弹窗由此展开 */
   origin?: OriginPoint | null;
-  /** 有多个服务器可选时显示分段；选项可带禁用原因。 */
-  serverOptions?: ServerOption[];
-  server?: string;
-  onServerChange?: (server: string) => void;
+  /** 有另一种房间可建时显示的开关，放在房间名称之前：它决定下面各项的含义。 */
+  roomMode?: RoomModeSwitch;
   /**
    * 私密的含义：`password`（默认）为私密房设密码、带锁进大厅；
    * `unlisted` 用于没有密码机制的服务器，开关只控制不进大厅，凭链接仍可进入。
@@ -57,9 +59,7 @@ export function CreateRoomDialog({
   defaultName,
   nameMaxLength,
   origin,
-  serverOptions,
-  server,
-  onServerChange,
+  roomMode,
   privacy,
   spectatorsDisabledReason,
   onCreate,
@@ -76,9 +76,7 @@ export function CreateRoomDialog({
           defaultName={defaultName}
           nameMaxLength={nameMaxLength}
           onOpenChange={onOpenChange}
-          serverOptions={serverOptions}
-          server={server}
-          onServerChange={onServerChange}
+          roomMode={roomMode}
           privacy={privacy}
           spectatorsDisabledReason={spectatorsDisabledReason}
           onCreate={onCreate}
@@ -91,7 +89,7 @@ export function CreateRoomDialog({
 
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
-  | "defaultName" | "nameMaxLength" | "onOpenChange" | "serverOptions" | "server" | "onServerChange"
+  | "defaultName" | "nameMaxLength" | "onOpenChange" | "roomMode"
   | "privacy" | "spectatorsDisabledReason" | "onCreate" | "onValidationError"
 >;
 
@@ -99,9 +97,7 @@ function CreateRoomForm({
   defaultName,
   nameMaxLength,
   onOpenChange,
-  serverOptions,
-  server,
-  onServerChange,
+  roomMode,
   privacy = "password",
   spectatorsDisabledReason,
   onCreate,
@@ -120,11 +116,7 @@ function CreateRoomForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 标签与控件显式关联，读屏能读出每个开关与输入的名称。
   const nameFieldId = useId();
-  const privateFieldId = useId();
-  const privateDescriptionId = useId();
   const passwordFieldId = useId();
-  const spectatorsFieldId = useId();
-  const spectatorsDescriptionId = useId();
   const spectatorsLocked = Boolean(spectatorsDisabledReason);
   const errorId = useId();
   // 只有「私密房缺密码」落在具体输入框上；服务端返回的失败不标红任何字段。
@@ -158,19 +150,14 @@ function CreateRoomForm({
   return (
     <>
       <div className="space-y-5">
-        {serverOptions?.length ? (
-          <div className="space-y-2">
-            <SegmentedControl
-              aria-label="房间服务器"
-              value={server ?? serverOptions[0].value}
-              options={serverOptions.map((option) => ({ value: option.value, label: option.label, disabled: Boolean(option.disabledReason) }))}
-              onValueChange={(value) => onServerChange?.(value)}
-            />
-            {serverOptions.find((option) => option.disabledReason)?.disabledReason ? (
-              // 禁用的分段点不动，原因必须常驻可见，玩家才知道为什么选不了。
-              <p className="text-xs text-muted-foreground">{serverOptions.find((option) => option.disabledReason)?.disabledReason}</p>
-            ) : null}
-          </div>
+        {roomMode ? (
+          <SwitchField
+            label={roomMode.label}
+            description={roomMode.disabledReason ?? roomMode.description}
+            checked={roomMode.checked}
+            onCheckedChange={roomMode.onCheckedChange}
+            disabled={Boolean(roomMode.disabledReason)}
+          />
         ) : null}
         <div className="space-y-2">
           <Label htmlFor={nameFieldId} className="text-sm">房间名称</Label>
@@ -180,23 +167,17 @@ function CreateRoomForm({
             onChange={(e) => setRoomName(e.target.value)}
             maxLength={nameMaxLength}
             placeholder="输入房间名称"
+            // 打开弹窗时焦点落在名称上：房间类型开关排在它前面，默认的「首个可聚焦元素」会落到开关上。
+            autoFocus
             className="h-10"
           />
         </div>
-        <div className="space-y-1 py-1">
-          <div className="flex items-center justify-between">
-            <Label htmlFor={privateFieldId} className="text-sm">{privacyCopy.label}</Label>
-            <Switch
-              id={privateFieldId}
-              checked={isPrivate}
-              onCheckedChange={(on) => setPrivateChoice({ privacy, on })}
-              aria-describedby={privacyCopy.description ? privateDescriptionId : undefined}
-            />
-          </div>
-          {privacyCopy.description ? (
-            <p id={privateDescriptionId} className="text-xs text-muted-foreground">{privacyCopy.description}</p>
-          ) : null}
-        </div>
+        <SwitchField
+          label={privacyCopy.label}
+          description={privacyCopy.description}
+          checked={isPrivate}
+          onCheckedChange={(on) => setPrivateChoice({ privacy, on })}
+        />
         <CollapsibleRegion open={needsPassword}>
               <div className="space-y-2 pb-1">
                 <Label htmlFor={passwordFieldId} className="text-sm">房间密码</Label>
@@ -215,20 +196,14 @@ function CreateRoomForm({
                 />
               </div>
         </CollapsibleRegion>
-        <div className="space-y-1 py-1">
-          <div className="flex items-center justify-between">
-            <Label htmlFor={spectatorsFieldId} className="text-sm">允许旁观</Label>
-            {/* 不允许禁止观战的服务器上开关恒为开：显示与实际提交一致，不沿用另一服务器上关掉的状态。 */}
-            <Switch
-              id={spectatorsFieldId}
-              checked={spectatorsLocked || allowSpectators}
-              onCheckedChange={setAllowSpectators}
-              disabled={spectatorsLocked}
-              aria-describedby={spectatorsLocked ? spectatorsDescriptionId : undefined}
-            />
-          </div>
-          {spectatorsLocked ? <p id={spectatorsDescriptionId} className="text-xs text-muted-foreground">{spectatorsDisabledReason}</p> : null}
-        </div>
+        {/* 不允许禁止观战的服务器上开关恒为开：显示与实际提交一致，不沿用另一服务器上关掉的状态。 */}
+        <SwitchField
+          label="允许旁观"
+          description={spectatorsDisabledReason}
+          checked={spectatorsLocked || allowSpectators}
+          onCheckedChange={setAllowSpectators}
+          disabled={spectatorsLocked}
+        />
         {errorMessage && (
           <p id={errorId} role="alert" className="text-xs text-destructive">{errorMessage}</p>
         )}
@@ -242,5 +217,32 @@ function CreateRoomForm({
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+/** 弹窗里的开关行：标签与开关同一行，说明常驻在下方并经 `aria-describedby` 关联。 */
+function SwitchField({ label, description, checked, onCheckedChange, disabled = false }: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  const id = useId();
+  const descriptionId = useId();
+  return (
+    <div className="space-y-1 py-1">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor={id} className={disabled ? "text-sm opacity-50" : "text-sm"}>{label}</Label>
+        <Switch
+          id={id}
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          disabled={disabled}
+          aria-describedby={description ? descriptionId : undefined}
+        />
+      </div>
+      {description ? <p id={descriptionId} className="text-xs text-muted-foreground">{description}</p> : null}
+    </div>
   );
 }

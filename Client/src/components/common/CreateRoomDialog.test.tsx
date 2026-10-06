@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CreateRoomDialog } from "./CreateRoomDialog";
@@ -39,6 +39,22 @@ describe("CreateRoomDialog", () => {
     // 换到有密码机制的服务器：上一种「私密」不沿用，否则会带着未填的密码直接报错。
     view.rerender(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" privacy="password" onCreate={onCreate} />);
     expect(screen.getByRole("switch", { name: "私密房间" })).not.toBeChecked();
+  });
+
+  it("房间类型开关常驻说明，不可用时禁用并改写为原因", async () => {
+    const user = userEvent.setup();
+    const onCheckedChange = vi.fn();
+    const mode = { label: "兼容原版", description: "开启后建在原版服务器上。", checked: false, onCheckedChange };
+    const view = render(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" roomMode={mode} onCreate={vi.fn(async () => {})} />);
+    // 开关排在名称前面，打开时焦点仍落在名称上。
+    await waitFor(() => expect(screen.getByLabelText("房间名称")).toHaveFocus());
+    const toggle = screen.getByRole("switch", { name: "兼容原版" });
+    expect(toggle).toHaveAccessibleDescription("开启后建在原版服务器上。");
+    await user.click(toggle);
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+    view.rerender(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" roomMode={{ ...mode, disabledReason: "原版服务器暂未接入。" }} onCreate={vi.fn(async () => {})} />);
+    expect(screen.getByRole("switch", { name: "兼容原版" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "兼容原版" })).toHaveAccessibleDescription("原版服务器暂未接入。");
   });
 
   it("房间名称按服务器上限截断，超长的默认名称不会被服务端拒绝", async () => {

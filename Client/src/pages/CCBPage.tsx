@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCCBStore, ccbErrorMessage } from "@/stores/UseCCBStore";
 import { useLobbySession } from "@/hooks/UseLobbySession";
-import { CreateRoomDialog, type ServerOption } from "@/components/common/CreateRoomDialog";
+import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
@@ -76,15 +76,6 @@ export default function CCBPage() {
     showError: (message) => useCCBStore.getState().setNotice(message, "error"),
   });
 
-  const serverOptions: ServerOption[] = [
-    { value: "native", label: CCB_SOURCE_LABELS.native },
-    {
-      value: "original",
-      label: CCB_SOURCE_LABELS.original,
-      ...(originalAvailable ? {} : { disabledReason: "原版服务器暂未接入，请使用增强房。" }),
-    },
-  ];
-
   return (
     <LobbyPage
       path="/ccb"
@@ -99,7 +90,7 @@ export default function CCBPage() {
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
       onSelectRoom={(room, event) => {
         const target = rooms.find((candidate) => candidate.roomId === room.roomId);
-        // 原版房没有密码机制，把当前分段切到它的来源，加入表单才不会带错字段。
+        // 原版房没有密码机制，把当前来源切到它，加入表单才不会带错字段。
         if (target) { setServer(target.source); void handleJoinRoom(target, event); }
       }}
       dialogs={<>
@@ -110,9 +101,13 @@ export default function CCBPage() {
           defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
           // 协议上限 32；原版服务器只保留前 30 个字符。
           nameMaxLength={server === "original" ? 30 : 32}
-          serverOptions={serverOptions}
-          server={server}
-          onServerChange={(value) => setServer(value as CCBSource)}
+          roomMode={{
+            label: "兼容原版",
+            description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
+            checked: server === "original",
+            onCheckedChange: (checked) => setServer(checked ? "original" : "native"),
+            ...(originalAvailable ? {} : { disabledReason: "原版服务器暂未接入，请使用增强房。" }),
+          }}
           privacy={server === "original" ? "unlisted" : "password"}
           spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止观战" : undefined}
           onValidationError={(message) => useCCBStore.getState().setNotice(message, "error")}
