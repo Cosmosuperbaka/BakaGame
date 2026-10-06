@@ -222,7 +222,7 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
               </GuessSlot>
             ) : slot === "done" ? (
               <GuessSlot key="done" className="flex items-start gap-2">
-                <motion.p role="status" {...receiptCard} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border-2 border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium">
+                <motion.p role="status" {...receiptCard} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium">
                   <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}><CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" /></motion.span>
                   本轮已完成，等待其他玩家
                 </motion.p>

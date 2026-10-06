@@ -11,6 +11,9 @@ import { useCCBRoomLifecycle } from "@/hooks/UseCCBRoomLifecycle";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { CCB_SOURCE_LABELS, ccbDisplayRound, ccbPerspective, ccbRoomPath } from "@/lib/CCBSession";
 
+/** 归密码步处理的加入失败：缺密码、密码错误、错误次数过多。 */
+const PASSWORD_CODES = new Set(["PASSWORD_REQUIRED", "PASSWORD_INCORRECT", "TOO_MANY_ATTEMPTS"]);
+
 export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
   const snapshot = useCCBStore((state) => state.snapshot);
@@ -29,17 +32,18 @@ export default function CCBRoomPage() {
   // 尚未握手成功：与原版重连中同为断线语义，文案区分来源。
   const connectionIssue = !lifecycle.connected ? "重连中..." : ready && !snapshot.upstreamConnected ? "原版重连中..." : null;
 
-  // 加入失败（房间已满、密码错误等）以提示条报出：公共进房门没有错误位，与另外两个游戏同口径。
+  // 密码步的失败写在密码框下（RoomJoinGate 的 passwordError）；其余加入失败（房间已满、已关闭等）以提示条报出。
+  const passwordFailure = PASSWORD_CODES.has(lifecycle.errorCode);
   useEffect(() => {
-    if (lifecycle.error) useCCBStore.getState().setNotice(lifecycle.error);
-  }, [lifecycle.error]);
+    if (lifecycle.error && !passwordFailure) useCCBStore.getState().setNotice(lifecycle.error);
+  }, [lifecycle.error, passwordFailure]);
 
   if (!ready) {
     // 进房分两步：先填名字，私密房再输密码。是否私密取大厅列表（私密房带锁进大厅）；
-    // 列表里查不到时（刚转私密）由服务端的缺密码 / 密码错误应答把人带到第二步。
+    // 列表里查不到时（刚转私密）由服务端的缺密码 / 密码错误应答（错误码）把人带到第二步。
     const locked = rooms.some((room) => room.roomId === lifecycle.roomId && room.hasPassword);
     const awaiting = lifecycle.needsJoin && !lifecycle.joining;
-    const needsPassword = awaiting && named && (locked || /密码/.test(lifecycle.error));
+    const needsPassword = lifecycle.needsJoin && named && (locked || passwordFailure);
     return (
       <RoomJoinGate
         roomId={lifecycle.roomId ?? ""}
@@ -56,6 +60,10 @@ export default function CCBRoomPage() {
         onConfirmPassword={() => void lifecycle.join()}
         onExit={() => void lifecycle.leave()}
         nameMaxLength={32}
+        pending={lifecycle.joining && named}
+        // 刚到密码步时的「需要密码」不算失败，不标红；密码错误与尝试过多写在框下。
+        passwordError={passwordFailure && lifecycle.errorCode !== "PASSWORD_REQUIRED"
+          ? { message: lifecycle.error, invalid: lifecycle.errorCode === "PASSWORD_INCORRECT" } : null}
       >
         {seo}
       </RoomJoinGate>

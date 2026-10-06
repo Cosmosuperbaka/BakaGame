@@ -54,7 +54,7 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CCBF
     >
       <span className="sr-only">{FIELD_LABEL[field]}</span>
       <span>{text}</span>
-      <Icon className="size-3.5 shrink-0" aria-label={label} />
+      <Icon className="size-3.5 shrink-0" role="img" aria-label={label} />
     </span>
   );
 }
@@ -178,7 +178,7 @@ function GuessRow({ guess, showRound }: { guess: CCBGuess; showRound: boolean })
                     <div className="flex flex-wrap gap-1">
                       {group.tags.map((tag) => (
                         <Badge key={tag.text} size="sm" variant={tag.matched ? "matched" : "muted"}>
-                          {tag.text}{tag.matched ? <Check className="size-3" aria-label="匹配" /> : null}
+                          {tag.text}{tag.matched ? <Check className="size-3" role="img" aria-label="匹配" /> : null}
                         </Badge>
                       ))}
                     </div>

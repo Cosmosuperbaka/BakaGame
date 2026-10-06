@@ -4,6 +4,7 @@ import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { normalizeCCBRoomId } from "@/lib/CCBSession";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
+import { isProtocolError } from "@/lib/WebsocketClient";
 
 /**
  * 房间路由只带统一房号：来源（增强房 / 原版房）由服务端的房号目录判定，
@@ -21,6 +22,9 @@ export function useCCBRoomLifecycle() {
   const [name, setName] = useState(getSavedUsername);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // 服务端的错误码：是否进入密码步、密码框是否标红按它判断，不匹配文案。
+  const [errorCode, setErrorCode] = useState("");
+  const fail = (failure: unknown) => { setError(ccbErrorMessage(failure)); setErrorCode(isProtocolError(failure) ? failure.code : ""); };
   const attempted = useRef("");
   const manualJoin = useRef<AbortController | null>(null);
   useEffect(() => () => { manualJoin.current?.abort(); }, [roomId]);
@@ -40,7 +44,7 @@ export function useCCBRoomLifecycle() {
         const restored = await store.reconnectRoom(roomId, controller.signal);
         if (!controller.signal.aborted) setNeedsJoin(!restored);
       } catch (failure) {
-        if (!controller.signal.aborted) { setError(ccbErrorMessage(failure)); setNeedsJoin(true); }
+        if (!controller.signal.aborted) { fail(failure); setNeedsJoin(true); }
       } finally { if (!controller.signal.aborted) setJoining(false); }
     };
     void restore();
@@ -51,12 +55,12 @@ export function useCCBRoomLifecycle() {
     if (!roomId || !name.trim() || joining || manualJoin.current) return;
     const controller = new AbortController();
     manualJoin.current = controller;
-    setJoining(true); setError("");
+    setJoining(true); setError(""); setErrorCode("");
     try {
       await useCCBStore.getState().joinRoom(roomId, name.trim(), password, controller.signal);
       if (controller.signal.aborted) return;
       saveUsername(name.trim()); setNeedsJoin(false);
-    } catch (failure) { if (!controller.signal.aborted) setError(ccbErrorMessage(failure)); }
+    } catch (failure) { if (!controller.signal.aborted) fail(failure); }
     finally {
       if (manualJoin.current === controller) manualJoin.current = null;
       if (!controller.signal.aborted) setJoining(false);
@@ -68,5 +72,5 @@ export function useCCBRoomLifecycle() {
     navigate("/ccb");
   }, [navigate]);
 
-  return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, join, leave };
+  return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, errorCode, join, leave };
 }

@@ -260,6 +260,30 @@ export const JoinPassword: Story = {
   },
 };
 
+/** 密码错误写在密码框下并标红，不再另弹提示条；错误码来自服务端应答。 */
+export const JoinPasswordWrong: Story = {
+  name: "加入房间弹窗 · 密码错误",
+  tags: ["!page", "overlay"],
+  beforeEach: () => {
+    removeCCBSession(CCB_NATIVE_ROOM_ID);
+    presetCCB({
+      connected: true, lobbyReady: true, originalAvailable: true,
+      rooms: CCB_LOBBY_ROOMS.map((room) => room.roomId === CCB_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
+    });
+    useCCBStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_INCORRECT", message: "房间密码错误" }) });
+    return presetSavedUsername();
+  },
+  play: async () => {
+    const nameDialog = await screen.findByRole("dialog", { name: "设置用户名" });
+    await userEvent.click(within(nameDialog).getByRole("button", { name: "进入房间" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "输入房间密码" }));
+    await userEvent.type(dialog.getByLabelText("房间密码"), "1234");
+    await userEvent.click(dialog.getByRole("button", { name: "加入房间" }));
+    await dialog.findByText("房间密码错误");
+    dropFocus();
+  },
+};
+
 export const MobilePlayers: Story = {
   name: "手机 · 玩家面板",
   tags: ["mobile"],
