@@ -113,6 +113,13 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 生产构建命令：平台的 Makers 项目是 GitHub 集成型，构建在平台侧发生，`npm run build` 即可
   （静态外壳已在 build 内完成）。仓库保留了 `build:seo` 作为指向 build 的兼容别名，等控制台
   改回 `npm run build` 后可以删掉。
+- **构建期有一次只读的 GitHub 接口请求**（`commit-history` 插件取公开仓库的提交历史）：
+  构建容器是浅克隆（depth=1），`git log` 只有 HEAD 一条，页脚弹窗的提交列表因此改由接口提供，
+  并用本次构建的提交作 `sha` 起点，保证列表第一条与 `meta[name=bakagame-build]` 是同一个提交。
+  请求失败（限流、超时、离线、该提交尚未推送都会 4xx/超时）一律降级为该容器内的 git 历史，
+  **不得让构建失败**；3 秒超时是硬上限，构建耗时预算按 ≤3s 计。
+  需要更高配额时在构建环境注入 `GITHUB_TOKEN`，未配置也能跑（未认证额度按出口 IP 每小时 60 次，
+  远高于构建频率）。
 - 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/ccb` 四个路由，正文应含对应文案且 canonical 指向自身。
   若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
   先检查静态产物与平台路由解析；不要因此恢复上节已撤销的 API/WS 中间件。静态路径规则与实时反代分别验证。

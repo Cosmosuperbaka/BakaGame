@@ -13,6 +13,12 @@
 export const SITE_ORIGIN = "https://game.baka.website";
 export const SITE_NAME = "BakaGame";
 
+/**
+ * 公开代码仓库。页脚外链、提交历史的取数接口与提交页跳转都从这里取，
+ * 免得同一串地址在三个地方各写一份、改一处漏两处。
+ */
+export const REPOSITORY_URL = "https://github.com/Cosmosuperbaka/BakaGame";
+
 /** 静态外壳：不执行 JS 的爬虫（百度为主）能读到的正文。 */
 export interface PageShell {
   /** 外壳 H1 */
