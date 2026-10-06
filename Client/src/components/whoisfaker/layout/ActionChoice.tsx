@@ -3,8 +3,6 @@ import { motion } from "framer-motion";
 import { CheckCircle2, Sword, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
-  duration,
-  ease,
   listItem,
   receiptCard,
   receiptMarkFollow,
@@ -49,12 +47,6 @@ export function TargetOption({
   );
 }
 
-/** 回执收回的去向：沿入场的起点原路退回被点的选项，时长取确定收束的一档。 */
-const receiptExit = {
-  ...receiptCard.initial,
-  transition: { duration: duration.quick, ease: ease.inOut },
-};
-
 /**
  * 提交回执。选项网格与回执是同一次决定的前后两面：两者经 `AnimatePresence mode="popLayout"` 交叉，
  * 回执的缩放原点落在被点的那张选项上（`origin`），读作「这张卡被接住了」；撤销时沿原路收回。
@@ -91,7 +83,7 @@ export function ActionReceipt({
       ref={setRef}
       initial={receiptCard.initial}
       animate={receiptCard.animate}
-      exit={receiptExit}
+      exit={receiptCard.exit}
       transition={receiptCard.transition}
       style={originStyle}
       className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-4 py-3"

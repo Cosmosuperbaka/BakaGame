@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { RefObject } from "react";
-import { duration, ease, spring } from "@/lib/Motion";
+import { duration, ease, spring, wordDock } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /**
  * 停靠状态的缩放比。词语始终以放大尺寸渲染，停靠时缩小，
  * 因此两端都是清晰字形，中间过程只有 transform 在变化。
  */
-const DOCK_SCALE = 0.34;
 
 interface AssignedWordProps {
   /** 本人本局的词语或提示；无值时不渲染 */
@@ -54,8 +53,8 @@ export function AssignedWord({
     if (width === 0 || height === 0) return;
     setNatural({ width, height });
     onDockSizeChange({
-      width: Math.ceil(width * DOCK_SCALE),
-      height: Math.ceil(height * DOCK_SCALE),
+      width: Math.ceil(width * wordDock.scale),
+      height: Math.ceil(height * wordDock.scale),
     });
   }, [word, onDockSizeChange]);
 
@@ -73,7 +72,7 @@ export function AssignedWord({
     }
     const anchor = anchorRef.current?.getBoundingClientRect();
     if (!anchor) return;
-    setPlacement({ x: anchor.left, y: anchor.top, scale: DOCK_SCALE });
+    setPlacement({ x: anchor.left, y: anchor.top, scale: wordDock.scale });
   }, [revealed, natural, anchorRef, stageRef]);
 
   useLayoutEffect(measure, [measure]);
@@ -104,7 +103,7 @@ export function AssignedWord({
       animate={
         placement
           ? { x: placement.x, y: placement.y, scale: placement.scale, opacity: 1 }
-          : { opacity: 0, x: 0, y: 0, scale: DOCK_SCALE }
+          : { opacity: 0, x: 0, y: 0, scale: wordDock.scale }
       }
       transition={
         placement

@@ -275,9 +275,7 @@ function GuessReceipt({ stage, solo }: { stage: keyof typeof RECEIPTS; solo: boo
   const { icon: Icon, tone, mark, text } = RECEIPTS[stage];
   return (
     <motion.div
-      initial={receiptCard.initial}
-      animate={receiptCard.animate}
-      transition={receiptCard.transition}
+      {...receiptCard}
       className={cn("flex items-center justify-center gap-2 rounded-md border px-4 py-3 text-sm", tone)}
     >
       <motion.span

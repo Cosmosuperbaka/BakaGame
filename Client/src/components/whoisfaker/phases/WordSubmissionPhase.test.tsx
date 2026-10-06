@@ -91,6 +91,23 @@ describe("word submission", () => {
     });
   });
 
+  it("漏填的字段标红并在框下说明，不发命令；填上后错误消失", () => {
+    render(<Harness />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "平民词" }), { target: { value: "饺子" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认提交" }));
+
+    const undercover = screen.getByRole("textbox", { name: "卧底词" });
+    expect(undercover).toHaveAttribute("aria-invalid", "true");
+    expect(undercover).toHaveAccessibleDescription("请输入卧底词");
+    expect(screen.getByRole("textbox", { name: "白板提示" })).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("textbox", { name: "平民词" })).not.toHaveAttribute("aria-invalid");
+    expect(sendCommand).not.toHaveBeenCalled();
+
+    fireEvent.change(undercover, { target: { value: "馄饨" } });
+    expect(undercover).not.toHaveAttribute("aria-invalid");
+  });
+
   it("关闭随机分配后展开逐人身份选择，并按房间配置预填", () => {
     render(<Harness />);
 

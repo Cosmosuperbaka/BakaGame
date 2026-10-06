@@ -485,8 +485,13 @@ export const readoutTick = {
 export const receiptCard = {
   initial: { opacity: 0, scale: 0.94 },
   animate: { opacity: 1, scale: 1 },
+  /** 撤销或换回输入栏时原路收回起点，时长取确定收束的一档，不再回弹。 */
+  exit: { opacity: 0, scale: 0.94, transition: { duration: duration.quick, ease: ease.inOut } },
   transition: spring.impulse,
 } as const;
+
+/** 谁是卧底分到的词语揭示后停靠到顶栏时的缩放：停靠位按这个比例预留宽高。 */
+export const wordDock = { scale: 0.34 } as const;
 
 /** 单独落位的对勾（已提交发言）。 */
 export const receiptMark = {

@@ -97,13 +97,17 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
     setManualRoles(initialRoles);
   };
 
+  // 能落到字段的校验写在该字段下（aria-invalid + 错误文案），点过一次提交后才显示，填上即消失。
+  const [attempted, setAttempted] = useState(false);
+  const fieldErrors = {
+    civilian: attempted && !civilianWord.trim() ? "请输入平民词" : null,
+    undercover: attempted && !undercoverWord.trim() ? "请输入卧底词" : null,
+    blank: attempted && hasBlank && !blankHint.trim() ? "开启白板时需填写提示" : null,
+  };
+
   const handleSubmit = useCallback(async () => {
-    if (!civilianWord.trim() || !undercoverWord.trim()) {
-      addToast("请输入平民词和卧底词", "error");
-      return;
-    }
-    if (hasBlank && !blankHint.trim()) {
-      addToast("开启白板时需填写提示", "error");
+    if (!civilianWord.trim() || !undercoverWord.trim() || (hasBlank && !blankHint.trim())) {
+      setAttempted(true);
       return;
     }
     if (!isRandomRole && !manualRoleCountsValid) {
@@ -148,6 +152,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
           onChange={setCivilianWord}
           placeholder="输入平民获得的词语"
           maxLength={20}
+          error={fieldErrors.civilian}
         />
         <SettingTextField
           label="卧底词"
@@ -155,6 +160,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
           onChange={setUndercoverWord}
           placeholder="输入卧底获得的词语"
           maxLength={20}
+          error={fieldErrors.undercover}
         />
         {hasBlank ? (
           <SettingTextField
@@ -163,6 +169,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
             onChange={setBlankHint}
             placeholder="给白板玩家的分类提示"
             maxLength={20}
+            error={fieldErrors.blank}
           />
         ) : null}
 
