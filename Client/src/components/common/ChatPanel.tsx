@@ -340,6 +340,8 @@ export function ChatPanel({
           aria-controls={candidates.length > 0 ? mentionListId : undefined}
           aria-activedescendant={candidates.length > 0 ? mentionOptionId(mentionIndex) : undefined}
           onKeyDown={(event) => {
+            // 输入法选词的回车只确认候选字，不发送、不选提及。
+            if (event.nativeEvent.isComposing) return;
             if (candidates.length > 0) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();

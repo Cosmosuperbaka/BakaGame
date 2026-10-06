@@ -321,7 +321,7 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
           <motion.tr
             key={player.id}
             variants={listItem}
-            className={cn("origin-left border-b border-border/60 align-top", isMe && "bg-primary/5")}
+            className={cn("origin-left border-b border-border align-top", isMe && "bg-primary/5")}
           >
             <th
               scope="row"

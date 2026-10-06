@@ -476,7 +476,7 @@ export function SettingToggleChips<T extends string>({
             <motion.button key={option.value} type="button" {...tappable} aria-pressed={pressed} onClick={() => toggle(option.value)}
               className={cn(
                 "rounded-full border px-3 py-1 text-xs transition-colors",
-                pressed ? "border-primary/50 bg-primary/15 font-medium text-primary" : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground",
+                pressed ? "border-primary/40 bg-primary/10 font-medium text-primary" : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground",
               )}>
               {option.label}
             </motion.button>

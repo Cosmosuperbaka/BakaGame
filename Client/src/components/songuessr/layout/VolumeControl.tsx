@@ -57,19 +57,26 @@ export function VolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
             <VolumeGlyph volume={volume} className="h-5 w-5" />
           </Button>
         </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content side="bottom" align="end" sideOffset={6} collisionPadding={12} aria-label="播放音量" asChild>
-            <motion.div
-              variants={popover}
-              initial="initial"
-              animate="animate"
-              className="z-popover origin-(--radix-popover-content-transform-origin) rounded-full floating-surface p-1 shadow-md"
-            >
-              {/* 触屏没有悬停：弹出层里轨道始终是粗的那一档，整行高度都能按住拖动。 */}
-              <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} expanded className="flex border-0 bg-transparent shadow-none" />
-            </motion.div>
-          </Popover.Content>
-        </Popover.Portal>
+        {/* 受控 + forceMount：关闭时经 AnimatePresence 播完退场再卸载，与玩家行浮层同口径。 */}
+        <AnimatePresence>
+          {open ? (
+            <Popover.Portal forceMount>
+              <Popover.Content forceMount side="bottom" align="end" sideOffset={6} collisionPadding={12} aria-label="播放音量" asChild>
+                <motion.div
+                  variants={popover}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  // 胶囊浮层：floating-surface 自带 rounded-md，这里显式压成全圆角。
+                  className="z-popover origin-(--radix-popover-content-transform-origin) floating-surface !rounded-full p-1 shadow-md"
+                >
+                  {/* 触屏没有悬停：弹出层里轨道始终是粗的那一档，整行高度都能按住拖动。 */}
+                  <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} expanded className="flex border-0 bg-transparent shadow-none" />
+                </motion.div>
+              </Popover.Content>
+            </Popover.Portal>
+          ) : null}
+        </AnimatePresence>
       </Popover.Root>
     </>
   );
