@@ -23,7 +23,7 @@ function RoomSourceTabs({ initial = "native" }: { initial?: "native" | "original
       <TabsContent value="original" className="space-y-3">
         <p className="text-sm text-muted-foreground">与原版玩家一起游玩，聊天仅增强版玩家可见。</p>
         <p role="status" className="rounded-md border p-4 text-sm">
-          原版服务器暂未接入，请使用增强房。
+          原版服务器暂未接入，暂时只能新建普通房间。
         </p>
       </TabsContent>
     </Tabs>

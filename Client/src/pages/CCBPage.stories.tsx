@@ -47,19 +47,18 @@ export const OriginalUnavailable: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
-    await dialog.findByText("原版服务器暂未接入，请使用增强房。");
+    await dialog.findByText("原版服务器暂未接入，暂时只能新建普通房间。");
     dropFocus();
   },
 };
 
 export const CreateDialog: Story = {
-  name: "创建增强房弹窗 · 私密房间",
+  name: "创建房间弹窗 · 私密房间",
   tags: ["!page", "overlay"],
   beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
-    await userEvent.click(dialog.getByRole("radio", { name: "增强房" }));
     await userEvent.click(dialog.getByRole("switch", { name: "私密房间" }));
     await dialog.findByLabelText("房间密码");
     dropFocus();
@@ -68,13 +67,13 @@ export const CreateDialog: Story = {
 
 /** 原版服务器没有密码机制：私密开关改为「不在大厅显示」并常驻说明，禁观战开关禁用并写明原因。 */
 export const CreateOriginalDialog: Story = {
-  name: "创建原版房弹窗 · 不在大厅显示",
+  name: "创建房间弹窗 · 兼容原版 · 不在大厅显示",
   tags: ["!page", "overlay"],
   beforeEach: () => lobby({ rooms: CCB_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
-    await userEvent.click(dialog.getByRole("radio", { name: "原版房" }));
+    await userEvent.click(dialog.getByRole("switch", { name: "兼容原版" }));
     await userEvent.click(await dialog.findByRole("switch", { name: "不在大厅显示" }));
     dropFocus();
   },
