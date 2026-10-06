@@ -53,7 +53,7 @@ export function AttemptList({
   return (
     <section className="overflow-hidden rounded-md bg-muted">
       <div className="border-b border-background px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground">{title}</h3>
       </div>
       <div>
         {attempts.map((attempt) => (
@@ -232,7 +232,7 @@ export function GameStage(props: SongGameAreaProps) {
         <PhaseHeader icon={Headphones} title={snapshot.settings.questionType === "anime" ? "听歌猜番" : "听歌猜曲"} />
         <section className="space-y-5 rounded-md bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <h3 className="text-xs font-semibold text-muted-foreground">
               {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
             </h3>
             {audioStatus === "loading" ? (

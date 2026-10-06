@@ -15,7 +15,7 @@ export function SectionHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-2.5 px-1">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
         {icon ?? <UserCheck className="h-3.5 w-3.5" />}
         {title}
       </div>

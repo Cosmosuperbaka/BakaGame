@@ -42,7 +42,7 @@ function DisclosureHeader({
       className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
     >
       {icon}
-      <h3 className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3 className="flex-1 text-xs font-semibold text-muted-foreground">
         {label}
       </h3>
       <DisclosureChevron open={open} className="text-muted-foreground" />
@@ -75,7 +75,7 @@ export function GameOverPhase() {
       <div className="mx-auto max-w-2xl space-y-5 py-8">
         <PhaseHeader icon={Trophy} title="游戏结束" />
         <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
             <BookOpen className="h-4 w-4 text-primary" />
             本局词语解密
           </div>
@@ -106,7 +106,7 @@ export function GameOverPhase() {
 
       {/* 词语揭秘全景卡片 */}
       <section className="space-y-3 overflow-hidden rounded-md bg-muted p-4">
-        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
           <BookOpen className="h-4 w-4 text-primary" />
           本局词语解密
         </div>
@@ -212,7 +212,7 @@ export function GameOverPhase() {
       {summary.blankGuesses.length > 0 && (
         <section className="overflow-hidden rounded-md bg-muted">
           <div className="border-b border-background px-4 py-2.5">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <h3 className="text-xs font-semibold text-muted-foreground">
               白板猜词记录
             </h3>
           </div>

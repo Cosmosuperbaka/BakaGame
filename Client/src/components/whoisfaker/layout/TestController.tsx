@@ -220,7 +220,7 @@ function ControlGroup({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-1.5 text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 mb-1.5 text-2xs font-semibold text-muted-foreground">
         {icon}
         {label}
       </div>

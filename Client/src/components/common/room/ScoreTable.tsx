@@ -161,7 +161,7 @@ export function ScoreTable({
   return (
     <section className="isolate overflow-hidden rounded-md bg-muted">
       <div className="border-b border-background px-4 py-2.5">
-        <h3 id={titleId} className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+        <h3 id={titleId} className="text-xs font-semibold text-muted-foreground">{title}</h3>
       </div>
       {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供胜者扫光取行宽 */}
       <div className="@container overflow-x-auto">
