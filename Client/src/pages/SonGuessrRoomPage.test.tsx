@@ -450,7 +450,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 验证猜中状态与更新后的得分
     expect(screen.getByText("15")).toBeInTheDocument();
     expect(screen.getByText("猜中")).toBeInTheDocument();
-    expect(screen.getByText("本轮操作已完成")).toBeInTheDocument();
+    expect(screen.getByText("猜中了，等待其他玩家")).toBeInTheDocument();
     expect(screen.getByText(/夜空中最亮的星 · 逃跑计划/)).toBeInTheDocument();
   });
 
@@ -624,7 +624,8 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     act(() => {
       useSonGuessrStore.setState({ connected: false });
     });
-    expect(screen.getByText("断线中...")).toBeInTheDocument();
+    // 顶栏在宽屏写文字、窄屏收成图标（可访问名同一句），两处都可能在文档里
+    expect(screen.getAllByText("断线中...").length).toBeGreaterThan(0);
 
     // 2. 房间被服务端关闭时，页面自动重定向到 /songuessr 大厅
     act(() => {

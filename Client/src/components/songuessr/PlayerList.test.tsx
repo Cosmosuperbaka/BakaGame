@@ -86,6 +86,22 @@ describe("SonGuessr PlayerList", () => {
     expect(screen.getByText("猜中")).toBeInTheDocument();
   });
 
+  it("听歌识番时作答状态写「猜番」", () => {
+    render(
+      <PlayerList
+        players={[createMockPlayer({ id: "p2", name: "猜番中玩家", roundStatus: "guessing" })]}
+        myPlayerId="p2"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+        questionType="anime"
+      />,
+    );
+
+    expect(screen.getByText("猜番")).toBeInTheDocument();
+    expect(screen.queryByText("猜歌")).not.toBeInTheDocument();
+  });
+
   it("准确展示玩家得分数字与分值单位", () => {
     const players: SonGuessrPlayerView[] = [
       createMockPlayer({ id: "p1", name: "高分玩家", score: 88 }),

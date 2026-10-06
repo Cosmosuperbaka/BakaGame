@@ -4,6 +4,7 @@ import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import { fromNow } from "@/stories/fixtures/Common";
 import { dropFocus } from "@/stories/PlayHelpers";
 import {
+  animeRoundSummary,
   choosingSnapshot,
   guesserPrivate,
   playingSnapshot,
@@ -20,6 +21,7 @@ import {
   SONG_SOLO_ROUTER,
   songPlayer,
   songPrivate,
+  songSettings,
   songSnapshot,
   spectatorPrivate,
   stubSongActions,
@@ -218,6 +220,14 @@ export const RoundResultPlayer: Story = {
   beforeEach: () => presetSongRoom(roundResultSnapshot(), songPrivate()),
 };
 
+export const RoundResultAnime: Story = {
+  name: "答案揭晓 · 听歌猜番 · 玩家",
+  beforeEach: () => presetSongRoom(
+    roundResultSnapshot({ settings: songSettings({ questionType: "anime" }), roundSummary: animeRoundSummary() }),
+    songPrivate(),
+  ),
+};
+
 // ==================== 单人模式 ====================
 
 const soloPrivate = songPrivate({ playerId: me.id });
@@ -254,6 +264,18 @@ export const SoloResult: Story = {
 };
 
 // ==================== 移动端覆盖面板 ====================
+
+/** 手机上歌词卡占满首屏：猜测栏贴在游戏区底边，不用先滚下去才能作答。 */
+export const MobileGuessBar: Story = {
+  name: "移动端 · 猜测栏贴底",
+  tags: ["mobile"],
+  globals: MOBILE,
+  beforeEach: () => presetSongRoom(
+    playingSnapshot({ settings: songSettings({ questionMode: "automatic" }) }),
+    guesserPrivate(fromNow(47_000)),
+  ),
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement),
+};
 
 export const MobilePlayers: Story = {
   name: "移动端 · 玩家列表",

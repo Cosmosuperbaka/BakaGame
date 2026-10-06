@@ -1,12 +1,14 @@
 import React from "react";
-import { motion } from "framer-motion";
-import { Film, Music2 } from "lucide-react";
+import { motion, type Variants } from "framer-motion";
+import { Check, Film, Music2, Trophy, X } from "lucide-react";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seal } from "@/components/ui/Seal";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
-import { sealCard } from "@/lib/Motion";
+import { followDelay, listItem, sealCard, springSettleMs } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 import {
   BANGUMI_TRACK_KIND_LABELS,
   detectExplicitTrackKind,
@@ -45,25 +47,33 @@ function formatTrackKind(
   return BANGUMI_TRACK_KIND_LABELS[effectiveKind] ?? "主题曲";
 }
 
+/**
+ * 歌曲信息。`answer` 是答案卡本身（标题 `text-xl`，`sm` 起信息列给右上角的印章让出 `pr-16`）；
+ * `related` 是番剧答案下的关联歌曲，标题降一档，不再让位（印章在番剧那一行）。
+ */
 export function SongSettlementDetails({
   song,
   trackKindBadge,
+  variant = "answer",
 }: {
   song: SonGuessrRoundSummary["song"];
   trackKindBadge?: React.ReactNode;
+  variant?: "answer" | "related";
 }) {
+  const related = variant === "related";
+  const Title = related ? "h4" : "h3";
   return (
-    <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+    <div className={cn("flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left", !related && "sm:pr-16")}>
       {song.pictureUrl ? (
         <img src={song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-sm" />
       ) : (
-        <div className="flex h-28 w-28 items-center justify-center rounded-md bg-background">
-          <Music2 className="h-9 w-9" />
+        <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-md bg-background">
+          <Music2 className="h-9 w-9 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-          <h2 className="break-words text-2xl font-bold">{song.title}</h2>
+          <Title className={cn("break-words font-semibold", related ? "text-lg" : "text-xl")}>{song.title}</Title>
           {trackKindBadge}
         </div>
         <p className="mt-1 text-muted-foreground">
@@ -90,20 +100,31 @@ export function SongSettlementDetails({
   );
 }
 
+/** 累计得分在答案卡落定之后再滚，读作这一轮的分数落进了总分。 */
+const SOLO_ROLL_DELAY = springSettleMs(sealCard.transition) / 1000;
+
 export function SoloRoundOutcome({
   correct,
   me,
+  delta,
   rounds,
 }: {
   correct: boolean;
   me?: SonGuessrPlayerView;
+  /** 本轮得分，累计得分从 `score - delta` 滚起 */
+  delta: number;
   rounds: number;
 }) {
+  const score = me?.score ?? 0;
+  const Icon = correct ? Check : X;
   return (
     <section className="rounded-md bg-muted p-4 text-center">
-      <p className="text-base font-semibold">{correct ? "本轮答对" : "本轮未答对"}</p>
+      <p className={cn("flex items-center justify-center gap-1.5 text-base font-semibold", correct ? "text-success" : "text-destructive")}>
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        {correct ? "本轮答对" : "本轮未答对"}
+      </p>
       <div className="mt-2 flex items-center justify-center gap-4 text-sm text-muted-foreground">
-        <span>累计得分 {me?.score ?? 0}</span>
+        <span>累计得分 <AnimatedNumber value={score} from={score - delta} delay={SOLO_ROLL_DELAY} gain="above" /></span>
         <span data-testid="solo-correct-rounds">答对 {me?.correctGuesses ?? 0}/{rounds} 轮</span>
       </div>
     </section>
@@ -116,7 +137,7 @@ const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "hits", header: "命中", tone: "muted" },
 ];
 
-/** 多人模式的得分统计：服务端已按总分从高到低排好，首行加奖杯 */
+/** 多人模式的得分统计：服务端已按总分从高到低排好，已有得分的首行加奖杯，与扫光同一条件 */
 export function SongScoreTable({
   scores,
   contributors,
@@ -133,7 +154,13 @@ export function SongScoreTable({
       ranked
       rows={scores.map((score, index) => ({
         key: score.playerId,
-        name: `${index === 0 ? "🏆 " : ""}${score.playerName}`,
+        name: index === 0 && score.score > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <Trophy className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+            <span className="sr-only">第一名：</span>
+            {score.playerName}
+          </span>
+        ) : score.playerName,
         cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
         rollFrom: { score: score.score - score.delta },
         contributor: correctIds.has(score.playerId),
@@ -143,6 +170,12 @@ export function SongScoreTable({
     />
   );
 }
+
+/** 番剧答案卡里的关联歌曲段：晚卡片一拍再推入。 */
+const RELATED_SONG_REVEAL: Variants = {
+  initial: {},
+  animate: { transition: { delayChildren: followDelay } },
+};
 
 export interface SongRoundResultPhaseProps {
   snapshot: SonGuessrRoomSnapshot;
@@ -180,16 +213,16 @@ export function SongRoundResultPhase({
         <Seal label="揭晓" className="absolute right-4 top-4" />
         {snapshot.settings.questionType === "anime" && summary.anime ? (
           <>
-            <div className="flex flex-col items-center gap-4 pr-16 text-center sm:flex-row sm:text-left">
+            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:pr-16 sm:text-left">
               {summary.anime.imageUrl ? (
                 <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-sm" />
               ) : (
-                <div className="flex h-28 w-20 items-center justify-center rounded-md bg-background">
-                  <Film className="h-9 w-9" />
+                <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-md bg-background">
+                  <Film className="h-9 w-9 text-muted-foreground" aria-hidden="true" />
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <h2 className="break-words text-2xl font-bold">{summary.anime.nameCn || summary.anime.name}</h2>
+                <h3 className="break-words text-xl font-semibold">{summary.anime.nameCn || summary.anime.name}</h3>
                 <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
                 <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
                   {summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}
@@ -199,20 +232,24 @@ export function SongRoundResultPhase({
               </div>
             </div>
 
-            <div className="border-t border-border/60 pt-4">
-              <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
-                <Music2 className="h-3.5 w-3.5" />
-                <span>关联歌曲</span>
-              </div>
-              <SongSettlementDetails
-                song={summary.song}
-                trackKindBadge={
-                  <Badge variant="default">
-                    {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
-                  </Badge>
-                }
-              />
-            </div>
+            {/* 关联歌曲是答案的从属信息：分隔线随卡片就位，内容晚一拍推入 */}
+            <motion.div variants={RELATED_SONG_REVEAL} initial="initial" animate="animate" className="border-t border-background pt-4">
+              <motion.div variants={listItem} className="origin-left">
+                <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
+                  <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>关联歌曲</span>
+                </div>
+                <SongSettlementDetails
+                  variant="related"
+                  song={summary.song}
+                  trackKindBadge={
+                    <Badge variant="default">
+                      {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
+                    </Badge>
+                  }
+                />
+              </motion.div>
+            </motion.div>
           </>
         ) : (
           <SongSettlementDetails song={summary.song} />
@@ -222,15 +259,17 @@ export function SongRoundResultPhase({
         <SoloRoundOutcome
           correct={summary.correctPlayerIds.includes(privateState.playerId)}
           me={me}
-          rounds={snapshot.roundNumber}
+          delta={summary.scores.find((score) => score.playerId === privateState.playerId)?.delta ?? 0}
+          rounds={summary.roundNumber}
         />
       ) : (
         <SongScoreTable scores={summary.scores} contributors={summary.correctPlayerIds} />
       )}
       {isHost ? (
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           <Button
             variant="outline"
+            size="lg"
             disabled={isFinishing || isNextRound}
             loading={isFinishing}
             onClick={() => void run("song.game.finish")}
@@ -238,6 +277,7 @@ export function SongRoundResultPhase({
             {isFinishing ? "正在返回..." : snapshot.solo ? "结束本局" : "返回等待阶段"}
           </Button>
           <Button
+            size="lg"
             disabled={
               (snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady) ||
               isNextRound ||
@@ -249,7 +289,10 @@ export function SongRoundResultPhase({
             {isNextRound ? "正在准备下一轮..." : "再来一轮"}
           </Button>
         </div>
-      ) : null}
+      ) : (
+        // 自动出题同样由房主点「再来一轮」才开始，措辞不分出题方式
+        <p className="text-center text-sm text-muted-foreground">等待房主开始下一轮</p>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { fn, screen, userEvent, within } from "storybook/test";
 import { STORY_EPOCH } from "@/stories/fixtures/Common";
 import {
   ANIME_ANSWER,
+  choosingSnapshot,
   ANIME_SEARCH_RESULTS,
   ANIME_SONG_CANDIDATES,
   guesserPrivate,
@@ -75,6 +76,8 @@ export const AudioCompleted: Story = { name: "播放结束 · 歌词总览", arg
 
 export const AudioError: Story = { name: "音频加载失败", args: { audioStatus: "error" } };
 
+export const AudioPlaying: Story = { name: "播放中", args: { audioPlaybackState: "playing" } };
+
 export const AudioPreparing: Story = {
   name: "音频准备中",
   args: { audioStatus: "loading", privateState: guesserPrivate(DEADLINE, { canGuess: false }) },
@@ -92,6 +95,16 @@ export const GaveUp: Story = {
   },
 };
 
+/** 猜中后搜索栏换成回执卡，等其他玩家作答。 */
+export const GuessedCorrect: Story = {
+  name: "已猜中 · 等待其他玩家",
+  args: {
+    audioPlaybackState: "completed",
+    me: playingPlayers().find((player) => player.id === host.id),
+    privateState: songPrivate({ playerId: host.id, remainingGuesses: 2, visibleAttempts: [SONG_ATTEMPTS.hostCorrect] }),
+  },
+};
+
 export const GuessesUsedUp: Story = {
   name: "猜测次数用尽",
   args: {
@@ -103,6 +116,23 @@ export const GuessesUsedUp: Story = {
     }),
   },
 };
+/** 首次提交前没有猜测记录，记录区整块收起。 */
+export const NoAttempts: Story = {
+  name: "尚无猜测",
+  args: { privateState: guesserPrivate(DEADLINE, { visibleAttempts: [] }) },
+};
+
+export const ChoosingSubmitterPending: Story = {
+  name: "指定出题人 · 房主 · 提交中",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
+  args: {
+    snapshot: choosingSnapshot(),
+    privateState: songPrivate({ playerId: host.id }),
+    isHost: true,
+    isPending: pendingOn("song.game.chooseSubmitter"),
+  },
+};
+
 export const Instrumental: Story = {
   name: "纯音乐 · 无歌词",
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),

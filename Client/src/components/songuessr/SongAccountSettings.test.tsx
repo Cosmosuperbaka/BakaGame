@@ -88,6 +88,14 @@ describe("SongAccountSettings", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  it("连接状态：多人房写「房间已连接」，单人模式只写「已连接」", () => {
+    const view = render(<SongAccountSettings snapshot={snapshot(true)} />);
+    expect(screen.getByText("房间已连接")).toBeInTheDocument();
+    view.rerender(<SongAccountSettings snapshot={{ ...snapshot(true), solo: true }} />);
+    expect(screen.getByText("已连接")).toBeInTheDocument();
+    expect(screen.queryByText("房间已连接")).not.toBeInTheDocument();
+  });
+
   it("更换账号时直接生成新二维码，不需要再点刷新", async () => {
     saveSongMusicSession({ cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } }, true);
     render(<SongAccountSettings snapshot={snapshot(true)} />);

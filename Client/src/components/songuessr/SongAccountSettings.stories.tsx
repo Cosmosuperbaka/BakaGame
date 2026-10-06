@@ -39,6 +39,12 @@ export const RoomConnected: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
 };
 
+export const SoloConnected: Story = {
+  name: "单人模式 · 已连接",
+  args: { snapshot: songSnapshot({ solo: true }) },
+  beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
+};
+
 export const VipExpanded: Story = {
   name: "展开 · 会员账号",
   args: { snapshot: songSnapshot() },

@@ -6,7 +6,7 @@ import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatus
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
+import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@/types";
 
 type SongStatus = {
   label: string;
@@ -19,6 +19,8 @@ export interface PlayerListProps {
   isHost: boolean;
   phase: SonGuessrPhase;
   allowSpectators: boolean;
+  /** 本局题型：听歌识番时作答状态写「猜番」 */
+  questionType?: SongQuestionType;
 }
 
 export function PlayerList({
@@ -27,6 +29,7 @@ export function PlayerList({
   isHost,
   phase,
   allowSpectators,
+  questionType = "song",
 }: PlayerListProps) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
@@ -80,6 +83,7 @@ export function PlayerList({
       myPlayerId={myPlayerId}
       isHostViewer={isHost}
       phase={phase}
+      questionType={questionType}
       hideSpectatorStatus={hideSpectatorStatus}
       onKick={handleKick}
       onTransferHost={handleTransferHost}
@@ -148,6 +152,7 @@ interface SongPlayerRowProps {
   myPlayerId?: string;
   isHostViewer: boolean;
   phase: SonGuessrPhase;
+  questionType: SongQuestionType;
   hideSpectatorStatus: boolean;
   onKick: (playerId: string) => void;
   onTransferHost: (playerId: string) => void;
@@ -159,6 +164,7 @@ function SongPlayerRow({
   myPlayerId,
   isHostViewer,
   phase,
+  questionType,
   hideSpectatorStatus,
   onKick,
   onTransferHost,
@@ -166,7 +172,7 @@ function SongPlayerRow({
   const isMe = player.id === myPlayerId;
   const canManage = isHostViewer && !isMe;
   const canTransfer = canManage && player.membership === "active" && player.online && !player.isBot;
-  const status = resolveSongStatus(player, phase, hideSpectatorStatus);
+  const status = resolveSongStatus(player, phase, questionType, hideSpectatorStatus);
   const actions = canManage
     ? hostActions({
         ...(canTransfer ? { onTransferHost: () => onTransferHost(player.id) } : {}),
@@ -193,6 +199,7 @@ function SongPlayerRow({
 function resolveSongStatus(
   player: SonGuessrPlayerView,
   phase: SonGuessrPhase,
+  questionType: SongQuestionType,
   hideSpectatorStatus: boolean,
 ): SongStatus | null {
   if (player.membership === "spectator") {
@@ -204,7 +211,7 @@ function resolveSongStatus(
       : { label: "等待", tone: "default" };
   }
   if (player.roundStatus === "submitter") return { label: "出题", tone: "questioner" };
-  if (player.roundStatus === "guessing") return { label: "猜歌", tone: "warning" };
+  if (player.roundStatus === "guessing") return { label: questionType === "anime" ? "猜番" : "猜歌", tone: "warning" };
   if (player.roundStatus === "correct") return { label: "猜中", tone: "success" };
   if (player.roundStatus === "finished") return { label: "完成", tone: "default" };
   return null;

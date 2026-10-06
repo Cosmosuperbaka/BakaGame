@@ -403,7 +403,7 @@ export const submittingSnapshot = (overrides: SnapshotPatch = {}) =>
 
 /**
  * 第 3 轮进行中。`audioUrl` 故意为空：播放器不加载任何媒体，截图不依赖外网与浏览器自动播放策略，
- * 音频按钮停在“加载中”（与“播放中”同一个转圈图标）。就绪、重播、失败态由阶段组件故事通过属性覆盖。
+ * 音频状态停在“加载中”的转圈。待播放、播放中、重播、失败态由阶段组件故事通过属性覆盖。
  */
 export const playingSnapshot = (overrides: SnapshotPatch = {}) =>
   songSnapshot({

@@ -178,7 +178,10 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
         timeZone: "Asia/Shanghai",
       }).format(new Date(account.vipExpireTime))}`
     : undefined;
-  const connection = snapshot.musicAccountReady ? CONNECTIONS.room : storedSession ? CONNECTIONS.local : CONNECTIONS.none;
+  const connection = snapshot.musicAccountReady
+    // 单人模式没有「房间」可言，账号只给自己取歌
+    ? (snapshot.solo ? { ...CONNECTIONS.room, label: "已连接" } : CONNECTIONS.room)
+    : storedSession ? CONNECTIONS.local : CONNECTIONS.none;
 
   const toggle = (next: boolean) => {
     if (!next) { cancelLogin(); setOpen(false); return; }

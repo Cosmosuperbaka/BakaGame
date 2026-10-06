@@ -176,6 +176,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 isHost={isHost}
                 phase={snapshot.phase}
                 allowSpectators={snapshot.allowSpectators}
+                questionType={snapshot.settings.questionType}
               />
             </div>
           </PlayerColumn>
@@ -236,6 +237,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 isHost={isHost}
                 phase={snapshot.phase}
                 allowSpectators={snapshot.allowSpectators}
+                questionType={snapshot.settings.questionType}
               />
             ),
           },

@@ -110,7 +110,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
     <div
       title={title}
       data-expanded={expanded || undefined}
-      className={cn("group/volume h-9 items-center gap-1 rounded-full border border-border/70 bg-panel pr-3 pl-1 shadow-sm", className)}
+      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel pr-3 pl-1 shadow-sm", className)}
     >
       <motion.button
         type="button"
