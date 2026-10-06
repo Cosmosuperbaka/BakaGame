@@ -26,7 +26,7 @@
 ### 2.2 禁止 `opacity + translateY` 批量 reveal
 
 - **禁止**把 `opacity` 配 `translateY` 作为主要动画手段，尤其禁止对批量列表项施加统一纵向位移 —— 多行同时平移会产生「一堆东西一起飘进来」的廉价感。
-- 列表项进场统一使用 `listItem`：以自身左缘为原点做等比缩放淡入，读作「被推到前面来」。
+- 列表项进场统一使用 `listItem`：以自身左缘为原点做等比缩放淡入，读作「被推到前面来」。要继承父级 `listContainer` 错峰的项只写 `variants={listItem}`，退场写对象 `exit={listItemExit}`，不写 `exit="exit"`：标签会让该项自成一级变体节点，不再继承起止与错峰。父级在加载完成时换 `key`，让整列从头错峰重播（大厅房间卡片与空状态）。
 - 纵向位移只允许用于单个、有明确方向语义的元素（如日出图标自下升起、步进数字沿增减方向滑动），且必须是该元素独立的动作，不能是批量节奏的一部分。
 
 ### 2.3 除 hover 外必须引入非线性
@@ -39,7 +39,7 @@
 ### 2.4 点击之间必须有状态延续或视觉因果
 
 - 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。
-- 就近弹出层（Popover）使用 `popover`，缩放原点朝向触发元素：Radix 浮层在内容元素上加 `origin-(--radix-popover-content-transform-origin)`，由 Radix 按实际落位（含避让翻转）给出原点；不写死 `origin-top` 之类的方向。
+- 就近弹出层（Popover）使用 `popover`，缩放原点朝向触发元素：Radix 浮层在内容元素上加 `origin-(--radix-popover-content-transform-origin)`，由 Radix 按实际落位（含避让翻转）给出原点；不写死 `origin-top` 之类的方向。Popover 一律受控（`open` / `onOpenChange`），`Portal` 与 `Content` 都带 `forceMount`，外包 `AnimatePresence` 按 `open` 条件渲染，退场播完再卸载；不受控时 Radix 关闭即卸载，没有退场。
 - 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。唯一例外是跨页：两页之间没有共用的节点，改由 View Transitions 把同名元素读作同一个对象，浏览器连续移动并交叉淡化（见下条）。
 - 页面导航一律经 `hooks/UsePageTransition` 的 `usePageNavigate`（默认 `viewTransition: true`），路由必须是数据路由（`AppRouter.tsx` 的 `createBrowserRouter`，页面走路由级 `lazy`，分块到齐后才开始过渡）。旧页连同按下的触发元素定格成快照向前退出、新页自后方推入；回到更浅一层的页面（房间→大厅→主页，浏览器后退同理）时两层对调，方向由 `RootLayout` 写到 `<html data-page-direction>`。不再先等按压播完再导航，快照本身就保留了点击的结果。
   - 跨页共享元素用 `useSharedElementName(name, partner)` 取 `view-transition-name`，只在本次过渡的另一端是 `partner` 时命名：同一页上有多个候选（主页三张游戏卡、大厅每张房间卡）时，一律命名会重名，不相干的过渡里它们也会脱离整页单独淡出。现有两对：主页卡片标题 ↔ 大厅顶栏游戏名（`game-title`），大厅房间卡房名 ↔ 房间顶栏房名（`room-title`，单人模式不命名）。被命名的元素宽度要贴合内容（`w-fit`），否则整行留白会随快照一起缩放。
@@ -51,6 +51,9 @@
 - 选中指示器（`Tabs`、`SegmentedControl` 的底块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
 - 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
+- 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
+- 两态共用同一个外框时（限时栏、读数块），内容用 `readoutSwap` 配 `popLayout` 交替，外框高度经 `useMeasuredHeight` 量出、按 `spring.settle` 补间，不先塌再撑开。
+- 只会在末尾追加的标记串（CCB 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
 - 玩家栏换组（玩家 ↔ 旁观）是一次整列重排：玩家栏包在 `PlayerListLayout`（按实例命名的 `LayoutGroup`，桌面侧栏与抽屉互不串台）里，行传 `layoutId={player.id}`，从旧分组滑到新分组；两处 `SpectatorToggle` 共用一个 `layoutId`，入口随之滑到另一组，图标与文案以 `readoutSwap` 在途中换掉。分组标题与入口带 `layout="position"`，行列表用 `AnimatePresence mode="popLayout"`（行组件逐层转交 `ref`），退场行立即抽出文档流，其余行不等它淡完才让位。换组的行、让位的行、标题与入口统一取 `playerRelayout`（`spring.settle`），同时起步、同时落定。
 
 ### 2.5 禁止写死数值
@@ -187,7 +190,7 @@
 
 | 变体 | 语义 |
 |---|---|
-| `listItem` | 列表项以左缘为原点缩放淡入 |
+| `listItem` / `listItemExit` | 列表项以左缘为原点缩放淡入；`listItemExit` 是同一退场的对象形式，继承父级错峰的项写 `exit={listItemExit}`（§2.2） |
 | `listContainer(count)` | 子项按序进入，步长随数量收敛 |
 | `phaseSwap` | 阶段切换，新内容自后推入、旧内容向前退出 |
 | `indicatorSlide` | 选中指示器在选项之间滑动（`spring.swift`），见 §2.4 |
@@ -201,13 +204,14 @@
 | `sharedTransfer` | 跨区域共享元素位移 |
 | `lyricOverview` | 原生歌词同节点位移与整体缩放共用时间轴 |
 | `spinner` | 匀速持续旋转的加载指示，只经 `Spinner` 组件使用 |
-| `urgentPulse` | 倒计时最后阶段的图标脉动，表达「快到时间了」这一持续状态 |
+| `urgentPulse` | 倒计时末段（≤10 秒）的图标脉动，表达「快到时间了」这一持续状态；`CountdownBadge` 与谁是卧底限时栏同一阈值与脉动。秒数逐秒以 `readoutTick` 换值（`CountdownBadge`） |
 | `countdownTickMs` | 倒计时刷新步长，进度条宽度按同一时长匀速补间 |
 | `popoverScale` | 就近弹出层起止尺度，`popover` 变体与 CSS 关键帧共用 |
 | `springToCss` / `installMotionTokens` | 把令牌生成 `:root` 上的 CSS 变量（见 §2.5） |
 | `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲 |
 | `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
-| `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片 |
+| `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片；`receiptCard.exit` 以确定时长原路收回起点、不回弹（撤销或换回输入栏），用法见 §2.4 |
+| `wordDock` | 谁是卧底词语停靠顶栏时的缩放（`scale`），顶栏占位按同一比例预留宽高 |
 | `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽、音量图标分档）自下顶上；步进器数值按增减方向取 `y` 的正负，新值顺着方向顶上来（`readoutTick`）。音量百分比改用 `AnimatedNumber` 逐位滚动；音量轨道粗细与滑块显隐走 CSS 的 `--motion-spring-snap` |
 | `toastItem` / `bannerRise` / `dropIn` | 提示自右缘推入、横幅自底部升起、状态条自上方落下 |
 | `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
@@ -221,7 +225,7 @@
 | `skeletonFade` | 骨架屏退场：数据到达时骨架原地淡出，真实内容在同一格里（外层 `grid`，两者都写 `[grid-area:1/1]`，真实内容后渲染、叠在上面）以各自的入场推上来，两者交叉而不是先清空再出现。骨架与真实内容共用布局（大厅是 `RoomCardLayout`），只淡出不缩放；骨架只在首屏出现，入场不播放，只定义退场 |
 | `pageScale` | 跨页过渡的前后两层尺度（后方 `behind`、前方 `ahead`），`index.css` 的 `page-leave` / `page-arrive` 关键帧经 `--motion-page-*-scale` 取用，幅度约为 `phaseSwap` 的一半 |
 | `roomEntrance` / `roomEntranceMs` | 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 顺序每栏晚 `step` 就位，读作「房间被搭起来」。玩家栏、聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入，两层不叠缩放）。`RoomShell` 只在挂载后第一帧起的 `roomEntranceMs` 内给根元素加 `data-room-entering`（跨页过渡会暂停渲染直到新页就绪，CSS 动画也从那一帧才起播；从挂载就计时，窗口会在聊天栏的弹性收尾前撤掉），关键帧在 `index.css`，各栏延迟变量由 `parts` 生成；四栏在各自的真实元素上写 `data-room-part`（`RoomHeader`、`PlayerColumn`、`ChatColumn`、游戏区 `main`，自己拼玩家栏的页面写在栏本体上），不加包装层，免得打断 `section > aside` 这类直接父子关系。窗口过后才挂载的栏（断线重连后补上、CCB 加入成功后才有的栏）直接出现，不重播 |
-| `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒 |
+| `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒；结算表之外的分数滚动（猜歌单人的累计分）延迟取 `springSettleMs(sealCard.transition)`，等答案卡落定再滚 |
 
 ## 6. 状态反馈的边界
 
