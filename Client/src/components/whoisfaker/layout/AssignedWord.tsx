@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { motion } from "framer-motion";
 import type { RefObject } from "react";
 import { duration, ease, spring } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 
 /**
  * 停靠状态的缩放比。词语始终以放大尺寸渲染，停靠时缩小，
@@ -93,7 +94,12 @@ export function AssignedWord({
     <motion.div
       ref={wordRef}
       aria-hidden={revealed ? undefined : "true"}
-      className="pointer-events-none fixed left-0 top-0 z-modal whitespace-nowrap rounded-md bg-primary/10 px-6 py-3 text-4xl font-bold leading-tight text-primary"
+      // 揭示态盖在揭词背板之上取 z-modal；停靠后只是顶栏里的一枚标签，降到 z-sticky，让抽屉与弹窗盖得住它。
+      // 停靠后与顶栏的 HeaderChip 同一语言：实底 bg-muted 配正文色，主色不作正文（Design §3.1）。
+      className={cn(
+        "pointer-events-none fixed left-0 top-0 whitespace-nowrap rounded-md bg-muted px-6 py-3 text-4xl font-bold leading-tight text-foreground",
+        revealed ? "z-modal" : "z-sticky",
+      )}
       style={{ originX: 0, originY: 0 }}
       animate={
         placement

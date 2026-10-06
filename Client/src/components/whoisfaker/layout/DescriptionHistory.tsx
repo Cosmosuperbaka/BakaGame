@@ -9,6 +9,7 @@ import {
   type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
 import { PlayerRow, type PlayerMarks, type PlayerRowProps } from "./PlayerList";
+import { SPEECH_COLUMN_MIN_WIDTH } from "./PlayerListLayout";
 import type { DescriptionRecord, WhoIsFakerRole, PublicPlayerView } from "@/types";
 
 /** 传给表格首列的 PlayerRow 上下文，由调用方统一组装 */
@@ -101,9 +102,11 @@ export function DescriptionTable({
               <th
                 key={column.key}
                 className={cn(
-                  "sticky top-0 z-panel min-w-[180px] whitespace-nowrap border-b border-r bg-panel px-4 py-3",
+                  "sticky top-0 z-panel whitespace-nowrap border-b border-r bg-panel px-4 py-3",
                   DESCRIPTION_HEAD_TONES[column.tone],
                 )}
+                // 与房间页侧栏的发言列共用一个下限
+                style={{ minWidth: SPEECH_COLUMN_MIN_WIDTH }}
               >
                 {column.label}
               </th>

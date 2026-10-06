@@ -350,6 +350,31 @@ export const MobileHistory: Story = {
   },
 };
 
+// ==================== 掉线待决 ====================
+
+/** 投票中有玩家掉线：待决块挂在阶段之上，主持人选择等待或淘汰。 */
+export const DisconnectPendingHost: Story = {
+  name: "投票阶段 · 主持人 · 掉线待决",
+  beforeEach: () => {
+    const snapshot = wifSnapshot("vote3");
+    snapshot.status.pendingDisconnectPlayerId = kanade.id;
+    snapshot.players = snapshot.players.map((player) => (player.id === kanade.id ? { ...player, online: false } : player));
+    presetWifRoom(snapshot, asHost);
+  },
+};
+
+export const DisconnectPendingPlayer: Story = {
+  name: "夜晚阶段 · 玩家 · 掉线待决",
+  globals: MOBILE,
+  tags: ["mobile"],
+  beforeEach: () => {
+    const snapshot = wifSnapshot("night2");
+    snapshot.status.pendingDisconnectPlayerId = kanade.id;
+    snapshot.players = snapshot.players.map((player) => (player.id === kanade.id ? { ...player, online: false } : player));
+    presetWifRoom(snapshot, wifPrivate("me", "night2"));
+  },
+};
+
 // ==================== 断线 ====================
 
 export const Disconnected: Story = {

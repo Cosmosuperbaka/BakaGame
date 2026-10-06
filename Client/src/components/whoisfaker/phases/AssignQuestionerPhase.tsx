@@ -42,6 +42,10 @@ export function AssignQuestionerPhase() {
         title="指定主持人"
       />
 
+      {!isHost ? (
+        <p className="text-center text-sm text-muted-foreground">等待房主指定本局主持人</p>
+      ) : null}
+
       {isHost && (
         <div className="w-full max-w-xl space-y-5">
           {/* 旁观者区块（优先推荐） */}
@@ -57,7 +61,7 @@ export function AssignQuestionerPhase() {
                 disabled={busy}
                 onPick={handleAssign}
                 tone="recommended"
-                nameWrap="truncate"
+                nameWrap="wrap"
               />
             </section>
           )}
@@ -79,9 +83,9 @@ export function AssignQuestionerPhase() {
             <CandidateGrid
               candidates={activeCandidates}
               disabled={busy}
-                onPick={handleAssign}
+              onPick={handleAssign}
               tone="default"
-              nameWrap="truncate"
+              nameWrap="wrap"
             />
           </section>
         </div>

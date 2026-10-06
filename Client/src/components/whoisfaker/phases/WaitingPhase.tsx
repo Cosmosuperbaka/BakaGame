@@ -87,7 +87,6 @@ export function WaitingPhase() {
             disabled={readying}
             loading={readying}
             onClick={handleReady}
-            className="gap-2 min-w-[120px]"
           >
             {readying
               ? me.isReady ? "正在取消..." : "正在准备..."

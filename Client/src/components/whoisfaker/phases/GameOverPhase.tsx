@@ -125,7 +125,7 @@ export function GameOverPhase() {
               </div>
             </div>
             {summary.words.blankHint && (
-              <div className="col-span-2 rounded-md border border-border bg-muted p-3 md:col-span-1">
+              <div className="col-span-2 rounded-md bg-background p-3 md:col-span-1">
                 <div className="text-xs text-muted-foreground font-medium mb-1">白板提示</div>
                 <div className="text-base font-bold text-foreground">
                   {summary.words.blankHint}
@@ -178,7 +178,7 @@ export function GameOverPhase() {
                   .map((item, idx) => (
                   <div key={idx} className="space-y-1.5 text-sm">
                     <div className="font-semibold text-xs text-muted-foreground">
-                      第 {item.day} 天{item.tieBreak ? " · 平票PK" : ""}：
+                      第 {item.day} 天{item.tieBreak ? " · 平票 PK" : ""}：
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {item.votes.map((v, vIdx) => {
@@ -222,16 +222,16 @@ export function GameOverPhase() {
               return (
                 <div
                   key={i}
-                  className="px-4 py-2.5 text-sm flex items-center gap-3"
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm"
                 >
-                  <span className="font-medium min-w-[5rem]">
+                  <span title={player?.name} className="w-1/3 min-w-0 shrink-0 truncate font-medium">
                     {player?.name}
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {g.guessedWords[0]} / {g.guessedWords[1]}
                   </span>
-                  <span className="flex-1" />
-                  <Badge variant={g.success ? "default" : "destructive"} size="xs">
+                  {/* 猜中是成功状态，取 success；猜错取 destructive，两者都有文字 */}
+                  <Badge variant={g.success ? "matched" : "destructive"} size="xs" className="shrink-0">
                     {g.success ? "正确" : "错误"}
                   </Badge>
                 </div>
@@ -242,16 +242,11 @@ export function GameOverPhase() {
       )}
 
       {/* 房主可让全房回到等待阶段。 */}
-      <div className="flex flex-col items-center gap-3 pt-2">
+      <div className="flex flex-wrap justify-center gap-2 pt-2">
         {isHost ? (
-          <Button
-            size="lg"
-            onClick={handleReturnToWaiting}
-            disabled={returning}
-            className="gap-2 px-8 text-base"
-          >
-            <RotateCcw className="h-4 w-4" />
-            {returning ? "正在返回…" : "返回房间等待"}
+          <Button size="lg" onClick={() => void handleReturnToWaiting()} loading={returning}>
+            {returning ? null : <RotateCcw className="h-4 w-4" />}
+            返回房间等待
           </Button>
         ) : (
           <p className="text-sm text-muted-foreground">等待房主返回房间</p>

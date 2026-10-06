@@ -1,24 +1,14 @@
 import { usePhaseAction } from "./UsePhaseAction";
 import { useState, useCallback, useId } from "react";
-import { motion } from "framer-motion";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
-import { Switch } from "@/components/ui/Switch";
-import { spring, tappable } from "@/lib/Motion";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
+import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { WhoIsFakerRole } from "@/types";
-
-const ROLE_SHORT_LABELS: Record<WhoIsFakerRole, string> = {
-  civilian: "民",
-  undercover: "卧",
-  angel: "天",
-  blank: "白",
-};
 
 const ROLE_FULL_LABELS: Record<WhoIsFakerRole, string> = {
   civilian: "平民",
@@ -45,10 +35,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
 
   // 默认启用随机分配身份
   const [isRandomRole, setIsRandomRole] = useState(true);
-  const civilianFieldId = useId();
-  const undercoverFieldId = useId();
-  const blankHintFieldId = useId();
-  const randomRoleFieldId = useId();
+  const roleCountId = useId();
 
   const roleConfig = snapshot.settings.roleConfig;
   const hasBlank = roleConfig.hasBlank;
@@ -83,6 +70,10 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
   const manualRoleCountsValid = availableRoles.every(
     (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole],
   );
+  const roleOptions: SegmentedOption<WhoIsFakerRole>[] = availableRoles.map((availableRole) => ({
+    value: availableRole,
+    label: ROLE_FULL_LABELS[availableRole],
+  }));
 
   const handleRandomRoleChange = (randomRole: boolean) => {
     setIsRandomRole(randomRole);
@@ -133,69 +124,56 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
   }, [run, civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, manualRoleCountsValid, sendCommand, addToast]);
 
   if (!isQuestioner) {
+    const questioner = snapshot.players.find((p) => p.id === snapshot.status.questionerPlayerId);
     return (
-      <div className="flex flex-col items-center">
-        <PhaseHeader
-          icon={PenLine}
-          title="等待出题"
-        />
+      <div className="mx-auto flex max-w-md flex-col items-center gap-2">
+        <PhaseHeader icon={PenLine} title="等待出题" />
+        <p className="text-center text-sm text-muted-foreground">
+          {questioner ? `${questioner.name} 正在出题` : "主持人正在出题"}
+        </p>
       </div>
     );
   }
 
+  const manualRolesInvalid = !isRandomRole && !manualRoleCountsValid;
+
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6">
-      <PhaseHeader
-        icon={PenLine}
-        title="提交词语"
-      />
+      <PhaseHeader icon={PenLine} title="提交词语" />
 
       <div className="w-full space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor={civilianFieldId} className="text-xs font-semibold text-info">平民词</Label>
-          <Input
-            id={civilianFieldId}
-            value={civilianWord}
-            onChange={(e) => setCivilianWord(e.target.value)}
-            placeholder="输入平民获得的词语"
+        <SettingTextField
+          label="平民词"
+          value={civilianWord}
+          onChange={setCivilianWord}
+          placeholder="输入平民获得的词语"
+          maxLength={20}
+        />
+        <SettingTextField
+          label="卧底词"
+          value={undercoverWord}
+          onChange={setUndercoverWord}
+          placeholder="输入卧底获得的词语"
+          maxLength={20}
+        />
+        {hasBlank ? (
+          <SettingTextField
+            label="白板提示"
+            value={blankHint}
+            onChange={setBlankHint}
+            placeholder="给白板玩家的分类提示"
             maxLength={20}
-            className="h-10"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={undercoverFieldId} className="text-xs font-semibold text-destructive">卧底词</Label>
-          <Input
-            id={undercoverFieldId}
-            value={undercoverWord}
-            onChange={(e) => setUndercoverWord(e.target.value)}
-            placeholder="输入卧底获得的词语"
-            maxLength={20}
-            className="h-10"
-          />
-        </div>
-        {hasBlank && (
-          <div className="space-y-1.5">
-            <Label htmlFor={blankHintFieldId} className="text-xs font-semibold text-muted-foreground">白板提示</Label>
-            <Input
-              id={blankHintFieldId}
-              value={blankHint}
-              onChange={(e) => setBlankHint(e.target.value)}
-              placeholder="给白板玩家的分类提示"
-              maxLength={20}
-              className="h-10"
-            />
-          </div>
-        )}
+        ) : null}
 
         {/* 随机/自定义分配身份 */}
-        <div className="pt-3 border-t space-y-3">
-          <div className="flex items-center justify-between py-1">
-            <div className="flex items-center gap-2">
-              <Dices className="h-4 w-4 text-primary" />
-              <Label htmlFor={randomRoleFieldId} className="text-sm font-medium cursor-pointer">随机分配身份</Label>
-            </div>
-            <Switch id={randomRoleFieldId} checked={isRandomRole} onCheckedChange={handleRandomRoleChange} />
-          </div>
+        <div className="space-y-3 border-t pt-4">
+          <SettingSwitchRow
+            label="随机分配身份"
+            icon={Dices}
+            checked={isRandomRole}
+            onCheckedChange={handleRandomRoleChange}
+          />
 
           <CollapsibleRegion open={!isRandomRole}>
             <div className="overflow-hidden rounded-md border bg-background text-sm">
@@ -213,46 +191,25 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
                   );
                 })}
               </div>
+              {/* 数量不符时提交按钮禁用，原因就写在这里，并经 aria-describedby 挂到按钮上 */}
+              {manualRolesInvalid ? (
+                <p id={roleCountId} className="border-b px-3 py-2 text-xs text-destructive">
+                  各身份数量需与房间配置一致
+                </p>
+              ) : null}
               {participants.map((p) => (
-                <div key={p.id} className="flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2 last:border-b-0">
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{p.name}</span>
-                  <div className="inline-grid grid-flow-col gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label={`为 ${p.name} 分配身份`}>
-                    {availableRoles.map((availableRole) => {
-                      const selected = (manualRoles[p.id] ?? "civilian") === availableRole;
-                      return (
-                        <motion.button
-                          key={availableRole}
-                          type="button"
-                          {...tappable}
-                          title={ROLE_FULL_LABELS[availableRole]}
-                          aria-label={ROLE_FULL_LABELS[availableRole]}
-                          aria-pressed={selected}
-                          onClick={() =>
-                            setManualRoles((previousRoles) => ({
-                              ...previousRoles,
-                              [p.id]: availableRole,
-                            }))
-                          }
-                          className={cn(
-                            "relative flex h-7 w-8 cursor-pointer items-center justify-center rounded-md text-xs font-semibold transition-colors",
-                            selected
-                              ? "text-background"
-                              : "text-muted-foreground hover:bg-background hover:text-foreground",
-                          )}
-                        >
-                          {/* 选中底块在同组内滑动，读作同一个指示器在移动 */}
-                          {selected ? (
-                            <motion.span
-                              layoutId={`manual-role-${p.id}`}
-                              transition={spring.snap}
-                              className="absolute inset-0 rounded-md bg-foreground shadow-sm"
-                            />
-                          ) : null}
-                          <span className="relative">{ROLE_SHORT_LABELS[availableRole]}</span>
-                        </motion.button>
-                      );
-                    })}
-                  </div>
+                <div key={p.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0">
+                  <span title={p.name} className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">{p.name}</span>
+                  <SegmentedControl
+                    size="sm"
+                    aria-label={`为 ${p.name} 分配身份`}
+                    className="ml-auto w-auto"
+                    value={manualRoles[p.id] ?? "civilian"}
+                    options={roleOptions}
+                    onValueChange={(availableRole) =>
+                      setManualRoles((previousRoles) => ({ ...previousRoles, [p.id]: availableRole }))
+                    }
+                  />
                 </div>
               ))}
             </div>
@@ -260,12 +217,14 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
         </div>
 
         <Button
-          className="w-full gap-2 h-10 mt-2"
-          onClick={handleSubmit}
+          size="lg"
+          className="w-full"
+          onClick={() => void handleSubmit()}
           loading={busy}
-          disabled={!isRandomRole && !manualRoleCountsValid}
+          disabled={manualRolesInvalid}
+          aria-describedby={manualRolesInvalid ? roleCountId : undefined}
         >
-          <Send className="h-4 w-4" />
+          {busy ? null : <Send className="h-4 w-4" />}
           确认提交
         </Button>
       </div>

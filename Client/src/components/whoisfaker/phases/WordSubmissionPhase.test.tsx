@@ -99,7 +99,7 @@ describe("word submission", () => {
     expect(screen.getByRole("switch", { name: "随机分配身份" })).toHaveAttribute("aria-checked", "false");
     // 预填顺序：先卧底，再白板，其余平民。
     const pressedRole = (name: string) =>
-      within(screen.getByRole("group", { name: `为 ${name} 分配身份` })).getByRole("button", { pressed: true });
+      within(screen.getByRole("radiogroup", { name: `为 ${name} 分配身份` })).getByRole("radio", { checked: true });
     expect(pressedRole("阿澄")).toHaveAccessibleName("卧底");
     expect(pressedRole("桃子")).toHaveAccessibleName("白板");
     expect(pressedRole("北川")).toHaveAccessibleName("平民");

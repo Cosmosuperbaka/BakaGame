@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { duration, listContainer, speechReveal } from "@/lib/Motion";
+import { duration, listContainer, listItem, speechReveal } from "@/lib/Motion";
 import {
   FastForward,
   MessageSquarePlus,
@@ -10,10 +10,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { DisconnectHandler } from "../layout/DisconnectHandler";
 import { PendingSpeech, SubmittedSpeech } from "../layout/PendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { SupplementRequestControl } from "../layout/SupplementRequestControl";
+import { useSupplementRequest } from "../layout/SupplementRequestControl";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { SpeechMode } from "@/types";
@@ -213,6 +212,10 @@ export function DescriptionPhase() {
     }
   }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, canSpeak, text, submitting, handleSubmit]);
 
+  // 主持人在普通描述里可以发起补充发言；入口在按钮行，选人面板是按钮行上方的整宽块。
+  const supplement = useSupplementRequest({ canRequest: mode === "normal" && waitingPlayerIds.length === 0 });
+  const counterId = useId();
+
   const handleAdvance = useCallback(async () => {
     if (advancing) return;
     setAdvancing(true);
@@ -227,8 +230,6 @@ export function DescriptionPhase() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      {snapshot.status.pendingDisconnectPlayerId ? <DisconnectHandler /> : null}
-
       <PhaseHeader icon={meta.icon} title={meta.title} iconClassName={meta.tone} />
 
       {mode === "supplement" && waitingPlayerIds.includes(myId) ? (
@@ -242,33 +243,44 @@ export function DescriptionPhase() {
 
       {canSpeak ? (
         <div className="flex gap-2">
-          <div className="flex-1 relative">
+          <div className="relative flex-1">
             <Input
               value={text}
+              aria-label={mode === "supplement" ? "补充发言" : "描述"}
+              aria-describedby={counterId}
               onChange={(e) => setText(clampToLimit(e.target.value))}
               placeholder={mode === "supplement" ? "输入补充发言..." : "输入你的描述..."}
-              className="flex-1 h-10 pr-14"
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              className="h-10 pr-14"
+              // 输入法组字时的回车只是上屏，不当作发送
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleSubmit();
+              }}
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none tabular-nums">
+            <span id={counterId} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground">
               {countTextUnits(text)}/{DESCRIPTION_MAX_UNITS}
             </span>
           </div>
-          <Button onClick={handleSubmit} className="gap-2 h-10" disabled={!text.trim() || submitting}>
-            <Send className="h-4 w-4" /> 发送
+          <Button size="lg" onClick={() => void handleSubmit()} loading={submitting} disabled={!text.trim()}>
+            {submitting ? null : <Send className="h-4 w-4" />} 发送
           </Button>
         </div>
+      ) : !isQuestioner && me?.membership === "active" && !amAlive ? (
+        <p className="text-center text-sm text-muted-foreground">你已出局，本轮不发言</p>
       ) : null}
 
+      {/* 补充发言期间主持人不推进，只看还差几人 */}
+      {isQuestioner && mode === "supplement" ? supplement.hint : null}
+
       {isQuestioner && mode !== "supplement" ? (
-        <div className="flex items-center justify-center gap-3 pt-2">
-          {mode === "normal" ? (
-            <SupplementRequestControl canRequest={waitingPlayerIds.length === 0} />
-          ) : null}
-          <Button onClick={handleAdvance} size="lg" className="gap-2 px-6" disabled={advancing}>
-            <FastForward className="h-4 w-4" />
-            {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
-          </Button>
+        <div className="space-y-3 pt-2">
+          {supplement.panel}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {mode === "normal" ? supplement.trigger : null}
+            <Button onClick={() => void handleAdvance()} size="lg" loading={advancing}>
+              {advancing ? null : <FastForward className="h-4 w-4" />}
+              {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -306,15 +318,18 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
       </thead>
       <tbody>
         {rows.map(({ player, text, submitted, isMe }) => (
-          <tr
+          <motion.tr
             key={player.id}
-            className={cn("border-b border-border/60 align-top", isMe && "bg-primary/5")}
+            variants={listItem}
+            className={cn("origin-left border-b border-border/60 align-top", isMe && "bg-primary/5")}
           >
             <th
               scope="row"
+              title={player.name}
               className={cn(
-                "truncate px-3 py-2.5 text-left text-sm font-medium",
-                isMe && "text-primary",
+                "truncate px-3 py-2.5 text-left text-sm",
+                // 本人那一行已有主色浅底，名字用正文色加粗，主色不作正文
+                isMe ? "font-semibold text-foreground" : "font-medium",
               )}
             >
               {player.name}
@@ -347,7 +362,7 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
                 )}
               </AnimatePresence>
             </td>
-          </tr>
+          </motion.tr>
         ))}
       </tbody>
     </motion.table>

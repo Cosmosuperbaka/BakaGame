@@ -2,6 +2,7 @@ import { useCallback, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
+import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
@@ -16,6 +17,8 @@ import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import {
   PLAYER_GROUP_TITLE_HEIGHT,
+  PLAYER_ME_MARK,
+  PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
   PlayerListLayout,
@@ -23,7 +26,7 @@ import {
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
-import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
+import { COMPACT_PLAYER_COLUMN_WIDTH, PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
 import type {
   DescriptionRecord,
   WhoIsFakerPhase,
@@ -81,6 +84,11 @@ export interface PlayerListProps {
    * 不依赖两侧各自复刻行高与间距。
    */
   history?: PlayerListHistory;
+  /**
+   * 移动端发言历史面板：玩家列收窄为只有头像与名字的固定列，横向滚动时贴住左缘，
+   * 宽度让给发言列。身份标记与房主操作留在「玩家列表」面板里。
+   */
+  compact?: boolean;
 }
 
 /** 玩家行右侧续接的发言列 */
@@ -112,6 +120,7 @@ export function PlayerList(props: PlayerListProps) {
     onMarkChange,
     revealedRoles,
     history,
+    compact = false,
   } = props;
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
@@ -218,9 +227,13 @@ export function PlayerList(props: PlayerListProps) {
         layout="position"
         className="col-span-full grid grid-cols-subgrid items-stretch"
       >
-        <div className="px-2">
-          <PlayerRow {...rowProps} embedded />
-        </div>
+        {compact ? (
+          <CompactNameCell player={player} me={player.id === myPlayerId} />
+        ) : (
+          <div className="px-2">
+            <PlayerRow {...rowProps} embedded />
+          </div>
+        )}
         {history.columns.map((column) => (
           <SpeechCell
             key={column.key}
@@ -248,7 +261,7 @@ export function PlayerList(props: PlayerListProps) {
     if (!history) return title;
     return (
       <div className="col-span-full grid grid-cols-subgrid items-stretch">
-        <div className="px-2">{title}</div>
+        <div className={compact ? "sticky left-0 z-panel border-r bg-panel px-2" : "px-2"}>{title}</div>
         {history.columns.map((column) => (
           <div
             key={column.key}
@@ -284,7 +297,12 @@ export function PlayerList(props: PlayerListProps) {
       )}
       style={
         history
-          ? { gridTemplateColumns: speechGridTemplate(history.columns.length) }
+          ? {
+              gridTemplateColumns: speechGridTemplate(
+                history.columns.length,
+                compact ? COMPACT_PLAYER_COLUMN_WIDTH : PLAYER_COLUMN_WIDTH,
+              ),
+            }
           : undefined
       }
     >
@@ -292,7 +310,8 @@ export function PlayerList(props: PlayerListProps) {
           否则行间距与列表末尾的空白处会把线断开。
           位置必须与行内首列取同一个宽度值，用 rem 而非像素常量，
           否则 120% 全局字号会让线落进玩家列内部。 */}
-      {history ? (
+      {/* 紧凑模式的玩家列贴住左缘，分界线改由列自身的右边框承担，否则横滚时线会留在原地。 */}
+      {history && !compact ? (
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 w-px bg-border"
@@ -368,6 +387,29 @@ export function PlayerList(props: PlayerListProps) {
         <div className="px-2">{body}</div>
       </PlayerListLayout>
     </ScrollArea>
+  );
+}
+
+/**
+ * 紧凑发言历史的玩家格：头像与名字，与完整玩家行同高，横滚时贴住左缘。
+ * 出局只保留删除线与读屏文字，窄列里放不下次行的图标。
+ */
+function CompactNameCell({ player, me }: { player: PublicPlayerView; me: boolean }) {
+  const eliminated = player.roundStatus === "dead";
+  return (
+    <div className="sticky left-0 z-panel border-r bg-panel px-1.5">
+      <div className={cn(PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT, "pl-2 pr-1", me && "bg-primary/10", !player.online && !player.isBot && "opacity-60")}>
+        {me ? <span className={PLAYER_ME_MARK} /> : null}
+        <PlayerAvatar name={player.name} me={me} />
+        <span
+          title={player.name}
+          className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
+        >
+          {player.name}
+        </span>
+        {eliminated ? <span className="sr-only">已出局</span> : null}
+      </div>
+    </div>
   );
 }
 

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
-import { countdownTickMs, dropIn, spring, urgentPulse } from "@/lib/Motion";
+import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
+import { countdownTickMs, dropIn, readoutSwap, spring, urgentPulse } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -107,137 +108,155 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
   const isCritical = remainingSec <= 10 && remainingSec > 0;
   const isWarning = remainingSec <= 30 && remainingSec > 10;
 
-  if (!phaseTimer && !canControl) {
-    return null;
-  }
+  // 有倒计时时全员可见；没有时只有能开启的人看到限时栏。两态共用同一个外框，只替换框内内容。
+  const visible = Boolean(phaseTimer) || canControl;
+  const tone = !phaseTimer ? "idle" : isCritical ? "critical" : isWarning ? "warning" : "neutral";
 
   return (
-    <div className={cn("w-full space-y-3", className)} data-testid="phase-timer-container">
-      {/* 倒计时进行中：全员操作区显示倒计时条 */}
-      <AnimatePresence mode="wait">
-        {phaseTimer && (
-          <motion.div
-            key={`timer-display-${phaseTimer.phase}-${phaseTimer.endsAt}`}
-            variants={dropIn}
-            initial="initial"
-            animate="animate"
-            exit="exit"
+    <AnimatePresence initial={false}>
+      {visible ? (
+        <motion.div
+          key="phase-timer"
+          variants={dropIn}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          data-testid="phase-timer-container"
+          className={cn(
+            "@container relative w-full overflow-hidden rounded-md border bg-background shadow-2xs transition-colors",
+            tone === "critical" ? "border-destructive/40" : tone === "warning" ? "border-warning/40" : "border-border",
+            className,
+          )}
+        >
+          {/* 末段的状态浅底叠在不透明的 bg-background 上，外框本身不换底色 */}
+          <div
+            aria-hidden="true"
             className={cn(
-              "relative overflow-hidden rounded-md border p-3 transition-colors",
-              isCritical
-                ? "border-destructive/40 bg-destructive/10 text-destructive"
-                : isWarning
-                  ? "border-warning/40 bg-warning/10 text-warning"
-                  : "border-border/80 bg-muted/40 text-foreground",
+              "pointer-events-none absolute inset-0 transition-colors",
+              tone === "critical" ? "bg-destructive/10" : tone === "warning" ? "bg-warning/10" : "bg-transparent",
             )}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <motion.span
-                  animate={isCritical ? urgentPulse.animate : { scale: 1 }}
-                  transition={isCritical ? urgentPulse.transition : spring.snap}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background"
+          />
+          <MeasuredSwap>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {phaseTimer ? (
+                <motion.div
+                  key={`running-${phaseTimer.phase}-${phaseTimer.endsAt}`}
+                  variants={readoutSwap}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="relative p-3"
                 >
-                  <Timer
-                    className={cn(
-                      "h-4 w-4",
-                      isCritical
-                        ? "text-destructive"
-                        : isWarning
-                          ? "text-warning"
-                          : "text-muted-foreground",
-                    )}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <div className="mr-auto flex min-w-0 items-center gap-2">
+                      <motion.span
+                        animate={isCritical ? urgentPulse.animate : { scale: 1 }}
+                        transition={isCritical ? urgentPulse.transition : spring.snap}
+                        className="flex shrink-0"
+                      >
+                        <Timer
+                          className={cn(
+                            "h-4 w-4",
+                            isCritical ? "text-destructive" : isWarning ? "text-warning" : "text-muted-foreground",
+                          )}
+                        />
+                      </motion.span>
+                      <span className="truncate text-xs font-medium text-muted-foreground">本阶段倒计时</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "font-mono text-xl font-bold tabular-nums",
+                          isCritical ? "text-destructive" : isWarning ? "text-warning" : "text-foreground",
+                        )}
+                      >
+                        {formatTime(remainingSec)}
+                      </span>
+                      {canControl ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground"
+                          onClick={handleStopTimer}
+                          loading={stopping}
+                        >
+                          {stopping ? null : <X className="h-3.5 w-3.5" />}
+                          取消
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* 底部平滑进度条 */}
+                  <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+                    <div
+                      className={cn(
+                        // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
+                        "h-full rounded-full transition-[width] ease-linear",
+                        isCritical ? "bg-destructive" : isWarning ? "bg-warning" : "bg-primary",
+                      )}
+                      style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
+                    />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="idle"
+                  data-testid="host-timer-bar"
+                  variants={readoutSwap}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  // 窄框（手机）里分段控件与按钮放不下一行：分段跟在标签后，按钮另起一行占满整宽
+                  className="relative flex flex-wrap items-center gap-2.5 p-2.5"
+                >
+                  <div className="mr-auto flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">阶段限时</span>
+                  </div>
+                  <SegmentedControl
+                    size="sm"
+                    aria-label="倒计时时长"
+                    className="w-full @sm:w-auto"
+                    value={String(selectedDuration)}
+                    options={DURATION_OPTIONS}
+                    onValueChange={(value) => setSelectedDuration(Number(value))}
                   />
-                </motion.span>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-medium text-muted-foreground truncate">
-                    本阶段倒计时
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "font-mono text-xl font-bold tracking-widest tabular-nums",
-                    isCritical
-                      ? "text-destructive"
-                      : isWarning
-                        ? "text-warning"
-                        : "text-foreground",
-                  )}
-                >
-                  {formatTime(remainingSec)}
-                </span>
-
-                {canControl && (
                   <Button
                     size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
-                    onClick={handleStopTimer}
-                    disabled={stopping}
+                    variant="outline"
+                    className="w-full @md:w-auto"
+                    onClick={handleStartTimer}
+                    loading={starting}
                   >
-                    <X className="h-3.5 w-3.5" />
-                    取消
+                    {starting ? null : <Play className="h-3 w-3 fill-current" />}
+                    开启倒计时
                   </Button>
-                )}
-              </div>
-            </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </MeasuredSwap>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
 
-            {/* 底部平滑进度条 */}
-            <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-              <div
-                className={cn(
-                  // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
-                  "h-full rounded-full transition-[width] ease-linear",
-                  isCritical
-                    ? "bg-destructive"
-                    : isWarning
-                      ? "bg-warning"
-                      : "bg-primary",
-                )}
-                style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 主持人/出题人未开启倒计时时的控制栏 */}
-      {canControl && !phaseTimer && (
-        <div
-          data-testid="host-timer-bar"
-          className="flex flex-wrap items-center justify-between gap-2.5 rounded-md border border-border/70 bg-background p-2.5 shadow-2xs"
-        >
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">阶段限时</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <SegmentedControl
-              size="sm"
-              aria-label="倒计时时长"
-              className="w-auto"
-              value={String(selectedDuration)}
-              options={DURATION_OPTIONS}
-              onValueChange={(value) => setSelectedDuration(Number(value))}
-            />
-
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 px-3 text-xs"
-              onClick={handleStartTimer}
-              disabled={starting}
-            >
-              <Play className="h-3 w-3 fill-current" />
-              开启倒计时
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+/**
+ * 两态内容交叉时外框高度按 spring.settle 补间：内容层量出布局高度，外层只动高度，
+ * 退场内容经 popLayout 抽出文档流叠在原位，外框不会先塌再撑开。
+ */
+function MeasuredSwap({ children }: { children: ReactNode }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const height = useMeasuredHeight(innerRef);
+  return (
+    <motion.div
+      className="relative"
+      initial={false}
+      animate={height === null ? undefined : { height }}
+      transition={spring.settle}
+    >
+      <div ref={innerRef}>{children}</div>
+    </motion.div>
   );
 }

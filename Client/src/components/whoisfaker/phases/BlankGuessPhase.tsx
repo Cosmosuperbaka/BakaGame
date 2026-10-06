@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { duration, readoutSwap } from "@/lib/Motion";
+import { duration, readoutSwap, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { PendingSpeech } from "../layout/PendingSpeech";
@@ -31,6 +31,8 @@ const REASON_TEXT: Record<BlankGuessReason, string> = {
 /**
  * 白板猜词入口。猜词只有一次机会且会打断全场，
  * 因此点击后先确认，再由服务端把房间切进阻塞阶段。
+ * 入口挂在游戏区的阶段之上（`PhaseStage` 的 `before`），排在限时栏下方靠右，
+ * 随内容一起滚动，不压在倒计时条上。
  */
 export function BlankGuessButton() {
   const privateState = useWhoIsFakerStore((s) => s.privateState);
@@ -39,6 +41,8 @@ export function BlankGuessButton() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const [confirming, setConfirming] = useState(false);
   const { run, busy } = usePhaseAction();
+  // 确认弹窗从入口按钮展开，关闭时收回
+  const { origin, capture } = useOriginTracker();
 
   // 已在猜词阶段时入口收起，界面交给下面的输入组件。
   const canEnter =
@@ -62,15 +66,19 @@ export function BlankGuessButton() {
 
   return (
     <>
-      {/* 固定在游戏区右上角，避开底部阶段控制器。 */}
-      <div className="absolute right-3 top-3 z-drawer md:right-5 md:top-5">
-        <Button size="lg" className="gap-2" onClick={() => setConfirming(true)}>
+      <div className="mx-auto mb-6 flex max-w-2xl justify-end">
+        <Button
+          onClick={(event) => {
+            capture(event);
+            setConfirming(true);
+          }}
+        >
           <HelpCircle className="h-4 w-4" />
           白板猜词
         </Button>
       </div>
 
-      <Dialog open={confirming} onOpenChange={setConfirming}>
+      <Dialog open={confirming} onOpenChange={setConfirming} origin={origin}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>发起白板猜词？</DialogTitle>
@@ -83,8 +91,8 @@ export function BlankGuessButton() {
             <Button variant="ghost" onClick={() => setConfirming(false)}>
               再想想
             </Button>
-            <Button loading={busy} onClick={handleEnter} className="gap-2">
-              <HelpCircle className="h-4 w-4" />
+            <Button loading={busy} onClick={() => void handleEnter()}>
+              {busy ? null : <HelpCircle className="h-4 w-4" />}
               进入猜词
             </Button>
           </DialogFooter>
@@ -105,6 +113,8 @@ function BlankGuessInput() {
   const { run, busy: submitting } = usePhaseAction();
   const pushTimer = useRef<number | undefined>(undefined);
   const pendingReview = snapshot.status.blankGuessPendingReview ?? false;
+  // 两个词都填了才能提交：回车与按钮同一口径
+  const ready = Boolean(wordA.trim() && wordB.trim());
 
   // 节流推送草稿：让其他人看到进展，又不至于逐键往返。
   useEffect(() => {
@@ -169,35 +179,36 @@ function BlankGuessInput() {
         猜出两个词，不分顺序。全场都能看到你的输入，机会只有一次。
       </p>
       <div className="space-y-2">
-        <Input
-          autoFocus
-          value={wordA}
-          onChange={(e) => setWordA(e.target.value)}
-          placeholder="词语 A"
-          maxLength={20}
-          className="h-10"
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-        />
-        <Input
-          value={wordB}
-          onChange={(e) => setWordB(e.target.value)}
-          placeholder="词语 B"
-          maxLength={20}
-          className="h-10"
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-        />
+        {[
+          { label: "词语 A", value: wordA, onChange: setWordA },
+          { label: "词语 B", value: wordB, onChange: setWordB },
+        ].map((field, index) => (
+          <Input
+            key={field.label}
+            autoFocus={index === 0}
+            aria-label={field.label}
+            value={field.value}
+            onChange={(e) => field.onChange(e.target.value)}
+            placeholder={field.label}
+            maxLength={20}
+            className="h-10"
+            // 输入法组字时的回车只是上屏；两个词都填了才提交，与按钮的禁用条件一致
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && ready) void handleSubmit();
+            }}
+          />
+        ))}
       </div>
-      <div className="flex justify-center">
-        <Button
-          size="lg"
-          className="gap-2 px-6"
-          onClick={handleSubmit}
-          disabled={submitting || !wordA.trim() || !wordB.trim()}
-        >
-          <Send className="h-4 w-4" />
-          {submitting ? "提交中…" : "提交猜测"}
-        </Button>
-      </div>
+      <Button
+        size="lg"
+        className="w-full"
+        onClick={() => void handleSubmit()}
+        loading={submitting}
+        disabled={!ready}
+      >
+        {submitting ? null : <Send className="h-4 w-4" />}
+        提交猜测
+      </Button>
     </div>
   );
 }
@@ -217,7 +228,7 @@ function GuessReadout({
       {cells.map((word, index) => (
         <div
           key={index}
-          className="flex min-h-11 items-center justify-center rounded-md border bg-muted px-4 py-2 text-base font-semibold"
+          className="flex min-h-11 min-w-0 items-center justify-center rounded-md bg-muted [overflow-wrap:anywhere] px-4 py-2 text-base font-semibold"
         >
           {/* 内容随输入替换，用 mode="wait" 让读数逐次落位而不是叠加 */}
           <AnimatePresence mode="wait" initial={false}>
@@ -262,6 +273,7 @@ export function BlankGuessWaiting() {
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const { run, busy: reviewing } = usePhaseAction();
+  const [verdict, setVerdict] = useState<boolean | null>(null);
 
   const status = snapshot.status;
   const guesser = snapshot.players.find((player) => player.id === status.blankGuessPlayerId);
@@ -272,11 +284,14 @@ export function BlankGuessWaiting() {
   const handleReview = useCallback(
     async (approve: boolean) => {
       await run(async () => {
-      try {
-        await sendCommand("game.reviewBlankGuess", { approve });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
+        setVerdict(approve);
+        try {
+          await sendCommand("game.reviewBlankGuess", { approve });
+        } catch (e) {
+          addToast((e as { message: string }).message, "error");
+        } finally {
+          setVerdict(null);
+        }
       });
     },
     [run, sendCommand, addToast],
@@ -309,23 +324,29 @@ export function BlankGuessWaiting() {
           {/* 真实词对只发给主持人与旁观者，普通玩家看不到这块 */}
           {isQuestioner && words ? (
             <>
-              <div className="rounded-md border bg-muted px-4 py-2.5 text-center text-sm">
+              <div className="rounded-md bg-muted px-4 py-2.5 text-center text-sm">
                 <span className="text-muted-foreground">真实词对：</span>
                 <span className="font-semibold">
                   {words.civilianWord} / {words.undercoverWord}
                 </span>
               </div>
-              <div className="flex justify-center gap-3">
+              <div className="flex flex-wrap justify-center gap-3">
                 <Button
+                  size="lg"
                   variant="outline"
                   disabled={reviewing}
-                  onClick={() => handleReview(false)}
-                  className="gap-2"
+                  loading={verdict === false}
+                  onClick={() => void handleReview(false)}
                 >
                   判定错误
                 </Button>
-                <Button disabled={reviewing} onClick={() => handleReview(true)} className="gap-2">
-                  <Gavel className="h-4 w-4" />
+                <Button
+                  size="lg"
+                  disabled={reviewing}
+                  loading={verdict === true}
+                  onClick={() => void handleReview(true)}
+                >
+                  {verdict === true ? null : <Gavel className="h-4 w-4" />}
                   算作正确
                 </Button>
               </div>

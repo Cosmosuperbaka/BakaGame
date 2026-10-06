@@ -1,13 +1,14 @@
 import { usePhaseAction } from "./UsePhaseAction";
-import { useCallback } from "react";
-import { motion } from "framer-motion";
-import { Moon, Sword, FastForward, CheckCircle2, Undo2 } from "lucide-react";
+import { useCallback, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Moon, FastForward } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { listContainer, listItem, receiptCard, receiptMarkFollow, selectable } from "@/lib/Motion";
+import { listContainer, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PrivilegedActionPreview } from "../layout/PrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { AbstainOption } from "../layout/AbstainOption";
+import { ActionReceipt, TargetOption } from "../layout/ActionChoice";
 
 export function NightPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
@@ -16,6 +17,9 @@ export function NightPhase() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const action = usePhaseAction();
   const { run, busy } = action;
+  const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
+  // 回执从被点的那张选项上展开
+  const { origin, capture } = useOriginTracker();
   const phaseResultPresentationPending = useWhoIsFakerStore(
     (state) => state.phaseResultPresentationPending,
   );
@@ -50,28 +54,34 @@ export function NightPhase() {
     [run, sendCommand, addToast]
   );
 
-  const handleCancelNightAction = useCallback(async () => {
-    await run(async () => {
-    try {
-      await sendCommand("game.cancelNightAction", {});
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
-    });
-  }, [run, sendCommand, addToast]);
+  const runPending = useCallback(
+    (key: "cancel" | "advance", type: string) =>
+      run(async () => {
+        setPendingCommand(key);
+        try {
+          await sendCommand(type, {});
+        } catch (e) {
+          addToast((e as { message: string }).message, "error");
+        } finally {
+          setPendingCommand(null);
+        }
+      }),
+    [run, sendCommand, addToast],
+  );
+  const handleCancelNightAction = () => void runPending("cancel", "game.cancelNightAction");
+  const handleAdvance = () => void runPending("advance", "game.advancePhase");
 
-  const handleAdvance = useCallback(async () => {
-    await run(async () => {
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
-    });
-  }, [run, sendCommand, addToast]);
+  // 夜里不行动的人各自说明原因，不留一块空白
+  const idleNote = isQuestioner || me?.membership !== "active"
+    ? null
+    : !amAlive
+      ? "你已出局，等待天亮"
+      : role === "angel" || role === "blank"
+        ? "你今晚没有行动，等待天亮"
+        : null;
 
   return (
-    <div className="space-y-6 max-w-lg mx-auto">
+    <div className="mx-auto max-w-lg space-y-6">
       <PhaseHeader
         icon={Moon}
         title="夜晚降临"
@@ -79,76 +89,68 @@ export function NightPhase() {
 
       <PrivilegedActionPreview mode="night" />
 
-      {canAct && !acted && (
-        <motion.div
-          className="grid grid-cols-2 gap-2.5"
-          variants={listContainer(targets.length)}
-          initial="initial"
-          animate="animate"
-        >
-            {targets.map((p) => (
-              <motion.button
-                key={p.id}
-                type="button"
-                variants={listItem}
-                {...selectable}
-                className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-3.5 text-left transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+      {/* 与投票阶段同一套交叉：选项退场、回执从被点的选项上展开 */}
+      <div className="relative">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {canAct && !acted ? (
+            <motion.div
+              key="options"
+              className="grid grid-cols-2 gap-2.5"
+              variants={listContainer(targets.length)}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              {targets.map((p) => (
+                <TargetOption
+                  key={p.id}
+                  name={p.name}
+                  tone="night"
+                  disabled={busy}
+                  onSelect={(event) => {
+                    capture(event);
+                    void handleNightAction(p.id);
+                  }}
+                />
+              ))}
+              <AbstainOption
+                label="不行动"
                 disabled={busy}
-                onClick={() => handleNightAction(p.id)}
-              >
-                <span className="truncate text-sm font-medium">{p.name}</span>
-                <Sword className="ml-2 h-4 w-4 shrink-0 text-destructive" />
-              </motion.button>
-            ))}
-          <AbstainOption disabled={busy} onSelect={() => handleNightAction()} />
-        </motion.div>
-      )}
+                onSelect={(event) => {
+                  capture(event);
+                  void handleNightAction();
+                }}
+              />
+            </motion.div>
+          ) : canAct && acted ? (
+            <ActionReceipt
+              key="receipt"
+              title="已完成夜晚决策"
+              detail={
+                actionTargetName ? (
+                  <>目标 <span className="font-medium text-foreground">{actionTargetName}</span></>
+                ) : "本夜不行动"
+              }
+              origin={origin}
+              busy={pendingCommand === "cancel"}
+              onUndo={handleCancelNightAction}
+            />
+          ) : null}
+        </AnimatePresence>
+      </div>
 
-      {/* 提交行动后的反馈卡片，与投票阶段同一套结构与配色 */}
-      {canAct && acted && (
-        <motion.div
-          {...receiptCard}
-          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/40 bg-primary/10 px-4 py-3"
-        >
-          <div className="flex items-center gap-2.5">
-            <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}>
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            </motion.span>
-            <div>
-              <div className="text-sm font-semibold text-foreground">已完成夜晚决策</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {actionTargetName ? (
-                  <>
-                    目标 <span className="font-medium text-foreground">{actionTargetName}</span>
-                  </>
-                ) : (
-                  "已弃票"
-                )}
-              </div>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 gap-1.5 text-xs"
-            disabled={busy}
-            onClick={handleCancelNightAction}
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-            撤销
-          </Button>
-        </motion.div>
-      )}
+      {idleNote ? <p className="text-center text-sm text-muted-foreground">{idleNote}</p> : null}
 
       {isQuestioner && (
-        <div className="text-center pt-2">
+        <div className="flex justify-center pt-2">
           <Button
             onClick={handleAdvance}
             disabled={busy || phaseResultPresentationPending}
+            loading={pendingCommand === "advance"}
             size="lg"
-            className="gap-2 px-6"
           >
-            <FastForward className="h-4 w-4" /> 天亮了
+            {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
+            天亮了
           </Button>
         </div>
       )}

@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   Eye,
   History,
   Menu,
@@ -384,7 +385,7 @@ export default function WhoIsFakerRoomPage() {
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
   const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
-  const playerList = (withHistory: boolean) => (
+  const playerList = (withHistory: boolean, compact = false) => (
     <PlayerList
       players={snapshot.players}
       hostPlayerId={snapshot.hostPlayerId}
@@ -397,7 +398,7 @@ export default function WhoIsFakerRoomPage() {
       playerMarks={playerMarks}
       onMarkChange={handleMarkChange}
       revealedRoles={revealedRoles}
-      {...(withHistory ? { history } : {})}
+      {...(withHistory ? { history, compact } : {})}
     />
   );
 
@@ -410,39 +411,44 @@ export default function WhoIsFakerRoomPage() {
         roomId={snapshot.roomId}
         center={<>
           {dayVisible && day > 0 ? <HeaderCounter>第 {day} 天</HeaderCounter> : null}
-          {privateState?.isQuestioner ? <HeaderChip icon={ShieldCheck} label="主持人" /> : null}
-          {!privateState?.isQuestioner && isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
-          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到 */}
-          {globalWords ? (
+          {/* 中栏在手机上只有一百六十多像素：主持人徽章在 sm 以下只留图标，身份名交给读屏 */}
+          {privateState?.isQuestioner ? (
             <>
-              <span
-                className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
-                title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
-              >
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary" />
-                <span className="whitespace-normal break-words sm:whitespace-nowrap">
-                  平民/卧底：{globalWords.civilianWord}/{globalWords.undercoverWord}
-                </span>
-              </span>
-              {globalWords.blankHint ? (
-                <span
-                  className="hidden max-w-full items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground sm:inline-flex"
-                  title={`白板：${globalWords.blankHint}`}
-                >
-                  <span className="whitespace-normal break-words sm:whitespace-nowrap">白板：{globalWords.blankHint}</span>
-                </span>
-              ) : null}
+              <HeaderChip icon={ShieldCheck} label="主持人" className="hidden sm:inline-flex" />
+              <HeaderChip icon={ShieldCheck} label="" title="主持人" className="px-1.5 sm:hidden" />
+              <span className="sr-only sm:hidden">主持人</span>
             </>
           ) : null}
+          {!privateState?.isQuestioner && isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
+          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到。放不下时截断，完整内容在 title 里 */}
+          {globalWords ? (
+            <HeaderChip
+              icon={BookOpen}
+              label={`${globalWords.civilianWord}/${globalWords.undercoverWord}`}
+              title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
+              truncate
+            />
+          ) : null}
+          {globalWords?.blankHint ? (
+            <HeaderChip
+              icon={CircleHelp}
+              label={globalWords.blankHint}
+              title={`白板：${globalWords.blankHint}`}
+              truncate
+              // 白板提示是三枚里最次要的一枚：中栏到 xl 才放得下三枚完整徽章，更窄时只留在平民/卧底词的 title 里
+              className="hidden xl:inline-flex"
+            />
+          ) : null}
           {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
-              此处只占位撑开顶栏空间，避免停靠时挤动相邻元素。 */}
+              此处只占位撑开顶栏空间，避免停靠时挤动相邻元素；停靠后的词语对读屏隐藏，由这里读出。 */}
           {privateInfoVisible && assignedWordText ? (
             <span
               ref={wordAnchorRef}
-              aria-label={`你的词语 ${assignedWordText}`}
-              className="shrink-0"
+              className="relative shrink-0"
               style={{ width: dockSize.width, height: dockSize.height }}
-            />
+            >
+              <span className="sr-only">你的词语 {assignedWordText}</span>
+            </span>
           ) : null}
         </>}
         connectionIssue={connected ? null : "断线中..."}
@@ -526,8 +532,9 @@ export default function WhoIsFakerRoomPage() {
             side: "left" as const,
             title: "发言历史",
             closeFrom: "md" as const,
-            className: "w-full max-w-sm",
-            content: playerList(true),
+            // 发言历史需要横向空间：面板占满游戏区宽度，玩家列换成只有头像与名字的窄列
+            className: "w-full",
+            content: playerList(true, true),
           }] : []),
           {
             key: "chat",

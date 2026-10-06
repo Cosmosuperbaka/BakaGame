@@ -2,7 +2,7 @@
 
 import type { PublicPlayerView } from "@/types";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
-import { PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
+import { COMPACT_PLAYER_COLUMN_WIDTH, PLAYER_COLUMN_WIDTH, SPEECH_COLUMN_MIN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
 
 const createPlayer = (overrides: Partial<PublicPlayerView> = {}): PublicPlayerView => ({
   id: "player-1",
@@ -20,7 +20,9 @@ const createPlayer = (overrides: Partial<PublicPlayerView> = {}): PublicPlayerVi
 describe("player list presentation", () => {
   it("keeps the player column fixed when history has no description columns", () => {
     expect(speechGridTemplate(0)).toBe(PLAYER_COLUMN_WIDTH);
-    expect(speechGridTemplate(1)).toContain("repeat(1, minmax(200px, max-content))");
+    expect(speechGridTemplate(1)).toBe(`${PLAYER_COLUMN_WIDTH} repeat(1, minmax(${SPEECH_COLUMN_MIN_WIDTH}, max-content))`);
+    // 移动端面板换成窄玩家列，发言列下限不变
+    expect(speechGridTemplate(2, COMPACT_PLAYER_COLUMN_WIDTH)).toMatch(new RegExp(`^${COMPACT_PLAYER_COLUMN_WIDTH} `));
   });
 
   it("uses the server-revealed role for eliminated players", () => {

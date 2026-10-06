@@ -12,6 +12,7 @@ import { VotingPhase } from "../phases/VotingPhase";
 import { NightPhase } from "../phases/NightPhase";
 import { BlankGuessButton, BlankGuessStage } from "../phases/BlankGuessPhase";
 import { GameOverPhase } from "../phases/GameOverPhase";
+import { DisconnectHandler } from "./DisconnectHandler";
 import { PhaseTimerControl } from "./PhaseTimerControl";
 import { TestController } from "./TestController";
 
@@ -23,20 +24,38 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
 
   if (!snapshot) return null;
 
-  const phase = snapshot.status.phase;
+  const status = snapshot.status;
+  const phase = status.phase;
+  // 阶段内的子状态（补充发言、平票 PK 的描述与投票、第几次 PK、白板待裁定、换天换局）
+  // 同样换掉整块内容，拼进标识里才会走 phaseSwap，而不是在原地硬切。
+  const phaseKey = [
+    status.roundId ?? "",
+    phase,
+    status.day,
+    status.speechMode ?? "",
+    status.tieBreakStage ?? "",
+    status.tieBreakIndex ?? "",
+    status.supplementIndex ?? "",
+    status.blankGuessPendingReview ? "review" : "",
+  ].join(":");
 
   return (
     <PhaseStage
-      phaseKey={phase}
+      phaseKey={phaseKey}
       reserveBottom={isTestRoom}
-      before={<PhaseTimerControl className="mx-auto max-w-2xl mb-6" />}
+      // 不随阶段切换的区块：掉线待决可能挂在任何进行中的阶段上，限时栏跨子阶段保留，
+      // 白板猜词入口排在限时栏下方，不压在倒计时条上
+      before={<>
+        <DisconnectHandler />
+        <PhaseTimerControl className="mx-auto mb-6 max-w-2xl" />
+        <BlankGuessButton />
+      </>}
       onPhaseSettled={() => {
         // 回到等待阶段时清空上一局的出题草稿，避免下一局沿用旧词。
         if (phase === "waiting") setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
       }}
       overlays={<>
         {isTestRoom ? <TestController /> : null}
-        <BlankGuessButton />
 
         {/* 揭词背板。词语本体由 RoomPage 的 AssignedWord 承担，
             此处只压暗底层内容，让注意力先落在词语上。 */}

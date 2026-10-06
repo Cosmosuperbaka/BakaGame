@@ -524,7 +524,7 @@ export function initWhoIsFakerWs() {
         currentStore.addToast("投票结果已公布");
         break;
       case "game.disconnectDecisionRequested":
-        currentStore.addToast("有玩家掉线，等待出题人处理", "info");
+        currentStore.addToast("有玩家掉线，等待主持人处理", "info");
         break;
       case "room.expiring":
         currentStore.addToast("房间即将因超时关闭", "error");

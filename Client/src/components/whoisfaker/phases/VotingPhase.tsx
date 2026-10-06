@@ -1,15 +1,16 @@
 import { usePhaseAction } from "./UsePhaseAction";
-import { useCallback } from "react";
-import { motion } from "framer-motion";
-import { CheckCircle2, FastForward, Undo2, Vote } from "lucide-react";
+import { useCallback, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { FastForward, Vote } from "lucide-react";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { Button } from "@/components/ui/Button";
-import { listContainer, listItem, receiptCard, receiptMarkFollow, selectable } from "@/lib/Motion";
+import { listContainer, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PrivilegedActionPreview } from "../layout/PrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { SupplementRequestControl } from "../layout/SupplementRequestControl";
+import { useSupplementRequest } from "../layout/SupplementRequestControl";
 import { AbstainOption } from "../layout/AbstainOption";
+import { ActionReceipt, TargetOption } from "../layout/ActionChoice";
 
 export function VotingPhase() {
   const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
@@ -18,6 +19,10 @@ export function VotingPhase() {
   const addToast = useWhoIsFakerStore((state) => state.addToast);
   const action = usePhaseAction();
   const { run, busy } = action;
+  // 哪个命令在等应答：加载指示只落在发起它的按钮上，其余按钮照常禁用。
+  const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
+  // 回执从被点的那张选项上展开
+  const { origin, capture } = useOriginTracker();
   const phaseResultPresentationPending = useWhoIsFakerStore(
     (state) => state.phaseResultPresentationPending,
   );
@@ -52,31 +57,31 @@ export function VotingPhase() {
     [run, addToast, sendCommand],
   );
 
-  const handleCancelVote = useCallback(async () => {
-    await run(async () => {
-    try {
-      await sendCommand("game.cancelVote", {});
-    } catch (error) {
-      addToast((error as { message: string }).message, "error");
-    }
-    });
-  }, [run, addToast, sendCommand]);
-
-  const handleAdvance = useCallback(async () => {
-    await run(async () => {
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (error) {
-      addToast((error as { message: string }).message, "error");
-    }
-    });
-  }, [run, addToast, sendCommand]);
+  const runPending = useCallback(
+    (key: "cancel" | "advance", type: string) =>
+      run(async () => {
+        setPendingCommand(key);
+        try {
+          await sendCommand(type, {});
+        } catch (error) {
+          addToast((error as { message: string }).message, "error");
+        } finally {
+          setPendingCommand(null);
+        }
+      }),
+    [run, addToast, sendCommand],
+  );
+  const handleCancelVote = () => void runPending("cancel", "game.cancelVote");
+  const handleAdvance = () => void runPending("advance", "game.advancePhase");
+  const supplement = useSupplementRequest({ canRequest: !isTieBreak, action });
 
   const abstained = votedId === ABSTAIN_TARGET_ID;
   const targetPlayerName = abstained
     ? undefined
     : (targets.find((target) => target.id === votedId)?.name ??
       snapshot.players.find((player) => player.id === votedId)?.name);
+  const isCandidate = tieBreakCandidateIds.includes(privateState?.playerId ?? "");
+  const showReceipt = amAlive && !isQuestioner && Boolean(votedId);
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -88,84 +93,83 @@ export function VotingPhase() {
 
       <PrivilegedActionPreview mode="vote" />
 
-      {canVote ? (
-        <motion.div
-          className="grid grid-cols-2 gap-2.5"
-          variants={listContainer(targets.length)}
-          initial="initial"
-          animate="animate"
-        >
-          {targets.map((player) => (
-            <motion.button
-              key={player.id}
-              type="button"
-              variants={listItem}
-              {...selectable}
-              className="flex cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
-              disabled={busy}
-              onClick={() => handleVote(player.id)}
+      {/* 选项与回执是同一次决定的前后两面：交叉替换，回执从被点的选项上展开，撤销时收回 */}
+      <div className="relative">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {canVote ? (
+            <motion.div
+              key="options"
+              className="grid grid-cols-2 gap-2.5"
+              variants={listContainer(targets.length)}
+              initial="initial"
+              animate="animate"
+              exit="exit"
             >
-              <span className="truncate text-sm font-medium">{player.name}</span>
-              <Vote className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
-            </motion.button>
-          ))}
-          {/* 弃票与投人是同一次决定的两种结果，因此并入同一组选项，
-              占满整行以区别于具体玩家。 */}
-          <AbstainOption disabled={busy} onSelect={() => handleVote(ABSTAIN_TARGET_ID)} />
-        </motion.div>
-      ) : null}
+              {targets.map((player) => (
+                <TargetOption
+                  key={player.id}
+                  name={player.name}
+                  tone="vote"
+                  disabled={busy}
+                  onSelect={(event) => {
+                    capture(event);
+                    void handleVote(player.id);
+                  }}
+                />
+              ))}
+              {/* 弃票与投人是同一次决定的两种结果，因此并入同一组选项，
+                  占满整行以区别于具体玩家。 */}
+              <AbstainOption
+                label="弃票"
+                disabled={busy}
+                onSelect={(event) => {
+                  capture(event);
+                  void handleVote(ABSTAIN_TARGET_ID);
+                }}
+              />
+            </motion.div>
+          ) : showReceipt ? (
+            <ActionReceipt
+              key="receipt"
+              title={abstained ? "已弃票" : "已完成投票"}
+              detail={
+                abstained ? "本轮不投出任何一票" : targetPlayerName ? (
+                  <>投给 <span className="font-medium text-foreground">{targetPlayerName}</span></>
+                ) : null
+              }
+              origin={origin}
+              busy={pendingCommand === "cancel"}
+              onUndo={handleCancelVote}
+            />
+          ) : null}
+        </AnimatePresence>
+      </div>
 
-      {isTieBreak && amAlive && tieBreakCandidateIds.includes(privateState?.playerId ?? "") && !votedId ? (
+      {isTieBreak && amAlive && isCandidate && !votedId ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-center text-sm text-warning">你是平票候选人，本轮不参与投票。</p>
       ) : null}
 
-      {amAlive && !isQuestioner && votedId ? (
-        <motion.div
-          {...receiptCard}
-          className="mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border-2 border-primary/40 bg-primary/10 px-4 py-3"
-        >
-          <div className="flex items-center gap-2.5">
-            <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}>
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            </motion.span>
-            <div>
-              <div className="text-sm font-semibold text-foreground">
-                {abstained ? "已弃票" : "已完成投票"}
-              </div>
-              {abstained ? (
-                <div className="mt-0.5 text-xs text-muted-foreground">本轮不投出任何一票</div>
-              ) : targetPlayerName ? (
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  投给 <span className="font-medium text-foreground">{targetPlayerName}</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 gap-1.5 text-xs"
-            disabled={busy}
-            onClick={handleCancelVote}
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-            撤销
-          </Button>
-        </motion.div>
+      {/* 不能投票的人也要知道自己在等什么 */}
+      {!isQuestioner && me?.membership === "active" && me.roundStatus === "dead" ? (
+        <p className="text-center text-sm text-muted-foreground">你已出局，本轮不能投票</p>
       ) : null}
 
       {isQuestioner ? (
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <SupplementRequestControl canRequest={!isTieBreak} action={action} />
-          <Button
-            onClick={handleAdvance}
-            disabled={busy || phaseResultPresentationPending}
-            size="lg"
-            className="gap-2 px-6"
-          >
-            <FastForward className="h-4 w-4" />
-            结算投票
-          </Button>
+        <div className="space-y-3 pt-2">
+          {supplement.panel}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {supplement.trigger}
+            <Button
+              onClick={handleAdvance}
+              disabled={busy || phaseResultPresentationPending}
+              loading={pendingCommand === "advance"}
+              size="lg"
+            >
+              {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
+              结算投票
+            </Button>
+          </div>
+          {supplement.hint}
         </div>
       ) : null}
     </div>

@@ -426,7 +426,8 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     act(() => {
       useWhoIsFakerStore.setState({ connected: false });
     });
-    expect(screen.getByText("断线中...")).toBeInTheDocument();
+    // 顶栏 sm 起写成文字、更窄时收成图标，两处同一份文案
+    expect(screen.getAllByText("断线中...").length).toBeGreaterThan(0);
 
     // 2. 房间被服务端关闭时，页面自动重定向到 /whoisfaker 大厅并清理关闭标记
     act(() => {
