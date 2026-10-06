@@ -28,3 +28,25 @@ it("视口放大到 sm 时收起弹出层", async () => {
   act(() => media.crossBreakpoint(true));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 });
+
+it("点图标静音，再点恢复到静音前的音量；拖到 0 后恢复到最近一次可听的音量", async () => {
+  const user = userEvent.setup();
+  stubMatchMedia(true);
+  const onVolumeChange = vi.fn();
+  const view = render(<VolumeControl volume={0.4} onVolumeChange={onVolumeChange} />);
+  await user.click(screen.getByRole("button", { name: "静音" }));
+  expect(onVolumeChange).toHaveBeenLastCalledWith(0);
+  view.rerender(<VolumeControl volume={0} onVolumeChange={onVolumeChange} />);
+  expect(screen.getByRole("button", { name: "取消静音" })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: "取消静音" }));
+  expect(onVolumeChange).toHaveBeenLastCalledWith(0.4);
+});
+
+it("进房时就是静音，取消静音回到默认音量", async () => {
+  const user = userEvent.setup();
+  stubMatchMedia(true);
+  const onVolumeChange = vi.fn();
+  render(<VolumeControl volume={0} onVolumeChange={onVolumeChange} />);
+  await user.click(screen.getByRole("button", { name: "取消静音" }));
+  expect(onVolumeChange).toHaveBeenLastCalledWith(0.65);
+});

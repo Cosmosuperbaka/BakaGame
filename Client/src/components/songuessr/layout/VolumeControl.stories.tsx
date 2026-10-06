@@ -36,6 +36,25 @@ export const Muted: Story = { name: "静音", args: { volume: 0 } };
 
 export const Max: Story = { name: "最大音量", args: { volume: 1 } };
 
+/** 悬停时轨道变粗、滑块显出；截图停在悬停态，便于对照细轨与粗轨。 */
+export const Hovered: Story = {
+  name: "悬停 · 轨道变粗",
+  play: async ({ canvasElement }) => {
+    await userEvent.hover(within(canvasElement).getByRole("slider", { name: "播放音量" }));
+  },
+};
+
+/** 点图标静音，读数滚到 0、图标换成静音。 */
+export const MuteToggle: Story = {
+  name: "点图标静音",
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "静音" }));
+    await expect(canvas.getByRole("button", { name: "取消静音" })).toHaveAttribute("aria-pressed", "true");
+    dropFocus();
+  },
+};
+
 /** `sm` 以下只剩图标按钮，点开后在按钮下方弹出滑块。 */
 export const MobilePopover: Story = {
   name: "移动端 · 弹出滑块",
