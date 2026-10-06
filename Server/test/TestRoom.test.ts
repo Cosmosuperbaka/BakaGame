@@ -162,7 +162,8 @@ test("结算后所有人的准备状态都被重置", async () => {
 
   const snapshot = snapshotOf(host);
   expect(snapshot.status.phase).toBe("gameOver");
-  expect(snapshot.players.every((player) => !player.isReady)).toBe(true);
+  // 房主没有准备态，快照里恒为已准备，不参与重置。
+  expect(snapshot.players.filter((player) => !player.isHost).every((player) => !player.isReady)).toBe(true);
 });
 
 test("测试房间可以随时增减机器人，人数上限生效", async () => {

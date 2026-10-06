@@ -90,6 +90,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 
 ### 4.2 角色池与人数要求
 - **开局条件**：至少 4 名参战玩家 + 1 名出题人（出题人可由房主指定或由房主本人/旁观者担任）。
+- **房主没有准备态**：`ensureAllReady` 只看房主以外的参与者，客户端不再替房主自动发准备指令；公共快照里房主恒为已准备（`isReady` 视图口径，存储字段不改），与猜歌、CCB 同口径。
 - **卧底人数公式**：`maxUndercoverCount = max(1, Math.ceil(participantCount / 4))`。
 - **可选高级角色**：
   - **白板 (`blank`)**：无词语，仅有词性提示；房间达到 8 人及以上可用。
@@ -107,7 +108,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 - **死亡身份揭露 (`revealRoleOnDeath`)**：布尔值，默认 `true`。
   - **开启时**：玩家在对局中死亡/被放逐出局时，其真实角色（`revealedRole`）即刻写入公共快照，全房存活普通玩家均可知晓其阵营。
   - **关闭时**：死亡玩家在对局中的角色在公共快照中严格保持 `undefined` 保密，存活普通玩家无法从公共快照探知其死前真实身份；仅出题人、旁观者或待最终 `gameOver` 阶段时方予揭露。
-  - **交互与同步**：房主可在等待大厅（`WaitingPhase`）随时切换，配置变更通过公开状态通道实时同步（`room.settings_changed` 是服务端日志类型）；非房主玩家在设置预览区展示“死亡揭露身份”/“死亡隐藏身份”状态胶囊。
+  - **交互与同步**：房主可在等待大厅（`WaitingPhase`）随时切换，配置变更通过公开状态通道实时同步（`room.settings_changed` 是服务端日志类型）；非房主玩家在等待页看到与房主同结构的只读设置，「死亡时揭露身份」一项显示开启或关闭。
 
 ---
 

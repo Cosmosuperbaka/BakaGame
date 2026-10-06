@@ -250,6 +250,33 @@ test("切换为旁观者会清除准备状态并收紧角色配置", async () =>
   expect(snapshot?.settings.roleConfig.hasBlank).toBe(false);
 });
 
+test("房主没有准备态：其他玩家都准备好即可开局，快照里房主恒为已准备", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "1616");
+  const guests = [];
+  for (let index = 0; index < 4; index += 1) {
+    const connection = createConnection(service, `host-ready-${index}`);
+    await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: "1616",
+      payload: { userName: `免准备玩家${index + 2}` },
+    });
+    guests.push(connection);
+  }
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.players.find((entry) => entry.isHost)?.isReady).toBe(true);
+  for (const connection of guests) {
+    await execute(service, connection, {
+      id: `ready-${connection.record.id}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+  const result = await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+  expect(result).toMatchObject({ phase: expect.not.stringMatching(/^waiting$/) });
+});
+
 test("对局开始后不能切换旁观或准备状态", async () => {
   const { service } = createTestContext();
   const { host } = await createRoom(service, "1515");
@@ -2265,7 +2292,8 @@ test("测试控制器生成的结算后房主可以让全房返回等待阶段",
   let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status).toMatchObject({ phase: "waiting", started: false, day: 0 });
   expect(snapshot?.summary).toBeUndefined();
-  expect(snapshot?.players.find((player) => player.id === result.playerId)?.isReady).toBe(false);
+  // 房主没有准备态，快照里恒为已准备；机器人回到等待后自动准备。
+  expect(snapshot?.players.find((player) => player.id === result.playerId)?.isReady).toBe(true);
   expect(snapshot?.players.filter((player) => player.isBot).every((player) => player.isReady)).toBe(
     true,
   );

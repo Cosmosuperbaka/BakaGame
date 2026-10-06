@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, X, Gamepad2, Settings, Lock, Globe, Users, Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
@@ -27,12 +27,6 @@ export function WaitingPhase() {
   const allReady = canSoloStart || (nonHostActive.length > 0 && nonHostActive.every((p) => p.isReady));
   const readyCount = nonHostActive.filter((p) => p.isReady).length;
   const showProgress = nonHostActive.length > 0;
-
-  useEffect(() => {
-    if (isHost && me && !me.isReady) {
-      sendCommand("player.setReady", { ready: true }).catch(() => {});
-    }
-  }, [isHost, me, sendCommand]);
 
   // 与猜歌同口径：准备、开始在等服务端应答期间显示加载态并禁用，避免连点发出相反的两条命令。
   const [readying, setReadying] = useState(false);

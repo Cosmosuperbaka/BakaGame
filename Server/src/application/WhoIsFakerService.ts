@@ -2989,7 +2989,8 @@ export class WhoIsFakerService {
           score: player.score,
           membership: player.membership,
           online: player.online,
-          isReady: player.isReady,
+          // 房主没有准备态，视图里恒为已准备，与另外两个游戏同口径；存储字段不动，转让后自然回到真实状态。
+          isReady: player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
           isBot: player.isBot,
           isHost: room.hostPlayerId === player.id,
           roundStatus,
@@ -3289,9 +3290,10 @@ export class WhoIsFakerService {
     );
   }
 
+  /** 房主没有准备态：开局只看其他参与者，房主不必先发准备指令。 */
   private ensureAllReady(room: WhoIsFakerRoomRecord) {
     const everyoneReady = Object.values(room.players)
-      .filter((player) => player.membership === "active")
+      .filter((player) => player.membership === "active" && player.id !== room.hostPlayerId)
       .every((player) => player.isReady);
 
     if (!everyoneReady) {
