@@ -8,6 +8,7 @@ export type CCBWorkerRequest =
   | { id: number; method: "searchCharacters"; keyword: string; limit: number }
   | { id: number; method: "searchSubjects"; keyword: string; limit: number; types?: number[] }
   | { id: number; method: "getSubjectCharacters"; subjectId: number; limit: number }
+  | { id: number; method: "getSubjects"; subjectIds: number[] }
   | { id: number; method: "getRawCharacter"; characterId: number }
   | { id: number; method: "getCharacter"; characterId: number; settings: CCBSettings }
   | { id: number; method: "chooseRandomCharacter"; settings: CCBSettings; rolls: number[] }
@@ -30,6 +31,7 @@ self.onmessage = async ({ data: request }: MessageEvent<CCBWorkerRequest>) => {
         case "searchCharacters": value = await repository.searchCharacters(request.keyword, request.limit); break;
         case "searchSubjects": value = await repository.searchSubjects(request.keyword, request.limit, request.types); break;
         case "getSubjectCharacters": value = await repository.getSubjectCharacters(request.subjectId, request.limit); break;
+        case "getSubjects": value = await repository.getSubjects(request.subjectIds); break;
         case "getRawCharacter": value = await repository.getRawCharacter(request.characterId); break;
         case "getCharacter": value = await repository.getCharacter(request.characterId, request.settings); break;
         case "chooseRandomCharacter": {

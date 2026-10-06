@@ -40,6 +40,10 @@ export class CCBCharacterWorkerProvider implements CCBDataProvider {
     await this.ready;
     return this.request({ method: "getSubjectCharacters", subjectId, limit }) as Promise<CCBCharacterSummary[]>;
   }
+  async getSubjects(subjectIds: number[]): Promise<CCBSubjectSummary[]> {
+    await this.ready;
+    return this.request({ method: "getSubjects", subjectIds }) as Promise<CCBSubjectSummary[]>;
+  }
   async getRawCharacter(characterId: number): Promise<CCBRawCharacter> {
     await this.ready;
     return this.request({ method: "getRawCharacter", characterId }) as Promise<CCBRawCharacter>;

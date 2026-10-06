@@ -16,7 +16,7 @@ export function createTestApp(options: Omit<AppDependencies, "sonGuessrService" 
     bangumiProvider: { searchSubjects: unused, getSubject: unused, chooseRandomSubject: unused, resolveCharacterImage: unused },
   });
   const ccbService = options.ccbService ?? new CCBService({ data: {
-    searchCharacters: unused, searchSubjects: unused, getSubjectCharacters: unused, getRawCharacter: unused,
+    searchCharacters: unused, searchSubjects: unused, getSubjectCharacters: unused, getSubjects: unused, getRawCharacter: unused,
     getCharacter: unused, chooseRandomCharacter: unused, importDirectory: unused, resolveCharacterImage: unused, close() {},
   } });
   releases.push(() => ccbService.close());

@@ -23,6 +23,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
   const data: CCBDataProvider = {
     searchCharacters: async () => [character(1), character(2)], searchSubjects: async () => [],
     getSubjectCharacters: async () => [character(1)],
+    getSubjects: async (ids: number[]) => ids.map((id) => ({ id, name: `Subject ${id}`, nameCn: `作品 ${id}`, type: 2, year: 2020, rating: 7, heat: 100 })),
     getRawCharacter: async () => { throw new AppError('UNUSED', '测试不读取原始资料'); },
     getCharacter: async id => { getCalls.push(id); return character(id, id === 2); },
     chooseRandomCharacter: async () => character(1), importDirectory: async id => ({ id, subjectIds: [100], missingSubjectIds: [], importedAt: clock }),

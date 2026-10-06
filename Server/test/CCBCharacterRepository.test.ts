@@ -70,6 +70,12 @@ describe("CCB 本地角色资料", () => {
     expect(await repository.getSubjectCharacters(15)).toEqual([]);
   });
 
+  test("按编号取作品名保持输入顺序，跳过受限、缺失与重复编号", async () => {
+    const { repository } = create();
+    expect((await repository.getSubjects([11, 999, 10, 15, 11])).map((row) => row.id)).toEqual([11, 10]);
+    expect(await repository.getSubjects([])).toEqual([]);
+  });
+
   test("只读本地关系、角色标签和声优，剔除受限/未来/无年份作品再累积标签", async () => {
     const { repository } = create();
     const view = await repository.getCharacter(1, settings());

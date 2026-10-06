@@ -12,7 +12,7 @@ export const originalCharacter = (id = 900): CCBCharacterView => ({
 export const originalData: CCBDataProvider = {
   async getCharacter(id) { return originalCharacter(id); }, async chooseRandomCharacter() { return originalCharacter(); },
   async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...originalCharacter(id), aliases: [], appearances: [], extraTagsBySubject: {} }; },
-  async searchCharacters() { return [originalCharacter()]; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return [originalCharacter()]; },
+  async searchCharacters() { return [originalCharacter()]; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return [originalCharacter()]; }, async getSubjects() { return []; },
   async importDirectory(id) { return { id, subjectIds: [10], missingSubjectIds: [], importedAt: 1 }; },
   async resolveCharacterImage(id) { return `https://images.example/${id}.jpg`; }, close() {},
 };

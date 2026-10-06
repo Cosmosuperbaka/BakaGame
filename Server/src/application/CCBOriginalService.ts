@@ -147,6 +147,7 @@ export class CCBOriginalService {
         this.requireSubjectSearch(session); return { results: await data.searchSubjects(message.payload.keyword) };
       case 'ccb.subject.characters':
         this.requireSubjectSearch(session); return { results: await data.getSubjectCharacters(message.payload.subjectId) };
+      case 'ccb.subject.lookup': return { results: await data.getSubjects(message.payload.subjectIds) };
       case 'ccb.directory.import': return data.importDirectory(message.payload.indexId);
       case 'ccb.character.image': return { imageUrl: await data.resolveCharacterImage(message.payload.characterId) };
       case 'ccb.game.imageHint': return this.imageHint(session);

@@ -110,6 +110,16 @@ export class CCBCharacterRepository implements CCBDataProvider {
     return rows.map(toSubject);
   }
 
+  async getSubjects(subjectIds: number[]): Promise<CCBSubjectSummary[]> {
+    this.assertOpen();
+    await this.ready;
+    const ids = [...new Set(subjectIds.filter(positiveId))].slice(0, 500);
+    if (!ids.length) return [];
+    const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as SubjectRow[];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return ids.flatMap((id) => { const row = byId.get(id); return row ? [toSubject(row)] : []; });
+  }
+
   async getSubjectCharacters(subjectId: number, limit = 50): Promise<CCBCharacterSummary[]> {
     this.assertOpen();
     await this.ready;

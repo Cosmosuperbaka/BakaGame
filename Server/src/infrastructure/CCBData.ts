@@ -31,6 +31,8 @@ export interface CCBDataProvider {
   searchCharacters(keyword: string, limit?: number): Promise<CCBCharacterSummary[]>;
   searchSubjects(keyword: string, limit?: number, types?: number[]): Promise<CCBSubjectSummary[]>;
   getSubjectCharacters(subjectId: number, limit?: number): Promise<CCBCharacterSummary[]>;
+  /** 按编号取作品摘要，顺序随输入、本地没有的编号跳过；不含 NSFW 过滤以外的筛选。 */
+  getSubjects(subjectIds: number[]): Promise<CCBSubjectSummary[]>;
   getRawCharacter(id: number): Promise<CCBRawCharacter>;
   getCharacter(id: number, settings: CCBSettings): Promise<CCBCharacterView>;
   chooseRandomCharacter(settings: CCBSettings, random?: () => number): Promise<CCBCharacterView>;

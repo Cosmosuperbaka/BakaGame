@@ -193,6 +193,8 @@
   从本地 SQLite 按批次重建。CCB 与 SonGuessr 共用同一 Meilisearch 实例和 `MEILISEARCH_KEY`，番剧索引名为
   `bangumi_subjects`。未配置 `MEILISEARCH_KEY` 的本地/测试夹具保持显式本地模式；生产必须提供
   可用的 Meilisearch，不能在运行期静默切换到另一套排序逻辑。
+- `ccb.subject.lookup` 按编号从本地 SQLite 取作品摘要（最多 500 个，与 `addedSubjects` 上限一致），
+  只供设置里的追加作品显示名称；顺序随输入，本地没有或受限的编号跳过，不联网、不走搜索索引。
 - 搜索回归以 Bangumi API 的过滤表达式和固定语料为参照，命中 ID 集合及顺序相似度必须达到
   99.9%，精确名称、别名、类型和 NSFW 边界样例要求完全一致。
 

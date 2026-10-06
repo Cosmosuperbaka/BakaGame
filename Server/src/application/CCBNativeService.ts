@@ -75,6 +75,7 @@ export class CCBNativeService {
       case 'ccb.subject.characters':
         if (room.phase === 'guessing' && !room.settings.subjectSearch && player.status === 'playing') throw new AppError('SUBJECT_SEARCH_DISABLED', '本局关闭了作品搜索');
         return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
+      case 'ccb.subject.lookup': return { results: await this.data.getSubjects(message.payload.subjectIds) };
       case 'ccb.directory.import':
         this.state.requireHost(room, player); this.state.requireWaiting(room); return this.data.importDirectory(message.payload.indexId);
       case 'ccb.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId) };

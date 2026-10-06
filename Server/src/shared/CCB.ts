@@ -149,6 +149,8 @@ export const CCBPayloadSchemas = {
   'ccb.character.search': t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
   'ccb.subject.search': t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
   'ccb.subject.characters': t.Object({ subjectId: id }, strict),
+  /** 按编号取作品名，供设置里的追加作品显示名称；上限与 `addedSubjects` 一致。 */
+  'ccb.subject.lookup': t.Object({ subjectIds: t.Array(id, { maxItems: 500 }) }, strict),
   'ccb.directory.import': t.Object({ indexId: id }, strict),
   'ccb.character.image': t.Object({ characterId: id }, strict),
   'ccb.game.start': empty,
