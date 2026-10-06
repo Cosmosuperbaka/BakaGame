@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 房主动作需要随 PlayerRow 一起被三个游戏消费，拆文件只会让调用点各写一遍。 */
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
@@ -7,7 +7,7 @@ import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Button } from "@/components/ui/Button";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
-import { listItem, popover, tappable } from "@/lib/Motion";
+import { listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /** 玩家行操作浮层里的一个动作。 */
@@ -42,6 +42,13 @@ export interface PlayerRowProps {
   actions?: PlayerRowAction[];
   /** 嵌入发言历史首列时去掉行自身的进出场动画，交由表格统一处理 */
   embedded?: boolean;
+  /**
+   * 跨分组的同一行身份（传玩家编号）：玩家与旁观之间切换时，行从原位置滑到新分组，而不是一处消失、一处出现。
+   * 调用方的玩家栏须包在 `PlayerListLayout` 里，编号才不会与同屏另一份玩家栏（抽屉）串台。
+   */
+  layoutId?: string;
+  /** 外层动画容器的引用：`AnimatePresence mode="popLayout"` 靠它把退场行抽出文档流，三个游戏的行组件逐层转交 */
+  ref?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -52,7 +59,7 @@ export interface PlayerRowProps {
  */
 export function PlayerRow({
   name, score, me = false, host = false, online = true, bot = false, eliminated = false,
-  badges, meta, detail, actionsHeader, actions, embedded = false,
+  badges, meta, detail, actionsHeader, actions, embedded = false, layoutId, ref,
 }: PlayerRowProps) {
   const interactive = Boolean(actionsHeader || actions?.length);
   const rowClass = cn(
@@ -127,7 +134,7 @@ export function PlayerRow({
   ) : <div className={rowClass}>{body}</div>;
 
   return embedded ? content : (
-    <motion.div variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" className="min-w-0">
+    <motion.div ref={ref} variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" layoutId={layoutId} transition={playerRelayout} className="min-w-0">
       {content}
     </motion.div>
   );

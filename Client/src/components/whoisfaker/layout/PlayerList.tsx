@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
@@ -18,6 +18,7 @@ import {
   PLAYER_GROUP_TITLE_HEIGHT,
   PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
+  PlayerListLayout,
   PlayerStatusPill,
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -363,7 +364,9 @@ export function PlayerList(props: PlayerListProps) {
   }
   return (
     <ScrollArea className="h-full">
-      <div className="px-2">{body}</div>
+      <PlayerListLayout>
+        <div className="px-2">{body}</div>
+      </PlayerListLayout>
     </ScrollArea>
   );
 }
@@ -440,6 +443,8 @@ export interface PlayerRowProps {
   onTransferHost: (playerId: string) => void;
   /** 嵌入发言历史首栏时去掉行自身的进出场动画，交由表格统一处理 */
   embedded?: boolean;
+  /** 转交给通用行的动画容器，供 `popLayout` 抽出退场行 */
+  ref?: Ref<HTMLDivElement>;
 }
 
 export function PlayerRow(props: PlayerRowProps) {
@@ -457,6 +462,7 @@ export function PlayerRow(props: PlayerRowProps) {
     onKick,
     onTransferHost,
     embedded,
+    ref,
   } = props;
 
   const isMe = player.id === myPlayerId;
@@ -482,6 +488,8 @@ export function PlayerRow(props: PlayerRowProps) {
         {status ? <PlayerStatusPill tone={status.tone} label={status.label} /> : null}
       </>}
       embedded={embedded}
+      layoutId={embedded ? undefined : player.id}
+      ref={ref}
       {...(canMark
         ? {
             actionsHeader: availableMarks.map((option, idx) => (

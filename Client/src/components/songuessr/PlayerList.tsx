@@ -1,8 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -88,59 +88,62 @@ export function PlayerList({
 
   return (
     <ScrollArea className="h-full">
-      <div className="min-w-0 px-2">
-        <div className="relative flex min-w-0 w-full flex-col py-3">
-          <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-          <motion.div
-            className="flex flex-col gap-px"
-            variants={listContainer(activePlayers.length)}
-            initial={false}
-            animate="animate"
-          >
-            <AnimatePresence initial={false}>
-              {activePlayers.map((player) => renderRow(player, false))}
-            </AnimatePresence>
-          </motion.div>
+      <PlayerListLayout>
+        <div className="min-w-0 px-2">
+          <div className="relative flex min-w-0 w-full flex-col py-3">
+            <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+            <motion.div
+              className="flex flex-col gap-px"
+              variants={listContainer(activePlayers.length)}
+              initial={false}
+              animate="animate"
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                {activePlayers.map((player) => renderRow(player, false))}
+              </AnimatePresence>
+            </motion.div>
 
-          {canJoinPlayers ? (
-            <SpectatorToggle
-              spectator={false}
-              queued={!waitingPhase}
-              selected={me?.nextRoundMembership === "active"}
-              onToggle={handleSetSpectator}
-            />
-          ) : null}
+            {canJoinPlayers ? (
+              <SpectatorToggle
+                spectator={false}
+                queued={!waitingPhase}
+                selected={me?.nextRoundMembership === "active"}
+                onToggle={handleSetSpectator}
+              />
+            ) : null}
 
-          {observers.length > 0 || canJoinSpectators ? (
-            <>
-              <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-              <motion.div
-                className="flex flex-col gap-px"
-                variants={listContainer(observers.length)}
-                initial={false}
-                animate="animate"
-              >
-                <AnimatePresence initial={false}>
-                  {observers.map((player) => renderRow(player, true))}
-                </AnimatePresence>
-              </motion.div>
-              {canJoinSpectators ? (
-                <SpectatorToggle
-                  spectator
-                  queued={!waitingPhase}
-                  selected={me?.nextRoundMembership === "spectator"}
-                  onToggle={handleSetSpectator}
-                />
-              ) : null}
-            </>
-          ) : null}
+            {observers.length > 0 || canJoinSpectators ? (
+              <>
+                <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+                <motion.div
+                  className="flex flex-col gap-px"
+                  variants={listContainer(observers.length)}
+                  initial={false}
+                  animate="animate"
+                >
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {observers.map((player) => renderRow(player, true))}
+                  </AnimatePresence>
+                </motion.div>
+                {canJoinSpectators ? (
+                  <SpectatorToggle
+                    spectator
+                    queued={!waitingPhase}
+                    selected={me?.nextRoundMembership === "spectator"}
+                    onToggle={handleSetSpectator}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </PlayerListLayout>
     </ScrollArea>
   );
 }
 
 interface SongPlayerRowProps {
+  ref?: Ref<HTMLDivElement>;
   player: SonGuessrPlayerView;
   myPlayerId?: string;
   isHostViewer: boolean;
@@ -151,6 +154,7 @@ interface SongPlayerRowProps {
 }
 
 function SongPlayerRow({
+  ref,
   player,
   myPlayerId,
   isHostViewer,
@@ -180,6 +184,8 @@ function SongPlayerRow({
       bot={player.isBot}
       badges={status ? <PlayerStatusPill {...status} /> : null}
       actions={actions}
+      layoutId={player.id}
+      ref={ref}
     />
   );
 }

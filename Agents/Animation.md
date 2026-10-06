@@ -51,6 +51,7 @@
 - 选中指示器（`Tabs`、`SegmentedControl` 的底块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
 - 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
+- 玩家栏换组（玩家 ↔ 旁观）是一次整列重排：玩家栏包在 `PlayerListLayout`（按实例命名的 `LayoutGroup`，桌面侧栏与抽屉互不串台）里，行传 `layoutId={player.id}`，从旧分组滑到新分组；两处 `SpectatorToggle` 共用一个 `layoutId`，入口随之滑到另一组，图标与文案以 `readoutSwap` 在途中换掉。分组标题与入口带 `layout="position"`，行列表用 `AnimatePresence mode="popLayout"`（行组件逐层转交 `ref`），退场行立即抽出文档流，其余行不等它淡完才让位。换组的行、让位的行、标题与入口统一取 `playerRelayout`（`spring.settle`），同时起步、同时落定。
 
 ### 2.5 禁止写死数值
 

@@ -1,3 +1,6 @@
+import { useId, type ReactNode } from "react";
+import { LayoutGroup, motion } from "framer-motion";
+import { playerRelayout } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export type PlayerStatusTone = "default" | "success" | "questioner" | "warning" | "danger";
@@ -61,7 +64,9 @@ export function PlayerGroupTitle({
   withRule?: boolean;
 }) {
   return (
-    <div
+    <motion.div
+      layout="position"
+      transition={playerRelayout}
       className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
@@ -72,6 +77,15 @@ export function PlayerGroupTitle({
         {count}
       </span>
       <span className="h-px flex-1 bg-border/70" />
-    </div>
+    </motion.div>
   );
+}
+
+/**
+ * 一份玩家栏的布局作用域：行（`PlayerRow layoutId`）、分组标题与旁观切换入口在同一组里联动，
+ * 有人在玩家与旁观之间换组时，行滑到新位置，下方的标题与入口跟着让位，不跳。
+ * 每个实例单独命名，桌面侧栏与窄屏抽屉同时挂载时互不串台。
+ */
+export function PlayerListLayout({ children }: { children: ReactNode }) {
+  return <LayoutGroup id={useId()}>{children}</LayoutGroup>;
 }

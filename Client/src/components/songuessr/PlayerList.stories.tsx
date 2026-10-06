@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
 import { dropFocus } from "@/stories/PlayHelpers";
@@ -7,6 +8,7 @@ import {
   SONG_PEOPLE,
   SONG_PLAYER_PANEL,
   songBot,
+  stubSongCommand,
   waitingPlayers,
   withHost,
 } from "@/stories/fixtures/SonGuessr";
@@ -83,4 +85,17 @@ export const SpectatorToggles: Story = {
       ))}
     </div>
   ),
+};
+
+/** 本地切换旁观：核对行、分组标题与入口在两组之间连续滑动（不截图，供手动与逐帧检查）。 */
+export const SpectatorToggleLive: Story = {
+  name: "旁观切换 · 交互",
+  tags: ["no-shot"],
+  render: function Render(args) {
+    const [spectating, setSpectating] = useState(false);
+    const players = args.players.map((player) =>
+      player.id === me.id ? { ...player, membership: spectating ? "spectator" as const : "active" as const } : player);
+    useEffect(() => stubSongCommand(async (_type, payload) => { setSpectating(Boolean(payload?.spectator)); return {}; }), []);
+    return <PlayerList {...args} players={players} />;
+  },
 };

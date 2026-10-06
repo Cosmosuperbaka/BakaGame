@@ -423,6 +423,12 @@ export const collapsible: Variants = {
   },
 };
 
+/**
+ * 玩家栏重排：换组的行（共享 `layoutId`）、让位的其余行、分组标题与旁观入口用同一条弹簧，
+ * 一起起步、一起落定，读作整列在挪，而不是一行跳过去、其余慢慢跟上。
+ */
+export const playerRelayout: Transition = { layout: spring.settle };
+
 /** 选中指示器（标签页、分段控件的底块）在选项之间滑动 */
 export const indicatorSlide: Transition = spring.swift;
 

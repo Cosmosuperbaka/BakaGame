@@ -1,10 +1,11 @@
+import type { Ref } from "react";
 import type { CCBPlayer, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { listContainer, listItem } from "@/lib/Motion";
+import { listContainer, listItem, playerRelayout } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { AnimatePresence, motion } from "framer-motion";
@@ -61,7 +62,7 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
 
   const renderRows = (players: CCBPlayer[], inTeam: boolean) => (
     <motion.div className="flex flex-col gap-px" variants={listContainer(players.length)} initial={false} animate="animate">
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} mode="popLayout">
         {players.map((player) => (
           <CCBPlayerRow
             key={player.id}
@@ -80,40 +81,43 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex min-w-0 flex-col px-2 py-3">
-        <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-        {teamed ? (
-          // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
-          <div className="flex flex-col gap-1.5">
-            <AnimatePresence initial={false}>
-              {groups.map(({ team, members }) => (
-                <motion.section
-                  key={team ?? "solo"}
-                  variants={listItem}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  layout="position"
-                  aria-label={team === null ? "个人游玩" : `${team} 队`}
-                  className={cn("min-w-0", team !== null && "rounded-md bg-muted/50 p-0.5")}
-                >
-                  <CCBTeamHeader team={team} members={members} snapshot={snapshot} />
-                  {renderRows(members, team !== null)}
-                </motion.section>
-              ))}
-            </AnimatePresence>
-          </div>
-        ) : renderRows(activePlayers, false)}
-        {canJoinPlayers ? <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} /> : null}
+      <PlayerListLayout>
+        <div className="flex min-w-0 flex-col px-2 py-3">
+          <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+          {teamed ? (
+            // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
+            <div className="flex flex-col gap-1.5">
+              <AnimatePresence initial={false}>
+                {groups.map(({ team, members }) => (
+                  <motion.section
+                    key={team ?? "solo"}
+                    variants={listItem}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    layout="position"
+                    transition={playerRelayout}
+                    aria-label={team === null ? "个人游玩" : `${team} 队`}
+                    className={cn("min-w-0", team !== null && "rounded-md bg-muted/50 p-0.5")}
+                  >
+                    <CCBTeamHeader team={team} members={members} snapshot={snapshot} />
+                    {renderRows(members, team !== null)}
+                  </motion.section>
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : renderRows(activePlayers, false)}
+          {canJoinPlayers ? <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} /> : null}
 
-        {observers.length > 0 || canJoinSpectators ? (
-          <>
-            <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-            {renderRows(observers, false)}
-            {canJoinSpectators ? <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} /> : null}
-          </>
-        ) : null}
-      </div>
+          {observers.length > 0 || canJoinSpectators ? (
+            <>
+              <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+              {renderRows(observers, false)}
+              {canJoinSpectators ? <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} /> : null}
+            </>
+          ) : null}
+        </div>
+      </PlayerListLayout>
     </ScrollArea>
   );
 }
@@ -160,6 +164,7 @@ function CCBTeamHeader({ team, members, snapshot }: { team: number | null; membe
 }
 
 interface CCBPlayerRowProps {
+  ref?: Ref<HTMLDivElement>;
   player: CCBPlayer;
   snapshot: CCBRoomSnapshot;
   /** 次数、同步提交与进度已由队伍标题给出，行内不再重复 */
@@ -171,7 +176,7 @@ interface CCBPlayerRowProps {
   run: CCBRun;
 }
 
-function CCBPlayerRow({ player, snapshot, sharedInHeader, self, canManage, busy, run }: CCBPlayerRowProps) {
+function CCBPlayerRow({ ref, player, snapshot, sharedInHeader, self, canManage, busy, run }: CCBPlayerRowProps) {
   const status = resolveCCBStatus(player, snapshot);
   const progress = !sharedInHeader && snapshot.phase === "guessing" && player.status !== "observing";
   const detail = [
@@ -200,6 +205,8 @@ function CCBPlayerRow({ player, snapshot, sharedInHeader, self, canManage, busy,
       meta={detail ? <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span> : null}
       detail={!sharedInHeader && player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}
       actions={actions}
+      layoutId={player.id}
+      ref={ref}
     />
   );
 }
