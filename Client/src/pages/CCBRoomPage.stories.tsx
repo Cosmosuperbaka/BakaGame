@@ -21,6 +21,17 @@ function inRoom({ snapshot, privateState }: CCBRoomScenario) {
   });
 }
 
+/** 追加作品按编号补名字：故事里替换 `ccb.subject.lookup` 的应答，其余命令照常（不会发出）。 */
+const SUBJECT_NAMES: Record<number, string> = { 328609: "孤独摇滚！", 1424: "轻音少女" };
+function stubSubjectLookup() {
+  const sendCommand = useCCBStore.getState().sendCommand;
+  useCCBStore.setState({
+    sendCommand: ((command, payload) => command === "ccb.subject.lookup"
+      ? Promise.resolve({ results: (payload as { subjectIds: number[] }).subjectIds.map((id) => ({ id, name: SUBJECT_NAMES[id] ?? `#${id}`, nameCn: SUBJECT_NAMES[id] ?? "", type: 2, year: null, rating: 0, heat: 0 })) })
+      : sendCommand(command, payload)) as typeof sendCommand,
+  });
+}
+
 /** 模拟点击会让浏览器按键盘操作绘制焦点环，真实鼠标点击没有；交互结束后移开焦点，画面与鼠标操作一致。 */
 function dropFocus() {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -68,7 +79,7 @@ export const WaitingGuest: Story = {
 /** 设置改为等待页内的折叠面板，逐个展开以便同屏审查三组设置。 */
 export const SettingsPanels: Story = {
   name: "设置面板 · 房主",
-  beforeEach: () => inRoom(ccbWaitingHostRoom(CCB_CUSTOM_SETTINGS)),
+  beforeEach: () => { inRoom(ccbWaitingHostRoom(CCB_CUSTOM_SETTINGS)); stubSubjectLookup(); },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     for (const name of [/题目设置/, /猜测设置/, /房间设置/]) {
@@ -86,6 +97,21 @@ export const ChoosingSetterHost: Story = {
 export const ChoosingSetterGuest: Story = {
   name: "指定出题人 · 玩家",
   beforeEach: () => inRoom(ccbChoosingSetterRoom("guest")),
+};
+
+/** 非房主展开两组玩法设置：同一份结构，字段只显示取值，房主工具（预设、导入导出、目录同步）不出现。 */
+export const SettingsPanelsGuest: Story = {
+  name: "设置面板 · 玩家 · 只读",
+  beforeEach: () => {
+    const scenario = ccbWaitingGuestRoom();
+    inRoom({ ...scenario, snapshot: { ...scenario.snapshot, settings: CCB_CUSTOM_SETTINGS } });
+    stubSubjectLookup();
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const name of ["题目设置", "猜测设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    dropFocus();
+  },
 };
 
 export const Preparing: Story = {

@@ -90,7 +90,19 @@ export const SettingsPanel: Story = {
   name: "设置面板 · 房主",
   beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("host", "waiting")),
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: /房间设置/ }));
+    const canvas = within(canvasElement);
+    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    dropFocus();
+  },
+};
+
+/** 非房主展开两组设置：同一份结构，字段只显示取值。 */
+export const SettingsPanelGuest: Story = {
+  name: "设置面板 · 玩家 · 只读",
+  beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("me", "waiting")),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -110,7 +122,8 @@ export const SettingsPanelFewPlayers: Story = {
     );
   },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: /房间设置/ }));
+    const canvas = within(canvasElement);
+    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };

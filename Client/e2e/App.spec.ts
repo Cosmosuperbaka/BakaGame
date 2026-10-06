@@ -337,7 +337,7 @@ test("two browser sessions can create and join the same server room", async ({ i
   await expect(page.getByText(roomName, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "复制", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "房间设置", exact: true }).click();
+  await page.getByRole("button", { name: "身份设置", exact: true }).click();
   await expect(page.getByText("卧底人数", { exact: true })).toBeVisible();
   await expectActionAreaScrollable(page);
 

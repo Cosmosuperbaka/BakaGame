@@ -1,26 +1,38 @@
 import { useId, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { headerTappable } from "@/lib/Motion";
+import { SettingsReadOnly } from "@/components/common/room/SettingFields";
+import { collapsible, headerTappable } from "@/lib/Motion";
 
-/** 等待页的折叠设置区：标题行整行可点，箭头与展开状态同步翻转。图标只传组件，尺寸与颜色在这里统一。 */
+/**
+ * 等待页的折叠设置组：标题行整行可点，箭头与展开状态同步翻转。图标只传组件，尺寸与颜色在这里统一。
+ * 收起时标题下方一行弱化的摘要（`summary`，各项以「·」相连），不展开也能看出这组设成了什么；展开时摘要收起、让位给字段。
+ * 摘要不进按钮的可访问名，经 `aria-describedby` 读出。`readOnly` 时组内字段只显示取值（非房主看到同一份结构）。
+ */
 export function SettingsAccordion({
   icon: Icon,
   title,
+  summary,
   open,
   onOpenChange,
+  readOnly = false,
   children,
 }: {
   icon: LucideIcon;
   title: string;
+  summary?: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  readOnly?: boolean;
   children: ReactNode;
 }) {
   const contentId = useId();
+  const summaryId = useId();
+  const titleId = useId();
+  const summaryText = summary?.filter(Boolean).join(" · ");
   return (
-    <div className="rounded-md border">
+    <div className="overflow-hidden rounded-md border bg-panel">
       {/* 整行标题用 headerTappable：只按压不悬停缩放，免得整行文字随鼠标晃动。 */}
       <motion.button
         type="button"
@@ -28,28 +40,34 @@ export function SettingsAccordion({
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         aria-controls={open ? contentId : undefined}
-        className="flex w-full items-center gap-2 px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/40"
+        // 可访问名只取标题：摘要虽在按钮里，作为描述读出，按名字查找时不受摘要内容影响。
+        aria-labelledby={titleId}
+        aria-describedby={summaryText && !open ? summaryId : undefined}
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
       >
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <span className="flex-1 text-left">{title}</span>
-        <DisclosureChevron open={open} className="text-muted-foreground" />
+        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span id={titleId} className="block text-sm font-medium">{title}</span>
+          <AnimatePresence initial={false}>
+            {summaryText && !open ? (
+              <motion.span key="summary" variants={collapsible} initial="initial" animate="animate" exit="exit" className="block overflow-hidden">
+                <span id={summaryId} className="block pt-1 text-xs leading-relaxed text-muted-foreground">{summaryText}</span>
+              </motion.span>
+            ) : null}
+          </AnimatePresence>
+        </span>
+        <DisclosureChevron open={open} className="mt-0.5 text-muted-foreground" />
       </motion.button>
       <CollapsibleRegion open={open} id={contentId}>
-        <div className="border-t px-4 py-4">{children}</div>
+        <div className="border-t px-4 py-4">
+          <SettingsReadOnly readOnly={readOnly}>{children}</SettingsReadOnly>
+        </div>
       </CollapsibleRegion>
     </div>
   );
 }
 
-/** 非房主看到的只读设置摘要。 */
-export function SettingsChips({ items }: { items: string[] }) {
-  return (
-    <div className="flex flex-wrap justify-center gap-2">
-      {items.map((item) => (
-        <span key={item} className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          {item}
-        </span>
-      ))}
-    </div>
-  );
+/** 一列折叠设置组的统一间距：三个游戏的等待页都用它包住各组，不各写 `space-y`。 */
+export function SettingsStack({ children }: { children: ReactNode }) {
+  return <div className="space-y-3">{children}</div>;
 }

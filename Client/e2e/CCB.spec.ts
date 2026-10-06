@@ -85,12 +85,13 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
 
     // 设置改成等待页内折叠面板加防抖自动保存：没有保存按钮，改动直达服务端。
     // 用访客侧的设置摘要断言落库——它只可能来自服务端广播，能证明确实保存成功。
-    await expect(guest.getByText("每次 60 秒", { exact: true })).toBeVisible();
+    const guestGuessSettings = guest.getByRole("button", { name: "猜测设置", exact: true });
+    await expect(guestGuessSettings).toHaveAccessibleDescription(/每次 60 秒/);
     await page.getByRole("button", { name: "猜测设置", exact: true }).click();
     const actionLimit = page.getByRole("textbox", { name: "每次行动限时" });
     await actionLimit.fill("0");
     await actionLimit.press("Enter");
-    await expect(guest.getByText("不限行动时间", { exact: true })).toBeVisible();
+    await expect(guestGuessSettings).toHaveAccessibleDescription(/不限行动时间/);
     // 房主不准备；随机出题要等其他人都准备好。
     await expect(page.getByRole("button", { name: "准备", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "等待玩家准备 (0/1)", exact: true })).toBeDisabled();

@@ -4,18 +4,47 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
-import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
+import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
 import {
   SongGameSettings,
   SongQuestionSettings,
   SongRoomSettings,
-  SongSettingsPreview,
+  songSettingsSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@/types";
 
 const notifyCopyFailed = () => useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
+
+/**
+ * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
+ * 单人模式没有房间设置。
+ */
+function SongSettingsGroups({ snapshot, solo = false, readOnly = false }: { snapshot: SonGuessrRoomSnapshot; solo?: boolean; readOnly?: boolean }) {
+  const [questionOpen, setQuestionOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
+  const [roomOpen, setRoomOpen] = useState(false);
+  const summary = songSettingsSummary(snapshot);
+  return (
+    <SettingsStack>
+      <SettingsAccordion icon={Music2} title="题目设置" summary={summary.question} readOnly={readOnly}
+        open={questionOpen} onOpenChange={setQuestionOpen}>
+        <SongQuestionSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
+      </SettingsAccordion>
+      <SettingsAccordion icon={Search} title="猜测设置" summary={summary.game} readOnly={readOnly}
+        open={gameOpen} onOpenChange={setGameOpen}>
+        <SongGameSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
+      </SettingsAccordion>
+      {!solo ? (
+        <SettingsAccordion icon={Settings} title="房间设置" summary={summary.room} readOnly={readOnly}
+          open={roomOpen} onOpenChange={setRoomOpen}>
+          <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
+        </SettingsAccordion>
+      ) : null}
+    </SettingsStack>
+  );
+}
 
 export function SongSoloWaitingPanel({
   snapshot,
@@ -26,30 +55,13 @@ export function SongSoloWaitingPanel({
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
 }) {
-  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
-  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
   const isStarting = Boolean(isPending?.("song.game.start"));
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Headphones} title="准备开始" />
       <SongAccountSettings snapshot={snapshot} />
-      <SettingsAccordion
-        icon={Music2}
-        title="题目设置"
-        open={questionSettingsOpen}
-        onOpenChange={setQuestionSettingsOpen}
-      >
-        <SongQuestionSettings snapshot={snapshot} solo />
-      </SettingsAccordion>
-      <SettingsAccordion
-        icon={Search}
-        title="猜测设置"
-        open={gameSettingsOpen}
-        onOpenChange={setGameSettingsOpen}
-      >
-        <SongGameSettings snapshot={snapshot} solo />
-      </SettingsAccordion>
+      <SongSettingsGroups snapshot={snapshot} solo />
       <Button
         size="lg"
         disabled={!snapshot.musicAccountReady || isStarting}
@@ -86,9 +98,6 @@ export function SongHostWaitingPanel({
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
 }) {
-  const [questionSettingsOpen, setQuestionSettingsOpen] = useState(false);
-  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
-  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const isStarting = Boolean(isPending?.("song.game.start"));
 
   return (
@@ -101,32 +110,7 @@ export function SongHostWaitingPanel({
 
       <SongAccountSettings snapshot={snapshot} />
 
-      <SettingsAccordion
-        icon={Music2}
-        title="题目设置"
-        open={questionSettingsOpen}
-        onOpenChange={setQuestionSettingsOpen}
-      >
-        <SongQuestionSettings snapshot={snapshot} />
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        icon={Search}
-        title="猜测设置"
-        open={gameSettingsOpen}
-        onOpenChange={setGameSettingsOpen}
-      >
-        <SongGameSettings snapshot={snapshot} />
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        icon={Settings}
-        title="房间设置"
-        open={roomSettingsOpen}
-        onOpenChange={setRoomSettingsOpen}
-      >
-        <SongRoomSettings snapshot={snapshot} />
-      </SettingsAccordion>
+      <SongSettingsGroups snapshot={snapshot} />
 
       <Button
         size="lg"
@@ -191,28 +175,31 @@ export function SongWaitingPhase({
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-6">
+    <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Gamepad2} title="等待开始" />
       <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
-      <SongSettingsPreview snapshot={snapshot} />
       {showProgress ? <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" /> : null}
+      {/* 与房主同一份设置结构，只读。 */}
+      <SongSettingsGroups snapshot={snapshot} readOnly />
       {me?.membership === "active" ? (
-        <Button
-          variant={me.isReady ? "outline" : "default"}
-          size="lg"
-          disabled={isReadyPending}
-          loading={isReadyPending}
-          onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
-          className="gap-2 min-w-[120px]"
-        >
-          {isReadyPending ? (
-            me.isReady ? "正在取消..." : "正在准备..."
-          ) : me.isReady ? (
-            <><X className="h-4 w-4" />取消准备</>
-          ) : (
-            <><Check className="h-4 w-4" />准备</>
-          )}
-        </Button>
+        <div className="flex justify-center">
+          <Button
+            variant={me.isReady ? "outline" : "default"}
+            size="lg"
+            disabled={isReadyPending}
+            loading={isReadyPending}
+            onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
+            className="gap-2 min-w-[120px]"
+          >
+            {isReadyPending ? (
+              me.isReady ? "正在取消..." : "正在准备..."
+            ) : me.isReady ? (
+              <><X className="h-4 w-4" />取消准备</>
+            ) : (
+              <><Check className="h-4 w-4" />准备</>
+            )}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

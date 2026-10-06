@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
-import { SettingsAccordion, SettingsChips } from "@/components/common/room/SettingsAccordion";
-import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
+import { SettingReveal, SettingSwitchRow, SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
@@ -14,21 +14,9 @@ import { ccbRoomPath } from "@/lib/CCBSession";
 import { CCBGameSettings } from "./CCBGameSettings";
 import { CCBTeamPicker } from "./CCBTeamPicker";
 
-/** 非房主看到的只读设置摘要。 */
-function settingsChips(snapshot: CCBRoomSnapshot): string[] {
-  const { settings } = snapshot;
-  return [
-    settings.answerMode === "manual" ? "指定出题人" : "随机出题",
-    settings.syncMode ? "同步模式" : "普通模式",
-    settings.nonstopMode ? "血战模式" : "首位猜中结束",
-    `${settings.maxAttempts} 次机会`,
-    settings.timeLimit ? `每次 ${settings.timeLimit} 秒` : "不限行动时间",
-  ];
-}
-
 /**
  * CCB 等待页，与另外两个游戏同一结构：房主在折叠面板里直接改设置（防抖自动保存），底部只有开始按钮，
- * 房主没有准备态；其他玩家看设置摘要与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
+ * 房主没有准备态；其他玩家看到同一份设置结构（只读）与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
  * 出题方式在设置里：随机出题要等其他人都准备；指定出题人点开始后进入选人阶段，出题人不必准备。
  */
 export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
@@ -72,6 +60,8 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
     onError: (error) => setRoomNotice(ccbErrorMessage(error)),
   });
 
+  // 非房主读当前快照；房主读草稿。
+  const roomValues = isHost ? roomDraft : { visibility: snapshot.visibility, allowSpectators: snapshot.allowSpectators };
   const editRoom = <K extends keyof typeof roomDraft>(key: K, value: (typeof roomDraft)[K]) =>
     setRoomDraft((current) => ({ ...current, [key]: value }));
 
@@ -88,28 +78,32 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
 
       <CCBTeamPicker snapshot={snapshot} privateState={privateState} />
 
-      {isHost ? (
-        <div className="space-y-3">
-          <CCBGameSettings settings={snapshot.settings} waiting={snapshot.phase === "waiting"} />
+      <SettingsStack>
+        <CCBGameSettings settings={snapshot.settings} waiting={snapshot.phase === "waiting"} readOnly={!isHost} />
 
-          <SettingsAccordion icon={Settings} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen}>
-            <div className="space-y-4">
-              <SettingTextField
-                label="房间名称"
-                value={roomDraft.name}
-                maxLength={snapshot.source === "original" ? 30 : 32}
-                placeholder="输入房间名称"
-                onChange={(value) => editRoom("name", value)}
-              />
-              {/* 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */}
-              <SettingSwitchRow
-                label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
-                description={snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined}
-                icon={roomDraft.visibility !== "private" ? Globe : snapshot.source === "original" ? EyeOff : Lock}
-                checked={roomDraft.visibility === "private"}
-                onCheckedChange={(checked) => editRoom("visibility", checked ? "private" : "public")}
-              />
-              {roomDraft.visibility === "private" && snapshot.source === "native" ? (
+        <SettingsAccordion icon={Settings} title="房间设置" open={roomOpen} onOpenChange={setRoomOpen} readOnly={!isHost}
+          summary={[
+            snapshot.visibility === "private" ? (snapshot.source === "original" ? "不在大厅显示" : "私密房间") : "公开房间",
+            snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
+          ]}>
+          <SettingsFields>
+            <SettingTextField
+              label="房间名称"
+              value={isHost ? roomDraft.name : snapshot.name}
+              maxLength={snapshot.source === "original" ? 30 : 32}
+              placeholder="输入房间名称"
+              onChange={(value) => editRoom("name", value)}
+            />
+            {/* 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */}
+            <SettingSwitchRow
+              label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
+              description={snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined}
+              icon={roomValues.visibility !== "private" ? Globe : snapshot.source === "original" ? EyeOff : Lock}
+              checked={roomValues.visibility === "private"}
+              onCheckedChange={(checked) => editRoom("visibility", checked ? "private" : "public")}
+            />
+            {isHost && snapshot.source === "native" ? (
+              <SettingReveal open={roomDraft.visibility === "private"}>
                 <SettingTextField
                   label="房间密码"
                   type="password"
@@ -117,23 +111,21 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
                   placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
                   onChange={(value) => editRoom("password", value)}
                 />
-              ) : null}
-              {snapshot.source === "native" ? (
-                <SettingSwitchRow
-                  label="允许旁观"
-                  icon={Users}
-                  checked={roomDraft.allowSpectators}
-                  onCheckedChange={(checked) => editRoom("allowSpectators", checked)}
-                />
-              ) : null}
-              {roomValidation ? <p role="alert" className="text-xs text-destructive">{roomValidation}</p> : null}
-              {roomNotice ? <p role="alert" className="text-xs text-destructive">{roomNotice}</p> : null}
-            </div>
-          </SettingsAccordion>
-        </div>
-      ) : (
-        <SettingsChips items={settingsChips(snapshot)} />
-      )}
+              </SettingReveal>
+            ) : null}
+            {snapshot.source === "native" ? (
+              <SettingSwitchRow
+                label="允许旁观"
+                icon={Users}
+                checked={roomValues.allowSpectators}
+                onCheckedChange={(checked) => editRoom("allowSpectators", checked)}
+              />
+            ) : null}
+            {roomValidation ? <p role="alert" className="text-xs text-destructive">{roomValidation}</p> : null}
+            {roomNotice ? <p role="alert" className="text-xs text-destructive">{roomNotice}</p> : null}
+          </SettingsFields>
+        </SettingsAccordion>
+      </SettingsStack>
 
       {isHost ? (
         <Button size="lg" className="w-full text-base" disabled={starting || !privateState.canStart} loading={starting}

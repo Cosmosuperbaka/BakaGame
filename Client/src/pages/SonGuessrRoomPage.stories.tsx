@@ -140,6 +140,17 @@ export const SettingsPanels: Story = {
   },
 };
 
+/** 非房主展开题目与猜测设置：同一份结构，字段只显示取值。 */
+export const SettingsPanelsGuest: Story = {
+  name: "设置面板 · 玩家 · 只读",
+  beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), songPrivate()),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const name of ["题目设置", "猜测设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    dropFocus();
+  },
+};
+
 // ==================== 指定出题人与出题 ====================
 
 export const ChoosingHost: Story = {

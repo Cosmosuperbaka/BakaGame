@@ -100,12 +100,18 @@ describe("waiting room sharing", () => {
     expect(screen.getByRole("button", { name: "已复制" })).toBeInTheDocument();
   });
 
-  it("非房主在设置预览中默认展示死亡揭露身份胶囊", () => {
+  it("非房主看到与房主同结构的只读设置：收起时有摘要，展开后只有取值没有控件", () => {
     render(<WaitingPhase />);
-    expect(screen.getByText("死亡揭露身份")).toBeInTheDocument();
+    const roles = screen.getByRole("button", { name: "身份设置" });
+    expect(roles).toHaveAccessibleDescription("1 名卧底 · 死亡揭露身份");
+    fireEvent.click(roles);
+    expect(screen.getByText("死亡时揭露身份")).toBeInTheDocument();
+    expect(screen.getByText("1 名")).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "卧底人数" })).not.toBeInTheDocument();
   });
 
-  it("非房主在设置关闭揭露时展示死亡隐藏身份胶囊", () => {
+  it("非房主在设置关闭揭露时摘要写死亡隐藏身份", () => {
     useWhoIsFakerStore.setState({
       snapshot: {
         ...snapshot,
@@ -116,7 +122,7 @@ describe("waiting room sharing", () => {
       },
     });
     render(<WaitingPhase />);
-    expect(screen.getByText("死亡隐藏身份")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "身份设置" })).toHaveAccessibleDescription("1 名卧底 · 死亡隐藏身份");
   });
 
   it("房主展开房间设置后可切换死亡时揭露身份开关", async () => {
@@ -136,8 +142,8 @@ describe("waiting room sharing", () => {
     });
 
     render(<WaitingPhase />);
-    // 房主展开房间设置
-    fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
+    // 揭露规则在身份设置里
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
 
     // 找到死亡时揭露身份开关
     const toggle = screen.getByRole("switch", { name: "死亡时揭露身份" });
@@ -156,7 +162,8 @@ describe("waiting room sharing", () => {
     });
 
     const { unmount } = render(<WaitingPhase />);
-    fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
 
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("房间");
     // 只有两名参与者：卧底上限为 1，天使不可开启；上限与开启条件都挂在控件的说明上。
@@ -175,7 +182,7 @@ describe("waiting room sharing", () => {
 
     useWhoIsFakerStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
     render(<WaitingPhase />);
-    fireEvent.click(screen.getByRole("button", { name: /房间设置/ }));
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
   });
 

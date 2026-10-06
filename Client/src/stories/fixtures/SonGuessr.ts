@@ -87,7 +87,7 @@ export function presetSongRoom(snapshot: SonGuessrRoomSnapshot, privateState: So
   presetSonGuessr({ connected: true, roomId: snapshot.roomId, sessionToken: privateState.sessionToken, snapshot, privateState });
 }
 
-type SongStoreActions = Pick<SonGuessrStore, "searchMusic" | "searchBangumi" | "resolveAnimeSongs" | "sendCommand" | "joinRoom">;
+type SongStoreActions = Pick<SonGuessrStore, "searchMusic" | "searchArtist" | "searchBangumi" | "resolveAnimeSongs" | "sendCommand" | "joinRoom">;
 
 /** 替换 Store 上的网络动作；预览层在下一个故事前会整体重置 Store，替换不会外溢。 */
 export function stubSongActions(actions: Partial<SongStoreActions>) {

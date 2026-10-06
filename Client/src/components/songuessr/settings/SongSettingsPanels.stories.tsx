@@ -1,17 +1,17 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { userEvent, within } from "storybook/test";
-import { Music2, Settings } from "lucide-react";
-import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
+import { screen, userEvent, within } from "storybook/test";
+import { Music2, Search, Settings } from "lucide-react";
+import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { dropFocus } from "@/stories/PlayHelpers";
-import { songSettings, songSnapshot, stubSongCommand } from "@/stories/fixtures/SonGuessr";
+import { songSettings, songSnapshot, stubSongActions } from "@/stories/fixtures/SonGuessr";
 import {
   AnimeAutoFilterSummary,
   SongAutoFilterSummary,
   SongGameSettings,
   SongQuestionSettings,
   SongRoomSettings,
-  SongSettingsPreview,
+  songSettingsSummary,
 } from "./SongSettingsPanels";
 
 // 设置面板在等待阶段改动后才会自动保存；故事只渲染初始值，不触发保存请求。
@@ -28,35 +28,54 @@ const panel = "rounded-md border px-4 py-4";
 const PLAYLIST = { id: "3778678", name: "夏夜城市流行精选", songCount: 128 };
 const ARTISTS = [{ id: "artist-yakou", name: "夜行ラジオ" }, { id: "artist-chenyu", name: "陈屿" }];
 
-/** 与房主等待面板相同的三个折叠分组，开合由故事自持。 */
-function AccordionGroup({ initiallyOpen }: { initiallyOpen: string | null }) {
+/** 与等待面板相同的三个折叠分组，开合由故事自持；`readOnly` 即非房主看到的样子。 */
+function AccordionGroup({ initiallyOpen, readOnly = false, snapshot = songSnapshot() }: {
+  initiallyOpen: string | null;
+  readOnly?: boolean;
+  snapshot?: ReturnType<typeof songSnapshot>;
+}) {
   const [open, setOpen] = useState(initiallyOpen);
-  const snapshot = songSnapshot();
+  const summary = songSettingsSummary(snapshot);
   const sections = [
-    { key: "question", title: "题目设置", icon: Music2, body: <SongQuestionSettings snapshot={snapshot} /> },
-    { key: "game", title: "猜测设置", icon: Settings, body: <SongGameSettings snapshot={snapshot} /> },
-    { key: "room", title: "房间设置", icon: Settings, body: <SongRoomSettings snapshot={snapshot} /> },
+    { key: "question", title: "题目设置", icon: Music2, summary: summary.question, body: <SongQuestionSettings snapshot={snapshot} readOnly={readOnly} /> },
+    { key: "game", title: "猜测设置", icon: Search, summary: summary.game, body: <SongGameSettings snapshot={snapshot} readOnly={readOnly} /> },
+    { key: "room", title: "房间设置", icon: Settings, summary: summary.room, body: <SongRoomSettings snapshot={snapshot} readOnly={readOnly} /> },
   ];
   return (
-    <div className="space-y-5">
+    <SettingsStack>
       {sections.map((section) => (
         <SettingsAccordion
           key={section.key}
           icon={section.icon}
           title={section.title}
+          summary={section.summary}
+          readOnly={readOnly}
           open={open === section.key}
           onOpenChange={(next) => setOpen(next ? section.key : null)}
         >
           {section.body}
         </SettingsAccordion>
       ))}
-    </div>
+    </SettingsStack>
   );
 }
 
 export const AccordionClosed: Story = { name: "折叠分组 · 收起", render: () => <AccordionGroup initiallyOpen={null} /> };
 
 export const AccordionOpen: Story = { name: "折叠分组 · 展开猜测设置", render: () => <AccordionGroup initiallyOpen="game" /> };
+
+/** 非房主：同一份结构，字段只显示取值。 */
+export const ReadOnlyQuestion: Story = {
+  name: "只读 · 展开题目设置 · 自动出题",
+  render: () => <AccordionGroup initiallyOpen="question" readOnly snapshot={songSnapshot({
+    settings: songSettings({ questionMode: "automatic", autoFilters: { playlist: PLAYLIST, artists: ARTISTS, minPopularity: 10_000 } }),
+  })} />,
+};
+
+export const ReadOnlyGame: Story = {
+  name: "只读 · 展开猜测设置",
+  render: () => <AccordionGroup initiallyOpen="game" readOnly />,
+};
 
 export const QuestionManual: Story = {
   name: "题目设置 · 手动出题",
@@ -80,9 +99,10 @@ export const QuestionAutoDefault: Story = {
 };
 export const QuestionArtistSearch: Story = {
   name: "题目设置 · 搜索歌手",
-  beforeEach: () => stubSongCommand((type) => (type === "song.music.artist.search"
-    ? Promise.resolve({ results: [{ id: "artist-yakou", name: "夜行ラジオ" }, { id: "artist-yakou-band", name: "夜行バス" }, { id: "artist-yeyou", name: "夜游乐队" }] })
-    : Promise.resolve({}))),
+  // 歌手搜索在 store 里直接走 WebSocket，不经 sendCommand，故事替换的是 searchArtist 本身。
+  beforeEach: () => stubSongActions({
+    searchArtist: async () => [{ id: "artist-yakou", name: "夜行ラジオ" }, { id: "artist-yakou-band", name: "夜行バス" }, { id: "artist-yeyou", name: "夜游乐队" }],
+  }),
   render: () => (
     <div className={panel}>
       <SongQuestionSettings snapshot={songSnapshot({
@@ -94,7 +114,8 @@ export const QuestionArtistSearch: Story = {
     const canvas = within(canvasElement);
     await userEvent.type(canvas.getByPlaceholderText("输入歌手名后搜索"), "夜行");
     await userEvent.click(canvas.getByRole("button", { name: "搜索" }));
-    await canvas.findByText("夜游乐队");
+    // 结果浮在下方，走 Portal，不在画布里。
+    await screen.findByRole("listbox", { name: "搜索歌手结果" });
     dropFocus();
   },
 };
@@ -147,20 +168,6 @@ export const RoomPrivate: Story = {
   render: () => (
     <div className={panel}>
       <SongRoomSettings snapshot={songSnapshot({ name: "周五夜听歌会", visibility: "private", hasPassword: true, allowSpectators: false })} />
-    </div>
-  ),
-};
-
-export const Preview: Story = {
-  name: "设置概览",
-  render: () => (
-    <div className="space-y-4">
-      <SongSettingsPreview snapshot={songSnapshot()} />
-      <SongSettingsPreview snapshot={songSnapshot({ settings: songSettings({ autoRotateSubmitter: true, bloodMode: true }) })} />
-      <SongSettingsPreview snapshot={songSnapshot({
-        visibility: "private", allowSpectators: false,
-        settings: songSettings({ questionMode: "automatic", showLyrics: false, showGuessTimer: false, maxGuessesPerRound: 5 }),
-      })} />
     </div>
   ),
 };

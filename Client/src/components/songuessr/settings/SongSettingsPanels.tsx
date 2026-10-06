@@ -1,19 +1,22 @@
-import { useId, useState } from "react";
-import { Globe, Lock, Users, X } from "lucide-react";
+/* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
+import { useRef, useState } from "react";
+import { Disc3, Globe, ListMusic, Lock, Tv, Users, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
-import { CollapsibleRegion } from "@/components/ui/Collapsible";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
 import { Badge } from "@/components/ui/Badge";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
-import { SettingsChips } from "@/components/common/room/SettingsAccordion";
-import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
-import { cn } from "@/lib/Utils";
+import type { SegmentedOption } from "@/components/ui/SegmentedControl";
+import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
+import {
+  SettingReveal, SettingSegmented, SettingStepper, SettingSwitchRow, SettingTextField, SettingToggleChips,
+  SettingValue, SettingYearRange, SettingsFields, SettingsSection, useSettingsReadOnly,
+} from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
+import { listItem } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import type {
   AnimeAutoFilters,
+  BangumiMusicTrackKind,
   SongArtistFilter,
   SongArtistSearchResult,
   SonGuessrRoomSnapshot,
@@ -38,6 +41,8 @@ const POPULARITY_OPTIONS: SegmentedOption<string>[] = POPULARITY_LEVELS.map((val
   value: String(value),
   label: value === 0 ? "不限" : `${value}+`,
 }));
+const TRACK_KIND_OPTIONS = ALL_BANGUMI_TRACK_KINDS.map((kind) => ({ value: kind, label: BANGUMI_TRACK_KIND_LABELS[kind] }));
+const popularityText = (value: number) => (value === 0 ? "不限热度" : `热度 ${value}+`);
 
 // 阶段切换会直接卸载等待设置树，旧 props 的 enabled 来不及变为 false。
 // 三类设置共用发送边界：防抖、卸载刷新和飞行中后续草稿都以当前房间阶段为准。
@@ -47,42 +52,132 @@ async function saveWaitingSettings(roomId: string, payload: Record<string, unkno
   await state.sendCommand("song.room.updateSettings", payload);
 }
 
+/** 题目设置的取值：非房主直接读快照，房主的草稿也从它起步。 */
+const questionOf = (snapshot: SonGuessrRoomSnapshot) => ({
+  questionType: snapshot.settings.questionType,
+  questionMode: snapshot.settings.questionMode,
+  autoRotateSubmitter: snapshot.settings.autoRotateSubmitter,
+  playlist: snapshot.settings.autoFilters.playlist,
+  artists: snapshot.settings.autoFilters.artists,
+  minPopularity: snapshot.settings.autoFilters.minPopularity,
+  animeFilters: snapshot.settings.animeAutoFilters ?? {},
+});
+type QuestionDraft = ReturnType<typeof questionOf>;
+
+/**
+ * 题目设置：题型与出题方式，手动出题时的轮流开关，自动出题时按题型出现的筛选小节。
+ * 非房主看到同一份结构（`readOnly`），读的是当前快照；房主改动防抖后自动保存。
+ */
 export function SongQuestionSettings({
   snapshot,
   solo = false,
+  readOnly = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
+  readOnly?: boolean;
 }) {
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const [draft, setDraft] = useState(() => questionOf(snapshot));
+  const values = readOnly ? questionOf(snapshot) : draft;
+  const edit = <K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const editAnime = (patch: Partial<AnimeAutoFilters>) => setDraft((current) => ({ ...current, animeFilters: { ...current.animeFilters, ...patch } }));
+
+  useAutoSave(
+    {
+      questionType: draft.questionType,
+      questionMode: draft.questionMode,
+      autoRotateSubmitter: draft.autoRotateSubmitter,
+      autoFilters: { playlist: draft.playlist, artists: draft.artists, minPopularity: draft.minPopularity },
+      animeAutoFilters: draft.animeFilters,
+    },
+    (payload) => saveWaitingSettings(snapshot.roomId, payload),
+    {
+      enabled: !readOnly && snapshot.phase === "waiting",
+      onError: (error) =>
+        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+    },
+  );
+
+  const automatic = values.questionMode === "automatic";
+  return (
+    <div>
+      <SettingsSection>
+        <SettingSegmented label="题目类型" value={values.questionType} options={QUESTION_TYPE_OPTIONS} onValueChange={(value) => edit("questionType", value)} />
+        {!solo ? (
+          <SettingSegmented label="出题方式" value={values.questionMode} options={QUESTION_MODE_OPTIONS} onValueChange={(value) => edit("questionMode", value)}
+            description={automatic ? "每轮按下面的筛选从网易云或番剧曲库自动抽题。" : "每轮由一位玩家搜索并选定题目。"} />
+        ) : null}
+        <SettingReveal open={!automatic}>
+          <SettingSwitchRow label="自动轮流出题" description="每轮按玩家加入顺序自动指定下一位出题人。"
+            checked={values.autoRotateSubmitter} onCheckedChange={(value) => edit("autoRotateSubmitter", value)} />
+        </SettingReveal>
+      </SettingsSection>
+
+      <SettingsSection title="曲库筛选" icon={ListMusic} open={automatic && values.questionType === "song"}>
+        <SongAutoFilters values={values} edit={edit} />
+      </SettingsSection>
+
+      <SettingsSection title="番剧筛选" icon={Tv} open={automatic && values.questionType === "anime"}>
+        <AnimeFilters filters={values.animeFilters} onChange={editAnime} />
+      </SettingsSection>
+    </div>
+  );
+}
+
+/** 已选条目：可移除的胶囊，进出按 `listItem` 推入淡出。歌单与歌手共用。 */
+function FilterChip({ label, removeLabel, onRemove }: { label: string; removeLabel: string; onRemove?: () => void }) {
+  return (
+    <motion.span variants={listItem} initial="initial" animate="animate" exit="exit" layout="position"
+      className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
+      <span className="min-w-0 truncate" title={label}>{label}</span>
+      {onRemove ? (
+        <Button type="button" variant="ghost" size="icon" className="h-5 w-5 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+          aria-label={removeLabel} onClick={onRemove}>
+          <X className="h-3 w-3" />
+        </Button>
+      ) : null}
+    </motion.span>
+  );
+}
+
+/**
+ * 听歌识曲的自动出题筛选：歌单（粘贴链接后读取）、歌手（浮动搜索多选）与热度档位，任一项都可单独使用。
+ * 只读时三项都写成一行取值。
+ */
+function SongAutoFilters({ values, edit }: {
+  values: QuestionDraft;
+  edit: <K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) => void;
+}) {
+  const readOnly = useSettingsReadOnly();
   const searchArtist = useSonGuessrStore((state) => state.searchArtist);
   const resolvePlaylistQuery = useSonGuessrStore((state) => state.resolvePlaylist);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [questionType, setQuestionType] = useState(snapshot.settings.questionType);
-  const [questionMode, setQuestionMode] = useState(snapshot.settings.questionMode);
-  const [autoRotateSubmitter, setAutoRotateSubmitter] = useState(snapshot.settings.autoRotateSubmitter);
-  const [playlistDraft, setPlaylistDraft] = useState(snapshot.settings.autoFilters.playlist?.id ?? "");
-  const [playlist, setPlaylist] = useState(snapshot.settings.autoFilters.playlist);
-  const [artistDraft, setArtistDraft] = useState("");
-  const [artists, setArtists] = useState<SongArtistFilter[]>(snapshot.settings.autoFilters.artists);
-  const [artistResults, setArtistResults] = useState<SongArtistSearchResult[]>([]);
-  const [searchingArtists, setSearchingArtists] = useState(false);
+  const [playlistDraft, setPlaylistDraft] = useState(values.playlist?.id ?? "");
   const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
-  const [minPopularity, setMinPopularity] = useState(snapshot.settings.autoFilters.minPopularity);
-  const [animeFilters, setAnimeFilters] = useState<AnimeAutoFilters>(snapshot.settings.animeAutoFilters ?? {});
-  const playlistFieldId = useId();
-  const artistFieldId = useId();
-  const popularityLabelId = useId();
-  const rankingLabelId = useId();
-  const songPopularityLabelId = useId();
-  const trackKindsLabelId = useId();
+  const [artistDraft, setArtistDraft] = useState("");
+  const [artistResults, setArtistResults] = useState<{ key: string; items: SongArtistSearchResult[] } | null>(null);
+  const [searchingArtists, setSearchingArtists] = useState(false);
+  const [artistError, setArtistError] = useState("");
+  const request = useRef(0);
+
+  if (readOnly) {
+    return (
+      <>
+        <SettingValue label="歌单" value={values.playlist ? `${values.playlist.name ?? values.playlist.id}（${values.playlist.songCount ?? "?"} 首）` : "网易云热歌榜"} />
+        <SettingValue label="歌手" value={values.artists.length ? values.artists.map((artist) => artist.name).join("、") : "不限"} />
+        <SettingValue label="热度筛选" value={popularityText(values.minPopularity)} />
+      </>
+    );
+  }
 
   const resolvePlaylist = async () => {
-    if (resolvingPlaylist) return;
+    if (resolvingPlaylist || !playlistDraft.trim()) return;
     setResolvingPlaylist(true);
     try {
       // 走 store 封装：同一份链接在复用窗口内不会重复请求上游。
       const result = await resolvePlaylistQuery(playlistDraft);
-      setPlaylist(result);
+      edit("playlist", result);
       setNotice(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
     } catch (error) {
       setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
@@ -94,424 +189,263 @@ export function SongQuestionSettings({
   const searchArtists = async () => {
     const keyword = artistDraft.trim();
     if (!keyword) return;
+    const id = ++request.current;
     setSearchingArtists(true);
+    setArtistError("");
     try {
-      const result = await searchArtist(keyword);
-      setArtistResults(result);
+      const items = await searchArtist(keyword);
+      if (id === request.current) setArtistResults({ key: `artists-${id}`, items });
     } catch (error) {
-      setNotice((error as { message?: string }).message ?? "搜索歌手失败", "error");
+      if (id === request.current) setArtistError((error as { message?: string }).message ?? "搜索歌手失败");
     } finally {
-      setSearchingArtists(false);
+      if (id === request.current) setSearchingArtists(false);
     }
   };
 
-  useAutoSave(
-    {
-      questionType,
-      questionMode,
-      autoRotateSubmitter,
-      autoFilters: { playlist, artists, minPopularity },
-      animeAutoFilters: animeFilters,
-    },
-    (payload) => saveWaitingSettings(snapshot.roomId, payload),
-    {
-      enabled: snapshot.phase === "waiting",
-      onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
-    },
-  );
+  const chosen = new Set(values.artists.map((artist) => artist.id));
+  const items = artistResults?.items ?? [];
+  const status: SearchStatus | null = artistError ? { tone: "error", text: artistError }
+    : searchingArtists && !items.length ? { tone: "busy", text: "正在搜索歌手" }
+      : artistResults && !searchingArtists && !items.length ? { tone: "info", text: "没有找到这位歌手" }
+        : null;
+  const toggleArtist = (artist: SongArtistFilter) =>
+    edit("artists", chosen.has(artist.id) ? values.artists.filter((item) => item.id !== artist.id) : [...values.artists, { id: artist.id, name: artist.name }]);
 
   return (
-    <div className="space-y-4">
-      <SegmentedControl
-        aria-label="题目类型"
-        value={questionType}
-        options={QUESTION_TYPE_OPTIONS}
-        onValueChange={setQuestionType}
-      />
+    <>
+      <div className="grid gap-2">
+        <SettingTextField label="歌单" value={playlistDraft} onChange={setPlaylistDraft} placeholder="粘贴网易云歌单链接或 ID"
+          action={(
+            <Button type="button" variant="outline" className="h-10 shrink-0" disabled={resolvingPlaylist || !playlistDraft.trim()}
+              loading={resolvingPlaylist} onClick={() => void resolvePlaylist()}>
+              {resolvingPlaylist ? "读取中" : "读取"}
+            </Button>
+          )} />
+        {/* 胶囊退场完才变空，空了就不占网格的间距。 */}
+        <div className="flex empty:hidden">
+          <AnimatePresence initial={false}>
+            {values.playlist ? (
+              <FilterChip key={values.playlist.id} label={`${values.playlist.name ?? values.playlist.id} · ${values.playlist.songCount ?? "?"} 首`}
+                removeLabel="清除歌单筛选" onRemove={() => { edit("playlist", undefined); setPlaylistDraft(""); }} />
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </div>
 
-      {!solo ? (
-        <SegmentedControl
-          aria-label="出题方式"
-          value={questionMode}
-          options={QUESTION_MODE_OPTIONS}
-          onValueChange={setQuestionMode}
+      <div className="grid gap-2">
+        <span className="text-sm leading-snug">歌手<span className="text-muted-foreground">（可多选）</span></span>
+        <SearchCombobox
+          value={artistDraft}
+          onValueChange={(value) => { setArtistDraft(value); if (!value.trim()) setArtistResults(null); }}
+          label="搜索歌手"
+          placeholder="输入歌手名后搜索"
+          maxLength={60}
+          onSubmit={() => void searchArtists()}
+          busy={searchingArtists && items.length > 0}
+          actions={<Button type="button" variant="outline" disabled={!artistDraft.trim()} onClick={() => void searchArtists()}>搜索</Button>}
+          options={items}
+          getKey={(artist) => artist.id}
+          renderOption={(artist) => <SearchOptionContent title={artist.name} trailing={chosen.has(artist.id) ? "已选" : undefined} />}
+          onSelect={toggleArtist}
+          listKey={artistResults?.key ?? "artists"}
+          status={status}
         />
-      ) : null}
-
-      {questionMode === "manual" ? (
-        <div className="rounded-md bg-muted/40 p-3">
-          <SettingSwitchRow label="自动轮流出题" description="每轮按玩家加入顺序自动指定下一位出题人。" checked={autoRotateSubmitter} onCheckedChange={setAutoRotateSubmitter} />
+        <div className="flex flex-wrap gap-1.5 empty:hidden">
+          <AnimatePresence initial={false}>
+            {values.artists.map((artist) => (
+              <FilterChip key={artist.id} label={artist.name} removeLabel={`移除歌手 ${artist.name}`}
+                onRemove={() => edit("artists", values.artists.filter((item) => item.id !== artist.id))} />
+            ))}
+          </AnimatePresence>
         </div>
-      ) : null}
+      </div>
 
-      {questionMode === "automatic" && questionType === "song" ? (
-        <div className="space-y-4 rounded-md bg-muted/40 p-3">
-          <div className="space-y-2">
-            <Label htmlFor={playlistFieldId} className="text-xs">歌单筛选</Label>
-            <div className="flex gap-2">
-              <Input
-                id={playlistFieldId}
-                value={playlistDraft}
-                onChange={(event) => setPlaylistDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void resolvePlaylist();
-                  }
-                }}
-                placeholder="粘贴网易云歌单链接或 ID"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={resolvingPlaylist}
-                loading={resolvingPlaylist}
-                onClick={() => void resolvePlaylist()}
-              >
-                {resolvingPlaylist ? "读取中" : "读取"}
-              </Button>
-            </div>
-            {playlist ? (
-              <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2 text-xs">
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <span className="truncate">{playlist.name ?? playlist.id}</span>
-                  <span className="shrink-0 text-muted-foreground">{playlist.songCount ?? ""} 首</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    setPlaylist(undefined);
-                    setPlaylistDraft("");
-                  }}
-                  aria-label="清除歌单筛选"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={artistFieldId} className="text-xs">歌手筛选（可多选）</Label>
-            <div className="flex gap-2">
-              <Input
-                id={artistFieldId}
-                value={artistDraft}
-                onChange={(event) => setArtistDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void searchArtists();
-                  }
-                }}
-                placeholder="输入歌手名后搜索"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={searchingArtists}
-                loading={searchingArtists}
-                onClick={() => void searchArtists()}
-              >
-                {searchingArtists ? "搜索中" : "搜索"}
-              </Button>
-            </div>
-            {artistResults.length > 0 ? (
-              <div className="space-y-1 rounded-md border bg-background p-2">
-                {artistResults.map((artist) => {
-                  const selected = artists.some((item) => item.id === artist.id);
-                  return (
-                    <button
-                      key={artist.id}
-                      type="button"
-                      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent/40", selected && "bg-primary/10 text-primary")}
-                      onClick={() => setArtists((current) => selected ? current.filter((item) => item.id !== artist.id) : [...current, { id: artist.id, name: artist.name }])}
-                    >
-                      <span>{artist.name}</span>
-                      <span>{selected ? "已选" : "选择"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-            {artists.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {artists.map((artist) => (
-                  <Button
-                    key={artist.id}
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`移除歌手 ${artist.name}`}
-                    onClick={() => setArtists((current) => current.filter((item) => item.id !== artist.id))}
-                  >
-                    {artist.name}
-                    <X />
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <p id={popularityLabelId} className="text-xs font-medium leading-none">热度筛选</p>
-            <SegmentedControl
-              size="sm"
-              aria-labelledby={popularityLabelId}
-              value={String(minPopularity)}
-              options={POPULARITY_OPTIONS}
-              onValueChange={(value) => setMinPopularity(toPopularityLevel(value))}
-            />
-            <p className="text-2xs text-muted-foreground">网易云对超高热度可能返回近似值，筛选按接口返回值判断。</p>
-          </div>
-          {!playlist && artists.length === 0 ? (
-            <p className="rounded-md border border-dashed px-3 py-2 text-2xs text-muted-foreground">
-              未填写歌单和歌手时，将从网易云热歌榜中自动出题；任一筛选项都可以单独使用。
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {questionMode === "automatic" && questionType === "anime" ? (
-        <div className="space-y-3 rounded-md bg-muted/40 p-3">
-          <Label className="text-xs">番剧筛选</Label>
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="w-20 text-sm text-muted-foreground">年份范围</span>
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.startYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, startYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="起始年份" />
-              <span className="text-muted-foreground">-</span>
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" value={animeFilters.endYear ?? ""} onChange={(e) => setAnimeFilters((f) => ({ ...f, endYear: e.target.value ? Number(e.target.value) : undefined }))} aria-label="结束年份" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span id={rankingLabelId} className="w-20 text-sm text-muted-foreground">热度范围</span>
-              <SegmentedControl
-                size="sm"
-                aria-labelledby={rankingLabelId}
-                className="w-auto"
-                value={animeFilters.ranking ?? "all"}
-                options={RANKING_OPTIONS}
-                onValueChange={(ranking) => setAnimeFilters((f) => ({ ...f, ranking }))}
-              />
-              <Input className="h-9 w-24 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" type="number" min="1" max="1000" value={animeFilters.subjectLimit ?? 50} onChange={(e) => setAnimeFilters((f) => ({ ...f, subjectLimit: e.target.value ? Number(e.target.value) : undefined }))} aria-label="作品数量" />
-              <span className="text-sm text-muted-foreground">部</span>
-            </div>
-            <div className="space-y-2">
-              <p id={songPopularityLabelId} className="text-sm font-medium leading-none text-muted-foreground">网易云歌曲热度</p>
-              <SegmentedControl
-                size="sm"
-                aria-labelledby={songPopularityLabelId}
-                value={String(animeFilters.songMinPopularity ?? 0)}
-                options={POPULARITY_OPTIONS}
-                onValueChange={(value) => setAnimeFilters((f) => ({ ...f, songMinPopularity: toPopularityLevel(value) }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p id={trackKindsLabelId} className="text-sm font-medium leading-none text-muted-foreground">歌曲类型筛选（多选）</p>
-                {!(animeFilters.trackKinds ? animeFilters.trackKinds.length === ALL_BANGUMI_TRACK_KINDS.length : true) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-2xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setAnimeFilters((f) => ({ ...f, trackKinds: [...ALL_BANGUMI_TRACK_KINDS] }))}
-                  >
-                    全选
-                  </Button>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby={trackKindsLabelId}>
-                {ALL_BANGUMI_TRACK_KINDS.map((kind) => {
-                  const currentSelected = new Set(animeFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
-                  const selected = currentSelected.has(kind);
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => {
-                        setAnimeFilters((f) => {
-                          const next = new Set(f.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
-                          if (next.has(kind)) {
-                            next.delete(kind);
-                          } else {
-                            next.add(kind);
-                          }
-                          const list = Array.from(next);
-                          return {
-                            ...f,
-                            trackKinds: list.length > 0 ? list : [...ALL_BANGUMI_TRACK_KINDS],
-                          };
-                        });
-                      }}
-                      className={cn(
-                        "rounded-md border px-2.5 py-1 text-xs transition-colors",
-                        selected
-                          ? "border-primary/40 bg-primary/10 font-medium text-primary shadow-2xs"
-                          : "border-border/60 bg-background text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-                      )}
-                    >
-                      {BANGUMI_TRACK_KIND_LABELS[kind]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+      <SettingSegmented label="热度筛选" value={String(values.minPopularity)} options={POPULARITY_OPTIONS}
+        onValueChange={(value) => edit("minPopularity", toPopularityLevel(value))}
+        description={!values.playlist && !values.artists.length
+          ? "未设歌单和歌手时从网易云热歌榜出题。超高热度可能是近似值，按接口返回值判断。"
+          : "超高热度可能是近似值，按接口返回值判断。"} />
+    </>
   );
 }
 
+/** 听歌识番的自动出题筛选：年份、榜单与数量、网易云热度和歌曲类型。 */
+function AnimeFilters({ filters, onChange }: { filters: AnimeAutoFilters; onChange: (patch: Partial<AnimeAutoFilters>) => void }) {
+  return (
+    <>
+      <SettingYearRange label="年份范围" optional start={filters.startYear} end={filters.endYear}
+        onChange={(startYear, endYear) => onChange({ startYear, endYear })} />
+      <SettingSegmented label="热度范围" value={filters.ranking ?? "all"} options={RANKING_OPTIONS} onValueChange={(ranking) => onChange({ ranking })} />
+      <SettingStepper label="作品数量" unit="部" value={filters.subjectLimit ?? 50} minimum={1} maximum={1000} step={10}
+        format={(value) => `前 ${value} 部`} onChange={(subjectLimit) => onChange({ subjectLimit })} />
+      <SettingSegmented label="网易云歌曲热度" value={String(filters.songMinPopularity ?? 0)} options={POPULARITY_OPTIONS}
+        onValueChange={(value) => onChange({ songMinPopularity: toPopularityLevel(value) })} />
+      <SettingToggleChips<BangumiMusicTrackKind> label="歌曲类型筛选" options={TRACK_KIND_OPTIONS}
+        selected={filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS} onChange={(trackKinds) => onChange({ trackKinds })} />
+    </>
+  );
+}
+
+const gameOf = (snapshot: SonGuessrRoomSnapshot) => ({
+  lyricsLineCount: snapshot.settings.lyricsLineCount,
+  showLyrics: snapshot.settings.showLyrics,
+  maxGuessesPerRound: snapshot.settings.maxGuessesPerRound,
+  guessDurationSeconds: snapshot.settings.guessDurationSeconds,
+  showGuessTimer: snapshot.settings.showGuessTimer,
+  bloodMode: snapshot.settings.bloodMode,
+});
+
+/** 猜测设置：歌词、次数、时限与血战。键名即协议字段，草稿原样保存。 */
 export function SongGameSettings({
   snapshot,
   solo = false,
+  readOnly = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
+  readOnly?: boolean;
 }) {
   const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [showLyrics, setShowLyrics] = useState(snapshot.settings.showLyrics);
-  const [bloodMode, setBloodMode] = useState(snapshot.settings.bloodMode);
-  const [showGuessTimer, setShowGuessTimer] = useState(snapshot.settings.showGuessTimer);
-  const [lyricsLineCount, setLyricsLineCount] = useState(snapshot.settings.lyricsLineCount);
-  const [maxGuesses, setMaxGuesses] = useState(snapshot.settings.maxGuessesPerRound);
-  const [guessDuration, setGuessDuration] = useState(snapshot.settings.guessDurationSeconds);
+  const [draft, setDraft] = useState(() => gameOf(snapshot));
+  const values = readOnly ? gameOf(snapshot) : draft;
+  const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
-  useAutoSave(
-    {
-      lyricsLineCount,
-      showLyrics,
-      maxGuessesPerRound: maxGuesses,
-      guessDurationSeconds: guessDuration,
-      showGuessTimer,
-      bloodMode,
-    },
-    (payload) => saveWaitingSettings(snapshot.roomId, payload),
-    {
-      enabled: snapshot.phase === "waiting",
-      onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
-    },
-  );
+  useAutoSave(draft, (payload) => saveWaitingSettings(snapshot.roomId, payload), {
+    enabled: !readOnly && snapshot.phase === "waiting",
+    onError: (error) =>
+      setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+  });
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <SettingSwitchRow label="显示歌词" description="关闭后只播放音乐，不显示歌词提示。" checked={showLyrics} onCheckedChange={setShowLyrics} />
-        {showLyrics ? (
-          <SettingStepper label="歌词行数" value={lyricsLineCount} minimum={1} maximum={10} onChange={setLyricsLineCount} />
-        ) : null}
-      </div>
-      <SettingStepper label="猜测次数" value={maxGuesses} minimum={1} maximum={10} onChange={setMaxGuesses} />
-      <div className="space-y-3">
-        <SettingSwitchRow label="猜测时限" description="关闭后本轮不会倒计时。" checked={showGuessTimer} onCheckedChange={setShowGuessTimer} />
-        {showGuessTimer ? (
-          <SettingStepper label="每次猜测时限" unit="秒" value={guessDuration} minimum={10} maximum={180} step={10} onChange={setGuessDuration} />
-        ) : null}
-      </div>
+    <SettingsFields>
+      <SettingSwitchRow label="显示歌词" description="关闭后只播放音乐，不显示歌词提示。" checked={values.showLyrics} onCheckedChange={(value) => edit("showLyrics", value)} />
+      <SettingReveal open={values.showLyrics}>
+        <SettingStepper label="歌词行数" unit="行" value={values.lyricsLineCount} minimum={1} maximum={10} onChange={(value) => edit("lyricsLineCount", value)} />
+      </SettingReveal>
+      <SettingStepper label="猜测次数" unit="次" value={values.maxGuessesPerRound} minimum={1} maximum={10} onChange={(value) => edit("maxGuessesPerRound", value)} />
+      <SettingSwitchRow label="猜测时限" description="关闭后本轮不会倒计时。" checked={values.showGuessTimer} onCheckedChange={(value) => edit("showGuessTimer", value)} />
+      <SettingReveal open={values.showGuessTimer}>
+        <SettingStepper label="每次猜测时限" unit="秒" value={values.guessDurationSeconds} minimum={10} maximum={180} step={10} onChange={(value) => edit("guessDurationSeconds", value)} />
+      </SettingReveal>
       {!solo ? (
-        <SettingSwitchRow label="血战模式" description="首位答对获得正式玩家数分，之后每位答对者依次少 1 分。" checked={bloodMode} onCheckedChange={setBloodMode} />
+        <SettingSwitchRow label="血战模式" description="首位答对获得正式玩家数分，之后每位答对者依次少 1 分。" checked={values.bloodMode} onCheckedChange={(value) => edit("bloodMode", value)} />
       ) : null}
-    </div>
+    </SettingsFields>
   );
 }
 
+const roomOf = (snapshot: SonGuessrRoomSnapshot) => ({
+  name: snapshot.name,
+  isPrivate: snapshot.visibility === "private",
+  password: "",
+  allowSpectators: snapshot.allowSpectators,
+});
+
+/** 房间设置：名称、私密与密码、旁观。非房主只看到名称、公开与否和旁观，看不到密码。 */
 export function SongRoomSettings({
   snapshot,
+  readOnly = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  readOnly?: boolean;
 }) {
   const setNotice = useSonGuessrStore((state) => state.setNotice);
-  const [name, setName] = useState(snapshot.name);
-  const [isPrivate, setIsPrivate] = useState(snapshot.visibility === "private");
-  const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(snapshot.allowSpectators);
+  const [draft, setDraft] = useState(() => roomOf(snapshot));
+  const values = readOnly ? roomOf(snapshot) : draft;
+  const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
   useAutoSave(
     {
-      name: name || undefined,
-      visibility: isPrivate ? "private" : "public",
-      password: isPrivate ? password || undefined : "",
-      allowSpectators,
+      name: draft.name || undefined,
+      visibility: draft.isPrivate ? "private" : "public",
+      password: draft.isPrivate ? draft.password || undefined : "",
+      allowSpectators: draft.allowSpectators,
     },
     (payload) => saveWaitingSettings(snapshot.roomId, payload),
     {
       enabled:
+        !readOnly &&
         snapshot.phase === "waiting" &&
-        (!isPrivate || snapshot.hasPassword || password.trim().length > 0),
+        (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
       onError: (error) =>
         setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
     },
   );
 
   return (
-    <div className="space-y-4">
-      <SettingTextField label="房间名称" value={name} maxLength={40} placeholder="输入房间名称" onChange={setName} />
-      <SettingSwitchRow label="私密房间" icon={isPrivate ? Lock : Globe} checked={isPrivate} onCheckedChange={setIsPrivate} />
-      <CollapsibleRegion open={isPrivate}>
-        <div className="pt-1">
+    <SettingsFields>
+      <SettingTextField label="房间名称" value={values.name} maxLength={40} placeholder="输入房间名称" onChange={(value) => edit("name", value)} />
+      <SettingSwitchRow label="私密房间" icon={values.isPrivate ? Lock : Globe} checked={values.isPrivate} onCheckedChange={(value) => edit("isPrivate", value)} />
+      {!readOnly ? (
+        <SettingReveal open={values.isPrivate}>
           {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-          <SettingTextField label="房间密码" type="password" value={password} onChange={setPassword}
+          <SettingTextField label="房间密码" type="password" value={draft.password} onChange={(value) => edit("password", value)}
             placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"} />
-        </div>
-      </CollapsibleRegion>
-      <SettingSwitchRow label="允许旁观" icon={Users} checked={allowSpectators} onCheckedChange={setAllowSpectators} />
-    </div>
+        </SettingReveal>
+      ) : null}
+      <SettingSwitchRow label="允许旁观" icon={Users} checked={values.allowSpectators} onCheckedChange={(value) => edit("allowSpectators", value)} />
+    </SettingsFields>
   );
 }
 
-export function SongSettingsPreview({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  const items = [
-    snapshot.settings.questionMode === "automatic"
-      ? "自动出题"
-      : snapshot.settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
-    snapshot.visibility === "private" ? "私密房间" : "公开房间",
-    snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-    snapshot.settings.showLyrics ? `${snapshot.settings.lyricsLineCount} 行歌词` : "歌词已关闭",
-    `每人 ${snapshot.settings.maxGuessesPerRound} 次猜测`,
-    snapshot.settings.showGuessTimer ? `每次 ${snapshot.settings.guessDurationSeconds} 秒` : "猜测时限已关闭",
-    snapshot.settings.bloodMode ? "血战模式" : "普通模式",
-  ];
-  return <SettingsChips items={items} />;
+/** 三个折叠组收起时的摘要，取自已保存的快照：房主改动防抖保存后随广播更新。 */
+export function songSettingsSummary(snapshot: SonGuessrRoomSnapshot) {
+  const { settings } = snapshot;
+  const anime = settings.animeAutoFilters ?? {};
+  const automatic = settings.questionMode === "automatic";
+  return {
+    question: [
+      settings.questionType === "anime" ? "听歌识番" : "听歌识曲",
+      snapshot.solo ? "" : automatic ? "自动出题" : settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
+      automatic && settings.questionType === "song"
+        ? settings.autoFilters.playlist ? `歌单 ${settings.autoFilters.playlist.name ?? settings.autoFilters.playlist.id}` : "热歌榜"
+        : "",
+      automatic && settings.questionType === "anime" ? `${anime.ranking === "year" ? "年榜" : "总榜"}前 ${anime.subjectLimit ?? 50} 部` : "",
+    ],
+    game: [
+      settings.showLyrics ? `${settings.lyricsLineCount} 行歌词` : "不显示歌词",
+      `${settings.maxGuessesPerRound} 次猜测`,
+      settings.showGuessTimer ? `每次 ${settings.guessDurationSeconds} 秒` : "不限时",
+      snapshot.solo ? "" : settings.bloodMode ? "血战模式" : "",
+    ],
+    room: [snapshot.visibility === "private" ? "私密房间" : "公开房间", snapshot.allowSpectators ? "允许旁观" : "不允许旁观"],
+  };
 }
 
+/** 对局中顶部的自动出题筛选摘要：听歌识曲。 */
 export function SongAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const filters = snapshot.settings.autoFilters;
-  const popularityLabel = filters.minPopularity === 0
-    ? "不限热度"
-    : `热度 ≥ ${filters.minPopularity >= 100_000 ? "100000" : filters.minPopularity}`;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      {filters.playlist ? <Badge variant="outline">歌单：{filters.playlist.name ?? filters.playlist.id}</Badge> : <Badge variant="outline">默认热歌榜</Badge>}
-      {filters.artists.map((artist) => <Badge key={artist.id} variant="outline">歌手：{artist.name}</Badge>)}
-      <Badge variant="outline">{popularityLabel}</Badge>
-    </div>
+    <FilterSummary icon={ListMusic} items={[
+      filters.playlist ? `歌单：${filters.playlist.name ?? filters.playlist.id}` : "默认热歌榜",
+      ...filters.artists.map((artist) => `歌手：${artist.name}`),
+      popularityText(filters.minPopularity),
+    ]} />
   );
 }
 
+/** 对局中顶部的自动出题筛选摘要：听歌识番。 */
 export function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const filters = snapshot.settings.animeAutoFilters ?? {};
-  const hasCustomKinds = filters.trackKinds && filters.trackKinds.length > 0 && filters.trackKinds.length < 18;
-  const kindLabel = hasCustomKinds
-    ? filters.trackKinds!.map((kind) => BANGUMI_TRACK_KIND_LABELS[kind] ?? kind).join("、")
-    : undefined;
+  const kinds = filters.trackKinds && filters.trackKinds.length > 0 && filters.trackKinds.length < ALL_BANGUMI_TRACK_KINDS.length
+    ? filters.trackKinds.map((kind) => BANGUMI_TRACK_KIND_LABELS[kind] ?? kind).join("、")
+    : "";
+  return (
+    <FilterSummary icon={Disc3} items={[
+      "番剧作品",
+      filters.startYear || filters.endYear ? `${filters.startYear ?? "不限"}-${filters.endYear ?? "不限"}` : "",
+      `${filters.ranking === "year" ? "年榜" : "总榜"}前${filters.subjectLimit ?? 50}部`,
+      kinds ? `歌曲 ${kinds}` : "",
+      `网易云热度 ≥ ${(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}`,
+    ]} />
+  );
+}
+
+function FilterSummary({ icon: Icon, items }: { icon: typeof ListMusic; items: string[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
-      <span className="font-medium text-primary">自动出题筛选</span>
-      <Badge variant="outline">番剧作品</Badge>
-      {(filters.startYear || filters.endYear) ? <Badge variant="outline">{filters.startYear ?? "不限"}-{filters.endYear ?? "不限"}</Badge> : null}
-      <Badge variant="outline">{filters.ranking === "year" ? "年榜" : "总榜"}前{filters.subjectLimit ?? 50}部</Badge>
-      {kindLabel ? <Badge variant="outline">歌曲 {kindLabel}</Badge> : null}
-      <Badge variant="outline">网易云热度 ≥ {(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}</Badge>
+      <span className="flex items-center gap-1 font-medium text-primary"><Icon className="h-3.5 w-3.5" aria-hidden="true" />自动出题筛选</span>
+      {items.filter(Boolean).map((item) => <Badge key={item} variant="outline">{item}</Badge>)}
     </div>
   );
 }
