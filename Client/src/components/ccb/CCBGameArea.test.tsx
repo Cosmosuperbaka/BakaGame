@@ -247,6 +247,41 @@ describe("CCB 操作区", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "取消本局" })).not.toBeInTheDocument());
   });
 
+  it("取消本局先经确认弹窗，确认后才发命令", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    render(<CCBGameArea snapshot={room({ phase: "preparing" })} privateState={privateState()} />);
+    await user.click(screen.getByRole("button", { name: "取消本局" }));
+    const dialog = await screen.findByRole("dialog", { name: "取消本局" });
+    expect(send).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "确认取消" }));
+    expect(send).toHaveBeenCalledWith("ccb.game.cancel", {}, expect.any(Object));
+  });
+
+  it("结算后仍在猜测中的玩家标为未猜中", () => {
+    const [host] = room().players;
+    const snapshot = room({ phase: "settled", players: [host, { ...host, id: "peach", name: "桃子", status: "playing", attempts: 3 }] });
+    render(<CCBPlayerList snapshot={snapshot} privateState={privateState()} />);
+    expect(screen.getByText("未猜中")).toBeInTheDocument();
+    expect(screen.queryByText("猜测中")).not.toBeInTheDocument();
+  });
+
+  it("结算的下一步按来源区分：增强房回等待，原版房直接开下一局", () => {
+    const answer: CCBCharacterView = {
+      id: 1, name: "Nijika", nameCn: "伊地知虹夏", gender: "female", popularity: 0, summary: "",
+      imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      appearances: [], highestRating: -1, earliestAppearance: 0, latestAppearance: 0,
+      subjectTags: [], characterTags: [], voiceActors: [], metaTags: [], comparisonAppearances: [], extraTags: [],
+    };
+    const roundSummary = { answer, scores: [], guesses: [], winners: [] };
+    const view = render(<CCBGameArea snapshot={room({ phase: "settled", roundSummary })} privateState={privateState({ playerId: "guest" })} />);
+    expect(screen.getByRole("heading", { name: "答案揭晓" })).toBeInTheDocument();
+    expect(screen.getByText("等待房主返回等待阶段")).toBeInTheDocument();
+    view.rerender(<CCBGameArea snapshot={room({ phase: "settled", roundSummary })} privateState={privateState()} />);
+    expect(screen.getByRole("button", { name: "返回等待房间" })).toBeInTheDocument();
+  });
+
   it("设置面板覆盖四个玩法开关，且只在实际生效的阶段提交草稿", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});

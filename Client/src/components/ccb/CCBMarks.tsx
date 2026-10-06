@@ -1,5 +1,7 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clock, Crown, Flag, Lightbulb, Skull, Star, Trophy, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { receiptMark } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -40,6 +42,7 @@ const VARIATION_SELECTOR = /^️$/u;
 /**
  * 猜测进度。整串作为一个图像读给读屏，逐次结果以图标呈现，
  * 悬停提示给出同一份文字描述，不依赖颜色传达。
+ * 新增的一次结果以 `receiptMark` 落位；挂载时已有的标记不重播（换布局、开抽屉重新挂载时安静出现）。
  */
 export function CCBMarks({ marks, name }: { marks: string; name: string }) {
   const items = (marks.match(MARK_TOKEN) ?? [])
@@ -57,13 +60,18 @@ export function CCBMarks({ marks, name }: { marks: string; name: string }) {
       title={title}
       aria-label={title}
     >
-      {items.map(({ token, index, style }) =>
-        style ? (
-          <style.icon key={`${token}-${index}`} aria-hidden="true" className={cn("h-3.5 w-3.5 shrink-0", style.tone)} />
-        ) : (
-          <span key={`${token}-${index}`} className="text-xs leading-none text-muted-foreground">{token}</span>
-        ),
-      )}
+      <AnimatePresence initial={false}>
+        {items.map(({ token, index, style }) => (
+          // 标记串只会在末尾追加，按序号作键：已有的标记不随新标记重播
+          <motion.span key={`${token}-${index}`} {...receiptMark} className="inline-flex shrink-0">
+            {style ? (
+              <style.icon aria-hidden="true" className={cn("h-3.5 w-3.5", style.tone)} />
+            ) : (
+              <span className="text-xs leading-none text-muted-foreground">{token}</span>
+            )}
+          </motion.span>
+        ))}
+      </AnimatePresence>
     </span>
   );
 }

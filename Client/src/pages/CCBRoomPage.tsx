@@ -1,11 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, MessageSquare, PenLine, Users } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { Seo } from "@/components/common/Seo";
 import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/RoomShell";
+import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { CCBPlayerList } from "@/components/ccb/CCBPlayerList";
 import { CCBGameArea } from "@/components/ccb/CCBGameArea";
@@ -17,7 +15,9 @@ export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
   const snapshot = useCCBStore((state) => state.snapshot);
   const privateState = useCCBStore((state) => state.privateState);
+  const rooms = useCCBStore((state) => state.rooms);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
+  const [named, setNamed] = useState(false);
   const showError = (error: unknown) => useCCBStore.getState().setNotice(ccbErrorMessage(error));
   const sendChat = async (text: string) => { await useCCBStore.getState().sendCommand("ccb.chat.send", { text }); };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
@@ -29,39 +29,36 @@ export default function CCBRoomPage() {
   // 尚未握手成功：与原版重连中同为断线语义，文案区分来源。
   const connectionIssue = !lifecycle.connected ? "重连中..." : ready && !snapshot.upstreamConnected ? "原版重连中..." : null;
 
-  const joinDialog = (
-    <Dialog open={lifecycle.needsJoin} onOpenChange={(open) => { if (!open) void lifecycle.leave(); }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>加入房间 #{lifecycle.roomId}</DialogTitle>
-          <DialogDescription>填写用户名后加入房间。</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void lifecycle.join(); }}>
-          <Input aria-label="用户名" placeholder="用户名" maxLength={32} value={lifecycle.name} onChange={(event) => lifecycle.setName(event.target.value)} />
-          <Input aria-label="房间密码" type="password" placeholder="私密房间密码（如有）" value={lifecycle.password} onChange={(event) => lifecycle.setPassword(event.target.value)} />
-          {lifecycle.error ? <p role="alert" className="text-sm text-destructive">{lifecycle.error}</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => void lifecycle.leave()}>返回大厅</Button>
-            <Button type="submit" loading={lifecycle.joining} disabled={!lifecycle.connected || !lifecycle.name.trim()}>加入房间</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  // 加入失败（房间已满、密码错误等）以提示条报出：公共进房门没有错误位，与另外两个游戏同口径。
+  useEffect(() => {
+    if (lifecycle.error) useCCBStore.getState().setNotice(lifecycle.error);
+  }, [lifecycle.error]);
 
   if (!ready) {
+    // 进房分两步：先填名字，私密房再输密码。是否私密取大厅列表（私密房带锁进大厅）；
+    // 列表里查不到时（刚转私密）由服务端的缺密码 / 密码错误应答把人带到第二步。
+    const locked = rooms.some((room) => room.roomId === lifecycle.roomId && room.hasPassword);
+    const awaiting = lifecycle.needsJoin && !lifecycle.joining;
+    const needsPassword = awaiting && named && (locked || /密码/.test(lifecycle.error));
     return (
-      <>
+      <RoomJoinGate
+        roomId={lifecycle.roomId ?? ""}
+        needsName={awaiting && !needsPassword}
+        needsPassword={needsPassword}
+        nameDraft={lifecycle.name}
+        onNameDraftChange={lifecycle.setName}
+        onConfirmName={() => {
+          setNamed(true);
+          if (!locked) void lifecycle.join();
+        }}
+        passwordDraft={lifecycle.password}
+        onPasswordDraftChange={lifecycle.setPassword}
+        onConfirmPassword={() => void lifecycle.join()}
+        onExit={() => void lifecycle.leave()}
+        nameMaxLength={32}
+      >
         {seo}
-        <RoomShell
-          onLeave={() => void lifecycle.leave()}
-          title={snapshot?.name ?? "猜猜呗"}
-          roomId={lifecycle.roomId}
-          connectionIssue={connectionIssue}
-          game={<div role="status" className="m-auto p-6 text-sm text-muted-foreground">{lifecycle.joining ? "正在连接房间…" : "请加入房间"}</div>}
-        />
-        {joinDialog}
-      </>
+      </RoomJoinGate>
     );
   }
 

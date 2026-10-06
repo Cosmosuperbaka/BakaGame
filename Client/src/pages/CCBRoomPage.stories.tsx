@@ -4,7 +4,7 @@ import CCBRoomPage from "./CCBRoomPage";
 import { presetCCB } from "@/stories/StorePresets";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import {
-  CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbChoosingSetterRoom, ccbGuessingRoom,
+  CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_LOBBY_ROOMS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbChoosingSetterRoom, ccbGuessingRoom,
   ccbOriginalRoom, ccbPreparingRoom, ccbSettledRoom, ccbSyncWaitingRoom, ccbTeamGuessingRoom, ccbWaitingGuestRoom, ccbWaitingHostRoom,
   presetSavedUsername, type CCBRoomScenario,
 } from "@/stories/fixtures/CCB";
@@ -165,6 +165,45 @@ export const GuessingSpectator: Story = {
   play: ({ canvasElement }) => loadLazyImages(canvasElement),
 };
 
+/** 出题人从搜索结果选中答案：「已选择」与搜索结果同一款行，行尾可清除。 */
+export const AnsweringSelected: Story = {
+  name: "出题阶段 · 已选答案",
+  beforeEach: () => {
+    inRoom(ccbAnsweringRoom("setter"));
+    const { nijika, hitori } = CCB_CHARACTERS;
+    useCCBStore.setState({ searchCharacters: async () => [nijika, hitori].map(({ id, name, nameCn, imageUrl }) => ({ id, name, nameCn, imageUrl })) });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByRole("combobox", { name: "搜索角色" }), "虹夏");
+    await userEvent.click(canvas.getByRole("button", { name: "搜角色" }));
+    const listbox = await screen.findByRole("listbox", { name: "搜索角色结果" });
+    await userEvent.click(within(listbox).getAllByRole("option")[0]);
+    await canvas.findByRole("button", { name: "清除已选答案" });
+    dropFocus();
+  },
+};
+
+/** 点开图片提示：占位格展开，图片落在固定高度的格里，级数写在按钮旁。 */
+export const GuessingImageHint: Story = {
+  name: "猜测阶段 · 图片提示",
+  beforeEach: () => {
+    inRoom(ccbGuessingRoom("player"));
+    const sendCommand = useCCBStore.getState().sendCommand;
+    useCCBStore.setState({
+      sendCommand: ((command, payload) => command === "ccb.game.imageHint"
+        ? Promise.resolve({ dataUrl: CCB_CHARACTERS.nijika.imageUrl })
+        : sendCommand(command, payload)) as typeof sendCommand,
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "查看图片提示" }));
+    await canvas.findByRole("img", { name: "第 6 级图片提示" });
+    dropFocus();
+  },
+};
+
 export const SyncWaiting: Story = {
   name: "同步模式 · 等待其他玩家",
   beforeEach: () => inRoom(ccbSyncWaitingRoom()),
@@ -183,8 +222,8 @@ export const OriginalReconnecting: Story = {
 };
 
 export const Connecting: Story = {
-  name: "连接中 · 重连中",
-  // Store 初始状态即未连接：生命周期等待连接，页面显示连接提示，顶栏显示重连中。
+  name: "连接中",
+  // Store 初始状态即未连接：生命周期等待连接，进房门显示加入中。
   beforeEach: () => presetCCB(),
 };
 
@@ -198,7 +237,26 @@ export const JoinDialog: Story = {
     return presetSavedUsername();
   },
   play: async () => {
-    await screen.findByRole("dialog", { name: `加入房间 #${CCB_NATIVE_ROOM_ID}` });
+    await screen.findByRole("dialog", { name: "设置用户名" });
+  },
+};
+
+/** 私密房分两步：填好名字后再输密码；是否私密取自大厅列表。 */
+export const JoinPassword: Story = {
+  name: "加入房间弹窗 · 输入密码",
+  tags: ["!page", "overlay"],
+  beforeEach: () => {
+    removeCCBSession(CCB_NATIVE_ROOM_ID);
+    presetCCB({
+      connected: true, lobbyReady: true, originalAvailable: true,
+      rooms: CCB_LOBBY_ROOMS.map((room) => room.roomId === CCB_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
+    });
+    return presetSavedUsername();
+  },
+  play: async () => {
+    const dialog = await screen.findByRole("dialog", { name: "设置用户名" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "进入房间" }));
+    await screen.findByRole("dialog", { name: "输入房间密码" });
   },
 };
 

@@ -34,6 +34,8 @@ function resolveCCBStatus(player: CCBPlayer, snapshot: CCBRoomSnapshot): CCBStat
   if (player.membership === "spectator") return null;
   if (snapshot.phase === "waiting" || snapshot.phase === "choosingSetter") return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
   if (snapshot.setterPlayerId === player.id) return { label: "出题", tone: "questioner" };
+  // 结算后仍是「猜测中」的人就是本局没猜中的，不再挂进行中的警示色。
+  if (snapshot.phase === "settled" && player.status === "playing") return { label: "未猜中", tone: "default" };
   return statuses[player.status];
 }
 
@@ -98,7 +100,7 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
                     layout="position"
                     transition={playerRelayout}
                     aria-label={team === null ? "个人游玩" : `${team} 队`}
-                    className={cn("min-w-0", team !== null && "rounded-md bg-muted/50 p-0.5")}
+                    className={cn("min-w-0", team !== null && "rounded-md bg-muted/40 p-0.5")}
                   >
                     <CCBTeamHeader team={team} members={members} snapshot={snapshot} />
                     {renderRows(members, team !== null)}

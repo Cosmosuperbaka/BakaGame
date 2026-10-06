@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Clapperboard, Disc3, Gamepad2, Tv, type LucideIcon } from "lucide-react";
 import type { CCBCharacterSummary, CCBSubjectSummary } from "@bakagame/shared";
 import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
@@ -81,11 +81,13 @@ const optionKey = (option: Option) => (option.kind === "character" ? `c-${option
  * 角色搜索：输入框右侧是「搜角色」「搜作品」两个按钮，结果浮在游戏区之上。
  * 上一次用哪个按钮搜，那个按钮就是实心的，回车沿用它。搜作品后点作品进入它的角色列表，顶上一行可返回作品结果。
  * 点角色即提交；`onSelect` 返回 `false` 表示没成功，结果保留可以换一个，否则清空输入与结果，面板随之退场。
+ * `trailing` 是与搜索同属一次提交的动作（「放弃本局」），排在搜索按钮之后、同一组里一起换行。
  */
-export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], onSelect }: {
+export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], trailing, onSelect }: {
   allowSubjects: boolean;
   disabled?: boolean;
   bannedIds?: number[];
+  trailing?: ReactNode;
   onSelect: (character: CCBCharacterSummary) => Promise<boolean | void> | boolean | void;
 }) {
   const latest = useLatestRequest();
@@ -168,7 +170,8 @@ export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], onS
     <Button
       type="button"
       variant={mode === target ? "default" : "outline"}
-      className="h-10"
+      // 收窄左右留白：猜测时后面还跟着「放弃本局」，1440 宽房间页的游戏区要能把三个按钮与输入框排在一行
+      className="h-10 px-3"
       disabled={disabled || !query}
       onClick={() => void search(target)}
     >
@@ -214,6 +217,7 @@ export function CCBSearch({ allowSubjects, disabled = false, bannedIds = [], onS
           <>
             {searchButton("character", "搜角色")}
             {allowSubjects ? searchButton("subject", "搜作品") : null}
+            {trailing}
           </>
         )}
       />

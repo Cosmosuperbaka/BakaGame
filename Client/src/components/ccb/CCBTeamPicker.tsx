@@ -66,7 +66,7 @@ export function CCBTeamPicker({ snapshot, privateState }: { snapshot: CCBRoomSna
               className={cn(
                 "group relative flex cursor-pointer flex-col gap-1 rounded-md px-2.5 py-1.5 transition-colors",
                 "has-focus-visible:outline-2 has-focus-visible:outline-ring",
-                checked ? "text-foreground" : "text-muted-foreground hover:bg-background/40 hover:text-foreground",
+                checked ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 switching && "cursor-wait",
               )}
             >

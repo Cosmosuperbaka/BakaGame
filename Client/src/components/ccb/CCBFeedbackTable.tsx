@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useId, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronsDown, ChevronsUp, Lightbulb, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CCBComparison, CCBFeedback, CCBFeedbackValue, CCBGuess } from "@bakagame/shared";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
-import { listContainer, listItem, spring } from "@/lib/Motion";
+import { listContainer, listItem, skeletonFade, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CCBCharacterImage } from "./CCBCharacterImage";
 
@@ -29,8 +29,8 @@ const COMPARISON: Record<CCBComparison, { label: string; icon: LucideIcon; tone:
 };
 
 const TONE_CLASS: Record<Tone, string> = {
-  match: "border-success/30 bg-success/10 text-success",
-  near: "border-warning/30 bg-warning/10 text-warning",
+  match: "border-success/40 bg-success/10 text-success",
+  near: "border-warning/40 bg-warning/10 text-warning",
   far: "border-transparent bg-muted text-foreground",
   unknown: "border-dashed border-border text-muted-foreground",
 };
@@ -49,7 +49,7 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CCBF
   const text = missing ? "未知" : field === "gender" ? (GENDER_TEXT[String(data.value)] ?? "未知") : data.value;
   return (
     <span
-      className={cn("inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-sm border px-1.5 tabular-nums", TONE_CLASS[tone])}
+      className={cn("inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-md border px-1.5 tabular-nums", TONE_CLASS[tone])}
       title={`${FIELD_LABEL[field]}：${label}`}
     >
       <span className="sr-only">{FIELD_LABEL[field]}</span>
@@ -206,10 +206,24 @@ const HEADERS: Array<{ key: string; lines: string[]; name?: string }> = [
  * 角色列贴住左缘，窄屏横向滚动时只移动数值与标签。
  */
 export function CCBFeedbackTable({ guesses, showRound = false }: { guesses: CCBGuess[]; showRound?: boolean }) {
-  if (!guesses.length) return <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">提交第一个猜测后，这里会显示线索</p>;
   const rows = [...guesses].reverse();
+  // 空状态与表格叠在同一格：第一条猜测到达时空状态原地淡出、表格行以 listItem 推上来，两者交叉而不是先清空再出现。
   return (
-    <div className="@container overflow-x-auto rounded-md border bg-panel" tabIndex={0} role="region" aria-label="猜测反馈">
+    <div className="relative grid">
+      <AnimatePresence initial={false} mode="popLayout">
+        {rows.length ? <FeedbackRows key="rows" rows={rows} showRound={showRound} /> : (
+          <motion.p key="empty" exit={skeletonFade.exit} className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground [grid-area:1/1]">
+            提交第一个猜测后，这里会显示线索
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function FeedbackRows({ ref, rows, showRound }: { ref?: Ref<HTMLDivElement>; rows: CCBGuess[]; showRound: boolean }) {
+  return (
+    <div ref={ref} className="@container overflow-x-auto rounded-md border bg-panel [grid-area:1/1]" tabIndex={0} role="region" aria-label="猜测反馈">
       <table className="w-full text-sm">
         <thead className="bg-muted text-xs text-muted-foreground">
           <tr>
