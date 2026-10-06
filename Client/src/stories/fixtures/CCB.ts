@@ -347,6 +347,18 @@ const ROUND3: CCBGuessStep[] = [
 ];
 
 /** 普通模式猜测中：`player` 为本人（已用 4 次、提示已解锁），`spectator` 为旁观者（可见答案与全部猜测）。 */
+/** 组队猜测：本人与阿澄同为 2 队，共用次数与进度；小布丁与桃子 1 队；其余个人游玩。 */
+export function ccbTeamGuessingRoom(): CCBRoomScenario {
+  const scenario = ccbGuessingRoom("player");
+  const team1 = { status: "playing" as const, attempts: 3, marks: "❌❌💡", team: 1 };
+  const team2 = { status: "playing" as const, attempts: 4, marks: "❌💡💡💡", team: 2 };
+  const players = scenario.snapshot.players.map((player) => ({
+    ...player,
+    ...(player.id === HOST.id || player.id === PEACH.id ? team1 : player.id === ME.id || player.id === AZUMI.id ? team2 : {}),
+  }));
+  return { ...scenario, snapshot: { ...scenario.snapshot, players } };
+}
+
 export function ccbGuessingRoom(viewer: "player" | "spectator"): CCBRoomScenario {
   const guesses = ROUND3.map((step) => ccbGuess(step, "nijika", GUESSING_SETTINGS));
   const snapshot = ccbSnapshot({

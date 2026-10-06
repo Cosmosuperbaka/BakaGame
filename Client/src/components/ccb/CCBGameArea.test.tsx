@@ -94,7 +94,6 @@ describe("CCB 操作区", () => {
     expect(screen.getByText("旁观")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "加入旁观" }));
     expect(send).toHaveBeenCalledWith("ccb.player.spectate", { spectator: true }, expect.objectContaining({ roomId: "1234" }));
-    expect(screen.getByRole("combobox", { name: "我的队伍" })).toBeInTheDocument();
 
     // 房间关闭观战后，空分组与入口一起收起。
     view.rerender(<CCBPlayerList snapshot={room({ allowSpectators: false })} privateState={privateState()} />);
@@ -104,7 +103,6 @@ describe("CCB 操作区", () => {
     // 已在旁观的人仍能回到玩家组，入口接在玩家分组之后；旁观者没有队伍可选。
     const watching = room({ allowSpectators: false, players: [{ ...host, membership: "spectator", status: "observing" }] });
     view.rerender(<CCBPlayerList snapshot={watching} privateState={privateState()} />);
-    expect(screen.queryByRole("combobox", { name: "我的队伍" })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "取消旁观" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "取消旁观" }));
     expect(send).toHaveBeenCalledWith("ccb.player.spectate", { spectator: false }, expect.objectContaining({ roomId: "1234" }));
@@ -112,6 +110,40 @@ describe("CCB 操作区", () => {
     // 开局后身份锁定，两种来源都不接受切换。
     view.rerender(<CCBPlayerList snapshot={{ ...watching, phase: "guessing" }} privateState={privateState()} />);
     expect(screen.queryByRole("button", { name: /旁观/ })).not.toBeInTheDocument();
+  });
+
+  it("等待页队伍面板点格即入队，旁观者没有队伍面板", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const [host] = room().players;
+    const players = [host, { ...host, id: "mate", name: "队友", team: 2 }];
+    const view = render(<CCBGameArea snapshot={room({ players })} privateState={privateState()} />);
+    const group = screen.getByRole("radiogroup", { name: "选择队伍" });
+    expect(within(group).getByRole("radio", { name: "个人，1 人" })).toBeChecked();
+    expect(within(group).getByRole("radio", { name: "2 队，1 人" })).not.toBeChecked();
+    await user.click(within(group).getByText("2 队"));
+    expect(send).toHaveBeenCalledWith("ccb.player.team", { team: 2 }, expect.objectContaining({ roomId: "1234" }));
+    view.rerender(<CCBGameArea snapshot={room({ players: [{ ...host, membership: "spectator" }, players[1]] })} privateState={privateState()} />);
+    expect(screen.queryByRole("radiogroup", { name: "选择队伍" })).not.toBeInTheDocument();
+  });
+
+  it("玩家栏按队伍分块：队伍在前、个人在后，标题给合计分与共享次数", () => {
+    const [host] = room().players;
+    const member = (id: string, name: string, team: number | null, score: number) =>
+      ({ ...host, id, name, team, score, status: "playing" as const, attempts: 2, marks: "❌❌" });
+    const snapshot = room({
+      phase: "guessing",
+      players: [member("host", "房主", null, 3), member("b", "乙", 2, 4), member("a", "甲", 1, 1), member("c", "丙", 2, 6)],
+    });
+    render(<CCBPlayerList snapshot={snapshot} privateState={privateState()} />);
+    const sections = screen.getAllByRole("region");
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["1 队", "2 队", "个人游玩"]);
+    expect(within(sections[1]).getByLabelText("合计 10 分")).toBeInTheDocument();
+    expect(within(sections[1]).getByText("2 人 · 2/10 次")).toBeInTheDocument();
+    // 共享的进度只在队伍标题出现一次；个人游玩的人仍在行内显示。
+    expect(within(sections[1]).getAllByLabelText(/猜测进度/)).toHaveLength(1);
+    expect(within(sections[2]).getByText("2/10 次")).toBeInTheDocument();
   });
 
   it("出题人与本局观战者看到身份说明而不是猜测次数", () => {

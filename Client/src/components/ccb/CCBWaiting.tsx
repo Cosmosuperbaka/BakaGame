@@ -12,6 +12,7 @@ import { useCCBAction } from "@/hooks/UseCCBAction";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { ccbRoomPath } from "@/lib/CCBSession";
 import { CCBGameSettings } from "./CCBGameSettings";
+import { CCBTeamPicker } from "./CCBTeamPicker";
 
 /** 非房主看到的只读设置摘要。 */
 function settingsChips(snapshot: CCBRoomSnapshot): string[] {
@@ -84,6 +85,8 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
       />
 
       {others.length ? <ReadyProgress ready={readyCount} total={others.length} variant={isHost ? "host" : "guest"} /> : null}
+
+      <CCBTeamPicker snapshot={snapshot} privateState={privateState} />
 
       {isHost ? (
         <div className="space-y-3">

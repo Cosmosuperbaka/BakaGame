@@ -81,7 +81,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.getByRole("textbox", { name: "用户名" }).fill(guestName);
     await guest.getByRole("button", { name: "加入房间", exact: true }).click();
     await expect(guest.getByRole("heading", { name: "等待开始" })).toBeVisible();
-    await expect(page.getByTitle(guestName)).toBeVisible();
+    await expect(page.getByTitle(guestName, { exact: true })).toBeVisible();
 
     // 设置改成等待页内折叠面板加防抖自动保存：没有保存按钮，改动直达服务端。
     // 用访客侧的设置摘要断言落库——它只可能来自服务端广播，能证明确实保存成功。

@@ -3,8 +3,9 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
-import { SettingSelect } from "@/components/common/room/SettingFields";
-import { listContainer } from "@/lib/Motion";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { listContainer, listItem } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { AnimatePresence, motion } from "framer-motion";
 import { CCBMarks } from "./CCBMarks";
@@ -35,6 +36,15 @@ function resolveCCBStatus(player: CCBPlayer, snapshot: CCBRoomSnapshot): CCBStat
   return statuses[player.status];
 }
 
+/** 参与者按队伍分组：队伍按队号升序在前，个人游玩的人在后；组内保持服务端座次。 */
+function teamGroups(players: CCBPlayer[]): Array<{ team: number | null; members: CCBPlayer[] }> {
+  const groups = new Map<number | null, CCBPlayer[]>();
+  for (const player of players) groups.set(player.team, [...(groups.get(player.team) ?? []), player]);
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : a - b))
+    .map(([team, members]) => ({ team, members }));
+}
+
 export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   const isHost = snapshot.hostPlayerId === privateState.playerId;
@@ -42,24 +52,22 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
   const { run, busy } = useCCBAction();
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const observers = snapshot.players.filter((player) => player.membership === "spectator");
+  const groups = teamGroups(activePlayers);
+  const teamed = groups.some((group) => group.team !== null);
   // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
   const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
   const canJoinPlayers = waiting && me?.membership === "spectator";
   const toggleSpectator = (spectator: boolean) => void run("ccb.player.spectate", { spectator });
 
-  const renderGroup = (players: CCBPlayer[]) => (
-    <motion.div
-      className="flex flex-col gap-px"
-      variants={listContainer(players.length)}
-      initial={false}
-      animate="animate"
-    >
+  const renderRows = (players: CCBPlayer[], inTeam: boolean) => (
+    <motion.div className="flex flex-col gap-px" variants={listContainer(players.length)} initial={false} animate="animate">
       <AnimatePresence initial={false}>
         {players.map((player) => (
           <CCBPlayerRow
             key={player.id}
             player={player}
             snapshot={snapshot}
+            sharedInHeader={inTeam && snapshot.phase === "guessing" && sharedProgress(players) !== null && player.status !== "observing"}
             self={player.id === privateState.playerId}
             canManage={isHost && player.id !== privateState.playerId}
             busy={busy}
@@ -74,40 +82,88 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
     <ScrollArea className="h-full">
       <div className="flex min-w-0 flex-col px-2 py-3">
         <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-        {renderGroup(activePlayers)}
+        {teamed ? (
+          // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
+          <div className="flex flex-col gap-1.5">
+            <AnimatePresence initial={false}>
+              {groups.map(({ team, members }) => (
+                <motion.section
+                  key={team ?? "solo"}
+                  variants={listItem}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  layout="position"
+                  aria-label={team === null ? "个人游玩" : `${team} 队`}
+                  className={cn("min-w-0", team !== null && "rounded-md bg-muted/50 p-0.5")}
+                >
+                  <CCBTeamHeader team={team} members={members} snapshot={snapshot} />
+                  {renderRows(members, team !== null)}
+                </motion.section>
+              ))}
+            </AnimatePresence>
+          </div>
+        ) : renderRows(activePlayers, false)}
         {canJoinPlayers ? <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} /> : null}
 
         {observers.length > 0 || canJoinSpectators ? (
           <>
             <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-            {renderGroup(observers)}
+            {renderRows(observers, false)}
             {canJoinSpectators ? <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} /> : null}
           </>
-        ) : null}
-
-        {/* 组队是 CCB 独有的设置，放在两个分组之后，不和旁观切换混在一起。 */}
-        {waiting && me?.membership === "active" ? (
-          <div className="mt-3 border-t pt-3">
-            <SettingSelect
-              label="我的队伍"
-              value={me.team === null ? "solo" : String(me.team)}
-              options={[
-                { value: "solo", label: "个人游玩" },
-                ...Array.from({ length: 8 }, (_, index) => ({ value: String(index + 1), label: `第 ${index + 1} 队` })),
-              ]}
-              disabled={busy}
-              onChange={(value) => void run("ccb.player.team", { team: value === "solo" ? null : Number(value) })}
-            />
-          </div>
         ) : null}
       </div>
     </ScrollArea>
   );
 }
 
+/**
+ * 队伍共用的那份进度：增强房同队共享次数与猜测记录，队员的次数与进度串完全相同；原版房的进度逐人来自上游，未必一致。
+ * 仍在猜的队员（出题人队友本局观战，不算）记录一致时返回其中一人，由队伍标题统一展示，否则返回 null、留在各自行里。
+ */
+function sharedProgress(members: CCBPlayer[]): CCBPlayer | null {
+  const guessing = members.filter((player) => player.status !== "observing");
+  const [first] = guessing;
+  if (!first) return null;
+  return guessing.every((player) => player.attempts === first.attempts && player.marks === first.marks && player.syncCompleted === first.syncCompleted)
+    ? first : null;
+}
+
+/**
+ * 队伍块的标题行：队号、人数与全队合计分。分数仍按人存储（离队后个人分保留），这里只是相加。
+ * 猜测阶段共享的次数、同步提交与进度只在这里出现一次，不在每个队员行重复。
+ */
+function CCBTeamHeader({ team, members, snapshot }: { team: number | null; members: CCBPlayer[]; snapshot: CCBRoomSnapshot }) {
+  if (team === null) {
+    return <p className="px-2 pt-1 pb-0.5 font-sans text-2xs text-muted-foreground">个人</p>;
+  }
+  const total = members.reduce((sum, player) => sum + player.score, 0);
+  const shared = snapshot.phase === "guessing" ? sharedProgress(members) : null;
+  const detail = [
+    `${members.length} 人`,
+    shared ? `${shared.attempts}/${snapshot.settings.maxAttempts} 次` : null,
+    shared && snapshot.settings.syncMode && shared.syncCompleted ? "已提交" : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <div className="space-y-0.5 px-2 pt-1 pb-0.5">
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        <span className="text-xs font-medium">{team} 队</span>
+        <span className="min-w-0 flex-1 truncate font-sans text-2xs text-muted-foreground">{detail}</span>
+        <span aria-label={`合计 ${total} 分`} className="flex shrink-0 items-baseline gap-0.5 font-sans text-2xs text-muted-foreground tabular-nums">
+          合计<AnimatedNumber value={total} className="text-xs text-foreground" />分
+        </span>
+      </div>
+      {shared?.marks ? <CCBMarks marks={shared.marks} name={`${team} 队`} /> : null}
+    </div>
+  );
+}
+
 interface CCBPlayerRowProps {
   player: CCBPlayer;
   snapshot: CCBRoomSnapshot;
+  /** 次数、同步提交与进度已由队伍标题给出，行内不再重复 */
+  sharedInHeader: boolean;
   self: boolean;
   canManage: boolean;
   busy: boolean;
@@ -115,11 +171,10 @@ interface CCBPlayerRowProps {
   run: CCBRun;
 }
 
-function CCBPlayerRow({ player, snapshot, self, canManage, busy, run }: CCBPlayerRowProps) {
+function CCBPlayerRow({ player, snapshot, sharedInHeader, self, canManage, busy, run }: CCBPlayerRowProps) {
   const status = resolveCCBStatus(player, snapshot);
-  const progress = snapshot.phase === "guessing" && player.status !== "observing";
+  const progress = !sharedInHeader && snapshot.phase === "guessing" && player.status !== "observing";
   const detail = [
-    player.team !== null ? `${player.team} 队` : null,
     progress ? `${player.attempts}/${snapshot.settings.maxAttempts} 次` : null,
     progress && snapshot.settings.syncMode && player.syncCompleted ? "已提交" : null,
   ].filter(Boolean).join(" · ");
@@ -143,7 +198,7 @@ function CCBPlayerRow({ player, snapshot, self, canManage, busy, run }: CCBPlaye
       online={player.online}
       badges={status ? <PlayerStatusPill {...status} /> : null}
       meta={detail ? <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span> : null}
-      detail={player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}
+      detail={!sharedInHeader && player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}
       actions={actions}
     />
   );

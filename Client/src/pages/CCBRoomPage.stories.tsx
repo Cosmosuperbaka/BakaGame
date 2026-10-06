@@ -5,7 +5,7 @@ import { presetCCB } from "@/stories/StorePresets";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import {
   CCB_CHARACTERS, CCB_CUSTOM_SETTINGS, CCB_NATIVE_ROOM_ID, CCB_ORIGINAL_ROOM_ID, CCB_SESSION_TOKEN, ccbAnsweringRoom, ccbChoosingSetterRoom, ccbGuessingRoom,
-  ccbOriginalRoom, ccbPreparingRoom, ccbSettledRoom, ccbSyncWaitingRoom, ccbWaitingGuestRoom, ccbWaitingHostRoom,
+  ccbOriginalRoom, ccbPreparingRoom, ccbSettledRoom, ccbSyncWaitingRoom, ccbTeamGuessingRoom, ccbWaitingGuestRoom, ccbWaitingHostRoom,
   presetSavedUsername, type CCBRoomScenario,
 } from "@/stories/fixtures/CCB";
 import { removeCCBSession } from "@/lib/CCBSession";
@@ -106,6 +106,12 @@ export const AnsweringGuesser: Story = {
 export const GuessingPlayer: Story = {
   name: "猜测阶段 · 玩家",
   beforeEach: () => inRoom(ccbGuessingRoom("player")),
+};
+
+/** 玩家栏按队伍分块，队伍标题给合计分与共享次数、进度。 */
+export const GuessingTeams: Story = {
+  name: "猜测阶段 · 组队",
+  beforeEach: () => inRoom(ccbTeamGuessingRoom()),
 };
 
 /** 搜索结果浮在反馈表之上；两个已猜过的角色在全局去重下标为「已被选择」。 */

@@ -29,7 +29,8 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
 
   return (
     // 标题与下方设置字段同一间距（gap-1.5）；它不是某个控件的 label，没有 htmlFor 目标，写成普通文字。
-    <div className="grid w-full gap-1.5">
+    // 列宽取 minmax(0,1fr)：默认的 auto 列按长链接的最小内容宽度撑开，窄屏上复制按钮会被挤出卡片。
+    <div className="grid w-full grid-cols-1 gap-1.5">
       <p className="text-xs font-medium text-muted-foreground">房间链接</p>
       <div className="flex gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
