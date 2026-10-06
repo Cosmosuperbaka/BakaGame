@@ -1,8 +1,10 @@
 import type { ReactNode, Ref } from "react";
-import { ArrowLeft, type LucideIcon } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft, WifiOff, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useSharedElementName } from "@/hooks/UsePageTransition";
+import { popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /** 移动端顶栏入口：各自在对应面板常驻显示的断点以下出现。 */
@@ -19,19 +21,30 @@ export interface RoomHeaderToggle {
 
 const HIDE_FROM = { md: "md:hidden", xl: "xl:hidden" } as const;
 
-/** 顶栏中间的身份徽章（主持人、出题人、旁观等），只写身份名，不加「视角」后缀。 */
-export function HeaderChip({ icon: Icon, label, muted = false, title, className }: { icon: LucideIcon; label: string; muted?: boolean; title?: string; className?: string }) {
+/**
+ * 顶栏中间的身份徽章（主持人、出题人、旁观等），只写身份名，不加「视角」后缀。
+ * `truncate` 让徽章在中栏放不下时收窄并截断文字（如词语提示），默认保持原宽。
+ */
+export function HeaderChip({ icon: Icon, label, muted = false, title, truncate = false, className }: {
+  icon: LucideIcon;
+  label: string;
+  muted?: boolean;
+  title?: string;
+  truncate?: boolean;
+  className?: string;
+}) {
   return (
     <span
-      title={title}
+      title={title ?? (truncate ? label : undefined)}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
+        "inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
+        truncate ? "min-w-0" : "shrink-0",
         muted ? "text-muted-foreground" : "text-foreground",
         className,
       )}
     >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      {truncate ? <span className="min-w-0 truncate">{label}</span> : label}
     </span>
   );
 }
@@ -85,14 +98,25 @@ export function RoomHeader({
         {roomTag ? <Badge variant="subtle" size="xs" className="shrink-0">{roomTag}</Badge> : null}
       </div>
 
-      <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden sm:gap-1.5 md:gap-2">{center}</div>
+      {/* safe 居中：内容比中栏宽时退回左对齐，只裁右侧并由可截断的子项收窄，不会两端一起被裁。 */}
+      <div className="flex min-w-0 items-center justify-center-safe gap-1 overflow-hidden sm:gap-1.5 md:gap-2">{center}</div>
 
       <div className="flex items-center justify-end gap-0 md:gap-1">
-        {connectionIssue ? (
-          <span role="status" className="mr-1 hidden shrink-0 text-xs text-destructive motion-safe:animate-pulse sm:inline">
-            {connectionIssue}
-          </span>
-        ) : null}
+        {/* 断线提示：sm 起写成文字，更窄时收成一枚图标（可访问名即文案），两者都随断线出现、恢复后收起。 */}
+        <AnimatePresence initial={false}>
+          {connectionIssue ? (
+            <motion.span key="text" variants={readoutSwap} initial="initial" animate="animate" exit="exit" role="status" className="mr-1 hidden shrink-0 text-xs text-destructive motion-safe:animate-pulse sm:inline">
+              {connectionIssue}
+            </motion.span>
+          ) : null}
+          {connectionIssue ? (
+            <motion.span key="icon" variants={popover} initial="initial" animate="animate" exit="exit" role="status" aria-label={connectionIssue} className="mr-1 flex shrink-0 text-destructive sm:hidden">
+              <WifiOff className="h-4 w-4" aria-hidden="true" />
+              {/* 播报读的是区域里的文字，aria-label 只作可访问名；两者同一份文案。 */}
+              <span className="sr-only">{connectionIssue}</span>
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
         {actions}
         {toggles.map(({ key, icon: Icon, label, expanded, onClick, hideFrom, triggerRef }) => (
           <Button

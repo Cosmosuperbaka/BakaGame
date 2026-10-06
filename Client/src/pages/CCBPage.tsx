@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Server } from "lucide-react";
 import { useCCBStore, ccbErrorMessage } from "@/stores/UseCCBStore";
 import { useLobbySession } from "@/hooks/UseLobbySession";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
@@ -50,6 +51,7 @@ export default function CCBPage() {
     setJoinTarget,
     joinPassword,
     setJoinPassword,
+    joinError,
     createOrigin,
     joinOrigin,
     handleJoinRoom,
@@ -57,6 +59,7 @@ export default function CCBPage() {
     handleCreateRoom,
     isInitialLoading,
     pending,
+    pendingRoomId,
   } = useLobbySession<CCBRoomSummary>({
     gamePath: "/ccb",
     rooms,
@@ -66,7 +69,7 @@ export default function CCBPage() {
       roomId: params.roomId,
       name: params.name,
       userName: params.userName,
-      // 原版房的 private 只表示不进大厅（弹窗以 unlisted 呈现），密码与禁观战仍只属于增强房。
+      // 原版房的 private 只表示不进大厅（弹窗以 unlisted 呈现），密码与禁止旁观仍只属于增强房。
       visibility: params.visibility,
       allowSpectators: server === "original" ? true : params.allowSpectators,
       ...(server === "native" && params.password ? { password: params.password } : {}),
@@ -83,7 +86,7 @@ export default function CCBPage() {
       rooms={rooms.map(toRoomView)}
       loading={isInitialLoading || leaving}
       disabled={leaving || pending}
-      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
+      pendingRoomId={pendingRoomId}
       userName={userName}
       onUserNameChange={setUserName}
       nameMaxLength={32}
@@ -103,14 +106,14 @@ export default function CCBPage() {
           nameMaxLength={server === "original" ? 30 : 32}
           roomMode={{
             label: "兼容原版",
+            icon: Server,
             description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
             checked: server === "original",
             onCheckedChange: (checked) => setServer(checked ? "original" : "native"),
             ...(originalAvailable ? {} : { disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。" }),
           }}
           privacy={server === "original" ? "unlisted" : "password"}
-          spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止观战" : undefined}
-          onValidationError={(message) => useCCBStore.getState().setNotice(message, "error")}
+          spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止旁观" : undefined}
           onCreate={(params) => handleCreateRoom(params)}
         />
         <JoinPasswordDialog
@@ -119,6 +122,7 @@ export default function CCBPage() {
           origin={joinOrigin.origin}
           password={joinPassword}
           onPasswordChange={setJoinPassword}
+          error={joinError}
           onCancel={() => setJoinTarget(null)}
           onConfirm={() => void handlePasswordJoin()}
         />

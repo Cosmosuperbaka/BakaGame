@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { RoomPasswordField, type RoomPasswordError } from "@/components/common/room/RoomJoinGate";
 import type { OriginPoint } from "@/lib/Motion";
 
 export interface JoinPasswordDialogProps {
@@ -18,17 +18,20 @@ export interface JoinPasswordDialogProps {
   pending?: boolean;
   password: string;
   onPasswordChange: (password: string) => void;
+  /** 上一次加入失败的文案，写在密码框下方；密码错误时同时标红输入框 */
+  error?: RoomPasswordError | null;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-/** 大厅点开带锁房间时的密码输入。 */
+/** 大厅点开带锁房间时的密码输入。与分享链接进房的密码弹窗同一种写法（`RoomPasswordField`）。 */
 export function JoinPasswordDialog({
   roomName,
   pending = false,
   origin,
   password,
   onPasswordChange,
+  error,
   onCancel,
   onConfirm,
 }: JoinPasswordDialogProps) {
@@ -43,22 +46,13 @@ export function JoinPasswordDialog({
           className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!pending) onConfirm();
+            if (password.trim() && !pending) onConfirm();
           }}
         >
-          <Input
-            disabled={pending}
-            autoFocus
-            type="password"
-            aria-label="房间密码"
-            value={password}
-            onChange={(event) => onPasswordChange(event.target.value)}
-            placeholder="请输入密码"
-            className="h-10 text-base"
-          />
+          <RoomPasswordField value={password} onChange={onPasswordChange} error={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
-            <Button type="submit" disabled={pending}>{pending ? "加入中…" : "加入"}</Button>
+            <Button type="submit" disabled={!password.trim()} loading={pending}>加入</Button>
           </DialogFooter>
         </form>
       </DialogContent>

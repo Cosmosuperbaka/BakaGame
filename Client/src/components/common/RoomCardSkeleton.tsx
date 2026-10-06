@@ -12,12 +12,15 @@ function SkeletonLine({ className }: { className: string }) {
   );
 }
 
-/** 房间卡片骨架：与真实卡片共用 `RoomCardLayout`，徽章位用 `placeholder` 变体，加载前后不跳动。 */
+/**
+ * 房间卡片骨架：与真实卡片共用 `RoomCardLayout`，徽章位用 `placeholder` 变体，加载前后不跳动。
+ * 读屏只读到外层的「正在加载房间列表」，骨架卡片本身是装饰，对读屏隐藏。
+ */
 export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="正在加载房间列表">
       {Array.from({ length: count }).map((_, index) => (
-        <Card key={index} className="pointer-events-none">
+        <Card key={index} aria-hidden="true" className="pointer-events-none">
           <RoomCardLayout
             // CSS 关键帧不受 MotionConfig 约束，减弱动效时由 motion-safe 关掉（Animation §3.6）。
             className="motion-safe:animate-pulse"
@@ -34,7 +37,6 @@ export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
           />
         </Card>
       ))}
-      <span className="sr-only">正在加载房间列表...</span>
     </div>
   );
 }

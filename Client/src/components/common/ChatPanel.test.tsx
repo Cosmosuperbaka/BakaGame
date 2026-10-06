@@ -36,7 +36,7 @@ describe("ChatPanel (Common)", () => {
     expect(systemMsg).toBeVisible();
     expect(screen.queryByTestId("chat-message-bubble")).not.toBeInTheDocument();
     expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "聊天消息" })).toHaveValue("");
   });
 
   it("频道可见范围说明先于玩家消息展示，不作为聊天正文", () => {
@@ -242,7 +242,7 @@ describe("ChatPanel (Common)", () => {
   it("输入提及只提供其他成员，选择候选后发送完整消息", async () => {
     const handleSend = vi.fn().mockResolvedValue(undefined);
     render(<ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />);
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
     fireEvent.change(input, { target: { value: "你好 @" } });
     const candidates = screen.getByRole("listbox", { name: "提及玩家" });
     expect(input).toHaveAttribute("aria-expanded", "true");

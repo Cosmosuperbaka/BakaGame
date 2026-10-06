@@ -77,8 +77,8 @@ test("landing page exposes playable games and keeps placeholders disabled", asyn
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
   await page.getByRole("button", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
+  // 大厅标题与主页同为完整的「Who is Faker」，旁边的头像只作装饰（alt 为空）。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
-  await expect(page.getByAltText("Faker")).toBeVisible();
   await assertPageQuality();
 });
 
@@ -148,7 +148,7 @@ test("players in a room are prompted when a newer build is deployed", async ({ p
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
   await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
-  await expect(page.getByRole("status")).toContainText("游戏有新版本，请刷新后继续游玩");
+  await expect(page.getByRole("status").filter({ hasText: "游戏有新版本" })).toContainText("游戏有新版本，请刷新后继续游玩");
   await expect(page.getByRole("button", { name: "刷新", exact: true })).toBeVisible();
 });
 
@@ -456,11 +456,12 @@ test("a decisive vote shows the eliminated player before game over", async ({ is
     await fillInput("输入卧底获得的词语", "香蕉");
 
     await page.getByRole("switch").click();
-    const firstRoleGroup = page.getByRole("group", { name: `为 ${playerNames[0]} 分配身份` });
+    const firstRoleGroup = page.getByRole("radiogroup", { name: `为 ${playerNames[0]} 分配身份` });
     await expect(firstRoleGroup).toBeVisible();
     for (const [index, playerName] of playerNames.entries()) {
-      const roleGroup = page.getByRole("group", { name: `为 ${playerName} 分配身份` });
-      await roleGroup.getByRole("button", { name: index === 0 ? "卧底" : "平民" }).click();
+      const roleGroup = page.getByRole("radiogroup", { name: `为 ${playerName} 分配身份` });
+      // 分段控件的单选框藏在可见标签下面，点标签选中。
+      await roleGroup.getByText(index === 0 ? "卧底" : "平民", { exact: true }).click();
     }
 
     await expect(page.getByPlaceholder("输入平民获得的词语")).toHaveValue("苹果");
@@ -656,7 +657,7 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
 });
 
 
-test("大厅卡片在亮暗移动桌面均不透光、人数等宽对齐且不溢出", async ({ page }) => {
+test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且不溢出", async ({ page }) => {
   const assertQuality = installPageQualityGuards(page);
   await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/songuessr\/ws/, socket => {
     socket.onMessage(message => {
@@ -680,8 +681,8 @@ test("大厅卡片在亮暗移动桌面均不透光、人数等宽对齐且不�
       await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
       await card.hover();
       await expect.poll(() => assertLobbyRendering(card).then(() => true, () => false)).toBe(true);
-      // 猜歌大厅在房名后标注题型（未带 questionType 的房间按「听歌识曲」）。
-      await expect(card).toHaveText("长房间名称与人数排版浏览器验收".repeat(3) + "听歌识曲房间号: 8629游戏中可观战2玩家13旁观");
+      // 猜歌大厅只给听歌识番挂题型标签，默认的听歌识曲不标。
+      await expect(card).toHaveText("长房间名称与人数排版浏览器验收".repeat(3) + "房间号 8629游戏中可旁观2 人 · 13 旁观");
     }
   }
   // 故意破坏实际渲染，验证同一个检查能检出透明背景与溢出；不以类名存在作为通过条件。

@@ -21,6 +21,7 @@ import { Seo } from "@/components/common/Seo";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
@@ -186,12 +187,12 @@ function GameIdentity({ game }: { game: GameEntry }) {
         src={game.icon}
         alt=""
         aria-hidden="true"
-        className="h-10 w-10 shrink-0 rounded-md object-cover border border-border/50 [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
+        className="h-10 w-10 shrink-0 rounded-md object-cover border border-border [@media(max-height:680px)]:h-8 [@media(max-height:680px)]:w-8"
       />
       <div className="min-w-0 flex-1">
         {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
         <div
-          className="w-fit max-w-full text-sm sm:text-base font-semibold tracking-tight truncate whitespace-nowrap"
+          className="w-fit max-w-full text-sm sm:text-base font-semibold truncate whitespace-nowrap"
           style={{ viewTransitionName: sharedName }}
         >
           {game.title}
@@ -216,8 +217,11 @@ function GameRow({ game }: { game: GameEntry }) {
     navigate(targetPath);
   };
 
-  const cardContainerClass =
-    "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-2xs transition-colors hover:border-primary/40 [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2";
+  // 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给可用的卡片，读作「这一张能进」；未上线的卡片不响应悬停。
+  const cardContainerClass = cn(
+    "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-2xs transition-colors [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2",
+    game.available && "hover:border-primary/40",
+  );
 
   // 单一入口游戏（如 Who is Faker）
   if (!game.subModes) {
@@ -289,7 +293,7 @@ function GameRow({ game }: { game: GameEntry }) {
                 <div
                   key={mode.id}
                   aria-disabled="true"
-                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border/80 bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
+                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
                 >
                   <span className="truncate">{mode.title}</span>
                   {!isWholeGameDisabled && <ComingSoonBadge />}
@@ -347,12 +351,13 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
       rel="noreferrer"
       variants={listItem}
       {...pressable}
-      className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="group inline-flex min-h-8 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <span>{link.name}</span>
       <ArrowUpRight
         aria-hidden="true"
-        className="h-3 w-3 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+        // 与文字同色（Design §3：并排图标不单独调淡），悬停时朝外链方向挪一点。
+        className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
       />
     </motion.a>
   );
@@ -495,6 +500,8 @@ export default function LandingPage() {
   // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
   const commit = commitHistory.currentCommit;
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
+  // 弹窗标题只写「版本信息」，版本号与提交哈希放在描述里，读屏打开弹窗时一并读出。
+  const versionDescription = `V${version ?? "∞"}${commit ? ` · ${commit}` : ""}`;
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
@@ -504,7 +511,7 @@ export default function LandingPage() {
           variants={listItem}
           initial="initial"
           animate="animate"
-          className="flex items-center justify-center gap-2 text-4xl font-bold tracking-tight sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl [@media(max-height:680px)]:text-3xl"
+          className="flex items-center justify-center gap-2 text-4xl font-bold sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl [@media(max-height:680px)]:text-3xl"
         >
           Baka
           <img
@@ -566,7 +573,7 @@ export default function LandingPage() {
               capture(event);
               setInfoOpen(true);
             }}
-            className="rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="min-h-8 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             {versionLabel}
           </motion.button>
@@ -576,7 +583,8 @@ export default function LandingPage() {
       <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{versionLabel}</DialogTitle>
+            <DialogTitle>版本信息</DialogTitle>
+            <DialogDescription className="font-mono">{versionDescription}</DialogDescription>
           </DialogHeader>
           <Tabs defaultValue="changelog">
             <TabsList className="mb-4 w-full">

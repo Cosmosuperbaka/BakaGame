@@ -65,7 +65,7 @@ export const CreateDialog: Story = {
   },
 };
 
-/** 原版服务器没有密码机制：私密开关改为「不在大厅显示」并常驻说明，禁观战开关禁用并写明原因。 */
+/** 原版服务器没有密码机制：私密开关改为「不在大厅显示」并常驻说明，禁止旁观开关禁用并写明原因。 */
 export const CreateOriginalDialog: Story = {
   name: "创建房间弹窗 · 兼容原版 · 不在大厅显示",
   tags: ["!page", "overlay"],

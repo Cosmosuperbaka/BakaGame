@@ -1,6 +1,8 @@
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
+import { motion } from "framer-motion"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
+import { headerTappable } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 const Select = SelectPrimitive.Root
@@ -11,19 +13,22 @@ const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "group/select field-frame flex h-9 w-full cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-md bg-background px-3 py-2 text-sm placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
-      className
-    )}
-    {...props}
-  >
-    {children}
-    {/* 展开时箭头翻转，与浮层开合同一状态（Animation §2.4）。 */}
-    <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap) group-data-[state=open]/select:rotate-180" />
-    </SelectPrimitive.Icon>
+  // asChild 包一个 motion.button 接按压反馈：整框只按压不悬停缩放（与折叠标题同档），悬停与聚焦仍由 field-frame 描边表达。
+  <SelectPrimitive.Trigger ref={ref} asChild {...props}>
+    <motion.button
+      type="button"
+      {...headerTappable}
+      className={cn(
+        "group/select field-frame flex h-9 w-full cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-md bg-background px-3 py-2 text-sm placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+        className
+      )}
+    >
+      {children}
+      {/* 展开时箭头翻转，与浮层开合同一状态（Animation §2.4）。 */}
+      <SelectPrimitive.Icon asChild>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap) group-data-[state=open]/select:rotate-180" />
+      </SelectPrimitive.Icon>
+    </motion.button>
   </SelectPrimitive.Trigger>
 ))
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName

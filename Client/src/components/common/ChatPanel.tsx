@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useId, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
-import { chatMessageLaunch, popover, systemNotice, tappable } from "@/lib/Motion";
+import { chatMessageLaunch, optionTappable, popover, systemNotice } from "@/lib/Motion";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
   applyMention,
@@ -78,7 +78,8 @@ function MessageText({
               "rounded-md px-1 font-medium",
               isMe && !isGhost
                 ? "bg-primary-foreground/20"
-                : "bg-primary/10 text-primary",
+                // 他人气泡上主色作文字对比度不足（Design §3.1），浅底标出提及，文字保持正文色。
+                : "bg-primary/10 text-foreground",
             )}
           >
             {segment.text}
@@ -109,6 +110,9 @@ export function ChatPanel({
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
+  const mentionListId = useId();
+  const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
   const messagesRef = useAutoScrollToBottom(messages.length);
 
   // 提及只对照当前房间名单判断，改名或退房不会留下失效标记
@@ -234,7 +238,7 @@ export function ChatPanel({
                           ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
                           : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
                         : isGhost
-                          ? "rounded-bl-sm bg-muted/40 border border-dashed border-border/80 text-foreground/85"
+                          ? "rounded-bl-sm bg-muted/40 border border-dashed border-border text-foreground/85"
                           : "rounded-bl-sm bg-muted text-foreground",
                       mentionsMe && "ring-1 ring-primary/40",
                     )}
@@ -280,6 +284,7 @@ export function ChatPanel({
               animate="animate"
               exit="exit"
               style={{ originY: 1 }}
+              id={mentionListId}
               role="listbox"
               aria-label="提及玩家"
               className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
@@ -287,10 +292,13 @@ export function ChatPanel({
               {candidates.map((player, index) => (
                 <motion.button
                   key={player.id}
+                  id={mentionOptionId(index)}
                   type="button"
                   role="option"
                   aria-selected={index === mentionIndex}
-                  {...tappable}
+                  // 焦点留在输入框里，候选只经 aria-activedescendant 指向，不进 Tab 序列。
+                  tabIndex={-1}
+                  {...optionTappable}
                   onMouseEnter={() => setMentionIndex(index)}
                   onClick={() => pickMention(player.name)}
                   className={cn(
@@ -325,7 +333,12 @@ export function ChatPanel({
           onChange={handleChange}
           placeholder={placeholder}
           className="flex-1"
+          role="combobox"
+          aria-label="聊天消息"
+          aria-autocomplete="list"
           aria-expanded={candidates.length > 0}
+          aria-controls={candidates.length > 0 ? mentionListId : undefined}
+          aria-activedescendant={candidates.length > 0 ? mentionOptionId(mentionIndex) : undefined}
           onKeyDown={(event) => {
             if (candidates.length > 0) {
               if (event.key === "ArrowDown") {

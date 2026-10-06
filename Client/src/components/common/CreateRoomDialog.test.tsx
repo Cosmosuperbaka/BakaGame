@@ -86,4 +86,18 @@ describe("CreateRoomDialog", () => {
     await user.click(screen.getByRole("button", { name: "创建" }));
     expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ allowSpectators: true }));
   });
+
+  it("回车提交；建房失败只写在弹窗里，不再同时回调 onValidationError", async () => {
+    const user = userEvent.setup();
+    const onValidationError = vi.fn();
+    const onCreate = vi.fn(async () => { throw new Error("房间号已被占用"); });
+    render(<CreateRoomDialog open onOpenChange={() => {}} defaultName="测试房间" onCreate={onCreate} onValidationError={onValidationError} />);
+
+    await user.type(screen.getByRole("textbox", { name: "房间名称" }), "{Enter}");
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("alert")).toHaveTextContent("房间号已被占用");
+    // 服务端失败归不到字段，不标红名称框。
+    expect(screen.getByRole("textbox", { name: "房间名称" })).not.toHaveAttribute("aria-invalid");
+    expect(onValidationError).not.toHaveBeenCalled();
+  });
 });

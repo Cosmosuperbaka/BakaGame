@@ -252,13 +252,19 @@ export function listContainer(count: number): Variants {
 const listItemEnter = { opacity: 0, scale: 0.94 };
 
 /**
+ * 列表项的退场。单独具名，供需要继承父级 `listContainer` 错峰的列表项直接以对象传给 `exit`：
+ * 写成标签 `exit="exit"` 会让该项自成一级变体节点，不再从父级继承 initial/animate 与错峰（大厅房间卡片）。
+ */
+export const listItemExit: TargetAndTransition = { opacity: 0, scale: 0.965, pointerEvents: "none", transition: { duration: duration.instant } };
+
+/**
  * 列表项。以自身左缘为原点做等比缩放，读作“推到前面来”。
  * 不使用纵向位移，避免多行同时平移产生的批量飘入观感。
  */
 export const listItem: Variants = {
   initial: listItemEnter,
   animate: { opacity: 1, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, scale: 0.965, pointerEvents: "none", transition: { duration: duration.instant } },
+  exit: listItemExit,
 };
 
 /**

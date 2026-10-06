@@ -34,6 +34,7 @@ export default function WhoIsFakerPage() {
     setJoinTarget,
     joinPassword,
     setJoinPassword,
+    joinError,
     createOrigin,
     joinOrigin,
     handleJoinRoom,
@@ -41,6 +42,7 @@ export default function WhoIsFakerPage() {
     handleCreateRoom,
     isInitialLoading,
     pending,
+    pendingRoomId,
   } = useLobbySession<WhoIsFakerRoomSummary>({
     gamePath: "/whoisfaker",
     rooms,
@@ -54,12 +56,13 @@ export default function WhoIsFakerPage() {
   return (
     <LobbyPage
       path="/whoisfaker"
-      title="Who is"
-      logo={{ src: "/assets/Faker.png", alt: "Faker" }}
+      // 游戏名与主页卡片标题一字不差，跨页过渡时同一串字形连续移动；图标只作装饰，不再拼进标题里读出。
+      title="Who is Faker"
+      logo={{ src: "/assets/Faker.png", alt: "" }}
       rooms={rooms.map(toRoomView)}
       disabled={pending}
       loading={isInitialLoading}
-      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
+      pendingRoomId={pendingRoomId}
       userName={userName}
       onUserNameChange={setUserName}
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
@@ -74,7 +77,6 @@ export default function WhoIsFakerPage() {
           origin={createOrigin.origin}
           defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
           nameMaxLength={40}
-          onValidationError={(message) => addToast(message, "error")}
           onCreate={handleCreateRoom}
         />
         <JoinPasswordDialog
@@ -83,6 +85,7 @@ export default function WhoIsFakerPage() {
           origin={joinOrigin.origin}
           password={joinPassword}
           onPasswordChange={setJoinPassword}
+          error={joinError}
           onCancel={() => setJoinTarget(null)}
           onConfirm={() => void handlePasswordJoin()}
         />

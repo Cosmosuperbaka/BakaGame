@@ -1,10 +1,9 @@
-import { useId, useState } from "react";
+import { useState } from "react";
+import { EyeOff, Globe, Lock, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
-import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
-import { Label } from "@/components/ui/Label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/Dialog";
+import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import type { OriginPoint } from "@/lib/Motion";
 
 /**
@@ -17,6 +16,8 @@ export interface RoomModeSwitch {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   disabledReason?: string;
+  /** 开关行图标，与下面私密、旁观两行对齐 */
+  icon?: LucideIcon;
 }
 
 export type RoomPrivacy = "password" | "unlisted";
@@ -50,6 +51,9 @@ export interface CreateRoomDialogProps {
     password?: string;
     allowSpectators: boolean;
   }) => Promise<void>;
+  /**
+   * @deprecated 校验与建房失败都写在弹窗里（缺密码标在密码框上，服务端失败写在表单末尾），不再回调；保留只为兼容旧调用。
+   */
   onValidationError?: (message: string) => void;
 }
 
@@ -63,12 +67,12 @@ export function CreateRoomDialog({
   privacy,
   spectatorsDisabledReason,
   onCreate,
-  onValidationError,
 }: CreateRoomDialogProps) {
   // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
   return (
     <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
-      <DialogContent>
+      {/* 标题已说清任务，表单字段各有标签与说明，不另写一段描述；显式置空，Radix 不再提示缺少描述。 */}
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>创建房间</DialogTitle>
         </DialogHeader>
@@ -80,7 +84,6 @@ export function CreateRoomDialog({
           privacy={privacy}
           spectatorsDisabledReason={spectatorsDisabledReason}
           onCreate={onCreate}
-          onValidationError={onValidationError}
         />
       </DialogContent>
     </Dialog>
@@ -90,7 +93,7 @@ export function CreateRoomDialog({
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
   | "defaultName" | "nameMaxLength" | "onOpenChange" | "roomMode"
-  | "privacy" | "spectatorsDisabledReason" | "onCreate" | "onValidationError"
+  | "privacy" | "spectatorsDisabledReason" | "onCreate"
 >;
 
 function CreateRoomForm({
@@ -101,7 +104,6 @@ function CreateRoomForm({
   privacy = "password",
   spectatorsDisabledReason,
   onCreate,
-  onValidationError,
 }: CreateRoomFormProps) {
   // 默认名称由用户名拼成，可能超过上限；切换服务器后上限也可能变小，提交时再按当前上限截一次。
   const [roomName, setRoomName] = useState(() => defaultName.slice(0, nameMaxLength));
@@ -113,23 +115,19 @@ function CreateRoomForm({
   const [password, setPassword] = useState("");
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // 标签与控件显式关联，读屏能读出每个开关与输入的名称。
-  const nameFieldId = useId();
-  const passwordFieldId = useId();
+  // 两类失败分开放：缺密码落在密码框上（标红并关联文案）；服务端返回的失败归不到字段，只在表单末尾给一行文案。
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
   const spectatorsLocked = Boolean(spectatorsDisabledReason);
-  const errorId = useId();
-  // 只有「私密房缺密码」落在具体输入框上；服务端返回的失败不标红任何字段。
-  const passwordInvalid = needsPassword && !password.trim() && errorMessage !== null;
 
   const handleCreate = async () => {
+    if (loading) return;
     if (needsPassword && !password.trim()) {
-      const msg = "私密房间需要设置密码";
-      setErrorMessage(msg);
-      onValidationError?.(msg);
+      setPasswordError("私密房间需要设置密码");
       return;
     }
-    setErrorMessage(null);
+    setPasswordError(null);
+    setServerError(null);
     setLoading(true);
     try {
       await onCreate({
@@ -139,110 +137,86 @@ function CreateRoomForm({
         allowSpectators: spectatorsLocked || allowSpectators,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "创建房间失败";
-      setErrorMessage(msg);
-      onValidationError?.(msg);
+      // 只走这一种渠道：失败写在弹窗里，不再同时弹 Toast。
+      setServerError((err as { message?: string } | null)?.message || "创建房间失败，请重试");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <>
+    // 整张表单一次提交：回车即创建，提交中按钮转圈并禁用，不再手写「创建中」。
+    <form
+      className="grid gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleCreate();
+      }}
+    >
       <div className="space-y-5">
         {roomMode ? (
-          <SwitchField
+          <SettingSwitchRow
             label={roomMode.label}
+            icon={roomMode.icon}
             description={roomMode.disabledReason ?? roomMode.description}
             checked={roomMode.checked}
             onCheckedChange={roomMode.onCheckedChange}
             disabled={Boolean(roomMode.disabledReason)}
           />
         ) : null}
-        <div className="space-y-2">
-          <Label htmlFor={nameFieldId} className="text-sm">房间名称</Label>
-          <Input
-            id={nameFieldId}
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            maxLength={nameMaxLength}
-            placeholder="输入房间名称"
-            // 打开弹窗时焦点落在名称上：房间类型开关排在它前面，默认的「首个可聚焦元素」会落到开关上。
-            autoFocus
-            className="h-10"
-          />
-        </div>
-        <SwitchField
+        <SettingTextField
+          label="房间名称"
+          value={roomName}
+          onChange={setRoomName}
+          maxLength={nameMaxLength}
+          placeholder="输入房间名称"
+          // 打开弹窗时焦点落在名称上：房间类型开关排在它前面，默认的「首个可聚焦元素」会落到开关上。
+          autoFocus
+          inputClassName="h-10"
+        />
+        <SettingSwitchRow
           label={privacyCopy.label}
+          // 原版房的「不在大厅显示」没有密码，开启时不用锁（Design §6）。
+          icon={isPrivate ? (privacy === "unlisted" ? EyeOff : Lock) : Globe}
           description={privacyCopy.description}
           checked={isPrivate}
           onCheckedChange={(on) => setPrivateChoice({ privacy, on })}
         />
         <CollapsibleRegion open={needsPassword}>
-              <div className="space-y-2 pb-1">
-                <Label htmlFor={passwordFieldId} className="text-sm">房间密码</Label>
-                <Input
-                  id={passwordFieldId}
-                  type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder="设置房间密码"
-                  aria-invalid={passwordInvalid || undefined}
-                  aria-describedby={passwordInvalid ? errorId : undefined}
-                  className="h-10"
-                />
-              </div>
+          <div className="pb-1">
+            <SettingTextField
+              label="房间密码"
+              type="password"
+              value={password}
+              onChange={(value) => {
+                setPassword(value);
+                if (passwordError) setPasswordError(null);
+              }}
+              placeholder="设置房间密码"
+              error={passwordError}
+              inputClassName="h-10"
+            />
+          </div>
         </CollapsibleRegion>
         {/* 不允许禁止观战的服务器上开关恒为开：显示与实际提交一致，不沿用另一服务器上关掉的状态。 */}
-        <SwitchField
+        <SettingSwitchRow
           label="允许旁观"
+          icon={Users}
           description={spectatorsDisabledReason}
           checked={spectatorsLocked || allowSpectators}
           onCheckedChange={setAllowSpectators}
           disabled={spectatorsLocked}
         />
-        {errorMessage && (
-          <p id={errorId} role="alert" className="text-xs text-destructive">{errorMessage}</p>
-        )}
+        {serverError ? <p role="alert" className="text-xs text-destructive">{serverError}</p> : null}
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
           取消
         </Button>
-        <Button onClick={handleCreate} disabled={loading}>
-          {loading ? "创建中..." : "创建"}
+        <Button type="submit" loading={loading}>
+          创建
         </Button>
       </DialogFooter>
-    </>
-  );
-}
-
-/** 弹窗里的开关行：标签与开关同一行，说明常驻在下方并经 `aria-describedby` 关联。 */
-function SwitchField({ label, description, checked, onCheckedChange, disabled = false }: {
-  label: string;
-  description?: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  const id = useId();
-  const descriptionId = useId();
-  return (
-    <div className="space-y-1 py-1">
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor={id} className={disabled ? "text-sm opacity-50" : "text-sm"}>{label}</Label>
-        <Switch
-          id={id}
-          checked={checked}
-          onCheckedChange={onCheckedChange}
-          disabled={disabled}
-          aria-describedby={description ? descriptionId : undefined}
-        />
-      </div>
-      {description ? <p id={descriptionId} className="text-xs text-muted-foreground">{description}</p> : null}
-    </div>
+    </form>
   );
 }

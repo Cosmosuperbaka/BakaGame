@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { popover } from "@/lib/Motion";
+import { headerTappable, popover, tappable } from "@/lib/Motion";
 import { loadStickerPacks, type StickerPack } from "@/lib/Stickers";
 import { cn } from "@/lib/Utils";
 
@@ -10,7 +10,7 @@ function AnimatedBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute rounded-md bg-secondary px-1 py-0.5 text-xs font-semibold leading-none text-secondary-foreground",
+        "pointer-events-none absolute rounded-md bg-secondary px-1 py-0.5 text-2xs font-semibold leading-none text-secondary-foreground",
         className,
       )}
     >
@@ -86,8 +86,10 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
           <ScrollArea className="h-52">
             <div className="grid grid-cols-5 gap-1 p-2">
               {pack.items.map((item) => (
-                <button
+                <motion.button
                   key={item.key}
+                  type="button"
+                  {...tappable}
                   onClick={() => { onSelect(item.path); onClose(); }}
                   className="flex flex-col items-center gap-0.5 rounded-md p-1 transition-colors hover:bg-accent hover:text-accent-foreground"
                   title={item.label}
@@ -100,13 +102,13 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                     />
                     {/* 整包都是动图时角标已挂在标签上，这里只标混装包里的动图 */}
                     {item.animated && !pack.animated && (
-                      <AnimatedBadge className="right-0 top-0 scale-90" />
+                      <AnimatedBadge className="right-0 top-0" />
                     )}
                   </div>
                   <span className="w-full truncate text-center text-2xs leading-tight text-muted-foreground">
                     {item.label}
                   </span>
-                </button>
+                </motion.button>
               ))}
             </div>
           </ScrollArea>
@@ -118,9 +120,11 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
             className="scrollbar-hidden flex shrink-0 overflow-x-auto border-t"
           >
             {packs.map((p, i) => (
-              <button
+              <motion.button
                 key={p.dir}
+                type="button"
                 role="tab"
+                {...headerTappable}
                 onClick={() => onTabChange(i)}
                 title={p.name}
                 aria-label={p.name}
@@ -139,7 +143,7 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                   className="h-8 w-8 object-contain"
                 />
                 {p.animated && <AnimatedBadge className="right-0 top-0" />}
-              </button>
+              </motion.button>
             ))}
           </div>
           </>

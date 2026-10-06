@@ -18,4 +18,13 @@ describe("ToastViewport", () => {
     await waitFor(() => expect(screen.queryByText("设置已保存")).not.toBeInTheDocument());
     unmount();
   });
+
+  it("容器是具名区域；错误立即播报，其余礼貌排队", () => {
+    render(<ToastViewport toasts={[{ id: 1, text: "密码错误", type: "error" }, { id: 2, text: "设置已保存", type: "success" }]} />);
+    expect(screen.getByRole("region", { name: "通知" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("密码错误");
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("设置已保存");
+    expect(status).toHaveAttribute("aria-live", "polite");
+  });
 });

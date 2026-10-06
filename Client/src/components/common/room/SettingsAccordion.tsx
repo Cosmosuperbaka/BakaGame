@@ -1,9 +1,9 @@
 import { Fragment, useId, type ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { SettingsReadOnly } from "@/components/common/room/SettingFields";
-import { collapsible, headerTappable } from "@/lib/Motion";
+import { headerTappable } from "@/lib/Motion";
 
 /**
  * 等待页的折叠设置组：标题行整行可点，箭头与展开状态同步翻转。图标只传组件，尺寸与颜色在这里统一。
@@ -56,19 +56,15 @@ export function SettingsAccordion({
             <span id={titleId} className="text-sm font-medium">{title}</span>
             {badge ? <span id={badgeId} className="inline-flex">{badge}</span> : null}
           </span>
-          <AnimatePresence initial={false}>
-            {summaryText && !open ? (
-              <motion.span key="summary" variants={collapsible} initial="initial" animate="animate" exit="exit" className="block overflow-hidden">
-                <span id={summaryId} className="block pt-1 text-xs leading-relaxed text-muted-foreground">{summaryItems.map((item, index) => (
-                  // 每一项整体不断行，窄屏只在「·」处换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
-                  <Fragment key={index}>
-                    {index ? " · " : null}
-                    <span className="inline-block max-w-full truncate align-bottom">{item}</span>
-                  </Fragment>
-                ))}</span>
-              </motion.span>
-            ) : null}
-          </AnimatePresence>
+          <CollapsibleRegion as="span" open={summaryText && !open}>
+            <span id={summaryId} className="block pt-1 text-xs leading-relaxed text-muted-foreground">{summaryItems.map((item, index) => (
+              // 每一项整体不断行，窄屏只在「·」处换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
+              <Fragment key={index}>
+                {index ? " · " : null}
+                <span className="inline-block max-w-full truncate align-bottom">{item}</span>
+              </Fragment>
+            ))}</span>
+          </CollapsibleRegion>
         </span>
         <DisclosureChevron open={open} className="mt-0.5 text-muted-foreground" />
       </motion.button>

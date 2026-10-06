@@ -57,11 +57,12 @@ export function CandidateGrid({
           key={candidate.id}
           type="button"
           variants={listItem}
-          {...selectable}
+          // 禁用时不挂手势：不可点的卡片不该随指针缩放。
+          {...(disabled ? undefined : selectable)}
           disabled={disabled}
           onClick={() => onPick(candidate.id)}
           className={cn(
-            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color]",
+            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] disabled:pointer-events-none disabled:opacity-50",
             tone === "recommended"
               ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
               : "hover:border-primary/40 hover:bg-primary/5",

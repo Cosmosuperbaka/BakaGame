@@ -1,13 +1,12 @@
 /* eslint-disable react-refresh/only-export-components -- 房主动作需要随 PlayerRow 一起被三个游戏消费，拆文件只会让调用点各写一遍。 */
-import type { ReactNode, Ref } from "react";
-import { motion } from "framer-motion";
+import { useState, type ReactNode, type Ref } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { Button } from "@/components/ui/Button";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
-import { listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
+import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /** 玩家行操作浮层里的一个动作。 */
@@ -62,6 +61,8 @@ export function PlayerRow({
   badges, meta, detail, actionsHeader, actions, embedded = false, layoutId, ref,
 }: PlayerRowProps) {
   const interactive = Boolean(actionsHeader || actions?.length);
+  // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
+  const [open, setOpen] = useState(false);
   const rowClass = cn(
     PLAYER_ROW_BASE,
     PLAYER_ROW_HEIGHT,
@@ -107,29 +108,36 @@ export function PlayerRow({
   );
 
   const content = interactive ? (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <Button type="button" variant="ghost" aria-label={`${name} 操作`} className={cn("h-auto justify-start", rowClass)}>
+        {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
+        <motion.button type="button" aria-label={`${name} 操作`} {...headerTappable} className={rowClass}>
           {body}
-        </Button>
+        </motion.button>
       </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side="right" align="center" sideOffset={6} collisionPadding={12} asChild>
-          <motion.div
-            variants={popover}
-            initial="initial"
-            animate="animate"
-            className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
-          >
-            {actionsHeader ? <div className="flex">{actionsHeader}</div> : null}
-            {actions?.length ? (
-              <div className={cn("flex flex-col", actionsHeader && "border-t")}>
-                {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
-              </div>
-            ) : null}
-          </motion.div>
-        </Popover.Content>
-      </Popover.Portal>
+      <AnimatePresence>
+        {open ? (
+          <Popover.Portal forceMount>
+            {/* 统一落在行下方、右缘对齐：玩家栏贴着视口左缘，窄屏抽屉里朝右展开会被截掉。 */}
+            <Popover.Content forceMount side="bottom" align="end" sideOffset={4} collisionPadding={12} asChild>
+              <motion.div
+                variants={popover}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
+              >
+                {actionsHeader ? <div className="flex">{actionsHeader}</div> : null}
+                {actions?.length ? (
+                  <div className={cn("flex flex-col", actionsHeader && "border-t")}>
+                    {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
+                  </div>
+                ) : null}
+              </motion.div>
+            </Popover.Content>
+          </Popover.Portal>
+        ) : null}
+      </AnimatePresence>
     </Popover.Root>
   ) : <div className={rowClass}>{body}</div>;
 

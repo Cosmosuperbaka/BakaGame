@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Link } from "lucide-react";
-import { pressable } from "@/lib/Motion";
+import { Button } from "@/components/ui/Button";
+import { readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /** 「已复制」反馈的停留时长：给玩家读完提示的时间，不参与任何业务时序。 */
@@ -37,19 +38,24 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{shareUrl}</span>
         </div>
-        <motion.button
+        <Button
           type="button"
-          {...pressable}
+          variant="outline"
           onClick={() => void handleCopy()}
-          aria-live="polite"
-          className={cn(
-            "flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
-            copied ? "border-success/40 bg-success/10 text-success" : "hover:bg-accent hover:text-accent-foreground",
-          )}
+          // 交替期间旧文案还在淡出，名字固定写在按钮上，读屏与按名查找都只得到当前这一份。
+          aria-label={copied ? "已复制" : "复制"}
+          // 成功态沿用 success 浅底描边，读作「复制好了」；悬停底色同步换成同色的预览档，不跳回 accent。
+          className={cn("shrink-0 gap-1.5 px-3 text-xs", copied && "border-success/40 bg-success/10 text-success hover:bg-success/10 hover:text-success")}
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? "已复制" : "复制"}
-        </motion.button>
+          {/* 图标与文字一起换：旧的抽出文档流淡出，新的自下方顶上来，按钮宽度跟着新文字。 */}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span key={copied ? "copied" : "idle"} aria-hidden="true" variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex items-center gap-1.5">
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "已复制" : "复制"}
+            </motion.span>
+          </AnimatePresence>
+          <span className="sr-only" aria-live="polite">{copied ? "链接已复制" : ""}</span>
+        </Button>
       </div>
     </div>
   );

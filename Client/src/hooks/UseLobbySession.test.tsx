@@ -61,3 +61,34 @@ it("关闭创建对话框的晚 ACK 不导航",async()=>{
   act(()=>{h.result.current.setCreateOpen(true);task=h.result.current.handleCreateRoom({name:"新房",visibility:"public",allowSpectators:true});});
   act(()=>h.result.current.setCreateOpen(false));await act(async()=>{ack.resolve();await task;});expect(navigate).not.toHaveBeenCalled();
 });
+it("密码加入失败写在密码弹窗里：密码错误标红，其余失败只给文案，都不弹 Toast", async () => {
+  const joinRoom = vi.fn()
+    .mockRejectedValueOnce({ code: "PASSWORD_INCORRECT", message: "房间密码错误" })
+    .mockRejectedValueOnce({ code: "TOO_MANY_ATTEMPTS", message: "密码错误次数过多，请稍后再试" });
+  const h = setup({ joinRoom });
+  await act(async () => { await h.result.current.handleJoinRoom({ ...room, hasPassword: true }, event); });
+  act(() => h.result.current.setJoinPassword("wrong"));
+  await act(async () => { await h.result.current.handlePasswordJoin(); });
+  expect(h.result.current.joinError).toEqual({ message: "房间密码错误", invalid: true });
+  // 改密码即撤下上一次的错误。
+  act(() => h.result.current.setJoinPassword("again"));
+  expect(h.result.current.joinError).toBeNull();
+  await act(async () => { await h.result.current.handlePasswordJoin(); });
+  expect(h.result.current.joinError).toEqual({ message: "密码错误次数过多，请稍后再试", invalid: false });
+  expect(h.options.showError).not.toHaveBeenCalled();
+});
+it("进房在途时记下是哪间房，结束后清空", async () => {
+  const ack = deferred<boolean>(); const h = setup({ reconnectRoom: vi.fn(() => ack.promise) });
+  let task!: Promise<void>;
+  act(() => { task = h.result.current.handleJoinRoom(room, event); });
+  expect(h.result.current.pendingRoomId).toBe("1234");
+  await act(async () => { ack.resolve(true); await task; });
+  expect(h.result.current.pendingRoomId).toBeNull();
+});
+it("建房失败抛回给弹窗、不另弹 Toast", async () => {
+  const h = setup({ createRoom: vi.fn().mockRejectedValue(new Error("房间已满")) });
+  await act(async () => {
+    await expect(h.result.current.handleCreateRoom({ name: "新房", visibility: "public", allowSpectators: true })).rejects.toThrow("房间已满");
+  });
+  expect(h.options.showError).not.toHaveBeenCalled();
+});

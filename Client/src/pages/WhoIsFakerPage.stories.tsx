@@ -50,3 +50,18 @@ export const PasswordDialog: Story = {
     dropFocus();
   },
 };
+
+/** 用户名为空时点「创建房间」：就地标红输入框并给出文案，不打开弹窗。 */
+export const NoUsernameBlocked: Story = {
+  name: "未设置用户名 · 拦下创建",
+  beforeEach: () => {
+    presetWhoIsFaker({ connected: true, lobbyReady: true, rooms: WIF_LOBBY_ROOMS });
+    return seedWifUsername("");
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "创建房间" }));
+    await canvas.findByText("请先填写用户名");
+  },
+};
+

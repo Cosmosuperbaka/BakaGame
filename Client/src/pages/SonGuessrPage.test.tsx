@@ -59,7 +59,10 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     useSonGuessrStore.setState({ rooms: [], connected: true, lobbyReady: true });
     renderPage();
 
-    expect(screen.getByText("暂无房间，点击上方按钮创建一个吧")).toBeInTheDocument();
+    const empty = screen.getByText("暂无房间").closest('[role="status"]');
+    expect(empty).not.toBeNull();
+    // 空状态里就地给出创建入口，与标题行的创建按钮同一个回调。
+    expect(within(empty as HTMLElement).getByRole("button", { name: "创建第一个房间" })).toBeInTheDocument();
   });
 
   it("已连接但首个房间列表未到时仍显示骨架屏", () => {
@@ -67,7 +70,7 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     renderPage();
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
-    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂无房间")).not.toBeInTheDocument();
   });
 
   it("初次加载尚未完成握手同步时渲染骨架屏防御 FOES", () => {
@@ -75,7 +78,7 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     renderPage();
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
-    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂无房间")).not.toBeInTheDocument();
   });
 
   it("按房间展示阶段、人数、观战与密码语义", () => {
@@ -85,25 +88,26 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(screen.getByText("绫地喰喰的房间")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
-    expect(screen.getByText("可观战")).toBeInTheDocument();
+    expect(screen.getByText("可旁观")).toBeInTheDocument();
 
     expect(screen.getByText("日常听歌房")).toBeInTheDocument();
     expect(screen.getByText("1234")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
-    expect(screen.getByText("禁观战")).toBeInTheDocument();
+    expect(screen.getByText("禁止旁观")).toBeInTheDocument();
 
     const roomOne = screen.getByText("绫地喰喰的房间").closest('[role="button"]');
-    expect(roomOne).toHaveTextContent("2玩家");
-    expect(roomOne).toHaveTextContent("3旁观");
+    expect(roomOne).toHaveTextContent("2 人");
+    expect(roomOne).toHaveTextContent("3 旁观");
 
     const roomTwo = screen.getByText("日常听歌房").closest('[role="button"]');
-    expect(roomTwo).toHaveTextContent("5玩家");
-    expect(roomTwo).toHaveTextContent("0旁观");
+    expect(roomTwo).toHaveTextContent("5 人");
+    expect(roomTwo).toHaveTextContent("0 旁观");
 
     const first = screen.getByRole("button", { name: /绫地喰喰的房间/ });
     const second = screen.getByRole("button", { name: /日常听歌房/ });
     expect(within(first).getByText("听歌识番")).toBeInTheDocument();
-    expect(within(second).getByText("听歌识曲")).toBeInTheDocument();
+    // 默认题型不挂标签，只有听歌识番的房间带。
+    expect(within(second).queryByText("听歌识曲")).not.toBeInTheDocument();
     expect(within(first).getByLabelText("需要密码")).toBeInTheDocument();
     expect(within(second).queryByLabelText("需要密码")).not.toBeInTheDocument();
     expect(first).toHaveAttribute("tabindex", "0");

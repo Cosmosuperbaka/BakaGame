@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Plus } from "lucide-react";
+import { Plus, Server } from "lucide-react";
 import { fn, screen } from "storybook/test";
 import { Button } from "@/components/ui/Button";
 import { dropFocus } from "@/stories/PlayHelpers";
@@ -81,12 +81,13 @@ function CompatibleDemo(props: CreateRoomDialogProps) {
       nameMaxLength={original ? 30 : 32}
       roomMode={{
         label: "兼容原版",
+        icon: Server,
         description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
         checked: original,
         onCheckedChange: setOriginal,
       }}
       privacy={original ? "unlisted" : "password"}
-      spectatorsDisabledReason={original ? "原版房间不允许禁止观战" : undefined}
+      spectatorsDisabledReason={original ? "原版房间不允许禁止旁观" : undefined}
     />
   );
 }
@@ -100,7 +101,7 @@ export const OriginalUnavailable: Story = {
   name: "兼容原版 · 不可用",
   args: {
     roomMode: {
-      label: "兼容原版", description: "开启后建在原版服务器上。", checked: false, onCheckedChange: fn(),
+      label: "兼容原版", icon: Server, description: "开启后建在原版服务器上。", checked: false, onCheckedChange: fn(),
       disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。",
     },
   },

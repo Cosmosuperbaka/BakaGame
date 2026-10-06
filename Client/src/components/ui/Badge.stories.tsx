@@ -34,11 +34,11 @@ export const Variants: Story = {
         <Badge variant="active">游戏中</Badge>
         <Badge variant="subtle">
           <Eye className="h-3.5 w-3.5" />
-          可观战
+          可旁观
         </Badge>
         <Badge variant="unavailable">
           <EyeOff className="h-3.5 w-3.5" />
-          禁观战
+          禁止旁观
         </Badge>
       </div>
       <div className="flex flex-wrap items-center gap-6">

@@ -241,6 +241,7 @@ function StackedField({
  */
 export function SettingTextField({
   label, value, onChange, placeholder, type = "text", maxLength, inputMode, description, action, readOnlyText,
+  error, autoFocus, disabled = false, inputClassName,
 }: {
   label: string;
   value: string;
@@ -253,9 +254,16 @@ export function SettingTextField({
   action?: ReactNode;
   /** 只读时的取值文字；缺省为输入框的值，密码框不显示 */
   readOnlyText?: string;
+  /** 落在这个字段上的校验失败：输入框标 `aria-invalid`，文案写在下方并经 `aria-describedby` 关联 */
+  error?: string | null;
+  autoFocus?: boolean;
+  disabled?: boolean;
+  /** 只改输入框的高度与字号（弹窗里的 `h-10`） */
+  inputClassName?: string;
 }) {
   const id = useId();
   const descriptionId = useId();
+  const errorId = useId();
   const readOnly = useSettingsReadOnly();
   if (readOnly) {
     if (type === "password") return null;
@@ -270,10 +278,13 @@ export function SettingTextField({
     <StackedField label={label} description={description} htmlFor={id} descriptionId={descriptionId}>
       <div className="flex gap-2">
         <Input id={id} type={type} value={value} maxLength={maxLength} placeholder={placeholder} inputMode={inputMode}
-          aria-describedby={description ? descriptionId : undefined}
+          autoFocus={autoFocus} disabled={disabled} className={inputClassName}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={[description ? descriptionId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined}
           onChange={(event) => onChange(event.target.value)} />
         {action}
       </div>
+      {error ? <p id={errorId} role="alert" className="text-xs text-destructive">{error}</p> : null}
     </StackedField>
   );
 }
@@ -521,7 +532,7 @@ export function SettingsSection({ title, icon: Icon, open = true, children }: {
           <div className="[section:not(:first-child)>&]:mt-4 [section:not(:first-child)>&]:border-t [section:not(:first-child)>&]:pt-4">
             <SettingsFields>
               {title ? (
-                <h4 className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground">
+                <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                   {title}
                 </h4>

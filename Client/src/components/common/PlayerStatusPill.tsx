@@ -70,13 +70,13 @@ export function PlayerGroupTitle({
       className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
-      <h3 className="font-sans text-2xs font-normal tracking-wide text-muted-foreground">
+      <h3 className="font-sans text-2xs font-normal text-muted-foreground">
         {label}
       </h3>
       <span className="font-sans text-2xs font-normal tabular-nums text-muted-foreground">
         {count}
       </span>
-      <span className="h-px flex-1 bg-border/70" />
+      <span className="h-px flex-1 bg-border" />
     </motion.div>
   );
 }

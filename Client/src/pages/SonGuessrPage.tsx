@@ -6,7 +6,7 @@ import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
 import { SONG_QUESTION_TYPE_LABELS, type SonGuessrRoomSummary } from "@/types";
 
-/** 猜歌的大厅区分「等待中」与「游戏中」两态，并标注「听歌识曲」或「听歌识番」。 */
+/** 猜歌的大厅区分「等待中」与「游戏中」两态；听歌识番的房间带题型标签。 */
 const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
   roomId: room.roomId,
   name: room.name,
@@ -15,7 +15,8 @@ const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
   allowSpectators: room.allowSpectators,
   playerCount: room.playerCount,
   spectatorCount: room.spectatorCount,
-  tag: (room.questionType && SONG_QUESTION_TYPE_LABELS[room.questionType]) ?? "听歌识曲",
+  // 只给与默认题型不同的房间挂标签（与房间顶栏的 roomTag 同口径），默认的听歌识曲不挂。
+  tag: room.questionType === "anime" ? SONG_QUESTION_TYPE_LABELS.anime : undefined,
 });
 
 export default function SonGuessrPage() {
@@ -35,6 +36,7 @@ export default function SonGuessrPage() {
     setJoinTarget,
     joinPassword,
     setJoinPassword,
+    joinError,
     createOrigin,
     joinOrigin,
     handleJoinRoom,
@@ -42,6 +44,7 @@ export default function SonGuessrPage() {
     handleCreateRoom,
     isInitialLoading,
     pending,
+    pendingRoomId,
   } = useLobbySession<SonGuessrRoomSummary>({
     gamePath: "/songuessr",
     rooms,
@@ -59,7 +62,7 @@ export default function SonGuessrPage() {
       rooms={rooms.map(toRoomView)}
       disabled={pending}
       loading={isInitialLoading}
-      children={pending ? <p role="status" className="mb-3 text-sm text-muted-foreground">正在进入房间…</p> : undefined}
+      pendingRoomId={pendingRoomId}
       userName={userName}
       onUserNameChange={setUserName}
       onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
@@ -74,7 +77,6 @@ export default function SonGuessrPage() {
           origin={createOrigin.origin}
           defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
           nameMaxLength={40}
-          onValidationError={(message) => setNotice(message, "error")}
           onCreate={handleCreateRoom}
         />
         <JoinPasswordDialog
@@ -83,6 +85,7 @@ export default function SonGuessrPage() {
           origin={joinOrigin.origin}
           password={joinPassword}
           onPasswordChange={setJoinPassword}
+          error={joinError}
           onCancel={() => setJoinTarget(null)}
           onConfirm={() => void handlePasswordJoin()}
         />

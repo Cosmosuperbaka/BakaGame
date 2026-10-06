@@ -49,7 +49,7 @@ export function RoomDrawer({
         {open ? (
           <>
             <DialogPrimitive.Overlay forceMount asChild>
-              <motion.div variants={backdrop} initial="initial" animate="animate" exit="exit" className="absolute inset-0 z-drawer bg-foreground/20" />
+              <motion.div variants={backdrop} initial="initial" animate="animate" exit="exit" className="absolute inset-0 z-drawer bg-foreground/20 dark:bg-black/50" />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content forceMount asChild aria-describedby={undefined}
               onOpenAutoFocus={() => { restoreFallback.current = false; }}

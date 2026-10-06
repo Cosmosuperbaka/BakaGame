@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -59,7 +59,10 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     useWhoIsFakerStore.setState({ rooms: [], connected: true, lobbyReady: true });
     renderPage();
 
-    expect(screen.getByText("暂无房间，点击上方按钮创建一个吧")).toBeInTheDocument();
+    const empty = screen.getByText("暂无房间").closest('[role="status"]');
+    expect(empty).not.toBeNull();
+    // 空状态里就地给出创建入口，与标题行的创建按钮同一个回调。
+    expect(within(empty as HTMLElement).getByRole("button", { name: "创建第一个房间" })).toBeInTheDocument();
   });
 
   it("已连接但首个房间列表未到时仍显示骨架屏", () => {
@@ -67,7 +70,7 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     renderPage();
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
-    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂无房间")).not.toBeInTheDocument();
   });
 
   it("房间列表到达时骨架原地淡出，房间卡片同时出现在它之上", async () => {
@@ -90,7 +93,7 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     renderPage();
 
     expect(screen.getByRole("status", { name: "正在加载房间列表" })).toBeInTheDocument();
-    expect(screen.queryByText("暂无房间，点击上方按钮创建一个吧")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂无房间")).not.toBeInTheDocument();
   });
 
   it("正常渲染房间列表卡片，且列表项外壳具备实底不透明背景类", () => {
@@ -100,30 +103,25 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     expect(screen.getByText("测试房间一")).toBeInTheDocument();
     expect(screen.getByText("8629")).toBeInTheDocument();
     expect(screen.getByText("等待中")).toBeInTheDocument();
-    expect(screen.getByText("可观战")).toBeInTheDocument();
+    expect(screen.getByText("可旁观")).toBeInTheDocument();
 
     expect(screen.getByText("测试房间二")).toBeInTheDocument();
     expect(screen.getByText("9999")).toBeInTheDocument();
     expect(screen.getByText("游戏中")).toBeInTheDocument();
-    expect(screen.getByText("禁观战")).toBeInTheDocument();
+    expect(screen.getByText("禁止旁观")).toBeInTheDocument();
 
     const roomOne = screen.getByText("测试房间一").closest('[role="button"]');
-    expect(roomOne).toHaveTextContent("4玩家");
-    expect(roomOne).toHaveTextContent("1旁观");
+    expect(roomOne).toHaveTextContent("4 人");
+    expect(roomOne).toHaveTextContent("1 旁观");
 
     const roomTwo = screen.getByText("测试房间二").closest('[role="button"]');
-    expect(roomTwo).toHaveTextContent("6玩家");
-    expect(roomTwo).toHaveTextContent("0旁观");
+    expect(roomTwo).toHaveTextContent("6 人");
+    expect(roomTwo).toHaveTextContent("0 旁观");
 
-    const digitElements = screen.getAllByText(/^[0-9]+$/);
-    for (const digit of digitElements) {
-      if (digit.textContent === "8629" || digit.textContent === "9999" || digit.textContent === "2") {
-        continue;
-      }
-      expect(digit).toHaveClass("w-[2ch]");
-      expect(digit).toHaveClass("text-right");
-      expect(digit).toHaveClass("tabular-nums");
-    }
+    // 人数写成「4 人 · 1 旁观」一整段，等宽数字，不再给每个数字定宽右对齐。
+    const counts = within(roomOne as HTMLElement).getByText(/4 人/);
+    expect(counts).toHaveTextContent("4 人 · 1 旁观");
+    expect(counts).toHaveClass("tabular-nums");
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("测试房间一");
@@ -132,5 +130,28 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     const motionWrapper = cardElement?.parentElement;
     expect(motionWrapper).toHaveClass("bg-card");
     expect(motionWrapper).toHaveClass("rounded-md");
+  });
+
+  it("用户名为空时创建与进房都就地拦下：标红输入框、聚焦并关联错误文案，不打开弹窗", () => {
+    localStorage.removeItem("wif_username");
+    useWhoIsFakerStore.setState({ rooms: mockRooms, connected: true, lobbyReady: true });
+    const joinRoom = vi.fn();
+    useWhoIsFakerStore.setState({ joinRoom, reconnectRoom: vi.fn().mockResolvedValue(false) });
+    renderPage();
+
+    const name = screen.getByRole("textbox", { name: "用户名" });
+    expect(name).toHaveValue("");
+    act(() => screen.getAllByRole("button", { name: "创建房间" })[0].click());
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveFocus();
+    expect(name).toHaveAccessibleDescription("请先填写用户名");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    act(() => screen.getByRole("button", { name: /测试房间二/ }).click());
+    expect(joinRoom).not.toHaveBeenCalled();
+
+    // 一输入就撤下错误。
+    fireEvent.change(name, { target: { value: "玩家" } });
+    expect(name).not.toHaveAttribute("aria-invalid");
   });
 });

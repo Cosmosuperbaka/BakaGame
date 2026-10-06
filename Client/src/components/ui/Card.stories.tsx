@@ -29,11 +29,11 @@ export const Composed: Story = {
         <Badge variant="subtle">等待中</Badge>
         <Badge variant="subtle">
           <Eye className="h-3.5 w-3.5" />
-          可观战
+          可旁观
         </Badge>
         <span className="ml-auto flex items-center gap-1.5 tabular-nums">
           <Users className="h-4 w-4 text-muted-foreground" />
-          5 玩家 · 1 旁观
+          5 人 · 1 旁观
         </span>
       </CardContent>
       <CardFooter className="justify-end gap-2">
