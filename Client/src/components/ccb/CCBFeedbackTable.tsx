@@ -39,7 +39,7 @@ const GENDER_TEXT: Record<string, string> = { female: "女", male: "男" };
 
 type NumericField = Exclude<keyof CCBFeedback, "sharedAppearances" | "tags" | "extraTags" | "gender">;
 const FIELD_LABEL: Record<NumericField | "gender", string> = {
-  gender: "性别", popularity: "收藏", appearancesCount: "作品数", rating: "最高分", latestAppearance: "最晚登场", earliestAppearance: "最早登场",
+  gender: "性别", popularity: "人气", appearancesCount: "作品数", rating: "最高分", latestAppearance: "最晚登场", earliestAppearance: "最早登场",
 };
 
 /** 一格数值：值与指向答案的箭头同处一个色块；成对的字段上下叠放，读屏先报字段名再报值。 */
@@ -195,7 +195,7 @@ function GuessRow({ guess, showRound }: { guess: CCBGuess; showRound: boolean })
 
 /** 表头两行：成对的字段上下叠放，与单元格内的两块色块逐一对应。 */
 const HEADERS: Array<{ key: string; lines: string[]; name?: string }> = [
-  { key: "profile", lines: ["性别", "收藏"], name: "性别与收藏" },
+  { key: "profile", lines: ["性别", "人气"], name: "性别与人气" },
   { key: "works", lines: ["作品数", "最高分"], name: "作品数与最高分" },
   { key: "years", lines: ["最晚登场", "最早登场"], name: "最晚与最早登场" },
   { key: "tags", lines: ["标签"] },
