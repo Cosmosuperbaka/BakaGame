@@ -198,7 +198,7 @@
 | `backdrop` | 覆盖层背板 |
 | `popover` | 就近弹出层，自触发点方向展开 |
 | `emergeFromOrigin` | 浮层自触发按钮位置被吸出，按原路收回 |
-| `collapsible` | 折叠区域，高度与不透明度分离。不直接手写 `AnimatePresence` + `collapsible`：内容区用 `ui/Collapsible` 的 `CollapsibleRegion`（外层只裁切，内边距与边框写在子元素上），指示箭头用 `DisclosureChevron`；行内折叠用 `Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
+| `collapsible` | 折叠区域，高度与不透明度分离。不直接手写 `AnimatePresence` + `collapsible`：内容区用 `ui/Collapsible` 的 `CollapsibleRegion`（外层只补间高度，内边距与边框写在子元素上）。裁切只在补间期间生效：变体在展开落定后把 `overflow` 放回 `visible`、收起起步时切回 `hidden`，区内字段的悬停描边与 3px 聚焦晕光不被区域边缘切掉；调用处与 `SettingsSection` 不再自加 `overflow-hidden`，需要 BFC 时用 `flow-root`，指示箭头用 `DisclosureChevron`；行内折叠用 `Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
 | `sharedTransfer` | 跨区域共享元素位移 |

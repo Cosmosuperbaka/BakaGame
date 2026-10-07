@@ -527,8 +527,8 @@ export function SettingsSection({ title, icon: Icon, open = true, children }: {
   return (
     <AnimatePresence initial={false}>
       {open ? (
-        <motion.section variants={collapsible} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-          {/* 节是 BFC（overflow-hidden），内层的上外边距留在节内，计入补间的高度。 */}
+        // flow-root 让节始终是 BFC：内层的上外边距留在节内、计入补间的高度；裁切只在补间期间由变体打开，字段的晕光不被切掉。
+        <motion.section variants={collapsible} initial="initial" animate="animate" exit="exit" className="flow-root">
           <div className="[section:not(:first-child)>&]:mt-4 [section:not(:first-child)>&]:border-t [section:not(:first-child)>&]:pt-4">
             <SettingsFields>
               {title ? (

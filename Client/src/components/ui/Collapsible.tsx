@@ -32,7 +32,8 @@ export function DisclosureChevron({
 
 /**
  * 按 collapsible 变体展开收起的内容区。收起即卸载，首次渲染不播放展开。
- * 外层只承担高度裁切（`overflow-hidden`）；内边距、边框写在子元素上，否则收起到 0 高时仍会露出一条。
+ * 外层只承担高度补间与补间期间的裁切（由 `collapsible` 变体切换 `overflow`，落定后不裁，区内的聚焦晕光不被切掉）；
+ * 内边距、边框写在子元素上，否则收起到 0 高时仍会露出一条。
  * 放在按钮里时（折叠标题下的摘要）传 `as="span"`：按钮只能包含行内内容，外层随之写成 `block`。
  */
 export function CollapsibleRegion({
@@ -52,7 +53,7 @@ export function CollapsibleRegion({
   return (
     <AnimatePresence initial={false}>
       {open ? (
-        <Region id={id} variants={collapsible} initial="initial" animate="animate" exit="exit" className={cn("overflow-hidden", as === "span" && "block", className)}>
+        <Region id={id} variants={collapsible} initial="initial" animate="animate" exit="exit" className={cn(as === "span" && "block", className)}>
           {children}
         </Region>
       ) : null}

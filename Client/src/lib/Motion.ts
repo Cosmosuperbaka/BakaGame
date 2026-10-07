@@ -408,12 +408,15 @@ export const sharedTransfer: Transition = spring.drift;
 /**
  * 折叠区域。高度与不透明度分离：展开时先撑开高度再显影，
  * 收起时先褪去内容再收拢高度，避免内容随高度一起被压扁。
+ * 裁切只在补间期间生效：展开落定后 `overflow` 放回 `visible`，区内输入框的聚焦晕光、
+ * 悬停描边不再被区域边缘切掉；收起一开始就重新裁切，内容不会溢出正在收拢的高度。
  */
 export const collapsible: Variants = {
-  initial: { height: 0, opacity: 0 },
+  initial: { height: 0, opacity: 0, overflow: "hidden" },
   animate: {
     height: "auto",
     opacity: 1,
+    transitionEnd: { overflow: "visible" },
     transition: {
       height: { duration: duration.base, ease: ease.out },
       opacity: { duration: duration.quick, ease: ease.out, delay: followDelay },
@@ -422,6 +425,7 @@ export const collapsible: Variants = {
   exit: {
     height: 0,
     opacity: 0,
+    overflow: "hidden",
     transition: {
       height: { duration: duration.quick, ease: ease.inOut, delay: followDelay * 0.66 },
       opacity: { duration: duration.instant, ease: ease.inOut },
