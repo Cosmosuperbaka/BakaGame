@@ -72,13 +72,38 @@ jobs:
     timeout-minutes: 3
     if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true' }}
     steps:
+      # 从 R2 加速域读取数据清单（公开、ESA 禁缓存），把版本化 URL / sha256 / size
+      # 解析后经 SSH envs 传给部署脚本——生产机全程不接触任何 R2 凭证，
+      # 只按一次性拼好的公开 URL 下载版本化对象。
+      - name: Resolve bangumi data manifest
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            -o /tmp/bangumi-manifest.json \
+            "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"
+          resolve_one() {
+            id=$1 var=$2
+            key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' /tmp/bangumi-manifest.json)
+            sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' /tmp/bangumi-manifest.json)
+            size=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .size' /tmp/bangumi-manifest.json)
+            [[ "$key" == bangumi/* && "$sha" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[1-9][0-9]*$ ]] \
+              || { echo "❌ manifest 条目异常：$id"; exit 1; }
+            echo "${var}_url=$BANGUMI_DATA_CDN_BASE/files/$key" >> "$GITHUB_ENV"
+            echo "${var}_sha=$sha" >> "$GITHUB_ENV"
+            echo "${var}_size=$size" >> "$GITHUB_ENV"
+          }
+          resolve_one character BG_CHAR
+          resolve_one song BG_SONG
+        env:
+          BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_REV: ${{ needs.gate.outputs.revision }}
           VERIFIED_RUN_ID: ${{ needs.gate.outputs.run_id }}
         with:
-          envs: DEPLOY_REV,VERIFIED_RUN_ID
+          envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_CHAR_URL,BG_CHAR_SHA,BG_CHAR_SIZE,BG_SONG_URL,BG_SONG_SHA,BG_SONG_SIZE
           host: ${{ secrets.DEPLOY_HOST }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
@@ -115,35 +140,37 @@ jobs:
             # 下载绝对截止时间（相对脚本开始的秒数）。到点即干净失败，
             # 为后面的容器重启 + 健康检查留足余量，确保不会撞上 3 分钟硬超时。
             DL_DEADLINE=115
-            # 可前缀拼接的 GitHub 代理节点（取自 https://github.akams.cn/ 节点列表）。
-            # 必须用 raw 形态：https://<节点>/https://github.com/<repo>/raw/<ref>/<path>
-            # 只有这个形态代理才会在服务端跟随 GitHub 到 media 的 302，返回 LFS 实体字节。
-            MIRRORS="ghproxy.net ghfast.top ghfile.geekertao.top github.tbap.top git.yylx.win gh.dpik.top github-proxy.memory-echoes.cn gh.acmsz.top fastgit.cc gh.noki.icu github.ikgy.top github.mxw.qzz.io direct"
+            # 数据库分发源：R2 加速域。版本化 URL / sha256 / size 由 runner 从
+            # manifest（公开、禁缓存）解析后经 SSH envs 传入（BG_*），生产机
+            # 不持有任何 R2 凭证。这里只做格式校验，防环境变量注入。
+            for v in BG_CHAR_URL BG_CHAR_SHA BG_CHAR_SIZE BG_SONG_URL BG_SONG_SHA BG_SONG_SIZE; do
+              if [ -z "${!v:-}" ]; then
+                echo "❌ 缺少数据分发环境变量：$v"
+                exit 1
+              fi
+            done
+            check_url()  { [[ "$1" =~ ^https://[A-Za-z0-9.:/_-]+$ ]] || { echo "❌ 非法数据 URL：$1"; exit 1; }; }
+            check_sha()  { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "❌ 非法 sha256：$1"; exit 1; }; }
+            check_size() { [[ "$1" =~ ^[1-9][0-9]*$ ]] || { echo "❌ 非法数据大小：$1"; exit 1; }; }
+            check_url "$BG_CHAR_URL"; check_sha "$BG_CHAR_SHA"; check_size "$BG_CHAR_SIZE"
+            check_url "$BG_SONG_URL"; check_sha "$BG_SONG_SHA"; check_size "$BG_SONG_SIZE"
 
             T0=$(date +%s)
             say() { echo "[$(( $(date +%s) - T0 ))s] $*"; }
             elapsed() { echo $(( $(date +%s) - T0 )); }
 
-            # 代理前缀形态：https://<节点>/https://github.com/.../raw/<ref>/<path>
-            # 该形态会让代理在服务端跟随 GitHub 到 media.githubusercontent.com 的 302，
-            # 拿到的是 LFS 实体字节，而不是指针文本。
-            proxy_url() {
-              if [ "$1" = "direct" ]; then
-                printf 'https://github.com/%s/raw/%s/%s' "$REPO" "$REF" "$2"
-              else
-                printf 'https://%s/https://github.com/%s/raw/%s/%s' "$1" "$REPO" "$REF" "$2"
-              fi
+            # 按 basename 映射到 runner 传入的 BG_* 变量。
+            # $1 = 文件名（不带路径）
+            data_var() {
+              case "$1" in
+                bangumi-character.sqlite) echo CHAR ;;
+                bangumi-song.sqlite) echo SONG ;;
+                *) echo "" ;;
+              esac
             }
-
-            # 从 LFS 指针文件里取字段。纯 shell 实现：不依赖 git / awk / sed，
-            # 因此不会因为外部命令缺失或管道异常把整个部署带崩。
-            # $1 = 指针文件路径，$2 = 字段名（oid / size）
-            lfs_field() {
-              while read -r k v; do
-                if [ "$k" = "$2" ]; then printf '%s' "${v#sha256:}"; return 0; fi
-              done < "$1"
-              return 1
-            }
+            want_url()  { eval "echo \"\$BG_$(data_var "$1")_URL\""; }
+            want_sha()  { eval "echo \"\$BG_$(data_var "$1")_SHA\""; }
+            want_size() { eval "echo \"\$BG_$(data_var "$1")_SIZE\""; }
 
             restore_cache() {
               for f in $DB_FILES; do
@@ -190,15 +217,15 @@ jobs:
               fi
             done
 
-            # ---------- 1. 代码同步（LFS 实体文件由本脚本接管） ----------
+            # ---------- 1. 代码同步（数据库实体不进 Git，由本脚本从 R2 取） ----------
             # 工作流已串行化（concurrency），上一次中断遗留的锁文件必然是陈旧的。
             if [ -f .git/index.lock ]; then
               say "清理上一次中断遗留的 .git/index.lock"
               rm -f .git/index.lock
             fi
 
-            # 关键：禁止 git 在 checkout 阶段触碰 LFS。仓库里存的是指针文本，
-            # 实体文件由本脚本自行提供，避免 git 去 github-cloud.githubusercontent.com 拉 200MB。
+            # 数据库已退出 Git/LFS；这里保留 SKIP_SMUDGE 作为过渡期双保险，
+            # 防止服务器上旧克隆的残留 LFS 配置在 reset 时去拉实体。
             export GIT_LFS_SKIP_SMUDGE=1
             git config --local filter.lfs.required false
 
@@ -229,33 +256,25 @@ jobs:
             [ "$COMMIT" = "$DEPLOY_REV" ] || exit 1
             say "已对齐至 $COMMIT"
 
-            # reset 后工作区里是 LFS 指针文本。先把指针文件各留一份副本（133 字节），
-            # 后面要用实体文件覆写工作区，届时就没法再读指针了；读取统一走 lfs_field。
-            for f in $DB_FILES; do
-              cp -f "$f" "$STASH/$(basename "$f").pointer"
-              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
-              size=$(lfs_field "$STASH/$(basename "$f").pointer" size || true)
-              say "目标数据库：$f oid=${want:-（非 LFS）} size=${size:-?}"
-            done
+            # reset 后工作区里不应再有数据库文件（数据已不进 Git）。
+            # 一致性锚点（版本化 URL / sha256 / size）由 runner 从 manifest 解析，
+            # 已随 SSH envs 传入并在脚本开头做过格式校验，这里直接可用。
 
-            # ---------- 2. 数据库：OID 未变化则零网络复用，变化才下载 ----------
+            # ---------- 2. 数据库：校验和未变化则零网络复用，变化才下载 ----------
             PENDING=""
             for f in $DB_FILES; do
-              cached="$STASH/$(basename "$f")"
-              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
+              b=$(basename "$f")
+              cached="$STASH/$b"
+              want=$(want_sha "$b")
               if [ -z "$want" ]; then
-                say "未见 LFS 指针，按普通文件处理：$f（前 16 字节：$(head -c 16 "$f" 2>/dev/null)）"
-                # 只有在 git 确实写入了真实内容时才丢弃暂存副本，避免把唯一的好文件删掉。
-                if [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
-                  rm -f "$cached"
-                fi
-                continue
+                echo "❌ 数据分发变量缺少条目：$b"
+                exit 1
               fi
               if [ -f "$cached" ] && [ "$(head -c 15 "$cached")" = "SQLite format 3" ]; then
                 hash=$(sha256sum "$cached"); hash=${hash%% *}
                 if [ "$hash" = "$want" ]; then
                   mv -f "$cached" "$f"
-                  say "复用本地数据库（LFS OID 未变化）：$f"
+                  say "复用本地数据库（校验和未变化）：$f"
                   continue
                 fi
                 say "本地数据库已过期：$f（本地 $(printf '%.12s' "$hash") → 目标 $(printf '%.12s' "$want")）"
@@ -266,53 +285,30 @@ jobs:
             done
 
             if [ -n "$PENDING" ]; then
-              say "需下载 LFS 数据：$PENDING"
+              say "需下载数据：$PENDING"
 
-              # 2.1 并行测速，挑出当前出口网络下最快的节点。
-              PROBE_FILE=$(echo "$PENDING" | awk '{print $1}')
-              PROBE_DIR="$STASH/.probe"
-              rm -rf "$PROBE_DIR"; mkdir -p "$PROBE_DIR"
-              idx=0
-              for m in $MIRRORS; do
-                idx=$((idx + 1))
-                # 错峰发起：镜像多为 Cloudflare 前置，同一 IP 的并发突发会被 403
-                sleep 0.25
-                (
-                  s=$(curl -sS -L --fail --connect-timeout 5 -o "$PROBE_DIR/body.$idx" \
-                        --max-time 6 -r 0-131071 -w '%{speed_download}' \
-                        "$(proxy_url "$m" "$PROBE_FILE")" 2>/dev/null || true)                  # 只认真正吐回 SQLite 实体字节的节点：403/404 错误页体积小、速度虚高，
-                  # 直接按 0 处理，免得把一个坏节点选成"最快"。
-                  if [ "$(head -c 15 "$PROBE_DIR/body.$idx" 2>/dev/null)" = "SQLite format 3" ]; then
-                    printf '%s %s\n' "${s:-0}" "$m" > "$PROBE_DIR/$idx"
-                  else
-                    printf '0 %s\n' "$m" > "$PROBE_DIR/$idx"
-                  fi
-                ) &
-              done
-              wait || true
-              BEST=$(cat "$PROBE_DIR"/[0-9]* 2>/dev/null | sort -rn | head -n 1 | awk '{print $2}')
-              BEST=${BEST:-direct}
-              say "测速最快节点：$BEST（各节点测得速度：$(cat "$PROBE_DIR"/[0-9]* 2>/dev/null | awk '{printf "%s=%dKB/s ", $2, $1/1024}')）"
-
-              # 2.2 多分片并行下载：首选最快节点，失败自动切换其它节点；
-              #     每个分片严格受全局预算约束，保证不会拖爆 3 分钟硬超时。
-              ORDER="$BEST $MIRRORS"
+              # 多分片并行下载：单一 R2 源（CF anycast），重试内建；
+              # 每个分片严格受全局预算约束，保证不会拖爆 3 分钟硬超时。
               DL_END=$(( T0 + DL_DEADLINE ))
 
               fetch_file() {
                 f="$1"
-                want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
-                size=$(lfs_field "$STASH/$(basename "$f").pointer" size || true)
-                if [ -z "$want" ] || [ -z "$size" ]; then
-                  echo "❌ 无法读取 LFS 目标信息：$f"
+                b=$(basename "$f")
+                want=$(want_sha "$b")
+                if [ -z "$want" ]; then
+                  echo "❌ 无法读取数据校验和：$f"
                   return 1
                 fi
+                size=$(want_size "$b")
+                case "$size" in
+                  ''|*[!0-9]*) echo "❌ 无法获取远端大小：$f"; return 1 ;;
+                esac
+                say "  $b：$size 字节，目标 sha256 $(printf '%.12s' "$want")…"
                 # 注意：两个文件是并行下载的，临时路径必须按文件名取唯一值。
                 # bash 的 $$ 在子 shell 中仍是父进程 PID，不能用来做区分。
-                # 分片目录额外带上目标 OID 前缀：断点续传只对同一个对象有意义。
-                tag=$(basename "$f")
-                parts="$STASH/.parts.$tag.${want:0:12}"
-                merged="$STASH/.merged.$tag"
+                # 分片目录额外带上目标校验和前缀：断点续传只对同一个对象有意义。
+                parts="$STASH/.parts.$b.${want:0:12}"
+                merged="$STASH/.merged.$b"
                 rm -f "$merged"; mkdir -p "$parts"
                 chunk=$(( (size + SPLIT - 1) / SPLIT ))
                 i=0
@@ -325,22 +321,20 @@ jobs:
                     if [ -f "$parts/$i" ] && [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
                       exit 0
                     fi
-                    for m in $ORDER; do
-                      cap=$(( DL_END - $(date +%s) ))
-                      if [ "$cap" -lt 8 ]; then break; fi
-                      if [ "$cap" -gt 60 ]; then cap=60; fi
-                      # --speed-limit/--speed-time：节点空有连接但不出流量时快速放弃；
-                      # --retry 应对镜像偶发 5xx/429/超时。
-                      if curl -sS -L --fail --connect-timeout 6 --max-time "$cap" \
-                           --retry 2 --retry-delay 1 \
-                           --speed-limit 32768 --speed-time 20 \
-                           -r "$start-$end" -o "$parts/$i" "$(proxy_url "$m" "$f")"; then
-                        # 逐分片长度自校验：防住忽略 Range 直接回整文件的代理。
-                        if [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
-                          exit 0
-                        fi
+                    cap=$(( DL_END - $(date +%s) ))
+                    if [ "$cap" -lt 8 ]; then exit 1; fi
+                    if [ "$cap" -gt 60 ]; then cap=60; fi
+                    # --speed-limit/--speed-time：连接空转不出流量时快速放弃；
+                    # --retry 应对偶发 5xx/429/超时。
+                    if curl -sS -L --fail --connect-timeout 6 --max-time "$cap" \
+                         --retry 2 --retry-delay 1 \
+                         --speed-limit 32768 --speed-time 20 \
+                         -r "$start-$end" -o "$parts/$i" "$(want_url "$b")"; then
+                      # 逐分片长度自校验：防住忽略 Range 直接回整文件的中间层。
+                      if [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
+                        exit 0
                       fi
-                    done
+                    fi
                     exit 1
                   ) &
                   i=$(( i + 1 ))
@@ -377,23 +371,19 @@ jobs:
                 wait "$p" || dl_ok=false
               done
               if [ "$dl_ok" != true ]; then
-                echo "❌ LFS 数据下载失败，本次部署中止"
+                echo "❌ 数据库下载失败，本次部署中止"
                 exit 1
               fi
-              say "LFS 数据下载完成"
+              say "数据库下载完成"
             fi
 
             # ---------- 3. 落盘校验 ----------
             for f in $DB_FILES; do
-              want=$(lfs_field "$STASH/$(basename "$f").pointer" oid || true)
-              if [ -n "$want" ]; then
-                hash=$(sha256sum "$f"); hash=${hash%% *}
-                if [ "$hash" != "$want" ]; then
-                  echo "❌ 数据库校验失败：$f"
-                  exit 1
-                fi
-              elif [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
-                echo "❌ 数据库文件无效：$f"
+              b=$(basename "$f")
+              want=$(want_sha "$b")
+              hash=$(sha256sum "$f"); hash=${hash%% *}
+              if [ -z "$want" ] || [ "$hash" != "$want" ]; then
+                echo "❌ 数据库校验失败：$f"
                 exit 1
               fi
               say "校验通过：$f"
