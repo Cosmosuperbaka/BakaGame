@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { listContainer, listItem, playerRelayout } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -56,6 +57,11 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const observers = snapshot.players.filter((player) => player.membership === "spectator");
   const groups = teamGroups(activePlayers);
+  // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
+  const rowKey = usePlayerRowKeys(snapshot.players.map((player) => ({
+    id: player.id,
+    group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
+  })));
   const teamed = groups.some((group) => group.team !== null);
   // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
   const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
@@ -67,7 +73,7 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
       <AnimatePresence initial={false} mode="popLayout">
         {players.map((player) => (
           <CCBPlayerRow
-            key={player.id}
+            key={rowKey(player.id)}
             player={player}
             snapshot={snapshot}
             sharedInHeader={inTeam && snapshot.phase === "guessing" && sharedProgress(players) !== null && player.status !== "observing"}

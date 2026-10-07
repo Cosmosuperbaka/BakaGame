@@ -54,7 +54,7 @@
 - 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
 - 两态共用同一个外框时（限时栏、读数块），内容用 `readoutSwap` 配 `popLayout` 交替，外框高度经 `useMeasuredHeight` 量出、按 `spring.settle` 补间，不先塌再撑开。
 - 只会在末尾追加的标记串（CCB 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
-- 玩家栏换组（玩家 ↔ 旁观）是一次整列重排：玩家栏包在 `PlayerListLayout`（按实例命名的 `LayoutGroup`，桌面侧栏与抽屉互不串台）里，行传 `layoutId={player.id}`，从旧分组滑到新分组；两处 `SpectatorToggle` 共用一个 `layoutId`，入口随之滑到另一组，图标与文案以 `readoutSwap` 在途中换掉。分组标题与入口带 `layout="position"`，行列表用 `AnimatePresence mode="popLayout"`（行组件逐层转交 `ref`），退场行立即抽出文档流，其余行不等它淡完才让位。换组的行、让位的行、标题与入口统一取 `playerRelayout`（`spring.settle`），同时起步、同时落定。
+- 玩家栏换组（玩家 ↔ 旁观）是一次整列重排：玩家栏包在 `PlayerListLayout`（按实例命名的 `LayoutGroup`，桌面侧栏与抽屉互不串台）里，行传 `layoutId={player.id}`，从旧分组滑到新分组；两处 `SpectatorToggle` 共用一个 `layoutId`，入口随之滑到另一组，图标与文案以 `readoutSwap` 在途中换掉。分组标题与入口带 `layout="position"`，行列表用 `AnimatePresence mode="popLayout"`（行组件逐层转交 `ref`），退场行立即抽出文档流，其余行不等它淡完才让位。换组的行、让位的行、标题与入口统一取 `playerRelayout`（`spring.settle`），同时起步、同时落定。行的 `key` 取 `hooks/UsePlayerRowKeys`（玩家编号加换组次数），不直接用玩家编号：退场还没播完就换回原组时，同 key 的子项会被 `AnimatePresence` 原地复活，framer-motion 会把它停在 `initial` 的透明缩小态且不补播入场，行就此看不见；每换一次组换一个 key，换回来的总是新挂载的一行，跨组滑动仍由 `layoutId` 负责。
 
 ### 2.5 禁止写死数值
 

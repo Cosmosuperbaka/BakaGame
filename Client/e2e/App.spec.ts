@@ -356,6 +356,36 @@ test("two browser sessions can create and join the same server room", async ({ i
   await closeIsolatedContext(guestContext);
 });
 
+test("独自一人在旁观动画途中切回，自己的玩家行仍然可见", async ({ page }) => {
+  const unique = Date.now().toString(36);
+  const name = `独自${unique}`;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/whoisfaker");
+  await page.getByPlaceholder("用户名").fill(name);
+  await page.getByRole("button", { name: "创建房间" }).click();
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
+  const row = page.locator(`span[title="${name}"]`);
+  await expect(row).toBeVisible();
+  // 等进房的入场动画落定，下面的切换才是「第一次」换组。
+  await page.waitForTimeout(1_000);
+
+  await page.getByRole("button", { name: "加入旁观" }).click();
+  // 不等入口滑完：旧行退场播到一半时切回来，正是会把行「复活」成透明态的时机。
+  // force 跳过 Playwright 的稳定性等待，否则点击会被拖到动画播完之后。
+  await page.getByRole("button", { name: "取消旁观" }).waitFor({ state: "attached" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "取消旁观" }).click({ force: true });
+  await expect(page.getByRole("button", { name: "加入旁观" })).toBeVisible();
+  // 旧行退场卸载后只剩一行，且它连同祖先都完全不透明。
+  await expect.poll(() => row.evaluateAll((elements) => elements.map((element) => {
+    for (let node: HTMLElement | null = element as HTMLElement; node; node = node.parentElement) {
+      if (getComputedStyle(node).opacity !== "1") return false;
+    }
+    return true;
+  }))).toEqual([true]);
+});
+
 test("empty description history keeps the player pane width after a direct voting jump", async ({ page }) => {
   const unique = Date.now().toString(36);
   await page.setViewportSize({ width: 1440, height: 900 });

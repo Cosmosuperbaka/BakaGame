@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@/types";
@@ -35,6 +36,8 @@ export function PlayerList({
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
+  // 换组后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
+  const rowKey = usePlayerRowKeys(players.map((player) => ({ id: player.id, group: player.membership })));
   const me = players.find((player) => player.id === myPlayerId);
   const waitingPhase = phase === "waiting";
   const canJoinSpectators =
@@ -78,7 +81,7 @@ export function PlayerList({
 
   const renderRow = (player: SonGuessrPlayerView, hideSpectatorStatus: boolean) => (
     <SongPlayerRow
-      key={player.id}
+      key={rowKey(player.id)}
       player={player}
       myPlayerId={myPlayerId}
       isHostViewer={isHost}

@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
@@ -148,6 +149,11 @@ export function PlayerList(props: PlayerListProps) {
   const observers = players.filter(
     (player) => player.membership === "spectator" || player.roundStatus === "questioner",
   );
+  // 换组后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
+  const rowKey = usePlayerRowKeys([
+    ...activePlayers.map((player) => ({ id: player.id, group: "active" })),
+    ...observers.map((player) => ({ id: player.id, group: "observer" })),
+  ]);
 
   const handleKick = useCallback(
     async (playerId: string) => {
@@ -213,13 +219,13 @@ export function PlayerList(props: PlayerListProps) {
     };
 
     // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
-    if (!history) return <PlayerRow key={player.id} {...rowProps} />;
+    if (!history) return <PlayerRow key={rowKey(player.id)} {...rowProps} />;
 
     // 展开后由外层承担进出场，行内首列去掉自身动画以免双重变换。
     // 列轨道继承自外层 grid，保证同一列在所有行上等宽。
     return (
       <motion.div
-        key={player.id}
+        key={rowKey(player.id)}
         variants={listItem}
         initial="initial"
         animate="animate"
