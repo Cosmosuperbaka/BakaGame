@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Link } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { readoutSwap } from "@/lib/Motion";
+import { useMeasuredWidth } from "@/hooks/UseMeasuredHeight";
+import { readoutSwap, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /** 「已复制」反馈的停留时长：给玩家读完提示的时间，不参与任何业务时序。 */
@@ -11,6 +12,8 @@ const COPIED_FEEDBACK_MS = 2_000;
 /** 等待页的房间链接：展示完整地址并一键复制，复制失败交给调用方提示。 */
 export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError: () => void }) {
   const [copied, setCopied] = useState(false);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const labelWidth = useMeasuredWidth(labelRef);
   const shareUrl = `${window.location.origin}${path}`;
 
   useEffect(() => {
@@ -47,13 +50,23 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           // 成功态沿用 success 浅底描边，读作「复制好了」；悬停底色同步换成同色的预览档，不跳回 accent。
           className={cn("shrink-0 gap-1.5 px-3 text-xs", copied && "border-success/40 bg-success/10 text-success hover:bg-success/10 hover:text-success")}
         >
-          {/* 图标与文字一起换：旧的抽出文档流淡出，新的自下方顶上来，按钮宽度跟着新文字。 */}
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.span key={copied ? "copied" : "idle"} aria-hidden="true" variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex items-center gap-1.5">
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? "已复制" : "复制"}
-            </motion.span>
-          </AnimatePresence>
+          {/* 图标与文字一起换：旧的抽出文档流淡出，新的自下方顶上来。
+              外层宽度量的是新文字的宽度，按 spring.settle 补间，按钮随之平滑伸缩，不在换字那一帧跳变。 */}
+          <motion.span
+            className="relative flex overflow-hidden"
+            initial={false}
+            animate={labelWidth === null ? undefined : { width: labelWidth }}
+            transition={spring.settle}
+          >
+            <span ref={labelRef} className="flex w-max shrink-0">
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span key={copied ? "copied" : "idle"} aria-hidden="true" variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex items-center gap-1.5 whitespace-nowrap">
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "已复制" : "复制"}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </motion.span>
           <span className="sr-only" aria-live="polite">{copied ? "链接已复制" : ""}</span>
         </Button>
       </div>
