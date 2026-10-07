@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import {
   SettingValue, SettingYearRange, SettingsFields, SettingsSection, useSettingsReadOnly,
 } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@/types";
@@ -157,6 +158,19 @@ function FilterChip({ icon: Icon, label, removeLabel, onRemove }: {
   );
 }
 
+const describeArtistError = (error: unknown) => (error as { message?: string } | null)?.message ?? "搜索歌手失败";
+
+/** 歌手头像：圆形，与歌曲的方形封面区分；没有头像时用图标占位。 */
+function ArtistAvatar({ artist }: { artist: SongArtistSearchResult }) {
+  return artist.avatarUrl ? (
+    <img src={artist.avatarUrl} alt="" loading="lazy" decoding="async" className="size-9 shrink-0 rounded-full bg-muted object-cover" />
+  ) : (
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <Mic2 className="size-4" aria-hidden="true" />
+    </span>
+  );
+}
+
 /**
  * 听歌识曲的自动出题筛选：歌单（粘贴链接后读取）、歌手（浮动搜索多选）与热度档位，任一项都可单独使用。
  * 只读时三项都写成一行取值。
@@ -172,10 +186,7 @@ function SongAutoFilters({ values, edit }: {
   const [playlistDraft, setPlaylistDraft] = useState(values.playlist?.id ?? "");
   const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
   const [artistDraft, setArtistDraft] = useState("");
-  const [artistResults, setArtistResults] = useState<{ key: string; items: SongArtistSearchResult[] } | null>(null);
-  const [searchingArtists, setSearchingArtists] = useState(false);
-  const [artistError, setArtistError] = useState("");
-  const request = useRef(0);
+  const artistSearch = useIdleSearch(artistDraft, searchArtist, describeArtistError, { enabled: !readOnly });
 
   if (readOnly) {
     return (
@@ -202,27 +213,11 @@ function SongAutoFilters({ values, edit }: {
     }
   };
 
-  const searchArtists = async () => {
-    const keyword = artistDraft.trim();
-    if (!keyword) return;
-    const id = ++request.current;
-    setSearchingArtists(true);
-    setArtistError("");
-    try {
-      const items = await searchArtist(keyword);
-      if (id === request.current) setArtistResults({ key: `artists-${id}`, items });
-    } catch (error) {
-      if (id === request.current) setArtistError((error as { message?: string }).message ?? "搜索歌手失败");
-    } finally {
-      if (id === request.current) setSearchingArtists(false);
-    }
-  };
-
   const chosen = new Set(values.artists.map((artist) => artist.id));
-  const items = artistResults?.items ?? [];
-  const status: SearchStatus | null = artistError ? { tone: "error", text: artistError }
-    : searchingArtists && !items.length ? { tone: "busy", text: "正在搜索歌手" }
-      : artistResults && !searchingArtists && !items.length ? { tone: "info", text: "没有找到这位歌手" }
+  const items = artistSearch.items;
+  const status: SearchStatus | null = artistSearch.error ? { tone: "error", text: artistSearch.error }
+    : artistSearch.loading && !items.length ? { tone: "busy", text: "正在搜索歌手" }
+      : artistSearch.empty ? { tone: "info", text: "没有找到这位歌手" }
         : null;
   const toggleArtist = (artist: SongArtistFilter) =>
     edit("artists", chosen.has(artist.id) ? values.artists.filter((item) => item.id !== artist.id) : [...values.artists, { id: artist.id, name: artist.name }]);
@@ -252,18 +247,17 @@ function SongAutoFilters({ values, edit }: {
         <span className="text-sm leading-snug">歌手<span className="text-muted-foreground">（可多选）</span></span>
         <SearchCombobox
           value={artistDraft}
-          onValueChange={(value) => { setArtistDraft(value); if (!value.trim()) setArtistResults(null); }}
+          onValueChange={setArtistDraft}
           label="搜索歌手"
-          placeholder="输入歌手名后搜索"
+          placeholder="歌手名"
           maxLength={60}
-          onSubmit={() => void searchArtists()}
-          busy={searchingArtists && items.length > 0}
-          actions={<Button type="button" variant="outline" disabled={!artistDraft.trim()} onClick={() => void searchArtists()}>搜索</Button>}
+          onSubmit={artistSearch.flush}
+          busy={artistSearch.loading && items.length > 0}
           options={items}
           getKey={(artist) => artist.id}
-          renderOption={(artist) => <SearchOptionContent title={artist.name} trailing={chosen.has(artist.id) ? "已选" : undefined} />}
+          renderOption={(artist) => <SearchOptionContent media={<ArtistAvatar artist={artist} />} title={artist.name} trailing={chosen.has(artist.id) ? "已选" : undefined} />}
           onSelect={toggleArtist}
-          listKey={artistResults?.key ?? "artists"}
+          listKey={artistSearch.listKey}
           status={status}
         />
         <div className="flex flex-wrap gap-1.5 empty:hidden">

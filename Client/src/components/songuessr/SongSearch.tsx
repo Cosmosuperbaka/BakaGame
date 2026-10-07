@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { Film, Music2 } from "lucide-react";
 import type { BangumiSongCandidate, BangumiSubjectSearchResult, SongSearchResult } from "@/types";
 import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
@@ -7,49 +8,10 @@ import { Badge } from "@/components/ui/Badge";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
 
-/** 停止输入多久后发起查询：连续敲字时不逐字请求上游。 */
-const DEBOUNCE_MS = 350;
-
 const messageOf = (error: unknown, fallback: string) => (error as { message?: string } | null)?.message ?? fallback;
-
-/**
- * 随输入防抖查询。新查询在途时保留上一批结果（输入框尾部转圈），晚到的旧结果一律丢弃；
- * 清空输入即视为没有结果，不需要等在途请求回来。
- */
-function useKeywordSearch<T>(keyword: string, search: (keyword: string) => Promise<T[]>, fallback: string) {
-  const query = keyword.trim();
-  const [result, setResult] = useState<{ keyword: string; items: T[] } | null>(null);
-  const [failure, setFailure] = useState<{ keyword: string; message: string } | null>(null);
-  const [inFlight, setInFlight] = useState(false);
-
-  useEffect(() => {
-    if (!query) return;
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setInFlight(true);
-      try {
-        const items = await search(query);
-        if (!cancelled) { setResult({ keyword: query, items }); setFailure(null); }
-      } catch (error) {
-        if (!cancelled) setFailure({ keyword: query, message: messageOf(error, fallback) });
-      } finally {
-        if (!cancelled) setInFlight(false);
-      }
-    }, DEBOUNCE_MS);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [query, search, fallback]);
-
-  const items = query && result ? result.items : [];
-  const loading = Boolean(query) && inFlight;
-  return {
-    items,
-    loading,
-    listKey: query && result ? `results:${result.keyword}` : "none",
-    error: query && failure?.keyword === query ? failure.message : "",
-    /** 当前关键词已查过且没有结果 */
-    empty: Boolean(query) && !loading && result?.keyword === query && items.length === 0,
-  };
-}
+// 自动搜索要求稳定的错误文案函数：写在模块级，不随渲染重建。
+const describeSongError = (error: unknown) => messageOf(error, "搜索歌曲失败");
+const describeAnimeError = (error: unknown) => messageOf(error, "搜索番剧失败");
 
 /** 封面缩略图：歌曲取方形，番剧取竖版海报；没有图时用同尺寸的图标占位。 */
 function Cover({ src, shape, icon: Icon }: { src?: string; shape: "square" | "poster"; icon: typeof Music2 }) {
@@ -119,7 +81,7 @@ export function SongSearch({ mode, disabled = false, guessedIds = [], className,
   const [keyword, setKeyword] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
-  const search = useKeywordSearch(keyword, searchMusic, "搜索歌曲失败");
+  const search = useIdleSearch(keyword, searchMusic, describeSongError);
 
   const choose = async (song: SongSearchResult) => {
     setPendingId(song.id);
@@ -149,6 +111,7 @@ export function SongSearch({ mode, disabled = false, guessedIds = [], className,
       placeholder="歌名、歌手或专辑"
       maxLength={80}
       disabled={disabled}
+      onSubmit={search.flush}
       busy={search.loading && search.items.length > 0}
       options={search.items}
       getKey={(song) => song.id}
@@ -184,7 +147,7 @@ export function AnimeSearch({ mode, disabled = false, guessedIds = [], className
   const [picked, setPicked] = useState<{ subject: BangumiSubjectSearchResult; songs: BangumiSongCandidate[] } | null>(null);
   const generation = useRef(0);
   useEffect(() => () => { generation.current++; }, []);
-  const search = useKeywordSearch(keyword, searchBangumi, "搜索番剧失败");
+  const search = useIdleSearch(keyword, searchBangumi, describeAnimeError);
 
   const leavePicked = () => {
     generation.current++;
@@ -242,6 +205,7 @@ export function AnimeSearch({ mode, disabled = false, guessedIds = [], className
       placeholder="番剧名称或别名"
       maxLength={80}
       disabled={disabled}
+      onSubmit={picked ? undefined : search.flush}
       busy={!picked && search.loading && options.length > 0}
       options={options}
       getKey={animeKey}

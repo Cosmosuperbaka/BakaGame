@@ -112,8 +112,8 @@ export const QuestionArtistSearch: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.type(canvas.getByPlaceholderText("输入歌手名后搜索"), "夜行");
-    await userEvent.click(canvas.getByRole("button", { name: "搜索" }));
+    // 停止输入后自动搜索，不再有搜索按钮。
+    await userEvent.type(canvas.getByRole("combobox", { name: "搜索歌手" }), "夜行");
     // 结果浮在下方，走 Portal，不在画布里。
     await screen.findByRole("listbox", { name: "搜索歌手结果" });
     dropFocus();
