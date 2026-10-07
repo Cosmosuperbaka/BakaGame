@@ -79,6 +79,7 @@ export class CCBNativeService {
       case 'ccb.directory.import':
         this.state.requireHost(room, player); this.state.requireWaiting(room); return this.data.importDirectory(message.payload.indexId);
       case 'ccb.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId) };
+      case 'ccb.subject.image': return { imageUrl: await this.data.resolveSubjectImage(message.payload.subjectId) };
       case 'ccb.game.start': await this.start(room, player); break;
       case 'ccb.game.chooseSetter': {
         this.state.requireHost(room, player);

@@ -12,7 +12,7 @@ export type CCBResponse<T extends CCBCommand> =
   T extends "ccb.character.search" | "ccb.subject.characters" ? { results: CCBCharacterSummary[] } :
   T extends "ccb.subject.search" | "ccb.subject.lookup" ? { results: CCBSubjectSummary[] } :
   T extends "ccb.directory.import" ? CCBDirectoryResult :
-  T extends "ccb.character.image" ? { imageUrl?: string } :
+  T extends "ccb.character.image" | "ccb.subject.image" ? { imageUrl?: string } :
   T extends "ccb.game.imageHint" ? { dataUrl: string } : Record<string, unknown>;
 
 export function sendCCB<T extends CCBCommand>(

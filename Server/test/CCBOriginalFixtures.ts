@@ -14,7 +14,8 @@ export const originalData: CCBDataProvider = {
   async getRawCharacter(id): Promise<CCBRawCharacter> { return { ...originalCharacter(id), aliases: [], appearances: [], extraTagsBySubject: {} }; },
   async searchCharacters() { return [originalCharacter()]; }, async searchSubjects() { return []; }, async getSubjectCharacters() { return [originalCharacter()]; }, async getSubjects() { return []; },
   async importDirectory(id) { return { id, subjectIds: [10], missingSubjectIds: [], importedAt: 1 }; },
-  async resolveCharacterImage(id) { return `https://images.example/${id}.jpg`; }, close() {},
+  async resolveCharacterImage(id) { return `https://images.example/${id}.jpg`; },
+  async resolveSubjectImage(id) { return `https://images.example/s${id}.jpg`; }, close() {},
 };
 
 export class FixtureSocket implements CCBOriginalSocket {

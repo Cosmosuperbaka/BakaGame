@@ -12,10 +12,6 @@ const boundedLimit = (limit: number, maximum = 50) => Math.min(maximum, Math.max
 const like = (keyword: string) => `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
 const validTypes = (types: number[]) => [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
-const toSubject = (row: SubjectRow): CCBSubjectSummary => ({
-  id: row.id, type: row.type, name: row.name, nameCn: row.name_cn || row.name,
-  year: /^\d{4}/.test(row.date) ? Number(row.date.slice(0, 4)) : null, rating: row.score, heat: row.heat,
-});
 
 /** 生产环境由 CCBCharacterWorker 独占：SQLite 同步查询不会占用游戏主循环。 */
 export class CCBCharacterRepository implements CCBDataProvider {
@@ -101,13 +97,13 @@ export class CCBCharacterRepository implements CCBDataProvider {
       const placeholders = result.ids.map(() => "?").join(",");
       const rows = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders})`).all(...result.ids) as SubjectRow[];
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [toSubject(row)] : []; });
+      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSubject(row)] : []; });
     }
     const pattern = like(query);
     const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND type IN (${selected.map(() => "?").join(",")})
       AND (name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR id=?)
       ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,heat DESC,id LIMIT ?`).all(...selected, pattern, pattern, Number(query) || -1, query, query, boundedLimit(limit)) as SubjectRow[];
-    return rows.map(toSubject);
+    return rows.map((row) => this.toSubject(row));
   }
 
   async getSubjects(subjectIds: number[]): Promise<CCBSubjectSummary[]> {
@@ -117,7 +113,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
     if (!ids.length) return [];
     const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as SubjectRow[];
     const byId = new Map(rows.map((row) => [row.id, row]));
-    return ids.flatMap((id) => { const row = byId.get(id); return row ? [toSubject(row)] : []; });
+    return ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSubject(row)] : []; });
   }
 
   async getSubjectCharacters(subjectId: number, limit = 50): Promise<CCBCharacterSummary[]> {
@@ -242,12 +238,29 @@ export class CCBCharacterRepository implements CCBDataProvider {
     return imageUrl;
   }
 
+  async resolveSubjectImage(id: number): Promise<string | undefined> {
+    this.assertOpen();
+    await this.ready;
+    if (!positiveId(id) || !this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(id)) return undefined;
+    return this.enrichment.resolveSubjectImage(id);
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     await Promise.allSettled([this.ready, ...this.directoryImports.values()]);
     await this.enrichment.close();
     this.db.close();
+  }
+
+  /** 封面只读已回填的那份，不在列表查询里回源；缺的由客户端按需经 `ccb.subject.image` 补。 */
+  private toSubject(row: SubjectRow): CCBSubjectSummary {
+    const imageUrl = this.enrichment.readImage(row.id, "subject");
+    return {
+      id: row.id, type: row.type, name: row.name, nameCn: row.name_cn || row.name,
+      year: /^\d{4}/.test(row.date) ? Number(row.date.slice(0, 4)) : null, rating: row.score, heat: row.heat,
+      ...(imageUrl ? { imageUrl } : {}),
+    };
   }
 
   private toSummary(row: CharacterRow): CCBCharacterSummary {

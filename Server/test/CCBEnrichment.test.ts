@@ -81,4 +81,29 @@ describe('CCB 资料补全异常边界', () => {
     enrichment.db.exec('DROP TRIGGER reject_image');
     expect(await enrichment.resolveCharacterImage(1)).toBe('https://images.invalid/1.jpg');
   });
+
+  test('作品封面走条目接口、请求合并并持久化原始地址，与同编号角色互不串用', async () => {
+    const paths: string[] = [];
+    const enrichment = create({ imageBase: 'https://mirror.invalid', fetcher: async (input) => {
+      const url = String(input); paths.push(new URL(url).pathname);
+      return url.includes('/subjects/') ? Response.json({ images: { medium: 'https://lain.bgm.tv/pic/cover/1.jpg' } }) : imageResponse();
+    } });
+    const covers = await Promise.all([enrichment.resolveSubjectImage(1), enrichment.resolveSubjectImage(1)]);
+    expect(covers).toEqual(['https://mirror.invalid/pic/cover/1.jpg', 'https://mirror.invalid/pic/cover/1.jpg']);
+    expect(paths).toEqual(['/v0/subjects/1']);
+    expect(enrichment.db.query("SELECT payload FROM enrichment WHERE entity='subject' AND id=1").get())
+      .toEqual({ payload: JSON.stringify({ image: 'https://lain.bgm.tv/pic/cover/1.jpg' }) });
+    expect(enrichment.readImage(1)).toBeUndefined();
+    expect(await enrichment.resolveCharacterImage(1)).toBe('https://images.invalid/1.jpg');
+    expect(paths).toEqual(['/v0/subjects/1', '/v0/characters/1']);
+  });
+
+  test('作品无封面只做短期负缓存，到期可恢复', async () => {
+    let now = 0, calls = 0;
+    const enrichment = create({ now: () => now, fetcher: async () => ++calls === 1 ? Response.json({ images: {} }) : Response.json({ images: { large: 'https://images.invalid/s1.jpg' } }) });
+    expect(await enrichment.resolveSubjectImage(1)).toBeUndefined();
+    expect(await enrichment.resolveSubjectImage(1)).toBeUndefined(); expect(calls).toBe(1);
+    now = 300_000;
+    expect(await enrichment.resolveSubjectImage(1)).toBe('https://images.invalid/s1.jpg');
+  });
 });

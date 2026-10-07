@@ -14,6 +14,7 @@ export type CCBWorkerRequest =
   | { id: number; method: "chooseRandomCharacter"; settings: CCBSettings; rolls: number[] }
   | { id: number; method: "importDirectory"; indexId: number }
   | { id: number; method: "resolveCharacterImage"; characterId: number }
+  | { id: number; method: "resolveSubjectImage"; subjectId: number }
   | { id: number; method: "close" };
 export type CCBWorkerReply = { id: number } & ({ ok: true; value: unknown } | { ok: false; code: string; message: string });
 
@@ -45,6 +46,7 @@ self.onmessage = async ({ data: request }: MessageEvent<CCBWorkerRequest>) => {
         }
         case "importDirectory": value = await repository.importDirectory(request.indexId); break;
         case "resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId); break;
+        case "resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId); break;
         case "close": await repository.close(); repository = undefined; value = true; break;
       }
     }

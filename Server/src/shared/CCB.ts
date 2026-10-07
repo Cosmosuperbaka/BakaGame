@@ -52,7 +52,7 @@ export interface CCBCharacterView extends CCBCharacterSummary {
   comparisonAppearances: CCBComparisonAppearance[];
   extraTags: CCBExtraTagSection[];
 }
-export interface CCBSubjectSummary { id: number; name: string; nameCn: string; type: number; year: number | null; rating: number; heat: number }
+export interface CCBSubjectSummary { id: number; name: string; nameCn: string; type: number; year: number | null; rating: number; heat: number; imageUrl?: string }
 export interface CCBDirectoryResult { id: number; subjectIds: number[]; missingSubjectIds: number[]; importedAt: number }
 export type CCBComparison = '=' | '+' | '++' | '-' | '--' | '?' | 'yes' | 'no';
 export interface CCBFeedbackValue { value: number | string; comparison: CCBComparison }
@@ -153,6 +153,7 @@ export const CCBPayloadSchemas = {
   'ccb.subject.lookup': t.Object({ subjectIds: t.Array(id, { maxItems: 500 }) }, strict),
   'ccb.directory.import': t.Object({ indexId: id }, strict),
   'ccb.character.image': t.Object({ characterId: id }, strict),
+  'ccb.subject.image': t.Object({ subjectId: id }, strict),
   'ccb.game.start': empty,
   'ccb.game.chooseSetter': t.Object({ playerId }, strict),
   'ccb.game.setAnswer': t.Object({ characterId: id, hints: t.Array(t.String({ maxLength: 30 }), { maxItems: 3 }) }, strict),

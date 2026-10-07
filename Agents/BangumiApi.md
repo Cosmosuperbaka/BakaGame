@@ -68,6 +68,10 @@ Server/storage/bangumi-enrichment.sqlite      （可写，不进 Git；`.gitigno
 角色立绘走 `GET /v0/characters/{id}`，图片字段结构与条目一致
 （`images.medium / large / common / grid` 依次回退），由 `resolveCharacterImage(characterId)` 暴露，
 **猜番（CCB）与猜歌共用同一条回源与缓存路径**。非法 id（非正整数）直接返回 `undefined`，不回源。
+CCB 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共用一行），由 `CCBEnrichment.resolveSubjectImage` 回源
+`GET /v0/subjects/{id}`，规则与角色立绘相同：请求按 `实体:编号` 合并，无图或 404 只进 5 分钟内存负缓存，其他失败原样报错。
+作品列表查询（搜作品、按编号取作品）只读已回填的封面、不回源；缺图的条目由客户端滚进视口时经 `ccb.subject.image` 按需补，
+本地不存在或 NSFW 的条目直接返回 `undefined`。
 
 ## 请求边界
 

@@ -38,6 +38,8 @@ export interface CCBDataProvider {
   chooseRandomCharacter(settings: CCBSettings, random?: () => number): Promise<CCBCharacterView>;
   importDirectory(indexId: number): Promise<CCBDirectoryResult>;
   resolveCharacterImage(id: number): Promise<string | undefined>;
+  /** 作品封面；本地没有、NSFW 或上游无图时为 `undefined` */
+  resolveSubjectImage(id: number): Promise<string | undefined>;
   close(): void | Promise<void>;
 }
 

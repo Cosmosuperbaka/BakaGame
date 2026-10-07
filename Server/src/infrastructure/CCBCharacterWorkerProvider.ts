@@ -64,6 +64,10 @@ export class CCBCharacterWorkerProvider implements CCBDataProvider {
     await this.ready;
     return this.request({ method: "resolveCharacterImage", characterId }) as Promise<string | undefined>;
   }
+  async resolveSubjectImage(subjectId: number): Promise<string | undefined> {
+    await this.ready;
+    return this.request({ method: "resolveSubjectImage", subjectId }) as Promise<string | undefined>;
+  }
 
   async close(): Promise<void> {
     if (this.closed) return;

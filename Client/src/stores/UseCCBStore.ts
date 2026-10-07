@@ -73,7 +73,7 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionGeneration = 0;
 const permanentErrors = new Set(["ROOM_NOT_FOUND", "SESSION_NOT_FOUND", "SESSION_INVALID", "SESSION_EXPIRED", "PLAYER_KICKED", "CCB_SESSION_INVALID"]);
 const serverTimedCommands = new Set<CCBCommand>([
-  "ccb.game.start", "ccb.game.next", "ccb.game.setAnswer", "ccb.game.imageHint", "ccb.character.image", "ccb.directory.import",
+  "ccb.game.start", "ccb.game.next", "ccb.game.setAnswer", "ccb.game.imageHint", "ccb.character.image", "ccb.subject.image", "ccb.directory.import",
 ]);
 
 export function resetCCBStateSync() {

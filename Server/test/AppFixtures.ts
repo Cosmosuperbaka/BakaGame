@@ -17,7 +17,7 @@ export function createTestApp(options: Omit<AppDependencies, "sonGuessrService" 
   });
   const ccbService = options.ccbService ?? new CCBService({ data: {
     searchCharacters: unused, searchSubjects: unused, getSubjectCharacters: unused, getSubjects: unused, getRawCharacter: unused,
-    getCharacter: unused, chooseRandomCharacter: unused, importDirectory: unused, resolveCharacterImage: unused, close() {},
+    getCharacter: unused, chooseRandomCharacter: unused, importDirectory: unused, resolveCharacterImage: unused, resolveSubjectImage: unused, close() {},
   } });
   releases.push(() => ccbService.close());
   return createApp({ ...options, sonGuessrService, ccbService });

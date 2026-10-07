@@ -27,7 +27,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
     getRawCharacter: async () => { throw new AppError('UNUSED', '测试不读取原始资料'); },
     getCharacter: async id => { getCalls.push(id); return character(id, id === 2); },
     chooseRandomCharacter: async () => character(1), importDirectory: async id => ({ id, subjectIds: [100], missingSubjectIds: [], importedAt: clock }),
-    resolveCharacterImage: async id => `https://images.invalid/${id}.jpg`, close: () => {}, ...overrides,
+    resolveCharacterImage: async id => `https://images.invalid/${id}.jpg`, resolveSubjectImage: async id => `https://images.invalid/s${id}.jpg`, close: () => {}, ...overrides,
   };
   const service = new CCBNativeService({ data, now: () => clock, random: () => 0, imageHints });
   const connect = (name: string): CCBTestClient => {

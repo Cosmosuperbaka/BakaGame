@@ -17,9 +17,24 @@ const CharacterResponse = Type.Object({
   stat: Type.Optional(Type.Object({ collects: Type.Optional(Type.Number()), comments: Type.Optional(Type.Number()) })),
   infobox: Type.Optional(Type.Array(Type.Object({ key: Type.String(), value: Type.Unknown() }))),
 });
+const SubjectResponse = Type.Object({
+  images: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
+});
 const DirectoryPage = Type.Object({
   total: Type.Integer({ minimum: 0 }), data: Type.Array(Type.Object({ id: Type.Integer({ minimum: 1 }) }), { maxItems: 100 }),
 });
+
+type ImageEntity = "character" | "subject";
+const MISS_TTL_MS = 300_000;
+
+/** 依次回退 `medium / large / common / grid`，只认 http(s) 地址。 */
+function pickImage(images: Record<string, string | null> | undefined): string | undefined {
+  const source = images ?? {};
+  return [source.medium, source.large, source.common, source.grid].find((candidate): candidate is string => {
+    if (!candidate) return false;
+    try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
+  });
+}
 
 export interface CCBCharacterSupplement {
   name?: string;
@@ -34,8 +49,9 @@ export interface CCBCharacterSupplement {
 export class CCBEnrichment {
   readonly db: Database;
   private readonly queue = new PQueue({ concurrency: 3 });
-  private readonly inFlight = new Map<number, Promise<string | undefined>>();
-  private readonly misses = new LRUCache<number, number>({ max: 1024 });
+  /** 键为 `实体:编号`：角色立绘与作品封面各自合并、各自负缓存 */
+  private readonly inFlight = new Map<string, Promise<string | undefined>>();
+  private readonly misses = new LRUCache<string, number>({ max: 1024 });
   private readonly now: () => number;
   private readonly fetcher: NonNullable<CCBDataOptions["fetcher"]>;
   private readonly apiBase: string;
@@ -65,33 +81,61 @@ export class CCBEnrichment {
     return row ? JSON.parse(row.payload) as CCBCharacterSupplement : {};
   }
 
-  readImage(id: number): string | undefined {
-    const row = this.db.query<{ payload: string }, [number]>("SELECT payload FROM enrichment WHERE entity='character' AND id=?").get(id);
+  readImage(id: number, entity: ImageEntity = "character"): string | undefined {
+    const row = this.db.query<{ payload: string }, [string, number]>("SELECT payload FROM enrichment WHERE entity=? AND id=?").get(entity, id);
     if (!row) return undefined;
     return rewriteBangumiImageUrl((JSON.parse(row.payload) as { image?: string }).image, this.imageBase);
   }
 
   resolveCharacterImage(id: number): Promise<string | undefined> {
+    return this.resolveImage("character", id, () => this.loadCharacter(id));
+  }
+
+  /** 作品封面：与猜歌的 `LocalBangumiProvider` 共用回填表的 `subject` 实体，同样只存上游原始地址。 */
+  resolveSubjectImage(id: number): Promise<string | undefined> {
+    return this.resolveImage("subject", id, () => this.loadSubject(id));
+  }
+
+  private resolveImage(entity: ImageEntity, id: number, load: () => Promise<string | undefined>): Promise<string | undefined> {
     if (!Number.isSafeInteger(id) || id <= 0 || this.closed) return Promise.resolve(undefined);
-    const persisted = this.readImage(id);
+    const persisted = this.readImage(id, entity);
     if (persisted) return Promise.resolve(persisted);
-    if (!this.apiBase || (this.misses.get(id) ?? 0) > this.now()) return Promise.resolve(undefined);
-    const running = this.inFlight.get(id);
+    const key = `${entity}:${id}`;
+    if (!this.apiBase || (this.misses.get(key) ?? 0) > this.now()) return Promise.resolve(undefined);
+    const running = this.inFlight.get(key);
     if (running) return running;
-    const request = this.loadCharacter(id).finally(() => this.inFlight.delete(id));
-    this.inFlight.set(id, request);
+    const request = load().finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, request);
     return request;
   }
 
-  private async loadCharacter(id: number): Promise<string | undefined> {
-    let raw: unknown;
+  /** 上游 404 记作缺图（短期负缓存）；其余失败原样抛出，不固化。 */
+  private async fetchEntity(entity: ImageEntity, id: number): Promise<unknown> {
     try {
-      raw = await this.request(`/v0/characters/${id}`);
+      return await this.request(`/v0/${entity === "character" ? "characters" : "subjects"}/${id}`);
     } catch (error) {
       if (!(error instanceof AppError) || error.code !== "CCB_DATA_NOT_FOUND") throw error;
-      this.misses.set(id, this.now() + 300_000);
+      this.misses.set(`${entity}:${id}`, this.now() + MISS_TTL_MS);
       return undefined;
     }
+  }
+
+  private async loadSubject(id: number): Promise<string | undefined> {
+    const raw = await this.fetchEntity("subject", id);
+    if (raw === undefined) return undefined;
+    if (!Value.Check(SubjectResponse, raw)) throw new AppError("CCB_DATA_INVALID", "作品资料格式无效");
+    const image = pickImage(raw.images);
+    if (!image) {
+      this.misses.set(`subject:${id}`, this.now() + MISS_TTL_MS);
+      return undefined;
+    }
+    this.db.query("INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
+    return rewriteBangumiImageUrl(image, this.imageBase);
+  }
+
+  private async loadCharacter(id: number): Promise<string | undefined> {
+    const raw = await this.fetchEntity("character", id);
+    if (raw === undefined) return undefined;
     if (!Value.Check(CharacterResponse, raw)) throw new AppError("CCB_DATA_INVALID", "角色补充资料格式无效");
     const next: CCBCharacterSupplement = { ...this.readCharacter(id) };
     if (raw.name?.trim()) next.name = raw.name.trim();
@@ -109,16 +153,12 @@ export class CCBEnrichment {
         if (aliases.length) next.aliases = [...new Set(aliases)];
       }
     }
-    const images = raw.images ?? {};
-    const image = [images.medium, images.large, images.common, images.grid].find((candidate) => {
-      if (!candidate) return false;
-      try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
-    });
+    const image = pickImage(raw.images);
     this.db.transaction(() => {
       if (Object.keys(next).length) this.db.query("INSERT INTO ccb_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at").run(id, JSON.stringify(next), this.now());
       if (image) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
     })();
-    if (!image) this.misses.set(id, this.now() + 300_000);
+    if (!image) this.misses.set(`character:${id}`, this.now() + MISS_TTL_MS);
     return image ? rewriteBangumiImageUrl(image, this.imageBase) : undefined;
   }
 
