@@ -214,7 +214,7 @@
 | `wordDock` | 谁是卧底词语停靠顶栏时的缩放（`scale`），顶栏占位按同一比例预留宽高 |
 | `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽、音量图标分档）自下顶上；步进器数值按增减方向取 `y` 的正负，新值顺着方向顶上来（`readoutTick`）。音量百分比这类连续跟手的读数用 `FollowNumber`：每位一只滚轮，位置由 `digitRoll.follow`（`spring.snap`）的弹簧驱动，目标变了带着当前速度续上，快速拖动不会像 `AnimatedNumber` 那样逐次重滚、互相打断而被吞掉；离散的分数变化仍用 `AnimatedNumber`。音量轨道粗细与滑块显隐走 CSS 的 `--motion-spring-snap` |
 | `toastItem` / `bannerRise` / `dropIn` | 提示自右缘推入、横幅自底部升起、状态条自上方落下 |
-| `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
+| `sunrise` | 谁是卧底夜晚反馈「天亮了」的日出图标自下升起（§2.2 允许的单元素纵向位移） |
 | `systemNotice` | 聊天系统提示从中线纵向展开 |
 | `speechReveal` | 发言内容沿基线浮现并由失焦变清晰 |
 | `scoreReveal` / `scoreRevealDelay` / `scoreRow` | 结算表逐行揭示：与 `listItem` 同一个入场，行距 `step` 比普通列表宽，名次才读得出先后；总跨度封顶在 `span`，人多时步长收窄。`ScoreTable` 逐行经 `custom` 传入 `scoreRevealDelay(index, count, ranked)`，不靠外层 stagger：按名次排列（`ranked`）自末行往上、第一名最后落定，按座次自上而下。`land` 是一行起播到大致落定的时长，行内数字从这时开始滚（`scoreRollDelay`） |

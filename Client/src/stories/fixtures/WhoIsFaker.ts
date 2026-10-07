@@ -196,6 +196,32 @@ const VOTE_HISTORY = [
   { day: 1, votes: VOTES.vote1 }, { day: 2, votes: VOTES.vote2 },
   { day: 2, tieBreak: true, votes: VOTES.tieVote2 }, { day: 3, votes: VOTES.vote3 },
 ];
+
+/** 夜间行动补上行动者身份，与服务端历史条目同形。 */
+const nightActions = (stage: keyof typeof NIGHT_ACTIONS) =>
+  NIGHT_ACTIONS[stage].map((action) => ({
+    ...action, actorRole: ROLE_OF[action.actorId] as "civilian" | "undercover",
+  }));
+
+type HistoryEntry = NonNullable<RoundSummary["history"]>[number];
+const voteEntry = (stage: WifStage, day: number, votes: VoteRecord[], eliminated: Person[], extra: Partial<HistoryEntry> = {}): HistoryEntry =>
+  ({ kind: "vote", day, createdAt: stageTime(stage, 80), votes, eliminatedPlayerIds: eliminated.map((person) => person.id), ...extra } as HistoryEntry);
+const nightEntry = (stage: keyof typeof NIGHT_ACTIONS, day: number, eliminated: Person[]): HistoryEntry =>
+  ({ kind: "night", day, createdAt: stageTime(stage, 80), actions: nightActions(stage), eliminatedPlayerIds: eliminated.map((person) => person.id) });
+
+/** 默认时间线的全局历史：与 `ELIMINATED_AFTER` 与 `VOTES` 逐条对应。 */
+const ROUND_HISTORY: HistoryEntry[] = [
+  voteEntry("vote1", 1, VOTES.vote1, [STONE]),
+  nightEntry("night1", 1, [AZUMI]),
+  voteEntry("vote2", 2, VOTES.vote2, [], { tieBreakCandidateIds: [PEACH.id, KITA.id] } as Partial<HistoryEntry>),
+  voteEntry("tieVote2", 2, VOTES.tieVote2, [PEACH], { tieBreak: true } as Partial<HistoryEntry>),
+  nightEntry("night2", 2, [LONG]),
+  voteEntry("vote3", 3, VOTES.vote3, [YUZU]),
+  {
+    kind: "blankGuess", day: 3, createdAt: stageTime("blankReview", 20), playerId: KITA.id,
+    guessedWords: ["饺子", "汤圆"], success: true, reason: "finale", reviewed: true,
+  },
+];
 // ==================== 玩家名单 ====================
 
 /** 房主标记与服务端一致按 hostPlayerId 推出：页面据此切换房主视图，玩家栏据此显示房主徽标。 */
@@ -430,9 +456,16 @@ export function wifRoundSummary(overrides: Partial<RoundSummary> = {}): RoundSum
     }],
     words: { pair: WORD_PAIR, ...WIF_WORDS },
     voteHistory: VOTE_HISTORY,
+    history: ROUND_HISTORY,
     ...overrides,
   };
 }
+
+/** 卧底胜结局里第 2 天的票型：白板被投出。 */
+const UNDERCOVER_VOTE2 = [
+  vote(ME, KITA), vote(PEACH, KITA), vote(KANADE, KITA),
+  vote(KITA, PEACH), vote(LONG, PEACH), vote(YUZU, KITA),
+];
 
 /**
  * 替代结局一次生成公开与私有视图，不能只换 summary 而沿用默认白板胜名单。
@@ -456,11 +489,24 @@ export function wifEndingScenario(winner: "undercover" | "good", viewer: WifView
     }],
     voteHistory: undercover ? [
       { day: 1, votes: VOTES.vote1 },
-      { day: 2, votes: [
-        vote(ME, KITA), vote(PEACH, KITA), vote(KANADE, KITA),
-        vote(KITA, PEACH), vote(LONG, PEACH), vote(YUZU, KITA),
-      ] },
+      { day: 2, votes: UNDERCOVER_VOTE2 },
     ] : VOTE_HISTORY,
+    history: undercover ? [
+      voteEntry("vote1", 1, VOTES.vote1, [STONE]),
+      nightEntry("night1", 1, [AZUMI]),
+      voteEntry("vote2", 2, UNDERCOVER_VOTE2, [KITA]),
+      {
+        kind: "blankGuess", day: 2, createdAt: stageTime("vote2", 85), playerId: KITA.id,
+        guessedWords: ["面团", "汤圆"], success: false, reason: "eliminated",
+      },
+      nightEntry("night2", 2, [LONG]),
+    ] : [
+      ...ROUND_HISTORY.slice(0, -1),
+      {
+        kind: "blankGuess", day: 3, createdAt: stageTime("blankReview", 80), playerId: KITA.id,
+        guessedWords: ["面团", "汤圆"], success: false, reason: "finale", reviewed: true,
+      },
+    ],
   });
   const players = roundPlayers("over", summary, eliminations);
   const snapshot = wifSnapshot("over", {
@@ -511,6 +557,46 @@ export function wifSnapshot(stage: WifStage, overrides: SnapshotPatch = {}): Who
     chat: wifChat(stage),
     ...(summary ? { summary } : {}),
     ...overrides,
+  });
+}
+
+/**
+ * 阶段反馈：停在某次结算之后、主持人继续之前。玩家名单取结算后的下一节点（出局已生效）。
+ * 平票投票反馈取第 2 天的 3:3 平票，夜晚反馈取第 1 夜，白板猜词反馈取终局猜词。
+ */
+export const WIF_FEEDBACK = {
+  vote: { after: "vote1", players: "night1" },
+  tie: { after: "vote2", players: "tie2" },
+  night: { after: "night1", players: "day2" },
+  blankGuess: { after: "blankReview", players: "blankReview" },
+} as const satisfies Record<string, { after: WifStage; players: WifStage }>;
+
+export function wifFeedbackSnapshot(kind: keyof typeof WIF_FEEDBACK): WhoIsFakerRoomSnapshot {
+  const { after, players } = WIF_FEEDBACK[kind];
+  const entry = kind === "vote" ? ROUND_HISTORY[0] : kind === "tie" ? ROUND_HISTORY[2] : kind === "night" ? ROUND_HISTORY[1] : ROUND_HISTORY[6];
+  const day = DAY_OF[after];
+  const feedback: NonNullable<WhoIsFakerRoomSnapshot["status"]["feedback"]> =
+    entry.kind === "vote"
+      ? {
+          kind: "vote", day, votes: entry.votes, eliminatedPlayerIds: entry.eliminatedPlayerIds,
+          ...(entry.tieBreakCandidateIds ? { tieBreakCandidateIds: entry.tieBreakCandidateIds } : {}),
+          next: entry.tieBreakCandidateIds ? "tieBreak" : "night",
+        }
+      : entry.kind === "night"
+        ? { kind: "night", day, eliminatedPlayerIds: entry.eliminatedPlayerIds, next: "description" }
+        : {
+            kind: "blankGuess", day, eliminatedPlayerIds: [], blankGuessReviewed: true, next: "gameOver",
+            blankGuess: {
+              playerId: KITA.id, guessedWords: BLANK_GUESS_WORDS, success: true, reason: "finale",
+              approvedByQuestioner: true, createdAt: stageTime("blankReview", 20),
+            },
+          };
+  const base = stageStatus(after, SUBMITTED_IN_PROGRESS);
+  return wifSnapshot(after, {
+    players: roundPlayers(players),
+    status: {
+      phase: "feedback", started: true, day, roundId: base.roundId, questionerPlayerId: base.questionerPlayerId, feedback,
+    },
   });
 }
 

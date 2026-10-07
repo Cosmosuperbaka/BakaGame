@@ -381,7 +381,7 @@ export default function WhoIsFakerRoomPage() {
   }
 
   const roleConfig = snapshot.settings.roleConfig;
-  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "gameOver"].includes(phase);
+  const dayVisible = ["description", "voting", "tieBreak", "night", "blankGuess", "feedback", "gameOver"].includes(phase);
   const privateInfoVisible = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
   const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 

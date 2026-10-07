@@ -467,9 +467,16 @@ test("投票阶段超时自动为未投票玩家提交弃票并结算", async ()
   await context.service.runHousekeeping();
 
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
-  // 全员弃票后无人出局，进入夜晚阶段
-  expect(snapshot.status.phase).toBe("night");
+  // 未投票者补弃票后结算，先停在投票反馈，继续后进入夜晚阶段
+  expect(snapshot.status.phase).toBe("feedback");
+  expect(snapshot.status.feedback?.kind).toBe("vote");
+  expect(snapshot.status.feedback?.votes?.some((vote) => vote.targetId === "abstain")).toBe(true);
+  expect(snapshot.status.feedback?.next).toBe("night");
   expect(snapshot.status.phaseTimer).toBeUndefined();
+
+  await execute(context.service, connHost, { id: "msg_continue", type: "game.advancePhase", payload: {} });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
+  expect(snapshot.status.phase).toBe("night");
 });
 
 test("夜晚阶段超时自动放弃行动并推进结算", async () => {
@@ -514,7 +521,13 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
   await context.service.runHousekeeping();
 
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
-  // 夜晚超时自动放弃行动并天亮进入描述阶段
-  expect(snapshot.status.phase).toBe("description");
+  // 夜晚超时自动放弃行动，天亮反馈后进入描述阶段
+  expect(snapshot.status.phase).toBe("feedback");
+  expect(snapshot.status.feedback).toMatchObject({ kind: "night", eliminatedPlayerIds: [], next: "description" });
   expect(snapshot.status.phaseTimer).toBeUndefined();
+
+  await execute(context.service, connHost, { id: "msg_continue", type: "game.advancePhase", payload: {} });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
+  expect(snapshot.status.phase).toBe("description");
+  expect(snapshot.status.day).toBe(2);
 });

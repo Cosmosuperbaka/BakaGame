@@ -10,6 +10,7 @@ export const PHASE_LABELS: Record<WhoIsFakerPhase, string> = {
   tieBreak: "平票PK",
   night: "夜晚阶段",
   blankGuess: "白板猜词",
+  feedback: "阶段反馈",
   gameOver: "游戏结束",
 };
 

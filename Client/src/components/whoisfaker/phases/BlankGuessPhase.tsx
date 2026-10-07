@@ -44,12 +44,13 @@ export function BlankGuessButton() {
   // 确认弹窗从入口按钮展开，关闭时收回
   const { origin, capture } = useOriginTracker();
 
-  // 已在猜词阶段时入口收起，界面交给下面的输入组件。
+  // 已在猜词阶段时入口收起，界面交给下面的输入组件；阶段反馈期间服务端同样不接受插入猜词。
   const canEnter =
     (privateState?.canSubmitBlankGuess ?? false) &&
     !(privateState?.blankGuessUsed ?? false) &&
     phase !== "gameOver" &&
-    phase !== "blankGuess";
+    phase !== "blankGuess" &&
+    phase !== "feedback";
 
   const handleEnter = useCallback(async () => {
     await run(async () => {
@@ -214,7 +215,7 @@ function BlankGuessInput() {
 }
 
 /** 猜词内容的实时读数。空格子留占位，读作「还在写」。 */
-function GuessReadout({
+export function GuessReadout({
   words,
   submitted,
 }: {

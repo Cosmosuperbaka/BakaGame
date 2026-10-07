@@ -69,6 +69,9 @@ const setupViews = async (connectionCount = 150) => {
     targetId: client === dead ? active[1].record.playerId! : dead.record.playerId!,
   } });
   await command(host, { type: "game.advancePhase", payload: {} });
+  expect(snapshot(host).status.phase).toBe("feedback");
+  // 投票反馈：出题人继续后入夜。
+  await command(host, { type: "game.advancePhase", payload: {} });
   const spectators: ViewClient[] = [];
   for (let index = connectionCount - 3; index < connectionCount; index++) {
     const client = connect(index); spectators.push(client);
@@ -224,11 +227,16 @@ test("目标同步和阶段切换重新核算ghost权限，不跨发布缓存或
   const alive = f.active.slice(1), undercover = alive.at(-1)!;
   for (const client of alive) await f.command(client, { type: "game.submitNightAction", payload: { targetId: null } });
   await f.command(f.host, { type: "game.advancePhase", payload: {} });
+  await f.command(f.host, { type: "game.advancePhase", payload: {} });
   for (const client of alive) await f.command(client, { type: "game.submitDescription", payload: { text: "第二天描述" } });
   await f.command(f.host, { type: "game.advancePhase", payload: {} });
   for (const client of alive) await f.command(client, { type: "game.submitVote", payload: {
     targetId: client === undercover ? alive[0].record.playerId! : undercover.record.playerId!,
   } });
+  await f.command(f.host, { type: "game.advancePhase", payload: {} });
+  // 反馈阶段仍在局内，ghost 聊天继续按权限隔离。
+  expect(snapshot(f.host).status.phase).toBe("feedback");
+  expect(new Set(f.clients.map(snapshot)).size).toBe(2);
   await f.command(f.host, { type: "game.advancePhase", payload: {} });
   expect(snapshot(f.host).status.phase).toBe("gameOver");
   expect(new Set(f.clients.map(snapshot)).size).toBe(1);

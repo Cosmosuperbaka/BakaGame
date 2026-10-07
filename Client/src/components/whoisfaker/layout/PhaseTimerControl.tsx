@@ -34,10 +34,11 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
   const phase = snapshot?.status.phase;
   const phaseTimer = snapshot?.status.phaseTimer;
 
-  // 选择出题人、出题阶段、等待中和结算阶段不支持设置倒计时
+  // 选择出题人、出题阶段、等待中、阶段反馈和结算阶段不支持设置倒计时
   const isSupportedPhase =
     phase !== undefined &&
     phase !== "assigningQuestioner" &&
+    phase !== "feedback" &&
     phase !== "wordSubmission" &&
     phase !== "waiting" &&
     phase !== "gameOver";

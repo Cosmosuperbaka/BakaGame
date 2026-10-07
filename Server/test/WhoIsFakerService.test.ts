@@ -556,9 +556,19 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   const resolutionSnapshots = getEventPayloads<WhoIsFakerRoomSnapshot>(host, "room.snapshot").slice(
     snapshotsBeforeResolution,
   );
+  // 决出胜负时先停在投票反馈：出局已落地，继续后才结算。
   const eliminationSnapshot = resolutionSnapshots.find(
-    (item) => item.status.phase === "voting",
+    (item) => item.status.phase === "feedback",
   );
+  expect(eliminationSnapshot?.status.feedback?.kind).toBe("vote");
+  expect(eliminationSnapshot?.status.feedback?.eliminatedPlayerIds).toEqual([hostResult.playerId]);
+  expect(eliminationSnapshot?.status.feedback?.votes).toHaveLength(4);
+  expect(eliminationSnapshot?.status.feedback?.next).toBe("gameOver");
+  await execute(service, questioner.connection, {
+    id: "continue-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
   const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(eliminationSnapshot?.players.find((player) => player.id === hostResult.playerId)?.roundStatus)
     .toBe("dead");
@@ -568,6 +578,9 @@ test("常规流程可以完整进入好人胜利结算", async () => {
   expect(snapshot?.summary?.words?.undercoverWord).toBeTruthy();
   expect(snapshot?.summary?.voteHistory).toHaveLength(1);
   expect(snapshot?.summary?.voteHistory?.[0]?.votes).toHaveLength(4);
+  expect(snapshot?.summary?.history).toMatchObject([
+    { kind: "vote", day: 1, eliminatedPlayerIds: [hostResult.playerId] },
+  ]);
   expect(snapshot?.players.find((player) => player.id === hostResult.playerId)?.score).toBe(0);
   expect(
     snapshot?.players.find((player) => player.id === joined[0].joinResult.playerId)?.score,
@@ -660,6 +673,15 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   });
 
   let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("feedback");
+  expect(snapshot?.status.feedback?.tieBreakCandidateIds).toHaveLength(2);
+  expect(snapshot?.status.feedback?.next).toBe("tieBreak");
+  await execute(service, questioner.connection, {
+    id: "continue-1",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("tieBreak");
   expect(snapshot?.status.tieBreakStage).toBe("description");
 
@@ -667,7 +689,7 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
   const candidates = snapshot?.status.tieBreakCandidateIds ?? [];
   expect(candidates).toHaveLength(2);
   expect(snapshot?.status.tieBreakIndex).toBe(1);
-  expect(getEventPayloads<Record<string, never>>(host, "game.voteResult").at(-1)).toEqual({});
+  expect(getEventPayloads(host, "game.voteResult")).toHaveLength(0);
 
   const tieOrder = snapshot?.status.speechOrder ?? [];
   expect(tieOrder).toEqual(snapshot?.status.tieBreakCandidateIds ?? []);
@@ -719,6 +741,13 @@ test("平票会进入 tieBreak 并在第二轮后进入夜晚阶段", async () =
     payload: {},
   });
 
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.feedback).toMatchObject({ kind: "vote", tieBreak: true, next: "night" });
+  await execute(service, questioner.connection, {
+    id: "continue-2",
+    type: "game.advancePhase",
+    payload: {},
+  });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("night");
 });
@@ -829,6 +858,11 @@ test("白板被淘汰后不能再主动发起猜词", async () => {
 
   await execute(service, questioner.connection, {
     id: "resolve",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  await execute(service, questioner.connection, {
+    id: "continue",
     type: "game.advancePhase",
     payload: {},
   });
@@ -1146,6 +1180,11 @@ test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚�
     type: "game.advancePhase",
     payload: {},
   });
+  await execute(service, questioner.connection, {
+    id: "continue-vote",
+    type: "game.advancePhase",
+    payload: {},
+  });
 
   let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(questioner.connection, "room.snapshot");
   expect(snapshot?.status.phase).toBe("night");
@@ -1223,12 +1262,21 @@ test("夜晚中途有人被淘汰后，其余玩家保留未受影响的夜晚�
     payload: {},
   });
 
+  // 天亮反馈只公开死者，不带凶手；继续后才进入下一天。
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(questioner.connection, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("feedback");
+  expect(snapshot?.status.feedback).toMatchObject({ kind: "night", day: 1, next: "description" });
+  expect(JSON.stringify(snapshot?.status.feedback)).not.toContain("actorId");
+  expect(snapshot?.status.day).toBe(1);
+  await execute(service, questioner.connection, {
+    id: "continue-night",
+    type: "game.advancePhase",
+    payload: {},
+  });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(questioner.connection, "room.snapshot");
   expect(snapshot?.status.phase).toBe("description");
   expect(snapshot?.status.day).toBe(2);
-  expect(
-    getEventPayloads<{ day: number }>(questioner.connection, "game.daybreak").at(-1)?.day,
-  ).toBe(2);
+  expect(getEventPayloads(questioner.connection, "game.daybreak")).toHaveLength(0);
 });
 
 test("掉线玩家只能通过 session token 恢复原席位", async () => {
@@ -2244,6 +2292,19 @@ test("真实结算结果展示结束前不能返回等待阶段", async () => {
     type: "game.advancePhase",
     payload: {},
   });
+  // 反馈只有出题人能继续，房主不行。
+  let hostContinueError: string | undefined;
+  try {
+    await execute(service, host, { id: "host-continue", type: "game.advancePhase", payload: {} });
+  } catch (error) {
+    hostContinueError = (error as { code?: string }).code;
+  }
+  expect(hostContinueError).toBe("FORBIDDEN");
+  await execute(service, questioner.connection, {
+    id: "continue-voting",
+    type: "game.advancePhase",
+    payload: {},
+  });
   expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.status.phase).toBe("gameOver");
 
   let errorCode: string | undefined;
@@ -2533,6 +2594,11 @@ test("夜晚踢人会保留其他有效动作并让机器人补齐缺失动作",
     type: "game.advancePhase",
     payload: {},
   });
+  await execute(service, host, {
+    id: "continue-after-night-kick",
+    type: "game.advancePhase",
+    payload: {},
+  });
   expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.status.phase).toBe(
     "description",
   );
@@ -2620,6 +2686,15 @@ test("平票PK第二轮再次平票时无人出局并直接进入夜晚", async 
   });
 
   let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("feedback");
+  expect(snapshot?.status.feedback?.tieBreakCandidateIds).toHaveLength(2);
+  expect(snapshot?.status.feedback?.next).toBe("tieBreak");
+  await execute(service, questioner.connection, {
+    id: "continue-1",
+    type: "game.advancePhase",
+    payload: {},
+  });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("tieBreak");
   expect(snapshot?.status.tieBreakStage).toBe("description");
 
@@ -2665,6 +2740,15 @@ test("平票PK第二轮再次平票时无人出局并直接进入夜晚", async 
     payload: {},
   });
 
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  // 再次平票的反馈里无人出局，也不再有 PK 候选
+  expect(snapshot?.status.feedback).toMatchObject({ kind: "vote", tieBreak: true, eliminatedPlayerIds: [], next: "night" });
+  expect(snapshot?.status.feedback?.tieBreakCandidateIds).toBeUndefined();
+  await execute(service, questioner.connection, {
+    id: "continue-2",
+    type: "game.advancePhase",
+    payload: {},
+  });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   // 必须进入夜晚且全员存活，无人出局
   expect(snapshot?.status.phase).toBe("night");
@@ -2965,7 +3049,11 @@ test("白板猜词打断发言阶段后，裁定未通过恢复原阶段并还�
     payload: { approve: false },
   });
 
-  // 检查阶段恢复为 description，且剩余倒计时被还原为约 40 秒
+  // 先停在猜词反馈，继续后阶段恢复为 description，且剩余倒计时被还原为约 40 秒
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(player.connection, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("feedback");
+  expect(snapshot?.status.phaseTimer).toBeUndefined();
+  await execute(service, host, { id: "continue-review", type: "game.advancePhase", payload: {} });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(player.connection, "room.snapshot");
   expect(snapshot?.status.phase).toBe("description");
   expect(snapshot?.status.phaseTimer).toBeDefined();
@@ -3027,7 +3115,10 @@ test("白板猜词期间白板掉线且出题人选择等待时，系统强制�
   advanceTime(61_000);
   await service.runHousekeeping();
 
-  // 房间自动结束猜词阶段并切回原阶段继续，杜绝永久死锁
+  // 房间自动结束猜词阶段，反馈后切回原阶段继续，杜绝永久死锁
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.status.phase).toBe("feedback");
+  await execute(service, host, { id: "continue-timeout", type: "game.advancePhase", payload: {} });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
   expect(snapshot?.status.phase).toBe("description");
 });

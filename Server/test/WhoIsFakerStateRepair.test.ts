@@ -35,7 +35,13 @@ const setupRound = async (roomId = "8920", botCount = 0) => {
   };
   const advance = () => command(questioner, { type: "game.advancePhase", payload: {} });
   const startTimer = () => command(questioner, { type: "game.startPhaseTimer", payload: { durationSeconds: 60 } });
-  return { ...context, questioner, participants, blank: participants[0], command, snapshot, describeAll, advance, startTimer };
+  /** 结算后先停在阶段反馈，出题人继续一次才进入下一阶段。 */
+  const settle = async () => {
+    expect(snapshot().status.phase).toBe("feedback");
+    expect(snapshot().status.phaseTimer).toBeUndefined();
+    await advance();
+  };
+  return { ...context, questioner, participants, blank: participants[0], command, snapshot, describeAll, advance, startTimer, settle };
 };
 
 test("提前推进描述、投票、PK两子阶段及夜晚失败不撤销倒计时，原超时仅推进一次", async () => {
@@ -63,6 +69,7 @@ test("提前推进描述、投票、PK两子阶段及夜晚失败不撤销倒计
   // 4比4平票；成功推进撤销旧计时器。
   for (const [i, c] of f.participants.entries()) await f.command(c, { type: "game.submitVote", payload: { targetId: f.participants[[0, 1, 3, 4].includes(i) ? 2 : 3].record.playerId! } });
   await f.advance();
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("tieBreak");
   expect(f.snapshot().status.phaseTimer).toBeUndefined();
   await assertRejectedKeepsTimer();
@@ -72,10 +79,12 @@ test("提前推进描述、投票、PK两子阶段及夜晚失败不撤销倒计
   await assertRejectedKeepsTimer();
   for (const c of f.participants.filter((_, i) => i !== 2 && i !== 3)) await f.command(c, { type: "game.submitVote", payload: { targetId: "abstain" } });
   await f.advance();
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("night");
   await assertRejectedKeepsTimer();
   f.advanceTime(60_001);
   await f.service.runHousekeeping();
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("description");
   expect(f.snapshot().status.phaseTimer).toBeUndefined();
 });
@@ -92,6 +101,7 @@ for (const exit of ["reject", "reviewTimeout", "draftTimeout"] as const) {
     if (exit !== "draftTimeout") await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
     if (exit === "reject") await f.command(f.questioner, { type: "game.reviewBlankGuess", payload: { approve: false } });
     else { await f.startTimer(); f.advanceTime(60_001); await f.service.runHousekeeping(); }
+    await f.settle();
     expect(f.snapshot().status.phase).toBe("description");
     expect(f.snapshot().status.speechMode).toBe("supplement");
     expect(f.snapshot().status.phaseTimer?.speechMode).toBe("supplement");
@@ -114,6 +124,9 @@ for (const draft of [["", ""], ["苹果", ""], ["苹果", "苹果"], ["\u0000", 
     if (draft[0] === draft[1]) await expect(f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: draft } })).rejects.toMatchObject({ code: "INVALID_WORD_PAIR" });
     await f.startTimer(); f.advanceTime(60_001); await f.service.runHousekeeping();
     const success = draft[0] === "香蕉";
+    expect(f.snapshot().status.feedback?.blankGuess?.success).toBe(success);
+    expect(f.snapshot().status.blankGuessPlayerId).toBeUndefined();
+    await f.settle();
     expect(f.snapshot().status.phase).toBe(success ? "gameOver" : "description");
     expect(f.snapshot().status.blankGuessPlayerId).toBeUndefined();
     expect(getLastEventPayload<WhoIsFakerPrivateState>(f.blank, "game.privateState")!.blankGuessUsed).toBe(true);
@@ -147,6 +160,9 @@ test("真正残局白板猜错并判错按延后赢家结算，计分与上下�
   const undercoverId = f.participants[1].record.playerId!;
   for (const c of f.participants) await f.command(c, { type: "game.submitVote", payload: { targetId: c === f.participants[1] ? f.participants[2].record.playerId! : undercoverId } });
   await f.advance();
+  // 投票反馈预告残局猜词，继续后才进入。
+  expect(f.snapshot().status.feedback?.next).toBe("blankGuess");
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("blankGuess");
   expect(f.snapshot().status.blankGuessReason).toBe("finale");
   const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
@@ -154,8 +170,11 @@ test("真正残局白板猜错并判错按延后赢家结算，计分与上下�
   await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
   expect(f.snapshot().status.blankGuessPendingReview).toBe(true);
   await f.command(f.questioner, { type: "game.reviewBlankGuess", payload: { approve: false } });
+  expect(f.snapshot().status.feedback?.next).toBe("gameOver");
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("gameOver");
   expect(f.snapshot().summary?.winner).toBe("good");
+  expect(f.snapshot().summary?.history?.map((entry) => entry.kind)).toEqual(["vote", "blankGuess"]);
   expect(room.round!.summary!.awardedScores.find((entry) => entry.playerId === f.participants[2].record.playerId!)!.delta).toBe(1);
   expect(f.snapshot().players.find((entry) => entry.id === f.participants[2].record.playerId!)!.score).toBe(1);
   expect(f.snapshot().summary!.awardedScores.some((entry) => entry.playerId === f.blank.record.playerId)).toBe(false);
@@ -194,6 +213,7 @@ for (const phase of ["description", "voting", "tieBreakDescription", "tieBreakVo
     if (phase === "tieBreakDescription" || phase === "tieBreakVote") {
       for (const [i, c] of f.participants.entries()) await f.command(c, { type: "game.submitVote", payload: { targetId: f.participants[[0, 1, 3, 4].includes(i) ? 2 : 3].record.playerId! } });
       await f.advance();
+      await f.settle();
       if (phase === "tieBreakVote") {
         for (const c of f.participants.slice(2, 4)) await f.command(c, { type: "game.submitDescription", payload: { text: "PK" } });
         await f.advance();
@@ -202,6 +222,7 @@ for (const phase of ["description", "voting", "tieBreakDescription", "tieBreakVo
     } else if (phase === "night") {
       for (const c of f.participants) await f.command(c, { type: "game.submitVote", payload: { targetId: "abstain" } });
       await f.advance();
+      await f.settle();
       await f.command(f.participants[2], { type: "game.submitNightAction", payload: {} });
     } else if (phase === "voting") {
       await f.command(f.participants[2], { type: "game.submitVote", payload: { targetId: f.participants[3].record.playerId! } });
@@ -212,6 +233,7 @@ for (const phase of ["description", "voting", "tieBreakDescription", "tieBreakVo
     await f.command(f.blank, { type: "game.enterBlankGuess", payload: {} });
     await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
     await f.command(f.questioner, { type: "game.reviewBlankGuess", payload: { approve: false } });
+    await f.settle();
     expect(room.round!.phase).toBe(original.phase);
     expect(room.round!.speechMode).toBe(original.mode);
     expect(room.round!.tieBreak).toEqual(original.tieBreak);
@@ -232,6 +254,7 @@ for (const phase of ["description", "supplement", "tieBreak"] as const) {
     if (phase === "tieBreak") {
       for (const [i, c] of f.participants.entries()) await f.command(c, { type: "game.submitVote", payload: { targetId: f.participants[[0, 1, 3, 4].includes(i) ? 2 : 3].record.playerId! } });
       await f.advance();
+      await f.settle();
     }
     const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
     // 仅在隔离测试里模拟运行时名册缺席，锁定已有超时占位作者契约。
@@ -303,6 +326,7 @@ test("在线白板及待裁定当前没有自动截止，手动计时可取消�
   await f.command(f.questioner, { type: "game.resolveDisconnect", payload: { playerId, resolution: "wait" } });
   expect(f.snapshot().status.phaseTimer?.durationSeconds).toBe(60);
   f.advanceTime(60_001); await f.service.runHousekeeping();
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("description");
   expect(f.snapshot().status.blankGuessPendingReview).toBeUndefined();
 });
@@ -338,7 +362,57 @@ test("猜词打断期间移除最后补充者只修改恢复目标，不逃逸�
   expect(f.snapshot().status.phaseTimer).toEqual(timer);
   await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
   await f.command(f.questioner, { type: "game.reviewBlankGuess", payload: { approve: false } });
+  await f.settle();
   expect(f.snapshot().status.phase).toBe("voting");
   expect(f.snapshot().status.supplementIndex).toBeUndefined();
   expect(f.snapshot().status.phaseTimer).toBeUndefined();
+});
+
+test("反馈期间离场只记出局并按新局面改写去向，历史按时间记录票型、夜晚行动与离场", async () => {
+  const f = await setupRound(); await f.describeAll(); await f.advance();
+  const civilian = f.participants[3].record.playerId!;
+  for (const c of f.participants) await f.command(c, { type: "game.submitVote", payload: { targetId: c === f.participants[3] ? f.participants[4].record.playerId! : civilian } });
+  await f.advance();
+  expect(f.snapshot().status.feedback).toMatchObject({ kind: "vote", eliminatedPlayerIds: [civilian], next: "night" });
+  // 反馈阶段不能开计时，出题人以外不能继续。
+  await expect(f.startTimer()).rejects.toMatchObject({ code: "INVALID_PHASE" });
+  await expect(f.command(f.participants[2], { type: "game.advancePhase", payload: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  // 卧底离场：好人已赢但白板仍在，去向改为残局猜词。
+  await f.command(f.participants[1], { type: "room.leave", payload: {} });
+  expect(f.snapshot().status.phase).toBe("feedback");
+  expect(f.snapshot().status.feedback?.next).toBe("blankGuess");
+  await f.advance();
+  expect(f.snapshot().status.phase).toBe("blankGuess");
+  expect(f.snapshot().status.blankGuessReason).toBe("finale");
+  await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
+  await f.command(f.questioner, { type: "game.reviewBlankGuess", payload: { approve: false } });
+  await f.settle();
+  const history = f.snapshot().summary!.history!;
+  expect(history.map((entry) => entry.kind)).toEqual(["vote", "removal", "blankGuess"]);
+  expect(history[0]).toMatchObject({ kind: "vote", day: 1, eliminatedPlayerIds: [civilian] });
+  expect(history[1]).toMatchObject({ kind: "removal", reason: "left" });
+  expect(history[2]).toMatchObject({ kind: "blankGuess", success: false, reviewed: true, reason: "finale" });
+});
+
+test("夜晚反馈不公开凶手，结算历史公开每人的夜晚行动", async () => {
+  const f = await setupRound(); await f.describeAll(); await f.advance();
+  for (const c of f.participants) await f.command(c, { type: "game.submitVote", payload: { targetId: "abstain" } });
+  await f.advance(); await f.settle();
+  const victim = f.participants[5].record.playerId!;
+  await f.command(f.participants[1], { type: "game.submitNightAction", payload: { targetId: victim } });
+  for (const c of f.participants.slice(2)) await f.command(c, { type: "game.submitNightAction", payload: {} });
+  await f.advance();
+  const feedback = f.snapshot().status.feedback!;
+  expect(feedback).toMatchObject({ kind: "night", day: 1, eliminatedPlayerIds: [victim], next: "description" });
+  expect(JSON.stringify(f.snapshot())).not.toContain('"actorId"');
+  await f.advance();
+  expect(f.snapshot().status).toMatchObject({ phase: "description", day: 2 });
+  await expect(f.command(f.questioner, { type: "test.jumpToPhase", payload: { phase: "feedback" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  // 结束本局查看历史：出题人以中止方式离开会直接结算。
+  await f.command(f.questioner, { type: "room.leave", payload: {} });
+  const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get("8920")!;
+  const night = room.round!.summary!.history!.find((entry) => entry.kind === "night");
+  expect(night).toMatchObject({ kind: "night", eliminatedPlayerIds: [victim] });
+  expect(night && night.kind === "night" ? night.actions.find((action) => action.actorId === f.participants[1].record.playerId!) : undefined)
+    .toMatchObject({ actorRole: "undercover", targetId: victim });
 });

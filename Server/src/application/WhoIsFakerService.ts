@@ -1,8 +1,11 @@
 import { AppError } from "../domain/Errors";
 import type {
   ChatChannel,
+  BlankGuessRecord,
   ChatMessage,
   ConnectionRecord,
+  FeedbackContinuation,
+  FeedbackNext,
   DescriptionRecord,
   WhoIsFakerPhase,
   GameRound,
@@ -13,6 +16,8 @@ import type {
   WhoIsFakerPrivateState,
   PublicPlayerView,
   RoleConfig,
+  RoundFeedback,
+  RoundHistoryEntry,
   WhoIsFakerRoomRecord,
   WhoIsFakerRoomSnapshot,
   WhoIsFakerRoomSummary,
@@ -714,6 +719,7 @@ export class WhoIsFakerService {
     round.descriptionSubmittedBy = [];
     round.votes = [];
     round.voteHistory = [];
+    round.history = [];
     round.tieBreak = undefined;
     round.nightActions = [];
     round.blankGuessContext = undefined;
@@ -765,10 +771,14 @@ export class WhoIsFakerService {
     }
 
     const round = this.requireRound(room);
-    this.ensureQuestioner(round, player.id);
+    // 测试房跳转后可能没有出题人，反馈继续与计时一样放开给房内任何人，免得卡在反馈里。
+    if (!(phase === "feedback" && room.id === ROOM_ID_TEST_MODE)) {
+      this.ensureQuestioner(round, player.id);
+    }
     this.ensurePhaseNotBlocked(round);
 
-    if (round.supplement) {
+    // 白板从补充发言中途猜词失败时，反馈期间补充上下文仍保留，不能挡住继续。
+    if (round.supplement && phase !== "feedback") {
       throw new AppError("PHASE_INCOMPLETE", "出题人发起的补充发言尚未完成");
     }
 
@@ -832,6 +842,9 @@ export class WhoIsFakerService {
         }
         this.clearPhaseTimer(room);
         await this.resolveNight(room);
+        break;
+      case "feedback":
+        await this.applyFeedbackContinuation(room);
         break;
       default:
         throw new AppError("INVALID_PHASE", "当前阶段不能手动推进");
@@ -1184,7 +1197,11 @@ export class WhoIsFakerService {
     });
 
     if (guess.success) {
-      await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
+      this.enterBlankGuessFeedback(room, guess, false, {
+        type: "finish",
+        winner: "blank",
+        reason: "白板猜中全部词语，获得胜利",
+      });
     } else {
       // 自动比对只认完全一致。细微差异交由主持人裁定，阶段继续阻塞。
       round.blankGuessContext.pendingReview = { words: guess.guessedWords };
@@ -1300,9 +1317,14 @@ export class WhoIsFakerService {
       throw new AppError("ACTION_FORBIDDEN", "当前没有待裁定的白板猜词");
     }
 
+    const record = round.blankGuessRecords.at(-1);
+
+    if (!record) {
+      throw new AppError("ACTION_FORBIDDEN", "当前没有待裁定的白板猜词");
+    }
+
     this.clearPhaseTimer(room);
     round.blankGuessContext!.pendingReview = undefined;
-    const record = round.blankGuessRecords.at(-1);
 
     await this.log({
       type: "game.blank_guess_reviewed",
@@ -1313,14 +1335,17 @@ export class WhoIsFakerService {
     });
 
     if (approve) {
-      if (record) {
-        record.success = true;
-        record.approvedByQuestioner = true;
-      }
-      await this.finishRound(room, "blank", "白板猜词经主持人判定有效，获得胜利");
-    } else {
-      await this.resolveFailedBlankGuess(room, "白板猜词未通过，游戏继续");
+      record.success = true;
+      record.approvedByQuestioner = true;
     }
+    this.enterBlankGuessFeedback(
+      room,
+      record,
+      true,
+      approve
+        ? { type: "finish", winner: "blank", reason: "白板猜词经主持人判定有效，获得胜利" }
+        : { type: "blankFailed", message: "白板猜词未通过，游戏继续" },
+    );
 
     this.touchRoom(room);
     this.requeuePendingDisconnects(room);
@@ -1386,6 +1411,7 @@ export class WhoIsFakerService {
     if (
       phase === "assigningQuestioner" ||
       phase === "wordSubmission" ||
+      phase === "feedback" ||
       phase === "gameOver"
     ) {
       throw new AppError("INVALID_PHASE", "当前阶段不支持设置倒计时");
@@ -1671,18 +1697,27 @@ export class WhoIsFakerService {
     if (currentPhase === "blankGuess") {
       const ctx = round.blankGuessContext;
       if (ctx) {
-        if (ctx.pendingReview) {
+        const pendingRecord = ctx.pendingReview ? round.blankGuessRecords.at(-1) : undefined;
+        if (ctx.pendingReview && pendingRecord) {
+          this.enterBlankGuessFeedback(room, pendingRecord, true, {
+            type: "blankFailed",
+            message: "白板猜词裁定超时未通过，游戏继续",
+          });
+        } else if (ctx.pendingReview) {
           ctx.pendingReview = undefined;
           await this.resolveFailedBlankGuess(room, "白板猜词裁定超时未通过，游戏继续");
         } else {
           const guess = evaluateBlankGuessDraft(round, ctx.draft ?? ["", ""], this.now(), ctx.reason);
           round.blankGuessUsed = true;
           round.blankGuessRecords.push(guess);
-          if (guess.success) {
-            await this.finishRound(room, "blank", "白板猜中全部词语，获得胜利");
-          } else {
-            await this.resolveFailedBlankGuess(room, "白板猜词超时失败，游戏继续");
-          }
+          this.enterBlankGuessFeedback(
+            room,
+            guess,
+            false,
+            guess.success
+              ? { type: "finish", winner: "blank", reason: "白板猜中全部词语，获得胜利" }
+              : { type: "blankFailed", message: "白板猜词超时失败，游戏继续" },
+          );
         }
         this.touchRoom(room);
         this.requeuePendingDisconnects(room);
@@ -1730,7 +1765,7 @@ export class WhoIsFakerService {
 
     const isIngame = Boolean(
       room.round &&
-      ["description", "voting", "tieBreak", "night", "blankGuess"].includes(room.round.phase),
+      ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(room.round.phase),
     );
 
     if (isIngame) {
@@ -1803,6 +1838,11 @@ export class WhoIsFakerService {
       throw new AppError("FORBIDDEN", "仅测试房间允许使用跳转控制器");
     }
 
+    // 反馈阶段只由结算产生，没有可凭空构造的结果。
+    if (target === "feedback") {
+      throw new AppError("INVALID_PHASE", "阶段反馈由结算产生，不能直接跳转");
+    }
+
     this.clearPhaseTimer(room);
 
     if (target === "waiting") {
@@ -1857,11 +1897,14 @@ export class WhoIsFakerService {
       round.descriptionSubmittedBy = [];
       round.votes = [];
       round.voteHistory = [];
+      round.history = [];
       round.tieBreak = undefined;
       round.nightActions = [];
       round.blankGuessUsed = false;
       round.blankGuessRecords = [];
       round.blankGuessContext = undefined;
+      round.feedback = undefined;
+      round.feedbackContinuation = undefined;
       round.pendingDisconnectPlayerIds = [];
       round.questionerReconnectDeadlineAt = undefined;
       round.summary = undefined;
@@ -1903,6 +1946,9 @@ export class WhoIsFakerService {
       round.assignments = assigned.assignments;
     }
 
+    round.feedback = undefined;
+    round.feedbackContinuation = undefined;
+
     switch (target) {
       case "wordSubmission":
         round.phase = "wordSubmission";
@@ -1914,6 +1960,7 @@ export class WhoIsFakerService {
         round.descriptionSubmittedBy = [];
         round.votes = [];
         round.voteHistory = [];
+        round.history = [];
         round.tieBreak = undefined;
         round.nightActions = [];
         round.blankGuessUsed = false;
@@ -2184,6 +2231,7 @@ export class WhoIsFakerService {
       blankGuessUsed: false,
       blankGuessRecords: [],
       pendingDisconnectPlayerIds: [],
+      history: [],
     };
 
     this.touchRoom(room);
@@ -2216,9 +2264,9 @@ export class WhoIsFakerService {
   }
 
   private async resolveVoting(room: WhoIsFakerRoomRecord, tieBreak: boolean) {
-    // 这个方法只负责“投票结算”，真正的胜负判断交给后续统一淘汰流程。
+    // 投票结算：出局立即落地并进入反馈，胜负与下一阶段留到出题人继续时统一判定。
     const round = this.requireRound(room);
-    const votes = tieBreak ? round.tieBreak?.votes ?? [] : round.votes;
+    const votes = (tieBreak ? round.tieBreak?.votes ?? [] : round.votes).map((vote) => ({ ...vote }));
     round.voteHistory.push({
       day: round.day,
       tieBreak,
@@ -2227,9 +2275,6 @@ export class WhoIsFakerService {
     const aliveIds = this.getAliveAssignedPlayerIds(room);
     const outcome = computeVoteOutcome(votes);
     const leaders = outcome.leaders;
-
-    // 投票明细（票数、领先者）已随快照发布，事件只保留提示性信号，不再携带客户端不消费的负载。
-    this.broadcastRoomEvent(room, "game.voteResult", {});
 
     await this.log({
       type: "game.vote_resolved",
@@ -2242,55 +2287,85 @@ export class WhoIsFakerService {
       },
     });
 
+    let eliminatedIds: string[] = [];
+    let tieBreakCandidateIds: string[] | undefined;
+
     if (!tieBreak) {
       if (leaders.length > 0 && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
-        // 平票或弃票数达到最高票：若非全员平票（有非候选玩家可在第二轮投票），则进入平票PK
+        // 平票或弃票数达到最高票：若非全员平票（有非候选玩家可在第二轮投票），则进入平票PK；
+        // 全员平票则无人出局，直接入夜。
         if (leaders.length < aliveIds.length) {
-          round.tieBreakCount += 1;
-          round.phase = "tieBreak";
-          round.speechMode = "tieBreak";
-          round.tieBreak = {
-            candidateIds: leaders,
-            stage: "description",
-            descriptionsDone: [],
-            votes: [],
-          };
-          return;
+          tieBreakCandidateIds = [...leaders];
         }
-        // 全员平票：无人出局，直接进入夜晚
-        await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
-        return;
+      } else if (leaders.length === 1) {
+        eliminatedIds = [leaders[0]];
       }
-
-      if (leaders.length === 1 && outcome.abstainCount < outcome.maxVotes) {
-        await this.applyEliminationAndMove(room, [leaders[0]], "投票出局", "night");
-        return;
-      }
-
       // 全员弃票或无得票者：无人出局
-      await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
-      return;
+    } else if (leaders.length === 1 && outcome.maxVotes > 0 && outcome.abstainCount < outcome.maxVotes) {
+      // 第二轮平票PK投票：仅当产生单一最高票时淘汰该玩家，再次平票或全员弃票则无人出局
+      eliminatedIds = [leaders[0]];
     }
 
-    // 第二轮平票PK投票：仅当产生单一最高票时淘汰该玩家，再次平票或全员弃票则无人出局
-    if (leaders.length === 1 && outcome.maxVotes > 0 && outcome.abstainCount < outcome.maxVotes) {
-      await this.applyEliminationAndMove(room, [leaders[0]], "平票再次出局", "night");
-    } else {
-      await this.applyEliminationAndMove(room, [], "平票无人出局", "night");
+    if (eliminatedIds.length > 0) {
+      recordEliminations(
+        round.assignments,
+        eliminatedIds,
+        tieBreak ? "平票再次出局" : "投票出局",
+        this.now(),
+      );
     }
+
+    round.history.push({
+      kind: "vote",
+      day: round.day,
+      createdAt: this.now(),
+      tieBreak: tieBreak || undefined,
+      votes: votes.map((vote) => ({ ...vote })),
+      eliminatedPlayerIds: [...eliminatedIds],
+      tieBreakCandidateIds: tieBreakCandidateIds ? [...tieBreakCandidateIds] : undefined,
+    });
+
+    round.votes = [];
+    round.tieBreak = undefined;
+    this.enterFeedback(
+      room,
+      {
+        kind: "vote",
+        day: round.day,
+        tieBreak: tieBreak || undefined,
+        votes,
+        eliminatedPlayerIds: eliminatedIds,
+        tieBreakCandidateIds,
+      },
+      tieBreakCandidateIds
+        ? { type: "tieBreak", candidateIds: tieBreakCandidateIds }
+        : { type: "advance", to: "night", winnerReason: "阶段结算后已满足胜利条件" },
+    );
   }
 
   private async resolveNight(room: WhoIsFakerRoomRecord) {
-    // 夜晚结算会先产生淘汰结果，再决定是否插入白板猜词或直接结算胜负。
+    // 夜晚结算：出局立即落地并进入天亮反馈（只公开死者，不公开凶手），
+    // 白板残局猜词与胜负留到出题人继续时判定。
     const round = this.requireRound(room);
+    const actions = round.nightActions.map((action) => ({
+      actorId: action.actorId,
+      actorRole: action.actorRole,
+      targetId: action.targetId,
+    }));
 
     const eliminatedIds = resolveNightEliminations(round, round.nightActions);
 
     if (eliminatedIds.length > 0) {
       recordEliminations(round.assignments, eliminatedIds, "夜晚结算", this.now());
-      // 胜负结算前先推送本阶段淘汰结果，让玩家栏有机会展示死亡状态。
-      this.publishRoomState(room);
     }
+
+    round.history.push({
+      kind: "night",
+      day: round.day,
+      createdAt: this.now(),
+      actions,
+      eliminatedPlayerIds: [...eliminatedIds],
+    });
 
     await this.log({
       type: "game.night_resolved",
@@ -2301,32 +2376,12 @@ export class WhoIsFakerService {
       },
     });
 
-    if (this.tryTransitionToFinaleBlankGuess(room)) {
-      return;
-    }
-
-    const winner = getWinnerAfterBlankFailure(round.assignments);
-
-    if (winner) {
-      await this.finishRound(room, winner, "夜晚结算后已满足胜利条件");
-      return;
-    }
-
-    round.phase = "description";
-    round.speechMode = "normal";
-    round.day += 1;
-    round.descriptionCycle += 1;
-    round.descriptionOrder = this.createDescriptionOrder(room);
-    round.descriptionSubmittedBy = [];
-    round.votes = [];
-    round.tieBreak = undefined;
     round.nightActions = [];
-    round.supplement = undefined;
-
-    this.broadcastRoomEvent(room, "game.daybreak", {
-      day: round.day,
-      eliminatedPlayerIds: eliminatedIds,
-    });
+    this.enterFeedback(
+      room,
+      { kind: "night", day: round.day, eliminatedPlayerIds: eliminatedIds },
+      { type: "advance", to: "daybreak", winnerReason: "夜晚结算后已满足胜利条件" },
+    );
   }
 
   private tryTransitionToFinaleBlankGuess(room: WhoIsFakerRoomRecord): boolean {
@@ -2385,6 +2440,187 @@ export class WhoIsFakerService {
     round.nightActions = [];
   }
 
+  /**
+   * 进入阶段反馈：结算结果已经落地（出局已记录），停在这里展示给全房，
+   * 出题人继续后才执行 `continuation`。决出胜负时同样先反馈、继续后再结算。
+   */
+  private enterFeedback(
+    room: WhoIsFakerRoomRecord,
+    feedback: Omit<RoundFeedback, "next">,
+    continuation: FeedbackContinuation,
+  ) {
+    const round = this.requireRound(room);
+    this.clearPhaseTimer(room);
+    round.phase = "feedback";
+    round.speechMode = undefined;
+    round.feedbackContinuation = continuation;
+    round.feedback = { ...feedback, next: this.predictFeedbackNext(round, continuation) };
+  }
+
+  /** 白板猜词有了最终结果后进入反馈：猜中即结算，猜错按猜词上下文恢复原阶段或按残局结算。 */
+  private enterBlankGuessFeedback(
+    room: WhoIsFakerRoomRecord,
+    record: BlankGuessRecord,
+    reviewed: boolean,
+    continuation: FeedbackContinuation,
+  ) {
+    const round = this.requireRound(room);
+    round.history.push({
+      kind: "blankGuess",
+      day: round.day,
+      createdAt: this.now(),
+      playerId: record.playerId,
+      guessedWords: [...record.guessedWords] as [string, string],
+      success: record.success,
+      reason: record.reason,
+      reviewed: reviewed || undefined,
+    });
+    if (round.blankGuessContext) {
+      round.blankGuessContext.pendingReview = undefined;
+    }
+    this.enterFeedback(
+      room,
+      {
+        kind: "blankGuess",
+        day: round.day,
+        eliminatedPlayerIds: [],
+        blankGuess: { ...record, guessedWords: [...record.guessedWords] as [string, string] },
+        blankGuessReviewed: reviewed || undefined,
+      },
+      continuation,
+    );
+  }
+
+  /** 预告继续后的去向，只用于展示；真正的去向在继续时按当时局面重新判定。 */
+  private predictFeedbackNext(round: GameRound, continuation: FeedbackContinuation): FeedbackNext {
+    if (continuation.type === "finish") {
+      return "gameOver";
+    }
+
+    if (continuation.type === "blankFailed") {
+      const context = round.blankGuessContext;
+      if (
+        !context ||
+        context.deferredWinner ||
+        (continuation.rosterChanged && getWinnerAfterBlankFailure(round.assignments))
+      ) {
+        return "gameOver";
+      }
+      return context.resumePhase ?? "gameOver";
+    }
+
+    if (shouldEnterFinalBlankGuess(round).shouldGuess) {
+      return "blankGuess";
+    }
+
+    if (getWinnerAfterBlankFailure(round.assignments)) {
+      return "gameOver";
+    }
+
+    if (continuation.type === "tieBreak") {
+      return this.getLiveTieBreakCandidates(round, continuation.candidateIds) ? "tieBreak" : "night";
+    }
+
+    return continuation.to === "night" ? "night" : "description";
+  }
+
+  /** 平票候选按继续时仍存活的人重算；原本多人 PK 只剩一人时 PK 失去意义，改为直接入夜。 */
+  private getLiveTieBreakCandidates(round: GameRound, candidateIds: string[]): string[] | undefined {
+    const alive = candidateIds.filter((id) => round.assignments[id]?.alive);
+    return alive.length > 1 || (alive.length === 1 && candidateIds.length === 1) ? alive : undefined;
+  }
+
+  /** 出题人在反馈阶段点继续：执行结算时存下的续接动作。 */
+  private async applyFeedbackContinuation(room: WhoIsFakerRoomRecord) {
+    const round = this.requireRound(room);
+    const continuation = round.feedbackContinuation;
+
+    if (!continuation) {
+      throw new AppError("INVALID_PHASE", "当前反馈没有可继续的结果");
+    }
+
+    round.feedback = undefined;
+    round.feedbackContinuation = undefined;
+
+    if (continuation.type === "finish") {
+      await this.finishRound(room, continuation.winner, continuation.reason);
+      return;
+    }
+
+    if (continuation.type === "blankFailed") {
+      await this.resolveFailedBlankGuess(room, continuation.message);
+      // 反馈期间有人离场可能已经分出胜负，恢复原阶段后再判一次。
+      if (round.phase !== "gameOver") {
+        const winner = continuation.rosterChanged ? getWinnerAfterBlankFailure(round.assignments) : undefined;
+        if (winner) {
+          await this.finishRound(room, winner, "阶段结算后已满足胜利条件");
+        } else if (round.phase === "feedback") {
+          // 猜词上下文缺失时没有可恢复的阶段，退回当天描述，避免停在反馈里无路可走。
+          round.blankGuessContext = undefined;
+          round.phase = "description";
+          round.speechMode = round.supplement ? "supplement" : "normal";
+        }
+      }
+      return;
+    }
+
+    if (this.tryTransitionToFinaleBlankGuess(room)) {
+      return;
+    }
+
+    const winner = getWinnerAfterBlankFailure(round.assignments);
+
+    if (winner) {
+      await this.finishRound(room, winner, continuation.type === "advance" ? continuation.winnerReason : "阶段结算后已满足胜利条件");
+      return;
+    }
+
+    round.votes = [];
+    round.nightActions = [];
+    round.tieBreak = undefined;
+
+    if (continuation.type === "tieBreak") {
+      const candidateIds = this.getLiveTieBreakCandidates(round, continuation.candidateIds);
+      if (candidateIds) {
+        round.tieBreakCount += 1;
+        round.phase = "tieBreak";
+        round.speechMode = "tieBreak";
+        round.tieBreak = {
+          candidateIds,
+          stage: "description",
+          descriptionsDone: [],
+          votes: [],
+        };
+        return;
+      }
+      round.phase = "night";
+      round.speechMode = undefined;
+      return;
+    }
+
+    if (continuation.to === "night") {
+      round.phase = "night";
+      round.speechMode = undefined;
+      return;
+    }
+
+    // 天亮：进入下一天的描述。
+    round.phase = "description";
+    round.speechMode = "normal";
+    round.day += 1;
+    round.descriptionCycle += 1;
+    round.descriptionOrder = this.createDescriptionOrder(room);
+    round.descriptionSubmittedBy = [];
+    round.supplement = undefined;
+  }
+
+  private toRemovalHistoryReason(reason: string): Extract<RoundHistoryEntry, { kind: "removal" }>["reason"] {
+    if (reason === "leave") return "left";
+    if (reason === "timeout") return "timeout";
+    if (reason === "掉线后被出题人移出") return "disconnected";
+    return "kicked";
+  }
+
   private async finishRound(room: WhoIsFakerRoomRecord, winner: RoundWinner, reason: string) {
     this.clearPhaseTimer(room);
     // 结算时既要给分，也要冻结当局摘要，供房间页在局后复盘。
@@ -2428,6 +2664,8 @@ export class WhoIsFakerService {
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
     round.blankGuessContext = undefined;
+    round.feedback = undefined;
+    round.feedbackContinuation = undefined;
     round.summary = {
       winner,
       reason,
@@ -2451,6 +2689,7 @@ export class WhoIsFakerService {
         tieBreak: entry.tieBreak,
         votes: entry.votes.map((vote) => ({ ...vote })),
       })),
+      history: structuredClone(round.history),
     };
 
     for (const player of Object.values(room.players)) {
@@ -2678,6 +2917,26 @@ export class WhoIsFakerService {
     }
 
     if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
+      room.round.history.push({
+        kind: "removal",
+        day: room.round.day,
+        createdAt: this.now(),
+        playerId: player.id,
+        reason: this.toRemovalHistoryReason(reason),
+      });
+    }
+
+    if (room.round?.phase === "feedback" && room.round.assignments[player.id]?.alive) {
+      // 反馈阶段只记出局、不改阶段：去向在继续时按当时局面重新判定，
+      // 也不让离场改写已经展示的结果（例如白板已经猜中）。
+      recordEliminations(room.round.assignments, [player.id], reason, this.now());
+      if (room.round.feedbackContinuation?.type === "blankFailed") {
+        room.round.feedbackContinuation.rosterChanged = true;
+      }
+      if (room.round.feedback && room.round.feedbackContinuation) {
+        room.round.feedback.next = this.predictFeedbackNext(room.round, room.round.feedbackContinuation);
+      }
+    } else if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
       const isGuesser =
         room.round.phase === "blankGuess" &&
         room.round.blankGuessContext?.playerId === player.id;
@@ -2909,6 +3168,7 @@ export class WhoIsFakerService {
     // 快照是前端渲染主数据源，尽量保证“一包就够渲染当前房间”。
     const speechState = room.round ? this.getCurrentSpeechState(room.round) : undefined;
 
+    const activeBlankGuess = room.round?.phase === "blankGuess" ? room.round.blankGuessContext : undefined;
     return {
       roomId: room.id,
       name: room.settings.name,
@@ -2941,20 +3201,18 @@ export class WhoIsFakerService {
         tieBreakCandidateIds: room.round?.tieBreak?.candidateIds,
         pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
         questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
-        blankGuessPlayerId: room.round?.blankGuessContext?.playerId,
-        blankGuessReason: room.round?.blankGuessContext?.reason,
-        blankGuessDraft:
-          room.round?.blankGuessContext?.pendingReview?.words ??
-          room.round?.blankGuessContext?.draft,
-        blankGuessPendingReview: room.round?.blankGuessContext?.pendingReview
-          ? true
-          : undefined,
+        // 反馈阶段仍保留猜词上下文供续接使用，但对外只在猜词阶段公开。
+        blankGuessPlayerId: activeBlankGuess?.playerId,
+        blankGuessReason: activeBlankGuess?.reason,
+        blankGuessDraft: activeBlankGuess?.pendingReview?.words ?? activeBlankGuess?.draft,
+        blankGuessPendingReview: activeBlankGuess?.pendingReview ? true : undefined,
         pendingSupplementPlayerIds: room.round?.supplement
           ? room.round.supplement.requestedPlayerIds.filter(
               (id) => !room.round!.supplement!.donePlayers.includes(id),
             )
           : undefined,
         phaseTimer: room.round?.phaseTimer ?? room.phaseTimer,
+        feedback: room.round?.feedback,
       },
       players: this.buildPublicPlayers(room),
       descriptions: this.buildPublicDescriptions(room.round),
@@ -3086,7 +3344,7 @@ export class WhoIsFakerService {
   private canViewerAccessGhostChat(room: WhoIsFakerRoomRecord, player?: WhoIsFakerPlayerRecord): boolean {
     if (
       !room.round ||
-      !["description", "voting", "tieBreak", "night", "blankGuess"].includes(room.round.phase)
+      !["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(room.round.phase)
     ) {
       return true;
     }
@@ -3521,6 +3779,15 @@ export class WhoIsFakerService {
     }
     if (phase === "blankGuess") {
       return `第 ${day} 天白板猜词阶段`;
+    }
+    if (phase === "feedback") {
+      const feedback = snapshot.status.feedback;
+      const label = feedback?.kind === "night"
+        ? "夜晚结果"
+        : feedback?.kind === "blankGuess"
+          ? "白板猜词结果"
+          : feedback?.tieBreak ? "平票投票结果" : "投票结果";
+      return `第 ${day} 天${label}`;
     }
     if (phase === "gameOver") {
       return `第 ${day} 天游戏结算阶段`;

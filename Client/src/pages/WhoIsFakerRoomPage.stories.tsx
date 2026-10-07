@@ -9,6 +9,7 @@ import {
   readyPlayers,
   seedWifUsername,
   wifEndingScenario,
+  wifFeedbackSnapshot,
   WIF_PEOPLE,
   WIF_ROOM_ROUTER,
   WIF_TEST_ROUTER,
@@ -252,6 +253,45 @@ export const BlankReviewing: Story = {
 export const BlankWatchingHost: Story = {
   name: "白板猜词 · 主持人",
   beforeEach: () => presetWifRoom(wifSnapshot("blankGuess"), asHost),
+};
+
+// ==================== 阶段反馈 ====================
+
+export const FeedbackVoteHost: Story = {
+  name: "阶段反馈 · 投票结果 · 主持人",
+  beforeEach: () => presetWifRoom(wifFeedbackSnapshot("vote"), wifPrivate("host", "night1")),
+  play: async () => {
+    await screen.findByRole("heading", { name: "第 1 天投票结果" });
+    await screen.findByRole("button", { name: "进入夜晚" });
+  },
+};
+
+export const FeedbackTiePlayer: Story = {
+  name: "阶段反馈 · 平票 · 玩家",
+  beforeEach: () => presetWifRoom(wifFeedbackSnapshot("tie"), wifPrivate("me", "tie2")),
+  play: async () => {
+    await screen.findByText("平票，进入 PK", { exact: false });
+    await screen.findByText("等待主持人继续");
+  },
+};
+
+export const FeedbackNight: Story = {
+  name: "阶段反馈 · 天亮了",
+  beforeEach: () => presetWifRoom(wifFeedbackSnapshot("night"), wifPrivate("me", "day2")),
+  play: async () => {
+    await screen.findByRole("heading", { name: "天亮了" });
+    // 夜晚反馈不公开凶手
+    expect(screen.queryByText("刀了", { exact: false })).toBeNull();
+  },
+};
+
+export const FeedbackBlankGuess: Story = {
+  name: "阶段反馈 · 白板猜词结果",
+  beforeEach: () => presetWifRoom(wifFeedbackSnapshot("blankGuess"), wifPrivate("host", "blankReview")),
+  play: async () => {
+    await screen.findByText("猜中");
+    await screen.findByRole("button", { name: "查看结算" });
+  },
 };
 
 // ==================== 游戏结束 ====================

@@ -13,7 +13,6 @@ import type {
   WhoIsFakerRoomSummary,
   ServerMessage,
   EventPacket,
-  DaybreakNotice,
 } from "@/types";
 import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
 
@@ -32,8 +31,6 @@ export interface WhoIsFakerGameState {
   sessionToken: string | null;
   snapshot: WhoIsFakerRoomSnapshot | null;
   privateState: WhoIsFakerPrivateState | null;
-  phaseResultPresentationPending: boolean;
-  daybreakNotice: DaybreakNotice | null;
   toasts: ToastItem[];
   /**
    * 房间被服务端关闭的时刻。房间页据此立刻退回大厅：
@@ -53,7 +50,6 @@ export interface WhoIsFakerGameState {
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   applyIncomingSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
-  showDaybreakNotice: (notice: DaybreakNotice) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
 
@@ -86,15 +82,11 @@ type RoomEntryReceipt = {
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
 let toastCounter = 0;
-let daybreakNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
 let syncedSnapshot: WhoIsFakerRoomSnapshot | null = null;
 let syncedPrivateState: WhoIsFakerPrivateState | null = null;
-let pendingGameOverSnapshot: WhoIsFakerRoomSnapshot | null = null;
-let phaseResultVisibleUntil = 0;
-let phaseResultTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const resetWhoIsFakerStateSync = () => {
   snapshotRevision = undefined;
@@ -102,16 +94,6 @@ export const resetWhoIsFakerStateSync = () => {
   syncRequestPending = false;
   syncedSnapshot = null;
   syncedPrivateState = null;
-  clearPhaseResultPresentation();
-};
-
-const PHASE_RESULT_DISPLAY_MS = 1500;
-
-const clearPhaseResultPresentation = () => {
-  if (phaseResultTimer) clearTimeout(phaseResultTimer);
-  phaseResultTimer = undefined;
-  pendingGameOverSnapshot = null;
-  phaseResultVisibleUntil = 0;
 };
 
 const MAX_CHAT_MESSAGES = 200;
@@ -130,24 +112,6 @@ const mergeChat = (
   return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
 };
 
-const isSameRound = (left: WhoIsFakerRoomSnapshot | null, right: WhoIsFakerRoomSnapshot) =>
-  Boolean(
-    left &&
-    left.roomId === right.roomId &&
-    left.status.roundId &&
-    left.status.roundId === right.status.roundId,
-  );
-
-const hasNewElimination = (previous: WhoIsFakerRoomSnapshot, next: WhoIsFakerRoomSnapshot) => {
-  const previousStatuses = new Map(
-    previous.players.map((player) => [player.id, player.roundStatus]),
-  );
-  return next.players.some(
-    (player) =>
-      player.roundStatus === "dead" && previousStatuses.get(player.id) !== "dead",
-  );
-};
-
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
   return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
@@ -164,7 +128,7 @@ const computePlayerChannel = (
   if (!snapshot || !playerId) return "main";
   const isIngame = Boolean(
     snapshot.status.started &&
-    ["description", "voting", "tieBreak", "night", "blankGuess"].includes(snapshot.status.phase),
+    ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(snapshot.status.phase),
   );
   if (!isIngame) return "main";
   const isQuestioner = snapshot.status.questionerPlayerId === playerId;
@@ -264,8 +228,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   sessionToken: null,
   snapshot: null,
   privateState: null,
-  phaseResultPresentationPending: false,
-  daybreakNotice: null,
   toasts: [],
   roomClosedAt: null,
   phaseTimedOutEndsAt: null,
@@ -273,10 +235,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
   setRooms: (rooms) => set({ rooms, lobbyReady: true }),
   joinRoomState: (roomId, sessionToken) => {
-    if (get().roomId !== roomId) {
-      resetWhoIsFakerStateSync();
-      set({ phaseResultPresentationPending: false });
-    }
+    if (get().roomId !== roomId) resetWhoIsFakerStateSync();
     set({ roomId, sessionToken, roomClosedAt: null, phaseTimedOutEndsAt: null });
   },
   leaveRoomState: () => {
@@ -288,8 +247,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       sessionToken: null,
       snapshot: null,
       privateState: null,
-      phaseResultPresentationPending: false,
-      daybreakNotice: null,
       phaseTimedOutEndsAt: null,
       roomClosedAt: null,
     });
@@ -302,17 +259,16 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   },
   setSnapshot: (incomingSnapshot) => {
     if (!incomingSnapshot) {
-      clearPhaseResultPresentation();
-      set({ snapshot: null, phaseResultPresentationPending: false });
+      set({ snapshot: null });
       return;
     }
+    // 出局后的停顿由服务端的阶段反馈承担，这里不再暂扣结算快照。
     const previousSnapshot = get().snapshot;
-    const summarySource = pendingGameOverSnapshot ?? previousSnapshot;
     const previousSummary =
       incomingSnapshot.status.phase === "gameOver" &&
       !incomingSnapshot.summary &&
-      summarySource?.status.roundId === incomingSnapshot.status.roundId
-        ? summarySource?.summary
+      previousSnapshot?.status.roundId === incomingSnapshot.status.roundId
+        ? previousSnapshot?.summary
         : undefined;
     let snapshot = previousSummary
       ? { ...incomingSnapshot, summary: previousSummary }
@@ -323,58 +279,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
     }
 
-    snapshot = applyChannelTransitions(snapshot, get().privateState?.playerId);
-
-    if (!isSameRound(previousSnapshot, snapshot)) {
-      clearPhaseResultPresentation();
-      set({ snapshot, phaseResultPresentationPending: false });
-      return;
-    }
-
-    if (
-      previousSnapshot &&
-      previousSnapshot.status.phase !== "gameOver" &&
-      snapshot.status.phase !== "gameOver" &&
-      hasNewElimination(previousSnapshot, snapshot)
-    ) {
-      phaseResultVisibleUntil = Date.now() + PHASE_RESULT_DISPLAY_MS;
-    }
-
-    if (
-      previousSnapshot?.status.phase !== "gameOver" &&
-      snapshot.status.phase === "gameOver" &&
-      phaseResultVisibleUntil > Date.now()
-    ) {
-      pendingGameOverSnapshot = snapshot;
-      set({ phaseResultPresentationPending: true });
-      if (!phaseResultTimer) {
-        phaseResultTimer = setTimeout(() => {
-          phaseResultTimer = undefined;
-          phaseResultVisibleUntil = 0;
-          const pendingSnapshot = pendingGameOverSnapshot;
-          pendingGameOverSnapshot = null;
-          if (!pendingSnapshot) return;
-
-          set((state) =>
-            isSameRound(state.snapshot, pendingSnapshot)
-              ? { snapshot: pendingSnapshot, phaseResultPresentationPending: false }
-              : state,
-          );
-        }, phaseResultVisibleUntil - Date.now());
-      }
-      return;
-    }
-
-    if (snapshot.status.phase !== "gameOver" && pendingGameOverSnapshot) {
-      clearPhaseResultPresentation();
-      set({ phaseResultPresentationPending: false });
-    }
-    set({
-      snapshot,
-      phaseResultPresentationPending: snapshot.status.phase === "gameOver"
-        ? false
-        : get().phaseResultPresentationPending,
-    });
+    set({ snapshot: applyChannelTransitions(snapshot, get().privateState?.playerId) });
   },
   applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
   setPrivateState: (privateState) => {
@@ -386,14 +291,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         set({ snapshot: updated });
       }
     }
-  },
-  showDaybreakNotice: (notice) => {
-    if (daybreakNoticeTimer) clearTimeout(daybreakNoticeTimer);
-    set({ daybreakNotice: notice });
-    daybreakNoticeTimer = setTimeout(() => {
-      set({ daybreakNotice: null });
-      daybreakNoticeTimer = undefined;
-    }, 4500);
   },
   addToast: (text, type = "info", durationMs = 3000) => {
     const id = ++toastCounter;
@@ -462,9 +359,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   },
 
   sendCommand: async (type, payload = {}) => {
-    if (get().phaseResultPresentationPending) {
-      throw new Error("阶段结果展示中，请稍候");
-    }
     const { roomId, sessionToken } = get();
     return ws.send(type, payload, {
       roomId: roomId ?? undefined,
@@ -516,12 +410,6 @@ export function initWhoIsFakerWs() {
           syncedPrivateState = result.state as WhoIsFakerPrivateState;
           if (!roomEntry.isPending()) currentStore.setPrivateState(syncedPrivateState);
         }
-        break;
-      case "game.daybreak":
-        currentStore.showDaybreakNotice(evt.payload as DaybreakNotice);
-        break;
-      case "game.voteResult":
-        currentStore.addToast("投票结果已公布");
         break;
       case "game.disconnectDecisionRequested":
         currentStore.addToast("有玩家掉线，等待主持人处理", "info");

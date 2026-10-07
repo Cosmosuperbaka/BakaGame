@@ -17,6 +17,7 @@ export const WHOISFAKER_PHASES = [
   "tieBreak",
   "night",
   "blankGuess",
+  "feedback",
   "gameOver",
 ] as const;
 
@@ -122,11 +123,6 @@ export interface VoteRecord {
   targetId: string;
 }
 
-export interface DaybreakNotice {
-  day: number;
-  eliminatedPlayerIds: string[];
-}
-
 // 夜晚阶段只允许平民和卧底提交动作。
 export interface NightActionRecord {
   actorId: string;
@@ -169,6 +165,92 @@ export interface RoundPlayerState {
   eliminatedReason?: string;
 }
 
+/** 反馈之后要去的阶段，公开给全房，用于提示「继续后进入哪里」。 */
+export type FeedbackNext = Extract<
+  WhoIsFakerPhase,
+  "description" | "voting" | "tieBreak" | "night" | "blankGuess" | "gameOver"
+>;
+
+/**
+ * 阶段反馈：投票、夜晚与白板猜词结算后，先停在 `feedback` 阶段把结果摆给全房，
+ * 由出题人手动继续。决出胜负时同样先反馈再结算。
+ * 夜晚反馈只给出局者，不给凶手；票型在投票反馈里完整公开。
+ */
+export interface RoundFeedback {
+  kind: "vote" | "night" | "blankGuess";
+  /** 结果所属的天数（夜晚反馈即这一夜所在的天）。 */
+  day: number;
+  /** 投票反馈：是否为平票 PK 的第二轮投票。 */
+  tieBreak?: boolean;
+  /** 投票反馈：本轮全部选票，含弃票。 */
+  votes?: VoteRecord[];
+  /** 本次结算出局的玩家。 */
+  eliminatedPlayerIds: string[];
+  /** 投票反馈：平票后进入 PK 的候选。 */
+  tieBreakCandidateIds?: string[];
+  /** 白板猜词反馈：最终裁定后的猜词记录。 */
+  blankGuess?: BlankGuessRecord;
+  /** 白板猜词反馈：这次猜测经过主持人裁定（含裁定超时）。 */
+  blankGuessReviewed?: boolean;
+  next: FeedbackNext;
+}
+
+/**
+ * 反馈阶段结束后的续接动作，只在服务端保存。续接在继续的那一刻才落地：
+ * 反馈期间有人离场时，局面按当时的存活情况重新判定（可能直接分出胜负）。
+ */
+export type FeedbackContinuation =
+  /** 投票后入夜、夜晚后天亮；先判白板残局猜词与胜负。 */
+  | { type: "advance"; to: "night" | "daybreak"; winnerReason: string }
+  /** 投票平票：继续后进入平票 PK，候选按当时仍存活的人重算。 */
+  | { type: "tieBreak"; candidateIds: string[] }
+  | { type: "finish"; winner: RoundWinner; reason: string }
+  /**
+   * 白板猜错：继续时按猜词上下文恢复原阶段或按残局结算。
+   * `rosterChanged` 表示反馈期间有人离场，恢复前要按新局面复判胜负。
+   */
+  | { type: "blankFailed"; message: string; rosterChanged?: boolean };
+
+/**
+ * 本局按时间顺序的全局历史，结算时整份公开。描述阶段不记录（另有描述历史）。
+ * 夜晚条目在结算时公开每个人的行动，包括凶手。
+ */
+export type RoundHistoryEntry =
+  | {
+      kind: "vote";
+      day: number;
+      createdAt: number;
+      tieBreak?: boolean;
+      votes: VoteRecord[];
+      eliminatedPlayerIds: string[];
+      tieBreakCandidateIds?: string[];
+    }
+  | {
+      kind: "night";
+      day: number;
+      createdAt: number;
+      actions: Array<{ actorId: string; actorRole: NightActionRecord["actorRole"]; targetId?: string }>;
+      eliminatedPlayerIds: string[];
+    }
+  | {
+      kind: "blankGuess";
+      day: number;
+      createdAt: number;
+      playerId: string;
+      guessedWords: [string, string];
+      success: boolean;
+      reason: BlankGuessReason;
+      reviewed?: boolean;
+    }
+  | {
+      kind: "removal";
+      day: number;
+      createdAt: number;
+      playerId: string;
+      /** 主动离开、离线超时被清理、被房主移出、掉线后被出题人移出。 */
+      reason: "left" | "timeout" | "kicked" | "disconnected";
+    };
+
 // 平票 PK 的临时状态，只在 tieBreak 阶段存在。
 export interface TieBreakState {
   candidateIds: string[];
@@ -184,7 +266,7 @@ export type BlankGuessReason = "active" | "eliminated" | "finale";
 export interface BlankGuessContext {
   playerId: string;
   reason: BlankGuessReason;
-  resumePhase?: Exclude<WhoIsFakerPhase, "blankGuess" | "assigningQuestioner" | "wordSubmission">;
+  resumePhase?: Exclude<FeedbackNext, "blankGuess">;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
   /** 打断发言/投票等原阶段时暂存的剩余倒计时毫秒数，供裁定未通过恢复原阶段时还原。 */
   interruptedRemainingTimerMs?: number;
@@ -223,6 +305,8 @@ export interface RoundSummary {
     blankHint?: string;
   };
   voteHistory?: VoteHistoryRecord[];
+  /** 按时间顺序的全局历史（描述阶段除外）。 */
+  history?: RoundHistoryEntry[];
 }
 
 // 单局游戏的全部运行态。
@@ -267,6 +351,11 @@ export interface GameRound {
   pendingDisconnectPlayerIds: string[];
   questionerReconnectDeadlineAt?: number;
   phaseTimer?: PhaseTimerState;
+  /** 当前阶段反馈，只在 `feedback` 阶段存在。 */
+  feedback?: RoundFeedback;
+  feedbackContinuation?: FeedbackContinuation;
+  /** 本局按时间顺序的全局历史。 */
+  history: RoundHistoryEntry[];
   summary?: RoundSummary;
 }
 
@@ -375,6 +464,8 @@ export interface WhoIsFakerRoomSnapshot {
     pendingSupplementPlayerIds?: string[];
     /** 当前阶段倒计时运行时状态 */
     phaseTimer?: PhaseTimerState;
+    /** 阶段反馈，只在 `feedback` 阶段存在。 */
+    feedback?: RoundFeedback;
   };
   players: PublicPlayerView[];
   descriptions: DescriptionRecord[];

@@ -1,6 +1,6 @@
 ﻿import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, BookOpen, RotateCcw, Vote } from "lucide-react";
+import { Trophy, BookOpen, History, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
@@ -12,6 +12,7 @@ import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { RoleBadge } from "../layout/RoleBadge";
+import { RoundHistoryTimeline } from "./RoundHistoryTimeline";
 
 const WIF_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "role", header: "身份", align: "left" },
@@ -58,6 +59,7 @@ export function GameOverPhase() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const summary = snapshot.summary;
   const [showVotes, setShowVotes] = useState(true);
+  const [showHistory, setShowHistory] = useState(true);
   const [returning, setReturning] = useState(false);
   const isHost = snapshot.hostPlayerId === privateState?.playerId;
 
@@ -85,6 +87,8 @@ export function GameOverPhase() {
       </div>
     );
   }
+
+  const hasHistory = Boolean(summary.history?.length);
 
   // 胜方色与 ROLE_COLORS 同源：好人阵营随平民取 info，卧底阵营取 destructive，白板取中性色。
   const winnerTone =
@@ -161,8 +165,23 @@ export function GameOverPhase() {
         })}
       />
 
-      {/* 投票复盘：按天顺序展示 */}
-      {summary.voteHistory && summary.voteHistory.length > 0 && (
+      {/* 全局历史已含每次投票与白板猜词，有它时不再重复下面两块旧复盘 */}
+      {hasHistory ? (
+        <section className="overflow-hidden rounded-md bg-muted">
+          <DisclosureHeader
+            icon={<History className="h-4 w-4 text-primary" />}
+            label="全局历史"
+            open={showHistory}
+            onToggle={() => setShowHistory((v) => !v)}
+          />
+          <CollapsibleRegion open={showHistory}>
+            <RoundHistoryTimeline history={summary.history ?? []} players={snapshot.players} />
+          </CollapsibleRegion>
+        </section>
+      ) : null}
+
+      {/* 投票复盘：按天顺序展示（没有全局历史的旧结算） */}
+      {!hasHistory && summary.voteHistory && summary.voteHistory.length > 0 && (
         <section className="overflow-hidden rounded-md bg-muted">
           <DisclosureHeader
             icon={<Vote className="h-4 w-4 text-primary" />}
@@ -208,7 +227,7 @@ export function GameOverPhase() {
       )}
 
       {/* 白板猜词记录 */}
-      {summary.blankGuesses.length > 0 && (
+      {!hasHistory && summary.blankGuesses.length > 0 && (
         <section className="overflow-hidden rounded-md bg-muted">
           <div className="border-b border-background px-4 py-2.5">
             <h3 className="text-xs font-semibold text-muted-foreground">

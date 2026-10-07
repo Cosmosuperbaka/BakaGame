@@ -23,9 +23,6 @@ export function VotingPhase() {
   const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
   // 回执从被点的那张选项上展开
   const { origin, capture } = useOriginTracker();
-  const phaseResultPresentationPending = useWhoIsFakerStore(
-    (state) => state.phaseResultPresentationPending,
-  );
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((player) => player.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
@@ -161,7 +158,7 @@ export function VotingPhase() {
             {supplement.trigger}
             <Button
               onClick={handleAdvance}
-              disabled={busy || phaseResultPresentationPending}
+              disabled={busy}
               loading={pendingCommand === "advance"}
               size="lg"
             >

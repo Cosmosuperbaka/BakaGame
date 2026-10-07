@@ -83,10 +83,28 @@ config/          ← Env.ts, Constants.ts
 ### 4.1 阶段生命周期图
 ```text
 waiting → assigningQuestioner → wordSubmission → description → voting
-  → tieBreak (若最高票平票) → night → description (次日天亮，循环)
-  → blankGuess (若触发白板猜词，全局阻塞)
+  → feedback (投票结果) → tieBreak (若最高票平票) / night
+  → feedback (天亮：夜晚结果) → description (次日，循环)
+  → blankGuess (若触发白板猜词，全局阻塞) → feedback (猜词结果)
   → gameOver (结算归档)
 ```
+
+**阶段反馈 (`feedback`)**：投票、平票 PK 投票、夜晚与白板猜词结算后，服务端先进入 `feedback` 阶段，
+把结果写进公共快照 `status.feedback`，由本局出题人点「继续」（`game.advancePhase`）推进；测试房跳转后可能没有出题人，
+继续放开给房内任何人。决出胜负时同样**先反馈再结算**，`gameOver` 只在继续之后进入。
+
+- 出局在结算那一刻就落地（玩家栏立即显示出局），续接动作 `feedbackContinuation` 只存服务端，继续时才执行：
+  入夜、天亮换天、进入平票 PK、残局白板猜词、按猜错上下文恢复原阶段或结算。
+- `feedback.next` 是服务端对下一阶段的预判，客户端只用来写继续按钮的文案。反馈期间有人离场时出局随即生效，
+  `next` 按当时存活情况重算（例如卧底离场后改为残局白板猜词或直接结算），继续时同样按当时局面重新判定。
+- 投票反馈公开全部选票（含弃票）、出局者或平票候选；夜晚反馈即「天亮了」，只公布出局者，**不公开凶手**；
+  白板猜词全房已实时围观，反馈只给最终两词、对错与是否经主持人裁定。
+- 反馈阶段没有倒计时（`PhaseTimerControl` 与服务端 `handleStartPhaseTimer` 都排除它），白板不能在此插入猜词；
+  旁观仍在观战频道。原先的 `game.daybreak` / `game.voteResult` 事件与客户端 1.5 秒结算暂扣一并移除，停顿交给反馈阶段。
+
+**全局历史 (`round.history` → `summary.history`)**：服务端按时间顺序记录投票（含平票 PK）、夜晚、白板猜词与对局中途离场
+（主动离开、离线超时、被房主移出、掉线后被出题人移出），描述阶段不记。夜晚条目带每个行动者的身份与目标，
+只在结算页公开。结算页有全局历史时以它取代旧的「投票明细」与「白板猜词记录」，旧结算缺字段时退回旧两块。
 
 ### 4.2 角色池与人数要求
 - **开局条件**：至少 4 名参战玩家 + 1 名出题人（出题人可由房主指定或由房主本人/旁观者担任）。
@@ -155,6 +173,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
    - 出题人通过 `game.reviewBlankGuess` 提交 `{ approve: boolean }`：
      - `approve: true`：改判为猜中，直接宣告白板获胜，对局结束。
      - `approve: false`：维持猜错，机会耗尽；若为残局触发则按残局胜负结算，否则退回原阶段继续游戏。
+   - 无论猜中、猜错还是裁定，结果都先进入阶段反馈（§4.1），出题人继续后才结算或恢复原阶段。
 
 **手动主持的截止语义（Spec §9.2 限定领域例外）**：在线白板猜词与在线人工裁定沿用已存在的手动主持策略，不自动创建固定阶段截止；本局出题人可选择 60 / 120 / 180 秒、取消或按当前时刻重新开启计时。取消仅撤销当前计时，不消耗/恢复猜词机会、不撤销裁定权限，也不留下隐藏的 180 秒硬截止。其他成员聊天可持续刷新房间闲置时间，十分钟闲置关闭因此不能充当这两个阶段的有限自动截止。此例外是对既有生产命令与正常开局回归的规则交界澄清，不是新增默认时限或宣称补齐自动截止。
 
@@ -192,7 +211,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 
 ### 9.2 观战频道流转时机
 - 旁观者在等待大厅、指定出题人（`assigningQuestioner`）及出题中（`wordSubmission`）阶段，统一保持在公共主聊天频道（`"main"`），确保选人与备战阶段全员沟通通畅。
-- 仅在出题完毕正式进入对局活跃期（`["description", "voting", "tieBreak", "night", "blankGuess"]`）后，旁观者才流转至观战专属频道（`"ghost"`）。
+- 仅在出题完毕正式进入对局活跃期（`["description", "voting", "tieBreak", "night", "blankGuess", "feedback"]`）后，旁观者才流转至观战专属频道（`"ghost"`）。
 
 ### 9.3 顶栏视觉与词语自适应
 - 顶部导航仅展示角色徽章（如“主持人”/“旁观”）与词语展示，杜绝“主持人视角”“旁观视角”等冗余标签。

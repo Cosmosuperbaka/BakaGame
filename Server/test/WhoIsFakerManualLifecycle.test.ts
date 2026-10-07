@@ -80,13 +80,21 @@ async function setup(separateHost = false) {
     await send(questioner, { type: "game.advancePhase", payload: {} });
     expect(snapshot().status.phase).toBe("voting");
   };
+  /** 白板猜词有结果后先停在反馈，出题人继续才进入下一阶段。 */
+  const settle = async (expected: WhoIsFakerRoomSnapshot["status"]["phase"]) => {
+    expect(snapshot().status.phase).toBe("feedback");
+    expect(snapshot().status.feedback?.kind).toBe("blankGuess");
+    expect(snapshot().status.phaseTimer).toBeUndefined();
+    await send(questioner, { type: "game.advancePhase", payload: {} });
+    expect(snapshot().status.phase).toBe(expected);
+  };
   expect(snapshot().testMode).toBe(false);
   expect(snapshot().status.phase).toBe("description");
   expect(snapshot().players.filter(player => player.roundStatus === "alive")).toHaveLength(8);
   expect(blank).toBeDefined(); expect(privateState(blank).canSubmitBlankGuess).toBe(true);
   expect(privateState(questioner).isQuestioner).toBe(true);
   return { ...context, clients, players, host, questioner, blank, observer, snapshot, privateState,
-    send, tick, enter, pendingReview, start, stop, review, chatFor, advanceDescriptions };
+    send, tick, enter, pendingReview, start, stop, review, chatFor, advanceDescriptions, settle };
 }
 
 describe("正常房间手动主持的白板生命周期", () => {
@@ -96,7 +104,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     expect(h.snapshot().status.blankGuessPlayerId).toBe(h.blank.record.playerId);
     expect(h.privateState(h.blank).canSubmitBlankGuess).toBe(true);
     await h.start(60); await h.tick(60_000);
-    expect(h.snapshot().status.phase).toBe("description");
+    await h.settle("description");
     expect(h.privateState(h.blank).blankGuessUsed).toBe(true);
     await h.advanceDescriptions();
   });
@@ -107,7 +115,8 @@ describe("正常房间手动主持的白板生命周期", () => {
     await h.start(180); await h.stop(); await h.tick(180_001);
     expect(h.snapshot().status.blankGuessPendingReview).toBe(true);
     await h.review(approve);
-    expect(h.snapshot().status.phase).toBe(approve ? "gameOver" : "description");
+    expect(h.snapshot().status.feedback?.blankGuess?.success).toBe(approve);
+    await h.settle(approve ? "gameOver" : "description");
     if (!approve) await h.advanceDescriptions();
   });
 
@@ -127,7 +136,7 @@ describe("正常房间手动主持的白板生命周期", () => {
       await h.tick(duration * 1000 - 1);
       expect(h.snapshot().status.phase).toBe("blankGuess");
       await h.tick(1);
-      expect(h.snapshot().status.phase).toBe("description");
+      await h.settle("description");
       expect(h.snapshot().status.phaseTimer).toBeUndefined();
       await h.advanceDescriptions();
     });
@@ -137,7 +146,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     const h = await setup(); await h.enter(); await h.start(60); await h.stop();
     await h.tick(180_001);
     await h.send(h.blank, { type: "game.submitBlankGuess", payload: { words: ["苹果", "香蕉"] } });
-    expect(h.snapshot().status.phase).toBe("gameOver");
+    await h.settle("gameOver");
     expect(h.snapshot().summary?.winner).toBe("blank");
   });
 
@@ -148,7 +157,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     await expect(h.stop(h.observer)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(h.review(false, h.observer)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(h.snapshot().status.phaseTimer).toEqual(timer);
-    await h.tick(120_000); expect(h.snapshot().status.phase).toBe("description");
+    await h.tick(120_000); await h.settle("description");
   });
 
   test("房主与出题人不同：房主不是计时/裁定者，但出题人操作不受阻且房主可移出出题人终止", async () => {
@@ -178,7 +187,7 @@ describe("正常房间手动主持的白板生命周期", () => {
         await h.start(60);
       }
       await h.tick(59_999); expect(h.snapshot().status.phase).toBe("blankGuess");
-      await h.tick(1); expect(h.snapshot().status.phase).toBe("description");
+      await h.tick(1); await h.settle("description");
       expect(h.snapshot().status.pendingDisconnectPlayerId).toBe(h.blank.record.playerId!);
       await h.send(h.questioner, { type: "game.resolveDisconnect", payload: { playerId: h.blank.record.playerId!, resolution: "eliminate" } });
       await h.advanceDescriptions();
@@ -210,7 +219,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     expect(h.snapshot().status.pendingDisconnectPlayerId).toBeUndefined();
     if (adjudicating) await h.review(true);
     else await h.send(restored, { type: "game.submitBlankGuess", payload: { words: ["苹果", "香蕉"] } });
-    expect(h.snapshot().status.phase).toBe("gameOver");
+    await h.settle("gameOver");
     expect(h.snapshot().summary?.winner).toBe("blank");
     expect(h.snapshot().status.phaseTimer).toBeUndefined();
   });
@@ -221,7 +230,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     expect(h.snapshot().hostPlayerId).toBe(h.observer.record.playerId!);
     await expect(h.start(60, h.observer)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await h.start(120); await h.stop(); await h.start(180); await h.review(false);
-    expect(h.snapshot().status.phase).toBe("description");
+    await h.settle("description");
     await h.advanceDescriptions();
   });
 
@@ -229,7 +238,7 @@ describe("正常房间手动主持的白板生命周期", () => {
     const h = await setup(); await h.enter(); if (adjudicating) await h.pendingReview();
     await expect(h.send(h.questioner, { type: "game.advancePhase", payload: {} })).rejects.toMatchObject({ code: "INVALID_PHASE" });
     await h.start(60); await h.stop(); await h.start(60); await h.tick(60_000);
-    expect(h.snapshot().status.phase).toBe("description");
+    await h.settle("description");
   });
 
   for (const adjudicating of [false, true]) for (const removal of ["leave", "kick"] as const) {

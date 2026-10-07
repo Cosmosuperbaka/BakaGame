@@ -176,6 +176,7 @@ test("残局条件满足时白板会进入猜词阶段", () => {
     blankGuessRecords: [],
     tieBreakCount: 0,
     pendingDisconnectPlayerIds: [],
+    history: [],
   };
 
   const result = shouldEnterFinalBlankGuess(round);
@@ -213,6 +214,7 @@ test("白板猜词会按词对本身判断是否正确", () => {
       resumePhase: "night",
     },
     pendingDisconnectPlayerIds: [],
+    history: [],
   };
 
   expect(

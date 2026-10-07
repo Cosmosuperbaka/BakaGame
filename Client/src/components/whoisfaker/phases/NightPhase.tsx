@@ -20,9 +20,6 @@ export function NightPhase() {
   const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
   // 回执从被点的那张选项上展开
   const { origin, capture } = useOriginTracker();
-  const phaseResultPresentationPending = useWhoIsFakerStore(
-    (state) => state.phaseResultPresentationPending,
-  );
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
@@ -145,7 +142,7 @@ export function NightPhase() {
         <div className="flex justify-center pt-2">
           <Button
             onClick={handleAdvance}
-            disabled={busy || phaseResultPresentationPending}
+            disabled={busy}
             loading={pendingCommand === "advance"}
             size="lg"
           >

@@ -294,69 +294,7 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState().snapshot?.summary).toBeUndefined();
   });
 
-  it("keeps a phase elimination visible before presenting game over", async () => {
-    const beforeElimination: WhoIsFakerRoomSnapshot = {
-      ...gameOverSnapshot("round-result"),
-      status: {
-        phase: "voting",
-        roundId: "round-result",
-        started: true,
-        day: 1,
-      },
-      players: [
-        {
-          id: "player-1",
-          name: "Player 1",
-          score: 0,
-          membership: "active",
-          online: true,
-          isReady: true,
-          isBot: false,
-          isHost: true,
-          roundStatus: "alive",
-        },
-      ],
-      summary: undefined,
-    };
-    const eliminationSnapshot: WhoIsFakerRoomSnapshot = {
-      ...beforeElimination,
-      players: beforeElimination.players.map((player) => ({
-        ...player,
-        roundStatus: "dead" as const,
-      })),
-    };
-    const finalSnapshot: WhoIsFakerRoomSnapshot = {
-      ...gameOverSnapshot("round-result", roundSummary),
-      players: eliminationSnapshot.players,
-    };
-
-    useWhoIsFakerStore.getState().setSnapshot(beforeElimination);
-    useWhoIsFakerStore.getState().setSnapshot(eliminationSnapshot);
-    useWhoIsFakerStore.getState().setSnapshot(finalSnapshot);
-
-    expect(useWhoIsFakerStore.getState().snapshot?.status.phase).toBe("voting");
-    expect(useWhoIsFakerStore.getState().snapshot?.players[0]?.roundStatus).toBe("dead");
-    expect(useWhoIsFakerStore.getState().phaseResultPresentationPending).toBe(true);
-
-    await expect(useWhoIsFakerStore.getState().sendCommand("game.advancePhase")).rejects.toThrow(
-      "阶段结果展示中，请稍候",
-    );
-    expect(wsMock.send).not.toHaveBeenCalledWith(
-      "game.advancePhase",
-      expect.anything(),
-      expect.anything(),
-    );
-
-    vi.advanceTimersByTime(1499);
-    expect(useWhoIsFakerStore.getState().snapshot?.status.phase).toBe("voting");
-
-    vi.advanceTimersByTime(1);
-    expect(useWhoIsFakerStore.getState().snapshot?.status.phase).toBe("gameOver");
-    expect(useWhoIsFakerStore.getState().snapshot?.summary).toEqual(roundSummary);
-    expect(useWhoIsFakerStore.getState().phaseResultPresentationPending).toBe(false);
-  });
-
-  it("continues applying snapshot patches while game over is held for presentation", () => {
+  it("applies game-over patches immediately after an elimination", () => {
     wsMock.send.mockResolvedValue({});
     const dispose = initGameSocket();
     const initialSnapshot: WhoIsFakerRoomSnapshot = {
@@ -437,10 +375,8 @@ describe("game store integration", () => {
       },
     });
 
-    expect(useWhoIsFakerStore.getState().snapshot?.status.phase).toBe("night");
+    // 出局后的停顿交给服务端的阶段反馈，客户端不再暂扣结算快照
     expect(wsMock.send).not.toHaveBeenCalledWith("room.requestSync");
-
-    vi.advanceTimersByTime(1500);
     expect(useWhoIsFakerStore.getState().snapshot?.status.phase).toBe("gameOver");
     expect(useWhoIsFakerStore.getState().snapshot?.chat[0]?.text).toBe("Game over");
     dispose();

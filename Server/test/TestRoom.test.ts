@@ -396,6 +396,12 @@ test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束",
   })) as { success: boolean };
 
   expect(result.success).toBe(true);
+  // 猜中先进入反馈展示对错，出题人继续后才结算。
+  const feedback = snapshotOf(host);
+  expect(feedback.status.phase).toBe("feedback");
+  expect(feedback.status.feedback).toMatchObject({ kind: "blankGuess", next: "gameOver" });
+  expect(feedback.status.feedback?.blankGuess).toMatchObject({ playerId, success: true, guessedWords: ["苹果", "香蕉"] });
+  await execute(service, host, { id: "continue", type: "game.advancePhase", payload: {} });
   const finished = snapshotOf(host);
   expect(finished.status.phase).toBe("gameOver");
   expect(finished.summary?.winner).toBe("blank");
@@ -470,6 +476,11 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
     payload: { approve: true },
   });
 
+  const feedback = snapshotOf(host);
+  expect(feedback.status.phase).toBe("feedback");
+  expect(feedback.status.feedback).toMatchObject({ kind: "blankGuess", blankGuessReviewed: true });
+  expect(feedback.status.feedback?.blankGuess?.success).toBe(true);
+  await execute(service, questioner, { id: "continue", type: "game.advancePhase", payload: {} });
   const finished = snapshotOf(host);
   expect(finished.status.phase).toBe("gameOver");
   expect(finished.summary?.winner).toBe("blank");
@@ -521,7 +532,12 @@ test("主动猜词猜错后，主持人判错则离开猜词并清理待裁定�
     payload: { approve: false },
   });
 
-  // 裁定之后必须离开 blankGuess，且不再留有待裁定标记。
+  // 裁定之后必须离开 blankGuess，且不再留有待裁定标记；反馈里给出判错结果。
+  const feedback = snapshotOf(host);
+  expect(feedback.status.phase).toBe("feedback");
+  expect(feedback.status.feedback?.blankGuess?.success).toBe(false);
+  expect(feedback.status.blankGuessPendingReview).toBeUndefined();
+  await execute(service, host, { id: "continue", type: "game.advancePhase", payload: {} });
   const after = snapshotOf(host);
   expect(after.status.phase).not.toBe("blankGuess");
   expect(after.status.blankGuessPendingReview).toBeUndefined();
@@ -715,6 +731,9 @@ test("主持人判错时回到原阶段继续游戏，机会不再返还", async
     type: "game.reviewBlankGuess",
     payload: { approve: false },
   });
+  expect(snapshotOf(host).status.phase).toBe("feedback");
+  expect(snapshotOf(host).status.feedback?.next).toBe("description");
+  await execute(service, questioner, { id: "continue", type: "game.advancePhase", payload: {} });
 
   // 回到发起猜词时的阶段，游戏继续；机会已经用掉，不能再猜。
   expect(snapshotOf(host).status.phase).toBe("description");
@@ -783,6 +802,8 @@ test("机器人会补齐发言与投票，出题人能一路推进到结算", as
 
   // 投票同样由机器人补齐，出题人结算后进入夜晚或直接分出胜负。
   await execute(service, host, { id: "resolve-vote", type: "game.advancePhase", payload: {} });
+  expect(snapshotOf(host).status.phase).toBe("feedback");
+  await execute(service, host, { id: "continue-vote", type: "game.advancePhase", payload: {} });
   const afterVote = snapshotOf(host);
   expect(["night", "tieBreak", "gameOver", "blankGuess"]).toContain(afterVote.status.phase);
 });
