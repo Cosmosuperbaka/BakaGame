@@ -66,4 +66,7 @@ Server/build
 
 word-bank.json
 bangumi-enrichment.sqlite
+
+# 番剧数据库不进 Git：曾走 LFS 吃穿带宽额度，现由 Cloudflare R2 分发（见 Server/data/README.md）
+Server/data/*.sqlite
 /tasks
