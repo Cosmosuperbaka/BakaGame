@@ -296,6 +296,11 @@ export function scoreRollDelay(index: number, count: number, ranked: boolean): n
 export const digitRoll = {
   transition: spring.settle,
   stagger: 0.04,
+  /**
+   * 连续跟手的读数（音量百分比）：每一位由一条弹簧位置驱动，目标变了就带着当前速度续上，
+   * 快速拖动时不会像逐次滚动那样被下一次变化打断重来。取 snap：跟得上手、几乎不过冲。
+   */
+  follow: spring.snap,
   /** 符号随滚动出现（0 滚到 +4、0 滚到 -1） */
   sign: { duration: duration.quick, ease: ease.out },
 } as const;

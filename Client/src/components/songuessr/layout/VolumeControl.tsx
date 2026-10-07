@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { FollowNumber } from "@/components/ui/FollowNumber";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
@@ -117,7 +117,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
     <div
       title={title}
       data-expanded={expanded || undefined}
-      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel pr-3 pl-1 shadow-sm", className)}
+      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel pr-2 pl-1 shadow-sm", className)}
     >
       <motion.button
         type="button"
@@ -151,10 +151,62 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
         onValueChange={([value]) => onVolumeChange(value)}
         aria-label="播放音量"
       />
-      {/* 读数定宽：三位数与一位数之间切换时胶囊不伸缩。 */}
-      <span className={cn("ml-1 flex w-10 items-baseline justify-end font-sans text-xs tabular-nums", muted ? "text-muted-foreground" : "text-foreground")}>
-        <AnimatedNumber value={percentage} />%
-      </span>
+      <VolumeReadout percentage={percentage} muted={muted} onCommit={(value) => onVolumeChange(value / 100)} />
     </div>
+  );
+}
+
+/**
+ * 右端的百分比读数：衬线加粗，与步进器的数值同一种字；三位滚轮定宽，一位数与三位数之间胶囊不伸缩。
+ * 读数本身是按钮，点一下原地换成输入框，直接键入 0–100 的百分比：回车或失焦提交，Esc 放弃。
+ */
+function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; muted: boolean; onCommit: (value: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const tone = muted ? "text-muted-foreground" : "text-foreground";
+
+  useEffect(() => {
+    if (editing) input.current?.select();
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const value = Number(draft.trim().replace(/%$/, ""));
+    // 空串或非数字视作放弃；越界按上下限夹住。
+    if (draft.trim() && Number.isFinite(value)) onCommit(Math.min(100, Math.max(0, Math.round(value))));
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") commit();
+    if (event.key === "Escape") {
+      // 只收起输入框，不让 Esc 再冒泡去关掉外层弹出层。
+      event.stopPropagation();
+      setEditing(false);
+    }
+  };
+
+  return editing ? (
+    <span className={cn("ml-1 flex w-12 items-baseline justify-end text-sm font-semibold tabular-nums", tone)}>
+      <input
+        ref={input}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        inputMode="numeric"
+        aria-label="输入音量百分比"
+        className="w-full min-w-0 rounded-sm bg-accent/60 px-0.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+      />
+      %
+    </span>
+  ) : (
+    <button
+      type="button"
+      onClick={() => { setDraft(String(percentage)); setEditing(true); }}
+      aria-label={`音量 ${percentage}%，点击输入`}
+      className={cn("ml-1 flex w-12 items-baseline justify-end rounded-sm text-sm font-semibold tabular-nums transition-colors hover:bg-accent/60", tone)}
+    >
+      <FollowNumber value={percentage} places={3} />%
+    </button>
   );
 }

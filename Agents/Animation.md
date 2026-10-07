@@ -212,7 +212,7 @@
 | `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
 | `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片；`receiptCard.exit` 以确定时长原路收回起点、不回弹（撤销或换回输入栏），用法见 §2.4 |
 | `wordDock` | 谁是卧底词语停靠顶栏时的缩放（`scale`），顶栏占位按同一比例预留宽高 |
-| `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽、音量图标分档）自下顶上；步进器数值按增减方向取 `y` 的正负，新值顺着方向顶上来（`readoutTick`）。音量百分比改用 `AnimatedNumber` 逐位滚动；音量轨道粗细与滑块显隐走 CSS 的 `--motion-spring-snap` |
+| `readoutSwap` / `readoutTick` | 读数替换：离散替换（猜词槽、音量图标分档）自下顶上；步进器数值按增减方向取 `y` 的正负，新值顺着方向顶上来（`readoutTick`）。音量百分比这类连续跟手的读数用 `FollowNumber`：每位一只滚轮，位置由 `digitRoll.follow`（`spring.snap`）的弹簧驱动，目标变了带着当前速度续上，快速拖动不会像 `AnimatedNumber` 那样逐次重滚、互相打断而被吞掉；离散的分数变化仍用 `AnimatedNumber`。音量轨道粗细与滑块显隐走 CSS 的 `--motion-spring-snap` |
 | `toastItem` / `bannerRise` / `dropIn` | 提示自右缘推入、横幅自底部升起、状态条自上方落下 |
 | `sunrise` | 日出图标自下升起（§2.2 允许的单元素纵向位移） |
 | `systemNotice` | 聊天系统提示从中线纵向展开 |
