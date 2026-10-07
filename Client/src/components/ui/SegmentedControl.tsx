@@ -24,13 +24,15 @@ interface SegmentedControlProps<T extends string> {
 }
 
 const SIZES = {
-  default: { root: "h-9 p-1", item: "px-3 text-sm" },
-  sm: { root: "h-8 p-0.5", item: "px-2.5 text-xs" },
+  default: { root: "h-9 p-1", item: "px-4 text-sm" },
+  sm: { root: "h-8 p-0.5", item: "px-3 text-xs" },
 } as const
 
 /**
- * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供；
- * 选中底块与 Tabs 是同一个 `SlidingIndicator`：按量到的选中项位置滑动，所在弹窗缩放开合时不跟着飘。
+ * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供。
+ * 外形与步进器、年份范围同一种全圆角凹槽：宽度贴合选项（各段等宽、取最长一段），不再横跨整行；
+ * 选中的那一颗是胶囊底块（`SlidingIndicator shape="pill"`），按量到的位置滑动，所在弹窗缩放开合时不跟着飘。
+ * 需要撑满时调用处传 `w-full`。
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -51,9 +53,9 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={cn("relative inline-flex w-full items-center rounded-md bg-muted text-muted-foreground", sizing.root, className)}
+      className={cn("relative inline-grid w-fit max-w-full auto-cols-fr grid-flow-col items-center rounded-full bg-muted text-muted-foreground", sizing.root, className)}
     >
-      <SlidingIndicator rect={rect} />
+      <SlidingIndicator rect={rect} shape="pill" />
       {options.map((option) => {
         const checked = option.value === value
         return (
@@ -65,7 +67,7 @@ export function SegmentedControl<T extends string>({
             tabIndex={-1}
             data-checked={checked || undefined}
             className={cn(
-              "relative flex h-full flex-1 cursor-pointer items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors",
+              "relative flex h-full min-w-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full font-medium transition-colors",
               sizing.item,
               checked ? "text-foreground" : !option.disabled && "hover:text-foreground",
               option.disabled && "cursor-not-allowed opacity-50",

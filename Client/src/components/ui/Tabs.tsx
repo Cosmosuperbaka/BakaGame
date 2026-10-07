@@ -51,8 +51,9 @@ const Tabs = React.forwardRef<
 Tabs.displayName = TabsPrimitive.Root.displayName
 
 /**
- * 标签栏。选中底块是栏里唯一的一个元素，按量到的选中标签位置滑动（`useIndicatorRect`），
- * 不靠 layoutId 交接：弹窗缩放开合、重新打开时底块都停在原位，不会从别处飞进来。
+ * 标签栏：一排文字标签压在一条细分隔线上，选中项底部是一道主色细线（`SlidingIndicator shape="underline"`）。
+ * 细线是栏里唯一的一个元素，按量到的选中标签位置滑动（`useIndicatorRect`），
+ * 不靠 layoutId 交接：弹窗缩放开合、重新打开时都停在原位，不会从别处飞进来。
  * 与下方内容的间距由调用处给标签栏加下外边距（`mb-4` 等），`TabsContent` 不写外边距（见 `TabsContent`）。
  */
 const TabsList = React.forwardRef<
@@ -67,12 +68,12 @@ const TabsList = React.forwardRef<
     <TabsPrimitive.List
       ref={listRef}
       className={cn(
-        "relative inline-flex h-9 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+        "relative inline-flex h-10 items-stretch justify-start gap-1 border-b border-border text-muted-foreground",
         className
       )}
       {...props}
     >
-      <SlidingIndicator rect={rect} />
+      <SlidingIndicator rect={rect} shape="underline" />
       {children}
     </TabsPrimitive.List>
   )
@@ -89,7 +90,8 @@ const TabsTrigger = React.forwardRef<
       type="button"
       {...tappable}
       className={cn(
-        "relative inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground",
+        // 标签贴在分隔线上（-mb-px 盖住那 1px），聚焦环向内收，不被弹窗边缘或分隔线切掉。
+        "relative -mb-px inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-t-md px-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:-outline-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground",
         className
       )}
     >

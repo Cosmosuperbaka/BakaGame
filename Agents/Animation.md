@@ -48,7 +48,7 @@
   - 会改动当前页内容的副作用放在换页之后。离开房间先导航、房间页卸载后再退房（谁是卧底、猜歌在卸载 cleanup 里调 `leaveRoom`，CCB 由大厅挂载时退房并重新订阅）：先退再走，快照拍到的是清空后的加入中占位，清空还会触发「脱离房间」的 effect 再导航一次、打断进行中的过渡。退房回包可能晚于下一次进房，store 只清掉发起这次退房的会话。
   - 过渡期间页面不响应点击，时长即冻结时长：整页约 0.42s（`spring.swift`），带共享元素约 0.6s（`spring.settle`）。
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
-- 选中指示器（`Tabs`、`SegmentedControl` 的底块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
+- 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、CCB 队伍面板的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
 - 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
 - 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
