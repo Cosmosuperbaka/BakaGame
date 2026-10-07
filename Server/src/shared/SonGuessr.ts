@@ -198,7 +198,16 @@ export interface SonGuessrMusicAccount {
   vipStatus?: "vip" | "nonVip" | "unknown";
   vipType?: number;
   vipExpireTime?: number;
+  /**
+   * 展示用的会员档位，按网易云客户端的优先级取最高的一档：超级黑胶（`redplus`）> 黑胶（`associator`）> 音乐包。
+   * 到期时间 `vipExpireTime` 与之对应；非会员或状态未知时缺席。
+   */
+  vipTier?: SonGuessrVipTier;
+  /** 黑胶成长等级 1–7（`redVipLevel`），决定官方徽章上的「壹」至「柒」；音乐包没有等级 */
+  vipLevel?: number;
 }
+
+export type SonGuessrVipTier = "svip" | "vip" | "musicPackage";
 
 export interface SongLyricWord {
   startTime: number;

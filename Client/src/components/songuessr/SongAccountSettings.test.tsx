@@ -88,25 +88,44 @@ describe("SongAccountSettings", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
-  it("连接状态：多人房写「房间已连接」，单人模式只写「已连接」", () => {
-    const view = render(<SongAccountSettings snapshot={snapshot(true)} />);
-    expect(screen.getByText("房间已连接")).toBeInTheDocument();
-    view.rerender(<SongAccountSettings snapshot={{ ...snapshot(true), solo: true }} />);
-    expect(screen.getByText("已连接")).toBeInTheDocument();
-    expect(screen.queryByText("房间已连接")).not.toBeInTheDocument();
+  it("加载到房间后才显示账号：官方会员徽章与到期日同一行，收起时标题行换成头像", () => {
+    saveSongMusicSession({
+      cookie: "MUSIC_U=browser-only",
+      account: {
+        nickname: "黑胶账号", avatarUrl: "https://example.invalid/avatar.jpg", vipStatus: "vip",
+        vipTier: "svip", vipLevel: 5, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+      },
+    }, true);
+    const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
+    const toggle = screen.getByRole("button", { name: /网易云账号/ });
+    // 本机有凭据但还没装进房间：只说正在连接，不出现账号，也不再有「已连接」这类状态标。
+    expect(toggle).toHaveAccessibleDescription("正在连接网易云账号…");
+    expect(screen.queryByText(/已连接|本机已登录/)).not.toBeInTheDocument();
+
+    view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
+    expect(toggle).toHaveAccessibleDescription("黑胶账号 · SVIP · 伍 2027/4/1 到期");
+    expect(toggle.querySelector("img")).toHaveAttribute("src", "https://example.invalid/avatar.jpg");
+
+    fireEvent.click(toggle);
+    expect(panel().getByText("黑胶账号")).toBeInTheDocument();
+    expect(panel().getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
+    expect(panel().getByText("2027/4/1 到期")).toBeInTheDocument();
+    expect(panel().queryByRole("button", { name: "更换账号" })).not.toBeInTheDocument();
   });
 
-  it("更换账号时直接生成新二维码，不需要再点刷新", async () => {
+  it("退出登录：清掉房间与本机凭据，面板直接换成新二维码", async () => {
     saveSongMusicSession({ cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } }, true);
+    sendCommand.mockImplementation(async (type: string) => (type === "song.auth.qr.create" ? qrResponse("after-logout") : {}));
     render(<SongAccountSettings snapshot={snapshot(true)} />);
 
     fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
     expect(sendCommand).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "更换账号" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "退出登录" })); });
 
-    expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create");
-    expect(await screen.findByAltText("网易云登录二维码")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回当前账号" })).toBeInTheDocument();
+    expect(sendCommand.mock.calls).toEqual([["song.auth.clear"], ["song.auth.qr.create"]]);
+    expect(getStoredSongMusicSession()).toBeNull();
+    expect(setNotice).toHaveBeenCalledWith("已退出网易云账号", "success");
+    expect(await screen.findByAltText("网易云登录二维码")).toHaveAttribute("src", qrResponse("after-logout").qrImage);
   });
 
   // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，
@@ -156,7 +175,7 @@ describe("SongAccountSettings", () => {
       .mockReturnValueOnce(oldCheck.promise)
       .mockReturnValueOnce(freshCreate.promise)
       .mockResolvedValueOnce(authorizedResponse);
-    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /网易云账号/ })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(sendCommand).toHaveBeenLastCalledWith("song.auth.qr.check", { key: "old-qr" });
@@ -173,17 +192,16 @@ describe("SongAccountSettings", () => {
     expect(getStoredSongMusicSession()).toEqual({
       cookie: authorizedResponse.cookie, account: authorizedResponse.account, persistent: true,
     });
-    expect(screen.getByText("夹具账号")).toBeInTheDocument();
+    // 服务端装好会话后推送的快照里 musicAccountReady 为真，账号随之出现。
+    view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
+    expect(panel().getByText("夹具账号")).toBeInTheDocument();
     expect(setNotice).toHaveBeenCalledExactlyOnceWith("网易云账号已加载到当前房间", "success");
   });
 
-  it.each(["close", "room-change", "unmount", "return-to-account"])(
+  it.each(["close", "room-change", "unmount"])(
     "%s使在途二维码授权失效，不覆盖本机账号或发成功提示",
     async (boundary) => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-      if (boundary === "return-to-account") {
-        saveSongMusicSession({ cookie: "MUSIC_U=existing-fixture", account: { nickname: "原账号", vipStatus: "vip" } }, true);
-      }
       const previousSession = getStoredSongMusicSession();
       const pendingCheck = deferred<typeof authorizedResponse>();
       sendCommand.mockResolvedValueOnce(qrResponse("pending-qr")).mockReturnValueOnce(pendingCheck.promise);
@@ -191,10 +209,6 @@ describe("SongAccountSettings", () => {
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
       });
-      if (boundary === "return-to-account") {
-        fireEvent.click(screen.getByRole("button", { name: "更换账号" }));
-        await act(async () => { fireEvent.click(screen.getByRole("button", { name: "刷新二维码" })); });
-      }
       await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
       expect(sendCommand.mock.calls).toEqual([
         ["song.auth.qr.create"], ["song.auth.qr.check", { key: "pending-qr" }],
@@ -202,8 +216,7 @@ describe("SongAccountSettings", () => {
 
       if (boundary === "close") fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
       else if (boundary === "room-change") view.rerender(<SongAccountSettings snapshot={{ ...snapshot(false), roomId: "5678" }} />);
-      else if (boundary === "unmount") view.unmount();
-      else fireEvent.click(screen.getByRole("button", { name: "返回当前账号" }));
+      else view.unmount();
 
       await act(async () => { pendingCheck.resolve(authorizedResponse); });
       await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
@@ -211,7 +224,6 @@ describe("SongAccountSettings", () => {
       expect(getStoredSongMusicSession()).toEqual(previousSession);
       expect(setNotice).not.toHaveBeenCalled();
       expect(screen.queryByText("夹具账号")).not.toBeInTheDocument();
-      if (boundary === "return-to-account") expect(panel().getByText("原账号")).toBeInTheDocument();
     },
   );
 
@@ -219,7 +231,7 @@ describe("SongAccountSettings", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const pendingCheck = deferred<typeof authorizedResponse>();
     sendCommand.mockResolvedValueOnce(qrResponse("login-qr")).mockReturnValueOnce(pendingCheck.promise);
-    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /网易云账号/ })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     fireEvent.click(screen.getByRole("switch", { name: "保存登录状态" }));
@@ -229,7 +241,8 @@ describe("SongAccountSettings", () => {
     expect(getStoredSongMusicSession()).toEqual({
       cookie: authorizedResponse.cookie, account: authorizedResponse.account, persistent: false,
     });
-    expect(screen.getByText("夹具账号")).toBeInTheDocument();
+    view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
+    expect(panel().getByText("夹具账号")).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
     expect(sendCommand.mock.calls).toEqual([
       ["song.auth.qr.create"], ["song.auth.qr.check", { key: "login-qr" }],

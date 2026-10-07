@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeftRight, LogOut, QrCode, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, QrCode, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Spinner } from "@/components/ui/Spinner";
@@ -18,18 +18,37 @@ import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
 
-/** 标题行右侧的连接状态：圆点颜色与头像角上的状态点同一份。 */
-const CONNECTIONS = {
-  room: { label: "房间已连接", tone: "bg-success/10 text-success", dot: "bg-success" },
-  local: { label: "本机已登录", tone: "bg-warning/10 text-warning", dot: "bg-warning" },
-  none: { label: "未登录", tone: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/50" },
-} as const;
+/** 黑胶成长等级在官方徽章上的写法。 */
+const LEVEL_NUMERALS = ["", "壹", "贰", "叁", "肆", "伍", "陆", "柒"];
 
-const VIP_TONES = {
-  vip: { label: "网易云会员", tone: "bg-success/10 text-success", description: "" },
-  nonVip: { label: "非会员", tone: "bg-warning/10 text-warning", description: "非会员账号也能出题，会员专享歌曲会自动匹配可用音源。" },
-  unknown: { label: "会员状态未知", tone: "bg-muted text-muted-foreground", description: "暂时无法读取会员状态，选歌时以网易云实际权限为准。" },
-} as const;
+/** 官方会员徽章：图片取自网易云 CDN 的原图（`public/assets/netease-vip`），读屏读档位与等级。 */
+function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string } | null {
+  const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
+  if (account.vipTier === "svip") return { src: `/assets/netease-vip/SVIP-${level}.png`, label: `SVIP · ${LEVEL_NUMERALS[level]}` };
+  if (account.vipTier === "vip") return { src: `/assets/netease-vip/VIP-${level}.png`, label: `VIP · ${LEVEL_NUMERALS[level]}` };
+  if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包" };
+  return null;
+}
+
+const expireFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Shanghai" });
+
+/** 会员一行的文字：徽章之后的到期日；旧版本存下的账号没有档位时退回文字。 */
+function vipText(account: SonGuessrMusicAccount): { label: string; expire: string; description?: string } {
+  const expire = account.vipStatus === "vip" && account.vipExpireTime ? `${expireFormat.format(new Date(account.vipExpireTime))} 到期` : "";
+  if (account.vipStatus === "vip") return { label: vipBadge(account)?.label ?? "网易云会员", expire };
+  if (account.vipStatus === "nonVip") return { label: "非会员", expire, description: "非会员账号也能出题，会员专享歌曲会自动匹配可用音源。" };
+  return { label: "会员状态未知", expire, description: "暂时无法读取会员状态，选歌时以网易云实际权限为准。" };
+}
+
+function AccountAvatar({ account, className }: { account: SonGuessrMusicAccount; className: string }) {
+  return account.avatarUrl ? (
+    <img src={account.avatarUrl} alt="" className={cn(className, "shrink-0 rounded-full bg-muted object-cover")} />
+  ) : (
+    <span className={cn(className, "flex shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground")}>
+      <UserRound className="size-3/5" aria-hidden="true" />
+    </span>
+  );
+}
 
 interface QrCreateResponse extends Record<string, unknown> {
   key: string;
@@ -52,7 +71,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [remember, setRemember] = useState(() => getStoredSongMusicSession()?.persistent ?? true);
   const [storedSession, setStoredSession] = useState<StoredSongMusicSession | null>(
     getStoredSongMusicSession,
@@ -85,7 +103,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     loginGenerationRef.current += 1;
     saveSongMusicSession(session, rememberRef.current);
     setStoredSession({ ...session, persistent: rememberRef.current });
-    setEditing(false);
     setQr(null);
     setQrStatus("登录成功");
     setNotice("网易云账号已加载到当前房间", "success");
@@ -108,7 +125,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     }
   }, [sendCommand, setNotice]);
 
-  const showQr = !storedSession || editing;
+  const showQr = !storedSession;
 
   const checkQr = useCallback(async () => {
     if (!qr || qrCheckingRef.current === loginGenerationRef.current) return;
@@ -150,7 +167,8 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     void createQr();
   };
 
-  const removeLogin = async () => {
+  /** 退出登录：清掉房间里的凭据与本机存储，面板回到扫码，展开着就直接给出新二维码。 */
+  const logout = async () => {
     cancelLogin();
     const generation = loginGenerationRef.current;
     setBusy(true);
@@ -163,38 +181,22 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     setBusy(false);
     clearStoredSongMusicSession();
     setStoredSession(null);
-    setEditing(false);
     setQr(null);
-    setNotice("本机登录状态已移除", "success");
+    setNotice("已退出网易云账号", "success");
+    if (open) void createQr();
   };
 
-  const account = storedSession?.account;
-  const vip = VIP_TONES[account?.vipStatus ?? "unknown"];
-  const vipExpireLabel = account?.vipExpireTime
-    ? `有效期至 ${new Intl.DateTimeFormat("zh-CN", {
-        year: "numeric",
-        month: "numeric",
-        day: "numeric",
-        timeZone: "Asia/Shanghai",
-      }).format(new Date(account.vipExpireTime))}`
-    : undefined;
-  const connection = snapshot.musicAccountReady
-    // 单人模式没有「房间」可言，账号只给自己取歌
-    ? (snapshot.solo ? { ...CONNECTIONS.room, label: "已连接" } : CONNECTIONS.room)
-    : storedSession ? CONNECTIONS.local : CONNECTIONS.none;
+  // 账号信息只在加载到房间后显示：本机存着凭据、还在装载时只说「正在连接」，不让人以为已经能用。
+  const account = snapshot.musicAccountReady ? storedSession?.account : undefined;
+  const connecting = Boolean(storedSession) && !snapshot.musicAccountReady;
+  const vip = account ? vipText(account) : null;
+  const badge = account ? vipBadge(account) : null;
 
   const toggle = (next: boolean) => {
     if (!next) { cancelLogin(); setOpen(false); return; }
     setOpen(true);
     if (showQr && !qr && !busy) void createQr();
   };
-  // 更换账号直接给出新二维码，不让人再点一次刷新。
-  const switchAccount = () => {
-    cancelLogin();
-    setEditing(true);
-    void createQr();
-  };
-  const backToAccount = () => { cancelLogin(); setEditing(false); };
 
   return (
     <SettingsAccordion
@@ -202,55 +204,37 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       title="网易云账号"
       open={open}
       onOpenChange={toggle}
-      summary={account ? [account.nickname, vip.label] : ["登录后全房共用此账号取歌"]}
-      badge={(
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-medium", connection.tone)}>
-          <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", connection.dot)} />
-          {connection.label}
-        </span>
-      )}
+      media={account ? <AccountAvatar account={account} className="size-5" /> : undefined}
+      summary={account && vip ? [account.nickname, [vip.label, vip.expire].filter(Boolean).join(" ")]
+        : connecting ? ["正在连接网易云账号…"] : ["登录后全房共用此账号取歌"]}
     >
       {/* 账号与二维码两态各自按高度收放，一个收起时另一个撑开，切换时面板高度连续变化。 */}
-      <CollapsibleRegion open={!showQr && Boolean(account)}>
-        {account ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <span className="relative shrink-0">
-                {account.avatarUrl ? (
-                  <img src={account.avatarUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
-                ) : (
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
-                    <UserRound className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+      <CollapsibleRegion open={!showQr}>
+        <div className="space-y-4">
+          {account && vip ? (
+            <div className="space-y-1.5">
+              {/* 头像、昵称与会员徽章同一行；空间不够时徽章与到期日整体换到昵称下方。 */}
+              <div className="flex items-center gap-3">
+                <AccountAvatar account={account} className="size-11" />
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 max-w-full truncate text-sm font-medium" title={account.nickname}>{account.nickname}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    {badge ? <img src={badge.src} alt={badge.label} className="h-4 w-auto" /> : <span className="font-medium text-foreground">{vip.label}</span>}
+                    {vip.expire ? <span className="tabular-nums">{vip.expire}</span> : null}
                   </span>
-                )}
-                <span aria-hidden="true" className={cn("absolute right-0 bottom-0 h-3 w-3 rounded-full ring-2 ring-panel", connection.dot)} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium" title={account.nickname}>{account.nickname}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {snapshot.musicAccountReady ? "全房音乐请求正在使用此账号" : "等待加载到当前房间"}
                 </div>
               </div>
+              {vip.description ? <p className="text-xs leading-relaxed text-muted-foreground">{vip.description}</p> : null}
             </div>
-            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
-              <div className={cn("min-w-0 flex-1", vip.description && "basis-40")}>
-                <div className="text-sm">会员状态</div>
-                {vip.description ? <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{vip.description}</p> : null}
-              </div>
-              <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium", vip.tone)}>
-                {vip.label}{vipExpireLabel ? <span className="font-normal opacity-80"> · {vipExpireLabel}</span> : null}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1 gap-1.5" disabled={busy} onClick={switchAccount}>
-                <ArrowLeftRight className="h-3.5 w-3.5" />更换账号
-              </Button>
-              <Button variant="ghost" size="sm" className="gap-1.5 text-destructive hover:text-destructive" disabled={busy} onClick={() => void removeLogin()}>
-                <LogOut className="h-3.5 w-3.5" />移除登录
-              </Button>
-            </div>
-          </div>
-        ) : null}
+          ) : (
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner />正在连接网易云账号…
+            </p>
+          )}
+          <Button variant="outline" size="sm" className="w-full gap-1.5 text-destructive hover:text-destructive" disabled={busy} onClick={() => void logout()}>
+            <LogOut className="h-3.5 w-3.5" />退出登录
+          </Button>
+        </div>
       </CollapsibleRegion>
 
       <CollapsibleRegion open={showQr}>
@@ -283,16 +267,13 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
           </div>
           <SettingSwitchRow label="保存登录状态" description="仅保存在当前浏览器，服务器不持久化账号信息"
             checked={remember} onCheckedChange={(value) => { rememberRef.current = value; setRemember(value); }} />
-          {account ? (
-            <Button variant="ghost" size="sm" className="w-full" onClick={backToAccount}>返回当前账号</Button>
-          ) : null}
         </div>
       </CollapsibleRegion>
 
       <p className="mt-4 flex gap-2 border-t pt-4 text-2xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
         <span>
-          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或主动移除登录时销毁。
+          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或退出登录时销毁。
         </span>
       </p>
     </SettingsAccordion>

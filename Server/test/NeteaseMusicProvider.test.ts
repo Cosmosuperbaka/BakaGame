@@ -1254,6 +1254,38 @@ describe("NeteaseMusicProvider", () => {
       });
   });
 
+  test("会员展示档位按超级黑胶 > 黑胶 > 音乐包取，到期时间与等级跟着这一档", async () => {
+    const future = Date.now() + 86_400_000;
+    const later = future + 86_400_000;
+    const createProvider = (data: Record<string, unknown>) => new NeteaseMusicProvider({
+      randomCNIP: false,
+      loadApi: async () => ({
+        login_status: async () => ({ body: { data: { code: 200, profile: { userId: 7, nickname: "档位测试" } } } }),
+        vip_info_v2: async () => ({ body: { code: 200, data } }),
+      }),
+    });
+    const account = async (data: Record<string, unknown>) => (await createProvider(data).getLoginStatus("MUSIC_U=tier")).account;
+
+    expect(await account({
+      redVipLevel: 5,
+      associator: { vipCode: 100, expireTime: later },
+      redplus: { vipCode: 300, expireTime: future },
+      musicPackage: { vipCode: 220, expireTime: later },
+    })).toMatchObject({ vipStatus: "vip", vipTier: "svip", vipLevel: 5, vipExpireTime: future });
+    // 超级黑胶已过期：退到黑胶，等级超出 7 时夹到 7。
+    expect(await account({
+      redVipLevel: 9,
+      associator: { vipCode: 100, expireTime: later },
+      redplus: { vipCode: 300, expireTime: Date.now() - 1 },
+    })).toMatchObject({ vipTier: "vip", vipLevel: 7, vipExpireTime: later });
+    const music = await account({ redVipLevel: 3, musicPackage: { vipCode: 220, expireTime: future } });
+    expect(music).toMatchObject({ vipTier: "musicPackage", vipExpireTime: future });
+    expect(music.vipLevel).toBeUndefined();
+    const none = await account({ redVipLevel: 0 });
+    expect(none.vipStatus).toBe("nonVip");
+    expect(none.vipTier).toBeUndefined();
+  });
+
   test("登录状态接口返回嵌套失效码时不会误判为已登录", async () => {
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({

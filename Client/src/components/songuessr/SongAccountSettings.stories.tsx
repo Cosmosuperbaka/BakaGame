@@ -29,18 +29,18 @@ const qrWaiting = (type: string) => (type === "song.auth.qr.create" ? Promise.re
 export const LoggedOut: Story = { name: "未登录" };
 
 export const LocalOnly: Story = {
-  name: "本机已登录 · 未加载到房间",
+  name: "正在连接（本机有凭据，未加载到房间）",
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
 };
 
 export const RoomConnected: Story = {
-  name: "房间已连接",
+  name: "已登录 · 收起",
   args: { snapshot: songSnapshot() },
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
 };
 
 export const SoloConnected: Story = {
-  name: "单人模式 · 已连接",
+  name: "单人模式 · 已登录",
   args: { snapshot: songSnapshot({ solo: true }) },
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
 };
@@ -69,6 +69,7 @@ export const NonVipExpanded: Story = {
 
 export const UnknownVipExpanded: Story = {
   name: "展开 · 会员状态未知",
+  args: { snapshot: songSnapshot() },
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.unknown),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
@@ -107,17 +108,16 @@ export const QrFailed: Story = {
   },
 };
 
-export const SwitchAccount: Story = {
-  name: "更换账号",
+export const Logout: Story = {
+  name: "退出登录后重新扫码",
   args: { snapshot: songSnapshot() },
   beforeEach: () => {
-    stubSongCommand(qrWaiting);
+    stubSongCommand((type) => (type === "song.auth.clear" ? Promise.resolve({}) : qrWaiting(type)));
     return seedMusicSession(SONG_ACCOUNTS.vip);
   },
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "更换账号" }));
-    await canvas.findByRole("button", { name: "返回当前账号" });
+    await userEvent.click(await canvas.findByRole("button", { name: "退出登录" }));
     await canvas.findByAltText("网易云登录二维码");
     dropFocus();
   },

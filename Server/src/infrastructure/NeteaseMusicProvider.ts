@@ -32,6 +32,7 @@ import type {
   SongDetails,
   SongAlbumSearchResult,
   SongArtistSearchResult,
+  SonGuessrVipTier,
   SongEncyclopedia,
   SonGuessrMusicAccount,
   SongLyricLine,
@@ -480,11 +481,23 @@ const readVipAccount = (
     .map((membership) => readNumber(membership.expireTime ?? membership.expire ?? membership.endTime))
     .filter((value): value is number => value !== undefined)
     .sort((left, right) => right - left)[0];
+  // 展示档位按网易云客户端的优先级取：超级黑胶 > 黑胶 > 音乐包，到期时间跟着这一档走。
+  const tiers: Array<[SonGuessrVipTier, Record<string, unknown>]> = [
+    ["svip", asRecord(data.redplus)], ["vip", asRecord(data.associator)], ["musicPackage", asRecord(data.musicPackage)],
+  ];
+  const shown = tiers.find(([, membership]) => active.includes(membership));
+  const level = readNumber(data.redVipLevel);
+  const tierFields: Partial<SonGuessrMusicAccount> = shown ? {
+    vipTier: shown[0],
+    vipExpireTime: readNumber(shown[1].expireTime ?? shown[1].expire ?? shown[1].endTime) ?? vipExpireTime,
+    ...(shown[0] !== "musicPackage" && level !== undefined && Number.isInteger(level) && level >= 1 ? { vipLevel: Math.min(level, 7) } : {}),
+  } : {};
   return {
     ...account,
     vipStatus: active.length > 0 ? "vip" : "nonVip",
     vipType,
     vipExpireTime,
+    ...tierFields,
   };
 };
 

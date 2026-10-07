@@ -1901,6 +1901,8 @@ export class SonGuessrService {
       vipStatus: session.account.vipStatus,
       vipType: session.account.vipType,
       vipExpireTime: session.account.vipExpireTime,
+      vipTier: session.account.vipTier,
+      vipLevel: session.account.vipLevel,
     };
     // 房间内只暂存调用音乐接口所需的 Cookie 和会员判定所需的最小账号状态，不做持久化保存。
     room.musicSession = { ownerPlayerId, cookie, account };

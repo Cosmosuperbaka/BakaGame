@@ -486,7 +486,7 @@ export const SONG_LOBBY_ROOMS: SonGuessrRoomSummary[] = [
 export const SONG_ACCOUNTS = {
   vip: {
     userId: "10001", nickname: "夜行电台的听众", avatarUrl: placeholderImage("听", 30, 80, 80),
-    vipStatus: "vip", vipType: 11, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+    vipStatus: "vip", vipType: 300, vipTier: "svip", vipLevel: 5, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
   },
   nonVip: { userId: "10002", nickname: "海豹的歌单", vipStatus: "nonVip" },
   unknown: { userId: "10003", nickname: "小布丁", vipStatus: "unknown" },
