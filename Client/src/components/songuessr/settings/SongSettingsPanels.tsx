@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
 import { useRef, useState } from "react";
-import { Disc3, Globe, ListMusic, Lock, Tv, Users, X } from "lucide-react";
+import { Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -126,16 +126,28 @@ export function SongQuestionSettings({
 }
 
 /** 已选条目：可移除的胶囊，进出按 `listItem` 推入淡出。歌单与歌手共用。 */
-function FilterChip({ label, removeLabel, onRemove }: { label: string; removeLabel: string; onRemove?: () => void }) {
+/**
+ * 已选筛选项的标签：纸面小卡片，左侧图标标明种类（歌单 / 歌手），右侧以细分隔线隔出独立的移除格。
+ * 移除格整格可点、悬停转为危险色，不再是挤在胶囊里的小圆钮。
+ */
+function FilterChip({ icon: Icon, label, removeLabel, onRemove }: {
+  icon: typeof X;
+  label: string;
+  removeLabel: string;
+  onRemove?: () => void;
+}) {
   return (
     <motion.span variants={listItem} initial="initial" animate="animate" exit="exit" layout="position"
-      className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
-      <span className="min-w-0 truncate" title={label}>{label}</span>
+      className="inline-flex h-7 max-w-full items-stretch overflow-hidden rounded-md border border-border bg-card text-xs shadow-2xs">
+      <span className="flex min-w-0 items-center gap-1.5 pr-2 pl-2">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 truncate" title={label}>{label}</span>
+      </span>
       {onRemove ? (
-        <Button type="button" variant="ghost" size="icon" className="h-5 w-5 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
-          aria-label={removeLabel} onClick={onRemove}>
+        <button type="button" aria-label={removeLabel} onClick={onRemove}
+          className="flex w-7 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-none">
           <X className="h-3 w-3" />
-        </Button>
+        </button>
       ) : null}
     </motion.span>
   );
@@ -225,7 +237,7 @@ function SongAutoFilters({ values, edit }: {
         <div className="flex empty:hidden">
           <AnimatePresence initial={false}>
             {values.playlist ? (
-              <FilterChip key={values.playlist.id} label={`${values.playlist.name ?? values.playlist.id} · ${values.playlist.songCount ?? "?"} 首`}
+              <FilterChip key={values.playlist.id} icon={ListMusic} label={`${values.playlist.name ?? values.playlist.id} · ${values.playlist.songCount ?? "?"} 首`}
                 removeLabel="清除歌单筛选" onRemove={() => { edit("playlist", undefined); setPlaylistDraft(""); }} />
             ) : null}
           </AnimatePresence>
@@ -253,7 +265,7 @@ function SongAutoFilters({ values, edit }: {
         <div className="flex flex-wrap gap-1.5 empty:hidden">
           <AnimatePresence initial={false}>
             {values.artists.map((artist) => (
-              <FilterChip key={artist.id} label={artist.name} removeLabel={`移除歌手 ${artist.name}`}
+              <FilterChip key={artist.id} icon={Mic2} label={artist.name} removeLabel={`移除歌手 ${artist.name}`}
                 onRemove={() => edit("artists", values.artists.filter((item) => item.id !== artist.id))} />
             ))}
           </AnimatePresence>
