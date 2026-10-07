@@ -72,8 +72,29 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: true
+
+      # 数据库不进 Git/LFS（曾把 LFS 带宽额度吃穿），从 R2 加速域取版本化实体。
+      # manifest.json 是一致性锚点（公开可读，ESA 上配置了禁缓存规则）；
+      # 文件名带 sha12 = 新缓存键，发布新版不会被 CDN 旧缓存污染。
+      - name: Download bangumi data
+        run: |
+          set -euo pipefail
+          mkdir -p Server/data
+          cd Server/data
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            -o manifest.json "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"
+          fetch_one() {
+            id=$1 out=$2
+            key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' manifest.json)
+            sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' manifest.json)
+            curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+              -o "$out" "$BANGUMI_DATA_CDN_BASE/files/$key"
+            echo "$sha  $out" | sha256sum --check --strict -
+          }
+          fetch_one character bangumi-character.sqlite
+          fetch_one song bangumi-song.sqlite
+        env:
+          BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -164,8 +185,27 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: true
+
+      # 同 Server CI：E2E 要起真实服务端，需要从 R2 加速域取数据库实体并校验。
+      - name: Download bangumi data
+        run: |
+          set -euo pipefail
+          mkdir -p Server/data
+          cd Server/data
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            -o manifest.json "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"
+          fetch_one() {
+            id=$1 out=$2
+            key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' manifest.json)
+            sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' manifest.json)
+            curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+              -o "$out" "$BANGUMI_DATA_CDN_BASE/files/$key"
+            echo "$sha  $out" | sha256sum --check --strict -
+          }
+          fetch_one character bangumi-character.sqlite
+          fetch_one song bangumi-song.sqlite
+        env:
+          BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
