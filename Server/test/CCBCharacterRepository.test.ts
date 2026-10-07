@@ -101,8 +101,6 @@ describe("CCB 本地角色资料", () => {
     const music = await repository.getCharacter(4, { ...settings(), metaTags: ["书籍"] });
     expect(music.appearances.map((row) => row.id)).toEqual([13]);
     expect(music.subjectTags).toEqual(["音乐"]);
-    const selected = await repository.getCharacter(1, { ...settings(), commonTags: false, characterTagNum: 1 });
-    expect(selected.metaTags).toEqual(["漫画改", "校园", "青春", "蓝发", "日本", "声優甲"]);
   });
 
   test("热度先选作品再按主配角规则选角色，额外作品和年榜独立生效", async () => {

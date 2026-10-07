@@ -27,11 +27,9 @@ export function buildCCBFeedback(guess: CCBCharacterView, answer: CCBCharacterVi
     const selected = [...matched, ...values.filter(value => !answerSet.has(value))].slice(0, limit);
     for (const text of selected) if (!tags.some(tag => tag.text === text)) tags.push({ text, matched: answerSet.has(text), hidden: false, kind });
   };
-  if (settings.commonTags) {
-    appendTags(guess.subjectTags, answer.subjectTags, settings.subjectTagNum, 'subject');
-    appendTags(guess.characterTags, answer.characterTags, settings.characterTagNum, 'character');
-    appendTags(guess.voiceActors, answer.voiceActors, Number.POSITIVE_INFINITY, 'voice');
-  } else appendTags(guess.metaTags, answer.metaTags, Number.POSITIVE_INFINITY, 'subject');
+  appendTags(guess.subjectTags, answer.subjectTags, settings.subjectTagNum, 'subject');
+  appendTags(guess.characterTags, answer.characterTags, settings.characterTagNum, 'character');
+  appendTags(guess.voiceActors, answer.voiceActors, Number.POSITIVE_INFINITY, 'voice');
   return {
     gender: { value: guess.gender, comparison: guess.gender === answer.gender ? 'yes' : 'no' },
     popularity: compareNumber(guess.popularity, answer.popularity, answer.popularity * .05, answer.popularity * .2),

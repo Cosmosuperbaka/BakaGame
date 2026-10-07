@@ -345,7 +345,7 @@ ORDER BY r.subject_id
 原版的标签池（`metaTags` / `rawTags`）是 `filteredAppearances` 的函数，而 `filteredAppearances`
 依赖**房间设置**：`gameSettings.metaTags` 决定 `bigTypes`（默认 `[2]`，选「游戏」→`[4]`、
 「书籍」→`[1]`、「三次元」→`[6]`、「全部」→`[1,2,4,6]`，注意是 `else if` 链），再叠加
-`commonTags` / `subjectTagNum` / `characterTagNum`。**同一个角色在不同设置下标签池不同。**
+`subjectTagNum` / `characterTagNum`（原版的 `commonTags` 本地固定为开启，设置里不再提供，与上游互通时照常发 `true`）。**同一个角色在不同设置下标签池不同。**
 
 因此构建脚本只物化**输入**：`subjects.raw_tags`（全类型未过滤的 `{标签: 票数}`）+
 `subjects.meta_tags` + `character_subject_relations` + `character_tags` + `character_vas`，

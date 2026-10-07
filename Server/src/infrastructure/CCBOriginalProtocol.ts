@@ -104,7 +104,7 @@ export function originalSettings(value: unknown, answerMode: CCBSettings['answer
   const numericKeys = ['startYear', 'endYear', 'topNSubjects', 'characterNum', 'maxAttempts', 'timeLimit',
     'subjectTagNum', 'characterTagNum', 'useImageHint'] as const;
   for (const key of numericKeys) result[key] = raw[key] === null && key === 'timeLimit' ? 0 : originalNumber(raw[key], defaults[key]);
-  const flags = ['useSubjectPerYear', 'useIndex', 'mainCharacterOnly', 'subjectSearch', 'commonTags',
+  const flags = ['useSubjectPerYear', 'useIndex', 'mainCharacterOnly', 'subjectSearch',
     'globalPick', 'tagBan', 'syncMode', 'nonstopMode'] as const;
   for (const key of flags) if (typeof raw[key] === 'boolean') result[key] = raw[key];
   result.metaTags = Array.isArray(raw.metaTags) ? originalStrings(raw.metaTags) : defaults.metaTags;
@@ -114,9 +114,9 @@ export function originalSettings(value: unknown, answerMode: CCBSettings['answer
   return result;
 }
 
-/** 本地设置转为上游格式；出题方式是本服务端的扩展，不发给原版服务器。 */
+/** 本地设置转为上游格式；出题方式是本服务端的扩展，不发给原版服务器。常见标签本地固定开启，上游照常收到 `true`。 */
 export const toOriginalSettings = ({ answerMode: _answerMode, ...settings }: CCBSettings): Record<string, unknown> => ({
-  ...settings, timeLimit: settings.timeLimit || null,
+  ...settings, commonTags: true, timeLimit: settings.timeLimit || null,
   addedSubjects: settings.addedSubjects.map(id => ({ id })),
 });
 

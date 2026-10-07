@@ -235,7 +235,6 @@ export function CCBGameSettings({ settings, waiting, readOnly = false }: { setti
           <SettingsSection title="标签" icon={Tags}>
             <SettingStepper label="作品标签数" value={values.subjectTagNum} minimum={0} maximum={10} onChange={(value) => change("subjectTagNum", value)} />
             <SettingStepper label="角色标签数" value={values.characterTagNum} minimum={0} maximum={10} onChange={(value) => change("characterTagNum", value)} />
-            <SettingSwitchRow label="显示常见标签" checked={values.commonTags} onCheckedChange={(value) => change("commonTags", value)} />
           </SettingsSection>
 
           <SettingsSection title="提示" icon={Lightbulb}>

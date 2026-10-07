@@ -15,7 +15,7 @@ export const CCBSettingsSchema = t.Object({
   mainCharacterOnly: t.Boolean(), characterNum: integer(1, 100),
   maxAttempts: integer(1, 100), timeLimit: integer(0, 120),
   subjectSearch: t.Boolean(), subjectTagNum: integer(0, 10), characterTagNum: integer(0, 10),
-  commonTags: t.Boolean(), useHints: t.Array(integer(0, 100), { maxItems: 3 }),
+  useHints: t.Array(integer(0, 100), { maxItems: 3 }),
   useImageHint: integer(0, 100), globalPick: t.Boolean(), tagBan: t.Boolean(),
   syncMode: t.Boolean(), nonstopMode: t.Boolean(),
   /** 出题方式：`random` 开始即随机抽题；`manual` 开始后进入选出题人阶段，由房主指定出题人。 */
@@ -23,10 +23,16 @@ export const CCBSettingsSchema = t.Object({
 }, strict);
 export type CCBSettings = Static<typeof CCBSettingsSchema>;
 export type CCBAnswerMode = CCBSettings['answerMode'];
-/** 导入设置文件。出题方式晚于文件格式加入，旧文件缺这一项时按随机出题补齐。 */
+/**
+ * 导入设置文件。出题方式晚于文件格式加入，旧文件缺这一项时按随机出题补齐；
+ * 「显示常见标签」已固定开启，旧文件里的 `commonTags` 直接丢弃。
+ */
 export function parseCCBSettings(value: unknown): CCBSettings {
-  const filled = value && typeof value === 'object' && !Array.isArray(value) && !('answerMode' in value)
-    ? { ...value, answerMode: 'random' } : value;
+  let filled = value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const { commonTags: _commonTags, ...rest } = value as Record<string, unknown>;
+    filled = 'answerMode' in rest ? rest : { ...rest, answerMode: 'random' };
+  }
   if (!Value.Check(CCBSettingsSchema, filled)) throw new Error('设置文件格式不正确');
   return filled;
 }
@@ -34,7 +40,7 @@ export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSe
   startYear: year - 5, endYear: year, topNSubjects: 20, useSubjectPerYear: false,
   metaTags: ['', '', ''], useIndex: false, indexId: null, addedSubjects: [],
   mainCharacterOnly: true, characterNum: 6, maxAttempts: 10, timeLimit: 60,
-  subjectSearch: true, subjectTagNum: 4, characterTagNum: 4, commonTags: true,
+  subjectSearch: true, subjectTagNum: 4, characterTagNum: 4,
   useHints: [], useImageHint: 0, globalPick: false, tagBan: false, syncMode: false, nonstopMode: false,
   answerMode: 'random',
 });

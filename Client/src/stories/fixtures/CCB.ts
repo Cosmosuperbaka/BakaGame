@@ -144,11 +144,9 @@ export function ccbFeedback(guess: CCBCharacterView, answer: CCBCharacterView, s
     const selected = [...values.filter((text) => pool.has(text)).slice(0, limit), ...values.filter((text) => !pool.has(text))].slice(0, limit);
     for (const text of selected) if (!tags.some((tag) => tag.text === text)) tags.push({ text, matched: pool.has(text), hidden: false, kind });
   };
-  if (settings.commonTags) {
-    append(guess.subjectTags, answer.subjectTags, settings.subjectTagNum, "subject");
-    append(guess.characterTags, answer.characterTags, settings.characterTagNum, "character");
-    append(guess.voiceActors, answer.voiceActors, Number.POSITIVE_INFINITY, "voice");
-  } else append(guess.metaTags, answer.metaTags, Number.POSITIVE_INFINITY, "subject");
+  append(guess.subjectTags, answer.subjectTags, settings.subjectTagNum, "subject");
+  append(guess.characterTags, answer.characterTags, settings.characterTagNum, "character");
+  append(guess.voiceActors, answer.voiceActors, Number.POSITIVE_INFINITY, "voice");
   return {
     gender: { value: guess.gender, comparison: guess.gender === answer.gender ? "yes" : "no" },
     popularity: compare(guess.popularity, answer.popularity, answer.popularity * 0.05, answer.popularity * 0.2),

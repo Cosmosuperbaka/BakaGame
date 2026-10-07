@@ -7,7 +7,6 @@ const SOURCE_NAMES = new Map([
   ["网文改", "小说改"], ["漫改", "漫画改"], ["漫画改编", "漫画改"], ["游戏改编", "游戏改"], ["小说改编", "小说改"],
 ]);
 const SOURCES = new Set(["原创", "游戏改", "小说改", "漫画改"]);
-const REGIONS = new Set(["日本", "欧美", "美国", "中国", "法国", "韩国", "英国", "俄罗斯", "中国香港", "苏联", "捷克", "中国台湾", "马来西亚"]);
 const EXPANDED_CHARACTERS = new Set([56822, 56823, 17529, 10956]);
 const EXTRA_SUBJECTS = new Set(extraSubjectIds);
 const weighted = (values: Map<string, number>) => [...values].sort((a, b) => b[1] - a[1]);
@@ -36,49 +35,25 @@ export function deriveCCBCharacter(raw: CCBRawCharacter, settings: CCBSettings, 
     const date = Date.parse(item.date);
     return Number.isInteger(year) && year > 0 && Number.isFinite(date) && date <= now;
   });
+  // 标签池固定走原版「常见标签」口径：作品标签按票数累积，来源标签归并后并入同一池。
   const sources = new Map<string, number>();
   const rawTags = new Map<string, number>();
-  const tags = new Map<string, number>();
-  const metas = new Map<string, number>();
-  const regions = new Set<string>();
   for (const appearance of selected) {
     const factor = appearance.relationType === 1 ? 3 : 1;
-    if (!settings.commonTags) {
-      for (const tag of appearance.metaTags) {
-        if (SOURCES.has(tag)) continue;
-        if (REGIONS.has(tag)) regions.add(tag);
-        else add(metas, tag, tags.get(tag) || factor);
-      }
-    }
-    if (!settings.commonTags && appearance.type !== 2 && appearance.type !== 4) continue;
     for (const [tag, votes] of Object.entries(appearance.rawTags)) {
-      if (!settings.commonTags && tag.includes("20")) continue;
       if (SOURCES.has(tag)) add(sources, tag, votes * factor);
-      else if (!settings.commonTags && REGIONS.has(tag)) regions.add(tag);
       else if (SOURCE_NAMES.has(tag)) add(sources, SOURCE_NAMES.get(tag)!, votes * factor);
-      else add(settings.commonTags ? rawTags : tags, tag, votes * factor);
+      else add(rawTags, tag, votes * factor);
     }
   }
   const topSource = weighted(sources)[0];
-  let subjectTags: string[];
+  if (topSource) add(rawTags, topSource[0], topSource[1]);
+  const entries = weighted(rawTags).filter(([tag]) => !tag.includes("20"));
+  const threshold = (entries[0]?.[1] ?? 0) * 0.1;
+  const cutoff = entries.findIndex(([, weight]) => weight < threshold);
+  // 保留原版的截断语义：无低于阈值项时，仅保留设置要求的数量。
+  const subjectTags = entries.slice(0, Math.max(cutoff, settings.subjectTagNum)).map(([tag]) => tag);
   const metaTags = new Set<string>();
-  if (settings.commonTags) {
-    if (topSource) add(rawTags, topSource[0], topSource[1]);
-    const entries = weighted(rawTags).filter(([tag]) => !tag.includes("20"));
-    const threshold = (entries[0]?.[1] ?? 0) * 0.1;
-    const cutoff = entries.findIndex(([, weight]) => weight < threshold);
-    // 保留原版的截断语义：无低于阈值项时，仅保留设置要求的数量。
-    subjectTags = entries.slice(0, Math.max(cutoff, settings.subjectTagNum)).map(([tag]) => tag);
-  } else {
-    if (topSource) metaTags.add(topSource[0]);
-    for (const [tag] of [...weighted(metas), ...weighted(tags)]) {
-      if (metaTags.size >= settings.subjectTagNum) break;
-      metaTags.add(tag);
-    }
-    subjectTags = [...metaTags];
-    for (const tag of raw.characterTags.slice(0, settings.characterTagNum)) metaTags.add(tag);
-    for (const tag of regions) metaTags.add(tag);
-  }
   const voiceActors = EXPANDED_CHARACTERS.has(raw.id) ? ["展开"] : raw.voiceActors;
   for (const voiceActor of voiceActors) metaTags.add(voiceActor);
   const appearances = selected.map((item) => ({
