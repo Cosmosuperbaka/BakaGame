@@ -130,8 +130,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
       {isHost ? (
         <Button size="lg" className="w-full text-base" disabled={starting || !privateState.canStart} loading={starting}
           onClick={() => void run("ccb.game.start", {})}>
-          {starting ? "正在开始游戏..."
-            : privateState.canStart ? (manual ? "开始并指定出题人" : "开始游戏")
+          {privateState.canStart ? (manual ? "开始并指定出题人" : "开始游戏")
               : others.length === 0 ? "等待玩家加入"
                 : manual ? "暂无可选出题人" : `等待玩家准备 (${readyCount}/${others.length})`}
         </Button>
@@ -139,7 +138,7 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
         <div className="flex justify-center">
           <Button variant={me.ready ? "outline" : "default"} size="lg" className="min-w-[120px] gap-2" disabled={readying} loading={readying}
             onClick={() => void run("ccb.player.ready", { ready: !me.ready })}>
-            {readying ? (me.ready ? "正在取消..." : "正在准备...") : me.ready ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
+            {me.ready ? <>{readying ? null : <X className="h-4 w-4" />}取消准备</> : <>{readying ? null : <Check className="h-4 w-4" />}准备</>}
           </Button>
         </div>
       ) : null}

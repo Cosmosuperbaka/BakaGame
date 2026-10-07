@@ -88,9 +88,8 @@ export function WaitingPhase() {
             loading={readying}
             onClick={handleReady}
           >
-            {readying
-              ? me.isReady ? "正在取消..." : "正在准备..."
-              : me.isReady ? <><X className="h-4 w-4" />取消准备</> : <><Check className="h-4 w-4" />准备</>}
+            {/* 进行中只把图标换成转圈，文案不变，按钮宽度不跳 */}
+            {me.isReady ? <>{readying ? null : <X className="h-4 w-4" />}取消准备</> : <>{readying ? null : <Check className="h-4 w-4" />}准备</>}
           </Button>
         </div>
       )}
@@ -142,9 +141,7 @@ function HostWaitingPanel({
         onClick={onStart}
         className="w-full text-base"
       >
-        {starting
-          ? "正在开始游戏..."
-          : allReady
+        {allReady
             ? "开始游戏"
             : nonHostTotal === 0
               ? "等待玩家加入"

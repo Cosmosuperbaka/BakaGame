@@ -530,7 +530,7 @@ function GuessBar({ ref, snapshot, privateState, guessDeadlineAt, onSelectSearch
         )}
         {privateState.canGiveUp ? (
           <Button variant="outline" className="h-10 shrink-0" loading={givingUp} onClick={() => void run("song.game.giveUp")}>
-            {givingUp ? "正在放弃..." : <><Flag />投降</>}
+            {givingUp ? null : <Flag />}投降
           </Button>
         ) : null}
       </div>

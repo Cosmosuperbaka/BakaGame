@@ -202,8 +202,9 @@ describe("waiting room sharing", () => {
     render(<WaitingPhase />);
 
     fireEvent.click(screen.getByRole("button", { name: "准备" }));
-    const pending = await screen.findByRole("button", { name: "正在准备..." });
+    const pending = screen.getByRole("button", { name: "准备" });
     expect(pending).toBeDisabled();
+    expect(pending).toHaveAttribute("aria-busy", "true");
     fireEvent.click(pending);
     expect(sendCommand).toHaveBeenCalledTimes(1);
 

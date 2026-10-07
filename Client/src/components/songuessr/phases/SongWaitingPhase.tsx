@@ -71,9 +71,7 @@ export function SongSoloWaitingPanel({
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {isStarting
-          ? "正在开始游戏..."
-          : snapshot.musicAccountReady
+        {snapshot.musicAccountReady
             ? "开始游戏"
             : "请先扫码登录网易云账号"}
       </Button>
@@ -119,9 +117,7 @@ export function SongHostWaitingPanel({
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {isStarting
-          ? "正在开始游戏..."
-          : !snapshot.musicAccountReady && allReady
+        {!snapshot.musicAccountReady && allReady
           ? "请先扫码登录网易云账号"
           : allReady
           ? "开始游戏"
@@ -191,13 +187,9 @@ export function SongWaitingPhase({
             onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
             className="gap-2 min-w-[120px]"
           >
-            {isReadyPending ? (
-              me.isReady ? "正在取消..." : "正在准备..."
-            ) : me.isReady ? (
-              <><X className="h-4 w-4" />取消准备</>
-            ) : (
-              <><Check className="h-4 w-4" />准备</>
-            )}
+            {me.isReady
+              ? <>{isReadyPending ? null : <X className="h-4 w-4" />}取消准备</>
+              : <>{isReadyPending ? null : <Check className="h-4 w-4" />}准备</>}
           </Button>
         </div>
       ) : null}

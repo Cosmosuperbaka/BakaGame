@@ -274,7 +274,7 @@ export function SongRoundResultPhase({
             loading={isFinishing}
             onClick={() => void run("song.game.finish")}
           >
-            {isFinishing ? "正在返回..." : snapshot.solo ? "结束本局" : "返回等待阶段"}
+            {snapshot.solo ? "结束本局" : "返回等待阶段"}
           </Button>
           <Button
             size="lg"
@@ -286,7 +286,7 @@ export function SongRoundResultPhase({
             loading={isNextRound}
             onClick={() => void run("song.game.nextRound")}
           >
-            {isNextRound ? "正在准备下一轮..." : "再来一轮"}
+            再来一轮
           </Button>
         </div>
       ) : (

@@ -997,7 +997,8 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(startButton).toBeDisabled();
     expect(startButton).toHaveAttribute("aria-busy", "true");
     expect(within(startButton).getByTestId("button-spinner")).toBeInTheDocument();
-    expect(within(startButton).getByText("正在开始游戏...")).toBeInTheDocument();
+    // 进行中文案保持原名，只把图标位换成转圈
+    expect(startButton).toHaveTextContent("开始游戏");
 
     // 再次点击被拦截，防止并发重发
     fireEvent.click(startButton);
@@ -1107,7 +1108,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(nextRoundButton).toBeDisabled();
     expect(nextRoundButton).toHaveAttribute("aria-busy", "true");
     expect(within(nextRoundButton).getByTestId("button-spinner")).toBeInTheDocument();
-    expect(within(nextRoundButton).getByText("正在准备下一轮...")).toBeInTheDocument();
+    expect(nextRoundButton).toHaveTextContent("再来一轮");
 
     // 旁边的返回等待按钮同步禁用，防止阶段跳转冲突
     expect(finishButton).toBeDisabled();
