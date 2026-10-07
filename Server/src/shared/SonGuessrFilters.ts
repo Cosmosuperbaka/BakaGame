@@ -1,7 +1,9 @@
 import { Type as t, type Static } from "@sinclair/typebox";
 
 const strict = { additionalProperties: false } as const;
-export const MinPopularitySchema = t.Union([t.Literal(0), t.Literal(1_000), t.Literal(10_000), t.Literal(100_000)]);
+/** 网易云热度门槛：0 表示不限，上限 1000000；客户端按刻度档位取值，服务端只校验范围。 */
+export const MAX_MIN_POPULARITY = 1_000_000;
+export const MinPopularitySchema = t.Integer({ minimum: 0, maximum: MAX_MIN_POPULARITY });
 export const SongPlaylistFilterSchema = t.Object({
   id: t.String({ minLength: 1, maxLength: 64 }),
   name: t.Optional(t.String({ maxLength: 128 })),

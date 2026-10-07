@@ -854,16 +854,21 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByRole("radio", { name: "自动出题" })).toBeChecked();
     const ranking = screen.getByRole("radiogroup", { name: "热度范围" });
     fireEvent.click(within(ranking).getByRole("radio", { name: "年榜" }));
-    const popularity = screen.getByRole("radiogroup", { name: "网易云歌曲热度" });
-    fireEvent.click(within(popularity).getByRole("radio", { name: "10000+" }));
+    // 刻度滑动条：0、500、1000、2000、3000、5000、7500、10000……，从不限向右七档落到 10000。
+    const popularity = screen.getByRole("slider", { name: "网易云歌曲热度" });
+    expect(popularity).toHaveAttribute("aria-valuetext", "不限");
+    popularity.focus();
+    for (let step = 0; step < 7; step += 1) fireEvent.keyDown(popularity, { key: "ArrowRight" });
     await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
       "song.room.updateSettings",
       expect.objectContaining({ animeAutoFilters: expect.objectContaining({ ranking: "year", songMinPopularity: 10_000 }) }),
     ));
 
     fireEvent.click(screen.getByRole("radio", { name: "听歌识曲" }));
-    const minPopularity = screen.getByRole("radiogroup", { name: "热度筛选" });
-    fireEvent.click(within(minPopularity).getByRole("radio", { name: "1000+" }));
+    const minPopularity = screen.getByRole("slider", { name: "热度筛选" });
+    minPopularity.focus();
+    fireEvent.keyDown(minPopularity, { key: "ArrowRight" });
+    fireEvent.keyDown(minPopularity, { key: "ArrowRight" });
     await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
       "song.room.updateSettings",
       expect.objectContaining({ questionType: "song", autoFilters: expect.objectContaining({ minPopularity: 1_000 }) }),

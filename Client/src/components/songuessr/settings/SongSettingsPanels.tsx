@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
 import {
-  SettingReveal, SettingSegmented, SettingStepper, SettingSwitchRow, SettingTextField, SettingToggleChips,
+  SettingReveal, SettingScaleSlider, SettingSegmented, SettingStepper, SettingSwitchRow, SettingTextField, SettingToggleChips,
   SettingValue, SettingYearRange, SettingsFields, SettingsSection, useSettingsReadOnly,
 } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
@@ -34,15 +34,19 @@ const RANKING_OPTIONS: SegmentedOption<NonNullable<AnimeAutoFilters["ranking"]>>
   { value: "all", label: "总榜" },
   { value: "year", label: "年榜" },
 ];
-// 网易云热度只有这四档；分段控件的值是字符串，回写时按档位查回数字，不让任意数字混进设置。
-const POPULARITY_LEVELS = [0, 1_000, 10_000, 100_000] as const;
-const toPopularityLevel = (value: string) => POPULARITY_LEVELS.find((level) => String(level) === value) ?? 0;
-const POPULARITY_OPTIONS: SegmentedOption<string>[] = POPULARITY_LEVELS.map((value) => ({
-  value: String(value),
-  label: value === 0 ? "不限" : `${value}+`,
-}));
+// 网易云热度门槛的刻度：0 为不限，越往后间距越大（前段百、千级细调，后段十万级大步），上限 1000000。
+// 滑动条只会回写其中一档；服务端按 0–1000000 校验，不认档位。
+const POPULARITY_STOPS = [
+  0, 500, 1_000, 2_000, 3_000, 5_000, 7_500, 10_000, 15_000, 20_000, 30_000, 50_000,
+  75_000, 100_000, 150_000, 200_000, 300_000, 500_000, 750_000, 1_000_000,
+] as const;
+const POPULARITY_MAJORS = [1_000, 10_000, 100_000] as const;
+const popularityValue = (value: number) => (value === 0 ? "不限" : `${value.toLocaleString("zh-CN")}+`);
+/** 刻度标注用中文数量级缩写，挤在轨道下方也读得清。 */
+const popularityTick = (value: number) =>
+  value === 0 ? "不限" : value >= 10_000 ? `${value / 10_000} 万` : `${value / 1_000} 千`;
 const TRACK_KIND_OPTIONS = ALL_BANGUMI_TRACK_KINDS.map((kind) => ({ value: kind, label: BANGUMI_TRACK_KIND_LABELS[kind] }));
-const popularityText = (value: number) => (value === 0 ? "不限热度" : `热度 ${value}+`);
+const popularityText = (value: number) => (value === 0 ? "不限热度" : `热度 ${value.toLocaleString("zh-CN")}+`);
 
 // 阶段切换会直接卸载等待设置树，旧 props 的 enabled 来不及变为 false。
 // 三类设置共用发送边界：防抖、卸载刷新和飞行中后续草稿都以当前房间阶段为准。
@@ -272,8 +276,9 @@ function SongAutoFilters({ values, edit }: {
         </div>
       </div>
 
-      <SettingSegmented label="热度筛选" value={String(values.minPopularity)} options={POPULARITY_OPTIONS}
-        onValueChange={(value) => edit("minPopularity", toPopularityLevel(value))}
+      <SettingScaleSlider label="热度筛选" value={values.minPopularity} stops={POPULARITY_STOPS} majors={POPULARITY_MAJORS}
+        format={popularityValue} formatTick={popularityTick}
+        onChange={(value) => edit("minPopularity", value)}
         description={!values.playlist && !values.artists.length
           ? "未设歌单和歌手时从网易云热歌榜出题。超高热度可能是近似值，按接口返回值判断。"
           : "超高热度可能是近似值，按接口返回值判断。"} />
@@ -290,8 +295,9 @@ function AnimeFilters({ filters, onChange }: { filters: AnimeAutoFilters; onChan
       <SettingSegmented label="热度范围" value={filters.ranking ?? "all"} options={RANKING_OPTIONS} onValueChange={(ranking) => onChange({ ranking })} />
       <SettingStepper label="作品数量" unit="部" value={filters.subjectLimit ?? 50} minimum={1} maximum={1000} step={10}
         format={(value) => `前 ${value} 部`} onChange={(subjectLimit) => onChange({ subjectLimit })} />
-      <SettingSegmented label="网易云歌曲热度" value={String(filters.songMinPopularity ?? 0)} options={POPULARITY_OPTIONS}
-        onValueChange={(value) => onChange({ songMinPopularity: toPopularityLevel(value) })} />
+      <SettingScaleSlider label="网易云歌曲热度" value={filters.songMinPopularity ?? 0} stops={POPULARITY_STOPS} majors={POPULARITY_MAJORS}
+        format={popularityValue} formatTick={popularityTick}
+        onChange={(value) => onChange({ songMinPopularity: value })} />
       <SettingToggleChips<BangumiMusicTrackKind> label="歌曲类型筛选" options={TRACK_KIND_OPTIONS}
         selected={filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS} onChange={(trackKinds) => onChange({ trackKinds })} />
     </>
@@ -448,7 +454,7 @@ export function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSn
       filters.startYear || filters.endYear ? `${filters.startYear ?? "不限"}-${filters.endYear ?? "不限"}` : "",
       `${filters.ranking === "year" ? "年榜" : "总榜"}前${filters.subjectLimit ?? 50}部`,
       kinds ? `歌曲 ${kinds}` : "",
-      `网易云热度 ≥ ${(filters.songMinPopularity ?? 0) === 0 ? "不限" : filters.songMinPopularity}`,
+      `网易云热度 ≥ ${popularityValue(filters.songMinPopularity ?? 0)}`,
     ]} />
   );
 }

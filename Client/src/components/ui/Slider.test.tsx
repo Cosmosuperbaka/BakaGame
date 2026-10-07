@@ -60,4 +60,14 @@ describe("Slider", () => {
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     expect(handleValueChange).not.toHaveBeenCalled();
   });
+
+  it("可见标签经 aria-labelledby 命名，取值文字落在拇指上", () => {
+    render(
+      <>
+        <span id="slider-title">热度筛选</span>
+        <Slider value={[0]} min={0} max={4} step={1} aria-labelledby="slider-title" aria-valuetext="不限" />
+      </>,
+    );
+    expect(screen.getByRole("slider", { name: "热度筛选" })).toHaveAttribute("aria-valuetext", "不限");
+  });
 });

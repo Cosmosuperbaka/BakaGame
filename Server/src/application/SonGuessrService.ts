@@ -31,6 +31,7 @@ import {
   ALL_BANGUMI_TRACK_KINDS,
   detectExplicitTrackKind,
   isBangumiCreditsEntry,
+  MAX_MIN_POPULARITY,
   MAX_SONGUESSR_COOKIE_LENGTH,
   SERVER_SHUTDOWN_MESSAGE,
 } from "../shared/Index";
@@ -1715,7 +1716,7 @@ export class SonGuessrService {
       .slice(0, 20)
       .map((artist) => ({ id: artist.id.trim().slice(0, 64), name: normalizeWord(artist.name).slice(0, 80) }))
       .filter((artist) => artist.id && artist.name);
-    const minPopularity = filters.minPopularity ?? 0;
+    const minPopularity = clampInt(filters.minPopularity ?? 0, 0, MAX_MIN_POPULARITY);
     return { playlist, artists, minPopularity };
   }
 
@@ -1724,9 +1725,7 @@ export class SonGuessrService {
     const endYear = filters.endYear && clampInt(filters.endYear, 1900, 2200);
     const trackKinds = (filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)
       .filter((kind, index, all) => ALL_BANGUMI_TRACK_KINDS.includes(kind) && all.indexOf(kind) === index);
-    const songMinPopularity = [0, 1_000, 10_000, 100_000].includes(filters.songMinPopularity ?? 0)
-      ? (filters.songMinPopularity ?? 0)
-      : 0;
+    const songMinPopularity = clampInt(filters.songMinPopularity ?? 0, 0, MAX_MIN_POPULARITY);
     return {
       startYear,
       endYear: endYear && startYear ? Math.max(startYear, endYear) : endYear,

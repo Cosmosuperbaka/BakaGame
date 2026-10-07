@@ -9,7 +9,11 @@ import { cn } from "@/lib/Utils";
 const Slider = React.forwardRef<
   React.ComponentRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & { trackClassName?: string; thumbClassName?: string }
->(({ className, trackClassName, thumbClassName, "aria-label": ariaLabel, ...props }, ref) => (
+>(({
+  className, trackClassName, thumbClassName,
+  "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy, "aria-describedby": ariaDescribedBy, "aria-valuetext": ariaValueText,
+  ...props
+}, ref) => (
   <SliderPrimitive.Root
     ref={ref}
     aria-label={ariaLabel}
@@ -23,8 +27,12 @@ const Slider = React.forwardRef<
     <SliderPrimitive.Track className={cn("relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted", trackClassName)}>
       <SliderPrimitive.Range className="absolute h-full bg-primary" />
     </SliderPrimitive.Track>
+    {/* 读屏与按名查找落在拇指（role="slider"）上：命名、说明与取值文字都转交给它，根节点只是布局容器。 */}
     <SliderPrimitive.Thumb
       aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
+      aria-valuetext={ariaValueText}
       className={cn(
         "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
         "transition-colors focus-visible:outline-offset-2",

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { Slider } from "@/components/ui/Slider";
 import { Switch } from "@/components/ui/Switch";
 import { useValueChange } from "@/hooks/UseValueChange";
 import { collapsible, iconTappable, readoutTick, tappable } from "@/lib/Motion";
@@ -42,7 +43,7 @@ function ReadOnlyValue({ children, muted = false }: { children: ReactNode; muted
  * 标签列不被挤成逐字断行。标签统一 `text-sm`，说明 `text-xs` 弱化色。
  */
 function SettingRow({
-  label, unit, description, icon: Icon, htmlFor, descriptionId, disabled = false, children,
+  label, unit, description, icon: Icon, htmlFor, labelId, descriptionId, disabled = false, children,
 }: {
   label: string;
   unit?: string;
@@ -50,6 +51,8 @@ function SettingRow({
   icon?: LucideIcon;
   /** 控件的 id；只读时没有控件，标签退回普通文字 */
   htmlFor?: string;
+  /** 控件组（分段、滑动条）经 aria-labelledby 指向的标签 id */
+  labelId?: string;
   descriptionId?: string;
   disabled?: boolean;
   children: ReactNode;
@@ -66,7 +69,7 @@ function SettingRow({
         <div className={cn("flex items-center gap-2", disabled && "opacity-50")}>
           {Icon ? <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
           {htmlFor ? <Label htmlFor={htmlFor} className="leading-snug font-normal">{text}</Label>
-            : <span className="text-sm leading-snug">{text}</span>}
+            : <span id={labelId} className="text-sm leading-snug">{text}</span>}
         </div>
         {description ? <p id={descriptionId} className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
@@ -340,17 +343,87 @@ export function SettingSegmented<T extends string>({
 }) {
   const labelId = useId();
   const readOnly = useSettingsReadOnly();
+  // 与步进器、开关同一种行：标签在左，贴合选项宽度的胶囊凹槽在右；窄屏放不下时整组折到下一行靠右。
+  return (
+    <SettingRow label={label} description={description} labelId={readOnly ? undefined : labelId}>
+      {readOnly ? <ReadOnlyValue>{options.find((option) => option.value === value)?.label ?? value}</ReadOnlyValue>
+        : <SegmentedControl aria-labelledby={labelId} value={value} options={options} onValueChange={onValueChange} />}
+    </SettingRow>
+  );
+}
+
+/**
+ * 刻度滑动条（热度门槛这类跨几个数量级的值）：滑块落在 `stops` 的档位上，档位越往后间距越大，
+ * 前段细调、后段大步，整条轨道都用得上。轨道下方每档一道细刻度，`majors` 里的档位加长并标出数值；
+ * 右侧读数与步进器同为衬线加粗。`stops[0]` 常为 0，由 `format` 写成「不限」。
+ * 回写的值只会是 `stops` 里的某一档，任意数字混不进设置。
+ */
+export function SettingScaleSlider({
+  label, description, value, stops, majors = [], format, formatTick = format, onChange, disabled = false,
+}: {
+  label: string;
+  description?: string;
+  value: number;
+  /** 升序的档位 */
+  stops: readonly number[];
+  /** 加长并标注数值的档位 */
+  majors?: readonly number[];
+  format: (value: number) => string;
+  /** 刻度标注的写法，缺省同读数 */
+  formatTick?: (value: number) => string;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  const labelId = useId();
+  const descriptionId = useId();
+  const readOnly = useSettingsReadOnly();
+  // 设置里存的值若不在档位上（旧数据），落到不超过它的最近一档。
+  const index = Math.max(0, stops.reduce((found, stop, position) => (stop <= value ? position : found), 0));
+  const last = stops.length - 1;
   if (readOnly) {
     return (
       <SettingRow label={label} description={description}>
-        <ReadOnlyValue>{options.find((option) => option.value === value)?.label ?? value}</ReadOnlyValue>
+        <ReadOnlyValue muted={value === 0}>{format(value)}</ReadOnlyValue>
       </SettingRow>
     );
   }
   return (
-    <StackedField label={label} labelId={labelId} description={description}>
-      <SegmentedControl aria-labelledby={labelId} value={value} options={options} onValueChange={onValueChange} />
-    </StackedField>
+    <div className="grid gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>{label}</span>
+        <span aria-hidden="true" className={cn("text-sm font-semibold tabular-nums", stops[index] === 0 ? "text-muted-foreground" : "text-foreground")}>
+          {format(stops[index])}
+        </span>
+      </div>
+      <div className="px-2">
+        <Slider
+          value={[index]}
+          min={0}
+          max={last}
+          step={1}
+          disabled={disabled}
+          onValueChange={([position]) => onChange(stops[position] ?? 0)}
+          aria-labelledby={labelId}
+          aria-describedby={description ? descriptionId : undefined}
+          aria-valuetext={format(stops[index])}
+          className="h-6"
+        />
+        {/* 刻度与滑块中心对齐：Radix 把滑块中心限制在轨道两端各缩进半个滑块，刻度按同样的比例排布在去掉两端的宽度里。 */}
+        <div aria-hidden="true" className="relative mx-2 h-6">
+          {stops.map((stop, position) => {
+            const major = majors.includes(stop) || position === 0 || position === last;
+            const left = `${(position / last) * 100}%`;
+            return (
+              <span key={stop} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left }}>
+                <span className={cn("w-px rounded-full", major ? "h-2 bg-muted-foreground/70" : "h-1 bg-muted-foreground/35", position <= index && "bg-primary/70")} />
+                {major ? <span className="mt-0.5 whitespace-nowrap font-sans text-2xs text-muted-foreground">{formatTick(stop)}</span> : null}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      {description ? <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+    </div>
   );
 }
 /** 年份输入：凹槽里的一格，失焦或回车时提交；`optional` 时留空表示不限。 */

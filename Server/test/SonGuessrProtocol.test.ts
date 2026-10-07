@@ -65,6 +65,22 @@ test("SonGuessr 协议解析题目设置与自动筛选", () => {
   });
 });
 
+test("SonGuessr 热度门槛接受 0 到 1000000 的整数，越界与小数拒收", () => {
+  const settings = (minPopularity: number) => ({
+    id: `popularity-${minPopularity}`,
+    type: "song.room.updateSettings",
+    payload: { autoFilters: { artists: [], minPopularity }, animeAutoFilters: { songMinPopularity: minPopularity } },
+  });
+  for (const value of [0, 2_000, 350_000, 1_000_000]) {
+    expect(parseSonGuessrMessage(settings(value))).toMatchObject({
+      payload: { autoFilters: { minPopularity: value }, animeAutoFilters: { songMinPopularity: value } },
+    });
+  }
+  for (const value of [-1, 1_000_001, 1.5]) {
+    expect(() => parseSonGuessrMessage(settings(value))).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+  }
+});
+
 test("SonGuessr 协议解析听歌猜番新筛选并拒绝旧字段", () => {
   expect(parseSonGuessrMessage({
     id: "anime-filters",
