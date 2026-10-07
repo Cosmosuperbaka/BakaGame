@@ -98,7 +98,8 @@ export class CCBRooms {
     if (player.id !== room.hostPlayerId) throw new AppError('NOT_HOST', '仅房主可以执行此操作');
   }
   requireWaiting(room: CCBRoom): void { if (room.phase !== 'waiting') throw new AppError('INVALID_PHASE', '请在等待阶段修改'); }
-  leave(connection: ConnectionRecord, room: CCBRoom, player: CCBPlayerRecord): void { this.remove(room, player); this.connections.detach(connection); }
+  /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
+  leave(connection: ConnectionRecord, room: CCBRoom, player: CCBPlayerRecord): void { this.connections.detach(connection); this.remove(room, player); }
   kick(room: CCBRoom, actor: CCBPlayerRecord, id: string): void {
     this.requireHost(room, actor); if (id === actor.id) throw new AppError('INVALID_PLAYER', '不能移除自己');
     const target = this.member(room, id); const connection = target.connectionId ? this.connections.findConnection(target.connectionId) : undefined;
@@ -217,7 +218,7 @@ export class CCBRooms {
     room.players.delete(player.id);
     if ((room.phase === 'answering' || room.phase === 'preparing') && room.setterPlayerId === player.id) this.resetWaiting(room);
     if (room.hostPlayerId === player.id) this.assignHost(room);
-    if (!room.players.size) this.closeRoom(room, '所有玩家已离开');
+    if (!room.players.size) this.closeRoom(room, '房间已关闭');
     else { if (![...room.players.values()].some(member => member.online)) room.emptyAt = this.now(); advanceCCBRound(room, this.now()); this.publish(room); }
   }
   private assignHost(room: CCBRoom) {

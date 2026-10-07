@@ -17,7 +17,8 @@ export const character = (id: number, shared = false): CCBCharacterView => ({
 });
 type Packet = { type?: string; event?: string; payload?: unknown };
 export interface CCBTestClient { record: ConnectionRecord; sent: Packet[]; closed: Array<{ code?: number; reason?: string }>; token?: string; id?: string }
-export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHints?: CCBImageHints) {
+/** `roomId` 默认普通房号；单人开局的用例传测试房号（普通房至少两人才能开局）。 */
+export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHints?: CCBImageHints, { roomId: defaultRoomId = '1234' }: { roomId?: string } = {}) {
   let clock = 1_000_000;
   const getCalls: number[] = [];
   const data: CCBDataProvider = {
@@ -39,7 +40,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
     };
     service.registerConnection(record); return { record, sent, closed };
   };
-  const send = async <T extends CCBCommand>(client: CCBTestClient, type: T, payload: CCBPayload<T>, roomId = '1234') => {
+  const send = async <T extends CCBCommand>(client: CCBTestClient, type: T, payload: CCBPayload<T>, roomId = defaultRoomId) => {
     const result = await service.execute(client.record.id, { id: crypto.randomUUID(), type, roomId, sessionToken: client.token, payload } as CCBClientMessage);
     if (type === 'ccb.room.create' || type === 'ccb.room.join' || type === 'ccb.room.reconnect') {
       const entry = result as CCBRoomEnterResult; client.token = entry.sessionToken; client.id = entry.privateState.playerId;
@@ -55,7 +56,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
   const privateState = (client: CCBTestClient) => latest<CCBPrivateState>(client, 'ccb.game.privateState');
   const create = async (name = '房主') => {
     const host = connect(name);
-    await send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '测试房间', userName: name, visibility: 'public', allowSpectators: true });
+    await send(host, 'ccb.room.create', { source: 'native', roomId: defaultRoomId, name: '测试房间', userName: name, visibility: 'public', allowSpectators: true });
     return host;
   };
   const join = async (name: string) => { const client = connect(name); await send(client, 'ccb.room.join', { userName: name }); return client; };

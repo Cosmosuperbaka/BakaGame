@@ -1,6 +1,7 @@
 import type { CCBGuess, CCBPrivateState, CCBRoomSnapshot, CCBRoomSummary } from '../shared/CCB';
 import { ccbUnitId, type CCBPlayerRecord, type CCBRoom } from '../domain/CCBModel';
 import { ccbParticipants, getCCBUnit } from '../domain/CCBRound';
+import { ROOM_ID_TEST_MODE } from '../shared/Index';
 
 /** 大厅人数与其它游戏同口径：只计在线成员，参与与旁观分开统计。 */
 export function ccbRoomSummary(room: CCBRoom): CCBRoomSummary {
@@ -52,7 +53,8 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
     playerId: player.id, canGuess,
     canSurrender: inGame && !unit!.ended,
     // 随机出题要其他参与者都准备；手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
-    canStart: room.phase === 'waiting' && isHost && participants.length > 0 &&
+    // 单人不能开局，只有测试房允许房主一个人试玩。
+    canStart: room.phase === 'waiting' && isHost && (participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0)) &&
       (room.settings.answerMode === 'manual'
         ? setterCandidates.length > 0
         : participants.every(member => member.id === room.hostPlayerId || member.ready)),

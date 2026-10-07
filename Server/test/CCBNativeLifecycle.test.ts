@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ccbTestHarness, character, deferred } from './CCBNativeFixtures';
-import type { CCBCharacterView } from '../src/shared/Index';
+import { ROOM_ID_TEST_MODE, type CCBCharacterView } from '../src/shared/Index';
 import type { CCBDataProvider } from '../src/infrastructure/CCBData';
 import { HOST_RECONNECT_TIMEOUT_MS } from '../src/config/Constants';
 import { CCB_JOIN_PASSWORD_MAX_ATTEMPTS } from '../src/application/CCBRooms';
 
 const active: ReturnType<typeof ccbTestHarness>[] = [];
 const harness = (data: Partial<CCBDataProvider> = {}) => { const result = ccbTestHarness(data); active.push(result); return result; };
+/** 房主一人开局的用例放在测试房里。 */
+const solo = (data: Partial<CCBDataProvider> = {}) => { const result = ccbTestHarness(data, undefined, { roomId: ROOM_ID_TEST_MODE }); active.push(result); return result; };
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 会话与异步边界', () => {
@@ -46,7 +48,7 @@ describe('CCB 会话与异步边界', () => {
 
   test('同局首次读取角色后冻结反馈，随后资料更新不改变重复猜测结果', async () => {
     let calls = 0;
-    const h = harness({ getCharacter: async id => ({ ...character(id), popularity: ++calls === 1 ? 10 : 10000 }) });
+    const h = solo({ getCharacter: async id => ({ ...character(id), popularity: ++calls === 1 ? 10 : 10000 }) });
     const host = await h.create(); await h.configure(host, {}); await h.send(host, 'ccb.game.start', {});
     await h.guess(host, 3); await h.guess(host, 3);
     expect(calls).toBe(1);
@@ -97,7 +99,7 @@ describe('CCB 会话与异步边界', () => {
   });
 
   test('中途加入只观战，下局准备后参加，关闭观战的房间拒绝中途加入', async () => {
-    const h = harness(); const host = await h.create(); await h.configure(host, {}); await h.send(host, 'ccb.game.start', {});
+    const h = solo(); const host = await h.create(); await h.configure(host, {}); await h.send(host, 'ccb.game.start', {});
     const late = await h.join('迟到'); expect(h.privateState(late).canGuess).toBe(false); expect(h.privateState(late).answer?.id).toBe(1);
     await h.guess(host, 1); await h.send(host, 'ccb.game.next', {}); await h.ready(late); await h.send(host, 'ccb.game.start', {});
     expect(h.privateState(late).canGuess).toBe(true);
@@ -108,7 +110,7 @@ describe('CCB 会话与异步边界', () => {
   });
 
   test('作品搜索禁用只约束正在猜题者，观战者仍可浏览', async () => {
-    const h = harness(); const host = await h.create(); const observer = await h.join('观战者');
+    const h = solo(); const host = await h.create(); const observer = await h.join('观战者');
     await h.configure(host, { subjectSearch: false }); await h.send(observer, 'ccb.player.spectate', { spectator: true }); await h.send(host, 'ccb.game.start', {});
     await expect(h.send(host, 'ccb.subject.search', { keyword: '作品' })).rejects.toMatchObject({ code: 'SUBJECT_SEARCH_DISABLED' });
     await expect(h.send(host, 'ccb.subject.characters', { subjectId: 100 })).rejects.toMatchObject({ code: 'SUBJECT_SEARCH_DISABLED' });
@@ -116,7 +118,7 @@ describe('CCB 会话与异步边界', () => {
   });
 
   test('手动出题人断线自动取消，重新选人后可继续开局', async () => {
-    const h = harness(); const host = await h.create(); const setter = await h.join('出题人');
+    const h = solo(); const host = await h.create(); const setter = await h.join('出题人');
     await h.chooseSetter(host, setter.id!); h.service.unregisterConnection(setter.record.id);
     expect(h.snapshot(host).phase).toBe('waiting'); expect(h.snapshot(host).setterPlayerId).toBeNull();
     await h.configure(host, {}); await h.send(host, 'ccb.game.start', {}); expect(h.snapshot(host).phase).toBe('guessing');
@@ -148,7 +150,7 @@ describe('CCB 会话与异步边界', () => {
 
   test('取消后同一时刻重开，不接受之前自动出题任务的迟到答案', async () => {
     const first = deferred<CCBCharacterView>(), second = deferred<CCBCharacterView>(); let calls = 0;
-    const h = harness({ chooseRandomCharacter: async () => ++calls === 1 ? first.promise : second.promise });
+    const h = solo({ chooseRandomCharacter: async () => ++calls === 1 ? first.promise : second.promise });
     const host = await h.create(); await h.configure(host, {});
     const previous = h.send(host, 'ccb.game.start', {});
     await h.send(host, 'ccb.game.cancel', {});

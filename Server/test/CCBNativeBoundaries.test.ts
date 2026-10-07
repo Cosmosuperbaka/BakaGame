@@ -3,12 +3,27 @@ import sharp from 'sharp';
 import { CCBImageHints } from '../src/infrastructure/CCBImageHints';
 import { ccbTestHarness, character, deferred } from './CCBNativeFixtures';
 import { ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from '../src/config/Constants';
+import { ROOM_ID_TEST_MODE } from '../src/shared/Index';
+
+const SOLO = { roomId: ROOM_ID_TEST_MODE };
 
 const active: ReturnType<typeof ccbTestHarness>[] = [];
 const keep = (h: ReturnType<typeof ccbTestHarness>) => { active.push(h); return h; };
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 房间与提示边界', () => {
+  test('普通房至少两人才能开局，测试房允许房主一人试玩', async () => {
+    const h = keep(ccbTestHarness()); const host = await h.create(); await h.configure(host, {});
+    expect(h.privateState(host).canStart).toBe(false);
+    await expect(h.send(host, 'ccb.game.start', {})).rejects.toMatchObject({ code: 'PLAYERS_NOT_READY' });
+    const guest = await h.join('猜题人'); expect(h.privateState(host).canStart).toBe(false);
+    await h.ready(guest); expect(h.privateState(host).canStart).toBe(true);
+    await h.send(guest, 'ccb.player.spectate', { spectator: true }); expect(h.privateState(host).canStart).toBe(false);
+    const test = keep(ccbTestHarness({}, undefined, SOLO)); const tester = await test.create(); await test.configure(tester, {});
+    expect(test.privateState(tester).canStart).toBe(true);
+    await test.send(tester, 'ccb.game.start', {}); expect(test.snapshot(tester).phase).not.toBe('waiting');
+  });
+
   test('手动出题开始后进入选人阶段：出题人不必准备，候选排除无法留下猜题者的队伍，取消保留准备', async () => {
     const h = keep(ccbTestHarness()); const host = await h.create(); const setter = await h.join('尚未准备');
     expect(h.privateState(host).canStart).toBe(false);
@@ -70,7 +85,7 @@ describe('CCB 房间与提示边界', () => {
   test('解锁图片由服务端处理，返回WebP字节而公开及私有快照仍不公开答案', async () => {
     const png = await sharp({ create: { width: 80, height: 80, channels: 3, background: '#ee99aa' } }).png().toBuffer();
     const hints = new CCBImageHints({ fetcher: async () => new Response(png) });
-    const h = keep(ccbTestHarness({}, hints)); const host = await h.create();
+    const h = keep(ccbTestHarness({}, hints, SOLO)); const host = await h.create();
     await h.configure(host, { maxAttempts: 3, useImageHint: 2 }); await h.send(host, 'ccb.game.start', {}); await h.guess(host, 3);
     const image = await h.send(host, 'ccb.game.imageHint', {}) as { dataUrl: string };
     expect(image.dataUrl.startsWith('data:image/webp;base64,')).toBe(true);
@@ -79,12 +94,12 @@ describe('CCB 房间与提示边界', () => {
   });
 
   test('无图片时明确告知，图片加载跨过结算后不返回旧提示', async () => {
-    const unavailable = keep(ccbTestHarness({ resolveCharacterImage: async () => undefined })); const host = await unavailable.create();
+    const unavailable = keep(ccbTestHarness({ resolveCharacterImage: async () => undefined }, undefined, SOLO)); const host = await unavailable.create();
     await unavailable.configure(host, { maxAttempts: 2, useImageHint: 2 }); await unavailable.send(host, 'ccb.game.start', {});
     await expect(unavailable.send(host, 'ccb.game.imageHint', {})).rejects.toMatchObject({ code: 'IMAGE_UNAVAILABLE' });
     const download = deferred<Response>();
     const hints = new CCBImageHints({ fetcher: async () => download.promise });
-    const h = keep(ccbTestHarness({}, hints)); const player = await h.create();
+    const h = keep(ccbTestHarness({}, hints, SOLO)); const player = await h.create();
     await h.configure(player, { maxAttempts: 2, useImageHint: 2 }); await h.send(player, 'ccb.game.start', {});
     const pending = h.send(player, 'ccb.game.imageHint', {}); await h.send(player, 'ccb.game.surrender', {});
     const png = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#ee99aa' } }).png().toBuffer();
@@ -115,7 +130,8 @@ describe('CCB 房间与提示边界', () => {
     const recovered = h.connect('恢复');
     await expect(h.send(recovered, 'ccb.room.reconnect', { roomId: '1234', sessionToken: guest.token! })).rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
     await h.send(host, 'ccb.room.leave', {}); expect(h.service.getHealthSnapshot().roomCount).toBe(0);
-    expect(host.sent.some(packet => packet.event === 'ccb.room.closed')).toBe(true);
+    // 最后一人离开随即关房，但离开者自己不再收到关闭通知，不弹多余提示
+    expect(host.sent.some(packet => packet.event === 'ccb.room.closed')).toBe(false);
   });
 
   test('房间空置宽限后清理，出题超时回到等待且服务器关闭通知到达客户端', async () => {

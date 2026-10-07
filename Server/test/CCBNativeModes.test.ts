@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ccbTestHarness } from './CCBNativeFixtures';
+import { ROOM_ID_TEST_MODE } from '../src/shared/Index';
 
 const active: ReturnType<typeof ccbTestHarness>[] = [];
 const harness = () => { const result = ccbTestHarness(); active.push(result); return result; };
+/** 房主一人开局的用例放在测试房里。 */
+const solo = () => { const result = ccbTestHarness({}, undefined, { roomId: ROOM_ID_TEST_MODE }); active.push(result); return result; };
 afterEach(() => { active.splice(0).forEach(test => test.service.close()); });
 
 describe('CCB 原生完整玩法', () => {
@@ -119,7 +122,7 @@ describe('CCB 原生完整玩法', () => {
   });
 
   test('提示按剩余次数解锁，图片尚未解锁时不能请求答案图', async () => {
-    const h = harness(); const host = await h.create();
+    const h = solo(); const host = await h.create();
     await h.configure(host, { maxAttempts: 5, useHints: [3,0,1], useImageHint: 1 }); await h.send(host, 'ccb.game.start', {});
     expect(h.privateState(host).hints).toEqual([]); expect(h.privateState(host).imageHintAvailable).toBe(false);
     await expect(h.send(host, 'ccb.game.imageHint', {})).rejects.toMatchObject({ code: 'HINT_LOCKED' });
