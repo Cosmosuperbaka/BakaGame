@@ -1,19 +1,15 @@
-import type { MouseEvent, Ref } from "react";
+import type { Ref } from "react";
 import { motion } from "framer-motion";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { DoorOpen } from "lucide-react";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import { listItem, listItemExit } from "@/lib/Motion";
 
 /**
- * 三游戏共用的大厅空状态：「暂无房间」与就地的创建入口（「创建第一个房间」）。
+ * 三游戏共用的大厅空状态：「暂无房间」与一行指引。创建入口只有标题行的「创建房间」一个，空状态不再放第二个按钮。
  * 与骨架屏同高：底下垫一份看不见的骨架撑开高度（各断点下卡片行数不同，写死高度对不齐），
  * 加载结束落到空列表时整块高度不变，下方内容不跳。
  */
-export function RoomListEmpty({ onCreate, disabled = false, ref }: {
-  /** 空状态里的「创建第一个房间」，与列表标题行的「创建房间」同一个回调；名字不同，读屏与查找时不会撞成两个同名按钮。不传时不显示按钮 */
-  onCreate?: (event: MouseEvent<HTMLElement>) => void;
-  disabled?: boolean;
+export function RoomListEmpty({ ref }: {
   /** 列表的 `AnimatePresence mode="popLayout"` 靠它把退场的空状态抽出文档流 */
   ref?: Ref<HTMLDivElement>;
 }) {
@@ -25,15 +21,11 @@ export function RoomListEmpty({ onCreate, disabled = false, ref }: {
       </div>
       <div
         role="status"
-        className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-muted/40 p-6 text-center [grid-area:1/1]"
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-muted/40 p-6 text-center [grid-area:1/1]"
       >
-        <p className="text-sm text-muted-foreground">暂无房间</p>
-        {onCreate ? (
-          <Button variant="outline" size="sm" onClick={onCreate} disabled={disabled} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            创建第一个房间
-          </Button>
-        ) : null}
+        <DoorOpen className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+        <p className="text-sm">暂无房间</p>
+        <p className="text-xs text-muted-foreground">创建一个房间，把链接发给朋友就能一起玩</p>
       </div>
     </motion.div>
   );

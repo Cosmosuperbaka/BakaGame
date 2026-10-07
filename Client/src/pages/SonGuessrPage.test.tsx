@@ -61,8 +61,9 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
     const empty = screen.getByText("暂无房间").closest('[role="status"]');
     expect(empty).not.toBeNull();
-    // 空状态里就地给出创建入口，与标题行的创建按钮同一个回调。
-    expect(within(empty as HTMLElement).getByRole("button", { name: "创建第一个房间" })).toBeInTheDocument();
+    // 创建入口只有标题行一个，空状态里不再重复放按钮。
+    expect(within(empty as HTMLElement).queryByRole("button")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "创建房间" })).toHaveLength(1);
   });
 
   it("已连接但首个房间列表未到时仍显示骨架屏", () => {

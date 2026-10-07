@@ -172,7 +172,7 @@ export function LobbyPage({
           >
             <AnimatePresence mode="popLayout">
               {loading ? null : rooms.length === 0 ? (
-                <RoomListEmpty key="empty" onCreate={handleCreate} disabled={disabled} />
+                <RoomListEmpty key="empty" />
               ) : (
                 rooms.map((room) => (
                   <RoomListCard
