@@ -16,7 +16,9 @@ const meta = {
   parameters: { layout: "fullscreen" },
   args: {
     path: "/whoisfaker",
-    title: "Who is Faker",
+    title: "Who is",
+    logo: { src: "/assets/Faker.png", alt: "Faker" },
+    titleLabel: "Who is Faker",
     rooms: ROOMS,
     loading: false,
     userName: "小明",

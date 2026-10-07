@@ -18,8 +18,12 @@ export interface LobbyPageProps {
   path: string;
   /** 游戏标识，显示在顶栏分隔线之后。 */
   title: ReactNode;
-  /** 房名左侧的游戏图标。 */
+  /** 标题之后的游戏图标；图标本身是标题的一部分时（Faker.png 即「Faker」），`alt` 写出它代表的字。 */
   logo?: { src: string; alt: string };
+  /** 标题与图标拼成的完整游戏名，供读屏与按名查找；只写文字标题时省略。 */
+  titleLabel?: string;
+  /** 标题后的弱化副标题（如 CCB 的「Enhanced Edition」），不参与跨页共享元素。 */
+  subtitle?: string;
   rooms: LobbyRoomView[];
   /** 首次握手尚未完成：显示骨架屏而不是「暂无房间」。 */
   loading: boolean;
@@ -48,6 +52,8 @@ export function LobbyPage({
   path,
   title,
   logo,
+  titleLabel,
+  subtitle,
   rooms,
   loading,
   userName,
@@ -96,7 +102,7 @@ export function LobbyPage({
           </Button>
           <div className="h-4 w-px shrink-0 bg-border" />
           {/* 窄屏收一档字号并允许截断：长游戏名不折成两行，三个大厅的顶栏同高。 */}
-          <h1 className="flex min-w-0 items-center gap-2 text-lg font-bold sm:text-2xl">
+          <h1 aria-label={titleLabel} className="flex min-w-0 items-center gap-2 text-lg font-bold sm:text-2xl">
             <span className="min-w-0 truncate" style={{ viewTransitionName: titleName }}>{title}</span>
             {logo ? (
               <img
@@ -104,6 +110,10 @@ export function LobbyPage({
                 alt={logo.alt}
                 className="h-6 w-6 shrink-0 rounded-md border border-border object-cover shadow-2xs sm:h-7 sm:w-7"
               />
+            ) : null}
+            {/* 副标题与游戏名同一基线，退一档字号与颜色；窄屏空间不够时先藏起来，游戏名不被挤截。 */}
+            {subtitle ? (
+              <span className="hidden shrink-0 self-end pb-0.5 text-xs font-medium text-muted-foreground sm:inline sm:pb-1 sm:text-sm">{subtitle}</span>
             ) : null}
           </h1>
         </div>

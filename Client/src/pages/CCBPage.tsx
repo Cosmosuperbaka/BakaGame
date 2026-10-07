@@ -83,6 +83,7 @@ export default function CCBPage() {
     <LobbyPage
       path="/ccb"
       title="二刺猿笑传之猜猜呗"
+      subtitle="Enhanced Edition"
       rooms={rooms.map(toRoomView)}
       loading={isInitialLoading || leaving}
       disabled={leaving || pending}

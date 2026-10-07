@@ -56,9 +56,10 @@ export default function WhoIsFakerPage() {
   return (
     <LobbyPage
       path="/whoisfaker"
-      // 游戏名与主页卡片标题一字不差，跨页过渡时同一串字形连续移动；图标只作装饰，不再拼进标题里读出。
-      title="Who is Faker"
-      logo={{ src: "/assets/Faker.png", alt: "" }}
+      // Faker.png 就是「Faker」这个词：顶栏写「Who is」接图标，读屏与按名查找仍得到完整的「Who is Faker」。
+      title="Who is"
+      logo={{ src: "/assets/Faker.png", alt: "Faker" }}
+      titleLabel="Who is Faker"
       rooms={rooms.map(toRoomView)}
       disabled={pending}
       loading={isInitialLoading}

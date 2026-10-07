@@ -77,7 +77,7 @@ test("landing page exposes playable games and keeps placeholders disabled", asyn
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
   await page.getByRole("button", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
-  // 大厅标题与主页同为完整的「Who is Faker」，旁边的头像只作装饰（alt 为空）。
+  // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
   await assertPageQuality();
 });
