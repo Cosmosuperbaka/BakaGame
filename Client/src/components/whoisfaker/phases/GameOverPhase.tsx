@@ -7,6 +7,7 @@ import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsibl
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 import { ABSTAIN_TARGET_ID } from "@/types";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
@@ -111,7 +112,7 @@ export function GameOverPhase() {
           本局词语解密
         </div>
         {summary.words ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
+          <div className={cn("grid grid-cols-2 gap-3 text-center", summary.words.blankHint && "md:grid-cols-3")}>
             <div className="rounded-md border border-info/40 bg-info/10 p-3">
               <div className="text-xs text-info font-medium mb-1">平民词</div>
               <div className="text-base font-bold text-info">
