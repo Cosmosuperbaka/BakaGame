@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       # 合成 fixture 自测，不依赖 dump 与网络；放在下载之前以便快速失败。
@@ -45,12 +45,64 @@ jobs:
           wc -c /tmp/bangumi/id_tags.js
       - name: Build SQLite databases
         run: python3 tools/build_bangumi_db.py /tmp/bangumi/dump Server/data --tags /tmp/bangumi/id_tags.js
-      - name: Commit generated data
+      # 数据不再提交进仓库（曾走 LFS，把 GitHub 带宽额度吃穿）：发布到 Cloudflare R2。
+      # 上传顺序是刻意设计的：
+      #   1. 先传版本化数据对象（文件名含 sha12，新文件名 = 新 CDN 缓存键，天然绕开旧缓存）；
+      #   2. 再传 manifest.json（下游的一致性锚点；公开可读，ESA 上配置了禁缓存规则）；
+      #   3. 最后清理旧版本对象——此时新链路已就绪，删旧不影响任何下游。
+      - name: Publish to R2
         shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          R2_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Server/data/bangumi-*.sqlite
-          git diff --cached --quiet || git commit -m "chore(Core): 更新番剧数据"
-          git push
+          aws configure set default.s3.addressing_style path
+          # 1. 本地计算 sha256 并生成 manifest（版本化对象名只有这一处定义）
+          python3 - <<'PYEOF'
+          import hashlib, json, os, datetime
+          def info(fid, fname, target):
+              p = os.path.join("Server/data", fname)
+              h = hashlib.sha256()
+              with open(p, "rb") as f:
+                  for chunk in iter(lambda: f.read(1 << 22), b""):
+                      h.update(chunk)
+              sha = h.hexdigest()
+              return {"id": fid, "object": f"bangumi/bangumi-{fid}.{sha[:12]}.sqlite",
+                      "sha256": sha, "size": os.path.getsize(p), "target": target}
+          manifest = {
+              "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "files": [
+                  info("character", "bangumi-character.sqlite", "Server/data/bangumi-character.sqlite"),
+                  info("song", "bangumi-song.sqlite", "Server/data/bangumi-song.sqlite"),
+              ],
+          }
+          with open("/tmp/bangumi-manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+          PYEOF
+          # 2. 上传版本化数据对象（幂等：同 sha 的对象重复上传结果相同）
+          while read -r key local; do
+            echo "上传 $local → s3://$R2_BUCKET/$key"
+            aws --endpoint-url "$R2_ENDPOINT" s3 cp "$local" "s3://$R2_BUCKET/$key"
+          done < <(jq -r '.files[] | "\(.object) Server/data/\(.target | split("/")[-1])"' /tmp/bangumi-manifest.json)
+          # 3. manifest 最后传（先数据后清单，把「清单指向未就绪数据」的窗口压到零）
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp /tmp/bangumi-manifest.json \
+            "s3://$R2_BUCKET/bangumi/manifest.json"
+          # 4. 清理旧版本对象（保留当前两份数据与 manifest；桶不随每周发布膨胀）
+          CURRENT="$(jq -r '.files[].object' /tmp/bangumi-manifest.json | tr '\n' ' ')bangumi/manifest.json "
+          aws --endpoint-url "$R2_ENDPOINT" s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" --prefix "bangumi/" --query 'Contents[].Key' --output text \
+            | tr '\t' '\n' | while read -r key; do
+              [ -z "$key" ] && continue
+              [ "$key" = "None" ] && continue
+              if [[ "$CURRENT" != *" $key "* ]]; then
+                echo "删除旧版本：$key"
+                aws --endpoint-url "$R2_ENDPOINT" s3api delete-object \
+                  --bucket "$R2_BUCKET" --key "$key"
+              fi
+            done
+          cat /tmp/bangumi-manifest.json
