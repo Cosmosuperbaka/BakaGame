@@ -278,7 +278,7 @@ const scoreRevealStep = (count: number) => (count > 1 ? Math.min(scoreReveal.ste
 
 /**
  * 结算表第 `index` 行的入场延迟（秒）。按名次排列的表（第一名在最上）自末行往上揭示，第一名最后落定；
- * 按座次排列的表（谁是卧底的身份开牌）自上而下。行内的数字滚动与胜者扫光都从这里取时刻。
+ * 按座次排列的表（谁是卧底的身份开牌）自上而下。行内的数字滚动从这里取时刻。
  */
 export function scoreRevealDelay(index: number, count: number, ranked: boolean): number {
   return (ranked ? count - 1 - index : index) * scoreRevealStep(count);
@@ -314,22 +314,6 @@ export const gainFloat: { initial: TargetAndTransition; animate: TargetAndTransi
   animate: { opacity: [0, 1, 1, 0], y: [4, -3, -5, -6] },
   transition: { duration: 1.1, times: [0, 0.18, 0.6, 1], ease: ease.out },
 };
-
-/**
- * 胜者扫光：整表揭示完后，第一名或获胜阵营的行有一道浅色光带自左向右扫过一次，不循环。
- * 光带只动 transform：起止位移恰让光带停在行外（与 `ScoreTable` 里光带渐变只占中间 30%–70% 配套），
- * 整段时长都落在行上，静止时被裁掉，减弱动效下直接落到终点、看不见。
- */
-export const winnerSweep = {
-  initial: { x: "-70%" },
-  animate: { x: "70%" },
-  transition: { duration: 0.9, ease: ease.inOut },
-} as const;
-
-/** 胜者扫光的起播时刻（秒）：最晚一行落定、数字滚完之后。最晚一行的延迟与排序方向无关。 */
-export function winnerSweepDelay(count: number): number {
-  return Math.max(0, count - 1) * scoreRevealStep(count) + scoreReveal.land + springSettleMs(digitRoll.transition) / 1000;
-}
 
 /** 结算表的行：与 `listItem` 同一个入场，延迟经 `custom` 逐行传入（取 `scoreRevealDelay`），不靠外层 stagger。 */
 export const scoreRow: Variants = {
@@ -516,21 +500,9 @@ export const receiptMarkFollow = {
 } as const;
 
 /**
- * 印章：结算答案卡落定后，一枚印落在卡上，「落定 + 盖章」的后半拍。
- * 比 `receiptMark` 多出角度回正与按落方向的一点位移，读作被按下去而不是凭空弹出；
- * 低阻尼的 `impulse` 让按下那一下有落力。只在结算这类一次性揭晓的时刻使用，不循环。
+ * 结算答案卡的落定：卡片以 `impulse` 回弹就位，与 `receiptCard` 同一条语汇，只是这里的「回执」是一局的答案。
  */
-export const sealDrop = {
-  initial: { opacity: 0, scale: 1.6, rotate: -12, y: -3 },
-  animate: { opacity: 1, scale: 1, rotate: -6, y: 0 },
-  transition: spring.impulse,
-} as const;
-
-/**
- * 结算答案卡的落定：卡片以 `impulse` 回弹就位，印章晚 `followDelay` 再落下。
- * 与 `receiptCard` 同一条语汇（先接住、再盖章），只是这里的「回执」是一局的答案。
- */
-export const sealCard = {
+export const revealCard = {
   initial: { opacity: 0, scale: 0.97 },
   animate: { opacity: 1, scale: 1 },
   transition: spring.impulse,

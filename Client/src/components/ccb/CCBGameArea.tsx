@@ -346,8 +346,6 @@ function CCBScoreTable({ scores, guesses }: { scores: CCBScore[]; guesses: CCBGu
         cells: { rank: score.rank ?? "—", score: score.score },
         rollFrom: { score: 0 },
         contributor: contributors.has(score.playerId),
-        // 同步模式下同一轮猜中的并列第一
-        winner: score.rank === 1,
       }))}
     />
   );

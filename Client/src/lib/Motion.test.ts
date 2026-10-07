@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  digitRoll,
   duration,
   ease,
   followDelay,
@@ -21,7 +20,6 @@ import {
   spring,
   springSettleMs,
   springToCss,
-  winnerSweepDelay,
   wordRevealTiming,
 } from "./Motion";
 
@@ -73,13 +71,11 @@ describe("Motion tokens", () => {
     expect(scoreRevealDelay(0, 1, true)).toBe(0);
   });
 
-  it("数字在行落定后才滚，胜者扫光等最晚一行滚完，与揭示方向无关", () => {
-    const rollSettle = springSettleMs(digitRoll.transition) / 1000;
+  it("数字在行落定后才滚，与揭示方向无关", () => {
     for (const count of [1, 3, 6, 16]) {
       for (const ranked of [true, false]) {
         const rolls = Array.from({ length: count }, (_, index) => scoreRollDelay(index, count, ranked));
         rolls.forEach((roll, index) => expect(roll).toBeGreaterThan(scoreRevealDelay(index, count, ranked)));
-        expect(winnerSweepDelay(count)).toBeCloseTo(Math.max(...rolls) + rollSettle);
       }
     }
   });

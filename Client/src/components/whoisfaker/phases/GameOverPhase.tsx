@@ -156,8 +156,6 @@ export function GameOverPhase() {
             },
             // 结算快照里的累计分已含本局得分，从赛前分滚起
             rollFrom: { total: total - delta },
-            // 服务端只给获胜阵营记分，本局得分即胜方；中止的局没有胜方
-            winner: delta > 0,
           };
         })}
       />

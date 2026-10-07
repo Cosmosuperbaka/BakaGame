@@ -58,7 +58,7 @@ export const DetailRow: Story = {
         { key: "score", header: "得分", signed: true, tone: "strong" },
       ]}
       rows={[
-        { key: "a", name: "月见里", detail: ["猜中角色", "基础 8", "首猜 2", "快速 2", "作品 0", "出题 0"], cells: { rank: 1, score: 12 }, rollFrom: { score: 0 }, winner: true },
+        { key: "a", name: "月见里", detail: ["猜中角色", "基础 8", "首猜 2", "快速 2", "作品 0", "出题 0"], cells: { rank: 1, score: 12 }, rollFrom: { score: 0 } },
         { key: "b", name: "Sakuraba", detail: ["基础 0", "首猜 0", "快速 0", "作品 0", "出题 0"], cells: { rank: "—", score: 0 }, rollFrom: { score: 0 } },
         { key: "c", name: "出题人", detail: ["纯在送分", "基础 0", "首猜 0", "快速 0", "作品 0", "出题 -6"], cells: { rank: "—", score: -6 }, rollFrom: { score: 0 } },
       ]}

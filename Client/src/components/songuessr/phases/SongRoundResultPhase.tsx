@@ -4,10 +4,9 @@ import { Check, Film, Music2, Trophy, X } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Seal } from "@/components/ui/Seal";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
-import { followDelay, listItem, sealCard, springSettleMs } from "@/lib/Motion";
+import { followDelay, listItem, revealCard, springSettleMs } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import {
   BANGUMI_TRACK_KIND_LABELS,
@@ -48,8 +47,7 @@ function formatTrackKind(
 }
 
 /**
- * 歌曲信息。`answer` 是答案卡本身（标题 `text-xl`，`sm` 起信息列给右上角的印章让出 `pr-16`）；
- * `related` 是番剧答案下的关联歌曲，标题降一档，不再让位（印章在番剧那一行）。
+ * 歌曲信息。`answer` 是答案卡本身（标题 `text-xl`）；`related` 是番剧答案下的关联歌曲，标题降一档。
  */
 export function SongSettlementDetails({
   song,
@@ -63,7 +61,7 @@ export function SongSettlementDetails({
   const related = variant === "related";
   const Title = related ? "h4" : "h3";
   return (
-    <div className={cn("flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left", !related && "sm:pr-16")}>
+    <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
       {song.pictureUrl ? (
         <img src={song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-sm" />
       ) : (
@@ -101,7 +99,7 @@ export function SongSettlementDetails({
 }
 
 /** 累计得分在答案卡落定之后再滚，读作这一轮的分数落进了总分。 */
-const SOLO_ROLL_DELAY = springSettleMs(sealCard.transition) / 1000;
+const SOLO_ROLL_DELAY = springSettleMs(revealCard.transition) / 1000;
 
 export function SoloRoundOutcome({
   correct,
@@ -137,13 +135,13 @@ const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "hits", header: "命中", tone: "muted" },
 ];
 
-/** 多人模式的得分统计：服务端已按总分从高到低排好，已有得分的首行加奖杯，与扫光同一条件 */
+/** 多人模式的得分统计：服务端已按总分从高到低排好，已有得分的首行加奖杯 */
 export function SongScoreTable({
   scores,
   contributors,
 }: {
   scores: SonGuessrRoundSummary["scores"];
-  /** 本轮答对的玩家：行落定后浮起浅底，与奖杯的扫光各说一件事 */
+  /** 本轮答对的玩家：行落定后浮起浅底，与奖杯各说一件事 */
   contributors: string[];
 }) {
   const correctIds = new Set(contributors);
@@ -164,8 +162,6 @@ export function SongScoreTable({
         cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
         rollFrom: { score: score.score - score.delta },
         contributor: correctIds.has(score.playerId),
-        // 扫光跟着奖杯走；还没人得分时第一行只是排在最前，不算领先
-        winner: index === 0 && score.score > 0,
       }))}
     />
   );
@@ -203,17 +199,16 @@ export function SongRoundResultPhase({
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <PhaseHeader icon={snapshot.settings.questionType === "anime" ? Film : Music2} title="答案揭晓" />
-      {/* 答案卡：整卡回弹落定，印章晚一拍落在右上；下方得分表在卡之外，两者各落各的 */}
+      {/* 答案卡：整卡回弹落定；下方得分表在卡之外，两者各落各的 */}
       <motion.section
-        initial={sealCard.initial}
-        animate={sealCard.animate}
-        transition={sealCard.transition}
-        className="relative space-y-4 rounded-md bg-muted p-4"
+        initial={revealCard.initial}
+        animate={revealCard.animate}
+        transition={revealCard.transition}
+        className="space-y-4 rounded-md bg-muted p-4"
       >
-        <Seal label="揭晓" className="absolute right-4 top-4" />
         {snapshot.settings.questionType === "anime" && summary.anime ? (
           <>
-            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:pr-16 sm:text-left">
+            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
               {summary.anime.imageUrl ? (
                 <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-sm" />
               ) : (

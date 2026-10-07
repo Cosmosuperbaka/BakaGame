@@ -1,7 +1,7 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { contributorWash, contributorWashDelay, scoreRevealDelay, scoreRollDelay, scoreRow, winnerSweep, winnerSweepDelay } from "@/lib/Motion";
+import { contributorWash, contributorWashDelay, scoreRevealDelay, scoreRollDelay, scoreRow } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -26,8 +26,6 @@ export interface ScoreTableRow {
   rollFrom?: Record<string, number>;
   /** 本局做出贡献（CCB 猜中、猜歌答对）：行落定后浮起常驻的浅底，让战报读得出这几分是谁挣的 */
   contributor?: boolean;
-  /** 第一名或获胜阵营：整表揭示完后有一道光扫过这一行，只播一次 */
-  winner?: boolean;
 }
 
 // 数值列比名字列收紧内边距，末列补回 pr-4 与区块标题对齐。
@@ -37,26 +35,7 @@ const rowClass = "border-b border-background align-baseline last:border-b-0";
 const alignClass = (column: ScoreTableColumn) => (column.align === "left" ? "text-left" : "text-right");
 
 /**
- * 胜者行的扫光。`tr` 上的定位各浏览器不一致，光层挂在首格里，宽度取滚动容器的 `100cqw` 横跨整行；
- * 外层裁掉行外的光带，`-z-10` 让光从文字底下经过（叠在区块底色之上，区块 `isolate` 兜住层叠）。
- * 渐变只占光带中间 30%–70%，与 `winnerSweep` 的起止位移配套：静止时光带整段停在行外。
- * 光取比 `muted` 更亮的一档表面：亮色是 card，暗色 card 与 muted 几乎同明度，取 secondary（Design §3.2）。
- */
-function WinnerSweep({ delay }: { delay: number }) {
-  return (
-    <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 -z-10 w-[100cqw] overflow-hidden">
-      <motion.span
-        className="absolute inset-0 bg-linear-to-r from-transparent from-30% via-card to-transparent to-70% dark:via-secondary"
-        initial={winnerSweep.initial}
-        animate={winnerSweep.animate}
-        transition={{ ...winnerSweep.transition, delay }}
-      />
-    </span>
-  );
-}
-
-/**
- * 贡献者行的浅底。与扫光同样把定位落在首格里、宽度取滚动容器的 `100cqw` 横跨整行：
+ * 贡献者行的浅底。定位落在首格里、宽度取滚动容器的 `100cqw` 横跨整行：
  * `tr` 上的定位各浏览器不一致，格子只负责撑起行高与基线。`-z-10` 压在文字底下、底纸之上，
  * 因此数字与名字仍按原色读，底色只交代「这几分是谁挣的」。区块 `isolate` 兜住层叠。
  */
@@ -90,16 +69,13 @@ export function ScoreTable({
   ranked?: boolean;
 }) {
   const titleId = useId();
-  const sweepDelay = winnerSweepDelay(rows.length);
   const body = rows.map((row, rowIndex) => {
     const rollDelay = scoreRollDelay(rowIndex, rows.length, ranked);
     const washDelay = contributorWashDelay(rowIndex, rows.length, ranked);
-    const layered = row.contributor || row.winner;
     const cells = (
       <>
-        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", layered && "relative")}>
+        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.contributor && "relative")}>
           {row.contributor ? <ContributorWash delay={washDelay} /> : null}
-          {row.winner ? <WinnerSweep delay={sweepDelay} /> : null}
           <span className="block font-medium [overflow-wrap:anywhere]">{row.name}</span>
           {row.detail?.length ? (
             <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -163,7 +139,7 @@ export function ScoreTable({
       <div className="border-b border-background px-4 py-2.5">
         <h3 id={titleId} className="text-xs font-semibold text-muted-foreground">{title}</h3>
       </div>
-      {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供胜者扫光取行宽 */}
+      {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供贡献者浅底取行宽 */}
       <div className="@container overflow-x-auto">
         <table aria-labelledby={titleId} className="w-full text-sm">
           <thead>
