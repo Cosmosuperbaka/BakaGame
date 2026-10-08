@@ -3,6 +3,21 @@ import type { AnimeAutoFilters, BangumiSubjectDetails, BangumiSubjectSearchResul
 import type { BangumiDataProvider, BangumiProviderInit } from "./LocalBangumiProvider";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout> };
+type RequestPayload =
+  | { method: "init"; options: BangumiProviderInit }
+  | { method: "searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
+  | { method: "getSubject"; subjectId: string }
+  | { method: "resolveCharacterImage"; characterId: number };
+
+/**
+ * 初始化超时必须独立于查询超时：索引重建（首次部署或数据变更后向 Meilisearch
+ * 写入数万文档）耗时为分钟级，若与查询共用短窗口，ready 被拒后**所有后续查询
+ * 永久失败**（线上踩过：猜番玩法全部报「本地番剧查询超时」，索引其实建好了）。
+ * 分级口径对齐 CCB 侧同类实现（CCBCharacterWorkerProvider，init=900s）。
+ */
+const INIT_TIMEOUT_MS = 600_000;
+/** 查询超时：Meilisearch 侧索引构建期间查询会排队等待，与 CCB 查询同取 20s。 */
+const QUERY_TIMEOUT_MS = 20_000;
 
 export class BangumiWorkerProvider implements BangumiDataProvider {
   private readonly worker: Worker;
@@ -56,7 +71,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
     this.worker.terminate();
   }
 
-  private request(payload: object): Promise<unknown> {
+  private request(payload: RequestPayload): Promise<unknown> {
     if (this.closed) return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 查询已关闭"));
     if (this.pending.size >= 64) return Promise.reject(new AppError("BANGUMI_RATE_LIMITED", "Bangumi 查询排队过多，请稍后重试"));
     const id = ++this.nextId;
@@ -64,7 +79,7 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时"));
-      }, 10_000);
+      }, payload.method === "init" ? INIT_TIMEOUT_MS : QUERY_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       this.worker.postMessage({ ...payload, id });
     });

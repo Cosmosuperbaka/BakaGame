@@ -5,7 +5,7 @@ import type { BangumiDataProvider } from "./LocalBangumiProvider";
  * 本地数据集降级后重新探测的冷却期。
  * 本地 sqlite 查询比网络回源快两个数量级（实测 p50 2ms vs 500~960ms），
  * 因此一次抖动绝不能把整个进程永久钉死在网络回源上；但也不能每次请求都重试本地
- * （超时型失败每次要等满 10s），所以用冷却期在两者之间取平衡。
+ * （超时型失败每次要等满查询超时窗口），所以用冷却期在两者之间取平衡。
  */
 export const BANGUMI_LOCAL_RETRY_COOLDOWN_MS = 5 * 60_000;
 
