@@ -3,6 +3,9 @@ import {
   duration,
   ease,
   followDelay,
+  genieClip,
+  genieKeyframes,
+  genieWindow,
   installMotionTokens,
   listItem,
   motionCssVariables,
@@ -31,6 +34,34 @@ function linearPoints(easing: string): number[] {
 }
 
 describe("Motion tokens", () => {
+  it("神灯三帧从来源出发、落回原位，收回是同一条路倒放", () => {
+    const vector = { dx: 120, dy: 300 };
+    const out = genieKeyframes(vector, false);
+    expect(out.x).toEqual([120, 120 * 0.35, 0]);
+    expect(out.y.at(-1)).toBe(0);
+    expect(out.scaleX.at(-1)).toBe(1);
+    expect(out.scaleY.at(-1)).toBe(1);
+    // 来源在下方：沿纵轴拉长得比横向快
+    expect(out.scaleY[1]).toBeGreaterThan(out.scaleX[1]);
+    const back = genieKeyframes(vector, true);
+    expect(back.x).toEqual([...out.x].reverse());
+    expect(back.clipPath).toEqual([...out.clipPath].reverse());
+  });
+
+  it("神灯裁切只收窄朝向来源的一边，落定时是外扩的矩形", () => {
+    // 来源在右侧：右边两个点向中线收拢，左边保持外扩
+    const pinched = genieClip({ dx: 400, dy: 10 }, 1);
+    expect(pinched).toBe("polygon(-8.00% -8.00%, 108.00% 46.00%, 108.00% 54.00%, -8.00% 108.00%)");
+    expect(genieClip({ dx: 400, dy: 10 }, 0)).toBe("polygon(-8.00% -8.00%, 108.00% -8.00%, 108.00% 108.00%, -8.00% 108.00%)");
+  });
+
+  it("神灯没有来源时退化为淡入淡出，不做位移", () => {
+    const initial = (genieWindow.initial as (path?: unknown) => Record<string, unknown>)(undefined);
+    expect(initial).toEqual({ opacity: 0 });
+    const exit = (genieWindow.exit as (path?: unknown) => Record<string, unknown>)({});
+    expect(exit).not.toHaveProperty("x");
+  });
+
   it("listItem variants contract includes pointerEvents none on exit", () => {
     expect(listItem).toBeDefined();
     expect(listItem.initial).toMatchObject({ opacity: 0, scale: 0.94 });

@@ -38,7 +38,7 @@
 
 ### 2.4 点击之间必须有状态延续或视觉因果
 
-- 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。
+- 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。从一个小入口打开整块内容的窗口（主页版本信息）改传 `genie`，走 `genieWindow` 的神灯开合：窗口从按钮里沿飞行轴先拉长、朝按钮一侧收成梯形倒出，再横向铺开落位，关闭时按同一路径吸回按钮。
 - 就近弹出层（Popover）使用 `popover`，缩放原点朝向触发元素：Radix 浮层在内容元素上加 `origin-(--radix-popover-content-transform-origin)`，由 Radix 按实际落位（含避让翻转）给出原点；不写死 `origin-top` 之类的方向。Popover 一律受控（`open` / `onOpenChange`），`Portal` 与 `Content` 都带 `forceMount`，外包 `AnimatePresence` 按 `open` 条件渲染，退场播完再卸载；不受控时 Radix 关闭即卸载，没有退场。
 - 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。唯一例外是跨页：两页之间没有共用的节点，改由 View Transitions 把同名元素读作同一个对象，浏览器连续移动并交叉淡化（见下条）。
 - 页面导航一律经 `hooks/UsePageTransition` 的 `usePageNavigate`（默认 `viewTransition: true`），路由必须是数据路由（`AppRouter.tsx` 的 `createBrowserRouter`，页面走路由级 `lazy`，分块到齐后才开始过渡）。旧页连同按下的触发元素定格成快照向前退出、新页自后方推入；回到更浅一层的页面（房间→大厅→主页，浏览器后退同理）时两层对调，方向由 `RootLayout` 写到 `<html data-page-direction>`。不再先等按压播完再导航，快照本身就保留了点击的结果。
@@ -50,7 +50,8 @@
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
 - 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、CCB 队伍面板的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
-- 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
+- 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。与神灯弹窗同一处的标签（更新日志 / 关于）传 `swap="genie"` 改走 `genieTab`：旧内容吸回自己的标签，新内容从被点的标签倒出，路径由 `Tabs` 实测面板中心到新旧标签中心得出。
+- 聊天发送是一次连续的神灯：输入框里的文字先凝成一枚 aria-hidden 胶囊，按 `genieKeyframes(…, true)` 收进发送按钮（`chatSend.collapse`）；服务端回显的自己那条消息随后从发送按钮倒出、升到列表里的落点（`chatSend.rise`），这条回显不再叠 `chatMessageLaunch` 的弹入。回显早于收拢播完时等收拢结束再升起，发送失败则不升起。别人的消息照常用 `chatMessageLaunch`。
 - 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
 - 两态共用同一个外框时（限时栏、读数块），内容用 `readoutSwap` 配 `popLayout` 交替，外框高度经 `useMeasuredHeight` 量出、按 `spring.settle` 补间，不先塌再撑开。
 - 只会在末尾追加的标记串（CCB 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
@@ -158,6 +159,8 @@
 
 无法取得触发点位置时（如固定位置的浮动按钮），至少要把 `transformOrigin` 手动指向按钮所在方向，不允许留在中心。
 
+神灯开合（`Dialog` 的 `genie`）同样取 `origin`，但不换算 `transform-origin`：`vectorFromViewportCenter` 求出按钮相对窗口中心的位移，缩放原点留在中心，由位移把窗口带回按钮；三帧形态落定后清掉内联裁切。减弱动效时没有路径，退回淡入淡出。
+
 ### 4.2 跨区域位移不连续
 
 **错误表现**：开局展示的词语从游戏区中央「瞬移」到顶栏。根因是两个不同元素通过 `layoutId` 交接，字号差异过大，交接瞬间字形被替换。
@@ -198,6 +201,9 @@
 | `backdrop` | 覆盖层背板 |
 | `popover` | 就近弹出层，自触发点方向展开 |
 | `emergeFromOrigin` | 浮层自触发按钮位置被吸出，按原路收回 |
+| `genie` / `genieWindow` / `genieTab` | 神灯开合：`custom` 传 `GeniePath`（`enter` / `exit` 为来源相对落点的位移），进场从来源倒出、退场吸回；用三帧确定时长（`genieShape.times`），不用弹簧。`genieWindow` 用于弹窗，`genieTab` 短一档用于标签切换；没有路径时退回淡入淡出 |
+| `genieShape` / `genieKeyframes` / `genieClip` | 神灯的形态参数、三帧 `x`/`y`/`scaleX`/`scaleY`/`clipPath` 关键帧与梯形裁切；`reverse` 为吸入。命令式动画（聊天发送）直接展开 `genieKeyframes` |
+| `chatSend` / `vectorFromViewportCenter` | 聊天发送两段的时长（收进按钮 `collapse`、自按钮升起 `rise`）；视口点到窗口中心的位移，供神灯弹窗求路径 |
 | `collapsible` | 折叠区域，高度与不透明度分离。不直接手写 `AnimatePresence` + `collapsible`：内容区用 `ui/Collapsible` 的 `CollapsibleRegion`（外层只补间高度，内边距与边框写在子元素上）。裁切只在补间期间生效：变体在展开落定后把 `overflow` 放回 `visible`、收起起步时切回 `hidden`，区内字段的悬停描边与 3px 聚焦晕光不被区域边缘切掉；调用处与 `SettingsSection` 不再自加 `overflow-hidden`，需要 BFC 时用 `flow-root`，指示箭头用 `DisclosureChevron`；行内折叠用 `Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
@@ -208,7 +214,7 @@
 | `countdownTickMs` | 倒计时刷新步长，进度条宽度按同一时长匀速补间 |
 | `popoverScale` | 就近弹出层起止尺度，`popover` 变体与 CSS 关键帧共用 |
 | `springToCss` / `installMotionTokens` | 把令牌生成 `:root` 上的 CSS 变量（见 §2.5） |
-| `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲 |
+| `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲；自己发出的那条改走 `chatSend` 的神灯（§2.4） |
 | `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
 | `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片；`receiptCard.exit` 以确定时长原路收回起点、不回弹（撤销或换回输入栏），用法见 §2.4 |
 | `wordDock` | 谁是卧底词语停靠顶栏时的缩放（`scale`），顶栏占位按同一比例预留宽高 |

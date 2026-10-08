@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { fireEvent, fn } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS, storyChat } from "@/stories/fixtures/Common";
@@ -87,6 +88,28 @@ const LONG_CHAT: ChatMessage[] = [
 ];
 
 export const Empty: Story = { name: "空消息" };
+
+/** 发送后由本地回显：服务端回包大约晚一拍到达，这里同样延后一点放进列表，回放完整的「收进按钮 → 飞出展开」。 */
+function EchoChat(props: React.ComponentProps<typeof ChatPanel>) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [...props.messages]);
+  return (
+    <ChatPanel
+      {...props}
+      messages={messages}
+      onSendMessage={async (text) => {
+        await props.onSendMessage(text);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        setMessages((current) => [...current, say(me, text, 600 + current.length)]);
+      }}
+    />
+  );
+}
+
+export const SendFlight: Story = {
+  name: "发送动画",
+  args: { messages: [say(peach, "说两句试试", 1), say(azumi, "我先来", 2)] },
+  render: (args) => <EchoChat {...args} />,
+};
 
 export const Mentioned: Story = {
   name: "对话 · 被提及",

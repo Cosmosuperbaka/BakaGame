@@ -667,6 +667,148 @@ export const emergeFromOrigin: Variants = {
   },
 };
 
+// ==================== 神灯展开 ====================
+
+/** 浮层中心指向来源（按钮）的向量，单位像素。 */
+export interface GenieVector {
+  dx: number;
+  dy: number;
+}
+
+/** 一次开合的两端：进场从 `enter` 吐出，退场收回 `exit`；缺省时退化为淡入淡出。 */
+export interface GeniePath {
+  enter?: GenieVector;
+  exit?: GenieVector;
+}
+
+/** 神灯途中的形态：沿飞行轴先拉长、再横向铺开，读作窗口从按钮里被「倒」出来。 */
+export const genieShape = {
+  /** 关键帧时刻：起点、半途、落定 */
+  times: [0, 0.5, 1],
+  /** 半途走过的路程比例 */
+  midTravel: 0.35,
+  /** 沿飞行轴的尺度：起点、半途 */
+  along: [0.1, 0.85],
+  /** 垂直于飞行轴的尺度：起点、半途 */
+  across: [0.06, 0.4],
+  /** 朝向来源一侧收窄的程度：起点、半途（1 收成一点，0 不收） */
+  pinch: [1, 0.7],
+  /** 裁切框外扩的百分比，留出阴影 */
+  overscan: 8,
+  /** 收到最窄时剩下的半宽（百分比） */
+  neck: 4,
+} as const;
+
+type GenieSide = "top" | "bottom" | "left" | "right";
+
+/** 来源在浮层的哪一侧：取位移较大的轴。 */
+function genieSide({ dx, dy }: GenieVector): GenieSide {
+  if (Math.abs(dy) >= Math.abs(dx)) return dy >= 0 ? "bottom" : "top";
+  return dx >= 0 ? "right" : "left";
+}
+
+/**
+ * 神灯的梯形裁切：朝向来源的一边按 `pinch` 收窄。四个点的结构恒定，裁切框可以在关键帧之间补间；
+ * 外扩 `overscan` 让阴影不被切掉。
+ */
+export function genieClip(vector: GenieVector, pinch: number): string {
+  const lo = -genieShape.overscan;
+  const hi = 100 + genieShape.overscan;
+  const lerp = (from: number, to: number) => from + (to - from) * pinch;
+  const near = (edge: number) => lerp(edge, edge < 50 ? 50 - genieShape.neck : 50 + genieShape.neck);
+  const points: Record<GenieSide, [number, number][]> = {
+    top: [[near(lo), lo], [near(hi), lo], [hi, hi], [lo, hi]],
+    bottom: [[lo, lo], [hi, lo], [near(hi), hi], [near(lo), hi]],
+    left: [[lo, near(lo)], [hi, lo], [hi, hi], [lo, near(hi)]],
+    right: [[lo, lo], [hi, near(lo)], [hi, near(hi)], [lo, hi]],
+  };
+  return `polygon(${points[genieSide(vector)].map(([x, y]) => `${x.toFixed(2)}% ${y.toFixed(2)}%`).join(", ")})`;
+}
+
+/** 沿飞行轴与垂直轴的尺度换成 scaleX / scaleY。 */
+function genieScale(vector: GenieVector, along: number, across: number) {
+  const vertical = genieSide(vector) === "top" || genieSide(vector) === "bottom";
+  return vertical ? { scaleX: across, scaleY: along } : { scaleX: along, scaleY: across };
+}
+
+/** 从中心出发的三帧：来源、半途、原位（`reverse` 时倒过来，用于收回）。不在组件里另拼形态。 */
+export function genieKeyframes(vector: GenieVector, reverse: boolean) {
+  const { midTravel, along, across, pinch } = genieShape;
+  const start = genieScale(vector, along[0], across[0]);
+  const mid = genieScale(vector, along[1], across[1]);
+  const frames = {
+    x: [vector.dx, vector.dx * midTravel, 0],
+    y: [vector.dy, vector.dy * midTravel, 0],
+    scaleX: [start.scaleX, mid.scaleX, 1],
+    scaleY: [start.scaleY, mid.scaleY, 1],
+    clipPath: [genieClip(vector, pinch[0]), genieClip(vector, pinch[1]), genieClip(vector, 0)],
+  };
+  if (!reverse) return frames;
+  return Object.fromEntries(Object.entries(frames).map(([key, values]) => [key, [...values].reverse()])) as typeof frames;
+}
+
+/**
+ * 神灯开合（macOS 程序坞那种）：进场从来源按钮里被倒出来，沿飞行轴先拉长、朝来源一侧收成梯形，再横向铺开落位；
+ * 退场原路吸回。`custom` 传 `GeniePath`，两端各自给出来源，缺省一端时只淡入淡出。
+ * 用确定时长而不是弹簧：弹簧只能在两帧之间补间，神灯需要三帧形态。缩放原点留在中心，位移负责把中心带到来源。
+ */
+export function genie(timing: { enter: number; exit: number }): Variants {
+  const fade = { opacity: 0 };
+  return {
+    initial: (path?: GeniePath) => {
+      if (!path?.enter) return fade;
+      const frames = genieKeyframes(path.enter, false);
+      return {
+        opacity: 0,
+        ...Object.fromEntries(Object.entries(frames).map(([key, values]) => [key, values[0]])),
+      };
+    },
+    animate: (path?: GeniePath) => {
+      if (!path?.enter) return { opacity: 1, transition: { duration: duration.quick, ease: ease.out } };
+      return {
+        opacity: 1,
+        ...genieKeyframes(path.enter, false),
+        transition: {
+          duration: timing.enter,
+          ease: ease.out,
+          times: [...genieShape.times],
+          opacity: { duration: timing.enter * 0.35, ease: ease.out },
+        },
+      };
+    },
+    exit: (path?: GeniePath) => {
+      if (!path?.exit) return { opacity: 0, pointerEvents: "none", transition: { duration: duration.instant, ease: ease.inOut } };
+      return {
+        opacity: [1, 1, 0],
+        pointerEvents: "none",
+        ...genieKeyframes(path.exit, true),
+        transition: {
+          duration: timing.exit,
+          ease: ease.inOut,
+          times: [...genieShape.times],
+          opacity: { duration: timing.exit, ease: ease.inOut, times: [0, 0.75, 1] },
+        },
+      };
+    },
+  };
+}
+
+/** 弹窗的神灯开合：自触发按钮倒出、收回。 */
+export const genieWindow = genie({ enter: duration.slow, exit: duration.base + duration.instant });
+/** 标签内容的神灯切换：旧内容吸回自己的标签，新内容从被点的标签倒出。比弹窗短一档，切换不拖沓。 */
+export const genieTab = genie({ enter: duration.base + duration.instant, exit: duration.base });
+
+/**
+ * 聊天发送：输入框里的文字先收进发送按钮（`collapse`），消息再从发送按钮倒出、飞到自己的位置展开（`rise`）。
+ * 回显早到时等收进动作播完再起飞，两段读作同一条消息的连续动作。
+ */
+export const chatSend = { collapse: duration.base, rise: duration.slow } as const;
+
+/** 视口中心指向某点的向量：居中弹窗的中心就是视口中心，不必等挂载后再量。 */
+export function vectorFromViewportCenter(point: OriginPoint): GenieVector {
+  return { dx: point.x - window.innerWidth / 2, dy: point.y - window.innerHeight / 2 };
+}
+
 /**
  * 未提交发言的占位省略号。三点依次浮起再落回，
  * 表达“正在等待”而不是静止的空值。

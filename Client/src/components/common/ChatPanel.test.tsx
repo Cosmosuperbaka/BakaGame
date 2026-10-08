@@ -212,6 +212,28 @@ describe("ChatPanel (Common)", () => {
     expect(sendButton).toBeDisabled();
   });
 
+  it("发送时文字凝成气泡收进发送按钮，回显那条不再叠一次弹入", async () => {
+    const handleSend = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />);
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    fireEvent.change(input, { target: { value: "飞出去" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    // 收进按钮的那枚气泡只是装饰，读屏不读
+    const ghost = await screen.findByText("飞出去");
+    expect(ghost.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(input).toHaveValue("");
+
+    rerender(
+      <ChatPanel
+        messages={[{ id: "echo", playerId: "p-me", playerName: "我", text: "飞出去", createdAt: 1, system: false }]}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={handleSend}
+      />,
+    );
+    expect(within(screen.getByTestId("chat-message-bubble")).getByText("飞出去")).toBeInTheDocument();
+  });
+
   it("正文保留提及成员与上下文，不把提及误作输入候选", () => {
     const messages: ChatMessage[] = [
       {

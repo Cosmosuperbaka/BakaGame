@@ -580,13 +580,14 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin}>
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin} genie>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>版本信息</DialogTitle>
             <DialogDescription className="font-mono">{versionDescription}</DialogDescription>
           </DialogHeader>
-          <Tabs defaultValue="changelog">
+          {/* 开合与切换都走神灯：窗口从版本号里倒出来、关上吸回去；切标签时旧内容吸回自己的标签，新内容从被点的标签倒出 */}
+          <Tabs defaultValue="changelog" swap="genie">
             <TabsList className="mb-4 w-full">
               <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>

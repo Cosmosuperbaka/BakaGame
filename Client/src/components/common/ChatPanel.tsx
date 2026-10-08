@@ -1,11 +1,22 @@
-import { useState, useRef, useCallback, useId, useMemo } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useState, useRef, useCallback, useId, useLayoutEffect, useMemo, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, animate, motion, useReducedMotion, type AnimationPlaybackControls } from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
-import { chatMessageLaunch, optionTappable, popover, systemNotice } from "@/lib/Motion";
+import {
+  chatMessageLaunch,
+  chatSend,
+  ease,
+  genieKeyframes,
+  genieShape,
+  optionTappable,
+  popover,
+  systemNotice,
+  type OriginPoint,
+} from "@/lib/Motion";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
   applyMention,
@@ -52,6 +63,114 @@ export interface ChatPanelProps {
   maxLength?: number;
   /** 外层容器扩展类名 */
   className?: string;
+}
+
+/** 一次发送的飞行：发送按钮中心与按下发送的时刻（`performance.now()`）。 */
+interface SendLaunch {
+  from: OriginPoint;
+  sentAt: number;
+}
+
+const centerOf = (rect: DOMRect): OriginPoint => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+
+/** 起飞前至少留一帧：自动滚到底在下一帧才发生，量早了起点会偏。 */
+const MIN_RISE_DELAY_MS = 32;
+
+/**
+ * 发送的第二段：回显的气泡从发送按钮里倒出来、飞到自己的位置展开（神灯）。
+ * 回显早于收进动作播完时，等它播完再起飞；起飞那一刻才量位置，滚到底之后起点仍对准按钮。
+ * 动的是气泡本身（同一个 DOM 元素），列表滚动区会裁掉按钮到列表下缘那一小段，读作从输入区里升起来。
+ */
+function useLaunchFlight(ref: RefObject<HTMLElement | null>, launch: SendLaunch | undefined) {
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node || !launch) return;
+    node.style.opacity = "0";
+    let controls: AnimationPlaybackControls | undefined;
+    const wait = Math.max(MIN_RISE_DELAY_MS, chatSend.collapse * 1000 - (performance.now() - launch.sentAt));
+    const timer = window.setTimeout(() => {
+      const center = centerOf(node.getBoundingClientRect());
+      const vector = { dx: launch.from.x - center.x, dy: launch.from.y - center.y };
+      controls = animate(
+        node,
+        { ...genieKeyframes(vector, false), opacity: [0, 1, 1] },
+        { duration: chatSend.rise, ease: ease.out, times: [...genieShape.times] },
+      );
+      void controls.finished.then(() => {
+        node.style.transform = "";
+        node.style.clipPath = "";
+      });
+    }, wait);
+    return () => {
+      window.clearTimeout(timer);
+      controls?.stop();
+      node.style.opacity = "";
+      node.style.transform = "";
+      node.style.clipPath = "";
+    };
+  }, [ref, launch]);
+}
+
+/** 气泡外壳：贴合内容宽度，神灯飞行以它的中心为准。 */
+function MessageShell({
+  launch,
+  isMe,
+  children,
+}: {
+  launch?: SendLaunch;
+  isMe: boolean;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLaunchFlight(ref, launch);
+  return (
+    <div ref={ref} className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 发送的第一段：输入框里的文字凝成一枚气泡，被吸进发送按钮（神灯收回）。
+ * 输入框此刻已经清空，这枚气泡是文字离开输入框的样子；挂在 body 上，不被输入区裁切。
+ */
+function SendCollapse({
+  text,
+  anchor,
+  target,
+  onDone,
+}: {
+  text: string;
+  anchor: { left: number; top: number; height: number; maxWidth: number };
+  target: OriginPoint;
+  onDone: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const center = centerOf(node.getBoundingClientRect());
+    const vector = { dx: target.x - center.x, dy: target.y - center.y };
+    const controls = animate(
+      node,
+      { ...genieKeyframes(vector, true), opacity: [1, 1, 0] },
+      { duration: chatSend.collapse, ease: ease.inOut, times: [...genieShape.times] },
+    );
+    void controls.finished.then(onDone);
+    return () => controls.stop();
+  }, [target, onDone]);
+
+  return createPortal(
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
+      style={{ left: anchor.left, top: anchor.top, height: anchor.height, maxWidth: anchor.maxWidth }}
+    >
+      {text}
+    </div>,
+    document.body,
+  );
 }
 
 /** 消息正文：命中房间成员的 `@名字` 高亮，其余按普通文本渲染 */
@@ -110,6 +229,18 @@ export function ChatPanel({
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const reducedMotion = useReducedMotion();
+  // 发送动画：先把文字吸进发送按钮（collapse），回显到达后气泡再从按钮飞出（launch）
+  const [collapse, setCollapse] = useState<{
+    key: number;
+    text: string;
+    anchor: { left: number; top: number; height: number; maxWidth: number };
+    target: OriginPoint;
+  } | null>(null);
+  const [pendingLaunch, setPendingLaunch] = useState<(SendLaunch & { baselineId: string | undefined }) | null>(null);
+  const [launched, setLaunched] = useState<SendLaunch & { id: string } | null>(null);
+  const finishCollapse = useCallback(() => setCollapse(null), []);
   // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
   const mentionListId = useId();
   const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
@@ -120,6 +251,16 @@ export function ChatPanel({
     () => players.filter((player) => player.id !== myPlayerId),
     [players, myPlayerId],
   );
+
+  // 本人最新一条消息：发送后它换了，就是这次发送的回显
+  const lastMineId = useMemo(
+    () => messages.findLast((message) => !message.system && message.playerId === myPlayerId)?.id,
+    [messages, myPlayerId],
+  );
+  if (pendingLaunch && lastMineId && lastMineId !== pendingLaunch.baselineId) {
+    setLaunched({ id: lastMineId, from: pendingLaunch.from, sentAt: pendingLaunch.sentAt });
+    setPendingLaunch(null);
+  }
 
   const candidates = useMemo(
     () =>
@@ -158,14 +299,32 @@ export function ChatPanel({
     [mention, text, closeMention],
   );
 
+  /** 记下发送这一刻的输入框与按钮位置，起播收进动作并等待回显起飞。 */
+  const startSendFlight = (sent: string) => {
+    const input = inputRef.current;
+    const button = sendButtonRef.current;
+    if (reducedMotion || !input || !button) return;
+    const inputRect = input.getBoundingClientRect();
+    const target = centerOf(button.getBoundingClientRect());
+    setCollapse({
+      key: performance.now(),
+      text: sent,
+      anchor: { left: inputRect.left, top: inputRect.top, height: inputRect.height, maxWidth: inputRect.width },
+      target,
+    });
+    setPendingLaunch({ from: target, sentAt: performance.now(), baselineId: lastMineId });
+  };
+
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    startSendFlight(trimmed);
     setText("");
     closeMention();
     try {
       await onSendMessage(trimmed);
     } catch (error) {
+      setPendingLaunch(null);
       onError?.(error);
     }
   };
@@ -219,19 +378,21 @@ export function ChatPanel({
                   key={message.id}
                   layout="position"
                   variants={chatMessageLaunch}
-                  initial="initial"
+                  // 自己刚发出的那条由 MessageShell 从发送按钮飞出，外层不再叠一次弹入
+                  initial={launched?.id === message.id ? false : "initial"}
                   animate="animate"
                   exit="exit"
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
+                  <MessageShell isMe={isMe} launch={launched?.id === message.id ? launched : undefined}>
                   <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
                     {message.playerName}
                   </span>
                   <div
                     data-testid="chat-message-bubble"
                     className={cn(
-                      "min-w-0 max-w-[85%] whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                      "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
                       safeStickerPath ? "p-1.5" : "px-3 py-1.5",
                       isMe
                         ? isGhost
@@ -258,6 +419,7 @@ export function ChatPanel({
                       />
                     )}
                   </div>
+                  </MessageShell>
                 </motion.div>
               );
             })}
@@ -369,7 +531,17 @@ export function ChatPanel({
           }}
           maxLength={maxLength}
         />
+        {collapse ? (
+          <SendCollapse
+            key={collapse.key}
+            text={collapse.text}
+            anchor={collapse.anchor}
+            target={collapse.target}
+            onDone={finishCollapse}
+          />
+        ) : null}
         <Button
+          ref={sendButtonRef}
           size="icon"
           className="shrink-0"
           onClick={() => void handleSend()}
