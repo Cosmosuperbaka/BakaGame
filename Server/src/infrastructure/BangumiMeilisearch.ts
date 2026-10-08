@@ -77,7 +77,9 @@ export class BangumiMeilisearch {
     const columns = new Set((db.query("PRAGMA table_info(subjects)").all() as Array<{ name: string }>).map((column) => column.name));
     const rank = columns.has("rank") ? "rank" : "0 AS rank";
     const aliases = columns.has("aliases") ? "aliases" : "name_cn AS aliases";
-    const rows = db.query(`SELECT id,name,name_cn,${aliases},date,score,rating_count,heat,type,nsfw,${rank} FROM subjects ORDER BY id`).all() as Array<Record<string, unknown>>;
+    // 歌库 subjects 没有 rating_count（仅角色库才有）；缺失时归零，避免索引初始化整体失败。
+    const ratingCount = columns.has("rating_count") ? "rating_count" : "0 AS rating_count";
+    const rows = db.query(`SELECT id,name,name_cn,${aliases},date,score,${ratingCount},heat,type,nsfw,${rank} FROM subjects ORDER BY id`).all() as Array<Record<string, unknown>>;
     const docs = rows.map((row) => ({ id: Number(row.id), name: String(row.name), aliases: uniqueStrings(typeof row.name_cn === "string" ? row.name_cn : "", parseJsonStrings(row.aliases)), date: parseDate(String(row.date)), score: Number(row.score ?? 0), rating_count: Number(row.rating_count ?? 0), heat: Number(row.heat ?? 0), rank: Number(row.rank ?? 0), type: Number(row.type ?? 0), nsfw: Boolean(row.nsfw) }));
     for (let offset = 0; offset < docs.length; offset += BATCH_SIZE) await waitForIndexTask(this.subjects.addDocuments(docs.slice(offset, offset + BATCH_SIZE), { primaryKey: "id" }));
   }
