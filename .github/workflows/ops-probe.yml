@@ -1,7 +1,8 @@
 name: Ops Probe
 
 # 一次性只读诊断（临时文件，诊断完成后移除）：
-# v3 目的：验证「容器 node_modules 的 bun」修复路径、Meilisearch 可达性、MAINTENANCE_TOKEN 现状。
+# v4 目的：实测 BakaGame 容器 → Meilisearch 的候选地址可达性（决定 MEILISEARCH_URL 取值），
+#          确认容器挂载与网络拓扑（重建容器安全边界）。
 # 不修改任何状态；不打印环境变量值（仅名称/键名）、不打印容器日志内容（仅计数）、不打印 SSH 主机。
 on:
   workflow_dispatch:
@@ -33,73 +34,67 @@ jobs:
             set -uo pipefail
 
             echo "===== 0. 宿主工具 ====="
-            command -v sudo timeout docker git curl || true
+            command -v sudo timeout docker git curl node || true
 
             echo "===== 1. 容器总览 ====="
-            sudo docker ps -a --filter name=BakaGame --format 'id={{.ID}} image={{.Image}} status={{.Status}}'; echo "rc=$?"
+            sudo docker ps -a --filter name=BakaGame --format 'BakaGame: id={{.ID}} image={{.Image}} status={{.Status}}'
+            sudo docker ps -a --format '{{.Names}}' | grep -iE 'meili|search' | head -5 || echo "(无名字含 meili/search 的容器)"
 
-            echo "===== 2. inspect 关键字段 ====="
+            echo "===== 2. BakaGame 网络与挂载 ====="
             sudo docker inspect BakaGame --format 'NetworkMode={{.HostConfig.NetworkMode}}'
-            sudo docker inspect BakaGame --format 'Created={{.Created}}'
-            sudo docker inspect BakaGame --format 'Cmd={{json .Config.Cmd}}'
-            sudo docker inspect BakaGame --format 'WorkingDir={{.Config.WorkingDir}}'
+            echo "--- 网络 ---"
+            sudo docker inspect BakaGame --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}}{{"\n"}}{{end}}'
+            echo "--- 挂载（仅类型与容器内路径）---"
+            sudo docker inspect BakaGame --format '{{range .Mounts}}{{.Type}} -> {{.Destination}}{{"\n"}}{{end}}'
             echo "--- 容器环境变量名（仅名称，不含值）---"
             sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^[A-Z_]+$' | sort
 
-            echo "===== 3. exec 基础 + stdin ====="
-            sudo docker exec BakaGame sh -c 'id -un; pwd'; echo "rc=$?"
-            printf 'stdin-echo-ok\n' | sudo docker exec -i BakaGame sh -c 'cat'; echo "rc=$?"
+            echo "===== 3. Meili 容器 inspect ====="
+            MEILI=$(sudo docker ps -a --format '{{.Names}}' | grep -iE 'meili' | head -1 || true)
+            echo "MEILI=$MEILI"
+            if [ -n "$MEILI" ]; then
+              sudo docker inspect "$MEILI" --format 'NetworkMode={{.HostConfig.NetworkMode}}'
+              sudo docker inspect "$MEILI" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}}{{"\n"}}{{end}}'
+              echo "--- Meili 环境键名（仅键名）---"
+              sudo docker inspect "$MEILI" --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^[A-Z_]+$' | sort | head -20
+            fi
 
-            echo "===== 4. 容器内运行时（PATH / node_modules / node）====="
-            sudo docker exec BakaGame sh -c 'command -v bun || echo "(PATH 无 bun)"; command -v node; node --version'; echo "rc=$?"
-            sudo docker exec BakaGame sh -c 'ls -la /app/node_modules/.bin/ | grep -i bun || echo "(无 .bin/bun)"'; echo "rc=$?"
-            sudo docker exec BakaGame sh -c '/app/node_modules/.bin/bun --version'; echo "rc=$?"
-            sudo docker exec BakaGame sh -c 'ls -la /app/node_modules/bun/bin/ 2>/dev/null || echo "(无 bun 包目录)"'; echo "rc=$?"
+            echo "===== 4. 网络拓扑：1panel-network ====="
+            GW=$(sudo docker network inspect 1panel-network --format '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{end}}{{end}}' 2>/dev/null || true)
+            echo "gateway=$GW"
+            echo "--- 成员容器 ---"
+            sudo docker network inspect 1panel-network --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null | head -20 || echo "(不可读)"
 
-            echo "===== 5. 修复复刻：release 元数据（容器 node_modules 的 bun）====="
-            cd /BakaGame
-            COMMIT=$(git rev-parse HEAD)
-            REL_OUT=$(mktemp); REL_ERR=$(mktemp)
-            S=$(date +%s%N)
-            sudo timeout 3s docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts > "$REL_OUT" 2> "$REL_ERR"
-            echo "rc=$?  耗时 $(( ($(date +%s%N) - S) / 1000000 )) ms"
-            echo "--- stdout ($(wc -c < "$REL_OUT") 字节):"; head -c 400 "$REL_OUT"; echo ""
-            echo "--- stderr ($(wc -c < "$REL_ERR") 字节):"; head -c 400 "$REL_ERR"; echo ""
-            rm -f "$REL_OUT" "$REL_ERR"
+            echo "===== 5. 容器内可达性矩阵（BakaGame → Meili 候选地址）====="
+            probe_url() {
+              local label="$1" url="$2" out
+              out=$(sudo docker exec BakaGame node -e "fetch('$url',{signal:AbortSignal.timeout(2500)}).then(async r=>console.log('HTTP '+r.status+' '+((await r.text()).slice(0,60)))).catch(e=>console.log('FAIL '+((e.cause&&(e.cause.code||e.cause.message))||e.name)))" 2>&1) || true
+              echo "$label => $out"
+            }
+            if [ -n "$MEILI" ]; then
+              probe_url "by-container-name" "http://$MEILI:7700/health"
+            fi
+            [ -n "${GW:-}" ] && probe_url "by-gateway" "http://$GW:7700/health"
+            probe_url "docker0-gateway" "http://172.17.0.1:7700/health"
+            probe_url "host-docker-internal" "http://host.docker.internal:7700/health"
+            probe_url "container-loopback(对照)" "http://127.0.0.1:7700/health"
 
-            echo "===== 6. stdin 机制复刻（notify/probe 同机制，含参数透传与 loopback fetch）====="
-            printf 'console.log("stdin-ok", JSON.stringify(process.argv.slice(2)))' | sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - AAA BBB; echo "rc=$?"
-            printf 'const r = await fetch("http://127.0.0.1:4850/health", { signal: AbortSignal.timeout(2000) }); console.log("fetch-ok", r.status);' | sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file -; echo "rc=$?"
+            echo "===== 6. 宿主侧 Meili 健康 + 容器内 bun 速检 ====="
+            (curl -sS -m 2 http://127.0.0.1:7700/health; echo " rc=$?") 2>&1 || echo "host-7700: unreachable"
+            sudo docker exec BakaGame /app/node_modules/.bin/bun --version; echo "rc=$?"
 
             echo "===== 7. 服务器工作区现状 ====="
             git -C /BakaGame rev-parse HEAD; echo "rc=$?"
             git -C /BakaGame status --short | head -8
-            ls -la /BakaGame/.deploy-stash 2>/dev/null | head -8
             ls -la /BakaGame/Server/data 2>/dev/null | head -8
-            ls -la /BakaGame/Server/build 2>/dev/null | head -6
 
-            echo "===== 8. 令牌与容器入口线索 ====="
-            sudo docker exec BakaGame sh -c '[ -n "${MAINTENANCE_TOKEN:-}" ] && echo "token-present" || echo "token-absent"'; echo "rc=$?"
-            echo "--- /app/.env 键名（仅键名）---"
-            sudo docker exec BakaGame sh -c 'grep -oE "^[A-Z_]+=" /app/.env 2>/dev/null | sort || true'; echo "rc=$?"
-            echo "--- run.sh 结构关键字（不含值）---"
-            sudo grep -oE '^[[:space:]]*(export )?[A-Z_]{3,}=|^[[:space:]]*(cd|source|exec|set) |bun (run|install)|npm (ci|install|start|run)' /opt/1panel/runtime/node/BakaGame/run.sh 2>/dev/null | sort | uniq -c || echo "(run.sh 不可读)"
-
-            echo "===== 9. Meilisearch 可达性 ====="
-            (curl -sS -m 2 -o /dev/null -w 'host-7700: HTTP %{http_code}\n' http://127.0.0.1:7700/health) 2>&1 || echo "host-7700: unreachable"
-            sudo docker exec BakaGame node -e "fetch('http://127.0.0.1:7700/health',{signal:AbortSignal.timeout(2000)}).then(async r=>console.log('container-7700: HTTP',r.status,(await r.text()).slice(0,60))).catch(e=>console.log('container-7700: unreachable',e.name))"
-            echo "容器总数: $(sudo docker ps -a --format '{{.Names}}' | wc -l)"
-            sudo docker ps -a --format '{{.Names}}' | grep -iE 'meili|search' || echo "(无名字含 meili/search 的容器)"
-
-            echo "===== 10. 线上服务健康与错误计数 ====="
+            echo "===== 8. 线上服务健康与错误计数 ====="
             for p in /health /livez /readyz; do
               code=$(curl -sS -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:4850$p" 2>/dev/null || true)
               echo "$p -> HTTP ${code:-conn-failed}"
             done
             LOG_TAIL=$(sudo docker logs --tail 500 BakaGame 2>&1)
-            echo "日志行数: $(printf '%s\n' "$LOG_TAIL" | wc -l)"
             echo "no-such-table 计数: $(printf '%s\n' "$LOG_TAIL" | grep -c 'no such table' || true)"
-            echo "corrupt 计数: $(printf '%s\n' "$LOG_TAIL" | grep -ci 'malformed\|corrupt' || true)"
             echo "meili/7700 提及计数: $(printf '%s\n' "$LOG_TAIL" | grep -ci 'meili\|7700' || true)"
 
             echo "===== DONE ====="
