@@ -1,8 +1,9 @@
 name: Ops Probe
 
 # 一次性只读诊断（临时文件，诊断完成后移除）：
-# v5 目的：核验发布证据（release.json / Sentry 警告）、Bangumi worker 报错计数、
-#          容器环境键名与 Meilisearch 索引状态（确认索引重建与搜索恢复）。
+# v6 目的：核验「本地番剧查询超时」修复 —— ① 主进程查询超时/报错计数（本次启动应为 0）；
+#          ② 容器内独立进程实测 Bangumi 查询链路（复刻 CreateServer 装配：readEnv +
+#          BangumiWorkerProvider，经 Worker → SQLite → Meilisearch 走列表/搜索/随机出题）。
 # 不修改任何状态；不打印环境变量值（仅名称/键名）、不打印容器日志内容（仅计数）、不打印 SSH 主机。
 on:
   workflow_dispatch:
@@ -14,7 +15,7 @@ jobs:
   probe:
     name: Probe Server
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - name: Probe via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -24,12 +25,54 @@ jobs:
           username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
           key: ${{ secrets.DEPLOY_KEY }}
           passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
-          command_timeout: 2m
+          command_timeout: 5m
           script_stop: false
           script: |
             set -euo pipefail
             PROBE_SH=$(mktemp /tmp/bakagame-probe.XXXXXX.sh)
-            trap 'rm -f "$PROBE_SH"' EXIT
+            BANGUMI_TS=$(mktemp /tmp/bakagame-bangumi-query.XXXXXX.ts)
+            trap 'rm -f "$PROBE_SH" "$BANGUMI_TS"' EXIT
+            export BAKA_TS_FILE="$BANGUMI_TS"
+
+            cat > "$BANGUMI_TS" <<'BANGUMI_TS_EOF'
+            // 容器内独立进程实测 Bangumi 查询链路（只读）：复刻 CreateServer 装配。
+            import { readEnv } from "/app/src/config/Env";
+            import { BangumiWorkerProvider } from "/app/src/infrastructure/BangumiWorkerProvider";
+
+            const env = readEnv();
+            const provider = new BangumiWorkerProvider({
+              songPath: env.bangumiSongDbPath!,
+              characterPath: env.bangumiCharacterDbPath!,
+              enrichmentPath: env.bangumiEnrichmentPath,
+              imageBase: env.bangumiImageUrl,
+              apiBase: env.bangumiApiUrl,
+              meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined,
+            });
+
+            try {
+              const t0 = Date.now();
+              const page = await provider.searchSubjects("", 3);
+              console.log(`LIST_OK rows=${page.length} elapsed_ms=${Date.now() - t0}`);
+              for (const row of page) console.log(`- ${row.id} ${row.nameCn || row.name}`);
+
+              const t1 = Date.now();
+              const hits = await provider.searchSubjects("孤独摇滚", 3);
+              console.log(`SEARCH_OK rows=${hits.length} elapsed_ms=${Date.now() - t1}`);
+              for (const row of hits) console.log(`- ${row.id} ${row.nameCn || row.name}`);
+
+              const t2 = Date.now();
+              const picked = await provider.chooseRandomSubject({}, () => 0.5);
+              console.log(`RANDOM_OK id=${picked.id} name=${picked.nameCn || picked.name} elapsed_ms=${Date.now() - t2}`);
+
+              console.log("BANGUMI_QUERY_PROBE_OK");
+            } catch (error) {
+              console.log(`BANGUMI_QUERY_PROBE_FAIL ${error instanceof Error ? error.message : String(error)}`);
+              process.exitCode = 1;
+            } finally {
+              await provider.close();
+            }
+            BANGUMI_TS_EOF
+
             cat > "$PROBE_SH" <<'BAKA_PROBE_EOF'
             set -uo pipefail
 
@@ -46,10 +89,12 @@ jobs:
             echo "近 5000 行「发布证据缺失」累计: $(sudo docker logs --tail 5000 BakaGame 2>&1 | grep -c '发布证据缺失' || true)"
             echo "本次启动以来「发布证据缺失」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c '发布证据缺失' || true)"
 
-            echo "===== 3. Bangumi worker 错误计数 ====="
+            echo "===== 3. Bangumi worker 错误与查询超时计数 ====="
             echo "近 5000 行「Bangumi worker query failed」累计: $(sudo docker logs --tail 5000 BakaGame 2>&1 | grep -c 'Bangumi worker query failed' || true)"
             echo "本次启动以来「Bangumi worker query failed」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c 'Bangumi worker query failed' || true)"
             echo "本次启动以来「no such column」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c 'no such column' || true)"
+            echo "近 5000 行「本地番剧查询超时」累计: $(sudo docker logs --tail 5000 BakaGame 2>&1 | grep -c '本地番剧查询超时' || true)"
+            echo "本次启动以来「本地番剧查询超时」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c '本地番剧查询超时' || true)"
 
             echo "===== 4. 容器环境键名（仅名称）====="
             sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^(MEILISEARCH|MAINTENANCE|DEPLOYMENT)' | sort
@@ -80,6 +125,12 @@ jobs:
               out=$(sudo docker exec BakaGame node -e "fetch('http://$MEILI:7700/health',{signal:AbortSignal.timeout(2500)}).then(async r=>console.log('HTTP '+r.status+' '+((await r.text()).slice(0,60)))).catch(e=>console.log('FAIL '+((e.cause&&(e.cause.code||e.cause.message))||e.name)))" 2>&1) || true
               echo "by-container-name => $out"
             fi
+
+            echo "===== 8. 容器内实测 Bangumi 查询（独立进程，复刻应用装配）====="
+            BQ_OUT=$(sudo timeout 150s docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - < "$BAKA_TS_FILE" 2>&1)
+            BQ_RC=$?
+            echo "$BQ_OUT"
+            echo "容器内查询进程退出码: $BQ_RC（0=全部成功）"
 
             echo "===== DONE ====="
             BAKA_PROBE_EOF
