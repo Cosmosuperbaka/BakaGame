@@ -1,8 +1,8 @@
 name: Ops Probe
 
 # 一次性只读诊断（临时文件，诊断完成后移除）：
-# v4 目的：实测 BakaGame 容器 → Meilisearch 的候选地址可达性（决定 MEILISEARCH_URL 取值），
-#          确认容器挂载与网络拓扑（重建容器安全边界）。
+# v5 目的：核验发布证据（release.json / Sentry 警告）、Bangumi worker 报错计数、
+#          容器环境键名与 Meilisearch 索引状态（确认索引重建与搜索恢复）。
 # 不修改任何状态；不打印环境变量值（仅名称/键名）、不打印容器日志内容（仅计数）、不打印 SSH 主机。
 on:
   workflow_dispatch:
@@ -33,69 +33,53 @@ jobs:
             cat > "$PROBE_SH" <<'BAKA_PROBE_EOF'
             set -uo pipefail
 
-            echo "===== 0. 宿主工具 ====="
-            command -v sudo timeout docker git curl node || true
-
             echo "===== 1. 容器总览 ====="
             sudo docker ps -a --filter name=BakaGame --format 'BakaGame: id={{.ID}} image={{.Image}} status={{.Status}}'
-            sudo docker ps -a --format '{{.Names}}' | grep -iE 'meili|search' | head -5 || echo "(无名字含 meili/search 的容器)"
-
-            echo "===== 2. BakaGame 网络与挂载 ====="
-            sudo docker inspect BakaGame --format 'NetworkMode={{.HostConfig.NetworkMode}}'
-            echo "--- 网络 ---"
-            sudo docker inspect BakaGame --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}}{{"\n"}}{{end}}'
-            echo "--- 挂载（仅类型与容器内路径）---"
-            sudo docker inspect BakaGame --format '{{range .Mounts}}{{.Type}} -> {{.Destination}}{{"\n"}}{{end}}'
-            echo "--- 容器环境变量名（仅名称，不含值）---"
-            sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^[A-Z_]+$' | sort
-
-            echo "===== 3. Meili 容器 inspect ====="
             MEILI=$(sudo docker ps -a --format '{{.Names}}' | grep -iE 'meili' | head -1 || true)
             echo "MEILI=$MEILI"
+
+            echo "===== 2. 发布证据与 Sentry 警告核验 ====="
+            echo "--- 容器内 /app/build/release.json ---"
+            sudo docker exec BakaGame cat /app/build/release.json 2>&1 || echo "(读取失败或不存在)"
+            STARTED=$(sudo docker inspect -f '{{.State.StartedAt}}' BakaGame)
+            echo "容器启动于: $STARTED"
+            echo "近 5000 行「发布证据缺失」累计: $(sudo docker logs --tail 5000 BakaGame 2>&1 | grep -c '发布证据缺失' || true)"
+            echo "本次启动以来「发布证据缺失」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c '发布证据缺失' || true)"
+
+            echo "===== 3. Bangumi worker 错误计数 ====="
+            echo "近 5000 行「Bangumi worker query failed」累计: $(sudo docker logs --tail 5000 BakaGame 2>&1 | grep -c 'Bangumi worker query failed' || true)"
+            echo "本次启动以来「Bangumi worker query failed」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c 'Bangumi worker query failed' || true)"
+            echo "本次启动以来「no such column」: $(sudo docker logs --since "$STARTED" BakaGame 2>&1 | grep -c 'no such column' || true)"
+
+            echo "===== 4. 容器环境键名（仅名称）====="
+            sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^(MEILISEARCH|MAINTENANCE|DEPLOYMENT)' | sort
+
+            echo "===== 5. Meilisearch 索引状态（宿主侧，带鉴权）====="
             if [ -n "$MEILI" ]; then
-              sudo docker inspect "$MEILI" --format 'NetworkMode={{.HostConfig.NetworkMode}}'
-              sudo docker inspect "$MEILI" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}}{{"\n"}}{{end}}'
-              echo "--- Meili 环境键名（仅键名）---"
-              sudo docker inspect "$MEILI" --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^[A-Z_]+$' | sort | head -20
+              KEY=$(sudo docker inspect "$MEILI" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MEILI_MASTER_KEY=//p')
+              AUTH=()
+              [ -n "$KEY" ] && AUTH=(-H "Authorization: Bearer $KEY")
+              echo "--- 索引列表（前 600 字节）---"
+              curl -sS -m 4 "${AUTH[@]}" http://127.0.0.1:7700/indexes | head -c 600
+              echo ""
+              for idx in bangumi_subjects bangumi_search_metadata ccb_subjects; do
+                echo "--- $idx stats ---"
+                curl -sS -m 4 "${AUTH[@]}" "http://127.0.0.1:7700/indexes/$idx/stats" | head -c 300
+                echo ""
+              done
             fi
 
-            echo "===== 4. 网络拓扑：1panel-network ====="
-            GW=$(sudo docker network inspect 1panel-network --format '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{end}}{{end}}' 2>/dev/null || true)
-            echo "gateway=$GW"
-            echo "--- 成员容器 ---"
-            sudo docker network inspect 1panel-network --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null | head -20 || echo "(不可读)"
-
-            echo "===== 5. 容器内可达性矩阵（BakaGame → Meili 候选地址）====="
-            probe_url() {
-              local label="$1" url="$2" out
-              out=$(sudo docker exec BakaGame node -e "fetch('$url',{signal:AbortSignal.timeout(2500)}).then(async r=>console.log('HTTP '+r.status+' '+((await r.text()).slice(0,60)))).catch(e=>console.log('FAIL '+((e.cause&&(e.cause.code||e.cause.message))||e.name)))" 2>&1) || true
-              echo "$label => $out"
-            }
-            if [ -n "$MEILI" ]; then
-              probe_url "by-container-name" "http://$MEILI:7700/health"
-            fi
-            [ -n "${GW:-}" ] && probe_url "by-gateway" "http://$GW:7700/health"
-            probe_url "docker0-gateway" "http://172.17.0.1:7700/health"
-            probe_url "host-docker-internal" "http://host.docker.internal:7700/health"
-            probe_url "container-loopback(对照)" "http://127.0.0.1:7700/health"
-
-            echo "===== 6. 宿主侧 Meili 健康 + 容器内 bun 速检 ====="
-            (curl -sS -m 2 http://127.0.0.1:7700/health; echo " rc=$?") 2>&1 || echo "host-7700: unreachable"
-            sudo docker exec BakaGame /app/node_modules/.bin/bun --version; echo "rc=$?"
-
-            echo "===== 7. 服务器工作区现状 ====="
-            git -C /BakaGame rev-parse HEAD; echo "rc=$?"
-            git -C /BakaGame status --short | head -8
-            ls -la /BakaGame/Server/data 2>/dev/null | head -8
-
-            echo "===== 8. 线上服务健康与错误计数 ====="
+            echo "===== 6. 服务健康（宿主侧 4850）====="
             for p in /health /livez /readyz; do
               code=$(curl -sS -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:4850$p" 2>/dev/null || true)
               echo "$p -> HTTP ${code:-conn-failed}"
             done
-            LOG_TAIL=$(sudo docker logs --tail 500 BakaGame 2>&1)
-            echo "no-such-table 计数: $(printf '%s\n' "$LOG_TAIL" | grep -c 'no such table' || true)"
-            echo "meili/7700 提及计数: $(printf '%s\n' "$LOG_TAIL" | grep -ci 'meili\|7700' || true)"
+
+            echo "===== 7. 容器内 → Meili 可达（by-container-name）====="
+            if [ -n "$MEILI" ]; then
+              out=$(sudo docker exec BakaGame node -e "fetch('http://$MEILI:7700/health',{signal:AbortSignal.timeout(2500)}).then(async r=>console.log('HTTP '+r.status+' '+((await r.text()).slice(0,60)))).catch(e=>console.log('FAIL '+((e.cause&&(e.cause.code||e.cause.message))||e.name)))" 2>&1) || true
+              echo "by-container-name => $out"
+            fi
 
             echo "===== DONE ====="
             BAKA_PROBE_EOF
