@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { Meilisearch, MeilisearchApiError, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
+import { Meilisearch, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
+import { isMeiliApiError, meiliHttpClient } from "./MeiliHttpClient";
 import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
 import type { AnimeAutoFilters } from "../shared/Index";
 
@@ -37,7 +38,8 @@ export class BangumiMeilisearch {
   private readonly metadata: Index<{ id: string; revision: string }>;
 
   constructor(options: CCBMeilisearchOptions) {
-    this.client = options.client ?? new Meilisearch({ host: INTERNAL_SEARCH_URL, apiKey: options.apiKey, timeout: SEARCH_TIMEOUT_MS });
+    // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上每次请求约 40ms 的 TCP 罚时。
+    this.client = options.client ?? new Meilisearch({ host: INTERNAL_SEARCH_URL, apiKey: options.apiKey, timeout: SEARCH_TIMEOUT_MS, httpClient: meiliHttpClient });
     this.subjects = this.client.index<BangumiSubjectSearchDocument>(INDEX) as Indexed;
     this.metadata = this.client.index(METADATA);
   }
@@ -57,7 +59,7 @@ export class BangumiMeilisearch {
     const stats = await this.subjects.getStats();
     let indexedRevision: string | undefined;
     try { indexedRevision = (await this.metadata.getDocument("dataset")).revision; }
-    catch (error) { if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "document_not_found") throw error; }
+    catch (error) { if (!isMeiliApiError(error, "document_not_found")) throw error; }
     if (indexedRevision !== revision || stats.numberOfDocuments !== count) {
       await this.replace(db);
       await waitForIndexTask(this.metadata.addDocuments([{ id: "dataset", revision }], { primaryKey: "id" }));
@@ -86,7 +88,7 @@ export class BangumiMeilisearch {
   private async ensureIndex<T extends Record<string, unknown>>(index: Index<T>): Promise<void> {
     try { await index.fetchInfo(); }
     catch (error) {
-      if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "index_not_found") throw error;
+      if (!isMeiliApiError(error, "index_not_found")) throw error;
       await waitForIndexTask(this.client.createIndex(index.uid, { primaryKey: "id" }));
     }
   }

@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { Meilisearch, MeilisearchApiError, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
+import { Meilisearch, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
+import { isMeiliApiError, meiliHttpClient } from "./MeiliHttpClient";
 
 export interface CCBCharacterSearchDocument {
   [key: string]: unknown;
@@ -74,10 +75,12 @@ export class CCBMeilisearch {
   private readonly metadata: Index<{ [key: string]: unknown; id: string; revision: string }>;
 
   constructor(options: CCBMeilisearchOptions) {
+    // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上每次请求约 40ms 的 TCP 罚时。
     this.client = options.client ?? new Meilisearch({
       host: INTERNAL_SEARCH_URL,
       apiKey: options.apiKey,
       timeout: SEARCH_TIMEOUT_MS,
+      httpClient: meiliHttpClient,
     });
     this.characters = this.client.index<CCBCharacterSearchDocument>(CHARACTER_INDEX) as IndexWithDocuments<CCBCharacterSearchDocument>;
     this.subjects = this.client.index<CCBSubjectSearchDocument>(SUBJECT_INDEX) as IndexWithDocuments<CCBSubjectSearchDocument>;
@@ -98,7 +101,7 @@ export class CCBMeilisearch {
     try {
       indexedRevision = (await this.metadata.getDocument("dataset")).revision;
     } catch (error) {
-      if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "document_not_found") throw error;
+      if (!isMeiliApiError(error, "document_not_found")) throw error;
     }
     if (indexedRevision !== revision || characterStats.numberOfDocuments !== characterCount) {
       await this.replaceCharacters(db);
@@ -143,7 +146,7 @@ export class CCBMeilisearch {
     try {
       await index.fetchInfo();
     } catch (error) {
-      if (!(error instanceof MeilisearchApiError) || error.cause?.code !== "index_not_found") throw error;
+      if (!isMeiliApiError(error, "index_not_found")) throw error;
       await waitForIndexTask(this.client.createIndex(index.uid, { primaryKey: "id" }));
     }
   }
