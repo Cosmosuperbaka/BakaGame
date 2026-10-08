@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { TEST_ROOM_ID } from "@/config/Constants";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { normalizeCCBRoomId } from "@/lib/CCBSession";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
@@ -51,13 +52,36 @@ export function useCCBRoomLifecycle() {
     return () => { controller.abort(); attempted.current = ""; };
   }, [roomId, connected, lobbyReady, closed, navigate]);
 
+  /**
+   * 直链进入：房号未命中（服务重启后房间随内存清空、测试房、已关闭房间的分享链接）时，
+   * 用同一房号就地开一间增强房再进入，与另外两个游戏的直链行为一致。
+   * 密码错误、重名等其它业务拒绝保持原样报错，不触发建房。
+   */
+  const joinOrCreate = async (targetRoomId: string, controller: AbortController) => {
+    const userName = name.trim();
+    try {
+      await useCCBStore.getState().joinRoom(targetRoomId, userName, password, controller.signal);
+    } catch (failure) {
+      if (!isProtocolError(failure) || failure.code !== "ROOM_NOT_FOUND") throw failure;
+      await useCCBStore.getState().createRoom({
+        source: "native",
+        roomId: targetRoomId,
+        // 房间名协议上限 32：用户名最多 32 字符，「的房间」后缀要留出空间。
+        name: targetRoomId === TEST_ROOM_ID ? "CCB 测试房" : `${userName.slice(0, 29)}的房间`,
+        userName,
+        visibility: "public",
+        allowSpectators: true,
+      }, controller.signal);
+    }
+  };
+
   const join = async () => {
     if (!roomId || !name.trim() || joining || manualJoin.current) return;
     const controller = new AbortController();
     manualJoin.current = controller;
     setJoining(true); setError(""); setErrorCode("");
     try {
-      await useCCBStore.getState().joinRoom(roomId, name.trim(), password, controller.signal);
+      await joinOrCreate(roomId, controller);
       if (controller.signal.aborted) return;
       saveUsername(name.trim()); setNeedsJoin(false);
     } catch (failure) { if (!controller.signal.aborted) fail(failure); }
