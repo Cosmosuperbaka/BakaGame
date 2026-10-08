@@ -78,7 +78,8 @@ export class CCBNativeService {
       case 'ccb.subject.lookup': return { results: await this.data.getSubjects(message.payload.subjectIds) };
       case 'ccb.directory.import':
         this.state.requireHost(room, player); this.state.requireWaiting(room); return this.data.importDirectory(message.payload.indexId);
-      case 'ccb.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId) };
+      // 列表是方形缩略图，尺寸缺省即方格图；大图用途走服务端内部调用，不带这条命令。
+      case 'ccb.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId, message.payload.size ?? 'grid') };
       case 'ccb.subject.image': return { imageUrl: await this.data.resolveSubjectImage(message.payload.subjectId) };
       case 'ccb.game.start': await this.start(room, player); break;
       case 'ccb.game.chooseSetter': {

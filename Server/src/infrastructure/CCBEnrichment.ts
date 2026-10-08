@@ -7,7 +7,7 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { AppError } from "../domain/Errors";
 import { rewriteBangumiImageUrl } from "./BangumiProvider";
-import type { CCBDirectoryResult } from "../shared/CCB";
+import type { CCBDirectoryResult, CCBImageSize } from "../shared/CCB";
 import type { CCBDataOptions } from "./CCBData";
 
 const CharacterResponse = Type.Object({
@@ -27,13 +27,34 @@ const DirectoryPage = Type.Object({
 type ImageEntity = "character" | "subject";
 const MISS_TTL_MS = 300_000;
 
-/** 依次回退 `medium / large / common / grid`，只认 http(s) 地址。 */
-function pickImage(images: Record<string, string | null> | undefined): string | undefined {
+const isHttpUrl = (candidate: string | null | undefined): candidate is string => {
+  if (!candidate) return false;
+  try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
+};
+
+/** 回填缓存的图片载荷。只存**上游原始 URL**，镜像地址在读取时重写。 */
+export interface BangumiEnrichment {
+  /** 长条大图（`large`）：竖版作品海报、图片提示、答案卡。 */
+  image?: string;
+  /** 方格图（`grid`），只有角色存：列表的方形缩略图。 */
+  grid?: string;
+}
+
+/**
+ * 一次回源挑出本次要存的**原始**地址，之后按用途各取所需。只有两档，不留中间档：
+ *
+ * - 长条一律 `large`。`common` 比 `medium` 还低一档（且只有作品才有），不取。
+ * - 方形一律 `grid`。**作品的 `grid` 是 `large` 直接裁出来的**，存它没有意义，
+ *   所以只有角色落 `grid`；角色没有 `grid` 时退回 `large`，不让老缓存变空白。
+ *
+ * 列表框是 36~40px 的方形且按 `object-top` 裁切，竖版大图只会被裁到头顶，
+ * `grid` 比例正对方框、体积也小一个量级。
+ */
+function pickImages(images: Record<string, string | null> | undefined, entity: ImageEntity): BangumiEnrichment {
   const source = images ?? {};
-  return [source.medium, source.large, source.common, source.grid].find((candidate): candidate is string => {
-    if (!candidate) return false;
-    try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
-  });
+  const image = [source.large].find(isHttpUrl);
+  const grid = entity === "character" ? [source.grid, source.large].find(isHttpUrl) : undefined;
+  return { ...(image ? { image } : {}), ...(grid ? { grid } : {}) };
 }
 
 export interface CCBCharacterSupplement {
@@ -81,29 +102,40 @@ export class CCBEnrichment {
     return row ? JSON.parse(row.payload) as CCBCharacterSupplement : {};
   }
 
-  readImage(id: number, entity: ImageEntity = "character"): string | undefined {
+  /**
+   * 读已回填的图。`grid` 缺失时退回大图：存量缓存里只有一份 `image`，
+   * 换尺寸不该让它们变成空白。
+   */
+  readImage(id: number, entity: ImageEntity = "character", size: CCBImageSize = "large"): string | undefined {
     const row = this.db.query<{ payload: string }, [string, number]>("SELECT payload FROM enrichment WHERE entity=? AND id=?").get(entity, id);
     if (!row) return undefined;
-    return rewriteBangumiImageUrl((JSON.parse(row.payload) as { image?: string }).image, this.imageBase);
+    const payload = JSON.parse(row.payload) as BangumiEnrichment;
+    const raw = size === "grid" ? payload.grid ?? payload.image : payload.image ?? payload.grid;
+    return rewriteBangumiImageUrl(raw, this.imageBase);
   }
 
-  resolveCharacterImage(id: number): Promise<string | undefined> {
-    return this.resolveImage("character", id, () => this.loadCharacter(id));
+  resolveCharacterImage(id: number, size: CCBImageSize = "large"): Promise<string | undefined> {
+    return this.resolveImage("character", id, size, () => this.loadCharacter(id, size));
   }
 
   /** 作品封面：与猜歌的 `LocalBangumiProvider` 共用回填表的 `subject` 实体，同样只存上游原始地址。 */
-  resolveSubjectImage(id: number): Promise<string | undefined> {
-    return this.resolveImage("subject", id, () => this.loadSubject(id));
+  resolveSubjectImage(id: number, size: CCBImageSize = "large"): Promise<string | undefined> {
+    return this.resolveImage("subject", id, size, () => this.loadSubject(id, size));
   }
 
-  private resolveImage(entity: ImageEntity, id: number, load: () => Promise<string | undefined>): Promise<string | undefined> {
+  /**
+   * 尺寸只决定「这次返回哪一份」：缺失才回源，且一次回源会把两个尺寸都写进去。
+   * 所以在途请求按 `实体:编号` 合并即可，不必按尺寸拆成两个上游请求。
+   */
+  private resolveImage(entity: ImageEntity, id: number, size: CCBImageSize, load: () => Promise<string | undefined>): Promise<string | undefined> {
     if (!Number.isSafeInteger(id) || id <= 0 || this.closed) return Promise.resolve(undefined);
-    const persisted = this.readImage(id, entity);
+    const persisted = this.readImage(id, entity, size);
     if (persisted) return Promise.resolve(persisted);
     const key = `${entity}:${id}`;
     if (!this.apiBase || (this.misses.get(key) ?? 0) > this.now()) return Promise.resolve(undefined);
     const running = this.inFlight.get(key);
-    if (running) return running;
+    // 搭别人的便车：那次回源写完后两个尺寸都在表里，这里按自己的尺寸重读。
+    if (running) return running.then(() => this.readImage(id, entity, size));
     const request = load().finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, request);
     return request;
@@ -120,20 +152,21 @@ export class CCBEnrichment {
     }
   }
 
-  private async loadSubject(id: number): Promise<string | undefined> {
+  private async loadSubject(id: number, size: CCBImageSize): Promise<string | undefined> {
     const raw = await this.fetchEntity("subject", id);
     if (raw === undefined) return undefined;
     if (!Value.Check(SubjectResponse, raw)) throw new AppError("CCB_DATA_INVALID", "作品资料格式无效");
-    const image = pickImage(raw.images);
-    if (!image) {
+    const picked = pickImages(raw.images, "subject");
+    const chosen = size === "grid" ? picked.grid ?? picked.image : picked.image ?? picked.grid;
+    if (!chosen) {
       this.misses.set(`subject:${id}`, this.now() + MISS_TTL_MS);
       return undefined;
     }
-    this.db.query("INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
-    return rewriteBangumiImageUrl(image, this.imageBase);
+    this.db.query("INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify(picked), this.now());
+    return rewriteBangumiImageUrl(chosen, this.imageBase);
   }
 
-  private async loadCharacter(id: number): Promise<string | undefined> {
+  private async loadCharacter(id: number, size: CCBImageSize): Promise<string | undefined> {
     const raw = await this.fetchEntity("character", id);
     if (raw === undefined) return undefined;
     if (!Value.Check(CharacterResponse, raw)) throw new AppError("CCB_DATA_INVALID", "角色补充资料格式无效");
@@ -153,13 +186,14 @@ export class CCBEnrichment {
         if (aliases.length) next.aliases = [...new Set(aliases)];
       }
     }
-    const image = pickImage(raw.images);
+    const picked = pickImages(raw.images, "character");
+    const chosen = size === "grid" ? picked.grid ?? picked.image : picked.image ?? picked.grid;
     this.db.transaction(() => {
       if (Object.keys(next).length) this.db.query("INSERT INTO ccb_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at").run(id, JSON.stringify(next), this.now());
-      if (image) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify({ image }), this.now());
+      if (chosen) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify(picked), this.now());
     })();
-    if (!image) this.misses.set(`character:${id}`, this.now() + MISS_TTL_MS);
-    return image ? rewriteBangumiImageUrl(image, this.imageBase) : undefined;
+    if (!chosen) this.misses.set(`character:${id}`, this.now() + MISS_TTL_MS);
+    return chosen ? rewriteBangumiImageUrl(chosen, this.imageBase) : undefined;
   }
 
   async fetchDirectory(indexId: number): Promise<number[]> {

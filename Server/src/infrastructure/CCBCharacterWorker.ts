@@ -1,7 +1,7 @@
 import { AppError } from "../domain/Errors";
 import { CCBCharacterRepository } from "./CCBCharacterRepository";
 import type { CCBDataInit } from "./CCBData";
-import type { CCBSettings } from "../shared/CCB";
+import type { CCBImageSize, CCBSettings } from "../shared/CCB";
 
 export type CCBWorkerRequest =
   | { id: number; method: "init"; options: CCBDataInit }
@@ -13,8 +13,8 @@ export type CCBWorkerRequest =
   | { id: number; method: "getCharacter"; characterId: number; settings: CCBSettings }
   | { id: number; method: "chooseRandomCharacter"; settings: CCBSettings; rolls: number[] }
   | { id: number; method: "importDirectory"; indexId: number }
-  | { id: number; method: "resolveCharacterImage"; characterId: number }
-  | { id: number; method: "resolveSubjectImage"; subjectId: number }
+  | { id: number; method: "resolveCharacterImage"; characterId: number; size?: CCBImageSize }
+  | { id: number; method: "resolveSubjectImage"; subjectId: number; size?: CCBImageSize }
   | { id: number; method: "close" };
 export type CCBWorkerReply = { id: number } & ({ ok: true; value: unknown } | { ok: false; code: string; message: string });
 
@@ -45,8 +45,8 @@ self.onmessage = async ({ data: request }: MessageEvent<CCBWorkerRequest>) => {
           break;
         }
         case "importDirectory": value = await repository.importDirectory(request.indexId); break;
-        case "resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId); break;
-        case "resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId); break;
+        case "resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId, request.size); break;
+        case "resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId, request.size); break;
         case "close": await repository.close(); repository = undefined; value = true; break;
       }
     }

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { AppError } from "../domain/Errors";
-import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
 import { CCBEnrichment } from "./CCBEnrichment";
 import { deriveCCBCharacter, resolveCCBSubjectTypes } from "./CCBCharacterDerivation";
@@ -229,20 +229,20 @@ export class CCBCharacterRepository implements CCBDataProvider {
     return result;
   }
 
-  async resolveCharacterImage(id: number): Promise<string | undefined> {
+  async resolveCharacterImage(id: number, size: CCBImageSize = "large"): Promise<string | undefined> {
     this.assertOpen();
     await this.ready;
     if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id)) return undefined;
-    const imageUrl = await this.enrichment.resolveCharacterImage(id);
+    const imageUrl = await this.enrichment.resolveCharacterImage(id, size);
     if (this.search) await this.syncCharacterIndex(id);
     return imageUrl;
   }
 
-  async resolveSubjectImage(id: number): Promise<string | undefined> {
+  async resolveSubjectImage(id: number, size: CCBImageSize = "large"): Promise<string | undefined> {
     this.assertOpen();
     await this.ready;
     if (!positiveId(id) || !this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(id)) return undefined;
-    return this.enrichment.resolveSubjectImage(id);
+    return this.enrichment.resolveSubjectImage(id, size);
   }
 
   async close(): Promise<void> {
@@ -263,9 +263,10 @@ export class CCBCharacterRepository implements CCBDataProvider {
     };
   }
 
+  /** 搜索列表是 36~40px 的方形框：取方格图，避免竖版大图被裁到只剩头顶。 */
   private toSummary(row: CharacterRow): CCBCharacterSummary {
     const supplement = this.enrichment.readCharacter(row.id);
-    return { id: row.id, name: supplement.name ?? row.name, nameCn: supplement.nameCn ?? (row.name_cn || row.name), imageUrl: this.enrichment.readImage(row.id) };
+    return { id: row.id, name: supplement.name ?? row.name, nameCn: supplement.nameCn ?? (row.name_cn || row.name), imageUrl: this.enrichment.readImage(row.id, "character", "grid") };
   }
 
   private async syncCharacterIndex(id: number): Promise<void> {

@@ -1,4 +1,4 @@
-import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
@@ -37,9 +37,10 @@ export interface CCBDataProvider {
   getCharacter(id: number, settings: CCBSettings): Promise<CCBCharacterView>;
   chooseRandomCharacter(settings: CCBSettings, random?: () => number): Promise<CCBCharacterView>;
   importDirectory(indexId: number): Promise<CCBDirectoryResult>;
-  resolveCharacterImage(id: number): Promise<string | undefined>;
+  /** 角色图；`size` 缺省为大图，搜索列表这类方形缩略图传 `grid`。 */
+  resolveCharacterImage(id: number, size?: CCBImageSize): Promise<string | undefined>;
   /** 作品封面；本地没有、NSFW 或上游无图时为 `undefined` */
-  resolveSubjectImage(id: number): Promise<string | undefined>;
+  resolveSubjectImage(id: number, size?: CCBImageSize): Promise<string | undefined>;
   close(): void | Promise<void>;
 }
 

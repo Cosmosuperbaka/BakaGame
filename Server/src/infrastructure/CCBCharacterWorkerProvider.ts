@@ -1,5 +1,5 @@
 import { AppError } from "../domain/Errors";
-import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
+import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBDataInit, CCBDataProvider, CCBRawCharacter } from "./CCBData";
 import type { CCBWorkerReply, CCBWorkerRequest } from "./CCBCharacterWorker";
 
@@ -72,13 +72,13 @@ export class CCBCharacterWorkerProvider implements CCBDataProvider {
     await this.ready;
     return this.request({ method: "importDirectory", indexId }) as Promise<CCBDirectoryResult>;
   }
-  async resolveCharacterImage(characterId: number): Promise<string | undefined> {
+  async resolveCharacterImage(characterId: number, size?: CCBImageSize): Promise<string | undefined> {
     await this.ready;
-    return this.request({ method: "resolveCharacterImage", characterId }) as Promise<string | undefined>;
+    return this.request({ method: "resolveCharacterImage", characterId, size }) as Promise<string | undefined>;
   }
-  async resolveSubjectImage(subjectId: number): Promise<string | undefined> {
+  async resolveSubjectImage(subjectId: number, size?: CCBImageSize): Promise<string | undefined> {
     await this.ready;
-    return this.request({ method: "resolveSubjectImage", subjectId }) as Promise<string | undefined>;
+    return this.request({ method: "resolveSubjectImage", subjectId, size }) as Promise<string | undefined>;
   }
 
   async close(): Promise<void> {

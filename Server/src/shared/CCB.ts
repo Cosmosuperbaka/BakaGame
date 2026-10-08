@@ -45,6 +45,18 @@ export const createDefaultCCBSettings = (year = new Date().getFullYear()): CCBSe
   answerMode: 'random',
 });
 export type CCBSource = 'native' | 'original';
+/**
+ * 角色/作品图的取用尺寸，只有两档，`small` / `medium` / `common` 一律不取：
+ *
+ * - `grid`：方格图，用于搜索列表这类 36~40px **方形**缩略图——竖版大图在方框里
+ *   会被裁到只剩头顶，方格图比例正对方框且体积小一个量级；
+ * - `large`：大图，用于**长条**场景——竖版作品封面、图片提示与答案卡。
+ *
+ * `common` 比 `medium` 还低一档且只有作品才有，不参与任何回退。**作品的 `grid`
+ * 是 `large` 直接裁出来的，存它没有意义**，所以只有角色落 `grid`。
+ * 服务端一次回源把该实体需要的尺寸存下来，之后按用途各取所需。
+ */
+export type CCBImageSize = 'grid' | 'large';
 /** `choosingSetter`：手动出题时房主开始后、指定出题人之前的独立阶段。 */
 export type CCBPhase = 'waiting' | 'choosingSetter' | 'preparing' | 'answering' | 'guessing' | 'settled';
 export interface CCBCharacterSummary { id: number; name: string; nameCn: string; imageUrl?: string }
@@ -134,6 +146,7 @@ const recoverySessionToken = t.Optional(t.Union([t.String({ maxLength: 128 }), t
 const playerId = t.String({ minLength: 1, maxLength: 128 });
 const roomId = t.String({ minLength: 1, maxLength: 32 });
 const id = integer(1, 2147483647);
+const imageSize = t.Union([t.Literal('grid'), t.Literal('large')]);
 export const CCBPayloadSchemas = {
   'ccb.lobby.subscribeRooms': empty,
   'ccb.room.create': t.Object({ source, roomId, name, userName: name,
@@ -158,7 +171,11 @@ export const CCBPayloadSchemas = {
   /** 按编号取作品名，供设置里的追加作品显示名称；上限与 `addedSubjects` 一致。 */
   'ccb.subject.lookup': t.Object({ subjectIds: t.Array(id, { maxItems: 500 }) }, strict),
   'ccb.directory.import': t.Object({ indexId: id }, strict),
-  'ccb.character.image': t.Object({ characterId: id }, strict),
+  /**
+   * 搜索列表滚进视口时的补图。列表是方形缩略图，默认取 `grid`；
+   * 图片提示与答案卡走服务端内部调用，固定 `medium`，不走这条命令。
+   */
+  'ccb.character.image': t.Object({ characterId: id, size: t.Optional(imageSize) }, strict),
   'ccb.subject.image': t.Object({ subjectId: id }, strict),
   'ccb.game.start': empty,
   'ccb.game.chooseSetter': t.Object({ playerId }, strict),
