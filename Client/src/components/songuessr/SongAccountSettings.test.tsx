@@ -34,8 +34,8 @@ const authorizedResponse = {
   account: { nickname: "夹具账号", vipStatus: "nonVip" as const },
 };
 const initialStore = useSonGuessrStore.getState();
-/** 展开后的内容区：标题行收起时的摘要也会写昵称与会员状态，断言只看正文。 */
-const panel = () => within(document.getElementById(screen.getByRole("button", { name: /网易云账号/ }).getAttribute("aria-controls")!)!);
+/** 展开后的内容区：收起单行里也会写昵称与会员状态，断言只看正文。 */
+const panel = () => within(document.getElementById(screen.getByRole("button", { name: /音乐账号配置/ }).getAttribute("aria-controls")!)!);
 
 describe("SongAccountSettings", () => {
   let sendCommand: ReturnType<typeof vi.fn>;
@@ -66,7 +66,7 @@ describe("SongAccountSettings", () => {
     });
     render(<SongAccountSettings snapshot={snapshot(false)} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
 
     await waitFor(() => {
       expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create");
@@ -81,7 +81,7 @@ describe("SongAccountSettings", () => {
     }, true);
     render(<SongAccountSettings snapshot={snapshot(true)} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
 
     expect(panel().getByText("非会员")).toBeInTheDocument();
     expect(panel().getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("SongAccountSettings", () => {
 
   it("未登录时收起态只写未配置，媒体位仍是网易云图标", () => {
     render(<SongAccountSettings snapshot={snapshot(false)} />);
-    const toggle = screen.getByRole("button", { name: /网易云账号/ });
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
 
     expect(toggle).toHaveAccessibleDescription("未配置");
     expect(within(toggle).getByText("未配置")).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("SongAccountSettings", () => {
       },
     }, true);
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
-    const toggle = screen.getByRole("button", { name: /网易云账号/ });
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     // 本机有凭据但还没装进房间：只说正在连接，不出现账号，也不再有「已连接」这类状态标。
     expect(toggle).toHaveAccessibleDescription("正在连接网易云账号…");
     expect(screen.queryByText(/已连接|本机已登录/)).not.toBeInTheDocument();
@@ -128,12 +128,36 @@ describe("SongAccountSettings", () => {
     expect(panel().queryByRole("button", { name: "更换账号" })).not.toBeInTheDocument();
   });
 
+  // 标题行收起时是账号行，展开后要让位给普通的组标题：展开卡里已有同一份账号信息，
+  // 标题行不再重复；读屏的描述也一并交还给正文，不再朗读已经撤走的账号行。
+  it("展开后标题行换回普通标题，账号行不再重复", async () => {
+    saveSongMusicSession({
+      cookie: "MUSIC_U=browser-only",
+      account: {
+        nickname: "黑胶账号", avatarUrl: "https://example.invalid/avatar.jpg", vipStatus: "vip",
+        vipTier: "svip", vipLevel: 5, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+      },
+    }, true);
+    render(<SongAccountSettings snapshot={snapshot(true)} />);
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAccessibleName("音乐账号配置");
+    expect(toggle).toHaveAccessibleDescription("");
+    await waitFor(() => {
+      expect(within(toggle).queryByRole("img", { name: "SVIP · 伍" })).not.toBeInTheDocument();
+      expect(within(toggle).queryByText("黑胶账号")).not.toBeInTheDocument();
+    });
+    expect(panel().getByText("黑胶账号")).toBeInTheDocument();
+  });
+
   it("退出登录：清掉房间与本机凭据，面板直接换成新二维码", async () => {
     saveSongMusicSession({ cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } }, true);
     sendCommand.mockImplementation(async (type: string) => (type === "song.auth.qr.create" ? qrResponse("after-logout") : {}));
     render(<SongAccountSettings snapshot={snapshot(true)} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
     expect(sendCommand).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "退出登录" })); });
 
@@ -150,7 +174,7 @@ describe("SongAccountSettings", () => {
     expect(getStoredSongMusicSession()).toBeNull();
 
     render(<SongAccountSettings snapshot={snapshot(false)} />);
-    fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
 
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
@@ -160,7 +184,7 @@ describe("SongAccountSettings", () => {
     const freshCreate = deferred<ReturnType<typeof qrResponse>>();
     sendCommand.mockReturnValueOnce(oldCreate.promise).mockReturnValueOnce(freshCreate.promise);
     render(<SongAccountSettings snapshot={snapshot(false)} />);
-    const toggle = screen.getByRole("button", { name: /网易云账号/ });
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
 
     fireEvent.click(toggle);
     fireEvent.click(toggle);
@@ -191,7 +215,7 @@ describe("SongAccountSettings", () => {
       .mockReturnValueOnce(freshCreate.promise)
       .mockResolvedValueOnce(authorizedResponse);
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /网易云账号/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(sendCommand).toHaveBeenLastCalledWith("song.auth.qr.check", { key: "old-qr" });
 
@@ -222,14 +246,14 @@ describe("SongAccountSettings", () => {
       sendCommand.mockResolvedValueOnce(qrResponse("pending-qr")).mockReturnValueOnce(pendingCheck.promise);
       const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+        fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
       });
       await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
       expect(sendCommand.mock.calls).toEqual([
         ["song.auth.qr.create"], ["song.auth.qr.check", { key: "pending-qr" }],
       ]);
 
-      if (boundary === "close") fireEvent.click(screen.getByRole("button", { name: /网易云账号/ }));
+      if (boundary === "close") fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
       else if (boundary === "room-change") view.rerender(<SongAccountSettings snapshot={{ ...snapshot(false), roomId: "5678" }} />);
       else view.unmount();
 
@@ -247,7 +271,7 @@ describe("SongAccountSettings", () => {
     const pendingCheck = deferred<typeof authorizedResponse>();
     sendCommand.mockResolvedValueOnce(qrResponse("login-qr")).mockReturnValueOnce(pendingCheck.promise);
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /网易云账号/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     fireEvent.click(screen.getByRole("switch", { name: "保存登录状态" }));
     expect(screen.getByRole("switch", { name: "保存登录状态" })).toHaveAttribute("aria-checked", "false");

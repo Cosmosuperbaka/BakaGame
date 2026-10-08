@@ -620,7 +620,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   await expect(page).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
   await expect(page.getByText(`${userName}的房间`, { exact: true })).toBeVisible();
   await expect(page.getByRole("slider", { name: "播放音量" })).toBeVisible();
-  await page.getByRole("button", { name: /网易云账号/ }).click();
+  await page.getByRole("button", { name: /音乐账号配置/ }).click();
   const qrImage = page.getByAltText("网易云登录二维码");
   await expect(qrImage).toBeVisible();
   await expect.poll(() => qrImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);

@@ -19,7 +19,7 @@ type Story = StoryObj<typeof meta>;
 
 const expand = async (canvasElement: HTMLElement) => {
   const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole("button", { name: /网易云账号/ }));
+  await userEvent.click(canvas.getByRole("button", { name: /音乐账号配置/ }));
   return canvas;
 };
 
@@ -51,7 +51,7 @@ export const VipExpanded: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    // 昵称与会员信息在收起单行里也有一份，等展开卡独有的“退出登录”按钮出现再截图。
+    // 展开后标题行换回普通标题（账号行随之撤走），等展开卡独有的“退出登录”按钮出现再截图。
     await canvas.findByRole("button", { name: "退出登录" });
     dropFocus();
   },
@@ -74,7 +74,7 @@ export const UnknownVipExpanded: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.unknown),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    // “会员状态未知”在收起单行里也已出现，等展开卡独有的“退出登录”按钮出现再截图。
+    // “会员状态未知”只在展开卡里有（标题行已换回普通标题），等它出现再截图。
     await canvas.findByRole("button", { name: "退出登录" });
     dropFocus();
   },

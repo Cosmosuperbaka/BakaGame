@@ -216,8 +216,8 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const badge = account ? vipBadge(account) : null;
 
   /**
-   * 折叠态的标题行单行：头像、昵称、官方会员徽章与到期日排在一起，昵称过长时截断；
-   * 未登录与装载中只写一行文案。展开时这行保持不动，账号卡与扫码区在下方切换。
+   * 收起态的标题行单行：头像、昵称、官方会员徽章与到期日排在一起，昵称过长时截断；
+   * 未登录与装载中只写一行文案。展开后这行换成普通的组标题（「音乐账号配置」），账号卡与扫码区在下方切换。
    */
   const headline = account && vip ? (
     <>
@@ -240,7 +240,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   return (
     <SettingsAccordion
       icon={UserRound}
-      title="网易云账号"
+      title="音乐账号配置"
       open={open}
       onOpenChange={toggle}
       media={<NeteaseCloudMusicIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
