@@ -61,9 +61,8 @@ export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promis
     if (signal != null) {
       const onAbort = () => {
         aborted = true;
-        // SDK 依据 Object.is(error, timeoutSymbol) 判别超时。必须先以
-        // signal.reason 结算再销毁请求：部分运行时（bun）的 destroy 会同步
-        // 触发 error 事件，顺序颠倒会把超时标记覆盖成普通 socket 错误。
+        // SDK 依据 Object.is(error, timeoutSymbol) 判别超时，signal.reason 必须
+        // 原样抛出；先结算再销毁，销毁引发的 error 由 aborted 守卫屏蔽。
         reject(signal.reason ?? new Error("The operation was aborted"));
         request.destroy();
       };

@@ -114,9 +114,11 @@ describe("经 SDK 的真实链路", () => {
       caught = error;
     }
     expect(caught).toBeDefined();
-    // SDK 依据 Object.is(error, timeoutSymbol) 识别超时并包装为
-    // MeilisearchRequestTimeOutError；若 httpClient 抛自定义错误则退化为普通请求失败。
-    expect((caught as Error).name).toBe("MeilisearchRequestTimeOutError");
+    // SDK 外层错误恒为 MeilisearchRequestError；超时识别体现在 cause：
+    // Object.is(reject 值, timeoutSymbol) 为真时 cause 为 MeilisearchRequestTimeOutError，
+    // 否则退化为普通请求失败（cause 为原始错误）。
+    expect((caught as Error).name).toBe("MeilisearchRequestError");
+    expect((caught as { cause?: Error }).cause?.name).toBe("MeilisearchRequestTimeOutError");
     // 假服务器的慢响应为 600ms；若 abort 未生效将等到 600ms+，这里断言远小于该值以证明超时生效。
     expect(performance.now() - startedAt).toBeLessThan(500);
     // 超时后连接池未被污染：后续请求正常返回。
