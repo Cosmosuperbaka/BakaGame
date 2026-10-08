@@ -116,7 +116,7 @@ const runAtomicStage = (f: ReturnType<typeof fixture>, revision: string, input: 
   mkdirSync(join(f.serverRoot, "src/infrastructure"), { recursive: true });
   writeFileSync(join(f.root, "Client/src/data/changelog.json"), input);
   writeFileSync(join(f.serverRoot, "src/infrastructure/Release.ts"), source);
-  const script = `set -euo pipefail\nCOMMIT="$FIXTURE_SHA"\nsay() { echo "$*"; }\nsudo() {\n  [ "$1" = timeout ] && [ "$2" = 3s ] && [ "$3" = docker ] && [ "$4" = exec ] && [ "$5" = -i ] && [ "$6" = BakaGame ] && [ "$7" = bun ] || return 1\n  shift 7\n  timeout 3s "$FIXTURE_BUN" "$@"\n}\n${releaseStage}\nprintf 'after-release\\n' > reached-restart\n`;
+  const script = `set -euo pipefail\nCOMMIT="$FIXTURE_SHA"\nsay() { echo "$*"; }\nsudo() {\n  [ "$1" = timeout ] && [ "$2" = 3s ] && [ "$3" = docker ] && [ "$4" = exec ] && [ "$5" = -i ] && [ "$6" = BakaGame ] && [ "$7" = /app/node_modules/.bin/bun ] || return 1\n  shift 7\n  timeout 3s "$FIXTURE_BUN" "$@"\n}\n${releaseStage}\nprintf 'after-release\\n' > reached-restart\n`;
   const bash = Bun.which("bash");
   if (!bash) throw new Error("Release shell fixture requires bash (Git Bash on Windows)");
   return Bun.spawnSync([bash, "--noprofile", "--norc", "-c", script], {
@@ -128,7 +128,7 @@ const runAtomicStage = (f: ReturnType<typeof fixture>, revision: string, input: 
 test("部署脚本绑定获验 SHA，原子元数据阶段位于维护/重启之前且限时，不依赖宿主 Node/Bun", () => {
   expect(workflow.indexOf(startMarker)).toBeGreaterThan(workflow.indexOf('[ "$COMMIT" = "$DEPLOY_REV" ]'));
   expect(workflow.indexOf(endMarker)).toBeLessThan(workflow.indexOf("# ---------- 4. 停机预告"));
-  expect(releaseStage).toContain('sudo timeout 3s docker exec -i BakaGame bun --no-env-file - "$COMMIT"');
+  expect(releaseStage).toContain('sudo timeout 3s docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - "$COMMIT"');
   expect(releaseStage).toContain('mv -f "$RELEASE_TMP" Server/build/release.json');
   expect(releaseStage).not.toMatch(/(^|\n)(node|bun) /);
   const f = fixture(); putMetadata(f, { old: "retained-until-success" });

@@ -400,14 +400,21 @@ jobs:
               say "校验通过：$f"
             done
 
-            # ---------- Release 元数据准备（预算 3 秒；不依赖宿主 Node/Bun） ----------
+            # ---------- Release 元数据准备（预算 3 秒；bun 取自容器 node_modules，镜像内无 PATH bun） ----------
             say "生成获验修订的无秘密 release 元数据"
             mkdir -p Server/build
             RELEASE_TMP=$(mktemp Server/build/.release.XXXXXX)
-            if ! sudo timeout 3s docker exec -i BakaGame bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" \
+            if ! sudo timeout 3s docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" \
               < Server/src/infrastructure/Release.ts > "$RELEASE_TMP"; then
-              rm -f "$RELEASE_TMP"
               echo "❌ Release 元数据生成失败，本次发布中止且不重启容器"
+              head -c 400 "$RELEASE_TMP" 2>/dev/null || true
+              rm -f "$RELEASE_TMP"
+              exit 1
+            fi
+            if [ ! -s "$RELEASE_TMP" ] || ! grep -qF "\"revision\":\"$COMMIT\"" "$RELEASE_TMP"; then
+              echo "❌ Release 元数据内容校验失败（空输出或修订不符），本次发布中止且不重启容器"
+              head -c 400 "$RELEASE_TMP" 2>/dev/null || true
+              rm -f "$RELEASE_TMP"
               exit 1
             fi
             chmod 644 "$RELEASE_TMP"
@@ -419,7 +426,7 @@ jobs:
             # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
             say "向在线玩家广播停机维护通知并摘除就绪流量"
             # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
-            if ! sudo docker exec -i BakaGame bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
+            if ! sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
               echo "❌ 维护预通知未成功，本次发布中止且不重启容器"
               exit 1
             fi
@@ -434,7 +441,7 @@ jobs:
             # ---------- 6. 业务就绪（总预算 30 秒，无房间创建） ----------
             say "验证存储就绪及三个协议订阅 ACK"
             # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。
-            if ! sudo docker exec -i BakaGame bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
+            if ! sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
               echo "❌ 重启后业务就绪失败；不自动二次重启或回滚，请运维处理"
               sudo docker logs --tail 50 BakaGame || true
               exit 1
