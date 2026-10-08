@@ -141,7 +141,7 @@ function CCBSetter({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; priv
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
       <PhaseIntro icon={PenLine} title="选择本局答案" description={<p>搜索并选中一位角色作为答案，结算前只有你和旁观者能看到。</p>} deadline={snapshot.phaseDeadlineAt} />
-      <CCBSearch allowSubjects defaultMode={snapshot.source === "native" ? "subject" : "character"} disabled={submitting} onSelect={setAnswer} />
+      <CCBSearch allowSubjects disabled={submitting} onSelect={setAnswer} />
       <div aria-live="polite">
         <CollapsibleRegion open={answer !== null}>
           {answer ? <SelectedAnswer answer={answer} onClear={() => setAnswer(null)} /> : null}
@@ -218,7 +218,7 @@ function CCBGuessing({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; pr
           <AnimatePresence initial={false} mode="popLayout">
             {slot === "search" ? (
               <GuessSlot key="search">
-                <CCBSearch allowSubjects={snapshot.settings.subjectSearch} defaultMode={snapshot.source === "native" ? "subject" : "character"} bannedIds={privateState.bannedCharacterIds} trailing={surrender} onSelect={async (character) => Boolean(await run("ccb.game.guess", { characterId: character.id }))} />
+                <CCBSearch allowSubjects={snapshot.settings.subjectSearch} bannedIds={privateState.bannedCharacterIds} trailing={surrender} onSelect={async (character) => Boolean(await run("ccb.game.guess", { characterId: character.id }))} />
               </GuessSlot>
             ) : slot === "done" ? (
               <GuessSlot key="done" className="flex items-start gap-2">
