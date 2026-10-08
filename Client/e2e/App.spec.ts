@@ -215,7 +215,9 @@ test("长玩家名不会挤出两款游戏玩家栏中的分数", async ({ page 
       return element.contains(document.elementFromPoint(x, y));
     });
     expect(visible).toBe(true);
-    await expect(page.getByTitle(name)).toBeVisible();
+    // 猜歌等待页的队伍成员叠放（TeamPicker）对同一批玩家也带 title —— 那是 aria-hidden
+    // 的装饰层；排除它，只断言玩家栏里承载姓名的那个可见元素。
+    await expect(page.getByTitle(name).and(page.locator(":not([aria-hidden])"))).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${game}-default-avatar.png`) });
   }
 });
@@ -545,6 +547,10 @@ test("a decisive vote shows the eliminated player before game over", async ({ is
     }));
 
     await page.getByRole("button", { name: "结算投票" }).click();
+    // 结算投票后先停在「投票结果」反馈阶段，由主持人点「查看结算」才推进到结算页。
+    const viewSettlement = page.getByRole("button", { name: "查看结算" });
+    await expect(viewSettlement).toBeVisible();
+    await viewSettlement.click();
     await expect(page.getByText("好人阵营胜利", { exact: true })).toBeVisible();
     await expect(page.getByLabel("已出局")).toHaveCount(1);
   } finally {
