@@ -24,7 +24,6 @@ export interface CCBSubjectSearchDocument {
   date: number;
   score: number;
   rating_count: number;
-  page_rank: number;
   heat: number;
   rank: number;
   type: number;
@@ -44,7 +43,8 @@ export interface CCBSearchResult {
 const CHARACTER_INDEX = "ccb_characters";
 const SUBJECT_INDEX = "ccb_subjects";
 const METADATA_INDEX = "ccb_search_metadata";
-const INDEX_SCHEMA_VERSION = 1;
+// v2：移除 page_rank（自接入起就是 rating_count 的副本、全仓零读取），并据此强制重建存量索引。
+const INDEX_SCHEMA_VERSION = 2;
 const BATCH_SIZE = 1_000;
 // 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：用 MEILISEARCH_URL 覆盖为容器可达地址。
 const INTERNAL_SEARCH_URL = (Bun.env.MEILISEARCH_URL?.trim() || "http://127.0.0.1:7700").replace(/\/+$/, "");
@@ -90,7 +90,7 @@ export class CCBMeilisearch {
   async initialize(db: Database, sourcePath: string): Promise<void> {
     await this.client.health();
     await this.configureIndex(this.characters, CCB_CHARACTER_RANKING_RULES, ["name", "aliases"], ["nsfw"], ["comment", "collect"]);
-    await this.configureIndex(this.subjects, CCB_SUBJECT_RANKING_RULES, ["name", "aliases"], ["tag", "meta_tag", "date", "score", "rating_count", "rank", "type", "nsfw"], ["date", "score", "rating_count", "page_rank", "heat", "rank"]);
+    await this.configureIndex(this.subjects, CCB_SUBJECT_RANKING_RULES, ["name", "aliases"], ["tag", "meta_tag", "date", "score", "rating_count", "rank", "type", "nsfw"], ["date", "score", "rating_count", "heat", "rank"]);
     await this.ensureIndex(this.metadata);
 
     const revision = `${INDEX_SCHEMA_VERSION}:${await fingerprint(sourcePath)}`;
@@ -170,7 +170,7 @@ export class CCBMeilisearch {
       id: Number(row.id), name: String(row.name), aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
       tag: Object.keys(parseJsonRecord(row.raw_tags)), meta_tag: parseJsonStrings(row.meta_tags),
       date: parseDate(String(row.date)), score: Number(row.score), rating_count: Number(row.rating_count),
-      page_rank: Number(row.rating_count), heat: Number(row.heat), rank: Number(row.rank ?? 0), type: Number(row.type), nsfw: Boolean(row.nsfw),
+      heat: Number(row.heat), rank: Number(row.rank ?? 0), type: Number(row.type), nsfw: Boolean(row.nsfw),
     })));
   }
 
