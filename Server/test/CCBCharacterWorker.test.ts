@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { CCBCharacterWorkerProvider } from "../src/infrastructure/CCBCharacterWorkerProvider";
 import { createDefaultCCBSettings } from "../src/shared/CCB";
@@ -36,4 +36,68 @@ test("缺失数据文件的初始化失败以业务错误返回，不产生未�
   const provider = new CCBCharacterWorkerProvider({ characterPath: `missing-${crypto.randomUUID()}.sqlite` });
   expect(await rejectionOf(provider.searchCharacters("角色"))).toMatchObject({ code: "CCB_DATA_UNAVAILABLE" });
   expect(await rejectionOf(provider.close())).toMatchObject({ code: "CCB_DATA_UNAVAILABLE" });
+});
+
+test("init 使用独立的长超时窗口，不与查询共用短窗口", async () => {
+  class EchoWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    postMessage(message: unknown) {
+      const request = message as { id: number };
+      queueMicrotask(() => this.onmessage?.({ data: { id: request.id, ok: true, value: true } } as MessageEvent));
+    }
+    terminate() {}
+  }
+  const originalWorker = globalThis.Worker;
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    globalThis.Worker = EchoWorker as unknown as typeof Worker;
+    const provider = new CCBCharacterWorkerProvider({ characterPath: "unused-character.sqlite" });
+    const delays = spy.mock.calls.map((call) => Number(call[1]));
+    // 索引重建分钟级（线上实测约 19 分钟）：init 必须是长窗口，否则 ready 被拒后所有查询永久失败。
+    expect(delays).toContain(3_600_000);
+    await provider.close();
+  } finally {
+    globalThis.Worker = originalWorker;
+    spy.mockRestore();
+  }
+});
+
+test("查询超时只拒绝该请求，不终止线程，后续请求正常", async () => {
+  class SelectiveWorker {
+    static latest: SelectiveWorker | null = null;
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    terminated = false;
+    constructor() { SelectiveWorker.latest = this; }
+    postMessage(message: unknown) {
+      const request = message as { id: number; method: string; keyword?: string };
+      if (request.method === "searchCharacters" && request.keyword === "slow") return; // 永不回包：模拟卡住的查询
+      queueMicrotask(() => this.onmessage?.({ data: { id: request.id, ok: true, value: request.method === "searchCharacters" ? [] : true } } as MessageEvent));
+    }
+    terminate() { this.terminated = true; }
+  }
+  const originalWorker = globalThis.Worker;
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    globalThis.Worker = SelectiveWorker as unknown as typeof Worker;
+    const provider = new CCBCharacterWorkerProvider({ characterPath: "unused-character.sqlite" });
+    const worker = SelectiveWorker.latest!;
+    expect(await provider.searchCharacters("warm")).toEqual([]);
+    spy.mockClear();
+    const slow = provider.searchCharacters("slow");
+    await Bun.sleep(0); // 等查询真正发出、20s 计时器完成注册
+    const timers = spy.mock.calls.filter((call) => Number(call[1]) === 20_000);
+    expect(timers.length).toBe(1);
+    (timers[0]![0] as () => void)(); // 手动触发超时到点
+    expect(await rejectionOf(slow)).toMatchObject({ code: "CCB_QUERY_TIMEOUT" });
+    expect(worker.terminated).toBe(false);
+    // 线程未死：后续请求照常返回，而不是「本地角色查询已关闭」。
+    expect(await provider.searchCharacters("ok")).toEqual([]);
+    expect(worker.terminated).toBe(false);
+    await provider.close();
+  } finally {
+    globalThis.Worker = originalWorker;
+    spy.mockRestore();
+  }
 });
