@@ -131,7 +131,7 @@ npx playwright test e2e/App.spec.ts
 - LCOV 的 `FNF/FNH/LF/LH` 按单值解析，不能套用 `DA` 双值格式；无有效计数的报告必须失败。
 - 新增生产资源在构建后通过 preview 验证 HTTP 200、MIME、非空内容及可解码性，覆盖入口 HTML、固定 WebP、哈希贴纸与 SPA 路由。只测插件函数或 Vite 开发模式不够。
 - E2E 关注跨页面、跨进程和真实用户风险；未处理 rejection、`pageerror`、console error 或非预期 4xx/5xx 令用例失败，能关联当前流程。预期错误用明确白名单并说明原因。
-- 生产服务冒烟保持隔离、可重复且不访问第三方；真实第三方集成单独运行、输出脱敏，不进入常规 CI。真实角色 E2E 检出时需拉取 LFS 数据实体。
+- 生产服务冒烟保持隔离、可重复且不访问第三方；真实第三方集成单独运行、输出脱敏，不进入常规 CI。真实角色 E2E 检出时需按 R2 manifest 拉取数据实体（见 [Server/data/README.md](../Server/data/README.md)）。
 
 ## 领域专项验收
 

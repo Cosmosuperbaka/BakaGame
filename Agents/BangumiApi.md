@@ -38,8 +38,8 @@ BANGUMI_ENRICHMENT_PATH=
 ## Bangumi API 回填缓存
 
 只读数据集里 `subjects.image` / 角色的图片列**始终为空**（构建脚本不写图片），所以图片只能回源。
-回填缓存就是「用 API 数据更新数据库」的落地形态——只读库是 LFS 产物、每周被 CI 重建，
-**不能被运行时写入**，补充数据因此单独存一张可写表：
+回填缓存就是「用 API 数据更新数据库」的落地形态——只读库每周由 CI 重建并发布到 R2（不进 Git，
+见 [Server/data/README.md](../Server/data/README.md)），**不能被运行时写入**，补充数据因此单独存一张可写表：
 
 ```
 Server/storage/bangumi-enrichment.sqlite      （可写，不进 Git；`.gitignore` 已忽略该文件名）
@@ -206,9 +206,9 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 ## 本地数据集构建
 
 `Server/data/` 下两个只读 SQLite 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
-每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并提交（LFS）。**角色关系、作品、标签与声优的
+每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并发布到 R2（不进 Git）。**角色关系、作品、标签与声优的
 运行时判定仅使用这些本地数据**；普通角色查询不得在缺失时回源补查。角色头像及其同次 API 返回的
-基础资料、用户明确导入的目录成员使用下述独立补全层，不能写入只读 LFS 产物。
+基础资料、用户明确导入的目录成员使用下述独立补全层，不能写入只读数据集产物。
 
 | 文件 | 内容 | 使用方 |
 |---|---|---|

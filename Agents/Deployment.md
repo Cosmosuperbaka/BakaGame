@@ -7,7 +7,7 @@
 | TLS、WS 接入、基址或探活 | 「反向代理职责」「当前请求链路与同源化边界」 |
 | SEO 与构建期 HTML | 「前端静态外壳」 |
 | 资源缓存及响应头 | 「边缘缓存策略」 |
-| 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、LFS、Secrets 小节 |
+| 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、R2 数据分发、Secrets 小节 |
 | 快照或容量 | 「带宽与容量基线」与 [Testing](Testing.md#验证范围) |
 
 本文描述配置与验收要求，不授权执行部署、重启或线上写探针；按用户已授权范围完成本地验证和发布准备。示例公网地址使用 `example.com` 占位，实际地址从部署配置取得。
@@ -211,6 +211,28 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 - 部署消费 CI 结果，不在 deploy 中重复跑一遍完整测试。手动 `workflow_dispatch` 必须提供 `ci_run_id`，与自动路径共用门禁：同仓库 `main` 的 push、整体 CI 完成且成功、实际 `Server CI` 成功；缺失、失败、取消、跳过或 PR run 均不放行。执行仍需发布授权。
 - 前端 Makers 的 main 推送可能独立触发构建；“不部署后端”不代表推送没有任何生产影响。
 
+### 容器运行环境前置条件
+
+以下变量必须在**容器创建时**注入运行环境（compose `environment`/`env_file` 或 `docker run -e`）。
+容器内以 `--no-env-file` 运行的步骤（release 元数据、停机通知、就绪探针）只读创建时环境，
+不读任何 `.env` 文件；`docker restart` 保留旧环境，补注入必须重建容器。发布前逐项核对：
+
+| 变量 | 缺失后果 | 要求 |
+|---|---|---|
+| `MAINTENANCE_TOKEN` | 停机通知步骤中止，部署不重启（安全失败） | 自洽随机串，`openssl rand -hex 32` 生成；trim 后非空且不含换行 |
+| `DEPLOYMENT_ENVIRONMENT=production` | 遥测 / Sentry 环境标记静默记为 development | 必须显式注入；解析优先级见 [Conventions](Conventions.md#运行环境标记与资产验证隔离) |
+| `MEILISEARCH_KEY` | CCB / SonGuessr 搜索不可用 | 与 Meilisearch master key 一致；网络前提见下节 |
+| `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
+
+存在性自查（只计数、不打印值）：
+
+```bash
+sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET)='
+```
+
+完整生产配置输出 5，未启用原版房时为 4。缺 `MAINTENANCE_TOKEN` 部署必中止，缺其余项按上表降级。
+
 ### 发布链路与失败边界
 
 CCB 与 SonGuessr 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
@@ -220,9 +242,9 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 前提未满足时不得发布该搜索配置。
 
 1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
-2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致，所有 LFS raw URL 同样绑定此 SHA（不消费移动 main），按下节规则校验、复用或下载 LFS 数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
+2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致（不消费移动 main）。数据实体不再随代码走：runner 在部署前从 R2 manifest 解析版本化数据 URL 与 sha256/size，经 SSH `envs` 传入，按下节规则校验、复用或下载数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
 3. 数据校验后、排空前生成获验修订的 release 元数据，流程及失败边界见下一节；宿主机不需要 Node/Bun。
-4. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。容器必须通过运行环境显式注入该变量（只在 `.env` 内提供不足以供 `--no-env-file` helper 消费）；缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
+4. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。Token 是只在容器内部自洽的随机共享密钥，不与任何外部系统交换，用 `openssl rand -hex 32` 生成即可（唯一格式约束：trim 后非空、不含换行）；必须在容器创建时通过运行环境显式注入（只在容器内 `.env` 提供不足以供 `--no-env-file` helper 消费，且 `docker restart` 不更新环境——补注入需重建容器）。缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
 5. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
 6. 在总计 30 秒预算内检查本机 `/health`、`/livez`、`/readyz` 的 `ready:true` 与三款游戏订阅 ACK（不创建房间）。通过 `docker exec -i` 将目标 SHA 的只读 `DeploymentProbe.ts` 送入容器 Bun，不猜测挂载路径，不加载应用或 `.env`。失败打印容器末尾日志、作业失败，不报部署成功；重启后不自动二次重启或回滚，由运维依据日志与获验 SHA 恢复。
 
@@ -244,7 +266,6 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 |---|---|
 | runner 准备 + SSH 建连 | ≤ 15s |
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
-| 节点测速 | ≤ 7s |
 | 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；当前为从脚本开始起 115s 的绝对截止，包含此前耗时 |
 | release 元数据生成与原子落盘 | ≤ 3s（容器元数据脚本由 `timeout 3s` 约束） |
 | 客户端排空 | ≤ 3s |
@@ -255,75 +276,50 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 下载截止时间与其他阶段预算有重叠，不能把表内数字直接相加。整体仍须满足 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
 这是目标值而非上限：数据下载路径必须设计成"无事发生"。
 
-### Git LFS 大文件获取约束
+### R2 数据分发约束
 
-`Server/data/bangumi-*.sqlite` 由 Git LFS 托管，是流水线中的大文件；实际大小以 LFS 指针为准，不把历史约 200MB 的样本量写成固定预算。
-在大陆服务器上，**任何"顺手 `git lfs pull`"的写法都是不可接受的**，原因与对策如下：
+`Server/data/bangumi-*.sqlite`（2026-10 实测合计约 336MiB，随每周重建变化，以 manifest 为准）
+**不进 Git**——曾走 Git LFS，把账户的 GitHub LFS 带宽额度吃穿，现由 Cloudflare R2 桶 `files`
+经加速域 `cdn.baka.website` 分发。对象命名、发布顺序与凭证边界的真相源是
+[Server/data/README.md](../Server/data/README.md)，本节只约束流水线侧的消费行为：
 
-#### SSH 执行与文件替换
-
-- **严禁 `script_stop: true`**。drone-ssh 开启它之后会对脚本**逐行改写**，在每条命令后
-  注入 `DRONE_SSH_PREV_COMMAND_EXIT_CODE=$?; [ $... -ne 0 ] && exit ...`。后果是：
-  任何**合法地为假**的 `if` 条件或 `&&` 链（状态码 1）都会被当成失败直接 `exit 1`，
-  多行命令（`if/while/函数体`）也会被截断。表现为"脚本在某个完全正常的分支处静默退出、
-  看似陷阱没触发"——其实 EXIT 陷阱触发了，只是 `on_exit` 里又被注入的检查再次打断。
-  失败即停由脚本自己的 `set -euo pipefail` 负责，`script_stop` 必须保持 `false`。
-- **往暂存区写实体文件前必须先验魔数**。`mv -f "$f" "$STASH/..."` 若在工作区是指针文本
-  （上一次失败运行留下的）时执行，会把暂存区里唯一的真实数据库覆盖成 133 字节指针，
-  **生产数据就此丢失**，只能靠重新下载恢复。正确做法：工作区内容通过
-  `head -c 15` 验过是 `SQLite format 3`、且暂存区没有有效副本时才搬，否则直接丢弃工作区那份。
-
-- **LFS 镜像前缀对实体下载无效**。把 `remote.origin.lfsurl` 改成
-  `https://<代理>/https://github.com/<repo>.git/info/lfs` 只能让体积微小的 batch
-  小请求走代理；batch 响应里的 `href` 由 GitHub 返回，指向
-  `github-cloud.githubusercontent.com/alambic/media/...` 这类签名直链，git-lfs 会
-  **直连**它。也就是说代理只加速了几百字节的元数据，200MB 实体依旧是裸奔出境。
-  排查时必须同时看"镜像是否生效"与"实体字节从哪个域名下来"，只看前者会误判。
-- **实体下载必须走 `raw` 形态的通用代理**：
-  `https://<节点>/https://github.com/<repo>/raw/<ref>/<path>`。该形态下代理在服务端
-  跟随 GitHub 到 `media.githubusercontent.com` 的 302，返回的是真实字节而非 LFS
-  指针文本。**不要用 `media.githubusercontent.com` 直接拼前缀**：多数代理白名单里
-  没有这个域名，会直接 403。节点清单维护在
-  [https://github.akams.cn/](https://github.akams.cn/)，脚本内置多个节点并在每次部署
-  时并行测速选最快者，单点失效不影响整体。
-- **测速探针必须校验内容而不是只看速度**。403/404 错误页体积小、`speed_download`
-  虚高，极易被误选成"最快节点"。只有响应体前 15 字节等于 `SQLite format 3` 的节点
-  才计入有效测速结果。
-- **禁止 smudge，实体文件由脚本接管**。部署脚本先 `export GIT_LFS_SKIP_SMUDGE=1`，
-  再把已就位的库文件挪到 `<仓库>/.deploy-stash`，`git reset --hard` 后按 LFS OID
-  比对：OID 未变则原子 `mv` 回位，**零网络**；OID 变化才下载。这是达成 1 分钟部署的
-  核心机制——数据一周才更新一次，九成以上的部署不该产生任何大文件流量。
-- **校验以 sha256 对齐 LFS OID 为唯一标准**。文件大小、SQLite 魔数、`sha256sum ==
-  oid` 三者都通过才算成功，缺一不可。
-- **LFS 指针一律用纯 shell 解析，禁止 `git show` + `awk`**。曾经的写法
-  `want=$(git show "HEAD:$f" | awk '/^oid sha256:/{print $2; exit}')` 有两个致命问题：
-  `awk` 的 `$2` 会带出 `sha256:` 前缀（而 `sha256sum` 输出的是裸十六进制，比对永远不命中，
-  缓存复用形同虚设）；且该管道是 `set -e` 下唯一不受 `if` 保护的语句，一旦 `git show`
-  在生产机上失败就直接静默退出 —— 表现为「日志停在最后一行 `say` 之后，连 EXIT 陷阱
-  都没触发」。正确做法：`git reset --hard` 后工作区里就是指针文本，用
-  `while read -r k v` 直接读文件即可，零外部命令、零管道、不可能因工具缺失或
-  SIGPIPE 崩掉。
-- **任何失败必须带行号喊出来**。脚本必须 `set -E` 加
-  `trap 'echo "❌ 第 ${LINENO} 行失败：$BASH_COMMAND"' ERR`，并且每个阶段都要打印
-  检查点（目标 OID/大小、复用还是下载、各节点测速结果）。静默失败会让排查成本翻十倍
-  —— 一次部署只有 3 分钟，没有第二次机会慢慢猜。
-- **开工先做环境自检**：`git/curl/awk/sort/tr/wc/head/basename/sha256sum/date/grep`
+- **一致性锚点只有 manifest**：`<CDN 基址>/files/bangumi/manifest.json`（公开、ESA 禁缓存）
+  记录当前版本的 `object / sha256 / size`。runner 在部署前解析出两个库的版本化 URL、sha256、
+  size，经 SSH `envs` 传参（`BG_CHAR_*` / `BG_SONG_*`）——**生产机全程不接触 R2 凭证**，
+  也不许现场解析 manifest 或猜测版本化对象名。
+- **传参先做格式校验**：URL（HTTPS + 白名单字符）、sha256（64 位小写十六进制）、size（正整数）
+  任一不合规即中止，防 SSH envs 注入。
+- **校验和未变化 = 零网络复用**：已就位的库先挪到与仓库同盘的 `.deploy-stash`（`mv` 原子改名），
+  `git reset --hard` 后比对缓存副本 sha256——相同则原子回位，全程无大文件流量；不同才下载。
+  数据每周重建一次，绝大多数部署应走零网络路径。
+- **下载 = 8 路分片并行 + 全局截止**：`SPLIT=8`、`DL_DEADLINE=115s`（自脚本起的绝对截止，
+  包含此前全部耗时）。每片 `curl -r` 带连接/总超时、`--speed-limit/--speed-time` 空转放弃与
+  `--retry 2 --retry-delay 1`（R2 同为 Cloudflare 前置，对并发突发可能 403/429，排查先看
+  状态码再调超时）；**逐分片长度自校验**（防忽略 `Range` 直接回整文件的中间层），合并后
+  整体 sha256 兜底。
+- **断点续传**：分片目录按「文件名 + 目标 sha256 前缀」命名并跨运行保留（失败清理只删
+  `.probe` / `.merged.*`，不动 `.parts.*`）；一次跑不完，重跑接着下，不从零开始。
+  分片临时路径必须由文件名派生——两个库是并行下载的，bash 的 `$$` 在子 shell 中仍是父进程
+  PID，用它拼路径会让两个任务互相覆盖，产出体积正确但内容错乱的文件。
+- **失败必须不重启容器、不留坏数据**：下载失败 / 落盘校验失败都在 `docker restart` 之前中止；
+  `trap on_exit` 把暂存区的旧库放回工作区，防止下一次容器重启读到缺失或损坏的数据库。
+  worktree 里若出现 LFS 指针文本（历史失败运行遗留）直接丢弃——**只有魔数 `SQLite format 3`
+  的文件才允许进暂存区，绝不能用 `mv -f` 让无效文件覆盖唯一的真实数据库**。
+- **LFS 双保险仍保留（过渡期）**：脚本 `export GIT_LFS_SKIP_SMUDGE=1` 并
+  `git config --local filter.lfs.required false`，防服务器旧克隆的残留配置在 reset 时去拉实体。
+- **任何失败必须带行号喊出来**：脚本 `set -E` +
+  `trap 'echo "❌ 第 ${LINENO} 行失败：$BASH_COMMAND"' ERR`，每阶段打印检查点
+  （目标 sha256/大小、复用还是下载）。静默失败会让排查成本翻十倍——一次部署只有 3 分钟，
+  没有第二次机会慢慢猜。
+- **开工先做环境自检**：`git/curl/awk/sort/tr/wc/head/basename/sha256sum/date/grep/cp/mv/rm/mktemp/cat/chmod/timeout`
   逐个 `command -v`，缺哪个就报名字退出。生产机环境不受本仓库控制，不要假设它齐全。
-- **重启前的准备失败必须恢复旧数据且不重启容器**。脚本用 `trap ... EXIT` 在非零退出时把旧库文件放回
-  原位，避免把指针文本留在工作区、让下一次容器重启直接读到坏数据；同时失败路径
-  不执行 `docker restart`，线上服务保持原状。
-- **断点续传**：分片目录按 `文件名 + 目标 OID 前缀` 命名并跨运行保留（`on_exit` 只清理
-  `.probe` 与 `.merged.*`，不动 `.parts.*`），长度已满的分片直接复用，整体 sha256 兜底。
-  数据库被毁后首次恢复要拉 200MB，一次跑不完就下次接着跑，而不是每次从零开始。
-- **镜像对同 IP 的并发突发会 403**（Cloudflare 前置）。探针要错峰发起（`sleep 0.25`），
-  分片下载带 `--retry 2 --retry-delay 1`。排查下载失败时先看是不是 403/429，而不是盲调超时。
-- **并发临时路径不能用 `$$` 命名**。两个库文件是并行下载的，而 bash 的 `$$` 在子
-  shell 中仍是父进程 PID，用它拼临时目录会让两个任务互相覆盖，最终产出体积正确但
-  内容错乱的文件。临时路径必须由文件名派生。
+
+迁移前的「LFS 镜像 / raw 代理 / 多节点测速」链路已整体废弃：实体不再从 GitHub 取，
+不要为防止 LFS 出境下载而恢复那套复杂度。
 
 ### GitHub Secrets 密钥配置规范
 
-严禁将真实服务器凭据提交至代码库。部署依赖以下 GitHub Repository Secrets：
+严禁将真实服务器凭据提交至代码库。部署与数据发布链路依赖以下 GitHub Repository Secrets：
 
 | Secret 名称 | 说明 | 示例/默认值 |
 |---|---|---|
@@ -332,3 +328,11 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 | `DEPLOY_USER` | SSH 登录用户名 | `ubuntu`（未设置时默认 `ubuntu`） |
 | `DEPLOY_KEY` | 用于 SSH 鉴权的私钥纯文本 | 必填（完整包含 BEGIN/END 标记） |
 | `DEPLOY_PASSPHRASE` | 用于解密 SSH 私钥的密码（若私钥受密码保护） | 可选（私钥无密码保护时无需配置） |
+| `BANGUMI_DATA_CDN_BASE` | R2 加速域基址（公开），CI 与部署据此解析 manifest 与数据 URL | 必填（只读消费，不含凭证） |
+| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 仅每周数据发布（`bangumi-data.yml`）使用 |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 仅每周数据发布使用 |
+| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 仅每周数据发布使用 |
+| `R2_BUCKET` | R2 桶名 | 仅每周数据发布使用 |
+
+R2 凭证四件套只被每周数据发布流程读取；CI 与生产部署只按公开 URL 下载版本化对象，
+生产机不持有任何 R2 凭证。
