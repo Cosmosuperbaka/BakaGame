@@ -35,12 +35,18 @@ const makeProviders = (healthy: () => boolean) => {
       if (!healthy()) unavailable();
       return undefined;
     },
+    resolveSubjectImage: async () => {
+      calls.local += 1;
+      if (!healthy()) unavailable();
+      return undefined;
+    },
   };
   const remote: BangumiDataProvider = {
     searchSubjects: async () => { calls.remote += 1; return result; },
     getSubject: async () => { calls.remote += 1; return { ...result[0], locked: false, musicTracks: [] }; },
     chooseRandomSubject: async () => { calls.remote += 1; return { ...result[0], locked: false, musicTracks: [] }; },
     resolveCharacterImage: async () => { calls.remote += 1; return undefined; },
+    resolveSubjectImage: async () => { calls.remote += 1; return undefined; },
   };
   return { calls, local, remote };
 };
@@ -111,6 +117,7 @@ describe("FallbackBangumiProvider", () => {
       getSubject: async () => { throw new AppError("BANGUMI_NO_SUBJECT", "查不到"); },
       chooseRandomSubject: async () => { throw new AppError("BANGUMI_NO_SUBJECT", "查不到"); },
       resolveCharacterImage: async () => undefined,
+      resolveSubjectImage: async () => undefined,
     };
     const provider = new FallbackBangumiProvider({ local, remote });
 

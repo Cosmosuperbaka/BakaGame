@@ -13,7 +13,7 @@ export function createTestApp(options: Omit<AppDependencies, "sonGuessrService" 
   const sonGuessrService = options.sonGuessrService ?? new SonGuessrService({
     eventLogger: options.logger,
     musicProvider: { search: unused, getSong: unused, getSongMetadata: unused, getLoginStatus: unused },
-    bangumiProvider: { searchSubjects: unused, getSubject: unused, chooseRandomSubject: unused, resolveCharacterImage: unused },
+    bangumiProvider: { searchSubjects: unused, getSubject: unused, chooseRandomSubject: unused, resolveCharacterImage: unused, resolveSubjectImage: unused },
   });
   const ccbService = options.ccbService ?? new CCBService({ data: {
     searchCharacters: unused, searchSubjects: unused, getSubjectCharacters: unused, getSubjects: unused, getRawCharacter: unused,

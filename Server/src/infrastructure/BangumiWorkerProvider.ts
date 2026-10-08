@@ -7,7 +7,8 @@ type RequestPayload =
   | { method: "init"; options: BangumiProviderInit }
   | { method: "searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { method: "getSubject"; subjectId: string }
-  | { method: "resolveCharacterImage"; characterId: number };
+  | { method: "resolveCharacterImage"; characterId: number }
+  | { method: "resolveSubjectImage"; subjectId: string };
 
 /**
  * 初始化超时必须独立于查询超时：索引重建（首次部署或数据变更后向 Meilisearch
@@ -56,6 +57,11 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
   async resolveCharacterImage(characterId: number): Promise<string | undefined> {
     await this.ready;
     return this.request({ method: "resolveCharacterImage", characterId }) as Promise<string | undefined>;
+  }
+
+  async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
+    await this.ready;
+    return this.request({ method: "resolveSubjectImage", subjectId }) as Promise<string | undefined>;
   }
 
   async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {

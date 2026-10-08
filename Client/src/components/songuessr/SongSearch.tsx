@@ -4,6 +4,7 @@ import { Film, Music2 } from "lucide-react";
 import type { BangumiSongCandidate, BangumiSubjectSearchResult, SongSearchResult } from "@/types";
 import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
+import { LazyImage } from "@/components/common/LazyImage";
 import { Badge } from "@/components/ui/Badge";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
@@ -53,7 +54,13 @@ function SubjectRow({ subject, guessed }: { subject: BangumiSubjectSearchResult;
   ].filter(Boolean).join(" · ");
   return (
     <SearchOptionContent
-      media={<Cover src={subject.imageUrl} shape="poster" icon={Film} />}
+      // 只读数据集不含图片：自带封面就直接用，没有的等滚进视口再补一次。
+      media={<LazyImage cacheKey={`song-subject:${subject.id}`} initial={subject.imageUrl} className="h-12 w-9"
+        fallback={<Film className="size-4" aria-hidden="true" />}
+        request={async () => {
+          const { imageUrl } = await useSonGuessrStore.getState().sendCommand<{ imageUrl?: string }>("song.subject.image", { subjectId: subject.id });
+          return imageUrl;
+        }} />}
       title={subject.nameCn || subject.name}
       subtitle={detail || undefined}
       trailing={guessed ? "已猜过" : undefined}

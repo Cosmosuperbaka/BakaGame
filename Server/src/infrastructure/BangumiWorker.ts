@@ -8,6 +8,7 @@ type Request =
   | { id: number; method: "searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { id: number; method: "getSubject"; subjectId: string }
   | { id: number; method: "resolveCharacterImage"; characterId: number }
+  | { id: number; method: "resolveSubjectImage"; subjectId: string }
   | { id: number; method: "close" };
 
 let provider: LocalBangumiProvider | undefined;
@@ -27,6 +28,8 @@ self.onmessage = async (event: MessageEvent<Request>) => {
       value = await provider.getSubject(request.subjectId);
     } else if (request.method === "resolveCharacterImage") {
       value = await provider.resolveCharacterImage(request.characterId);
+    } else if (request.method === "resolveSubjectImage") {
+      value = await provider.resolveSubjectImage(request.subjectId);
     } else {
       provider.close();
       provider = undefined;

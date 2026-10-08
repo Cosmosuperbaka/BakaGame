@@ -15,6 +15,11 @@ export interface BangumiDataProvider {
   /** 角色立绘：本地数据集不含图片，只能回源取，结果写进回填缓存。 */
   resolveCharacterImage(characterId: number): Promise<string | undefined>;
   /**
+   * 番剧封面：只读数据集没有图片列，命中回填缓存就直接返回，否则回源一次并落盘。
+   * 搜索列表缺的封面由客户端滚进视口时经 `song.subject.image` 按需补。
+   */
+  resolveSubjectImage(subjectId: string): Promise<string | undefined>;
+  /**
    * 释放底层资源（SQLite 句柄等）。声明为可选：远端 provider 不需要它。
    * 有了这个声明，回退 provider 就不必再写双重 `as unknown as` 去探测方法是否存在。
    */
@@ -221,7 +226,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json() as { images?: Record<string, unknown> };
       const images = body.images ?? {};
-      const candidate = images.medium ?? images.large ?? images.common ?? images.grid;
+      const candidate = images.large;
       const image = rewriteImage(candidate, this.imageBase);
       // 拿不到合法图片地址（上游确实没图，或返回的不是 URL）：只做短期负缓存，
       // **不写回填缓存**，避免把「暂时没有」当成永久结论。
@@ -244,6 +249,25 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     return this.resolveEntityImage("character", characterId);
   }
 
+  async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
+    const id = Number(subjectId);
+    if (!Number.isInteger(id) || id <= 0) return undefined;
+    return this.resolveEntityImage("subject", id);
+  }
+
+  /**
+   * 列表结果补上已回填的封面。
+   *
+   * 只读数据集的 `subjects.image` 全库为空（构建脚本不写图片），所以搜索结果默认
+   * 一张封面都没有。这里只**读**回填缓存、绝不回源 —— 一次搜索二十条，逐条回源
+   * 会把上游打爆并撞上限流。缺的那部分留给客户端按需补。
+   */
+  private fillPersistedImage(row: SubjectRow): SubjectRow {
+    if (row.image) return row;
+    const persisted = this.readEnrichment("subject", Number(row.id))?.image;
+    return persisted ? { ...row, image: persisted } : row;
+  }
+
   async initialize(): Promise<void> {
     await this.searchReady;
   }
@@ -262,14 +286,14 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       const placeholders = ids.map(() => "?").join(",");
       const found = this.song.query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`).all(...ids) as SubjectRow[];
       const byId = new Map(found.map((row) => [Number(row.id), row]));
-      return ids.flatMap((id) => { const row = byId.get(id); return row ? [toResult(row, this.imageBase)] : []; });
+      return ids.flatMap((id) => { const row = byId.get(id); return row ? [toResult(this.fillPersistedImage(row), this.imageBase)] : []; });
     }
     if (q) {
       rows = this.song.query(`SELECT s.* FROM subject_search f JOIN subjects s ON s.id=f.rowid WHERE subject_search MATCH ? AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`).all(`${q.replace(/["*]/g, " ")}*`, ...args, q, q, `${q}%`, `${q}%`, Math.min(50, Math.max(1, limit))) as SubjectRow[];
     } else {
       rows = this.song.query(`SELECT * FROM subjects WHERE ${clauses.join(" AND ")} ORDER BY heat DESC, rank ASC, score DESC, id ASC LIMIT ?`).all(...args, Math.min(50, Math.max(1, limit))) as SubjectRow[];
     }
-    return rows.map((row) => toResult(row, this.imageBase));
+    return rows.map((row) => toResult(this.fillPersistedImage(row), this.imageBase));
   }
   async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
     const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");

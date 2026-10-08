@@ -58,6 +58,10 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     return this.run(() => this.local.resolveCharacterImage(characterId), () => this.remote.resolveCharacterImage(characterId));
   }
 
+  resolveSubjectImage(subjectId: string): Promise<string | undefined> {
+    return this.run(() => this.local.resolveSubjectImage(subjectId), () => this.remote.resolveSubjectImage(subjectId));
+  }
+
   async close(): Promise<void> {
     await Promise.all([this.local.close?.(), this.remote.close?.()]);
   }

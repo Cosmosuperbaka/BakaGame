@@ -310,7 +310,7 @@ const normalizeSubject = (raw: unknown, imageUrl: string): BangumiSubjectSearchR
     id,
     name,
     nameCn: readString(item.name_cn) ?? name,
-    imageUrl: rewriteBangumiImageUrl(images.medium ?? images.large ?? images.common ?? images.grid, imageUrl),
+    imageUrl: rewriteBangumiImageUrl(images.large, imageUrl),
     year: parseYear(item.date),
     rating: readNumber(asRecord(item.rating).score),
     ratingCount: readNumber(asRecord(item.rating).total),
@@ -415,9 +415,22 @@ export class BangumiProvider {
     try {
       const body = asRecord(await this.requestJson(`/v0/characters/${characterId}`));
       const images = asRecord(body.images);
-      const image = rewriteBangumiImageUrl(images.medium ?? images.large ?? images.common ?? images.grid, this.imageUrl);
+      const image = rewriteBangumiImageUrl(images.large, this.imageUrl);
       if (image) this.characterImageCache.set(characterId, image);
       return image;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** 番剧封面：与角色立绘同一套回源与缓存口径，只缓存成功结果。 */
+  async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
+    const id = Number(subjectId);
+    if (!Number.isInteger(id) || id <= 0) return undefined;
+    try {
+      const body = asRecord(await this.requestJson(`/v0/subjects/${id}`));
+      const images = asRecord(body.images);
+      return rewriteBangumiImageUrl(images.large, this.imageUrl);
     } catch {
       return undefined;
     }

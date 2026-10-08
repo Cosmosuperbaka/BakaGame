@@ -136,7 +136,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     const requested: string[] = [];
     const fetcher = async (input: RequestInfo | URL) => {
       requested.push(String(input));
-      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+      return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const provider = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });
     expect(await provider.resolveCharacterImage(12393)).toBe("https://mirror.example/pic/crt/l/aa/bb/12393_crt_x.jpg");
@@ -156,7 +156,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     let calls = 0;
     const fetcher = async () => {
       calls++;
-      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+      return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const first = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher });
     expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
@@ -178,7 +178,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
     const first = new LocalBangumiProvider({
       songPath, characterPath, enrichmentPath, apiBase: "https://api.example",
-      fetcher: async () => new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 }),
+      fetcher: async () => new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 }),
     });
     expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
     first.close();
@@ -201,7 +201,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     const flaky = async () => {
       calls++;
       if (calls === 1) throw new Error("上游瞬时故障");
-      return new Response(JSON.stringify({ images: { medium: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
+      return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const first = new LocalBangumiProvider({ songPath, characterPath, enrichmentPath, apiBase: "https://api.example", fetcher: flaky });
     expect(await first.resolveCharacterImage(12393)).toBeUndefined();

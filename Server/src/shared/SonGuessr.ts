@@ -500,6 +500,8 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.music.artist.search", { keyword: string }>
   | ClientEnvelope<"song.bangumi.search", { keyword: string }>
   | ClientEnvelope<"song.bangumi.songs", { subjectId: string }>
+  /** 番剧封面：只读数据集不含图片，列表缺的封面滚进视口时按需补一条。 */
+  | ClientEnvelope<"song.subject.image", { subjectId: string }>
   | ClientEnvelope<"song.game.start", Record<string, never>>
   | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
   | ClientEnvelope<"song.game.submitSong", { songId: string }>

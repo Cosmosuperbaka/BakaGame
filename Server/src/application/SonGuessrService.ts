@@ -1132,6 +1132,8 @@ export class SonGuessrService {
         return this.searchBangumi(connection, message.payload.keyword);
       case "song.bangumi.songs":
         return this.getAnimeSongs(connection, message.payload.subjectId);
+      case "song.subject.image":
+        return this.getSubjectImage(connection, message.payload.subjectId);
       case "song.game.start":
         return this.startGame(connection);
       case "song.game.chooseSubmitter":
@@ -1660,6 +1662,17 @@ export class SonGuessrService {
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     return { results: await provider.searchSubjects(keyword, 20) };
+  }
+
+  /**
+   * 番剧封面补图：只读数据集不含图片，搜索列表缺的封面滚进视口时才来要一次。
+   * 命中回填缓存就不回源，所以反复搜索同一部番剧不会再打上游。
+   */
+  private async getSubjectImage(connection: ConnectionRecord, subjectId: string) {
+    this.requireRoomPlayer(connection);
+    const provider = this.options.bangumiProvider;
+    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+    return { imageUrl: await provider.resolveSubjectImage(subjectId) };
   }
 
   private async getAnimeSongs(connection: ConnectionRecord, subjectId: string) {
