@@ -8,7 +8,7 @@
 
 - `Server/` 使用 Bun，`Client/` 使用 Node/npm；根目录没有 `package.json`。命令在对应包内执行。
 - 共享模型和协议只有一份物理源码：`Server/src/shared/`。客户端通过 `@bakagame/shared` 引用，不添加 `file:../packages/` 依赖。
-- 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要纯中文、最多 12 字，scope 仅限 `Faker`、`Song`、`CCB`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
+- 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要以中文写作、专有名词可保留英文，最多 20 字，scope 仅限 `Faker`、`Song`、`CCB`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
 
 ## 按任务查阅
 
