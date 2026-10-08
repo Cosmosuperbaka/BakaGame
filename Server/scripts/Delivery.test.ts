@@ -51,6 +51,15 @@ test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验
   } finally { await rm(directory, { recursive: true, force: true }); }
 }, 20_000);
 
+test("部署数据变量在写入侧与转发侧同名（GITHUB_ENV 大小写敏感）", async () => {
+  const workflow = await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text();
+  // 写入 $GITHUB_ENV 的名称必须与 appleboy envs 转发名完全一致：Linux 环境变量大小写敏感，
+  // 曾经以 BG_CHAR_url 写入、以 BG_CHAR_URL 转发，真实部署在脚本首行校验即中止。
+  const writes = workflow.match(/echo "\$\{var\}_[A-Za-z]+=/g) ?? [];
+  expect(writes).toEqual(['echo "${var}_URL=', 'echo "${var}_SHA=', 'echo "${var}_SIZE=']);
+  expect(workflow).toContain("envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_CHAR_URL,BG_CHAR_SHA,BG_CHAR_SIZE,BG_SONG_URL,BG_SONG_SHA,BG_SONG_SIZE");
+});
+
 test("环境白名单拒绝合成账号、遥测与代理，数据库落临时目录", () => {
   const env = isolatedEnvironment({ PATH: "fixture-path", SENTRY_DSN: "https://dummy.invalid", OTEL_EXPORTER_OTLP_ENDPOINT: "https://dummy.invalid", HTTPS_PROXY: "https://dummy.invalid", NETEASE_COOKIE: "dummy" }, 12345, tmpdir(), "owner");
   expect(env.PATH).toBe("fixture-path"); expect(env.SENTRY_DSN).toBe(""); expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("");

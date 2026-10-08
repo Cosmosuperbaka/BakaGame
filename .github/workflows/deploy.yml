@@ -88,9 +88,9 @@ jobs:
             size=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .size' /tmp/bangumi-manifest.json)
             [[ "$key" == bangumi/* && "$sha" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[1-9][0-9]*$ ]] \
               || { echo "❌ manifest 条目异常：$id"; exit 1; }
-            echo "${var}_url=$BANGUMI_DATA_CDN_BASE/files/$key" >> "$GITHUB_ENV"
-            echo "${var}_sha=$sha" >> "$GITHUB_ENV"
-            echo "${var}_size=$size" >> "$GITHUB_ENV"
+            echo "${var}_URL=$BANGUMI_DATA_CDN_BASE/files/$key" >> "$GITHUB_ENV"
+            echo "${var}_SHA=$sha" >> "$GITHUB_ENV"
+            echo "${var}_SIZE=$size" >> "$GITHUB_ENV"
           }
           resolve_one character BG_CHAR
           resolve_one song BG_SONG
@@ -235,13 +235,24 @@ jobs:
             # 只有"工作区是有效 SQLite 且暂存区没有有效副本"时才搬过去。
             mkdir -p "$STASH"
             for f in $DB_FILES; do
-              c="$STASH/$(basename "$f")"
+              b=$(basename "$f")
+              c="$STASH/$b"
               if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
                 if [ ! -f "$c" ] || [ "$(head -c 15 "$c" 2>/dev/null)" != "SQLite format 3" ]; then
                   mv -f "$f" "$c"
                   say "暂存实体文件：$f"
                 else
-                  rm -f "$f"
+                  # 两份都是有效实体：上次部署在停机预告前中止时，工作区副本可能已是下载
+                  # 校验过的目标数据、而暂存区仍是陈旧版本——此时取信工作区。否则重跑会
+                  # 丢掉已下载的数据、白下三百多兆。
+                  stash_sha=$(sha256sum "$c"); stash_sha=${stash_sha%% *}
+                  work_sha=$(sha256sum "$f"); work_sha=${work_sha%% *}
+                  if [ "$stash_sha" != "$(want_sha "$b")" ] && [ "$work_sha" = "$(want_sha "$b")" ]; then
+                    mv -f "$f" "$c"
+                    say "暂存副本已过期，改用工作区目标数据：$f"
+                  else
+                    rm -f "$f"
+                  fi
                 fi
               elif [ -f "$f" ]; then
                 say "工作区是 LFS 指针文本，丢弃：$f"
