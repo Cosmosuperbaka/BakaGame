@@ -4,6 +4,7 @@ import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
 import {
   MAX_SONGUESSR_COOKIE_LENGTH,
+  SONGUESSR_MAX_TEAM,
   type RoomVisibility,
   type SongArtistFilter,
   type SonGuessrClientMessage,
@@ -121,6 +122,15 @@ export const SonGuessrMessageSchemas = {
     t.Object(
       {
         spectator: t.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  "song.player.setTeam": createMessageSchema(
+    "song.player.setTeam",
+    t.Object(
+      {
+        team: t.Union([t.Integer({ minimum: 1, maximum: SONGUESSR_MAX_TEAM }), t.Null()]),
       },
       { additionalProperties: false },
     ),

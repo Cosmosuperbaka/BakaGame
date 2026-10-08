@@ -24,12 +24,13 @@ import {
   submitterPrivate,
   submittingSnapshot,
   songPrivate,
+  teamPlayingPlayers,
   waitForLyrics,
 } from "@/stories/fixtures/SonGuessr";
 import { ROOM_ID_TEST_MODE } from "@/types";
 import { AttemptList, GameStage, SongGameArea } from "./SongGameStage";
 
-const { host, me, peach, azumi } = SONG_PEOPLE;
+const { host, me, peach, azumi, kanade, long } = SONG_PEOPLE;
 const meView = playingPlayers().find((player) => player.id === me.id);
 
 /** 倒计时基于共享回合截止时间，使用固定故事时钟保证截图稳定。 */
@@ -130,6 +131,56 @@ export const ChoosingSubmitterPending: Story = {
     privateState: songPrivate({ playerId: host.id }),
     isHost: true,
     isPending: pendingOn("song.game.chooseSubmitter"),
+  },
+};
+
+const teamSnapshot = () => playingSnapshot({ players: teamPlayingPlayers() });
+const teamView = (id: string) => teamPlayingPlayers().find((player) => player.id === id);
+
+export const TeamGuessing: Story = {
+  name: "组队 · 本队猜测",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement),
+  args: {
+    snapshot: teamSnapshot(),
+    me: teamView(me.id),
+    // 队友房主猜错的一次也记在本队名下，剩余次数共用
+    privateState: guesserPrivate(DEADLINE, {
+      visibleAttempts: [songAttempt(host, 1, 8, "wrong", { guessedSong: SONG_SEARCH_RESULTS[1] })],
+    }),
+  },
+};
+
+export const TeamObserver: Story = {
+  name: "组队 · 队友出题 · 观战",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement),
+  args: {
+    snapshot: teamSnapshot(),
+    me: teamView(kanade.id),
+    privateState: submitterPrivate({ playerId: kanade.id, isSubmitter: false, teamObserver: true }),
+  },
+};
+
+export const TeamCorrect: Story = {
+  name: "组队 · 队友已猜中",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement),
+  args: {
+    snapshot: teamSnapshot(),
+    me: teamView(long.id),
+    privateState: songPrivate({
+      playerId: long.id,
+      remainingGuesses: 1,
+      visibleAttempts: [SONG_ATTEMPTS.azumiWrong, songAttempt(azumi, 2, 20, "correct", { guessedSong: SONG_SEARCH_RESULTS[0] })],
+    }),
+  },
+};
+
+export const ChoosingSubmitterTeams: Story = {
+  name: "指定出题人 · 组队",
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
+  args: {
+    snapshot: choosingSnapshot({ players: teamPlayingPlayers().map((player) => ({ ...player, roundStatus: "waiting", guessesUsed: 0 })) }),
+    privateState: songPrivate({ playerId: host.id }),
+    isHost: true,
   },
 };
 

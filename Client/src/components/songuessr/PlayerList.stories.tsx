@@ -9,6 +9,8 @@ import {
   SONG_PLAYER_PANEL,
   songBot,
   stubSongCommand,
+  teamPlayingPlayers,
+  teamWaitingPlayers,
   waitingPlayers,
   withHost,
 } from "@/stories/fixtures/SonGuessr";
@@ -44,6 +46,16 @@ export const Submitting: Story = {
 export const Playing: Story = {
   name: "猜歌阶段 · 出题 / 猜歌 / 猜中 / 完成",
   args: { players: withHost(playingPlayers()), phase: "playing" },
+};
+
+export const TeamWaiting: Story = {
+  name: "组队 · 等待阶段",
+  args: { players: withHost(teamWaitingPlayers()) },
+};
+
+export const TeamPlaying: Story = {
+  name: "组队 · 共享次数 / 观战 / 队伍猜中",
+  args: { players: withHost(teamPlayingPlayers()), phase: "playing", maxGuesses: 3 },
 };
 
 export const HostManage: Story = {

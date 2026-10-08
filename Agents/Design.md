@@ -56,7 +56,7 @@
 - 面板之上的就近弹出层（表情选择器、提及候选、玩家操作菜单、`Select` 下拉、`Tooltip`、测试控制器、骑缝按钮等）统一用 `index.css` 的 `floating-surface` 工具类（`rounded-md border bg-background/95 backdrop-blur-md`），靠模糊与阴影从面板里立起来，而不是靠加深底色。该类本身不带阴影，由调用处按 §5 的三档给出：就近浮层 `shadow-md`，测试控制器这类盖住整块内容的面板 `shadow-lg`，骑缝按钮是按钮，取 `shadow-sm`。该类不参与 tailwind-merge 合并，调用处不再叠加同类圆角、描边或底色。弹窗主体（`DialogContent`）、全局浮动提醒与状态提示（`Toast`）不属于就近浮层，分别沿用 `bg-popover`、§6 的 `bg-card/95` 与 §3.1 的不透明底。`bg-secondary` 明度 0.8846，作浮层底色偏深；`bg-card` 明度 0.9914，几乎是纯白，两者都不作浮层底色。浮层内的分隔线用不带透明度的 `border-t` / `border-r`，次要文字取 `text-muted-foreground`，悬停态用实底 `bg-accent` 配 `text-accent-foreground`，不用 `bg-accent/60` 这类会被浮层底色吃掉的半透明档。
 - 深色模式为同色系低明度版本，新增颜色必须同时在 `:root` 与 `.dark` 下确认对比度。表面明度顺序在两种主题下并不对称：亮色 `secondary` < `muted` < `panel` < `background` < `card`，暗色 `background` < `muted` < `panel` < `card` < `secondary`。以下写法已按此修正，新增同类控件照做：
   - 骨架条与徽章占位用 `bg-foreground/6` 至 `/10`，不用 `bg-muted`（暗色 muted 比 card 更暗，骨架会整片消失）。
-  - 选中指示器由公共的 `SlidingIndicator` 统一给出，调用处不再另画，按容器取形状：`SegmentedControl` 是全圆角 `bg-muted` 凹槽里的胶囊底块（`pill`，带一圈 `ring-primary/25`），与步进器同一种凹槽；`Tabs` 不铺轨道，只在底边分隔线上走一道 2px 主色下划线（`underline`），选中项文字转 `text-foreground`；CCB 队伍九宫格用方块底块（`block`）。底块暗色补 `dark:bg-secondary`；只用 `bg-background` 时与 muted 轨道几乎同色。
+  - 选中指示器由公共的 `SlidingIndicator` 统一给出，调用处不再另画，按容器取形状：`SegmentedControl` 是全圆角 `bg-muted` 凹槽里的胶囊底块（`pill`，带一圈 `ring-primary/25`），与步进器同一种凹槽；`Tabs` 不铺轨道，只在底边分隔线上走一道 2px 主色下划线（`underline`），选中项文字转 `text-foreground`；队伍九宫格（`TeamPicker`）用方块底块（`block`）。底块暗色补 `dark:bg-secondary`；只用 `bg-background` 时与 muted 轨道几乎同色。
   - `Switch` 关闭态滑块暗色改用 `bg-foreground/75`，否则深色滑块压在 `input` 轨道上看不见。
   - 遮罩层暗色用 `dark:bg-black/50`：`bg-foreground/25` 在暗色下是浅色，会把页面提亮而不是压暗。
 
@@ -87,13 +87,13 @@
 | 页面底 | `bg-background` | 页面底色；实色块或状态浅底上的内嵌小块（票数、身份标签、票型明细行、封面与图片占位、歌词框）；自成一段的流内区块（主持人限时栏）；聊天输入托盘 |
 | 面板 | `bg-panel` | 三块主面板；面板内的区内遮罩统一 `bg-panel/90 backdrop-blur-sm`（揭词背板） |
 | 实色块 | `bg-muted`（无描边）、`bg-card` | `bg-muted` 承载面板内的主要内容块（阶段分区、结算表、答案卡、提示、投票选项）与页面上的计数角标；`bg-card` 是页面上的卡片（大厅房间卡片及其骨架、大厅输入框） |
-| 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、身份分配轨道）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章、CCB 玩家栏的队伍块 |
+| 淡色块 | `bg-muted/40` | 流内唯一的半透明中性档：设置分组、凹槽（链接框、身份分配轨道）、虚线空状态与占位、表头与底栏这类次要条带、中性提示角标、倒计时条的中性态、本人的身份预测徽章、玩家栏的队伍块 |
 | 浮层 | `floating-surface`、`bg-popover`、`bg-card/95` | 就近浮层、弹窗主体、全局浮动提醒，见 §3；状态提示 `Toast` 例外，外层取不透明的 `bg-background`，见 §3.1 |
 
 - 实色块上不再叠 `bg-muted/NN`：两者几乎同色，内嵌小块改用 `bg-background`。中性描边与分隔线一律不带透明度（`border-border`、`bg-border`）；实色块内的分隔线用 `border-background` / `divide-background`，这类表格与折叠标题悬停取 `accent/40`，改成 `bg-background` 会抹掉分隔线。
 - 淡色块与虚线空状态不加外投影，凹槽可用 `shadow-inner`。流内区块不加 `backdrop-blur`，模糊只留给浮层与区内遮罩。
 - 纸纹理：`index.css` 的 `--paper-grain` 是 160px 平铺的道林纸微细纸齿（SVG `feTurbulence`），基础层仅把它铺在整页底层画布 `body` 上。采用 3 八度超微观哑光微纸齿（基频 `0.75`），160px 严密无缝拼接，彻底消除任何中低频粗斑、斑疹或波状水渍感；亮色为超微观哑光微纸齿（Alpha 峰值约 5.0%，平均压暗约 2.0%），暗色为极淡暖象牙白微纸齿（Alpha 峰值约 4.0%，平均提亮约 1.5%，无电视雪花感）。所有业务表面类（卡片 `bg-card`、面板 `bg-panel`、按钮 `bg-secondary`、淡色块 `bg-muted/40`、弹窗 `bg-popover` 等）均保持纯净实底，不铺纹理，确保按钮、文字与表单控件清晰锐利、零杂质。整页外壳容器与房间顶栏（`LandingPage`、`RoomShell`、`RoomHeader`、`LobbyPage` 等）不设不透明底色遮挡 `body`。文字令牌的对比度按铺纹理后的实测标定，调整纹理强度或表面色后按 §3.1 重新核对。
-- 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的 ghost 小按钮用 `hover:bg-background`。带滑动指示器的容器（`SegmentedControl`、`Tabs`、CCB 队伍面板）里，未选中项悬停只把文字加深到 `text-foreground`，不加底色，免得与底块或下划线抢位。状态色的悬停预览见 §3.1 的 `/5`。
+- 悬停分三类：流内可点击的行、卡片、选项与可选角标用 `hover:bg-accent/40`，不改文字色；按钮、仿按钮的自定义控件与浮层内的条目用实底 `hover:bg-accent` 配 `hover:text-accent-foreground`（`Button` 的 `outline`、`ghost` 自带此档，`secondary` 保留自身的 `hover:bg-secondary/80`）；嵌在淡色轨道或状态色块里的 ghost 小按钮用 `hover:bg-background`。带滑动指示器的容器（`SegmentedControl`、`Tabs`、队伍面板）里，未选中项悬停只把文字加深到 `text-foreground`，不加底色，免得与底块或下划线抢位。状态色的悬停预览见 §3.1 的 `/5`。
 
 ## 4. 字体与文案
 
@@ -219,13 +219,13 @@
 - 游戏阶段内容保持居中、限定合理最大宽度。三个游戏按内容取同一档：等待页、单表单与单卡片阶段 `max-w-md`，候选网格与投票类 `max-w-lg`/`max-w-xl`，猜测、发言与结算这类带表格或长列表的阶段 `max-w-2xl`；等待页内间距统一 `space-y-5`；核心操作在当前阶段内容之后，浮动操作固定在所属的相对定位容器内。
 - 等待页底部的主操作三个游戏同一口径：房主只有整宽的开始按钮（`size="lg"`），不能开始时按钮禁用并写明原因（「等待玩家加入」「等待玩家准备 (x/y)」「暂无可选出题人」）；房主没有准备按钮，准备进度只数其他参与者。非房主只有居中的准备切换，已准备时转为描边的「取消准备」。
 - 阶段内按钮只按两种口径排，不追加尺寸覆盖：表单的提交按钮整宽 `size="lg"`，推进类按钮居中 `size="lg"`。「取消本局」这类退回动作放在阶段底部操作行靠右，并经确认弹窗。猜歌与 CCB 的结算标题为「答案揭晓」（谁是卧底写获胜阵营）；三个游戏的结算操作区 `flex flex-wrap justify-center gap-2`，按钮 `size="lg"`、描边的次按钮在前；非房主在同一位置看到「等待房主…」说明。候选网格不可操作时传 `disabled`，不靠隐藏。
-- 指定出题人或主持人是独立阶段，三个游戏同一形态：`PhaseHeader` 加 `CandidateGrid`，旁观玩家一组排在前面并标为推荐（`tone="recommended"`），参与者一组在后；点候选即指定；协议允许退回的（CCB）在下方放一个描边的「返回等待」。非房主只看等待说明。候选名单只取服务端下发的名单，客户端不自行筛选。CCB 的候选名后带队伍号，组提示写明「指定后其队友本局一起观战」。
+- 指定出题人或主持人是独立阶段，三个游戏同一形态：`PhaseHeader` 加 `CandidateGrid`，旁观玩家一组排在前面并标为推荐（`tone="recommended"`），参与者一组在后；点候选即指定；协议允许退回的（CCB）在下方放一个描边的「返回等待」。非房主只看等待说明。候选名单只取服务端下发的名单，客户端不自行筛选。组队时（CCB、猜歌）候选名后带队伍号，组提示写明「指定后其队友本局一起观战」；猜歌没有候选时显示「暂无可选出题人」，房主的开始按钮同文案禁用。
 - 描述、平票 PK 与补充发言阶段用两列表格呈现本轮发言：左列玩家名、右列描述。本轮应发言的玩家一次性全部列出，行高固定，内容揭示时不引起相邻行位移。
 - 发言按顺序揭示：只要顺序在前的玩家尚未提交，其后已提交的内容也保持折起，避免抢先发言影响他人判断。出题人与旁观者可见全部内容，本人始终可见自己那一句。未公开的格子用 `PendingSpeech` 占位，不用短横线或空白。
 - 发言历史的等待占位只给本列确实该发言的玩家。应发言名单由 `buildDescriptionColumns` 的 `expectedPlayerIds` 给出：已结束的列取实际发言过的人，进行中的列再并入服务端下发的待提交名单。出题人、旁观者与当时已出局的玩家格子留空。
 - 各游戏玩家栏统一使用 `components/common/PlayerAvatar.tsx` 的首字方块头像：取昵称首个码位渲染，本人用 `primary` 底色区分。头像只作昵称旁的身份提示，不编码身份、得分或在线状态；尺寸固定 `h-8 w-8`，玩家列与发言历史的逐行对齐依赖该宽度，换渲染方式不得改尺寸。未接入真实头像来源前，不新增头像协议字段或登录占位入口。
 - 玩家行只有 `components/common/PlayerRow.tsx` 一处实现，三个游戏不再各写一套。行结构固定为左端头像、中间双行信息、右侧分数；差异全部由插槽注入：`badges` 放状态与身份徽章，`meta` 放徽章之后的补充文字（如「2 队 · 3/10 次」），`detail` 放第三行内容（如 CCB 的猜测进度），`actionsHeader` 与 `actions` 放操作浮层。共用 `PLAYER_ROW_HEIGHT` 的 `min-h-14`，发言历史继续由同一行网格对齐。名字可截断且提供完整 `title`（玩家行之外截断的名字同样补 `title`），分数和操作提示不得被长名字挤出。分数经 `ui/AnimatedNumber` 显示：变化时逐位滚到新值、加分时上方浮起「+N」；可访问名始终是「N 分」。
-- 玩家栏固定「玩家」「旁观」两组，分组标题用 `PlayerGroupTitle`。旁观分组已经说明身份，行内不再挂「旁观」徽章；分组为空且本人不能加入时整组不渲染。旁观切换统一用 `components/common/SpectatorToggle`，入口接在要去的那一组之后：「加入旁观」在旁观分组下方，「取消旁观」在玩家分组下方。允许对局中排队的游戏（猜歌）传 `queued` 与 `selected`，文案随之换成「下轮加入…」并以次要底色标出已排队。游戏特有的分组（CCB 的队伍）在玩家组内分块：队伍块用淡色块 `bg-muted/40` 包住标题行与队员行，标题行给队号、人数、合计分与共享进度，个人游玩的人接在最后、只有一行小标题不加底；选队伍这类本人设置放进等待页（CCB 队伍面板，三列九格、选中底块与分段控件同一个 `SlidingIndicator`），玩家栏只展示。
+- 玩家栏固定「玩家」「旁观」两组，分组标题用 `PlayerGroupTitle`。旁观分组已经说明身份，行内不再挂「旁观」徽章；分组为空且本人不能加入时整组不渲染。旁观切换统一用 `components/common/SpectatorToggle`，入口接在要去的那一组之后：「加入旁观」在旁观分组下方，「取消旁观」在玩家分组下方。允许对局中排队的游戏（猜歌）传 `queued` 与 `selected`，文案随之换成「下轮加入…」并以次要底色标出已排队。队伍（CCB、猜歌）在玩家组内分块，分组与块外壳统一用 `lib/Teams` 的 `teamGroups` 与 `components/common/TeamSection`：队伍块用淡色块 `bg-muted/40` 包住标题行与队员行，标题行给队号、人数、合计分与共享进度，个人游玩的人接在最后、只有一行小标题不加底；行 key 的分组写成 `active:${team ?? "solo"}`。选队伍这类本人设置放进等待页，统一用 `components/common/room/TeamPicker`（三列九格、选中底块与分段控件同一个 `SlidingIndicator`），各游戏只包一层传入成员、命令与说明；玩家栏只展示。
 - 玩家行的操作浮层由 `PlayerRow` 自己持有：有操作权限时整行是原生按钮并带可见聚焦态，Enter 与空格都能打开；房主任免、转移房主等共有动作取 `hostActions` 组装，避免各游戏重复写同一组动作。动作不可执行时保留在浮层里并禁用，不直接隐藏造成位置跳变。
 - 纵向 `ScrollArea` 的内容层使用块布局，禁止 Radix 默认的表格最小内容宽度撑开玩家栏。长名字、分数和历史展开必须用浏览器验证实际可见范围，不能仅以页面没有横向滚动判定通过。
 - 玩家身份一律以双字徽章 `whoisfaker/layout/RoleBadge` 呈现，玩家栏、出题人的投票与夜间预览、结算身份表共用这一个实现：出题人视角与结算公开的真实身份用常规底色，本人的身份预测改用淡色块 `bg-muted/40` 表达“未确认”，并以视觉隐藏的「预测」前缀告诉读屏（不在无语义的 `span` 上写 `aria-label`，读屏多半不读）。有操作权限的整行使用原生按钮与可见聚焦态，支持 Enter/空格打开操作浮层。

@@ -9,6 +9,7 @@ import {
   SONG_STAGE_FRAME,
   songPlayer,
   songSnapshot,
+  teamWaitingPlayers,
   waitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
 import { SongWaitingPhase } from "./SongWaitingPhase";
@@ -50,6 +51,22 @@ export const HostStarting: Story = {
     me: find(host.id),
     isHost: true,
     isPending: pendingOn("song.game.start"),
+  },
+};
+
+export const TeamPicking: Story = {
+  name: "玩家 · 选择队伍",
+  args: { snapshot: songSnapshot({ players: teamWaitingPlayers() }), me: teamWaitingPlayers().find((player) => player.id === me.id) },
+};
+
+export const HostNoCandidate: Story = {
+  name: "房主 · 组队后暂无可选出题人",
+  args: {
+    // 两人同队：谁出题都会让队友一起观战，留不下猜歌的人
+    snapshot: songSnapshot({ players: [songPlayer(host, { isReady: true, team: 1 }), songPlayer(me, { isReady: true, team: 1 })] }),
+    me: songPlayer(host, { isReady: true, team: 1, isHost: true }),
+    isHost: true,
+    submitterCandidateIds: [],
   },
 };
 

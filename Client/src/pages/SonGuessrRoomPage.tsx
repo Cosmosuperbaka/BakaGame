@@ -163,7 +163,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         center={<>
           {displayRound > 0 ? <HeaderCounter>第 {displayRound} 轮</HeaderCounter> : null}
           {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人" /> : null}
-          {isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
+          {isSpectator || privateState.teamObserver ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
         </>}
         actions={<VolumeControl volume={volume} onVolumeChange={setVolume} />}
         connectionIssue={connected ? null : "断线中..."}
@@ -177,6 +177,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 phase={snapshot.phase}
                 allowSpectators={snapshot.allowSpectators}
                 questionType={snapshot.settings.questionType}
+                maxGuesses={snapshot.settings.maxGuessesPerRound}
               />
             </div>
           </PlayerColumn>
@@ -238,6 +239,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 phase={snapshot.phase}
                 allowSpectators={snapshot.allowSpectators}
                 questionType={snapshot.settings.questionType}
+                maxGuesses={snapshot.settings.maxGuessesPerRound}
               />
             ),
           },

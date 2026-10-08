@@ -48,7 +48,7 @@
   - 会改动当前页内容的副作用放在换页之后。离开房间先导航、房间页卸载后再退房（谁是卧底、猜歌在卸载 cleanup 里调 `leaveRoom`，CCB 由大厅挂载时退房并重新订阅）：先退再走，快照拍到的是清空后的加入中占位，清空还会触发「脱离房间」的 effect 再导航一次、打断进行中的过渡。退房回包可能晚于下一次进房，store 只清掉发起这次退房的会话。
   - 过渡期间页面不响应点击，时长即冻结时长：整页约 0.42s（`spring.swift`），带共享元素约 0.6s（`spring.settle`）。
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
-- 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、CCB 队伍面板的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
+- 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、队伍面板 `TeamPicker` 的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
 - 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。与神灯弹窗同一处的标签（更新日志 / 关于）传 `swap="genie"` 改走 `genieTab`：旧内容吸回自己的标签，新内容从被点的标签倒出，路径由 `Tabs` 实测面板中心到新旧标签中心得出。
 - 聊天发送是一次连续的神灯：输入框里的文字先凝成一枚 aria-hidden 胶囊，按 `genieKeyframes(…, true)` 收进发送按钮（`chatSend.collapse`）；服务端回显的自己那条消息随后从发送按钮倒出、升到列表里的落点（`chatSend.rise`），这条回显不再叠 `chatMessageLaunch` 的弹入。回显早于收拢播完时等收拢结束再升起，发送失败则不升起。别人的消息照常用 `chatMessageLaunch`。

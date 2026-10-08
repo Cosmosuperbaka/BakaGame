@@ -1,13 +1,13 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import type { CCBPlayer, CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { listContainer, listItem, playerRelayout } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
+import { TeamSection } from "@/components/common/TeamSection";
+import { listContainer } from "@/lib/Motion";
+import { teamGroups } from "@/lib/Teams";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { AnimatePresence, motion } from "framer-motion";
 import { CCBMarks } from "./CCBMarks";
@@ -38,15 +38,6 @@ function resolveCCBStatus(player: CCBPlayer, snapshot: CCBRoomSnapshot): CCBStat
   // 结算后仍是「猜测中」的人就是本局没猜中的，不再挂进行中的警示色。
   if (snapshot.phase === "settled" && player.status === "playing") return { label: "未猜中", tone: "default" };
   return statuses[player.status];
-}
-
-/** 参与者按队伍分组：队伍按队号升序在前，个人游玩的人在后；组内保持服务端座次。 */
-function teamGroups(players: CCBPlayer[]): Array<{ team: number | null; members: CCBPlayer[] }> {
-  const groups = new Map<number | null, CCBPlayer[]>();
-  for (const player of players) groups.set(player.team, [...(groups.get(player.team) ?? []), player]);
-  return [...groups.entries()]
-    .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : a - b))
-    .map(([team, members]) => ({ team, members }));
 }
 
 export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
@@ -97,20 +88,9 @@ export function CCBPlayerList({ snapshot, privateState }: { snapshot: CCBRoomSna
             <div className="flex flex-col gap-1.5">
               <AnimatePresence initial={false}>
                 {groups.map(({ team, members }) => (
-                  <motion.section
-                    key={team ?? "solo"}
-                    variants={listItem}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    layout="position"
-                    transition={playerRelayout}
-                    aria-label={team === null ? "个人游玩" : `${team} 队`}
-                    className={cn("min-w-0", team !== null && "rounded-md bg-muted/40 p-0.5")}
-                  >
-                    <CCBTeamHeader team={team} members={members} snapshot={snapshot} />
+                  <CCBTeamSection key={team ?? "solo"} team={team} members={members} snapshot={snapshot}>
                     {renderRows(members, team !== null)}
-                  </motion.section>
+                  </CCBTeamSection>
                 ))}
               </AnimatePresence>
             </div>
@@ -143,31 +123,32 @@ function sharedProgress(members: CCBPlayer[]): CCBPlayer | null {
 }
 
 /**
- * 队伍块的标题行：队号、人数与全队合计分。分数仍按人存储（离队后个人分保留），这里只是相加。
- * 猜测阶段共享的次数、同步提交与进度只在这里出现一次，不在每个队员行重复。
+ * 队伍块：标题行给队号、人数与全队合计分（见 `TeamSection`）。
+ * 猜测阶段共享的次数、同步提交与进度只在标题出现一次，不在每个队员行重复。
  */
-function CCBTeamHeader({ team, members, snapshot }: { team: number | null; members: CCBPlayer[]; snapshot: CCBRoomSnapshot }) {
-  if (team === null) {
-    return <p className="px-2 pt-1 pb-0.5 font-sans text-2xs text-muted-foreground">个人</p>;
-  }
-  const total = members.reduce((sum, player) => sum + player.score, 0);
-  const shared = snapshot.phase === "guessing" ? sharedProgress(members) : null;
+function CCBTeamSection({ ref, team, members, snapshot, children }: {
+  ref?: Ref<HTMLElement>;
+  team: number | null;
+  members: CCBPlayer[];
+  snapshot: CCBRoomSnapshot;
+  children: ReactNode;
+}) {
+  const shared = team !== null && snapshot.phase === "guessing" ? sharedProgress(members) : null;
   const detail = [
     `${members.length} 人`,
     shared ? `${shared.attempts}/${snapshot.settings.maxAttempts} 次` : null,
     shared && snapshot.settings.syncMode && shared.syncCompleted ? "已提交" : null,
   ].filter(Boolean).join(" · ");
   return (
-    <div className="space-y-0.5 px-2 pt-1 pb-0.5">
-      <div className="flex min-w-0 items-baseline gap-1.5">
-        <span className="text-xs font-medium">{team} 队</span>
-        <span className="min-w-0 flex-1 truncate font-sans text-2xs text-muted-foreground">{detail}</span>
-        <span aria-label={`合计 ${total} 分`} className="flex shrink-0 items-baseline gap-0.5 font-sans text-2xs text-muted-foreground tabular-nums">
-          合计<AnimatedNumber value={total} className="text-xs text-foreground" />分
-        </span>
-      </div>
-      {shared?.marks ? <CCBMarks marks={shared.marks} name={`${team} 队`} /> : null}
-    </div>
+    <TeamSection
+      ref={ref}
+      team={team}
+      scores={members.map((player) => player.score)}
+      detail={detail}
+      extra={shared?.marks ? <CCBMarks marks={shared.marks} name={`${team} 队`} /> : null}
+    >
+      {children}
+    </TeamSection>
   );
 }
 

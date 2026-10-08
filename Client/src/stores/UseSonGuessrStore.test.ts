@@ -82,6 +82,8 @@ const privateState: SonGuessrPrivateState = {
   playerId: "player-1",
   sessionToken: "live-token",
   isSubmitter: false,
+  teamObserver: false,
+  submitterCandidateIds: [],
   canSubmitSong: false,
   canGuess: false,
   canGiveUp: false,

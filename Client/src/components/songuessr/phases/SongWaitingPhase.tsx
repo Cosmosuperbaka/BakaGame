@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { TeamPicker } from "@/components/common/room/TeamPicker";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
 import {
@@ -49,6 +50,24 @@ function SongSettingsGroups({ snapshot, solo = false, readOnly = false, account 
   );
 }
 
+type SongRun = (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+
+/** 等待页的队伍面板：只给参与者，旁观者没有队伍。同队共用次数、记录与限时，一人猜中全队结束。 */
+function SongTeamPicker({ snapshot, me, run, isPending }: {
+  snapshot: SonGuessrRoomSnapshot; me?: SonGuessrPlayerView; run: SongRun; isPending?: (type: string) => boolean;
+}) {
+  if (!me || me.membership !== "active") return null;
+  return (
+    <TeamPicker
+      players={snapshot.players.filter((player) => player.membership === "active")}
+      selfId={me.id}
+      switching={Boolean(isPending?.("song.player.setTeam"))}
+      hint="同队共享次数与猜测"
+      onPick={(team) => void run("song.player.setTeam", { team })}
+    />
+  );
+}
+
 export function SongSoloWaitingPanel({
   snapshot,
   run,
@@ -81,6 +100,8 @@ export function SongSoloWaitingPanel({
 
 export function SongHostWaitingPanel({
   snapshot,
+  me,
+  noCandidate = false,
   showProgress,
   readyCount,
   nonHostTotal,
@@ -90,6 +111,9 @@ export function SongHostWaitingPanel({
   isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
+  /** 手动出题且没有可指定的出题人（组队后谁出题都会让整队观战、留不下猜歌的人） */
+  noCandidate?: boolean;
   showProgress: boolean;
   readyCount: number;
   nonHostTotal: number;
@@ -108,17 +132,21 @@ export function SongHostWaitingPanel({
 
       {showProgress ? <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" /> : null}
 
+      <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
+
       <SongSettingsGroups snapshot={snapshot} account />
 
       <Button
         size="lg"
-        disabled={!canStart || isStarting}
+        disabled={!canStart || noCandidate || isStarting}
         loading={isStarting}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
         {!snapshot.musicAccountReady && allReady
           ? "请先扫码登录网易云账号"
+          : allReady && noCandidate
+          ? "暂无可选出题人"
           : allReady
           ? "开始游戏"
           : nonHostTotal === 0
@@ -133,6 +161,8 @@ export interface SongWaitingPhaseProps {
   snapshot: SonGuessrRoomSnapshot;
   me?: SonGuessrPlayerView;
   isHost: boolean;
+  /** 房主在手动出题时收到的可选出题人（见 `SonGuessrPrivateState.submitterCandidateIds`） */
+  submitterCandidateIds?: string[];
   run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
   isPending?: (type: string) => boolean;
 }
@@ -141,6 +171,7 @@ export function SongWaitingPhase({
   snapshot,
   me,
   isHost,
+  submitterCandidateIds,
   run,
   isPending,
 }: SongWaitingPhaseProps) {
@@ -159,6 +190,8 @@ export function SongWaitingPhase({
     return (
       <SongHostWaitingPanel
         snapshot={snapshot}
+        me={me}
+        noCandidate={snapshot.settings.questionMode !== "automatic" && submitterCandidateIds?.length === 0}
         showProgress={showProgress}
         readyCount={readyCount}
         nonHostTotal={nonHostActive.length}
@@ -175,6 +208,7 @@ export function SongWaitingPhase({
       <PhaseHeader icon={Gamepad2} title="等待开始" />
       <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
       {showProgress ? <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" /> : null}
+      <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
       {/* 与房主同一份设置结构，只读。 */}
       <SongSettingsGroups snapshot={snapshot} readOnly />
       {me?.membership === "active" ? (

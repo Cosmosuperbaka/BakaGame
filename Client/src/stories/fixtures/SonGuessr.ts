@@ -45,7 +45,7 @@ type Person = { id: string; name: string };
 
 export function songPlayer(person: Person, overrides: Partial<SonGuessrPlayerView> = {}): SonGuessrPlayerView {
   return {
-    id: person.id, name: person.name, score: 0, membership: "active", online: true, isReady: false, isBot: false,
+    id: person.id, name: person.name, score: 0, team: null, membership: "active", online: true, isReady: false, isBot: false,
     isHost: false, correctGuesses: 0, totalGuesses: 0, roundStatus: "waiting", guessesUsed: 0, ...overrides,
   };
 }
@@ -77,8 +77,10 @@ export function songSnapshot(overrides: Partial<SonGuessrRoomSnapshot> = {}): So
 
 export function songPrivate(overrides: Partial<SonGuessrPrivateState> = {}): SonGuessrPrivateState {
   return {
-    playerId: ME.id, sessionToken: "story-session", isSubmitter: false, canSubmitSong: false, canGuess: false,
-    canGiveUp: false, remainingGuesses: 3, visibleAttempts: [], ...overrides,
+    playerId: ME.id, sessionToken: "story-session", isSubmitter: false, teamObserver: false,
+    // 服务端只发给房主；夹具默认给出全部在线真人，房主视角的选人与开局按钮才可用。
+    submitterCandidateIds: [HOST, ME, PEACH, AZUMI, LONG, PASSERBY].map((person) => person.id),
+    canSubmitSong: false, canGuess: false, canGiveUp: false, remainingGuesses: 3, visibleAttempts: [], ...overrides,
   };
 }
 
@@ -380,6 +382,28 @@ export function playingPlayers(): SonGuessrPlayerView[] {
     songPlayer(LONG, { isReady: true, score: 3, correctGuesses: 1, totalGuesses: 3, roundStatus: "correct", guessesUsed: 1 }),
     songPlayer(PASSERBY, { membership: "spectator", roundStatus: "spectator" }),
   ];
+}
+
+/** 组队后的等待名单：1 队房主与我，2 队桃与奏，梓与长名在 3 队，旁观者没有队伍。 */
+export function teamWaitingPlayers(): SonGuessrPlayerView[] {
+  const teams: Record<string, number> = { [HOST.id]: 1, [ME.id]: 1, [PEACH.id]: 2, [KANADE.id]: 2, [AZUMI.id]: 3, [LONG.id]: 3 };
+  return waitingPlayers().map((player) => ({ ...player, isReady: true, online: true, team: teams[player.id] ?? null }));
+}
+
+/**
+ * 组队的第 3 轮进行中：桃（2 队）出题，队友奏本局观战；1 队共用一份次数，已用 1 次；
+ * 3 队梓猜中，队友长名随之结束（队伍猜中）。
+ */
+export function teamPlayingPlayers(): SonGuessrPlayerView[] {
+  const status: Record<string, Partial<SonGuessrPlayerView>> = {
+    [HOST.id]: { roundStatus: "guessing", guessesUsed: 1, score: 4 },
+    [ME.id]: { roundStatus: "guessing", guessesUsed: 1, score: 3 },
+    [PEACH.id]: { roundStatus: "submitter", score: 3 },
+    [KANADE.id]: { roundStatus: "observing", score: 1 },
+    [AZUMI.id]: { roundStatus: "correct", guessesUsed: 2, score: 5 },
+    [LONG.id]: { roundStatus: "teamCorrect", guessesUsed: 2, score: 2 },
+  };
+  return teamWaitingPlayers().map((player) => ({ ...player, ...status[player.id] }));
 }
 
 /** 第 3 轮结算：分数与 `SONG_ROUND_SCORES` 一致，海豹已投降。 */

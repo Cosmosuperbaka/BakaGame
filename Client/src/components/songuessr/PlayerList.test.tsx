@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,7 @@ const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGues
   id: "player-1",
   name: "测试玩家",
   score: 10,
+  team: null,
   membership: "active",
   online: true,
   isReady: true,
@@ -149,5 +150,26 @@ describe("SonGuessr PlayerList", () => {
     } finally {
       useSonGuessrStore.setState({ sendCommand: originalSendCommand });
     }
+  });
+
+  it("组队时按队伍分块：标题给合计分与共享次数，观战与队伍猜中各有状态", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "s", name: "出题人", team: 2, roundStatus: "submitter" }),
+      createMockPlayer({ id: "o", name: "观战队友", team: 2, roundStatus: "observing", score: 4 }),
+      createMockPlayer({ id: "a", name: "甲", team: 1, roundStatus: "correct", guessesUsed: 2, score: 3 }),
+      createMockPlayer({ id: "b", name: "乙", team: 1, roundStatus: "teamCorrect", guessesUsed: 2, score: 5 }),
+      createMockPlayer({ id: "c", name: "丙", team: null, roundStatus: "guessing", guessesUsed: 1 }),
+    ];
+
+    render(<PlayerList players={players} myPlayerId="c" isHost={false} phase="playing" allowSpectators maxGuesses={3} />);
+
+    const sections = screen.getAllByRole("region");
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["1 队", "2 队", "个人游玩"]);
+    expect(within(sections[0]!).getByLabelText("合计 8 分")).toBeInTheDocument();
+    expect(within(sections[0]!).getByText("2 人 · 2/3 次")).toBeInTheDocument();
+    expect(within(sections[0]!).getByText("队伍猜中")).toBeInTheDocument();
+    // 出题人与观战队友都不在作答，队伍标题不给次数
+    expect(within(sections[1]!).getByText("2 人")).toBeInTheDocument();
+    expect(within(sections[1]!).getByText("观战")).toBeInTheDocument();
   });
 });

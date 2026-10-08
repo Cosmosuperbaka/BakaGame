@@ -1,11 +1,13 @@
-import { useCallback, type Ref } from "react";
+import { useCallback, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { TeamSection } from "@/components/common/TeamSection";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer } from "@/lib/Motion";
+import { teamGroups } from "@/lib/Teams";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@/types";
 
@@ -22,6 +24,8 @@ export interface PlayerListProps {
   allowSpectators: boolean;
   /** 本局题型：听歌识番时作答状态写「猜番」 */
   questionType?: SongQuestionType;
+  /** 每局猜测次数上限：组队时队伍标题给出共享的已用次数 */
+  maxGuesses?: number;
 }
 
 export function PlayerList({
@@ -31,13 +35,19 @@ export function PlayerList({
   phase,
   allowSpectators,
   questionType = "song",
+  maxGuesses,
 }: PlayerListProps) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
-  // 换组后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
-  const rowKey = usePlayerRowKeys(players.map((player) => ({ id: player.id, group: player.membership })));
+  const groups = teamGroups(activePlayers);
+  const teamed = groups.some((group) => group.team !== null);
+  // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
+  const rowKey = usePlayerRowKeys(players.map((player) => ({
+    id: player.id,
+    group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
+  })));
   const me = players.find((player) => player.id === myPlayerId);
   const waitingPhase = phase === "waiting";
   const canJoinSpectators =
@@ -93,22 +103,37 @@ export function PlayerList({
     />
   );
 
+  const renderRows = (list: SonGuessrPlayerView[]) => (
+    <motion.div
+      className="flex flex-col gap-px"
+      variants={listContainer(list.length)}
+      initial={false}
+      animate="animate"
+    >
+      <AnimatePresence initial={false} mode="popLayout">
+        {list.map((player) => renderRow(player, false))}
+      </AnimatePresence>
+    </motion.div>
+  );
+
   return (
     <ScrollArea className="h-full">
       <PlayerListLayout>
         <div className="min-w-0 px-2">
           <div className="relative flex min-w-0 w-full flex-col py-3">
             <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-            <motion.div
-              className="flex flex-col gap-px"
-              variants={listContainer(activePlayers.length)}
-              initial={false}
-              animate="animate"
-            >
-              <AnimatePresence initial={false} mode="popLayout">
-                {activePlayers.map((player) => renderRow(player, false))}
-              </AnimatePresence>
-            </motion.div>
+            {teamed ? (
+              // 有人组队时按队伍分块：队伍一块带标题与共享次数，个人游玩的人接在最后、不加底。
+              <div className="flex flex-col gap-1.5">
+                <AnimatePresence initial={false}>
+                  {groups.map(({ team, members }) => (
+                    <SongTeamSection key={team ?? "solo"} team={team} members={members} phase={phase} maxGuesses={maxGuesses}>
+                      {renderRows(members)}
+                    </SongTeamSection>
+                  ))}
+                </AnimatePresence>
+              </div>
+            ) : renderRows(activePlayers)}
 
             {canJoinPlayers ? (
               <SpectatorToggle
@@ -146,6 +171,30 @@ export function PlayerList({
         </div>
       </PlayerListLayout>
     </ScrollArea>
+  );
+}
+
+/**
+ * 队伍块：同队共用一份猜测次数，作答中由标题给出一次「已用/上限」；出题人的队友本局观战，不计入。
+ * 出题人自己不在任何队伍单元里，同样排除。
+ */
+function SongTeamSection({ ref, team, members, phase, maxGuesses, children }: {
+  ref?: Ref<HTMLElement>;
+  team: number | null;
+  members: SonGuessrPlayerView[];
+  phase: SonGuessrPhase;
+  maxGuesses?: number;
+  children: ReactNode;
+}) {
+  const guessing = members.filter((player) => player.roundStatus !== "observing" && player.roundStatus !== "submitter");
+  const shared = phase === "playing" && maxGuesses !== undefined && guessing.length > 0
+    && guessing.every((player) => player.guessesUsed === guessing[0]!.guessesUsed)
+    ? guessing[0]!.guessesUsed : null;
+  const detail = [`${members.length} 人`, shared !== null ? `${shared}/${maxGuesses} 次` : null].filter(Boolean).join(" · ");
+  return (
+    <TeamSection ref={ref} team={team} scores={members.map((player) => player.score)} detail={detail}>
+      {children}
+    </TeamSection>
   );
 }
 
@@ -215,7 +264,9 @@ function resolveSongStatus(
   }
   if (player.roundStatus === "submitter") return { label: "出题", tone: "questioner" };
   if (player.roundStatus === "guessing") return { label: questionType === "anime" ? "猜番" : "猜歌", tone: "warning" };
+  if (player.roundStatus === "observing") return { label: "观战", tone: "default" };
   if (player.roundStatus === "correct") return { label: "猜中", tone: "success" };
+  if (player.roundStatus === "teamCorrect") return { label: "队伍猜中", tone: "success" };
   if (player.roundStatus === "finished") return { label: "完成", tone: "default" };
   return null;
 }

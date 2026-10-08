@@ -29,6 +29,7 @@ import {
 } from "../infrastructure/NeteaseMusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
+  SONGUESSR_MAX_TEAM,
   detectExplicitTrackKind,
   isBangumiCreditsEntry,
   MAX_MIN_POPULARITY,
@@ -108,6 +109,8 @@ interface SonGuessrPlayerRecord {
   online: boolean;
   isReady: boolean;
   score: number;
+  /** 队伍号 1–8，`null` 为个人游玩；旁观者没有队伍。 */
+  team: number | null;
   correctGuesses: number;
   totalGuesses: number;
   isBot: boolean;
@@ -116,8 +119,12 @@ interface SonGuessrPlayerRecord {
   connectionId?: string;
 }
 
+/**
+ * 一个作答单元：个人一份，同队队员共用同一个对象（与 CCB 的队伍同口径）。
+ * 次数、猜中、放弃、限时与在途锁都按单元记，一人猜中或放弃即全队结束；音频是否就绪仍按人记在回合上。
+ */
 interface SonGuessrRoundPlayerState {
-  audioReady: boolean;
+  memberIds: string[];
   guessesUsed: number;
   correct: boolean;
   gaveUp: boolean;
@@ -135,7 +142,12 @@ interface SonGuessrRoundRecord {
   attempts: SongGuessAttempt[];
   correctPlayerIds: string[];
   startScores: Record<string, number>;
+  /** 按玩家索引作答单元，同队队员指向同一个对象。 */
   players: Record<string, SonGuessrRoundPlayerState>;
+  /** 各玩家的音频是否就绪：每个客户端各自加载，不随队伍共享。 */
+  audioReady: Record<string, boolean>;
+  /** 出题人的队友：本局观战，看得到答案与全房猜测，不作答。开局冻结。 */
+  observerIds: string[];
   settings: SonGuessrSettings;
   audioPreparationDeadlineAt: number;
   audioReadyDeadlineAt?: number;
@@ -1092,6 +1104,8 @@ export class SonGuessrService {
         return this.setReady(connection, message.payload.ready);
       case "song.player.setSpectator":
         return this.setSpectator(connection, message.payload.spectator);
+      case "song.player.setTeam":
+        return this.setTeam(connection, message.payload.team);
       case "song.room.updateSettings":
         return this.updateSettings(connection, message.payload);
       case "song.room.kick":
@@ -1221,6 +1235,8 @@ export class SonGuessrService {
         const isRoundHardExpired =
           round.hardDeadlineAt !== undefined && currentTime >= round.hardDeadlineAt;
 
+        // 先按人处理音频宽限，再按作答单元判超时：同队共用一份限时，逐人判会让一次超时扣好几遍。
+        const units = new Set<SonGuessrRoundPlayerState>();
         for (const [playerId, state] of Object.entries(round.players)) {
           if (
             playerId === round.submitterPlayerId &&
@@ -1228,40 +1244,29 @@ export class SonGuessrService {
           ) {
             continue;
           }
-          if (
-            state.correct ||
-            state.gaveUp ||
-            state.guessesUsed >= round.settings.maxGuessesPerRound
-          ) {
-            continue;
+          if (this.isUnitFinished(round, state)) continue;
+
+          // 音频就绪宽限期结束仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额
+          if (!round.audioReady[playerId] && currentTime >= audioReadyDeadlineAt) {
+            this.armRoundDeadlines(room);
+            round.audioReady[playerId] = true;
+            // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
+            // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
+            // 下一轮巡检就把补偿出来的答题时间又当成超时收走。队友先就绪时全队计时已在走，不重开。
+            if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
+            changed = true;
           }
+          units.add(state);
+        }
+        for (const state of units) {
           // 上游正在校验这次猜测（占位已扣、结果未回）：超时由 in-flight 流程自己判定。
           // 巡检在这里抢先记一次 timeout，会让一次真实猜测扣掉两次配额，
           // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
           // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
-          if (state.inFlight && !isRoundHardExpired) {
-            continue;
-          }
-
-          const isAudioReadyTimeout =
-            !state.audioReady &&
-            currentTime >= audioReadyDeadlineAt;
-          const isGuessTimeout =
-            state.deadlineAt !== undefined && state.deadlineAt <= currentTime;
-
-          // 音频就绪宽限期结束仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额
-          if (isAudioReadyTimeout && !state.audioReady) {
-            this.armRoundDeadlines(room);
-            state.audioReady = true;
-            // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
-            // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
-            // 下一轮巡检就把补偿出来的答题时间又当成超时收走。
-            this.restartGuessDeadline(room, state);
-            changed = true;
-          }
-
+          if (state.inFlight && !isRoundHardExpired) continue;
+          const isGuessTimeout = state.deadlineAt !== undefined && state.deadlineAt <= currentTime;
           if (isGuessTimeout || isRoundHardExpired) {
-            this.recordTimeout(room, playerId);
+            this.recordTimeout(room, state);
             changed = true;
           }
         }
@@ -1525,6 +1530,8 @@ export class SonGuessrService {
       if (!room.allowSpectators) throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
       player.membership = "spectator";
       player.isReady = false;
+      // 旁观者没有队伍：回到玩家组时从个人游玩开始。
+      player.team = null;
     } else {
       player.membership = "active";
       player.isReady = player.id === room.hostPlayerId;
@@ -1533,6 +1540,21 @@ export class SonGuessrService {
     this.publishRoom(room);
     this.publishLobby();
     return { spectator, queued: false };
+  }
+
+  /** 选队伍：只在等待阶段、只给参与玩家，与 CCB 的 `ccb.player.team` 同口径。准备状态保留。 */
+  private setTeam(connection: ConnectionRecord, team: number | null) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间没有队伍");
+    if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "只能在等待阶段更换队伍");
+    if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者没有队伍");
+    if (team !== null && (!Number.isInteger(team) || team < 1 || team > SONGUESSR_MAX_TEAM)) {
+      throw new AppError("INVALID_TEAM", `队伍号只能是 1–${SONGUESSR_MAX_TEAM}`);
+    }
+    player.team = team;
+    this.touch(room);
+    this.publishRoom(room);
+    return { team };
   }
 
   private updateSettings(
@@ -2028,6 +2050,9 @@ export class SonGuessrService {
         if (activePlayers.some((candidate) => !candidate.isReady)) {
           throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
         }
+        if (!automatic && this.submitterCandidates(room).length === 0) {
+          throw new AppError("NO_SUBMITTER_CANDIDATE", "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家");
+        }
       }
 
       room.pendingSubmitterPlayerId = undefined;
@@ -2066,6 +2091,9 @@ export class SonGuessrService {
     const target = room.players[targetPlayerId];
     if (!target || !target.online || target.membership === "kicked" || target.isBot) {
       throw new AppError("INVALID_TARGET", "出题人必须是在线真人玩家");
+    }
+    if (!this.submitterCandidates(room).includes(target)) {
+      throw new AppError("INVALID_TARGET", "指定后没有可以猜歌的玩家：出题人的队友会一起观战");
     }
 
     room.pendingSubmitterPlayerId = target.id;
@@ -2684,17 +2712,30 @@ export class SonGuessrService {
     );
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
-    const participantStates = Object.fromEntries(
-      this.activePlayers(room).map((candidate) => [
-        candidate.id,
-        {
-          audioReady: candidate.isBot,
+    const observerIds = this.teammateIds(room, submitterPlayerId);
+    const units = new Map<string, SonGuessrRoundPlayerState>();
+    const participantStates: Record<string, SonGuessrRoundPlayerState> = {};
+    const audioReady: Record<string, boolean> = {};
+    for (const candidate of this.activePlayers(room)) {
+      if (observerIds.includes(candidate.id)) continue;
+      // 出题人与人机各自单独一份：出题人（测试房以外）不作答，人机开局即放弃，都不能拖累所在队伍。
+      const key = candidate.team === null || candidate.isBot || candidate.id === submitterPlayerId
+        ? candidate.id
+        : `team:${candidate.team}`;
+      let unit = units.get(key);
+      if (!unit) {
+        unit = {
+          memberIds: [],
           guessesUsed: candidate.isBot ? roundSettings.maxGuessesPerRound : 0,
           correct: false,
           gaveUp: candidate.isBot,
-        } satisfies SonGuessrRoundPlayerState,
-      ]),
-    );
+        };
+        units.set(key, unit);
+      }
+      unit.memberIds.push(candidate.id);
+      participantStates[candidate.id] = unit;
+      audioReady[candidate.id] = candidate.isBot;
+    }
     room.roundNumber = roundNumber;
     room.currentRound = {
       number: roundNumber,
@@ -2707,6 +2748,8 @@ export class SonGuessrService {
       correctPlayerIds: [],
       startScores: Object.fromEntries(Object.values(room.players).map((candidate) => [candidate.id, candidate.score])),
       players: participantStates,
+      audioReady,
+      observerIds,
       settings: roundSettings,
       audioPreparationDeadlineAt: this.now() + AUDIO_READY_GRACE_MS,
       audioReadyDeadlineAt: undefined,
@@ -2879,22 +2922,22 @@ export class SonGuessrService {
     ) {
       return { ignored: true };
     }
-    if (
-      !state.audioReady &&
-      !state.correct &&
-      !state.gaveUp &&
-      state.guessesUsed < round.settings.maxGuessesPerRound
-    ) {
+    if (!round.audioReady[player.id] && !this.isUnitFinished(round, state)) {
       // 首个就绪的玩家定义本回合的倒计时起点；此时才锚定硬截止。
       this.armRoundDeadlines(room);
-      state.audioReady = true;
+      round.audioReady[player.id] = true;
       // 必须用「当前时刻」起算，不能复用本回合统一的 audioReadyDeadlineAt：
       // 自动选曲会占用数秒到数十秒，用旧锚点会得到一个可能已过期的截止时刻，
       // 巡检随即把它当成答题超时，玩家还没数到 0 就被判超时。
-      this.restartGuessDeadline(room, state);
+      // 队伍共用一份限时：队友先就绪时计时已经开始，不再重开。
+      if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
     }
     this.touch(room);
-    this.publishPrivateState(room, player);
+    // 全队的截止时刻可能刚起算，队友的私有状态一并刷新。
+    for (const memberId of state.memberIds) {
+      const member = room.players[memberId];
+      if (member) this.publishPrivateState(room, member);
+    }
     return { deadlineAt: state.deadlineAt };
   }
 
@@ -2927,14 +2970,13 @@ export class SonGuessrService {
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
     }
-    if (!state.audioReady) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
-    if (state.correct) throw new AppError("ALREADY_CORRECT", "你已经猜对了");
-    if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", "你已经放弃本回合");
-    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", "正在校验上一次猜测，请稍候");
-    if (state.guessesUsed >= round.settings.maxGuessesPerRound) throw new AppError("NO_MORE_GUESSES", "本回合猜测次数已用完");
+    if (round.observerIds.includes(player.id)) throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
+    if (!state) throw new AppError("SPECTATOR_FORBIDDEN", "你本局不参与猜歌");
+    if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
+    this.ensureUnitOpen(round, state, player.id);
 
     if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
-      this.recordTimeout(room, player.id);
+      this.recordTimeout(room, state);
       if (this.isRoundComplete(room)) this.finishRound(room);
       this.publishRoom(room);
       throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
@@ -2983,7 +3025,8 @@ export class SonGuessrService {
       state.correct = true;
       state.deadlineAt = undefined;
       player.correctGuesses += 1;
-      const formalPlayerCount = this.activePlayers(room).length;
+      // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
+      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
       player.score += round.settings.bloodMode
         ? formalPlayerCount - round.correctPlayerIds.length
         : SCORING.correct;
@@ -3009,18 +3052,16 @@ export class SonGuessrService {
     if (room.settings.questionType !== "anime" || !round.anime) {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
+    if (round.observerIds.includes(player.id)) throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
     const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (!state || player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
     }
-    if (!state.audioReady) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
-    if (state.correct) throw new AppError("ALREADY_CORRECT", "你已经猜对了");
-    if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", "你已经放弃本回合");
-    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", "正在校验上一次猜测，请稍候");
-    if (state.guessesUsed >= round.settings.maxGuessesPerRound) throw new AppError("NO_MORE_GUESSES", "本回合猜测次数已用完");
+    if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
+    this.ensureUnitOpen(round, state, player.id);
     if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
-      this.recordTimeout(room, player.id);
+      this.recordTimeout(room, state);
       if (this.isRoundComplete(room)) this.finishRound(room);
       this.publishRoom(room);
       throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
@@ -3062,7 +3103,8 @@ export class SonGuessrService {
       state.correct = true;
       state.deadlineAt = undefined;
       player.correctGuesses += 1;
-      const formalPlayerCount = this.activePlayers(room).length;
+      // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
+      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
       player.score += round.settings.bloodMode
         ? formalPlayerCount - round.correctPlayerIds.length
         : SCORING.correct;
@@ -3089,10 +3131,10 @@ export class SonGuessrService {
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GIVE_UP", "出题人无需放弃");
     }
-    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", "正在校验上一次猜测，请稍候");
-    if (state.correct) throw new AppError("ALREADY_CORRECT", "你已经猜对了");
+    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", state.memberIds.length > 1 ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候");
+    if (state.correct) throw new AppError("ALREADY_CORRECT", state.memberIds.length > 1 ? "本队已经猜中了" : "你已经猜对了");
     if (state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound) {
-      throw new AppError("ROUND_ACTION_FINISHED", "你已完成本回合操作");
+      throw new AppError("ROUND_ACTION_FINISHED", state.memberIds.length > 1 ? "本队已完成本回合" : "你已完成本回合操作");
     }
 
     state.gaveUp = true;
@@ -3241,38 +3283,92 @@ export class SonGuessrService {
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       return undefined;
     }
+    if (round.observerIds.includes(player.id)) return undefined;
     let state = round.players[player.id];
     if (!state) {
-      state = {
-        audioReady: false,
+      // 有队伍时并回队友那一份，不另起一套次数。
+      const teammate = player.team === null ? undefined : Object.entries(round.players).find(([id]) =>
+        id !== round.submitterPlayerId && room.players[id]?.team === player.team && !room.players[id]?.isBot);
+      state = teammate?.[1] ?? {
+        memberIds: [],
         guessesUsed: 0,
         correct: false,
         gaveUp: false,
         deadlineAt: undefined,
       };
+      state.memberIds.push(player.id);
       round.players[player.id] = state;
+      round.audioReady[player.id] ??= false;
     }
     return state;
   }
 
-  private recordTimeout(room: SonGuessrRoomRecord, playerId: string) {
+  /**
+   * 记一次超时。队伍与 CCB 同口径：按当时在线的队员人数扣次数（不超过剩余次数），每人记一条；
+   * 无人在线时（含个人掉线）仍扣一次，记在第一位队员名下，回合不会因为掉线卡住。
+   */
+  private recordTimeout(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
     const round = room.currentRound;
-    const state = round?.players[playerId];
-    const player = room.players[playerId];
-    if (!round || !state || !player || state.correct || state.gaveUp) return;
-    if (state.guessesUsed >= round.settings.maxGuessesPerRound) return;
-
-    state.guessesUsed += 1;
-    player.totalGuesses += 1;
-    round.attempts.push({
-      id: this.createId("song_guess"),
-      playerId,
-      playerName: player.name,
-      guessNumber: state.guessesUsed,
-      createdAt: this.now(),
-      result: "timeout",
-    });
+    if (!round || this.isUnitFinished(round, state)) return;
+    const members = state.memberIds.filter((id) => room.players[id]);
+    const online = members.filter((id) => room.players[id]!.online);
+    const actors = (online.length ? online : members.slice(0, 1))
+      .slice(0, round.settings.maxGuessesPerRound - state.guessesUsed);
+    for (const playerId of actors) {
+      const player = room.players[playerId]!;
+      state.guessesUsed += 1;
+      player.totalGuesses += 1;
+      round.attempts.push({
+        id: this.createId("song_guess"),
+        playerId,
+        playerName: player.name,
+        guessNumber: state.guessesUsed,
+        createdAt: this.now(),
+        result: "timeout",
+      });
+    }
     this.restartGuessDeadline(room, state);
+  }
+
+  /** 作答单元已结束：猜中、放弃或次数用尽。 */
+  private isUnitFinished(round: SonGuessrRoundRecord, state: SonGuessrRoundPlayerState) {
+    return state.correct || state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound;
+  }
+
+  /** 猜歌、猜番共用的单元检查；队伍里的提示写「本队」，免得队友以为是自己点过。 */
+  private ensureUnitOpen(round: SonGuessrRoundRecord, state: SonGuessrRoundPlayerState, playerId: string) {
+    const teamed = state.memberIds.length > 1;
+    if (state.correct) {
+      throw new AppError("ALREADY_CORRECT", round.correctPlayerIds.includes(playerId) ? "你已经猜对了" : "队友已经猜中了");
+    }
+    if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", teamed ? "本队已经放弃本回合" : "你已经放弃本回合");
+    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", teamed ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候");
+    if (state.guessesUsed >= round.settings.maxGuessesPerRound) {
+      throw new AppError("NO_MORE_GUESSES", teamed ? "本队本回合猜测次数已用完" : "本回合猜测次数已用完");
+    }
+  }
+
+  /** 与 `submitterId` 同队的其他参与玩家；出题人个人游玩或没有出题人（自动出题）时为空。 */
+  private teammateIds(room: SonGuessrRoomRecord, submitterId: string): string[] {
+    const team = room.players[submitterId]?.team ?? null;
+    if (team === null) return [];
+    return this.activePlayers(room)
+      .filter((candidate) => candidate.id !== submitterId && candidate.team === team)
+      .map((candidate) => candidate.id);
+  }
+
+  /**
+   * 可以担任出题人的玩家：在线真人，且他出题后（连同队友一起观战）还留得下在线的猜歌玩家。
+   * 测试房的出题人自己也能猜，只看前一条。
+   */
+  private submitterCandidates(room: SonGuessrRoomRecord): SonGuessrPlayerRecord[] {
+    const testRoom = this.isTestRoom(room);
+    return Object.values(room.players).filter((candidate) => {
+      if (!candidate.online || candidate.membership === "kicked" || candidate.isBot) return false;
+      if (testRoom) return true;
+      const observers = new Set([candidate.id, ...this.teammateIds(room, candidate.id)]);
+      return this.activePlayers(room).some((player) => player.online && !observers.has(player.id));
+    });
   }
 
   /**
@@ -3372,6 +3468,7 @@ export class SonGuessrService {
       if (membership === "active" && !player.online) continue;
       player.nextRoundMembership = undefined;
       player.membership = membership;
+      if (membership === "spectator") player.team = null;
       player.isReady = membership === "active" && (player.id === room.hostPlayerId || player.isBot);
     }
   }
@@ -3384,8 +3481,10 @@ export class SonGuessrService {
   }
 
   private nextRotatingSubmitter(room: SonGuessrRoomRecord, previousSubmitterId?: string) {
+    // 轮流也只轮到留得下猜歌玩家的人：整队出题会把队友一起带去观战。
+    const eligible = new Set(this.submitterCandidates(room));
     const candidates = Object.values(room.players)
-      .filter((player) => player.online && player.membership === "active" && !player.isBot)
+      .filter((player) => player.membership === "active" && eligible.has(player))
       .sort((left, right) => left.joinedAt - right.joinedAt);
     if (candidates.length === 0) return undefined;
     const previousIndex = candidates.findIndex((player) => player.id === previousSubmitterId);
@@ -3405,11 +3504,12 @@ export class SonGuessrService {
     if (!round) return false;
     const guessers = this.activePlayers(room).filter(
       (player) =>
-        player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id),
+        (player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id)) &&
+        !round.observerIds.includes(player.id),
     );
     return guessers.every((player) => {
       const state = round.players[player.id];
-      return !state || state.correct || state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound;
+      return !state || this.isUnitFinished(round, state);
     });
   }
 
@@ -3481,7 +3581,8 @@ export class SonGuessrService {
     let roundStatus: SonGuessrPlayerView["roundStatus"] = "waiting";
     if (round?.submitterPlayerId === player.id) roundStatus = "submitter";
     else if (player.membership === "spectator") roundStatus = "spectator";
-    else if (state?.correct) roundStatus = "correct";
+    else if (round?.observerIds.includes(player.id)) roundStatus = "observing";
+    else if (state?.correct) roundStatus = round?.correctPlayerIds.includes(player.id) ? "correct" : "teamCorrect";
     else if (
       state &&
       (state.gaveUp || state.guessesUsed >= (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound))
@@ -3492,6 +3593,7 @@ export class SonGuessrService {
       id: player.id,
       name: player.name,
       score: player.score,
+      team: player.team,
       membership: player.membership,
       nextRoundMembership: player.nextRoundMembership,
       online: player.online,
@@ -3513,18 +3615,25 @@ export class SonGuessrService {
     const round = room.currentRound;
     const state = round?.players[player.id];
     const isSubmitter = round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
-    const canParticipateAsGuesser = !isSubmitter || this.canTestSubmitterGuess(room, player.id);
-    const canObserveAllAttempts = isSubmitter || player.membership === "spectator";
+    const teamObserver = room.phase === "playing" && Boolean(round?.observerIds.includes(player.id));
+    const canParticipateAsGuesser = (!isSubmitter || this.canTestSubmitterGuess(room, player.id)) && !teamObserver;
+    const canObserveAllAttempts = isSubmitter || teamObserver || player.membership === "spectator";
+    const seesAnswer = isSubmitter || teamObserver || player.membership === "spectator";
+    // 候选名单逐人重算观战队友是 O(n²)，私有状态又按连接逐个生成：只给房主、只在手动出题的等待与选人阶段算。
+    const needsCandidates = player.id === room.hostPlayerId && !room.solo &&
+      (room.phase === "choosingSubmitter" || (room.phase === "waiting" && room.settings.questionMode === "manual"));
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
       isSubmitter,
+      teamObserver,
+      submitterCandidateIds: needsCandidates ? this.submitterCandidates(room).map((candidate) => candidate.id) : [],
       canSubmitSong: room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id,
       canGuess:
         room.phase === "playing" &&
         player.membership === "active" &&
         canParticipateAsGuesser &&
-        Boolean(state?.audioReady) &&
+        Boolean(state && round?.audioReady[player.id]) &&
         !state?.correct &&
         !state?.gaveUp &&
         (state?.guessesUsed ?? 0) < (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
@@ -3542,18 +3651,14 @@ export class SonGuessrService {
         (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound) - (state?.guessesUsed ?? 0),
       ),
       guessDeadlineAt: state?.deadlineAt,
-      // 出题人与旁观者在游戏中均可看到本题答案
-      submittedSong:
-        (isSubmitter || player.membership === "spectator") && round
-          ? this.publicSong(round.song)
-          : undefined,
-      submittedAnime:
-        (isSubmitter || player.membership === "spectator") && round?.anime
-          ? this.publicAnime(round.anime)
-          : undefined,
+      // 出题人、出题人的队友与旁观者在游戏中均可看到本题答案
+      submittedSong: seesAnswer && round ? this.publicSong(round.song) : undefined,
+      submittedAnime: seesAnswer && round?.anime ? this.publicAnime(round.anime) : undefined,
+      // 猜歌玩家看得到本队的全部猜测（队伍共用记录），看不到别队的
       visibleAttempts: round
         ? round.attempts.filter(
-            (attempt) => canObserveAllAttempts || attempt.playerId === player.id,
+            (attempt) =>
+              canObserveAllAttempts || attempt.playerId === player.id || Boolean(state?.memberIds.includes(attempt.playerId)),
           )
         : [],
     };
@@ -3666,6 +3771,7 @@ export class SonGuessrService {
       online: true,
       isReady: host,
       score: 0,
+      team: null,
       correctGuesses: 0,
       totalGuesses: 0,
       isBot,

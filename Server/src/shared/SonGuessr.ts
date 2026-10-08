@@ -364,10 +364,18 @@ export interface SonGuessrRoundSummary {
   scores: SonGuessrScore[];
 }
 
+/** 协议允许的队伍号，与 CCB 一致；`null` 是个人游玩。 */
+export const SONGUESSR_MAX_TEAM = 8;
+
 export interface SonGuessrPlayerView {
   id: string;
   name: string;
   score: number;
+  /**
+   * 队伍号 1–8，`null` 为个人游玩；只在等待阶段由本人更改，旁观者没有队伍。
+   * 同队共用一份猜测次数、猜测记录与限时：一人猜中全队结束，分数记给猜中者；出题人的队友本局观战。
+   */
+  team: number | null;
   membership: "active" | "spectator" | "kicked";
   nextRoundMembership?: "active" | "spectator";
   online: boolean;
@@ -376,7 +384,8 @@ export interface SonGuessrPlayerView {
   isHost: boolean;
   correctGuesses: number;
   totalGuesses: number;
-  roundStatus: "waiting" | "submitter" | "guessing" | "correct" | "finished" | "spectator";
+  /** `teamCorrect`：队友已猜中，本人不再作答；`observing`：队友出题，本局观战。 */
+  roundStatus: "waiting" | "submitter" | "guessing" | "correct" | "teamCorrect" | "finished" | "spectator" | "observing";
   guessesUsed: number;
 }
 
@@ -424,6 +433,13 @@ export interface SonGuessrPrivateState {
   playerId: string;
   sessionToken: string;
   isSubmitter: boolean;
+  /** 队友出题、本局观战：与出题人同样看得到答案与全房猜测，但不能作答。 */
+  teamObserver: boolean;
+  /**
+   * 可指定的出题人，只下发给房主、只在手动出题的等待与选人阶段计算：在线真人，且他出题后
+   * （连同队友一起观战）仍留得下猜歌的人。测试房的出题人自己也能猜，不受这一条限制。
+   */
+  submitterCandidateIds: string[];
   canSubmitSong: boolean;
   canGuess: boolean;
   canGiveUp: boolean;
@@ -461,6 +477,7 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.room.requestSync", Record<string, never>>
   | ClientEnvelope<"song.player.setReady", { ready: boolean }>
   | ClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
+  | ClientEnvelope<"song.player.setTeam", { team: number | null }>
   | ClientEnvelope<
       "song.room.updateSettings",
       Partial<Omit<SonGuessrSettings, "autoFilters">> & {

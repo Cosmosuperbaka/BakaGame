@@ -18,6 +18,7 @@ import {
   Play,
   RotateCcw,
   UserCheck,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import { AnimeAutoFilterSummary, SongAutoFilterSummary } from "@/components/songuessr/settings/SongSettingsPanels";
 import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
+import { withTeamName } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
 import type {
   SongGuessAttempt,
@@ -252,13 +254,15 @@ function AudioCueControl({ audioStatus, audioPlaybackState, onPlayAudio, onRetry
   );
 }
 
-/** 本人在本轮的作答进度：还能猜、音频未就绪、猜中、投降、次数用尽。 */
-type GuessStage = "guessing" | "preparing" | "correct" | "gaveUp" | "exhausted";
+/** 本人在本轮的作答进度：还能猜、音频未就绪、猜中、队友猜中、投降、次数用尽。 */
+type GuessStage = "guessing" | "preparing" | "correct" | "teamCorrect" | "gaveUp" | "exhausted";
 
 function resolveGuessStage(privateState: SonGuessrPrivateState, me?: SonGuessrPlayerView): GuessStage {
   if (privateState.canGuess || privateState.canGiveUp) return "guessing";
   const mine = privateState.visibleAttempts.filter((attempt) => attempt.playerId === privateState.playerId);
-  if (mine.some((attempt) => attempt.result === "gaveUp")) return "gaveUp";
+  if (me?.roundStatus === "teamCorrect") return "teamCorrect";
+  // 组队时投降由任一队员发起、记在发起者名下，全队共享结果；可见记录只含本人与队友
+  if (privateState.visibleAttempts.some((attempt) => attempt.result === "gaveUp")) return "gaveUp";
   if (me?.roundStatus === "correct" || mine.some((attempt) => attempt.result === "correct")) return "correct";
   if (privateState.remainingGuesses > 0 && me?.roundStatus !== "finished") return "preparing";
   return "exhausted";
@@ -266,6 +270,7 @@ function resolveGuessStage(privateState: SonGuessrPrivateState, me?: SonGuessrPl
 
 const RECEIPTS: Record<Exclude<GuessStage, "guessing" | "preparing">, { icon: LucideIcon; tone: string; mark: string; text: string }> = {
   correct: { icon: Check, tone: "border-success/40 bg-success/10 text-success", mark: "text-success", text: "猜中了" },
+  teamCorrect: { icon: Users, tone: "border-success/40 bg-success/10 text-success", mark: "text-success", text: "队友已猜中" },
   gaveUp: { icon: Flag, tone: "border-dashed bg-muted/40 text-muted-foreground", mark: "text-muted-foreground", text: "你已放弃本回合" },
   exhausted: { icon: CircleSlash, tone: "border-dashed bg-muted/40 text-muted-foreground", mark: "text-muted-foreground", text: "猜测次数已用完" },
 };
@@ -309,11 +314,11 @@ export function GameStage(props: SongGameAreaProps) {
   } = props;
 
   if (snapshot.phase === "waiting") {
-    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
+    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
   }
 
   if (snapshot.phase === "choosingSubmitter") {
-    return <ChoosingSubmitterPhase snapshot={snapshot} isHost={isHost} run={run} isPending={isPending} />;
+    return <ChoosingSubmitterPhase snapshot={snapshot} privateState={privateState} isHost={isHost} run={run} isPending={isPending} />;
   }
 
   if (snapshot.phase === "submittingSong") {
@@ -322,7 +327,10 @@ export function GameStage(props: SongGameAreaProps) {
 
   if (snapshot.phase === "playing" && snapshot.currentRound) {
     const anime = snapshot.settings.questionType === "anime";
-    const canObserveAllAttempts = privateState.isSubmitter || me?.membership === "spectator";
+    const canObserveAllAttempts = privateState.isSubmitter || privateState.teamObserver || me?.membership === "spectator";
+    // 组队时可见记录里混着队友的猜测，标题与每行都写明是谁猜的
+    const teamAttempts = !canObserveAllAttempts
+      && privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
     const hasLyrics = (snapshot.currentRound.lyricClip?.lines?.length ?? 0) > 0;
     const stage = resolveGuessStage(privateState, me);
     return (
@@ -366,6 +374,8 @@ export function GameStage(props: SongGameAreaProps) {
         </section>
         {me?.membership === "spectator" ? (
           <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>
+        ) : privateState.teamObserver ? (
+          <p className="text-center text-sm text-muted-foreground">队友出题，你本局观战</p>
         ) : privateState.isSubmitter && stage !== "guessing" ? null : (
           // 作答的几种状态在同一处交叉：旧的抽出文档流淡去，新的同时落位
           <AnimatePresence initial={false} mode="popLayout">
@@ -391,8 +401,8 @@ export function GameStage(props: SongGameAreaProps) {
         )}
         <AttemptList
           attempts={privateState.visibleAttempts}
-          title={canObserveAllAttempts ? "全房猜测" : "我的猜测"}
-          showPlayerName={canObserveAllAttempts}
+          title={canObserveAllAttempts ? "全房猜测" : teamAttempts ? "本队猜测" : "我的猜测"}
+          showPlayerName={canObserveAllAttempts || teamAttempts}
         />
       </div>
     );
@@ -411,16 +421,19 @@ export function GameStage(props: SongGameAreaProps) {
     );
   }
 
-  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} run={run} isPending={isPending} />;
+  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
 }
 
-function ChoosingSubmitterPhase({ snapshot, isHost, run, isPending }: Pick<SongGameAreaProps, "snapshot" | "isHost" | "run" | "isPending">) {
-  const activeCandidates = snapshot.players.filter(
-    (player) => player.membership === "active" && player.online && !player.isBot,
-  );
-  const spectatorCandidates = snapshot.players.filter(
-    (player) => player.membership === "spectator" && player.online && !player.isBot,
-  );
+/**
+ * 房主指定出题人：候选取服务端下发的 `submitterCandidateIds`（在线真人，且他出题、队友一起观战后仍留得下猜歌的人）。
+ * 组队时候选名后带上队伍，并提示指定后其队友本局一起观战。
+ */
+function ChoosingSubmitterPhase({ snapshot, privateState, isHost, run, isPending }: Pick<SongGameAreaProps, "snapshot" | "privateState" | "isHost" | "run" | "isPending">) {
+  const allowed = new Set(privateState.submitterCandidateIds);
+  const candidates = snapshot.players.filter((player) => allowed.has(player.id));
+  const activeCandidates = candidates.filter((player) => player.membership === "active").map(withTeamName);
+  const spectatorCandidates = candidates.filter((player) => player.membership === "spectator");
+  const teamed = snapshot.players.some((player) => player.membership === "active" && player.team !== null);
   const choosing = isPending?.("song.game.chooseSubmitter") ?? false;
   const pick = (playerId: string) => void run("song.game.chooseSubmitter", { playerId });
   return (
@@ -434,10 +447,17 @@ function ChoosingSubmitterPhase({ snapshot, isHost, run, isPending }: Pick<SongG
               <CandidateGrid candidates={spectatorCandidates} tone="recommended" nameWrap="wrap" disabled={choosing} onPick={pick} />
             </section>
           ) : null}
-          <section>
-            <SectionHeader title="玩家" icon={<UserCheck className="h-3.5 w-3.5" />} />
-            <CandidateGrid candidates={activeCandidates} tone="default" nameWrap="wrap" disabled={choosing} onPick={pick} />
-          </section>
+          {activeCandidates.length > 0 ? (
+            <section>
+              <SectionHeader title="玩家" icon={<UserCheck className="h-3.5 w-3.5" />} />
+              <CandidateGrid candidates={activeCandidates} tone="default" nameWrap="wrap" disabled={choosing} onPick={pick} />
+            </section>
+          ) : null}
+          {candidates.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground">暂无可选出题人</p>
+          ) : teamed ? (
+            <p className="text-center text-xs text-muted-foreground">指定后其队友本局一起观战</p>
+          ) : null}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">等待房主指定本局出题人</p>

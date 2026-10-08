@@ -5010,3 +5010,152 @@ test("局部自动筛选输入归一为完整快照，不要求客户端伪造�
   const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
   expect(snapshot.settings.autoFilters).toEqual({ playlist: { id: "12345", name: undefined, songCount: undefined }, artists: [], minPopularity: 0 });
 });
+
+describe("SonGuessr 组队", () => {
+  const setTeam = (service: SonGuessrService, client: TestConnection, team: number | null) =>
+    execute(service, client, { id: `team-${client.record.id}-${team}`, type: "song.player.setTeam", roomId: "1234", payload: { team } });
+  const ready = (service: SonGuessrService, client: TestConnection) =>
+    execute(service, client, { id: `ready-${client.record.id}`, type: "song.player.setReady", roomId: "1234", payload: { ready: true } });
+  const audio = (service: SonGuessrService, client: TestConnection) =>
+    execute(service, client, { id: `audio-${client.record.id}`, type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 1 } });
+  const guess = (service: SonGuessrService, client: TestConnection, songId: string) =>
+    execute(service, client, { id: `guess-${client.record.id}-${songId}`, type: "song.game.guess", roomId: "1234", payload: { songId } });
+  const privateOf = (client: TestConnection) => lastEvent<SonGuessrPrivateState>(client, "song.game.privateState");
+  const playerOf = (client: TestConnection, playerId: string) =>
+    lastEvent<SonGuessrRoomSnapshot>(client, "song.room.snapshot").players.find((player) => player.id === playerId)!;
+
+  /** 房主个人出题；甲乙同在 1 队，丙个人游玩。 */
+  const setup = async (settings: Record<string, unknown> = {}) => {
+    let now = 10_000;
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 }, now: () => now });
+    const host = connection(service, "team-host");
+    const a = connection(service, "team-a");
+    const b = connection(service, "team-b");
+    const c = connection(service, "team-c");
+    await createRoom(service, host);
+    const hostId = privateOf(host).playerId;
+    const aId = (await joinRoom(service, a, "甲")).playerId;
+    const bId = (await joinRoom(service, b, "乙")).playerId;
+    const cId = (await joinRoom(service, c, "丙")).playerId;
+    await setTeam(service, a, 1);
+    await setTeam(service, b, 1);
+    if (Object.keys(settings).length) {
+      await execute(service, host, { id: "team-settings", type: "song.room.updateSettings", roomId: "1234", payload: settings });
+    }
+    for (const client of [a, b, c]) await ready(service, client);
+    return { service, host, a, b, c, hostId, aId, bId, cId, advance: (ms: number) => { now += ms; } };
+  };
+  const play = async (ctx: Awaited<ReturnType<typeof setup>>, submitterId: string, submitter: TestConnection) => {
+    await execute(ctx.service, ctx.host, { id: "team-start", type: "song.game.start", roomId: "1234", payload: {} });
+    await execute(ctx.service, ctx.host, { id: "team-choose", type: "song.game.chooseSubmitter", roomId: "1234", payload: { playerId: submitterId } });
+    await execute(ctx.service, submitter, { id: "team-submit", type: "song.game.submitSong", roomId: "1234", payload: { songId: "answer" } });
+  };
+
+  test("队伍只在等待阶段由参与玩家选择，旁观会清掉队伍", async () => {
+    const ctx = await setup();
+    expect(playerOf(ctx.host, ctx.aId).team).toBe(1);
+    await execute(ctx.service, ctx.a, { id: "spectate", type: "song.player.setSpectator", roomId: "1234", payload: { spectator: true } });
+    expect(playerOf(ctx.host, ctx.aId)).toMatchObject({ membership: "spectator", team: null });
+    await expect(setTeam(ctx.service, ctx.a, 2)).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
+    await execute(ctx.service, ctx.a, { id: "back", type: "song.player.setSpectator", roomId: "1234", payload: { spectator: false } });
+    await ready(ctx.service, ctx.a);
+    await setTeam(ctx.service, ctx.a, 1);
+    await play(ctx, ctx.hostId, ctx.host);
+    await expect(setTeam(ctx.service, ctx.c, 2)).rejects.toMatchObject({ code: "INVALID_PHASE" });
+  });
+
+  test("同队共用次数与猜测记录，一人猜中全队结束，分数只记给猜中者", async () => {
+    const ctx = await setup({ maxGuessesPerRound: 3 });
+    await play(ctx, ctx.hostId, ctx.host);
+    for (const client of [ctx.a, ctx.b, ctx.c]) await audio(ctx.service, client);
+
+    await guess(ctx.service, ctx.a, "wrong");
+    // 乙看得到队友这一次，次数一起少了一次；别队的丙看不到
+    expect(privateOf(ctx.b)).toMatchObject({ remainingGuesses: 2 });
+    expect(privateOf(ctx.b).visibleAttempts.map((attempt) => attempt.playerId)).toEqual([ctx.aId]);
+    expect(privateOf(ctx.c)).toMatchObject({ remainingGuesses: 3, visibleAttempts: [] });
+
+    await guess(ctx.service, ctx.b, "answer");
+    expect(playerOf(ctx.host, ctx.bId)).toMatchObject({ roundStatus: "correct", score: 1 });
+    expect(playerOf(ctx.host, ctx.aId)).toMatchObject({ roundStatus: "teamCorrect", score: 0 });
+    expect(privateOf(ctx.a)).toMatchObject({ canGuess: false, canGiveUp: false });
+    await expect(guess(ctx.service, ctx.a, "answer")).rejects.toMatchObject({ code: "ALREADY_CORRECT", message: "队友已经猜中了" });
+    // 丙还在猜，回合不结束
+    expect(lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot").phase).toBe("playing");
+
+    await execute(ctx.service, ctx.c, { id: "give-up", type: "song.game.giveUp", roomId: "1234", payload: {} });
+    const summary = lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot").roundSummary!;
+    expect(summary.correctPlayerIds).toEqual([ctx.bId]);
+    // 出题人按猜中单元计：一队猜中 = 3 分
+    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(3);
+  });
+
+  test("出题人的队友本局观战：看得到答案与全房猜测，不能作答，也不拖住回合", async () => {
+    const ctx = await setup();
+    await setTeam(ctx.service, ctx.host, 1);
+    await play(ctx, ctx.aId, ctx.a);
+    expect(privateOf(ctx.b)).toMatchObject({ teamObserver: true, canGuess: false, submittedSong: { id: "answer" } });
+    expect(playerOf(ctx.host, ctx.bId).roundStatus).toBe("observing");
+    expect(playerOf(ctx.host, ctx.hostId).roundStatus).toBe("observing");
+    await expect(guess(ctx.service, ctx.b, "answer")).rejects.toMatchObject({ code: "TEAM_OBSERVER" });
+
+    await audio(ctx.service, ctx.c);
+    await guess(ctx.service, ctx.c, "wrong");
+    expect(privateOf(ctx.b).visibleAttempts.map((attempt) => attempt.playerId)).toEqual([ctx.cId]);
+    await guess(ctx.service, ctx.c, "answer");
+    expect(lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot").phase).toBe("roundResult");
+  });
+
+  test("整队出题后没人可猜的玩家不能当出题人，候选名单只下发给房主", async () => {
+    const ctx = await setup();
+    await setTeam(ctx.service, ctx.host, 1);
+    await setTeam(ctx.service, ctx.c, 1);
+    // 全员同队：谁出题都会把其他人一起带去观战
+    expect(privateOf(ctx.host).submitterCandidateIds).toEqual([]);
+    await expect(execute(ctx.service, ctx.host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} }))
+      .rejects.toMatchObject({ code: "NO_SUBMITTER_CANDIDATE" });
+
+    await setTeam(ctx.service, ctx.c, 2);
+    expect([...privateOf(ctx.host).submitterCandidateIds].sort()).toEqual([ctx.hostId, ctx.aId, ctx.bId, ctx.cId].sort());
+    expect(privateOf(ctx.a).submitterCandidateIds).toEqual([]);
+  });
+
+  test("队伍超时按在线队员人数扣次数，计时全队共用一份", async () => {
+    const ctx = await setup({ maxGuessesPerRound: 3, guessDurationSeconds: 10 });
+    await play(ctx, ctx.hostId, ctx.host);
+    await audio(ctx.service, ctx.a);
+    const deadline = privateOf(ctx.a).guessDeadlineAt;
+    ctx.advance(3_000);
+    // 队友后就绪不重开全队的计时
+    await audio(ctx.service, ctx.b);
+    expect(privateOf(ctx.b).guessDeadlineAt).toBe(deadline);
+    await audio(ctx.service, ctx.c);
+
+    ctx.advance(7_000);
+    await ctx.service.runHousekeeping();
+    expect(privateOf(ctx.a).remainingGuesses).toBe(1);
+    expect(privateOf(ctx.a).visibleAttempts.map((attempt) => [attempt.playerId, attempt.result])).toEqual([
+      [ctx.aId, "timeout"],
+      [ctx.bId, "timeout"],
+    ]);
+  });
+
+  test("血战按作答单元排名：每队只有猜中者得分，观战队友不计入分母", async () => {
+    const ctx = await setup({ bloodMode: true });
+    await setTeam(ctx.service, ctx.host, 2);
+    const extra = connection(ctx.service, "team-d");
+    await joinRoom(ctx.service, extra, "丁");
+    await setTeam(ctx.service, extra, 2);
+    await ready(ctx.service, extra);
+    // 房主出题，同队的丁本局观战：正式玩家 5 人，分母扣掉丁为 4
+    await play(ctx, ctx.hostId, ctx.host);
+    for (const client of [ctx.a, ctx.b, ctx.c]) await audio(ctx.service, client);
+    await guess(ctx.service, ctx.c, "answer");
+    await guess(ctx.service, ctx.a, "answer");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("roundResult");
+    expect(playerOf(ctx.host, ctx.cId).score).toBe(4);
+    expect(playerOf(ctx.host, ctx.aId).score).toBe(3);
+    expect(playerOf(ctx.host, ctx.bId).score).toBe(0);
+  });
+});
