@@ -11,7 +11,7 @@
 
 ## 提交信息
 
-格式：`type(scope): 中文摘要`。摘要及可选正文全部使用中文，不含英文描述；摘要最多 12 字（含标点）。英文仅用于固定的 type、scope 字段。
+格式：`type(scope): 中文摘要`。摘要及可选正文使用中文表述，不写英文描述；专有名词（如 R2、LFS、AMLL）允许保留英文原文。摘要最多 12 字（含标点）。英文仅用于固定的 type、scope 字段与专有名词。
 
 | 字段 | 允许值 |
 |---|---|
@@ -22,10 +22,10 @@
 scope 区分大小写，不使用 `server`、`client`、`shared` 等自建作用域。提交前校验标题：
 
 ```regex
-^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((Faker|Song|CCB|Core)\): [\u4e00-\u9fa5\d，。、“”《》（）]{1,12}$
+^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((Faker|Song|CCB|Core)\): [\u4e00-\u9fa5\dA-Za-z，。、“”《》（）]{1,12}$
 ```
 
-该正则允许数字及列出的中文标点，正文仍须人工确认中文与准确性。摘要过长时先精简表达，只有包含多个独立改动时才拆分提交。
+该正则允许数字、专有名词英文字母及列出的中文标点；正文仍须人工确认中文与准确性。摘要过长时先精简表达，只有包含多个独立改动时才拆分提交。
 
 ## 产品版本
 
