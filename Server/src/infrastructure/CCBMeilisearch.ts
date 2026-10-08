@@ -45,7 +45,8 @@ const SUBJECT_INDEX = "ccb_subjects";
 const METADATA_INDEX = "ccb_search_metadata";
 const INDEX_SCHEMA_VERSION = 1;
 const BATCH_SIZE = 1_000;
-const INTERNAL_SEARCH_URL = "http://127.0.0.1:7700";
+// 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：用 MEILISEARCH_URL 覆盖为容器可达地址。
+const INTERNAL_SEARCH_URL = (Bun.env.MEILISEARCH_URL?.trim() || "http://127.0.0.1:7700").replace(/\/+$/, "");
 const SEARCH_TIMEOUT_MS = 5_000;
 const INDEX_TASK_TIMEOUT_MS = 600_000;
 

@@ -222,18 +222,19 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `MAINTENANCE_TOKEN` | 停机通知步骤中止，部署不重启（安全失败） | 自洽随机串，`openssl rand -hex 32` 生成；trim 后非空且不含换行 |
 | `DEPLOYMENT_ENVIRONMENT=production` | 遥测 / Sentry 环境标记静默记为 development | 显式设为 production 时**启动强制要求 `MEILISEARCH_KEY`**，否则服务拒绝启动；未设置时按 NODE_ENV → development 解析（优先级见 [Conventions](Conventions.md#运行环境标记与资产验证隔离)）。Meilisearch 就绪前不要设 production |
 | `MEILISEARCH_KEY` | 搜索降级为本地 FTS/LIKE 与官方回退（无 Meilisearch 增强） | 与 Meilisearch master key 一致；网络前提见下节；首次启用涉及索引构建，须单独验证，不与其它变更同批 |
+| `MEILISEARCH_URL` | 独立 Meili 容器下回环地址不可达：搜索与出题链路初始化失败（**不降级**，不可用） | Meili 与 app 同网络命名空间时可不设（默认 `http://127.0.0.1:7700`）；独立容器设为容器可达地址（如 `http://<meili 容器名>:7700`），与 `MEILISEARCH_KEY` 同批核对 |
 | `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
 
 存在性自查（只计数、不打印值）：
 
 ```bash
 sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET)='
+  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET)='
 ```
 
-完整生产配置输出 5，未启用原版房时为 4。缺 `MAINTENANCE_TOKEN` 部署必中止，缺其余项按上表降级。
+完整生产配置输出 6，未启用原版房时为 5。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
 
-**首次从「来源 IP 校验」旧版迁移**：Bearer 版脚本对旧版服务必然收到 403，首次部署会在第 4 步安全中止——不重启容器、线上保持旧版，且工作区已完成代码与数据的对齐校验（含 release 元数据生成），属预期行为而非故障。运维在确认中止后手动重启（或重建）容器令新版上线，再以同一获验 CI run 重新触发部署，即可完成端到端验证；此后链路对新版原生可用。
+**首次从「来源 IP 校验」旧版迁移**：Bearer 版脚本对旧版服务必然收到 403，首次部署会在第 4 步安全中止——不重启容器、线上保持旧版，且工作区已完成代码与数据的对齐校验（含 release 元数据生成），属预期行为而非故障。运维在确认中止后手动重启（或重建）容器令新版上线——**重建前逐项核对上表**（`MAINTENANCE_TOKEN` 名称与取值、独立 Meili 容器下的 `MEILISEARCH_URL` 可达性）——再以同一获验 CI run 重新触发部署，即可完成端到端验证；此后链路对新版原生可用。
 
 ### 发布链路与失败边界
 
