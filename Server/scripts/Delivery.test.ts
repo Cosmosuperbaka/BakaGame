@@ -20,7 +20,7 @@ test("门禁仅接受同仓 main push 的获验完整 SHA，手动选择不能�
   expect(deploymentRevision(run, [], repository)).toBeNull();
 });
 
-test("main 推进后仍 fetch/reset 获验 SHA，raw URL 同修订", async () => {
+test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bakagame-git-fixture-"));
   const git = (...args: string[]) => {
     return execFileSync("git", args, {
@@ -44,7 +44,10 @@ test("main 推进后仍 fetch/reset 获验 SHA，raw URL 同修订", async () =>
     expect(workflow).toContain('REF="$DEPLOY_REV"');
     expect(workflow).toContain('git reset --hard "$DEPLOY_REV"');
     expect(workflow).not.toContain('origin/$REF');
-    expect(workflow).toContain('"$REPO" "$REF" "$2"');
+    // 数据分发自 R2 迁移后不再有 raw URL 拼接：下载地址取自 runner 从 manifest 解析的变量，
+    // 脚本只做格式校验，落盘按 sha256 兜底（数据与代码修订解耦，但同样不可被移动引用替换）。
+    expect(workflow).toContain('check_url "$BG_CHAR_URL"');
+    expect(workflow).toContain('"$(want_url "$b")"');
   } finally { await rm(directory, { recursive: true, force: true }); }
 }, 20_000);
 
@@ -176,8 +179,10 @@ test("Worker 继承出口守卫，不能跨线程访问第三方", async () => {
 
 
 test("部署内嵌 Bash 仅语法检查，不执行发布命令", async () => {
-  const workflow = Bun.YAML.parse(await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()) as { jobs: { deploy: { steps: { with: { script: string } }[] } } };
-  const script = workflow.jobs.deploy.steps[0].with.script;
+  const workflow = Bun.YAML.parse(await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()) as { jobs: { deploy: { steps: { with?: { script?: unknown } }[] } } };
+  // 带内嵌脚本的步骤已不再是 steps[0]（其前新增了 manifest 解析步），按内容定位，不依赖下标。
+  const script = workflow.jobs.deploy.steps.map((step) => step.with?.script).find((value): value is string => typeof value === "string");
+  if (typeof script !== "string") throw new Error("deploy.yml 的 deploy job 中未找到内嵌部署脚本");
   execFileSync("bash", ["-n"], { input: script, encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"] });
   const inner = script.split("<<'BAKA_DEPLOY_EOF'\n")[1].split("\nBAKA_DEPLOY_EOF")[0];
   execFileSync("bash", ["-n"], { input: inner, encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"] });
