@@ -88,7 +88,17 @@ describe("SongAccountSettings", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
-  it("加载到房间后才显示账号：官方会员徽章与到期日同一行，收起时标题行换成头像", () => {
+  it("未登录时收起态只写未配置，媒体位仍是网易云图标", () => {
+    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    const toggle = screen.getByRole("button", { name: /网易云账号/ });
+
+    expect(toggle).toHaveAccessibleDescription("未配置");
+    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
+    expect(toggle.querySelector("svg")).toBeInTheDocument();
+    expect(toggle.querySelector("img")).not.toBeInTheDocument();
+  });
+
+  it("加载到房间后才显示账号：收起态单行排头像、昵称、会员徽章图与到期日", () => {
     saveSongMusicSession({
       cookie: "MUSIC_U=browser-only",
       account: {
@@ -103,11 +113,16 @@ describe("SongAccountSettings", () => {
     expect(screen.queryByText(/已连接|本机已登录/)).not.toBeInTheDocument();
 
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
-    expect(toggle).toHaveAccessibleDescription("黑胶账号 · SVIP · 伍 2027/4/1 到期");
-    expect(toggle.querySelector("img")).toHaveAttribute("src", "https://example.invalid/avatar.jpg");
+    // 收起态就是单行：头像、昵称、官方会员徽章图与到期日都直接出现在按钮里，不再走文本摘要。
+    expect(toggle).toHaveAccessibleDescription("黑胶账号 SVIP · 伍 2027/4/1 到期");
+    expect(toggle.querySelector("img[src='https://example.invalid/avatar.jpg']")).toBeInTheDocument();
+    expect(within(toggle).getByText("黑胶账号")).toBeInTheDocument();
+    expect(within(toggle).getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
+    expect(within(toggle).getByText("2027/4/1 到期")).toBeInTheDocument();
 
     fireEvent.click(toggle);
     expect(panel().getByText("黑胶账号")).toBeInTheDocument();
+    // 展开卡里是同一张官方徽章图，两处不漂移。
     expect(panel().getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
     expect(panel().getByText("2027/4/1 到期")).toBeInTheDocument();
     expect(panel().queryByRole("button", { name: "更换账号" })).not.toBeInTheDocument();

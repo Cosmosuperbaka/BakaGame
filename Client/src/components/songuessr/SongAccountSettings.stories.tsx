@@ -51,7 +51,8 @@ export const VipExpanded: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    await canvas.findByText(SONG_ACCOUNTS.vip.nickname);
+    // 昵称与会员信息在收起单行里也有一份，等展开卡独有的“退出登录”按钮出现再截图。
+    await canvas.findByRole("button", { name: "退出登录" });
     dropFocus();
   },
 };
@@ -73,7 +74,8 @@ export const UnknownVipExpanded: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.unknown),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
-    await canvas.findByText("会员状态未知");
+    // “会员状态未知”在收起单行里也已出现，等展开卡独有的“退出登录”按钮出现再截图。
+    await canvas.findByRole("button", { name: "退出登录" });
     dropFocus();
   },
 };

@@ -21,6 +21,18 @@ import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
 /** 黑胶成长等级在官方徽章上的写法。 */
 const LEVEL_NUMERALS = ["", "壹", "贰", "叁", "肆", "伍", "陆", "柒"];
 
+/**
+ * 网易云音乐图标：官方圆标加音符的 24×24 单色路径，取自 Simple Icons 的 `neteasecloudmusic` 条目（数据 CC0）。
+ * 纯装饰（对读屏隐藏），颜色随所在处文字（`currentColor`），尺寸由调用处的类给出。
+ */
+function NeteaseCloudMusicIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M13.046 9.388a3.919 3.919 0 0 0-.66.19c-.809.312-1.447.991-1.666 1.775a2.269 2.269 0 0 0-.074.81c.048.546.333 1.05.764 1.35a1.483 1.483 0 0 0 2.01-.286c.406-.531.355-1.183.24-1.636-.098-.387-.22-.816-.345-1.249a64.76 64.76 0 0 1-.269-.954zm-.82 10.07c-3.984 0-7.224-3.24-7.224-7.223 0-.98.226-3.02 1.884-4.822A7.188 7.188 0 0 1 9.502 5.6a.792.792 0 1 1 .587 1.472 5.619 5.619 0 0 0-2.795 2.462 5.538 5.538 0 0 0-.707 2.7 5.645 5.645 0 0 0 5.638 5.638c1.844 0 3.627-.953 4.542-2.428 1.042-1.68.772-3.931-.627-5.238a3.299 3.299 0 0 0-1.437-.777c.172.589.334 1.18.494 1.772.284 1.12.1 2.181-.519 2.989-.39.51-.956.888-1.592 1.064a3.038 3.038 0 0 1-2.58-.44 3.45 3.45 0 0 1-1.44-2.514c-.04-.467.002-.93.128-1.376.35-1.256 1.356-2.339 2.622-2.826a5.5 5.5 0 0 1 .823-.246l-.134-.505c-.37-1.371.25-2.579 1.547-3.007.329-.109.68-.145 1.025-.105.792.09 1.476.592 1.709 1.023.258.507-.096 1.153-.706 1.153a.788.788 0 0 1-.54-.213c-.088-.08-.163-.174-.259-.247a.825.825 0 0 0-.632-.166.807.807 0 0 0-.634.551c-.056.191-.031.406.02.595.07.256.159.597.217.82 1.11.098 2.162.54 2.97 1.296 1.974 1.844 2.35 4.886.892 7.233-1.197 1.93-3.509 3.177-5.889 3.177zM0 12c0 6.627 5.373 12 12 12s12-5.373 12-12S18.627 0 12 0 0 5.373 0 12Z" />
+    </svg>
+  );
+}
+
 /** 官方会员徽章：图片取自网易云 CDN 的原图（`public/assets/netease-vip`），读屏读档位与等级。 */
 function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string } | null {
   const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
@@ -46,6 +58,17 @@ function AccountAvatar({ account, className }: { account: SonGuessrMusicAccount;
   ) : (
     <span className={cn(className, "flex shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground")}>
       <UserRound className="size-3/5" aria-hidden="true" />
+    </span>
+  );
+}
+
+/** 官方会员徽章（没有徽章的档位退回文字）与到期日：折叠单行与展开卡共用，保证两处的图片与排版一致。 */
+function VipStatus({ vip, badge }: { vip: { label: string; expire: string }; badge: { src: string; label: string } | null }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {badge ? <img src={badge.src} alt={badge.label} className="h-4 w-auto" /> : <span className="font-medium text-foreground">{vip.label}</span>}
+      {/* 徽章与到期日之间保留一个文本空格，读屏的拼接描述才是「SVIP · 伍 2027/4/1 到期」；视觉间距由 flex 的 gap 管，空白文本节点不参与布局。 */}
+      {vip.expire ? <>{" "}<span className="tabular-nums">{vip.expire}</span></> : null}
     </span>
   );
 }
@@ -192,6 +215,22 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const vip = account ? vipText(account) : null;
   const badge = account ? vipBadge(account) : null;
 
+  /**
+   * 折叠态的标题行单行：头像、昵称、官方会员徽章与到期日排在一起，昵称过长时截断；
+   * 未登录与装载中只写一行文案。展开时这行保持不动，账号卡与扫码区在下方切换。
+   */
+  const headline = account && vip ? (
+    <>
+      <AccountAvatar account={account} className="size-5" />
+      <span className="min-w-0 max-w-full truncate text-sm font-medium" title={account.nickname}>{account.nickname}</span>
+      {/* 昵称与徽章之间保留一个文本空格，读屏的描述才是「…昵称 SVIP · 伍 到期日」；视觉间距由 flex 的 gap 管。 */}
+      {" "}
+      <VipStatus vip={vip} badge={badge} />
+    </>
+  ) : (
+    <span className="text-sm text-muted-foreground">{connecting ? "正在连接网易云账号…" : "未配置"}</span>
+  );
+
   const toggle = (next: boolean) => {
     if (!next) { cancelLogin(); setOpen(false); return; }
     setOpen(true);
@@ -204,9 +243,8 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       title="网易云账号"
       open={open}
       onOpenChange={toggle}
-      media={account ? <AccountAvatar account={account} className="size-5" /> : undefined}
-      summary={account && vip ? [account.nickname, [vip.label, vip.expire].filter(Boolean).join(" ")]
-        : connecting ? ["正在连接网易云账号…"] : ["登录后全房共用此账号取歌"]}
+      media={<NeteaseCloudMusicIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+      headline={headline}
     >
       {/* 账号与二维码两态各自按高度收放，一个收起时另一个撑开，切换时面板高度连续变化。 */}
       <CollapsibleRegion open={!showQr}>
@@ -218,10 +256,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
                 <AccountAvatar account={account} className="size-11" />
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="min-w-0 max-w-full truncate text-sm font-medium" title={account.nickname}>{account.nickname}</span>
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    {badge ? <img src={badge.src} alt={badge.label} className="h-4 w-auto" /> : <span className="font-medium text-foreground">{vip.label}</span>}
-                    {vip.expire ? <span className="tabular-nums">{vip.expire}</span> : null}
-                  </span>
+                  <VipStatus vip={vip} badge={badge} />
                 </div>
               </div>
               {vip.description ? <p className="text-xs leading-relaxed text-muted-foreground">{vip.description}</p> : null}
