@@ -1,0 +1,131 @@
+name: Ops Probe
+
+# 一次性只读诊断（临时文件，诊断完成后移除）：
+# 定位「docker exec + stdin 送入 bun」模式在生产容器首跑静默失败的原因。
+# 不修改任何状态：只采集宿主/容器事实与 release 调用的原始 stdout/stderr。
+# 不打印任何环境变量值（仅变量名）、不打印容器日志、不打印 SSH 主机。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
+          command_timeout: 2m
+          script_stop: false
+          script: |
+            set -euo pipefail
+            PROBE_SH=$(mktemp /tmp/bakagame-probe.XXXXXX.sh)
+            trap 'rm -f "$PROBE_SH"' EXIT
+            cat > "$PROBE_SH" <<'BAKA_PROBE_EOF'
+            set -uo pipefail
+
+            echo "===== 0. 宿主工具 ====="
+            command -v sudo timeout docker git || true
+            sudo timeout 3s echo "sudo-timeout-ok"; echo "rc=$?"
+
+            echo "===== 1. 容器总览 ====="
+            sudo docker ps -a --filter name=BakaGame --format 'id={{.ID}} image={{.Image}} status={{.Status}}'; echo "rc=$?"
+
+            echo "===== 2. inspect 关键字段 ====="
+            sudo docker inspect BakaGame --format 'Image={{.Config.Image}}'
+            sudo docker inspect BakaGame --format 'Created={{.Created}}'
+            sudo docker inspect BakaGame --format 'Cmd={{json .Config.Cmd}}'
+            sudo docker inspect BakaGame --format 'Entrypoint={{json .Config.Entrypoint}}'
+            sudo docker inspect BakaGame --format 'WorkingDir={{.Config.WorkingDir}}'
+            sudo docker inspect BakaGame --format 'RestartCount={{.RestartCount}} StartedAt={{.State.StartedAt}}'
+            sudo docker inspect BakaGame --format '{{range .Mounts}}Mount {{.Type}} [{{.Source}}] -> [{{.Destination}}] rw={{.RW}}{{"\n"}}{{end}}'
+            echo "--- 容器环境变量名（仅名称，不含值）---"
+            sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E '^[A-Z_]+$' | sort | head -50
+
+            echo "===== 3. exec 基础（无 stdin）====="
+            sudo docker exec BakaGame sh -c 'echo exec-basic-ok; id -un; pwd'; echo "rc=$?"
+
+            echo "===== 3b. exec -i 读 stdin ====="
+            printf 'stdin-echo-ok\n' | sudo docker exec -i BakaGame sh -c 'cat'; echo "rc=$?"
+
+            echo "===== 4. 容器内 bun ====="
+            sudo docker exec BakaGame sh -c 'command -v bun; bun --version'; echo "rc=$?"
+
+            echo "===== 5. bun stdin 裸跑 ====="
+            printf 'console.log("bun-stdin-plain-ok")\n' | sudo docker exec -i BakaGame bun -; echo "rc=$?"
+
+            echo "===== 5b. bun run - stdin ====="
+            printf 'console.log("bun-run-dash-ok")\n' | sudo docker exec -i BakaGame bun run -; echo "rc=$?"
+
+            echo "===== 5c. bun run - argv 形状 ====="
+            printf 'console.log(JSON.stringify(Bun.argv))\n' | sudo docker exec -i BakaGame bun run - X Y; echo "rc=$?"
+
+            echo "===== 5d. 修复候选：sh -c cd /tmp + exec bun - ====="
+            printf 'console.log(JSON.stringify(Bun.argv))\n' | sudo docker exec -i BakaGame sh -c 'cd /tmp && exec bun - "$@"' sh X Y; echo "rc=$?"
+
+            echo "===== 5e. 修复候选：sh -c cd /tmp + exec bun run - ====="
+            printf 'console.log(JSON.stringify(Bun.argv))\n' | sudo docker exec -i BakaGame sh -c 'cd /tmp && exec bun run - "$@"' sh X Y; echo "rc=$?"
+
+            echo "===== 6. bun stdin --no-env-file ====="
+            printf 'console.log("bun-stdin-noenv-ok")\n' | sudo docker exec -i BakaGame bun --no-env-file -; echo "rc=$?"
+
+            echo "===== 7. argv 透传 ====="
+            printf 'console.log(JSON.stringify(process.argv.slice(2)))\n' | sudo docker exec -i BakaGame bun --no-env-file - AAA BBB; echo "rc=$?"
+
+            echo "===== 8. 服务器工作区现状 ====="
+            git -C /BakaGame rev-parse HEAD; echo "rc=$?"
+            git -C /BakaGame status --short | head -8
+            ls -la /BakaGame/.deploy-stash 2>/dev/null | head -8
+            ls -la /BakaGame/Server/data 2>/dev/null | head -8
+            ls -la /BakaGame/Server/build 2>/dev/null | head -6
+
+            echo "===== 9. 精确复刻 release 调用（sudo + timeout 3s + 文件重定向 stdin）====="
+            cd /BakaGame
+            COMMIT=$(git rev-parse HEAD)
+            REL_OUT=$(mktemp); REL_ERR=$(mktemp)
+            S=$(date +%s%N)
+            sudo timeout 3s docker exec -i BakaGame bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts > "$REL_OUT" 2> "$REL_ERR"
+            echo "rc=$?  耗时 $(( ($(date +%s%N) - S) / 1000000 )) ms"
+            echo "--- stdout ($(wc -c < "$REL_OUT") 字节):"; head -c 400 "$REL_OUT"; echo ""
+            echo "--- stderr ($(wc -c < "$REL_ERR") 字节):"; head -c 1200 "$REL_ERR"; echo ""
+
+            echo "===== 10. 变体：去 timeout ====="
+            sudo docker exec -i BakaGame bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts; echo "rc=$?"
+
+            echo "===== 11. 变体：去 timeout 去 sudo ====="
+            docker exec -i BakaGame bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts; echo "rc=$?"
+
+            echo "===== 12. 变体：管道送 stdin ====="
+            cat Server/src/infrastructure/Release.ts | sudo timeout 3s docker exec -i BakaGame bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)"; echo "rc=$?"
+
+            echo "===== 13. 变体：去 --no-env-file ====="
+            sudo timeout 3s docker exec -i BakaGame bun - "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts; echo "rc=$?"
+
+            echo "===== 14. 容器内视角 ====="
+            sudo docker exec BakaGame sh -c 'ls -la /BakaGame 2>&1 | head -10'; echo "rc=$?"
+            sudo docker exec BakaGame sh -c 'ls -la 2>&1 | head -14'; echo "rc=$?"
+
+            echo "===== 15. docker 版本 ====="
+            sudo docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'; echo "rc=$?"
+
+            echo "===== 16. docker exec -w 支持 ====="
+            sudo docker exec -w /tmp BakaGame pwd; echo "rc=$?"
+
+            echo "===== 17. 修复候选 A（cd /tmp + bun run -）+ 真实载荷 ====="
+            sudo timeout 3s docker exec -i BakaGame sh -c 'cd /tmp && exec bun run - "$@"' sh "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts; echo "rc=$?"
+
+            echo "===== 17b. 修复候选 B（cd /tmp + bun -）+ 真实载荷 ====="
+            sudo timeout 3s docker exec -i BakaGame sh -c 'cd /tmp && exec bun - "$@"' sh "$COMMIT" "$(cat Client/src/data/changelog.json)" < Server/src/infrastructure/Release.ts; echo "rc=$?"
+
+            echo "===== DONE ====="
+            BAKA_PROBE_EOF
+            bash "$PROBE_SH"
