@@ -108,10 +108,10 @@
 | `spring.settle` | 中 | 布局重排、面板宽高变化 |
 | `spring.drift` | 重 | 跨区域长距离位移 |
 | `spring.impulse` | 低阻尼 | 需要落位回弹的确认反馈 |
-| `spring.thrust` | 中、有动量 | 被抛出的主轴位移与尺度，冲过落点约 6% 再拉回 |
-| `spring.wobble` | 软 | 与主轴垂直的副轴形变，比 thrust 慢半拍、过冲约 9% |
+| `spring.thrust` | 中、有动量 | 被抛出的主轴位移与尺度，冲过落点约 4.7% 再拉回 |
+| `spring.wobble` | 软 | 与主轴垂直的副轴形变，比 thrust 慢半拍、过冲约 5.4% |
 | `spring.recall` | 重、几乎不回弹 | 收回来源（弹窗吸回按钮、胶囊退回输入框） |
-| `spring.push` | 中 | 整幅推移（标签内容）、胶囊的横向分量，过冲约 2% |
+| `spring.push` | 中 | 整幅推移（标签内容）、胶囊的横向分量，过冲约 1.7% |
 
 需要确定收束时间时（擦除、折叠、退出）才用 `duration.*` 配 `ease.*`：`ease.out` 用于进场与展开，`ease.inOut` 用于折叠与退出，`ease.emphasized` 用于跨区域强调位移。
 

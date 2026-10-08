@@ -20,14 +20,14 @@ export const spring = {
   drift: { type: "spring", stiffness: 150, damping: 24, mass: 1.15 },
   /** 确认类反馈：阻尼更低，落位时有一次可感知的回弹，替代触觉提示 */
   impulse: { type: "spring", stiffness: 420, damping: 18, mass: 0.8 },
-  /** 被抛出的主轴位移：带着动量冲过落点约 6% 再拉回 */
-  thrust: { type: "spring", stiffness: 380, damping: 26, mass: 1 },
-  /** 与主轴垂直的形变：比 thrust 软、慢半拍，落位时横向铺开约 9% 再回弹 */
-  wobble: { type: "spring", stiffness: 240, damping: 19, mass: 1 },
+  /** 被抛出的主轴位移：带着动量冲过落点约 4.7% 再拉回 */
+  thrust: { type: "spring", stiffness: 380, damping: 27, mass: 1 },
+  /** 与主轴垂直的形变：比 thrust 软、慢半拍，落位时横向铺开约 5.4% 再回弹 */
+  wobble: { type: "spring", stiffness: 240, damping: 21, mass: 1 },
   /** 收回来源：起步快、几乎不回弹，配反向初速度做蓄力 */
   recall: { type: "spring", stiffness: 520, damping: 34, mass: 0.9 },
-  /** 整幅推移（标签内容）：过冲约 2%，读作一条被推了一下的胶片 */
-  push: { type: "spring", stiffness: 340, damping: 28, mass: 1 },
+  /** 整幅推移（标签内容）：过冲约 1.7%，读作一条被推了一下的胶片 */
+  push: { type: "spring", stiffness: 340, damping: 29, mass: 1 },
 } satisfies Record<string, Transition>;
 
 /** 缓动曲线。仅在需要可预期时长（擦除、折叠、退出）时替代弹性过渡。 */
@@ -701,7 +701,7 @@ export const flingShape = {
   /** 抛出时沿行程的初速度 */
   launch: 2,
   /** 收回前主轴的蓄力：初速度为负，窗口先鼓一下再被吸走 */
-  windup: -6,
+  windup: -4.5,
 } as const;
 
 /** 视口中心指向某点的向量：居中弹窗的中心就是视口中心，不必等挂载后再量。 */
@@ -800,7 +800,7 @@ export const tabPushSwap: Variants = {
 export const chatThrow = {
   lift: 1.4,
   launch: 3,
-  impulse: { along: 4, across: -3 },
+  impulse: { along: 3, across: -2.2 },
   into: { along: 0.08, across: 0.04 },
   waitMs: 1200,
   /** 气泡接手时相对胶囊的尺寸比限制在这个范围里：长消息换行后不至于从一条细线炸开 */
