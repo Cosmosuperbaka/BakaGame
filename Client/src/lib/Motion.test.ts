@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   duration,
   ease,
+  byAxes,
+  flingDockMs,
+  flingShape,
+  flingWindow,
   followDelay,
-  genieClip,
-  genieKeyframes,
-  genieWindow,
   installMotionTokens,
+  jitterFrames,
+  stepJitter,
+  stepJitterAnimation,
+  springReachMs,
+  springTrace,
+  tabPushSwap,
   listItem,
   motionCssVariables,
   motionTokenCss,
@@ -34,32 +41,64 @@ function linearPoints(easing: string): number[] {
 }
 
 describe("Motion tokens", () => {
-  it("神灯三帧从来源出发、落回原位，收回是同一条路倒放", () => {
+  it("抛掷取位移较大的一轴为主轴，形变只落在 scale 上，全程不动透明度", () => {
+    expect(byAxes({ dx: 400, dy: 10 }, "along", "across")).toEqual({ scaleX: "along", scaleY: "across" });
+    expect(byAxes({ dx: 10, dy: 300 }, "along", "across")).toEqual({ scaleX: "across", scaleY: "along" });
+    const resolve = (key: "initial" | "animate" | "exit", vector: { dx: number; dy: number }) =>
+      (flingWindow[key] as (vector: { dx: number; dy: number }) => Record<string, unknown>)(vector);
     const vector = { dx: 120, dy: 300 };
-    const out = genieKeyframes(vector, false);
-    expect(out.x).toEqual([120, 120 * 0.35, 0]);
-    expect(out.y.at(-1)).toBe(0);
-    expect(out.scaleX.at(-1)).toBe(1);
-    expect(out.scaleY.at(-1)).toBe(1);
-    // 来源在下方：沿纵轴拉长得比横向快
-    expect(out.scaleY[1]).toBeGreaterThan(out.scaleX[1]);
-    const back = genieKeyframes(vector, true);
-    expect(back.x).toEqual([...out.x].reverse());
-    expect(back.clipPath).toEqual([...out.clipPath].reverse());
+    // 按钮在下方：从按钮的位置、约按钮大小出发，纵向是主轴
+    expect(resolve("initial", vector)).toEqual({ x: 120, y: 300, scaleX: flingShape.from.across, scaleY: flingShape.from.along });
+    for (const key of ["initial", "animate", "exit"] as const) expect(resolve(key, vector)).not.toHaveProperty("opacity");
   });
 
-  it("神灯裁切只收窄朝向来源的一边，落定时是外扩的矩形", () => {
-    // 来源在右侧：右边两个点向中线收拢，左边保持外扩
-    const pinched = genieClip({ dx: 400, dy: 10 }, 1);
-    expect(pinched).toBe("polygon(-8.00% -8.00%, 108.00% 46.00%, 108.00% 54.00%, -8.00% 108.00%)");
-    expect(genieClip({ dx: 400, dy: 10 }, 0)).toBe("polygon(-8.00% -8.00%, 108.00% -8.00%, 108.00% 108.00%, -8.00% 108.00%)");
+  it("抛掷进场带着朝落点的初速度，副轴比主轴软；收回时主轴先蓄力", () => {
+    const enter = (flingWindow.animate as (vector: { dx: number; dy: number }) => { transition: Record<string, { velocity?: number; stiffness: number }> })({ dx: 0, dy: 300 });
+    expect(enter.transition.y.velocity).toBeLessThan(0);
+    expect(enter.transition.scaleY.velocity).toBeGreaterThan(0);
+    expect(enter.transition.scaleX.stiffness).toBeLessThan(enter.transition.scaleY.stiffness);
+    const exit = (flingWindow.exit as (vector: { dx: number; dy: number }) => { transition: Record<string, { velocity?: number }> })({ dx: 0, dy: 300 });
+    // 目标比 1 小，初速度却是正的：窗口先鼓一下再被吸走
+    expect(exit.transition.scaleY.velocity).toBeGreaterThan(0);
+    expect(flingDockMs).toBeGreaterThan(0);
+    expect(flingDockMs).toBeLessThan(springReachMs(spring.recall, 1));
   });
 
-  it("神灯没有来源时退化为淡入淡出，不做位移", () => {
-    const initial = (genieWindow.initial as (path?: unknown) => Record<string, unknown>)(undefined);
-    expect(initial).toEqual({ opacity: 0 });
-    const exit = (genieWindow.exit as (path?: unknown) => Record<string, unknown>)({});
-    expect(exit).not.toHaveProperty("x");
+  it("负的初速度先朝反方向走，正的初速度更早到达", () => {
+    expect(Math.min(...springTrace(spring.recall, -8))).toBeLessThan(0);
+    expect(Math.min(...springTrace(spring.recall))).toBe(0);
+    expect(springReachMs(spring.thrust, 0.9, 2)).toBeLessThan(springReachMs(spring.thrust, 0.9));
+  });
+
+  it("副轴的 wobble 比主轴的 thrust 过冲更大、落定更晚", () => {
+    const peak = (name: keyof typeof spring) => Math.max(...springTrace(spring[name]));
+    expect(peak("wobble")).toBeGreaterThan(peak("thrust"));
+    expect(peak("thrust")).toBeGreaterThan(1.03);
+    expect(springTrace(spring.wobble).length).toBeGreaterThan(springTrace(spring.thrust).length);
+  });
+
+  it("标签推移整幅进出、方向相反，没有方向时直接换掉", () => {
+    const initial = tabPushSwap.initial as (direction: number) => Record<string, unknown>;
+    const exit = tabPushSwap.exit as (direction: number) => Record<string, unknown>;
+    expect(initial(1).x).toBe("104%");
+    expect(exit(1).x).toBe("-104%");
+    expect(initial(1)).not.toHaveProperty("opacity");
+    expect(initial(0)).toEqual({ x: "0%" });
+    expect(exit(0)).toMatchObject({ visibility: "hidden" });
+  });
+
+  it("阶梯抖动正负交替衰减、末格归零，每格之间硬切", () => {
+    const frames = jitterFrames();
+    expect(Math.max(...frames.map(Math.abs))).toBe(1);
+    expect(frames.at(-1)).toBe(0);
+    expect(frames.length).toBeLessThan(stepJitter.fps);
+    expect(frames.some((value) => value > 0) && frames.some((value) => value < 0)).toBe(true);
+    const { keyframes, transition } = stepJitterAnimation({ y: 2 });
+    expect(keyframes.y?.[0]).toBe(0);
+    expect(keyframes.y).toHaveLength(frames.length + 1);
+    const ease = (transition as { ease: Array<(progress: number) => number> }).ease;
+    expect(ease).toHaveLength(frames.length);
+    expect([ease[0](0), ease[0](0.01), ease[0](0.99)]).toEqual([0, 1, 1]);
   });
 
   it("listItem variants contract includes pointerEvents none on exit", () => {

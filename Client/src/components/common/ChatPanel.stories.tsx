@@ -89,7 +89,7 @@ const LONG_CHAT: ChatMessage[] = [
 
 export const Empty: Story = { name: "空消息" };
 
-/** 发送后由本地回显：服务端回包大约晚一拍到达，这里同样延后一点放进列表，回放完整的「收进按钮 → 飞出展开」。 */
+/** 发送后由本地回显：服务端回包大约晚一拍到达，这里同样延后一点放进列表，回放完整的「胶囊掷出 → 回显接手落位」。 */
 function EchoChat(props: React.ComponentProps<typeof ChatPanel>) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [...props.messages]);
   return (

@@ -20,8 +20,14 @@ export const spring = {
   drift: { type: "spring", stiffness: 150, damping: 24, mass: 1.15 },
   /** 确认类反馈：阻尼更低，落位时有一次可感知的回弹，替代触觉提示 */
   impulse: { type: "spring", stiffness: 420, damping: 18, mass: 0.8 },
-  /** 自输入框飞出的消息：起步有力、收尾轻微过冲，介于 swift 与 impulse 之间 */
-  launch: { type: "spring", stiffness: 420, damping: 26, mass: 0.75 },
+  /** 被抛出的主轴位移：带着动量冲过落点约 6% 再拉回 */
+  thrust: { type: "spring", stiffness: 380, damping: 26, mass: 1 },
+  /** 与主轴垂直的形变：比 thrust 软、慢半拍，落位时横向铺开约 9% 再回弹 */
+  wobble: { type: "spring", stiffness: 240, damping: 19, mass: 1 },
+  /** 收回来源：起步快、几乎不回弹，配反向初速度做蓄力 */
+  recall: { type: "spring", stiffness: 520, damping: 34, mass: 0.9 },
+  /** 整幅推移（标签内容）：过冲约 2%，读作一条被推了一下的胶片 */
+  push: { type: "spring", stiffness: 340, damping: 28, mass: 1 },
 } satisfies Record<string, Transition>;
 
 /** 缓动曲线。仅在需要可预期时长（擦除、折叠、退出）时替代弹性过渡。 */
@@ -59,22 +65,37 @@ const SPRING_REST_SPEED = 0.02;
 const SPRING_SAMPLES = 48;
 
 /**
- * 把弹性过渡解成 CSS 可用的曲线与时长。
- * 以 1ms 步长积分 0→1 的阻尼振动，到位移与速度都低于阈值时视为静止，
- * 再等时采样成 `linear()`：过冲部分保留为大于 1 的取值，观感与 framer-motion 的同名弹性一致。
+ * 以 1ms 步长积分 0→1 的阻尼振动 `m·x'' = k·(1 − x) − c·x'`，到位移与速度都低于阈值时视为静止。
+ * `velocity` 是初速度，以「每秒走完的全程」为单位：负值先朝反方向蓄力。返回每毫秒的进度。
  */
-export function springToCss({ stiffness, damping, mass }: SpringToken): { easing: string; duration: number } {
+export function springTrace({ stiffness, damping, mass }: SpringToken, velocity = 0): number[] {
   const step = 0.001;
   const trace = [0];
   let position = 0;
-  let velocity = 0;
+  let speed = velocity;
   // 上限 5 秒，防止参数失误时死循环；现有档位都在 1 秒内静止。
   while (trace.length < 5_000) {
-    velocity += ((stiffness * (1 - position) - damping * velocity) / mass) * step;
-    position += velocity * step;
+    speed += ((stiffness * (1 - position) - damping * speed) / mass) * step;
+    position += speed * step;
     trace.push(position);
-    if (Math.abs(1 - position) < SPRING_REST_DELTA && Math.abs(velocity) < SPRING_REST_SPEED) break;
+    if (Math.abs(1 - position) < SPRING_REST_DELTA && Math.abs(speed) < SPRING_REST_SPEED) break;
   }
+  return trace;
+}
+
+/** 弹性第一次走到 `progress`（0–1）所需的毫秒数：动作「到了」的时刻，早于完全静止。 */
+export function springReachMs(token: SpringToken, progress: number, velocity = 0): number {
+  const trace = springTrace(token, velocity);
+  const index = trace.findIndex((value) => value >= progress);
+  return index < 0 ? trace.length - 1 : index;
+}
+
+/**
+ * 把弹性过渡解成 CSS 可用的曲线与时长：`springTrace` 等时采样成 `linear()`，
+ * 过冲部分保留为大于 1 的取值，观感与 framer-motion 的同名弹性一致。
+ */
+export function springToCss(token: SpringToken): { easing: string; duration: number } {
+  const trace = springTrace(token);
   const last = trace.length - 1;
   const points = Array.from({ length: SPRING_SAMPLES + 1 }, (_, index) =>
     index === SPRING_SAMPLES ? 1 : Number(trace[Math.round((index / SPRING_SAMPLES) * last)].toFixed(3)),
@@ -431,29 +452,6 @@ export const playerRelayout: Transition = { layout: spring.settle };
 /** 选中指示器（标签页、分段控件的底块）在选项之间滑动 */
 export const indicatorSlide: Transition = spring.swift;
 
-/** 标签页内容切换的横向位移（像素）：只够读出方向，不让整块内容横穿面板。 */
-export const tabShift = 14;
-
-/**
- * 标签页内容切换。`custom` 是切换方向（1 往后、-1 往前、0 未知）：
- * 新内容从目标标签所在一侧滑入，旧内容向另一侧让出，与底块同向移动；方向未知时只交叉淡化。
- * 退出项由 AnimatePresence 的 popLayout 抽出文档流，两块内容在同一位置交叉，面板高度不跳。
- */
-export const tabSwap: Variants = {
-  initial: (direction: number) => ({ opacity: 0, x: direction * tabShift }),
-  animate: {
-    opacity: 1,
-    x: 0,
-    transition: { ...spring.swift, opacity: { duration: duration.quick, ease: ease.out } },
-  },
-  exit: (direction: number) => ({
-    opacity: 0,
-    x: -direction * tabShift,
-    pointerEvents: "none",
-    transition: { duration: duration.quick, ease: ease.inOut, opacity: { duration: duration.instant, ease: ease.inOut } },
-  }),
-};
-
 // ==================== 具名小动作 ====================
 // 只在一两处出现、但同样必须有名字的动作。组件里只引用，不再内联幅度。
 
@@ -667,146 +665,200 @@ export const emergeFromOrigin: Variants = {
   },
 };
 
-// ==================== 神灯展开 ====================
+// ==================== 抛掷与收回 ====================
+// 弹窗开合、标签推移、聊天发送各自成套、互不引用对方的参数，只共用同一套物理：位移与形变都由二阶弹簧阻尼驱动，不做淡入淡出。
+// 沿位移方向（主轴）与垂直方向（副轴）用两档不同的弹簧，主轴快、副轴软而慢半拍：
+// 飞行途中沿运动方向拉长，落位时副轴冲过头、横向铺开再回弹，读作有质量的东西被抛到位。
 
-/** 浮层中心指向来源（按钮）的向量，单位像素。 */
-export interface GenieVector {
+/** 位移向量：元素自落点指向来源（按钮、上一个位置）的偏移，单位像素。 */
+export interface FlingVector {
   dx: number;
   dy: number;
 }
 
-/** 一次开合的两端：进场从 `enter` 吐出，退场收回 `exit`；缺省时退化为淡入淡出。 */
-export interface GeniePath {
-  enter?: GenieVector;
-  exit?: GenieVector;
+/**
+ * 把「主轴、副轴」上的两个值落到 scaleX / scaleY：取位移较大的那一轴为主轴，没有位移时按纵向处理。
+ * 主轴是运动方向，副轴与它垂直。
+ */
+export function byAxes<T>({ dx, dy }: FlingVector, along: T, across: T): { scaleX: T; scaleY: T } {
+  return Math.abs(dx) > Math.abs(dy) ? { scaleX: along, scaleY: across } : { scaleX: across, scaleY: along };
 }
 
-/** 神灯途中的形态：沿飞行轴先拉长、再横向铺开，读作窗口从按钮里被「倒」出来。 */
-export const genieShape = {
-  /** 关键帧时刻：起点、半途、落定 */
-  times: [0, 0.5, 1],
-  /** 半途走过的路程比例 */
-  midTravel: 0.35,
-  /** 沿飞行轴的尺度：起点、半途 */
-  along: [0.1, 0.85],
-  /** 垂直于飞行轴的尺度：起点、半途 */
-  across: [0.06, 0.4],
-  /** 朝向来源一侧收窄的程度：起点、半途（1 收成一点，0 不收） */
-  pinch: [1, 0.7],
-  /** 裁切框外扩的百分比，留出阴影 */
-  overscan: 8,
-  /** 收到最窄时剩下的半宽（百分比） */
-  neck: 4,
+/**
+ * 带初速度的弹簧。`launch` 以「每秒走完的全程数」为单位，换算成 framer-motion 的值域初速度：
+ * 正值顺着行程抛出（动量），负值先朝反方向蓄力。
+ */
+export function springWithVelocity(token: SpringToken, launch: number, from: number, to: number): Transition {
+  return { ...token, velocity: launch * (to - from) };
+}
+
+/** 弹窗抛掷的形态参数。 */
+export const flingShape = {
+  /** 离开按钮那一刻的尺度：约等于按钮本身；主轴带着初速度先长、副轴后铺开，途中自然拉长 */
+  from: { along: 0.06, across: 0.14 },
+  /** 收进按钮时的尺度：副轴收到 0，窗口缩成一条看不见的线，卸载时没有残影 */
+  into: { along: 0.04, across: 0 },
+  /** 抛出时沿行程的初速度 */
+  launch: 2,
+  /** 收回前主轴的蓄力：初速度为负，窗口先鼓一下再被吸走 */
+  windup: -6,
 } as const;
 
-type GenieSide = "top" | "bottom" | "left" | "right";
-
-/** 来源在浮层的哪一侧：取位移较大的轴。 */
-function genieSide({ dx, dy }: GenieVector): GenieSide {
-  if (Math.abs(dy) >= Math.abs(dx)) return dy >= 0 ? "bottom" : "top";
-  return dx >= 0 ? "right" : "left";
-}
-
-/**
- * 神灯的梯形裁切：朝向来源的一边按 `pinch` 收窄。四个点的结构恒定，裁切框可以在关键帧之间补间；
- * 外扩 `overscan` 让阴影不被切掉。
- */
-export function genieClip(vector: GenieVector, pinch: number): string {
-  const lo = -genieShape.overscan;
-  const hi = 100 + genieShape.overscan;
-  const lerp = (from: number, to: number) => from + (to - from) * pinch;
-  const near = (edge: number) => lerp(edge, edge < 50 ? 50 - genieShape.neck : 50 + genieShape.neck);
-  const points: Record<GenieSide, [number, number][]> = {
-    top: [[near(lo), lo], [near(hi), lo], [hi, hi], [lo, hi]],
-    bottom: [[lo, lo], [hi, lo], [near(hi), hi], [near(lo), hi]],
-    left: [[lo, near(lo)], [hi, lo], [hi, hi], [lo, near(hi)]],
-    right: [[lo, lo], [hi, near(lo)], [hi, near(hi)], [lo, hi]],
-  };
-  return `polygon(${points[genieSide(vector)].map(([x, y]) => `${x.toFixed(2)}% ${y.toFixed(2)}%`).join(", ")})`;
-}
-
-/** 沿飞行轴与垂直轴的尺度换成 scaleX / scaleY。 */
-function genieScale(vector: GenieVector, along: number, across: number) {
-  const vertical = genieSide(vector) === "top" || genieSide(vector) === "bottom";
-  return vertical ? { scaleX: across, scaleY: along } : { scaleX: along, scaleY: across };
-}
-
-/** 从中心出发的三帧：来源、半途、原位（`reverse` 时倒过来，用于收回）。不在组件里另拼形态。 */
-export function genieKeyframes(vector: GenieVector, reverse: boolean) {
-  const { midTravel, along, across, pinch } = genieShape;
-  const start = genieScale(vector, along[0], across[0]);
-  const mid = genieScale(vector, along[1], across[1]);
-  const frames = {
-    x: [vector.dx, vector.dx * midTravel, 0],
-    y: [vector.dy, vector.dy * midTravel, 0],
-    scaleX: [start.scaleX, mid.scaleX, 1],
-    scaleY: [start.scaleY, mid.scaleY, 1],
-    clipPath: [genieClip(vector, pinch[0]), genieClip(vector, pinch[1]), genieClip(vector, 0)],
-  };
-  if (!reverse) return frames;
-  return Object.fromEntries(Object.entries(frames).map(([key, values]) => [key, [...values].reverse()])) as typeof frames;
-}
-
-/**
- * 神灯开合（macOS 程序坞那种）：进场从来源按钮里被倒出来，沿飞行轴先拉长、朝来源一侧收成梯形，再横向铺开落位；
- * 退场原路吸回。`custom` 传 `GeniePath`，两端各自给出来源，缺省一端时只淡入淡出。
- * 用确定时长而不是弹簧：弹簧只能在两帧之间补间，神灯需要三帧形态。缩放原点留在中心，位移负责把中心带到来源。
- */
-export function genie(timing: { enter: number; exit: number }): Variants {
-  const fade = { opacity: 0 };
-  return {
-    initial: (path?: GeniePath) => {
-      if (!path?.enter) return fade;
-      const frames = genieKeyframes(path.enter, false);
-      return {
-        opacity: 0,
-        ...Object.fromEntries(Object.entries(frames).map(([key, values]) => [key, values[0]])),
-      };
-    },
-    animate: (path?: GeniePath) => {
-      if (!path?.enter) return { opacity: 1, transition: { duration: duration.quick, ease: ease.out } };
-      return {
-        opacity: 1,
-        ...genieKeyframes(path.enter, false),
-        transition: {
-          duration: timing.enter,
-          ease: ease.out,
-          times: [...genieShape.times],
-          opacity: { duration: timing.enter * 0.35, ease: ease.out },
-        },
-      };
-    },
-    exit: (path?: GeniePath) => {
-      if (!path?.exit) return { opacity: 0, pointerEvents: "none", transition: { duration: duration.instant, ease: ease.inOut } };
-      return {
-        opacity: [1, 1, 0],
-        pointerEvents: "none",
-        ...genieKeyframes(path.exit, true),
-        transition: {
-          duration: timing.exit,
-          ease: ease.inOut,
-          times: [...genieShape.times],
-          opacity: { duration: timing.exit, ease: ease.inOut, times: [0, 0.75, 1] },
-        },
-      };
-    },
-  };
-}
-
-/** 弹窗的神灯开合：自触发按钮倒出、收回。 */
-export const genieWindow = genie({ enter: duration.slow, exit: duration.base + duration.instant });
-/** 标签内容的神灯切换：旧内容吸回自己的标签，新内容从被点的标签倒出。比弹窗短一档，切换不拖沓。 */
-export const genieTab = genie({ enter: duration.base + duration.instant, exit: duration.base });
-
-/**
- * 聊天发送：输入框里的文字先收进发送按钮（`collapse`），消息再从发送按钮倒出、飞到自己的位置展开（`rise`）。
- * 回显早到时等收进动作播完再起飞，两段读作同一条消息的连续动作。
- */
-export const chatSend = { collapse: duration.base, rise: duration.slow } as const;
-
 /** 视口中心指向某点的向量：居中弹窗的中心就是视口中心，不必等挂载后再量。 */
-export function vectorFromViewportCenter(point: OriginPoint): GenieVector {
+export function flingVector(point: OriginPoint | null): FlingVector {
+  if (!point) return { dx: 0, dy: 0 };
   return { dx: point.x - window.innerWidth / 2, dy: point.y - window.innerHeight / 2 };
+}
+
+const NO_FLING: FlingVector = { dx: 0, dy: 0 };
+
+/**
+ * 弹窗从按钮里被抛出、关闭时吸回按钮。`custom` 传 `flingVector(origin)`。
+ * 进场：位移按 `spring.thrust` 带着动量冲过中心再拉回，主轴尺度同档，副轴走更软的 `spring.wobble`，
+ * 途中沿飞行方向拉长、落位时横向铺开再回弹。退场：主轴先蓄力鼓起，位移与尺度按 `spring.recall` 收回按钮。
+ * 全程不动透明度，缩放原点留在中心，由位移把窗口带到按钮上。减弱动效时 MotionConfig 让变换直接落位。
+ */
+export const flingWindow: Variants = {
+  initial: (vector: FlingVector = NO_FLING) => ({
+    x: vector.dx,
+    y: vector.dy,
+    ...byAxes(vector, flingShape.from.along, flingShape.from.across),
+  }),
+  animate: (vector: FlingVector = NO_FLING) => {
+    const { from, launch } = flingShape;
+    return {
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      transition: {
+        x: springWithVelocity(spring.thrust, launch, vector.dx, 0),
+        y: springWithVelocity(spring.thrust, launch, vector.dy, 0),
+        ...byAxes<Transition>(vector, springWithVelocity(spring.thrust, launch, from.along, 1), spring.wobble),
+      },
+    };
+  },
+  exit: (vector: FlingVector = NO_FLING) => {
+    const { into, windup } = flingShape;
+    return {
+      x: vector.dx,
+      y: vector.dy,
+      ...byAxes(vector, into.along, into.across),
+      pointerEvents: "none",
+      transition: {
+        x: spring.recall,
+        y: spring.recall,
+        // 副轴走几乎不过冲的 snap：收到 0 时不会冲成负值、翻出一道镜像的细缝
+        ...byAxes<Transition>(vector, springWithVelocity(spring.recall, windup, 1, into.along), spring.snap),
+      },
+    };
+  },
+};
+
+/** 窗口收回、撞进按钮的时刻（毫秒）：位移走完九成。按钮在这一刻被撞得抖一下。 */
+export const flingDockMs = springReachMs(spring.recall, 0.9);
+
+/** 标签内容推移：一整幅面板加一道缝的行程（百分比）、途中纵向的压扁程度、点击带来的初速度。 */
+export const tabPush = { travel: 104, squash: 0.96, launch: 1.5 } as const;
+
+/**
+ * 标签内容切换。`custom` 是切换方向（1 往后、-1 往前、0 未知）：
+ * 新旧两幅面板像一条胶片被整幅推过去，旧的从一侧推出、新的从另一侧推入，与底块同向；
+ * 位移走 `spring.push`，带着点击的初速度冲过落点一点再拉回，纵向在途中被压扁、按 `spring.wobble` 弹回。
+ * 两幅面板之间留一道缝，根节点横向裁切，不靠淡化遮住交叠。方向未知（外部改值）时直接换掉。
+ */
+export const tabPushSwap: Variants = {
+  initial: (direction: number) => (direction ? { x: `${direction * tabPush.travel}%`, scaleY: tabPush.squash } : { x: "0%" }),
+  animate: (direction: number) => ({
+    x: "0%",
+    scaleY: 1,
+    transition: {
+      x: springWithVelocity(spring.push, tabPush.launch, direction * tabPush.travel, 0),
+      scaleY: spring.wobble,
+    },
+  }),
+  exit: (direction: number) =>
+    direction
+      ? {
+          x: `${-direction * tabPush.travel}%`,
+          scaleY: tabPush.squash,
+          pointerEvents: "none",
+          transition: {
+            x: springWithVelocity(spring.push, tabPush.launch, 0, -direction * tabPush.travel),
+            scaleY: spring.wobble,
+          },
+        }
+      : { visibility: "hidden", transition: { duration: duration.none } },
+};
+
+/**
+ * 聊天发送：输入框里的文字凝成一枚胶囊，被掷到输入区右上方等回显（`lift` 为输入框高度的倍数）。
+ * 纵向与横向用不同的弹簧，轨迹是弧；掷出的冲量 `impulse`（每秒尺度变化量）让主轴鼓起、副轴收窄，再弹回原形。
+ * 回显到达时，自己那条气泡从胶囊当前的位置与尺寸接手，继承胶囊的速度飞进落点；胶囊同一帧撤掉。
+ * `waitMs` 内等不到回显（发送失败、频道不回显）时，胶囊被收回输入框、缩成 `into` 那么大。
+ */
+export const chatThrow = {
+  lift: 1.4,
+  launch: 3,
+  impulse: { along: 4, across: -3 },
+  into: { along: 0.08, across: 0.04 },
+  waitMs: 1200,
+  /** 气泡接手时相对胶囊的尺寸比限制在这个范围里：长消息换行后不至于从一条细线炸开 */
+  scale: { min: 0.4, max: 1.6 },
+} as const;
+
+/**
+ * 定格阶梯抖动：把一次欠阻尼冲击响应按 `fps` 采样成离散的几格，每格保持、格间硬切，
+ * 读作逐帧拍出来的震颤，而不是平滑的摆动。振幅逐格衰减，最后一格回到 0。
+ */
+export const stepJitter = { fps: 24, stiffness: 1800, damping: 15, mass: 0.5, floor: 0.05 } as const;
+
+/** 抖动的归一化格序列：正负交替衰减，满幅为 ±1，低于 `floor` 的尾巴截掉，末格为 0。 */
+export function jitterFrames(): number[] {
+  const { fps, stiffness, damping, mass, floor } = stepJitter;
+  const step = 0.001;
+  const frameMs = 1000 / fps;
+  let position = 0;
+  let velocity = 1;
+  const samples: number[] = [];
+  for (let ms = 0, frame = 1; frame < fps; ms += 1) {
+    velocity += ((-stiffness * position - damping * velocity) / mass) * step;
+    position += velocity * step;
+    if (ms >= frame * frameMs) {
+      samples.push(position);
+      frame += 1;
+    }
+  }
+  const peak = Math.max(...samples.map(Math.abs));
+  const frames = samples.map((value) => Number((value / peak).toFixed(3)));
+  const last = frames.findLastIndex((value) => Math.abs(value) >= floor);
+  return [...frames.slice(0, last + 1), 0];
+}
+
+/** 每段一进入就跳到目标值并保持到段尾：阶梯抖动的格间硬切。 */
+const holdStep = (progress: number) => (progress > 0 ? 1 : 0);
+
+/** 各处阶梯抖动的振幅：位移单位像素，旋转单位度。 */
+export const jitterShape = {
+  /** 发送按钮的图标被射出的胶囊反冲 */
+  sendRecoil: { y: 2, rotate: -12 },
+  /** 版本号按钮被收回的窗口撞了一下 */
+  versionDock: { y: 2.5 },
+} as const;
+
+/** 把振幅展开成可以直接交给 `animate` 的阶梯关键帧与过渡。 */
+export function stepJitterAnimation(shape: Partial<Record<"x" | "y" | "rotate", number>>) {
+  const frames = jitterFrames();
+  const keyframes = Object.fromEntries(
+    Object.entries(shape).map(([key, amplitude]) => [key, [0, ...frames.map((value) => value * (amplitude ?? 0))]]),
+  ) as Partial<Record<"x" | "y" | "rotate", number[]>>;
+  const segments = frames.length;
+  const transition: Transition = {
+    duration: segments / stepJitter.fps,
+    times: Array.from({ length: segments + 1 }, (_, index) => index / segments),
+    ease: Array.from({ length: segments }, () => holdStep),
+  };
+  return { keyframes, transition };
 }
 
 /**
@@ -827,17 +879,17 @@ export const ellipsisDot: Variants = {
 };
 
 /**
- * 聊天消息发送：从输入框以弹性形变飞入展开（类似 macOS 窗口打开的弹性加速与神灯展开）。
+ * 别人发来的消息：自气泡尾巴所在的下角弹出，不做淡入。
+ * 纵向沿上升方向按 `spring.thrust` 先到，横向按 `spring.wobble` 慢半拍、落位时铺开再回弹；
+ * 退场（消息被裁掉）按 `spring.recall` 缩回下角。
  */
 export const chatMessageLaunch: Variants = {
-  initial: { opacity: 0, scale: 0.35, y: 32, scaleX: 0.75, scaleY: 1.15 },
+  initial: { y: 18, scaleX: 0.4, scaleY: 0.4 },
   animate: {
-    opacity: 1,
-    scale: 1,
     y: 0,
     scaleX: 1,
     scaleY: 1,
-    transition: spring.launch,
+    transition: { y: spring.thrust, scaleY: spring.thrust, scaleX: spring.wobble },
   },
-  exit: { opacity: 0, scale: 0.95, transition: { duration: duration.instant } },
+  exit: { scaleX: 0, scaleY: 0, transition: spring.recall },
 };

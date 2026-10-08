@@ -218,7 +218,7 @@ describe("ChatPanel (Common)", () => {
     const input = screen.getByRole("combobox", { name: "聊天消息" });
     fireEvent.change(input, { target: { value: "飞出去" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
-    // 收进按钮的那枚气泡只是装饰，读屏不读
+    // 掷出去的那枚胶囊只是装饰，读屏不读
     const ghost = await screen.findByText("飞出去");
     expect(ghost.closest("[aria-hidden='true']")).not.toBeNull();
     expect(input).toHaveValue("");

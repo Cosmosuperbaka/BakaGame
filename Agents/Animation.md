@@ -38,7 +38,7 @@
 
 ### 2.4 点击之间必须有状态延续或视觉因果
 
-- 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。从一个小入口打开整块内容的窗口（主页版本信息）改传 `genie`，走 `genieWindow` 的神灯开合：窗口从按钮里沿飞行轴先拉长、朝按钮一侧收成梯形倒出，再横向铺开落位，关闭时按同一路径吸回按钮。
+- 浮层必须表达来源。弹窗用 `useOriginTracker` 捕获触发按钮的视口中心，经 `Dialog` 的 `origin` 传入，由 `emergeFromOrigin` 自按钮位置展开；关闭时按原路收回，开合互为逆过程。从一个小入口打开整块内容的窗口（主页版本信息）改传 `fling`，走 `flingWindow` 的抛掷开合：窗口约按钮大小，从按钮里带着初速度被抛出，主轴（位移较大的一轴）按 `spring.thrust` 先长、冲过中心再拉回，副轴按更软的 `spring.wobble` 慢半拍铺开、落位时横向多铺一点再回弹；关闭时主轴先蓄力鼓一下，再按 `spring.recall` 吸回按钮、缩成一条线，版本号在窗口撞进去的那一刻（`flingDockMs`）阶梯抖动一下（`jitterShape.versionDock`）。全程不动透明度。
 - 就近弹出层（Popover）使用 `popover`，缩放原点朝向触发元素：Radix 浮层在内容元素上加 `origin-(--radix-popover-content-transform-origin)`，由 Radix 按实际落位（含避让翻转）给出原点；不写死 `origin-top` 之类的方向。Popover 一律受控（`open` / `onOpenChange`），`Portal` 与 `Content` 都带 `forceMount`，外包 `AnimatePresence` 按 `open` 条件渲染，退场播完再卸载；不受控时 Radix 关闭即卸载，没有退场。
 - 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。唯一例外是跨页：两页之间没有共用的节点，改由 View Transitions 把同名元素读作同一个对象，浏览器连续移动并交叉淡化（见下条）。
 - 页面导航一律经 `hooks/UsePageTransition` 的 `usePageNavigate`（默认 `viewTransition: true`），路由必须是数据路由（`AppRouter.tsx` 的 `createBrowserRouter`，页面走路由级 `lazy`，分块到齐后才开始过渡）。旧页连同按下的触发元素定格成快照向前退出、新页自后方推入；回到更浅一层的页面（房间→大厅→主页，浏览器后退同理）时两层对调，方向由 `RootLayout` 写到 `<html data-page-direction>`。不再先等按压播完再导航，快照本身就保留了点击的结果。
@@ -50,8 +50,8 @@
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
 - 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、队伍面板 `TeamPicker` 的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
 - 搜索结果面板（`SearchCombobox`）按 `popover` 自输入框一侧展开；面板高度由 `hooks/UseMeasuredHeight` 量出内容的布局高度，按 `spring.settle` 补间，换一批结果、进出二级列表时平滑伸缩。旧的一批候选经 `AnimatePresence mode="popLayout"` 抽出文档流按序淡出，新的一批同时以 `listItem` 推入，两批交叉而不是先清空再出现。
-- 标签内容切换用 `tabSwap`：方向取标签先后，新内容从目标标签一侧滑入、旧内容向另一侧让出，与底块同向；旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，两块交叉而不是先清空再出现。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。与神灯弹窗同一处的标签（更新日志 / 关于）传 `swap="genie"` 改走 `genieTab`：旧内容吸回自己的标签，新内容从被点的标签倒出，路径由 `Tabs` 实测面板中心到新旧标签中心得出。
-- 聊天发送是一次连续的神灯：输入框里的文字先凝成一枚 aria-hidden 胶囊，按 `genieKeyframes(…, true)` 收进发送按钮（`chatSend.collapse`）；服务端回显的自己那条消息随后从发送按钮倒出、升到列表里的落点（`chatSend.rise`），这条回显不再叠 `chatMessageLaunch` 的弹入。回显早于收拢播完时等收拢结束再升起，发送失败则不升起。别人的消息照常用 `chatMessageLaunch`。
+- 标签内容切换用 `tabPushSwap`：方向取标签先后，新旧两幅内容像一条胶片被整幅推过去（行程 `tabPush.travel`，一整幅加一道缝），与底块同向；位移带着点击的初速度按 `spring.push` 冲过落点一点再拉回，途中纵向压扁到 `tabPush.squash`、按 `spring.wobble` 弹回。旧内容经 `AnimatePresence mode="popLayout"` 抽出文档流叠在原位，`Tabs` 根节点 `overflow-x-clip` 裁掉推出去的部分，不靠淡化遮住交叠。方向未知（外部改值）时直接换掉。并列面板取同一固定高度（更新日志弹窗两个标签都是 `h-[min(58vh,34rem)]`），切换时外层不跟着伸缩。
+- 聊天发送与弹窗开合各自成套，不共用形态参数（`chatThrow` 与 `flingShape` 互不引用），只共用弹簧档位与 `byAxes`。输入框里的文字凝成一枚 aria-hidden 胶囊，被掷到输入框上方 `chatThrow.lift` 倍高度、右缘对齐处：纵向走 `spring.thrust`、横向走更慢的 `spring.push`，轨迹是一道弧；掷出的冲量 `chatThrow.impulse` 只作为尺度的初速度，主轴鼓起、副轴收窄再弹回原形。同一刻发送按钮的图标被反冲得阶梯抖动（`jitterShape.sendRecoil`）。服务端回显的自己那条消息到达后先藏两帧（`visibility`）等列表滚到底，再从胶囊此刻的位置与尺寸（尺寸比限在 `chatThrow.scale`）接手、继承胶囊的速度飞进落点；气泡显形与胶囊撤掉在同一帧，这条回显不再叠 `chatMessageLaunch`。发送失败或 `chatThrow.waitMs` 内等不到回显时，胶囊按 `spring.recall` 收回输入框；收回后才到的回显按别人的消息弹出。别人的消息用 `chatMessageLaunch`：自气泡尾巴所在的下角弹出，纵向 thrust、横向 wobble，不做淡入。
 - 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
 - 两态共用同一个外框时（限时栏、读数块），内容用 `readoutSwap` 配 `popLayout` 交替，外框高度经 `useMeasuredHeight` 量出、按 `spring.settle` 补间，不先塌再撑开。
 - 只会在末尾追加的标记串（CCB 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
@@ -81,6 +81,18 @@
 - 分段控件（`SegmentedControl`）的聚焦点在视觉隐藏的原生 `radio` 上，承载按压动画的 `label` 同样显式写 `tabIndex={-1}`，由 `index.css` 的 `label:has(> input.sr-only:focus-visible)` 把环画到 `label` 上。
 - 验收：新增或改动带手势预设的组件后，用键盘逐次 Tab 走查该区域，确认每个可点元素**恰好占一个**停靠点，且停靠点都是可交互元素本身。
 
+### 2.8 拒绝塑料感（Anti-AI-Slop）
+
+> 拒绝 AI 塑料感（Anti-AI-Slop）：严禁任何无意义的 opacity: 0 -> 1 或线性匀速缓动；采用真实的二阶弹簧阻尼系统（Spring-damper）、各向异性推力与定格阶梯抖动（Stepped Jitter）；每一个动作都有阻尼、有动量、有过冲回弹。
+
+落到本项目：
+
+- 严禁无意义的 `opacity: 0 → 1`：出现与消失靠位移、尺度或裁切表达来源与去向，透明度不作为出现方式。新增或重做的动效一律遵守；仍带淡化的既有变体（`listItem`、`popover`、`emergeFromOrigin` 等）在下次改动时一并迁移。
+- 严禁线性匀速缓动；§2.3 的两处例外（`spinner`、`countdownTickMs`）表达的是匀速流逝本身，不算违反。
+- 运动由二阶弹簧阻尼驱动：每一个动作都有阻尼、有动量、有过冲回弹。被抛出或推开的元素带初速度（`springWithVelocity`），收回前可以先反向蓄力。
+- 各向异性推力：沿运动方向（主轴）与垂直方向（副轴）用不同的弹簧（`byAxes` 配 `spring.thrust` / `spring.wobble`），途中沿运动方向拉长，落位时副轴冲过头再回弹，不做等比缩放。
+- 撞击、反冲这类瞬时冲击用定格阶梯抖动（`stepJitterAnimation`）：离散的几格、逐格衰减、格间硬切，不用平滑摆动。
+
 ## 3. 六个维度
 
 每段动效都要同时兼顾以下六项。缺失任一项都算实现不完整。
@@ -96,6 +108,10 @@
 | `spring.settle` | 中 | 布局重排、面板宽高变化 |
 | `spring.drift` | 重 | 跨区域长距离位移 |
 | `spring.impulse` | 低阻尼 | 需要落位回弹的确认反馈 |
+| `spring.thrust` | 中、有动量 | 被抛出的主轴位移与尺度，冲过落点约 6% 再拉回 |
+| `spring.wobble` | 软 | 与主轴垂直的副轴形变，比 thrust 慢半拍、过冲约 9% |
+| `spring.recall` | 重、几乎不回弹 | 收回来源（弹窗吸回按钮、胶囊退回输入框） |
+| `spring.push` | 中 | 整幅推移（标签内容）、胶囊的横向分量，过冲约 2% |
 
 需要确定收束时间时（擦除、折叠、退出）才用 `duration.*` 配 `ease.*`：`ease.out` 用于进场与展开，`ease.inOut` 用于折叠与退出，`ease.emphasized` 用于跨区域强调位移。
 
@@ -159,7 +175,7 @@
 
 无法取得触发点位置时（如固定位置的浮动按钮），至少要把 `transformOrigin` 手动指向按钮所在方向，不允许留在中心。
 
-神灯开合（`Dialog` 的 `genie`）同样取 `origin`，但不换算 `transform-origin`：`vectorFromViewportCenter` 求出按钮相对窗口中心的位移，缩放原点留在中心，由位移把窗口带回按钮；三帧形态落定后清掉内联裁切。减弱动效时没有路径，退回淡入淡出。
+抛掷开合（`Dialog` 的 `fling`）同样取 `origin`，但不换算 `transform-origin`：`flingVector` 求出按钮相对窗口中心的位移，经 `custom` 交给 `flingWindow`，缩放原点留在中心，由位移把窗口带到按钮上。减弱动效时 `MotionConfig` 让变换直接落位，窗口原地出现、关闭即消失，版本号不抖动。
 
 ### 4.2 跨区域位移不连续
 
@@ -197,13 +213,15 @@
 | `listContainer(count)` | 子项按序进入，步长随数量收敛 |
 | `phaseSwap` | 阶段切换，新内容自后推入、旧内容向前退出 |
 | `indicatorSlide` | 选中指示器在选项之间滑动（`spring.swift`），见 §2.4 |
-| `tabSwap` / `tabShift` | 标签内容横向交叉：`custom` 传方向（1 往后、-1 往前、0 只淡化），位移幅度 `tabShift` 只够读出方向 |
+| `tabPushSwap` / `tabPush` | 标签内容整幅推移：`custom` 传方向（1 往后、-1 往前、0 直接换掉），行程、压扁程度与初速度取 `tabPush`（§2.4） |
 | `backdrop` | 覆盖层背板 |
 | `popover` | 就近弹出层，自触发点方向展开 |
 | `emergeFromOrigin` | 浮层自触发按钮位置被吸出，按原路收回 |
-| `genie` / `genieWindow` / `genieTab` | 神灯开合：`custom` 传 `GeniePath`（`enter` / `exit` 为来源相对落点的位移），进场从来源倒出、退场吸回；用三帧确定时长（`genieShape.times`），不用弹簧。`genieWindow` 用于弹窗，`genieTab` 短一档用于标签切换；没有路径时退回淡入淡出 |
-| `genieShape` / `genieKeyframes` / `genieClip` | 神灯的形态参数、三帧 `x`/`y`/`scaleX`/`scaleY`/`clipPath` 关键帧与梯形裁切；`reverse` 为吸入。命令式动画（聊天发送）直接展开 `genieKeyframes` |
-| `chatSend` / `vectorFromViewportCenter` | 聊天发送两段的时长（收进按钮 `collapse`、自按钮升起 `rise`）；视口点到窗口中心的位移，供神灯弹窗求路径 |
+| `flingWindow` / `flingShape` / `flingVector` / `flingDockMs` | 弹窗抛掷开合：`custom` 传 `flingVector(origin)`（按钮相对视口中心的位移），起止尺度、抛出初速度与收回蓄力取 `flingShape`；`flingDockMs` 是窗口撞进按钮的时刻，供按钮的阶梯抖动定时（§2.4、§4.1） |
+| `byAxes` / `springWithVelocity` | 抛掷物理的两件工具：把「主轴、副轴」上的值落到 `scaleX` / `scaleY`（位移较大的一轴为主轴）；给弹簧加以「每秒走完的全程数」计的初速度，负值先反向蓄力 |
+| `chatThrow` | 聊天发送的胶囊：升起高度、掷出初速度、尺度冲量、收回尺度、等回显的时长与接手尺寸比（§2.4） |
+| `stepJitter` / `jitterFrames` / `jitterShape` / `stepJitterAnimation` | 定格阶梯抖动：欠阻尼冲击响应按 `fps` 采样成逐格衰减的离散格，格间硬切；`jitterShape` 登记各处振幅，`stepJitterAnimation(shape)` 展开成 `animate` 的关键帧与过渡 |
+| `springTrace` / `springReachMs` | 逐毫秒积分弹簧（可带初速度），以及第一次走到某进度的毫秒数：动作「到了」的时刻，早于完全静止 |
 | `collapsible` | 折叠区域，高度与不透明度分离。不直接手写 `AnimatePresence` + `collapsible`：内容区用 `ui/Collapsible` 的 `CollapsibleRegion`（外层只补间高度，内边距与边框写在子元素上）。裁切只在补间期间生效：变体在展开落定后把 `overflow` 放回 `visible`、收起起步时切回 `hidden`，区内字段的悬停描边与 3px 聚焦晕光不被区域边缘切掉；调用处与 `SettingsSection` 不再自加 `overflow-hidden`，需要 BFC 时用 `flow-root`，指示箭头用 `DisclosureChevron`；行内折叠用 `Collapsible`，整行设置分组用 `SettingsAccordion`，不写原生 `<details>` |
 | `wipeFromLeft` | 自左缘擦入的覆盖面板，读作「拉开」 |
 | `ellipsisDot` | 等待占位省略号，三点依次浮起落回 |
@@ -214,7 +232,7 @@
 | `countdownTickMs` | 倒计时刷新步长，进度条宽度按同一时长匀速补间 |
 | `popoverScale` | 就近弹出层起止尺度，`popover` 变体与 CSS 关键帧共用 |
 | `springToCss` / `installMotionTokens` | 把令牌生成 `:root` 上的 CSS 变量（见 §2.5） |
-| `spring.launch` | 聊天消息自输入框飞出（`chatMessageLaunch`），起步有力、轻微过冲；自己发出的那条改走 `chatSend` 的神灯（§2.4） |
+| `chatMessageLaunch` | 别人发来的消息自气泡尾巴所在的下角弹出：纵向 `spring.thrust`、横向 `spring.wobble`，不做淡入；退场按 `spring.recall` 缩回下角。自己发出的那条改走 `chatThrow` 的接手（§2.4） |
 | `followDelay` | 从属元素晚主体一拍：回执卡内对勾、折叠区显影 |
 | `receiptCard` / `receiptMark` / `receiptMarkFollow` | 提交回执：卡片回弹落位，对勾单独落位或晚一拍跟随卡片；`receiptCard.exit` 以确定时长原路收回起点、不回弹（撤销或换回输入栏），用法见 §2.4 |
 | `wordDock` | 谁是卧底词语停靠顶栏时的缩放（`scale`），顶栏占位按同一比例预留宽高 |

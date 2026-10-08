@@ -1,21 +1,41 @@
-import { useState, useRef, useCallback, useId, useLayoutEffect, useMemo, type RefObject } from "react";
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  type Ref,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, animate, motion, useReducedMotion, type AnimationPlaybackControls } from "framer-motion";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  type MotionValue,
+  type Transition,
+} from "framer-motion";
 import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
 import {
+  byAxes,
   chatMessageLaunch,
-  chatSend,
-  ease,
-  genieKeyframes,
-  genieShape,
+  chatThrow,
+  jitterShape,
   optionTappable,
   popover,
+  spring,
+  springWithVelocity,
+  stepJitterAnimation,
   systemNotice,
-  type OriginPoint,
 } from "@/lib/Motion";
 import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
 import {
@@ -65,111 +85,186 @@ export interface ChatPanelProps {
   className?: string;
 }
 
-/** 一次发送的飞行：发送按钮中心与按下发送的时刻（`performance.now()`）。 */
-interface SendLaunch {
-  from: OriginPoint;
-  sentAt: number;
+/** 掷出中的胶囊：气泡接手时读它此刻的位置与速度。 */
+interface ThrowHandle {
+  node: HTMLDivElement | null;
+  x: MotionValue<number>;
+  y: MotionValue<number>;
 }
 
-const centerOf = (rect: DOMRect): OriginPoint => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+/** 一次发送的胶囊：起点贴着输入框里的文字。 */
+interface SendThrowState {
+  key: number;
+  text: string;
+  anchor: { left: number; top: number; height: number; maxWidth: number };
+  /** `fly` 掷出并悬停等回显；`recall` 等不到回显，收回输入框 */
+  phase: "fly" | "recall";
+}
 
-/** 起飞前至少留一帧：自动滚到底在下一帧才发生，量早了起点会偏。 */
-const MIN_RISE_DELAY_MS = 32;
+/** 回显接手胶囊所需的两样东西：胶囊句柄，与接手后撤掉胶囊的回调。 */
+interface ThrowHandoff {
+  capsule: RefObject<ThrowHandle | null>;
+  onTake: () => void;
+}
+
+const centerOf = (rect: DOMRect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+
+/** 气泡接手时相对胶囊的尺寸比；量不到尺寸（未布局）时按原大处理。 */
+const handoffScale = (from: number, own: number) =>
+  own > 0 ? Math.min(chatThrow.scale.max, Math.max(chatThrow.scale.min, from / own)) : 1;
 
 /**
- * 发送的第二段：回显的气泡从发送按钮里倒出来、飞到自己的位置展开（神灯）。
- * 回显早于收进动作播完时，等它播完再起飞；起飞那一刻才量位置，滚到底之后起点仍对准按钮。
- * 动的是气泡本身（同一个 DOM 元素），列表滚动区会裁掉按钮到列表下缘那一小段，读作从输入区里升起来。
+ * 发送的第一段：输入框里的文字凝成一枚胶囊，被掷到输入区右上方等回显。
+ * 两轴推力不同：纵向走 `spring.thrust` 先到，横向走更慢的 `spring.push` 后到，轨迹是一道向右上方弯过去的弧；
+ * 掷出的冲量（`chatThrow.impulse`）让主轴尺度鼓起、副轴收窄，起止都是原大，形变只来自初速度，按 thrust / wobble 回弹。
+ * 收回时按 `spring.recall` 退回输入框、缩成一道缝。挂在 body 上，不被输入区与列表的滚动区裁切。
  */
-function useLaunchFlight(ref: RefObject<HTMLElement | null>, launch: SendLaunch | undefined) {
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node || !launch) return;
-    node.style.opacity = "0";
-    let controls: AnimationPlaybackControls | undefined;
-    const wait = Math.max(MIN_RISE_DELAY_MS, chatSend.collapse * 1000 - (performance.now() - launch.sentAt));
-    const timer = window.setTimeout(() => {
-      const center = centerOf(node.getBoundingClientRect());
-      const vector = { dx: launch.from.x - center.x, dy: launch.from.y - center.y };
-      controls = animate(
-        node,
-        { ...genieKeyframes(vector, false), opacity: [0, 1, 1] },
-        { duration: chatSend.rise, ease: ease.out, times: [...genieShape.times] },
-      );
-      void controls.finished.then(() => {
-        node.style.transform = "";
-        node.style.clipPath = "";
-      });
-    }, wait);
-    return () => {
-      window.clearTimeout(timer);
-      controls?.stop();
-      node.style.opacity = "";
-      node.style.transform = "";
-      node.style.clipPath = "";
-    };
-  }, [ref, launch]);
-}
+function SendThrow({
+  ref,
+  text,
+  anchor,
+  phase,
+  onRecalled,
+}: Omit<SendThrowState, "key"> & { ref: Ref<ThrowHandle>; onRecalled: () => void }) {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const vectorRef = useRef({ dx: 0, dy: 0 });
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const scaleX = useMotionValue(1);
+  const scaleY = useMotionValue(1);
+  useImperativeHandle(ref, () => ({ node: nodeRef.current, x, y }), [x, y]);
 
-/** 气泡外壳：贴合内容宽度，神灯飞行以它的中心为准。 */
-function MessageShell({
-  launch,
-  isMe,
-  children,
-}: {
-  launch?: SendLaunch;
-  isMe: boolean;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLaunchFlight(ref, launch);
-  return (
-    <div ref={ref} className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}>
-      {children}
-    </div>
+  useLayoutEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+    // 落点：升到输入框上方，右缘对齐输入框右缘，靠向自己那一侧的气泡。
+    const vector = { dx: Math.max(0, anchor.maxWidth - node.offsetWidth), dy: -anchor.height * chatThrow.lift };
+    vectorRef.current = vector;
+    const { impulse, launch } = chatThrow;
+    const velocity = byAxes(vector, impulse.along, impulse.across);
+    const springs = byAxes<Transition>(vector, spring.thrust, spring.wobble);
+    const controls = [
+      animate(x, vector.dx, springWithVelocity(spring.push, launch, 0, vector.dx)),
+      animate(y, vector.dy, springWithVelocity(spring.thrust, launch, 0, vector.dy)),
+      animate(scaleX, 1, { ...springs.scaleX, velocity: velocity.scaleX }),
+      animate(scaleY, 1, { ...springs.scaleY, velocity: velocity.scaleY }),
+    ];
+    return () => controls.forEach((control) => control.stop());
+  }, [anchor, x, y, scaleX, scaleY]);
+
+  useLayoutEffect(() => {
+    if (phase !== "recall") return;
+    const shape = byAxes(vectorRef.current, chatThrow.into.along, chatThrow.into.across);
+    const controls = [
+      animate(x, 0, spring.recall),
+      animate(y, 0, spring.recall),
+      animate(scaleX, shape.scaleX, spring.recall),
+      animate(scaleY, shape.scaleY, spring.recall),
+    ];
+    void Promise.all(controls.map((control) => control.finished)).then(onRecalled);
+    return () => controls.forEach((control) => control.stop());
+  }, [phase, x, y, scaleX, scaleY, onRecalled]);
+
+  return createPortal(
+    <motion.div
+      ref={nodeRef}
+      aria-hidden="true"
+      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
+      style={{ left: anchor.left, top: anchor.top, height: anchor.height, maxWidth: anchor.maxWidth, x, y, scaleX, scaleY }}
+    >
+      {text}
+    </motion.div>,
+    document.body,
   );
 }
 
 /**
- * 发送的第一段：输入框里的文字凝成一枚气泡，被吸进发送按钮（神灯收回）。
- * 输入框此刻已经清空，这枚气泡是文字离开输入框的样子；挂在 body 上，不被输入区裁切。
+ * 发送的第二段：回显的气泡从胶囊手里接过这条消息。
+ * 先藏两帧（`visibility`，不经过透明度）等列表滚到底，再量出胶囊此刻的位置与尺寸，
+ * 把气泡摆到胶囊上、继承胶囊的速度，按 thrust / wobble 飞进自己的落点；气泡显形与胶囊撤掉在同一帧。
  */
-function SendCollapse({
-  text,
-  anchor,
-  target,
-  onDone,
-}: {
-  text: string;
-  anchor: { left: number; top: number; height: number; maxWidth: number };
-  target: OriginPoint;
-  onDone: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
+function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHandoff | undefined) {
   useLayoutEffect(() => {
     const node = ref.current;
-    if (!node) return;
-    const center = centerOf(node.getBoundingClientRect());
-    const vector = { dx: target.x - center.x, dy: target.y - center.y };
-    const controls = animate(
-      node,
-      { ...genieKeyframes(vector, true), opacity: [1, 1, 0] },
-      { duration: chatSend.collapse, ease: ease.inOut, times: [...genieShape.times] },
-    );
-    void controls.finished.then(onDone);
-    return () => controls.stop();
-  }, [target, onDone]);
+    if (!node || !handoff) return;
+    node.style.visibility = "hidden";
+    let frame = 0;
+    let stop: (() => void) | undefined;
+    const reset = () => {
+      node.style.visibility = "";
+      node.style.transform = "";
+      node.style.transformOrigin = "";
+    };
+    const take = () => {
+      const capsule = handoff.capsule.current;
+      const bubble = node.querySelector<HTMLElement>("[data-testid='chat-message-bubble']");
+      if (!capsule?.node || !bubble) {
+        node.style.visibility = "";
+        return;
+      }
+      const shell = node.getBoundingClientRect();
+      const own = bubble.getBoundingClientRect();
+      const from = capsule.node.getBoundingClientRect();
+      const ownCenter = centerOf(own);
+      const fromCenter = centerOf(from);
+      const vector = { dx: fromCenter.x - ownCenter.x, dy: fromCenter.y - ownCenter.y };
+      const startScaleX = handoffScale(from.width, own.width);
+      const startScaleY = handoffScale(from.height, own.height);
+      // 以气泡中心为缩放原点：气泡与胶囊重合，名字随气泡一起被带过来。
+      node.style.transformOrigin = `${ownCenter.x - shell.left}px ${ownCenter.y - shell.top}px`;
+      const springs = byAxes<Transition>(vector, spring.thrust, spring.wobble);
+      const controls = animate(
+        node,
+        {
+          x: [vector.dx, 0],
+          y: [vector.dy, 0],
+          scaleX: [startScaleX, 1],
+          scaleY: [startScaleY, 1],
+        },
+        {
+          x: { ...spring.thrust, velocity: capsule.x.getVelocity() },
+          y: { ...spring.thrust, velocity: capsule.y.getVelocity() },
+          scaleX: springs.scaleX,
+          scaleY: springs.scaleY,
+        },
+      );
+      stop = () => controls.stop();
+      void controls.finished.then(reset);
+      // animate 在下一帧才写上第一帧；排在它之后再交接，气泡不会在落点上闪现一帧。
+      frame = requestAnimationFrame(() => {
+        node.style.visibility = "";
+        capsule.node!.style.visibility = "hidden";
+        handoff.onTake();
+      });
+    };
+    // 两帧：第一帧里自动滚到底（UseAutoScrollToBottom 的 rAF 排在这之后），第二帧量到的才是落点。
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(take);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      stop?.();
+      reset();
+    };
+  }, [ref, handoff]);
+}
 
-  return createPortal(
-    <div
-      ref={ref}
-      aria-hidden="true"
-      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
-      style={{ left: anchor.left, top: anchor.top, height: anchor.height, maxWidth: anchor.maxWidth }}
-    >
-      {text}
-    </div>,
-    document.body,
+/** 气泡外壳：贴合内容宽度，接手胶囊时整体被带过来。 */
+function MessageShell({
+  handoff,
+  isMe,
+  children,
+}: {
+  handoff?: ThrowHandoff;
+  isMe: boolean;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useThrowHandoff(ref, handoff);
+  return (
+    <div ref={ref} className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}>
+      {children}
+    </div>
   );
 }
 
@@ -229,18 +324,20 @@ export function ChatPanel({
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const sendIconRef = useRef<HTMLSpanElement>(null);
   const reducedMotion = useReducedMotion();
-  // 发送动画：先把文字吸进发送按钮（collapse），回显到达后气泡再从按钮飞出（launch）
-  const [collapse, setCollapse] = useState<{
-    key: number;
-    text: string;
-    anchor: { left: number; top: number; height: number; maxWidth: number };
-    target: OriginPoint;
-  } | null>(null);
-  const [pendingLaunch, setPendingLaunch] = useState<(SendLaunch & { baselineId: string | undefined }) | null>(null);
-  const [launched, setLaunched] = useState<SendLaunch & { id: string } | null>(null);
-  const finishCollapse = useCallback(() => setCollapse(null), []);
+  // 发送动画：文字凝成胶囊掷出输入框（thrown），回显到达后自己那条气泡从胶囊手里接过去（handoffId）
+  const [thrown, setThrown] = useState<SendThrowState | null>(null);
+  const capsuleRef = useRef<ThrowHandle>(null);
+  const [pendingEcho, setPendingEcho] = useState<{ baselineId: string | undefined } | null>(null);
+  const [handoffId, setHandoffId] = useState<string | null>(null);
+  const handoff = useMemo<ThrowHandoff>(() => ({ capsule: capsuleRef, onTake: () => setThrown(null) }), []);
+  const recallThrow = useCallback(() => setThrown((current) => current && { ...current, phase: "recall" }), []);
+  // 收回播完：胶囊撤掉，之后才到的回显按别人的消息那样弹出。
+  const finishRecall = useCallback(() => {
+    setThrown(null);
+    setPendingEcho(null);
+  }, []);
   // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
   const mentionListId = useId();
   const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
@@ -257,10 +354,18 @@ export function ChatPanel({
     () => messages.findLast((message) => !message.system && message.playerId === myPlayerId)?.id,
     [messages, myPlayerId],
   );
-  if (pendingLaunch && lastMineId && lastMineId !== pendingLaunch.baselineId) {
-    setLaunched({ id: lastMineId, from: pendingLaunch.from, sentAt: pendingLaunch.sentAt });
-    setPendingLaunch(null);
+  if (pendingEcho && lastMineId && lastMineId !== pendingEcho.baselineId) {
+    setHandoffId(lastMineId);
+    setPendingEcho(null);
   }
+
+  // 胶囊悬停等回显，等不到（频道不回显、网络慢）就收回输入框。
+  const waitingKey = pendingEcho && thrown?.phase === "fly" ? thrown.key : null;
+  useEffect(() => {
+    if (waitingKey === null) return;
+    const timer = window.setTimeout(recallThrow, chatThrow.waitMs);
+    return () => window.clearTimeout(timer);
+  }, [waitingKey, recallThrow]);
 
   const candidates = useMemo(
     () =>
@@ -299,32 +404,35 @@ export function ChatPanel({
     [mention, text, closeMention],
   );
 
-  /** 记下发送这一刻的输入框与按钮位置，起播收进动作并等待回显起飞。 */
-  const startSendFlight = (sent: string) => {
+  /** 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。 */
+  const startThrow = (sent: string) => {
     const input = inputRef.current;
-    const button = sendButtonRef.current;
-    if (reducedMotion || !input || !button) return;
-    const inputRect = input.getBoundingClientRect();
-    const target = centerOf(button.getBoundingClientRect());
-    setCollapse({
+    if (reducedMotion || !input) return;
+    const rect = input.getBoundingClientRect();
+    setThrown({
       key: performance.now(),
       text: sent,
-      anchor: { left: inputRect.left, top: inputRect.top, height: inputRect.height, maxWidth: inputRect.width },
-      target,
+      anchor: { left: rect.left, top: rect.top, height: rect.height, maxWidth: rect.width },
+      phase: "fly",
     });
-    setPendingLaunch({ from: target, sentAt: performance.now(), baselineId: lastMineId });
+    setPendingEcho({ baselineId: lastMineId });
+    const icon = sendIconRef.current;
+    if (icon) {
+      const { keyframes, transition } = stepJitterAnimation(jitterShape.sendRecoil);
+      void animate(icon, keyframes, transition);
+    }
   };
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    startSendFlight(trimmed);
+    startThrow(trimmed);
     setText("");
     closeMention();
     try {
       await onSendMessage(trimmed);
     } catch (error) {
-      setPendingLaunch(null);
+      recallThrow();
       onError?.(error);
     }
   };
@@ -372,20 +480,21 @@ export function ChatPanel({
               const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
               const mentionsMe =
                 !isSticker && Boolean(myPlayerId) && mentionsPlayer(message.text, myPlayerId!, players);
+              const takesThrow = handoffId === message.id;
 
               return (
                 <motion.div
                   key={message.id}
                   layout="position"
                   variants={chatMessageLaunch}
-                  // 自己刚发出的那条由 MessageShell 从发送按钮飞出，外层不再叠一次弹入
-                  initial={launched?.id === message.id ? false : "initial"}
+                  // 自己刚发出的那条由 MessageShell 从胶囊手里接过去，外层不再叠一次弹入
+                  initial={takesThrow ? false : "initial"}
                   animate="animate"
                   exit="exit"
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <MessageShell isMe={isMe} launch={launched?.id === message.id ? launched : undefined}>
+                  <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
                   <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
                     {message.playerName}
                   </span>
@@ -531,24 +640,26 @@ export function ChatPanel({
           }}
           maxLength={maxLength}
         />
-        {collapse ? (
-          <SendCollapse
-            key={collapse.key}
-            text={collapse.text}
-            anchor={collapse.anchor}
-            target={collapse.target}
-            onDone={finishCollapse}
+        {thrown ? (
+          <SendThrow
+            key={thrown.key}
+            ref={capsuleRef}
+            text={thrown.text}
+            anchor={thrown.anchor}
+            phase={thrown.phase}
+            onRecalled={finishRecall}
           />
         ) : null}
         <Button
-          ref={sendButtonRef}
           size="icon"
           className="shrink-0"
           onClick={() => void handleSend()}
           disabled={!text.trim()}
           aria-label="发送消息"
         >
-          <Send className="h-4 w-4" />
+          <span ref={sendIconRef} className="inline-flex">
+            <Send className="h-4 w-4" />
+          </span>
         </Button>
       </div>
     </div>

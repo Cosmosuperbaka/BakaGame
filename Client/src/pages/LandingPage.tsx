@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { animate, motion, useReducedMotion } from "framer-motion";
 import {
+  flingDockMs,
+  jitterShape,
   listItem,
   listContainer,
   iconTappable,
   pressable,
+  stepJitterAnimation,
   useOriginTracker,
 } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
@@ -490,6 +493,28 @@ const INFO_PANEL = "scrollbar-hidden h-[min(58vh,34rem)] overflow-y-auto overscr
 export default function LandingPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
+  const versionRef = useRef<HTMLSpanElement>(null);
+  const reducedMotion = useReducedMotion();
+  const [docking, setDocking] = useState(0);
+  // 弹窗被吸回版本号的那一刻，号码被撞得逐格抖一下（定格阶梯抖动），读作窗口真的收进了按钮里。
+  useEffect(() => {
+    if (!docking || reducedMotion) return;
+    let stop: (() => void) | undefined;
+    const timer = window.setTimeout(() => {
+      const node = versionRef.current;
+      if (!node) return;
+      const { keyframes, transition } = stepJitterAnimation(jitterShape.versionDock);
+      stop = animate(node, keyframes, transition).stop;
+    }, flingDockMs);
+    return () => {
+      window.clearTimeout(timer);
+      stop?.();
+    };
+  }, [docking, reducedMotion]);
+  const changeInfoOpen = (open: boolean) => {
+    setInfoOpen(open);
+    if (!open) setDocking((count) => count + 1);
+  };
   // 入口可用性随构建模式变化，首次渲染时读一次；测试用 `vi.stubEnv("DEV", …)` 覆盖。
   const games = useMemo(() => resolveGames(), []);
 
@@ -575,26 +600,26 @@ export default function LandingPage() {
             }}
             className="min-h-8 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            {versionLabel}
+            <span ref={versionRef} className="inline-block">{versionLabel}</span>
           </motion.button>
         </div>
       </footer>
 
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen} origin={origin} genie>
+      <Dialog open={infoOpen} onOpenChange={changeInfoOpen} origin={origin} fling>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>版本信息</DialogTitle>
             <DialogDescription className="font-mono">{versionDescription}</DialogDescription>
           </DialogHeader>
-          {/* 开合与切换都走神灯：窗口从版本号里倒出来、关上吸回去；切标签时旧内容吸回自己的标签，新内容从被点的标签倒出 */}
-          <Tabs defaultValue="changelog" swap="genie">
+          {/* 窗口带着动量从版本号里抛出来、关上时吸回去；切标签时两幅内容整幅推过去 */}
+          <Tabs defaultValue="changelog">
             <TabsList className="mb-4 w-full">
               <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
               <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
             </TabsList>
             {/* 两份数据都在构建期定型（提交历史取自 GitHub 接口，取不到时降级为本地 git 历史），
                 打开弹窗即可用，不存在加载中状态。
-                两个面板同高：切换标签时弹窗不跟着伸缩，内容在原地横向交叉。 */}
+                两个面板同高：切换标签时弹窗不跟着伸缩，内容在原地整幅推过去。 */}
             <TabsContent value="changelog" className={INFO_PANEL}>
               {entries.length > 0 ? (
                 <ol className="space-y-6">
