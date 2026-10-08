@@ -33,11 +33,17 @@ function NeteaseCloudMusicIcon({ className }: { className?: string }) {
   );
 }
 
-/** 官方会员徽章：图片取自网易云 CDN 的原图（`public/assets/netease-vip`），读屏读档位与等级。 */
+/** 官方会员徽章：图片取自网易云 CDN 的原图（`public/assets/netease-vip`），读屏读档位与等级。
+ *  路径必须写成完整静态字符串：构建期的 WebP 转换只做精确字符串替换，模板拼接会漏进产物，被 asset-smoke 拦下。 */
+const VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
+  svip: ["", "/assets/netease-vip/SVIP-1.png", "/assets/netease-vip/SVIP-2.png", "/assets/netease-vip/SVIP-3.png", "/assets/netease-vip/SVIP-4.png", "/assets/netease-vip/SVIP-5.png", "/assets/netease-vip/SVIP-6.png", "/assets/netease-vip/SVIP-7.png"],
+  vip: ["", "/assets/netease-vip/VIP-1.png", "/assets/netease-vip/VIP-2.png", "/assets/netease-vip/VIP-3.png", "/assets/netease-vip/VIP-4.png", "/assets/netease-vip/VIP-5.png", "/assets/netease-vip/VIP-6.png", "/assets/netease-vip/VIP-7.png"],
+};
+
 function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string } | null {
   const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
-  if (account.vipTier === "svip") return { src: `/assets/netease-vip/SVIP-${level}.png`, label: `SVIP · ${LEVEL_NUMERALS[level]}` };
-  if (account.vipTier === "vip") return { src: `/assets/netease-vip/VIP-${level}.png`, label: `VIP · ${LEVEL_NUMERALS[level]}` };
+  if (account.vipTier === "svip") return { src: VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}` };
+  if (account.vipTier === "vip") return { src: VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}` };
   if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包" };
   return null;
 }
