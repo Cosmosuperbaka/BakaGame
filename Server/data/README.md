@@ -1,40 +1,27 @@
-# Bangumi 数据库
+# Bangumi 数据集与图床
 
-`bangumi.sqlite`（单库，猜歌与 CCB 共用）**不进 Git**（曾走 LFS，
-把账户的 GitHub LFS 带宽额度吃穿），现由 Cloudflare R2（`files` 桶）经
-加速域 `cdn.baka.website` 分发。
+`bangumi.sqlite`（单库，猜歌与 CCB 共用）与 `images/`（avif 图床分片 + 校验 `manifest.json`）
+均**不进 Git**——曾走 Git LFS，把账户的 GitHub LFS 带宽额度吃穿。
 
-## 三个设计要点
+## 投递与更新（2026-10 起）
 
-1. **版本化文件名**：对象名形如 `bangumi/bangumi-<kind>.<sha12>.sqlite`，
-   每次发布内容变化 ⇒ 文件名变化 ⇒ CDN 缓存键全新，不会被旧缓存污染。
-2. **manifest.json 是唯一一致性锚点**：记录当前版本的 `object / sha256 / size /
-   target`。它在 ESA 上配置了**禁缓存**规则（`cache-cdn-manifest-nocache`），
-   公开可读且实时生效；先传数据后传 manifest，不存在「清单指向未就绪数据」的窗口。
-3. **凭证最小化**：R2 的 AK/SK / 端点 / 加速域基址全部存放在仓库 secrets
-   （`R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_S3_ENDPOINT / R2_BUCKET /
-   BANGUMI_DATA_CDN_BASE`），**只有每周发布流程（bangumi-data.yml）使用**；
-   CI 与生产部署只 `curl` 公开 URL，生产机不持有任何 R2 凭证。
+1. **基线 = 本地一次性构建**（`tools/` 整体不进 Git，都在本地工作区运行）：
+   - `tools/build_bangumi_db.py`：从 `bangumi/Archive` dump 构建结构、名称与关系；
+   - `tools/refresh_subject_tags.py`：用 API 刷新作品标签并回填 `subjects.image`
+     （dump 的 tags 被截断到 11 个，API 给 30 个）；
+   - `tools/build_bangumi_images.py`：经 `bangumi.baka.website` 反代抓 avif
+     （`Accept: image/avif`，断点续传，分 16 片）。
+2. **投放**：
+   - 图床目录连 `manifest.json` 一起上传到服务器 `Server/data/`；
+   - 数据集上传服务器之外，**还需发布一份到 R2**（`tools/publish_bangumi_data.py`，本地运行）——
+     CI 的 E2E 与生产首启的基线补发都从 `<CDN 基址>/files/bangumi/manifest.json` 的
+     `dataset` 条目取它。
+3. **此后由后端自行更新**：角色标签走 CCB-TagsCI 的增量 diff（`id_tags.diff.json`）、作品标签
+   与封面地址走 API 刷新、新条目按首播日期窗口发现；每日 04:00 先备份数据库再跑维护任务，
+   备份为 `bangumi.sqlite.backup`（只留一份）。
+4. **CI 不生产数据、部署不碰数据**：原每周构建发布流程（`bangumi-data.yml`）已删除；部署只在
+   服务器没有可用数据库时按上面的 R2 清单补发（已有库绝不替换，见
+   [Agents/Deployment.md](../../Agents/Deployment.md)「数据分发」）。
 
-> URL 形态：`<CDN基址>/files/<对象名>`。中间的 `files` 段是 ESA 回源 S3
-> 源站的桶段（ESA 会把 URL 首段当作源站桶名），与 R2 桶 `files` 物理同名。
-
-## 本地开发取数
-
-无需任何凭证：
-
-```bash
-mkdir -p Server/data && cd Server/data
-curl -fLO https://cdn.baka.website/files/bangumi/manifest.json
-key=$(jq -r '.files[] | select(.id=="dataset") | .object' manifest.json)
-sha=$(jq -r '.files[] | select(.id=="dataset") | .sha256' manifest.json)
-curl -fLo bangumi.sqlite "https://cdn.baka.website/files/$key"
-echo "$sha  bangumi.sqlite" | sha256sum --check --strict -
-```
-
-## 更新链路
-
-`bangumi-data.yml`（北京时间每周一 05:00，或 CCB-TagsCI 派发）从
-`bangumi/Archive` dump 构建新库后按「版本化对象 → manifest → 删旧版」的
-顺序发布；CI（ci.yml）与生产部署（deploy.yml）经 manifest 校验 sha256 后
-取用，本地缓存副本校验和未变化时零下载复用。
+> R2 对象命名保持 `bangumi/bangumi-dataset.<sha12>.sqlite` 风格：文件名带内容哈希 ⇒ CDN 缓存键
+> 随内容变化；发布顺序永远是「先传对象、后传 manifest」，不存在「清单指向未就绪数据」的窗口。

@@ -205,10 +205,16 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 
 ## 本地数据集构建
 
-`Server/data/bangumi.sqlite` 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
-每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并发布到 R2（不进 Git）。**角色关系、作品、标签与声优的
-运行时判定仅使用这些本地数据**；普通角色查询不得在缺失时回源补查。角色头像及其同次 API 返回的
-基础资料、用户明确导入的目录成员使用下述独立补全层。
+`Server/data/bangumi.sqlite` 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成（**本地一次性
+构建**，`tools/` 整体不进 Git）。发布链路已退役：CI 不再构建或发布数据集；基线（首版）由运维上传——
+R2 上保留一份供 CI 的 E2E 取用，服务器则由后端自行更新（角色标签走增量 diff、作品标签与封面地址走
+API 刷新、新条目按首播窗口发现）。**角色关系、作品与声优的运行时判定仅使用这些本地数据**；普通角色
+查询不得在缺失时回源补查。角色头像及其同次 API 返回的基础资料、用户明确导入的目录成员使用下述独立
+补全层。
+
+⚠️ dump 有两个字段不可直接使用：`tags` 被截断为每条 11 个（API 返回 30 个，缺的恰是「鲁路修」这类
+有信息量的标签），`images` 整个字段不存在。构建产物必须用 `tools/refresh_subject_tags.py` 全量刷新
+一次（作品标签 + `subjects.image`；实测 36,342 条约 2 分钟、312 条/s）。
 
 **单库**：猜歌与 CCB 共用同一个数据集文件。此前 `subjects` 在两个库里各存一份（动画两边都有），
 更新要改两处且可能不一致 —— 库要改成可写、由后端自己更新时必须收口成一份。
@@ -223,7 +229,7 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 ### 作品裁剪口径（2026-10-10）
 
 **没有角色关联、也没有关联音乐的作品一律不入库** —— 它们既不会出现在 CCB 的登场作品里，
-也出不了猜歌的题，却占全库九成以上（实测 683,809 → 49,227，再剔 nsfw 后入库 35,942）。
+也出不了猜歌的题，却占全库九成以上（2026-10-10 用 dump-2026-10-06 实测 694,202 → 49,675，再剔 nsfw 后入库 36,342）。
 
 因此 `subjects` 里**没有「数据缺失」这回事**：查不到就是本项目不需要，不是构建漏了。
 `music_subjects` 与 `music_search` 已删除（运行时零读取，曲目信息全部来自 `subject_music_relations`）。
@@ -275,23 +281,25 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 原版服务端的 `POST /api/character-tags` 与 `/api/game-character-tags` 都只写 MongoDB，
 没有任何读回端点。原版**每周会更新**这个文件，所以**不要把快照提交进本仓库**——存下来必然过期。
 
-链路（两端 Actions 都改过，见下）：
+链路（2026-10 起：日常走增量 diff，全量只用于初始构建与兜底）：
 
 ```
 CCB-TagsCI  weekly-tags-maintenance        北京时间 周一 04:00
    ├─ 同步 guesser fork → 合并用户反馈标签 → 写 outputs/id_tags.js（提交）
-   └─ 派发 repository_dispatch: bangumi-tags-updated → BakaGame
-BakaGame    bangumi-data.yml               北京时间 周一 05:00（兜底）+ 收到派发立即跑
-   ├─ curl 下载 CCB-TagsCI 的 outputs/id_tags.js 到 /tmp/bangumi/id_tags.js
-   └─ python3 tools/build_bangumi_db.py <dump> Server/data --tags /tmp/bangumi/id_tags.js
+   └─ 同时产出 outputs/id_tags.diff.json（相对上一版的 added/changed/removed，实测一次几百字节）
+BakaGame    后端运行时（数据 Worker）       周期执行
+   ├─ 拉 outputs/id_tags.diff.json，校验 baseSha256 与本地已应用位点后整组替换 character_tags
+   └─ 位点对不上（中间漏过轮次）则拒绝应用，退回「全量 id_tags.js + 全量重建」兜底
 ```
 
-- **权威地址**：`https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js`
-  （注意 CCB-TagsCI 的默认分支是 **`master`**，不是 `main`；guesser fork 才是 `main`）。
+- **权威地址**：`https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.js`，
+  diff 为同目录的 `outputs/id_tags.diff.json`（注意 CCB-TagsCI 的默认分支是 **`master`**，不是 `main`；
+  guesser fork 才是 `main`）。
 - **构建脚本也支持直接给 URL**（`--tags` 默认就是这个地址），本地开发不必先手动下载。
-- BakaGame 侧用 `curl --fail --location --retry 3` 下载、下载字节数打进 CI 日志，便于追溯当晚用的是哪一版。
-- **定时任务排在 05:00 而不是 04:00**：必须等 CCB-TagsCI 把当晚的标签推完再重建。派发事件是加速路径，
-  定时任务是兜底——派发失败（例如 `CI_TOKEN` 对 BakaGame 缺 `repo` 权限）时仍能在一小时内自我修复。
+- **日常更新只应用 diff**（实测一次 467 字节 vs 全量 2 MB）；应用是幂等的，已应用版本记在服务器
+  本地状态文件（`appliedSha256`）作为下一轮基线。
+- **全量重建只在初始构建或缺轮次补偿时执行**：位点对不上必须走全量（下载 `id_tags.js` + 重建），
+  不能拿旧 diff 硬套——会静默漏掉中间的变更。
 - 脚本只认结尾 `}` 前的对象字面量，**数字键是裸写法**（`1:["紫瞳",…]`）不是合法 JSON，
   必须按行首补引号再解析；每行一个条目，所以行首匹配不会误伤标签文本里的数字冒号。
 - 标签是**平铺集合**（发色与性格混在一起），CCB 的「角色标签」交集用的就是它；
@@ -411,9 +419,9 @@ ORDER BY r.subject_id
 
 以下是历史构建样本，实际大小和行数以本次构建输出为准，不作为固定验收阈值。
 
-单库 `bangumi.sqlite`（裁剪后）实测 **266 MiB**：`characters` 220,559 行、
-`subjects` 35,942 行、`character_subject_relations` 363,606 行、`character_vas` 183,158 行。
-裁剪前两个库合计约 335 MiB —— 省下的主要是 `subjects` 从 635,188 行降到 35,942 行。
+单库 `bangumi.sqlite`（裁剪后、标签与封面回填后）实测 **288 MiB**：`characters` 223,204 行、
+`subjects` 36,342 行、`character_subject_relations` 368,662 行、`character_vas` 185,758 行。
+裁剪前两个库合计约 335 MiB —— 省下的主要是 `subjects` 从 635,188 行降到 36,342 行。
 文本本身不大（`raw_tags` / `summary` / `aliases` 是大头，标签与声优合计约 1.1 MiB）。
 
 ⚠️ 历史教训：**曾经物化过标签池（`tag_pool`/`raw_tag_pool`）与登场作品（`character_appearances`），

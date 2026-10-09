@@ -72,20 +72,35 @@ jobs:
     timeout-minutes: 3
     if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true' }}
     steps:
-      # 从 R2 加速域读取数据清单（公开、ESA 禁缓存），把版本化 URL / sha256 / size
-      # 解析后经 SSH envs 传给部署脚本——生产机全程不接触任何 R2 凭证，
-      # 只按一次性拼好的公开 URL 下载版本化对象。
+      # 数据分发为**可选**步骤：manifest 提供 dataset 条目时才下发数据 URL，
+      # 缺失即跳过（生产机沿用现有数据库），不阻断代码部署。
       - name: Resolve bangumi data manifest
         run: |
           set -euo pipefail
-          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+          # 数据集与图床已改由运维一次性上传、之后由后端自行更新，CI 不再生产
+          # 清单；只有显式提供 dataset 条目时才解析版本化 URL / sha256 / size
+          # 并经 SSH envs 下发——生产机全程不接触任何 R2 凭证。
+          if ! curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
             -o /tmp/bangumi-manifest.json \
-            "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"
+            "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"; then
+            echo "⏭ 未取到数据清单，跳过数据分发"
+            echo "BG_DATA_URL=" >> "$GITHUB_ENV"
+            echo "BG_DATA_SHA=" >> "$GITHUB_ENV"
+            echo "BG_DATA_SIZE=" >> "$GITHUB_ENV"
+            exit 0
+          fi
           resolve_one() {
             id=$1 var=$2
             key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' /tmp/bangumi-manifest.json)
             sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' /tmp/bangumi-manifest.json)
             size=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .size' /tmp/bangumi-manifest.json)
+            if [ -z "$key" ]; then
+              echo "⏭ 清单没有 $id 条目，跳过数据分发"
+              echo "BG_DATA_URL=" >> "$GITHUB_ENV"
+              echo "BG_DATA_SHA=" >> "$GITHUB_ENV"
+              echo "BG_DATA_SIZE=" >> "$GITHUB_ENV"
+              exit 0
+            fi
             [[ "$key" == bangumi/* && "$sha" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[1-9][0-9]*$ ]] \
               || { echo "❌ manifest 条目异常：$id"; exit 1; }
             echo "${var}_URL=$BANGUMI_DATA_CDN_BASE/files/$key" >> "$GITHUB_ENV"
@@ -139,19 +154,29 @@ jobs:
             # 下载绝对截止时间（相对脚本开始的秒数）。到点即干净失败，
             # 为后面的容器重启 + 健康检查留足余量，确保不会撞上 3 分钟硬超时。
             DL_DEADLINE=115
-            # 数据库分发源：R2 加速域。版本化 URL / sha256 / size 由 runner 从
-            # manifest（公开、禁缓存）解析后经 SSH envs 传入（BG_*），生产机
-            # 不持有任何 R2 凭证。这里只做格式校验，防环境变量注入。
-            for v in BG_DATA_URL BG_DATA_SHA BG_DATA_SIZE; do
-              if [ -z "${!v:-}" ]; then
-                echo "❌ 缺少数据分发环境变量：$v"
-                exit 1
-              fi
-            done
+            # 数据分发源（可选）：R2 加速域，现在只承担「基线补发」——服务器上没有
+            # 可用数据库（首启/灾备）时按清单下载一份；已有的库由后端自行更新，
+            # **绝不替换**。提供时，版本化 URL / sha256 / size 由 runner 从 manifest
+            # （公开、禁缓存）解析后经 SSH envs 传入（BG_*），生产机不持有任何 R2
+            # 凭证；未提供则完全跳过网络。这里只做格式校验，防环境变量注入。
+            DATA_SYNC=false
+            if [ -n "${BG_DATA_URL:-}" ] || [ -n "${BG_DATA_SHA:-}" ] || [ -n "${BG_DATA_SIZE:-}" ]; then
+              for v in BG_DATA_URL BG_DATA_SHA BG_DATA_SIZE; do
+                if [ -z "${!v:-}" ]; then
+                  echo "❌ 数据分发变量不完整：$v"
+                  exit 1
+                fi
+              done
+              DATA_SYNC=true
+            fi
             check_url()  { [[ "$1" =~ ^https://[A-Za-z0-9.:/_-]+$ ]] || { echo "❌ 非法数据 URL：$1"; exit 1; }; }
             check_sha()  { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "❌ 非法 sha256：$1"; exit 1; }; }
             check_size() { [[ "$1" =~ ^[1-9][0-9]*$ ]] || { echo "❌ 非法数据大小：$1"; exit 1; }; }
-            check_url "$BG_DATA_URL"; check_sha "$BG_DATA_SHA"; check_size "$BG_DATA_SIZE"
+            if [ "$DATA_SYNC" = true ]; then
+              check_url "$BG_DATA_URL"; check_sha "$BG_DATA_SHA"; check_size "$BG_DATA_SIZE"
+            else
+              echo "⏭ 未提供数据分发变量，跳过数据分发（沿用服务器现有数据库）"
+            fi
 
             T0=$(date +%s)
             say() { echo "[$(( $(date +%s) - T0 ))s] $*"; }
@@ -165,9 +190,9 @@ jobs:
                 *) echo "" ;;
               esac
             }
-            want_url()  { eval "echo \"\$BG_$(data_var "$1")_URL\""; }
-            want_sha()  { eval "echo \"\$BG_$(data_var "$1")_SHA\""; }
-            want_size() { eval "echo \"\$BG_$(data_var "$1")_SIZE\""; }
+            want_url()  { eval "echo \"\${BG_$(data_var "$1")_URL:-}\""; }
+            want_sha()  { eval "echo \"\${BG_$(data_var "$1")_SHA:-}\""; }
+            want_size() { eval "echo \"\${BG_$(data_var "$1")_SIZE:-}\""; }
 
             restore_cache() {
               for f in $DB_FILES; do
@@ -214,7 +239,7 @@ jobs:
               fi
             done
 
-            # ---------- 1. 代码同步（数据库实体不进 Git，由本脚本从 R2 取） ----------
+            # ---------- 1. 代码同步（数据库实体不进 Git；分发为可选，见第 2 步） ----------
             # 工作流已串行化（concurrency），上一次中断遗留的锁文件必然是陈旧的。
             if [ -f .git/index.lock ]; then
               say "清理上一次中断遗留的 .git/index.lock"
@@ -226,32 +251,13 @@ jobs:
             export GIT_LFS_SKIP_SMUDGE=1
             git config --local filter.lfs.required false
 
-            # 把已就位的实体文件挪出工作区（mv 是原子改名）。
-            # 血的教训：工作区里可能躺着指针文本（上一次失败留下的），绝不能用
-            # mv -f 盲目覆盖暂存区 —— 那会把唯一的真实数据库覆盖成 133 字节指针。
-            # 只有"工作区是有效 SQLite 且暂存区没有有效副本"时才搬过去。
+            # 服务器的数据库由后端自行更新：部署**绝不搬走、绝不覆盖**它——旧双库
+            # 时代会先把实体挪进暂存区以便下载替换，自更新语义下那一步只剩风险窗口。
+            # 只清理可能残留的 LFS 指针文本（历史失败运行遗留，绝不能被当作库使用），
+            # 有效性由第 3 步统一验证。
             mkdir -p "$STASH"
             for f in $DB_FILES; do
-              b=$(basename "$f")
-              c="$STASH/$b"
-              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
-                if [ ! -f "$c" ] || [ "$(head -c 15 "$c" 2>/dev/null)" != "SQLite format 3" ]; then
-                  mv -f "$f" "$c"
-                  say "暂存实体文件：$f"
-                else
-                  # 两份都是有效实体：上次部署在停机预告前中止时，工作区副本可能已是下载
-                  # 校验过的目标数据、而暂存区仍是陈旧版本——此时取信工作区。否则重跑会
-                  # 丢掉已下载的数据、白下三百多兆。
-                  stash_sha=$(sha256sum "$c"); stash_sha=${stash_sha%% *}
-                  work_sha=$(sha256sum "$f"); work_sha=${work_sha%% *}
-                  if [ "$stash_sha" != "$(want_sha "$b")" ] && [ "$work_sha" = "$(want_sha "$b")" ]; then
-                    mv -f "$f" "$c"
-                    say "暂存副本已过期，改用工作区目标数据：$f"
-                  else
-                    rm -f "$f"
-                  fi
-                fi
-              elif [ -f "$f" ]; then
+              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
                 say "工作区是 LFS 指针文本，丢弃：$f"
                 rm -f "$f"
               fi
@@ -268,11 +274,28 @@ jobs:
             # 一致性锚点（版本化 URL / sha256 / size）由 runner 从 manifest 解析，
             # 已随 SSH envs 传入并在脚本开头做过格式校验，这里直接可用。
 
-            # ---------- 2. 数据库：校验和未变化则零网络复用，变化才下载 ----------
+            # ---------- 2. 数据库：已有的库绝不替换；缺失时才按清单补发（可选） ----------
             PENDING=""
             for f in $DB_FILES; do
               b=$(basename "$f")
               cached="$STASH/$b"
+              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
+                # 服务器上的库由后端持续更新，与清单的 sha256 几乎必然不同 —— 按设计
+                # **保留**，部署绝不覆盖。（如需强制换代：先移走服务器上的库再部署。）
+                say "保留服务器现有数据库：$f"
+                continue
+              fi
+              if [ "$DATA_SYNC" = false ]; then
+                # 没有清单、工作区也没有可用库：尝试从旧暂存区恢复，否则要求先上传。
+                if [ -f "$cached" ] && [ "$(head -c 15 "$cached" 2>/dev/null)" = "SQLite format 3" ]; then
+                  mv -f "$cached" "$f"
+                  say "从暂存恢复数据库：$f"
+                else
+                  echo "❌ 服务器上没有可用的数据库：$f（需先上传数据集或提供清单）"
+                  exit 1
+                fi
+                continue
+              fi
               want=$(want_sha "$b")
               if [ -z "$want" ]; then
                 echo "❌ 数据分发变量缺少条目：$b"
@@ -388,13 +411,23 @@ jobs:
             # ---------- 3. 落盘校验 ----------
             for f in $DB_FILES; do
               b=$(basename "$f")
-              want=$(want_sha "$b")
-              hash=$(sha256sum "$f"); hash=${hash%% *}
-              if [ -z "$want" ] || [ "$hash" != "$want" ]; then
-                echo "❌ 数据库校验失败：$f"
+              # 保留的服务器数据库与清单位点几乎必然不同（后端持续更新），因此校验
+              # 只要求它是一份真实的 SQLite；与清单一致时额外报告一致（刚补发的场景）。
+              if [ ! -s "$f" ] || [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
+                echo "❌ 数据库文件不可用：$f"
                 exit 1
               fi
-              say "校验通过：$f"
+              want=$(want_sha "$b")
+              if [ -n "$want" ]; then
+                hash=$(sha256sum "$f"); hash=${hash%% *}
+                if [ "$hash" = "$want" ]; then
+                  say "校验通过（与清单一致）：$f"
+                else
+                  say "校验通过（保留的服务器数据库，与清单位点不同）：$f"
+                fi
+              else
+                say "校验通过（存在且为 SQLite）：$f"
+              fi
             done
 
             # ---------- Release 元数据准备（预算 3 秒；bun 取自容器 node_modules，镜像内无 PATH bun） ----------

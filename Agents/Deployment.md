@@ -245,7 +245,7 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 前提未满足时不得发布该搜索配置。
 
 1. SSH 使用 `appleboy/ssh-action`，`script_stop: false`，由脚本 `set -euo pipefail` 管理失败；作业与 SSH 命令均限 3 分钟。
-2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致（不消费移动 main）。数据实体不再随代码走：runner 在部署前从 R2 manifest 解析版本化数据 URL 与 sha256/size，经 SSH `envs` 传入，按下节规则校验、复用或下载数据库。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
+2. 门禁输出获验 run ID 与完整 40 位 SHA；远端 `/BakaGame` fetch/reset 该 SHA，并核验 HEAD 一致（不消费移动 main）。数据实体不随代码分发：部署**绝不搬走、绝不覆盖**服务器上的数据库（数据集与图床由运维一次性上传、此后由后端自行更新）；仅在服务器没有可用数据库且 manifest 提供 `dataset` 条目时按下一节规则补发。这是部署环境操作，不在本地开发工作区照抄 `reset --hard`。
 3. 数据校验后、排空前生成获验修订的 release 元数据，流程及失败边界见下一节；宿主机不需要 Node/Bun。
 4. 排空前通过容器内 `DeploymentNotify.ts` 调用本机 `POST /api/system/notify-shutdown`，从生产容器环境读取 `MAINTENANCE_TOKEN` 并以 Bearer 鉴权，不使用自报 `X-Real-IP`、不打印 token、不放入命令参数。Token 是只在容器内部自洽的随机共享密钥，不与任何外部系统交换，用 `openssl rand -hex 32` 生成即可（唯一格式约束：trim 后非空、不含换行）；必须在容器创建时通过运行环境显式注入（只在容器内 `.env` 提供不足以供 `--no-env-file` helper 消费，且 `docker restart` 不更新环境——补注入需重建容器）。缺失、非成功状态或 3 秒超时均中止部署且不重启，不声称预通知成功。接口向三款游戏广播并摘除 readiness。
 5. 等待 3 秒排空，重启 `BakaGame` 容器；容器入口负责依赖同步与服务拉起。
@@ -279,22 +279,27 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 下载截止时间与其他阶段预算有重叠，不能把表内数字直接相加。整体仍须满足 3 分钟硬超时。**常态部署（数据未变）应在 60s 内完成**，
 这是目标值而非上限：数据下载路径必须设计成"无事发生"。
 
-### R2 数据分发约束
+### 数据分发（可选；只用于基线补发）
 
-`Server/data/bangumi-*.sqlite`（2026-10 实测合计约 336MiB，随每周重建变化，以 manifest 为准）
-**不进 Git**——曾走 Git LFS，把账户的 GitHub LFS 带宽额度吃穿，现由 Cloudflare R2 桶 `files`
-经加速域 `cdn.baka.website` 分发。对象命名、发布顺序与凭证边界的真相源是
-[Server/data/README.md](../Server/data/README.md)，本节只约束流水线侧的消费行为：
+`Server/data/bangumi.sqlite`（2026-10-10 实测约 288 MiB）**不进 Git**——曾走 Git LFS，把账户的
+GitHub LFS 带宽额度吃穿。**现行投递方式**：一份「基线」数据集由运维一次性上传（图床目录
+`Server/data/images/` 直接上服务器；数据集另发一份到 R2 供 CI 取用），此后由后端自行更新
+（标签刷新、新条目发现、每日备份）；CI 不再构建或发布数据集（原每周 `bangumi-data.yml` 已删除）。
+
+部署脚本只保留一条**基线补发**通路：服务器上**没有**可用数据库时（首启/灾备重建），若 manifest
+提供了 `dataset` 条目则按版本化 URL 下载并校验落位；**服务器已有的库绝不搬走、绝不替换**——它与
+清单的 sha256 几乎必然不同（后端在持续更新）。无清单时完全跳过网络。发布基线与本地更新链路见
+[Server/data/README.md](../Server/data/README.md)：
 
 - **一致性锚点只有 manifest**：`<CDN 基址>/files/bangumi/manifest.json`（公开、ESA 禁缓存）
-  记录当前版本的 `object / sha256 / size`。runner 在部署前解析出两个库的版本化 URL、sha256、
-  size，经 SSH `envs` 传参（`BG_CHAR_*` / `BG_SONG_*`）——**生产机全程不接触 R2 凭证**，
+  记录当前版本的 `object / sha256 / size`。runner 在部署前解析出版本化 URL、sha256、size，
+  经 SSH `envs` 传参（`BG_DATA_*`）——**生产机全程不接触 R2 凭证**，
   也不许现场解析 manifest 或猜测版本化对象名。
 - **传参先做格式校验**：URL（HTTPS + 白名单字符）、sha256（64 位小写十六进制）、size（正整数）
   任一不合规即中止，防 SSH envs 注入。
-- **校验和未变化 = 零网络复用**：已就位的库先挪到与仓库同盘的 `.deploy-stash`（`mv` 原子改名），
-  `git reset --hard` 后比对缓存副本 sha256——相同则原子回位，全程无大文件流量；不同才下载。
-  数据每周重建一次，绝大多数部署应走零网络路径。
+- **已有的库绝不触碰**：工作区的库不进暂存区、不参与下载比对——后端在持续更新它，部署对它唯一的
+  动作是「校验为有效 SQLite」。只有完全缺失时才走补发；指针文本（LFS 时代残留）一律丢弃，
+  绝不能被当作数据库搬动。
 - **下载 = 8 路分片并行 + 全局截止**：`SPLIT=8`、`DL_DEADLINE=115s`（自脚本起的绝对截止，
   包含此前全部耗时）。每片 `curl -r` 带连接/总超时、`--speed-limit/--speed-time` 空转放弃与
   `--retry 2 --retry-delay 1`（R2 同为 Cloudflare 前置，对并发突发可能 403/429，排查先看
@@ -302,7 +307,7 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
   整体 sha256 兜底。
 - **断点续传**：分片目录按「文件名 + 目标 sha256 前缀」命名并跨运行保留（失败清理只删
   `.probe` / `.merged.*`，不动 `.parts.*`）；一次跑不完，重跑接着下，不从零开始。
-  分片临时路径必须由文件名派生——两个库是并行下载的，bash 的 `$$` 在子 shell 中仍是父进程
+  分片临时路径必须由文件名派生——多个数据文件是并行下载的，bash 的 `$$` 在子 shell 中仍是父进程
   PID，用它拼路径会让两个任务互相覆盖，产出体积正确但内容错乱的文件。
 - **失败必须不重启容器、不留坏数据**：下载失败 / 落盘校验失败都在 `docker restart` 之前中止；
   `trap on_exit` 把暂存区的旧库放回工作区，防止下一次容器重启读到缺失或损坏的数据库。
@@ -331,11 +336,12 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 | `DEPLOY_USER` | SSH 登录用户名 | `ubuntu`（未设置时默认 `ubuntu`） |
 | `DEPLOY_KEY` | 用于 SSH 鉴权的私钥纯文本 | 必填（完整包含 BEGIN/END 标记） |
 | `DEPLOY_PASSPHRASE` | 用于解密 SSH 私钥的密码（若私钥受密码保护） | 可选（私钥无密码保护时无需配置） |
-| `BANGUMI_DATA_CDN_BASE` | R2 加速域基址（公开），CI 与部署据此解析 manifest 与数据 URL | 必填（只读消费，不含凭证） |
-| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 仅每周数据发布（`bangumi-data.yml`）使用 |
-| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 仅每周数据发布使用 |
-| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 仅每周数据发布使用 |
-| `R2_BUCKET` | R2 桶名 | 仅每周数据发布使用 |
+| `BANGUMI_DATA_CDN_BASE` | R2 加速域基址（公开），CI 与部署据此解析基线 manifest | 必填（只读消费，不含凭证） |
+| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 当前无使用方（本地发布脚本自备凭证） |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 当前无使用方 |
+| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 当前无使用方 |
+| `R2_BUCKET` | R2 桶名 | 当前无使用方 |
 
-R2 凭证四件套只被每周数据发布流程读取；CI 与生产部署只按公开 URL 下载版本化对象，
-生产机不持有任何 R2 凭证。
+R2 凭证四件套当前没有仓库内使用方（每周发布流程已删除；本地发布脚本
+`tools/publish_bangumi_data.py` 用自己环境的变量，不进仓库）；CI 与生产部署只按公开 URL
+下载版本化对象，生产机不持有任何 R2 凭证。
