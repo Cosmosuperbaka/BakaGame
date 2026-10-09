@@ -205,15 +205,28 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 
 ## 本地数据集构建
 
-`Server/data/` 下两个只读 SQLite 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
+`Server/data/bangumi.sqlite` 由 `tools/build_bangumi_db.py` 从 Bangumi Archive dump 生成，
 每周一 05:00 由 `.github/workflows/bangumi-data.yml` 重建并发布到 R2（不进 Git）。**角色关系、作品、标签与声优的
 运行时判定仅使用这些本地数据**；普通角色查询不得在缺失时回源补查。角色头像及其同次 API 返回的
-基础资料、用户明确导入的目录成员使用下述独立补全层，不能写入只读数据集产物。
+基础资料、用户明确导入的目录成员使用下述独立补全层。
 
-| 文件 | 内容 | 使用方 |
+**单库**：猜歌与 CCB 共用同一个数据集文件。此前 `subjects` 在两个库里各存一份（动画两边都有），
+更新要改两处且可能不一致 —— 库要改成可写、由后端自己更新时必须收口成一份。
+
+| 表 | 内容 | 使用方 |
 |---|---|---|
-| `bangumi-song.sqlite` | `subjects`（动画）/ `music_subjects` / `subject_music_relations` | Songuessr |
-| `bangumi-character.sqlite` | `characters` / `subjects` / `character_subject_relations` / `character_tags` / `character_extra_tags` / `character_vas` | CCB |
+| `subjects` | **裁剪后**的作品（见下）、两侧字段合一、含 `image` 列（dump 无图，留空待后端写） | 双方 |
+| `characters` | 角色（全量） | CCB |
+| `subject_music_relations` | 动画 ↔ 音乐条目的曲目关系（title / artist / kind） | Songuessr |
+| `character_subject_relations` / `character_tags` / `character_extra_tags` / `character_vas` | 角色关系、标签、专属标签、声优 | CCB |
+
+### 作品裁剪口径（2026-10-10）
+
+**没有角色关联、也没有关联音乐的作品一律不入库** —— 它们既不会出现在 CCB 的登场作品里，
+也出不了猜歌的题，却占全库九成以上（实测 683,809 → 49,227，再剔 nsfw 后入库 35,942）。
+
+因此 `subjects` 里**没有「数据缺失」这回事**：查不到就是本项目不需要，不是构建漏了。
+`music_subjects` 与 `music_search` 已删除（运行时零读取，曲目信息全部来自 `subject_music_relations`）。
 
 ### 角色中文名与性别只能从 infobox 解析（铁律）
 
@@ -398,10 +411,10 @@ ORDER BY r.subject_id
 
 以下是历史构建样本，实际大小和行数以本次构建输出为准，不作为固定验收阈值。
 
-修复 + 新增表后 `bangumi-character.sqlite` 为 **252.8 MiB**（114 MiB 的旧库 → 加 summary/aliases/标签/声优
-→ 补 `subjects` 全部类型与 `heat`）：`aliases` 让 trigram 索引显著增长，`subjects` 634,649 行，
-`character_subject_relations` 424,143 行（两条索引：按角色、**按作品**——出题 stage 2 要用）。
-文本本身不大（`raw_tags` 约 33 MiB / `summary` 23.6 MiB / `aliases` 3.0 MiB / 标签与声优合计约 1.1 MiB）。
+单库 `bangumi.sqlite`（裁剪后）实测 **266 MiB**：`characters` 220,559 行、
+`subjects` 35,942 行、`character_subject_relations` 363,606 行、`character_vas` 183,158 行。
+裁剪前两个库合计约 335 MiB —— 省下的主要是 `subjects` 从 635,188 行降到 35,942 行。
+文本本身不大（`raw_tags` / `summary` / `aliases` 是大头，标签与声优合计约 1.1 MiB）。
 
 ⚠️ 历史教训：**曾经物化过标签池（`tag_pool`/`raw_tag_pool`）与登场作品（`character_appearances`），
 两样都已被证明是错的并删除**，库一度涨到 343 MiB。判据是同一条 —— 见上一节「登场作品运行时算」

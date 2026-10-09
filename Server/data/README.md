@@ -1,6 +1,6 @@
 # Bangumi 数据库
 
-`bangumi-character.sqlite` 与 `bangumi-song.sqlite` **不进 Git**（曾走 LFS，
+`bangumi.sqlite`（单库，猜歌与 CCB 共用）**不进 Git**（曾走 LFS，
 把账户的 GitHub LFS 带宽额度吃穿），现由 Cloudflare R2（`files` 桶）经
 加速域 `cdn.baka.website` 分发。
 
@@ -26,12 +26,10 @@
 ```bash
 mkdir -p Server/data && cd Server/data
 curl -fLO https://cdn.baka.website/files/bangumi/manifest.json
-for id in character song; do
-  key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' manifest.json)
-  sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' manifest.json)
-  curl -fLO "https://cdn.baka.website/files/$key"
-  echo "$sha  $(basename "$key")" | sha256sum --check --strict -
-done
+key=$(jq -r '.files[] | select(.id=="dataset") | .object' manifest.json)
+sha=$(jq -r '.files[] | select(.id=="dataset") | .sha256' manifest.json)
+curl -fLo bangumi.sqlite "https://cdn.baka.website/files/$key"
+echo "$sha  bangumi.sqlite" | sha256sum --check --strict -
 ```
 
 ## 更新链路

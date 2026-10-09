@@ -91,8 +91,7 @@ jobs:
               -o "$out" "$BANGUMI_DATA_CDN_BASE/files/$key"
             echo "$sha  $out" | sha256sum --check --strict -
           }
-          fetch_one character bangumi-character.sqlite
-          fetch_one song bangumi-song.sqlite
+          fetch_one dataset bangumi.sqlite
         env:
           BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
@@ -202,8 +201,7 @@ jobs:
               -o "$out" "$BANGUMI_DATA_CDN_BASE/files/$key"
             echo "$sha  $out" | sha256sum --check --strict -
           }
-          fetch_one character bangumi-character.sqlite
-          fetch_one song bangumi-song.sqlite
+          fetch_one dataset bangumi.sqlite
         env:
           BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 

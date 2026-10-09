@@ -92,8 +92,7 @@ jobs:
             echo "${var}_SHA=$sha" >> "$GITHUB_ENV"
             echo "${var}_SIZE=$size" >> "$GITHUB_ENV"
           }
-          resolve_one character BG_CHAR
-          resolve_one song BG_SONG
+          resolve_one dataset BG_DATA
         env:
           BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
@@ -103,7 +102,7 @@ jobs:
           DEPLOY_REV: ${{ needs.gate.outputs.revision }}
           VERIFIED_RUN_ID: ${{ needs.gate.outputs.run_id }}
         with:
-          envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_CHAR_URL,BG_CHAR_SHA,BG_CHAR_SIZE,BG_SONG_URL,BG_SONG_SHA,BG_SONG_SIZE
+          envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_DATA_URL,BG_DATA_SHA,BG_DATA_SIZE
           host: ${{ secrets.DEPLOY_HOST }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
@@ -132,7 +131,7 @@ jobs:
             [[ "$VERIFIED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
             REF="$DEPLOY_REV"
             echo "发布获验 CI run=$VERIFIED_RUN_ID SHA=$DEPLOY_REV"
-            DB_FILES="Server/data/bangumi-song.sqlite Server/data/bangumi-character.sqlite"
+            DB_FILES="Server/data/bangumi.sqlite"
             # 数据库实体文件中转目录：与仓库同盘，mv 为原子改名，不产生拷贝开销。
             STASH="/BakaGame/.deploy-stash"
             # 单文件并行分片数。
@@ -143,7 +142,7 @@ jobs:
             # 数据库分发源：R2 加速域。版本化 URL / sha256 / size 由 runner 从
             # manifest（公开、禁缓存）解析后经 SSH envs 传入（BG_*），生产机
             # 不持有任何 R2 凭证。这里只做格式校验，防环境变量注入。
-            for v in BG_CHAR_URL BG_CHAR_SHA BG_CHAR_SIZE BG_SONG_URL BG_SONG_SHA BG_SONG_SIZE; do
+            for v in BG_DATA_URL BG_DATA_SHA BG_DATA_SIZE; do
               if [ -z "${!v:-}" ]; then
                 echo "❌ 缺少数据分发环境变量：$v"
                 exit 1
@@ -152,8 +151,7 @@ jobs:
             check_url()  { [[ "$1" =~ ^https://[A-Za-z0-9.:/_-]+$ ]] || { echo "❌ 非法数据 URL：$1"; exit 1; }; }
             check_sha()  { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "❌ 非法 sha256：$1"; exit 1; }; }
             check_size() { [[ "$1" =~ ^[1-9][0-9]*$ ]] || { echo "❌ 非法数据大小：$1"; exit 1; }; }
-            check_url "$BG_CHAR_URL"; check_sha "$BG_CHAR_SHA"; check_size "$BG_CHAR_SIZE"
-            check_url "$BG_SONG_URL"; check_sha "$BG_SONG_SHA"; check_size "$BG_SONG_SIZE"
+            check_url "$BG_DATA_URL"; check_sha "$BG_DATA_SHA"; check_size "$BG_DATA_SIZE"
 
             T0=$(date +%s)
             say() { echo "[$(( $(date +%s) - T0 ))s] $*"; }
@@ -163,8 +161,7 @@ jobs:
             # $1 = 文件名（不带路径）
             data_var() {
               case "$1" in
-                bangumi-character.sqlite) echo CHAR ;;
-                bangumi-song.sqlite) echo SONG ;;
+                bangumi.sqlite) echo DATA ;;
                 *) echo "" ;;
               esac
             }

@@ -77,8 +77,8 @@ jobs:
           manifest = {
               "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               "files": [
-                  info("character", "bangumi-character.sqlite", "Server/data/bangumi-character.sqlite"),
-                  info("song", "bangumi-song.sqlite", "Server/data/bangumi-song.sqlite"),
+                  # 单库：猜歌与 CCB 共用同一份数据集（see tools/build_bangumi_db.py）。
+                  info("dataset", "bangumi.sqlite", "Server/data/bangumi.sqlite"),
               ],
           }
           with open("/tmp/bangumi-manifest.json", "w") as f:
