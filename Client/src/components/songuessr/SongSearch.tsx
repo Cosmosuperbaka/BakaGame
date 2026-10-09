@@ -29,14 +29,27 @@ function Cover({ src, shape, icon: Icon }: { src?: string; shape: "square" | "po
 const songDetail = (song: SongSearchResult) => [song.artist, song.album].filter(Boolean).join(" · ");
 
 function SongRow({ song, guessed, badge }: { song: SongSearchResult; guessed?: boolean; badge?: string }) {
+  const isQqSong = song.id.startsWith("qq:");
+  const isNeteaseSong = song.id.startsWith("netease:");
+  const platformBadge = isQqSong ? (
+    <Badge variant="outline" size="xs" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
+      QQ音乐
+    </Badge>
+  ) : isNeteaseSong ? (
+    <Badge variant="outline" size="xs" className="border-rose-500/40 text-rose-600 dark:text-rose-400">
+      网易云
+    </Badge>
+  ) : null;
+
   return (
     <SearchOptionContent
       media={<Cover src={song.pictureUrl} shape="square" icon={Music2} />}
       title={song.title}
       subtitle={songDetail(song) || undefined}
       trailing={guessed ? "已猜过" : (
-        badge || song.requiresVip ? (
+        platformBadge || badge || song.requiresVip ? (
           <span className="flex items-center gap-1">
+            {platformBadge}
             {badge ? <Badge variant="outline" size="xs">{badge}</Badge> : null}
             {song.requiresVip ? <Badge variant="restricted" size="xs">会员专享</Badge> : null}
           </span>
