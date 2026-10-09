@@ -77,78 +77,64 @@ interface GameEntry {
   subModes?: GameSubMode[];
 }
 
-/**
- * CCB 增强版的主页入口在生产部署临时下线。
- *
- * 生产构建（`npm run build`，含 Makers 平台侧构建）只把该条目渲染成「即将上线」的
- * 不可用卡片；本地 `npm run dev` 保持开放，便于联调。这里只拦主页入口——
- * `/ccb` 大厅与 `/ccb/room/<房号>` 直链照常进入，服务端不做任何拦截。
- *
- * 恢复上线：把 `isCcbHomeEntryAvailable` 改回 `() => true`（或删除该开关与调用点）。
- */
-const isCcbHomeEntryAvailable = () => import.meta.env.DEV;
-
-/** 主页游戏条目。入口开关在组件首次渲染时读取，测试可用 `vi.stubEnv("DEV", …)` 覆盖。 */
-function resolveGames(): GameEntry[] {
-  return [
-    {
-      id: "whoisfaker",
-      path: "/whoisfaker",
-      lobbyPath: "/whoisfaker",
-      icon: "/assets/Faker.png",
-      title: "Who is Faker",
-      available: true,
-    },
-    {
-      id: "songuessr",
-      lobbyPath: "/songuessr",
-      icon: "/assets/SongGuessr.gif",
-      title: "Songuessr",
-      available: true,
-      subModes: [
-        {
-          id: "singleplayer",
-          title: "单人模式",
-          path: "/songuessr/solo",
-          available: true,
-        },
-        {
-          id: "multiplayer",
-          title: "多人模式",
-          path: "/songuessr",
-          available: true,
-        },
-      ],
-    },
-    {
-      id: "animecharguessr",
-      path: "/ccb",
-      lobbyPath: "/ccb",
-      icon: "/assets/CCB.jpg",
-      title: "二刺猿笑传之猜猜呗",
-      subtitle: "Enhanced Edition",
-      available: isCcbHomeEntryAvailable(),
-      subModes: [
-        {
-          id: "multiplayer",
-          title: "多人模式",
-          path: "/ccb",
-          available: true,
-        },
-        {
-          id: "ranked",
-          title: "排位赛",
-          available: false,
-        },
-        {
-          id: "tournament",
-          title: "锦标赛",
-          available: false,
-        },
-      ],
-    },
-  ];
-}
+const GAMES: GameEntry[] = [
+  {
+    id: "whoisfaker",
+    path: "/whoisfaker",
+    lobbyPath: "/whoisfaker",
+    icon: "/assets/Faker.png",
+    title: "Who is Faker",
+    available: true,
+  },
+  {
+    id: "songuessr",
+    lobbyPath: "/songuessr",
+    icon: "/assets/SongGuessr.gif",
+    title: "Songuessr",
+    available: true,
+    subModes: [
+      {
+        id: "singleplayer",
+        title: "单人模式",
+        path: "/songuessr/solo",
+        available: true,
+      },
+      {
+        id: "multiplayer",
+        title: "多人模式",
+        path: "/songuessr",
+        available: true,
+      },
+    ],
+  },
+  {
+    id: "animecharguessr",
+    path: "/ccb",
+    lobbyPath: "/ccb",
+    icon: "/assets/CCB.jpg",
+    title: "二刺猿笑传之猜猜呗",
+    subtitle: "Enhanced Edition",
+    available: true,
+    subModes: [
+      {
+        id: "multiplayer",
+        title: "多人模式",
+        path: "/ccb",
+        available: true,
+      },
+      {
+        id: "ranked",
+        title: "排位赛",
+        available: false,
+      },
+      {
+        id: "tournament",
+        title: "锦标赛",
+        available: false,
+      },
+    ],
+  },
+];
 
 interface FriendLink {
   href: string;
@@ -515,8 +501,6 @@ export default function LandingPage() {
     setInfoOpen(open);
     if (!open) setDocking((count) => count + 1);
   };
-  // 入口可用性随构建模式变化，首次渲染时读一次；测试用 `vi.stubEnv("DEV", …)` 覆盖。
-  const games = useMemo(() => resolveGames(), []);
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
   // 也不依赖 entries 的书写顺序。
@@ -555,11 +539,11 @@ export default function LandingPage() {
             auto 边距在有空间时居中、空间不足时归零，矮屏下自然退化为顶部对齐。 */}
         <motion.div
           className="my-auto flex w-full flex-col gap-2.5 sm:gap-3"
-          variants={listContainer(games.length)}
+          variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
         >
-          {games.map((game) => (
+          {GAMES.map((game) => (
             <GameRow key={game.id} game={game} />
           ))}
         </motion.div>

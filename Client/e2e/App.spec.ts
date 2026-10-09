@@ -58,7 +58,7 @@ async function removeAllTestBots(page: Page) {
   await expect(bots).toHaveCount(0);
 }
 
-test("landing page exposes playable games and keeps placeholders disabled", async ({ page }) => {
+test("landing page exposes three playable games and keeps placeholders disabled", async ({ page }) => {
   const assertPageQuality = installPageQualityGuards(page);
   await page.goto("/");
 
@@ -66,33 +66,12 @@ test("landing page exposes playable games and keeps placeholders disabled", asyn
   await expect(page.getByRole("button", { name: /Who is Faker/ })).toBeVisible();
   await expect(page.getByText("Songuessr")).toBeVisible();
   await expect(page.getByTestId("game-entry-songuessr").getByRole("button", { name: /多人模式/ })).toBeVisible();
-
-  // CCB 增强版的主页入口在生产构建里临时下线：卡片保留原尺寸与结构，
-  // 但整卡不可用（没有可点击的入口）。直链进大厅见下一条用例。
-  const ccbEntry = page.getByTestId("game-entry-animecharguessr");
-  await expect(ccbEntry).toBeVisible();
-  await expect(ccbEntry.getByText("即将上线")).toBeVisible();
-  await expect(ccbEntry.getByRole("button")).toHaveCount(0);
-
+  await expect(page.getByTestId("game-entry-animecharguessr").getByRole("button", { name: /多人模式/ })).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
   await page.getByRole("button", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
-  await assertPageQuality();
-});
-
-test("CCB lobby stays reachable by direct link while its home entry is disabled", async ({ page }) => {
-  const assertPageQuality = installPageQualityGuards(page);
-  await page.goto("/");
-
-  // 入口不可点：主页上没有任何通往 /ccb 的按钮
-  await expect(page.getByTestId("game-entry-animecharguessr").getByRole("button")).toHaveCount(0);
-
-  await page.goto("/ccb");
-  await expect(page).toHaveURL(/\/ccb$/);
-  await expect(page.getByRole("textbox", { name: "用户名" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "创建房间", exact: true })).toBeVisible();
   await assertPageQuality();
 });
 
