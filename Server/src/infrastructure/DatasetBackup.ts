@@ -13,6 +13,11 @@ export interface DatasetBackupOptions {
   backupPath: string;
   logger?: { warn: (message: string) => void };
   now?: () => number;
+  /**
+   * 每日 04:00 的额外维护任务（备份之后执行）。抛错只记警告，不影响排程。
+   * 当前挂的是「发现并导入新条目」。
+   */
+  onDailyTask?: () => Promise<void>;
 }
 
 /**
@@ -56,8 +61,19 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
     if (next.getTime() <= current) next.setTime(next.getTime() + DAY_MS);
     timer = setTimeout(() => {
       runBackup();
+      void runDailyTask();
       scheduleNext();
     }, next.getTime() - current);
+  };
+
+  const runDailyTask = async () => {
+    if (!options.onDailyTask) return;
+    try {
+      await options.onDailyTask();
+    } catch (error) {
+      // 日常维护失败不该影响服务：下一轮会重试，数据本身还在。
+      options.logger?.warn(`每日维护任务失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   // 刚起来就先备一份：首次部署后没有任何快照，更新器一旦写坏就没有退路。

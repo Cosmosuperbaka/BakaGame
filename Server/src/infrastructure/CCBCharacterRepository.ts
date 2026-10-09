@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
+import { discoverNewSubjects, type DiscoveryResult } from "./SubjectDiscovery";
 import { AppError } from "../domain/Errors";
 import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
@@ -125,6 +126,41 @@ export class CCBCharacterRepository implements CCBDataProvider {
       JOIN subjects s ON s.id=r.subject_id WHERE r.subject_id=? AND r.relation_type IN (1,2) AND s.nsfw=0
       ORDER BY r.relation_order,c.id LIMIT ?`).all(subjectId, boundedLimit(limit, 100)) as CharacterRow[];
     return rows.map((row) => this.toSummary(row));
+  }
+
+  /**
+   * 应用角色标签增量（上游 CCB-TagsCI 的 diff）。
+   *
+   * 同一角色的标签是**一整组**：`position` 是它在 id_tags 数组里的下标，原版按
+   * `slice(0, characterTagNum)` 取前若干个，所以只能整组替换、不能逐条增删（会错位）。
+   * `removed` 必须一起处理，否则留下指向不存在角色的悬空行。
+   */
+  async applyTagChanges(replaced: Array<[number, string[]]>, removed: number[]): Promise<void> {
+    this.assertOpen();
+    const apply = this.db.transaction(() => {
+      for (const [characterId, tags] of replaced) {
+        this.db.query("DELETE FROM character_tags WHERE character_id=?").run(characterId);
+        tags.forEach((tag, position) => {
+          this.db.query("INSERT OR IGNORE INTO character_tags VALUES (?,?,?)").run(characterId, position, tag);
+        });
+      }
+      for (const characterId of removed) {
+        this.db.query("DELETE FROM character_tags WHERE character_id=?").run(characterId);
+      }
+    });
+    apply();
+  }
+
+  /**
+   * 发现并导入新条目（每日维护调用）。
+   *
+   * 数据集是构建产物，两份 dump 之间新出的作品不会自己出现 —— 没有这一步，
+   * 搜索永远搜不到新番。判据与全量构建一致：没角色也没关联音乐的直接跳过。
+   */
+  async discoverNewSubjects(base: string, since?: string): Promise<DiscoveryResult> {
+    this.assertOpen();
+    await this.ready;
+    return discoverNewSubjects({ db: this.db, base, search: this.search, since });
   }
 
   async getRawCharacter(id: number): Promise<CCBRawCharacter> {

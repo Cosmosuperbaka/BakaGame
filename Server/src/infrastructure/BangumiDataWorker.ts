@@ -2,6 +2,7 @@ import { AppError } from "../domain/Errors";
 import { CCBCharacterRepository } from "./CCBCharacterRepository";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { scheduleDatasetBackup } from "./DatasetBackup";
+import { syncTagDiff } from "./TagDiffSync";
 import type { AnimeAutoFilters } from "../shared/Index";
 import type { BangumiProviderInit } from "./LocalBangumiProvider";
 import type { CCBDataInit } from "./CCBData";
@@ -18,7 +19,7 @@ import type { CCBImageSize, CCBSettings } from "../shared/CCB";
  * 年份/评分过滤、CCB 带作品类型），合名会撞车，所以保留命名空间。
  */
 export type BangumiDataRequest =
-  | { id: number; method: "init"; song: BangumiProviderInit; ccb: CCBDataInit }
+  | { id: number; method: "init"; song: BangumiProviderInit; ccb: CCBDataInit; tagDiff?: TagDiffOptions }
   // ---- 猜歌 ----
   | { id: number; method: "song.searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { id: number; method: "song.getSubject"; subjectId: string }
@@ -35,9 +36,17 @@ export type BangumiDataRequest =
   | { id: number; method: "ccb.importDirectory"; indexId: number }
   | { id: number; method: "ccb.resolveCharacterImage"; characterId: number; size?: CCBImageSize }
   | { id: number; method: "ccb.resolveSubjectImage"; subjectId: number; size?: CCBImageSize }
+  /** 拉取并应用上游的角色标签增量（CCB-TagsCI 产出）。 */
+  | { id: number; method: "ccb.syncTagDiff" }
   | { id: number; method: "close" };
 
 export type BangumiDataReply = { id: number } & ({ ok: true; value: unknown } | { ok: false; code: string; message: string });
+
+/** 角色标签增量的来源与已应用版本的记录位置。 */
+export interface TagDiffOptions {
+  diffUrl: string;
+  statePath: string;
+}
 
 /** 一个 Worker 进程里同时持有两条数据链路；各自的初始化失败互不影响。 */
 let song: LocalBangumiProvider | undefined;
@@ -46,6 +55,7 @@ let songError: AppError | undefined;
 let ccbError: AppError | undefined;
 /** 备份定时器的停止函数；两条链路读的是同一个库，只起一份备份。 */
 let stopBackup: (() => void) | undefined;
+let tagDiff: TagDiffOptions | undefined;
 
 /**
  * 两条链路共用一次 init，但**分别容错**：猜歌的库缺失不该让 CCB 一起不可用
@@ -87,10 +97,19 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         ccbError = asAppError(error, "CCB_DATA_UNAVAILABLE");
       }
       // 库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。
+      tagDiff = request.tagDiff;
       stopBackup = scheduleDatasetBackup({
         dbPath: request.song.dbPath,
         backupPath: `${request.song.dbPath}.backup`,
         logger: { warn: (message) => console.warn(message) },
+        // 每日维护：补上两份 dump 之间新出的作品与角色。没有这一步，搜索永远搜不到新番。
+        onDailyTask: async () => {
+          const base = (request.song.apiBase ?? "").trim();
+          if (!base) return;   // 未配置上游地址时静默跳过（本地开发常见）。
+          const result = await requireCcb().discoverNewSubjects(base);
+          console.log(`新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，`
+            + `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`);
+        },
       });
       value = true;
     } else if (request.method === "close") {
@@ -131,6 +150,11 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         case "ccb.importDirectory": value = await repository.importDirectory(request.indexId); break;
         case "ccb.resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId, request.size); break;
         case "ccb.resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId, request.size); break;
+        case "ccb.syncTagDiff": {
+          if (!tagDiff) throw new AppError("CCB_DATA_UNAVAILABLE", "标签增量未配置");
+          value = await syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
+          break;
+        }
       }
     }
     self.postMessage({ id: request.id, ok: true, value } satisfies BangumiDataReply);
