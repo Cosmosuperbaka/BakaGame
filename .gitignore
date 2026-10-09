@@ -75,12 +75,10 @@ Server/data/images/
 Server/data/*.sqlite.backup
 Server/data/tag-diff-state.json
 
-# 本地构建工具不进 Git：CI 只需要 build_bangumi_db.py 与它的自测
-# （见 .github/workflows/bangumi-data.yml 的「Build SQLite databases」），
-# 其余三个都是本地/一次性跑的，放在工作区即可。
-# apply_tag_diff 的应用逻辑会在后端（Server/src）以 TS 实现 —— 运行时能力
-# 必须随部署走，不能依赖一个不跟踪的脚本。
-tools/apply_tag_diff.py
-tools/build_bangumi_images.py
-tools/refresh_subject_tags.py
+# 本地构建工具不进 Git。数据集只在首次部署时构建一次（本地跑），之后由后端
+# 自己更新（爬 API + 应用角色标签 diff），CI 不再生产数据 —— 所以
+# build_bangumi_db.py 也一并移出：它不是运行时依赖。
+# 注意：apply_tag_diff / 刷新标签的**运行时**版本在 Server/src 以 TS 实现，
+# 必须随部署走；tools/ 下这些只是本地一次性用的原型。
+tools/
 /tasks

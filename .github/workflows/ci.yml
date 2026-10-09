@@ -23,7 +23,6 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
-      tools: ${{ steps.filter.outputs.tools }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,7 +36,6 @@ jobs:
               - 'Server/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
-              - '.github/workflows/bangumi-data.yml'
             client:
               - 'Client/*'
               - 'Client/!(e2e)/**'
@@ -48,21 +46,6 @@ jobs:
               - 'Client/**'
               - 'Server/**'
               - '.github/workflows/ci.yml'
-
-            tools:
-              - 'tools/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/bangumi-data.yml'
-
-  tools:
-    name: Python Builder Fixtures
-    runs-on: ubuntu-latest
-    needs: [changes]
-    if: ${{ needs.changes.outputs.tools == 'true' }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test database builder without downloads
-        run: python3 -B tools/test_build_bangumi_db.py
 
   server:
     name: Server CI
