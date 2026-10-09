@@ -302,8 +302,8 @@ def test_build_end_to_end() -> None:
 
         import sqlite3
 
-        char = sqlite3.connect(out / "bangumi-character.sqlite")
-        row = char.execute("SELECT role, name, name_cn, gender, aliases, summary, comments, collects FROM characters WHERE id = 1").fetchone()
+        db = sqlite3.connect(out / "bangumi.sqlite")
+        row = db.execute("SELECT role, name, name_cn, gender, aliases, summary, comments, collects FROM characters WHERE id = 1").fetchone()
         check("role 落库", row[0], 1)
         check("name 落库", row[1], "ルルーシュ・ランペルージ")
         check("name_cn 落库", row[2], "鲁路修·兰佩路基")
@@ -312,19 +312,19 @@ def test_build_end_to_end() -> None:
         check("summary 落库", row[5], "主角。")
         check("collects 落库", row[7], 1227)
 
-        gender = char.execute("SELECT gender FROM characters WHERE id = 2").fetchone()[0]
+        gender = db.execute("SELECT gender FROM characters WHERE id = 2").fetchone()[0]
         check("空性别归一为 '?'", gender, "?")
 
-        check("character_tags 行数", char.execute("SELECT count(*) FROM character_tags").fetchone()[0], 2)
-        check("专属标签落库且没有展示代码", char.execute(
+        check("character_tags 行数", db.execute("SELECT count(*) FROM character_tags").fetchone()[0], 2)
+        check("专属标签落库且没有展示代码", db.execute(
             "SELECT section, tag FROM character_extra_tags ORDER BY section_position, tag_position"
         ).fetchall(), [("位置", "打野"), ("位置", "上路"), ("难度", "2")])
         # 注意：SQLite 的 TEXT 排序是 BINARY，中文按码点/UTF-8 字节序，不是拼音。
-        check("character_tags 内容", char.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY tag").fetchall(), [("紫瞳",), ("腹黑",)])
+        check("character_tags 内容", db.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY tag").fetchall(), [("紫瞳",), ("腹黑",)])
         # position 必须保持 id_tags 的数组序：原版按 `slice(0, characterTagNum)` 取前若干个。
         check(
             "character_tags 保序",
-            char.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY position").fetchall(),
+            db.execute("SELECT tag FROM character_tags WHERE character_id = 1 ORDER BY position").fetchall(),
             [("紫瞳",), ("腹黑",)],
         )
 
@@ -332,7 +332,7 @@ def test_build_end_to_end() -> None:
         # 运行时由 CCBCharacterRepository 联表算。这里只断言原始关联齐备。
         check(
             "角色↔作品关联落库",
-            char.execute("SELECT subject_id, relation_type FROM character_subject_relations WHERE character_id = 1 ORDER BY subject_id").fetchall(),
+            db.execute("SELECT subject_id, relation_type FROM character_subject_relations WHERE character_id = 1 ORDER BY subject_id").fetchall(),
             [(8, 1), (999, 1)],
         )
 
@@ -340,61 +340,70 @@ def test_build_end_to_end() -> None:
         # 的函数，物化任意一份都会把某一种设置写死。这里只断言「输入」齐备。
         check(
             "角色库的 subjects 存 raw_tags 票数、投票人数与热度",
-            char.execute("SELECT raw_tags, rating_count, heat FROM subjects WHERE id = 8").fetchone(),
+            db.execute("SELECT raw_tags, rating_count, heat FROM subjects WHERE id = 8").fetchone(),
             ('{"机战": 10}', 0, 100),
         )
-        # 音乐(3) 也必须进角色库：原版的大类过滤为空时会回退到全部类型，那时要用它的标签。
+        # 类型不设限：原版的大类过滤为空时会回退到全部类型，那时书籍/三次元的标签也要
+        # 参与计算。所以 999（书籍）照样入库 —— 判据是「有没有角色关联」，不是类型。
         check(
-            "音乐条目也进角色库",
-            char.execute("SELECT type, rating_count FROM subjects WHERE id = 77").fetchone(),
-            (3, 0),
+            "非动画类型的作品同样入库（判据是有无角色关联）",
+            db.execute("SELECT type FROM subjects WHERE id = 999").fetchone(),
+            (1,),
         )
         check(
             "characters 表不含标签池列",
-            [row[1] for row in char.execute("PRAGMA table_info(characters)")],
+            [row[1] for row in db.execute("PRAGMA table_info(characters)")],
             ["id", "role", "name", "name_cn", "gender", "aliases", "summary", "comments", "collects"],
         )
 
         # nsfw 作品**一个都不能进角色库**（合规硬要求，见 Agents/CCB.md §6.5）。
         check(
             "nsfw 作品不进角色库",
-            char.execute("SELECT count(*) FROM subjects WHERE id IN (556, 557)").fetchone()[0],
+            db.execute("SELECT count(*) FROM subjects WHERE id IN (556, 557)").fetchone()[0],
             0,
         )
         check(
             "nsfw 作品的关联一并剔除（不留悬空行）",
-            char.execute(
+            db.execute(
                 "SELECT count(*) FROM character_subject_relations WHERE subject_id IN (556, 557)"
             ).fetchone()[0],
             0,
         )
         check(
             "角色库 nsfw 计数为 0",
-            char.execute("SELECT count(*) FROM subjects WHERE nsfw = 1").fetchone()[0],
+            db.execute("SELECT count(*) FROM subjects WHERE nsfw = 1").fetchone()[0],
             0,
         )
 
-        vas = char.execute("SELECT character_id, position, person_id, name, name_cn FROM character_vas ORDER BY character_id").fetchall()
+        vas = db.execute("SELECT character_id, position, person_id, name, name_cn FROM character_vas ORDER BY character_id").fetchall()
         check("声优只保留动画/游戏作品", vas, [(1, 0, 1, "水樹奈々", "水树奈奈")])
 
         # FTS 索引必须仍然可用，且能靠中文名检索
-        hit = char.execute("SELECT rowid FROM character_search WHERE character_search MATCH ?", ("鲁路修*",)).fetchall()
+        hit = db.execute("SELECT rowid FROM character_search WHERE character_search MATCH ?", ("鲁路修*",)).fetchall()
         check_true("character_search 可检索中文名", any(r[0] == 1 for r in hit))
-        char.close()
 
-        song = sqlite3.connect(out / "bangumi-song.sqlite")
-        # 歌曲库**不剔除 nsfw**：那边的 `subjects` 只存动画，「NSFW 动画进不进歌曲题库」
-        # 是另一个产品决定，不在本次范围内。所以这里是 2（8 与 nsfw 的 556）而不是 1。
-        check("song 表未受影响（含 nsfw 动画）", song.execute("SELECT count(*) FROM subjects").fetchone()[0], 2)
-        check("music 表未受影响", song.execute("SELECT count(*) FROM music_subjects").fetchone()[0], 1)
+        # ---- 单库与裁剪 ----
+        # 猜歌与 CCB 共用同一个库：subjects 不再各存一份，也不再产出两个文件。
+        check_true("只产出一个库文件", (out / "bangumi.sqlite").exists())
+        # 裁剪：没有角色关联、也没有关联音乐的作品永远用不到。
+        # fixture 里 8（有角色 + 有音乐）与 999（有角色）留下；3154（无任何关联）被丢弃。
+        check("裁剪后只剩用得到的作品", db.execute("SELECT id FROM subjects ORDER BY id").fetchall(), [(8,), (999,)])
+        check("无关联作品被裁掉", db.execute("SELECT count(*) FROM subjects WHERE id = 3154").fetchone()[0], 0)
+        # 音乐条目 77 只被 8 反向关联、自身没有角色关联 —— 它不会出现在任何角色的登场
+        # 作品里，所以不入库；曲目信息由 subject_music_relations 承载，不依赖它在 subjects。
+        check("无角色关联的音乐条目不入库", db.execute("SELECT count(*) FROM subjects WHERE id = 77").fetchone()[0], 0)
+        # nsfw 一律不进：556/557 虽然有角色关联，仍在裁剪后剔除。
+        check("nsfw 作品一个不留", db.execute("SELECT count(*) FROM subjects WHERE nsfw = 1").fetchone()[0], 0)
         # 曲目必须带上音乐条目 infobox 里的艺术家：出题打分的「歌手交集 ±4/3」全靠它，
         # 空着会让原版优先退化成只看曲名与专辑名（旧库实测 3 万条曲目里 0 条带 artist）。
         check(
             "曲目带艺术家落库",
-            song.execute("SELECT title, artist, kind FROM subject_music_relations WHERE subject_id = 8 AND music_id = 77").fetchall(),
+            db.execute("SELECT title, artist, kind FROM subject_music_relations WHERE subject_id = 8 AND music_id = 77").fetchall(),
             [("COLORS", "島谷ひとみ", "opening")],
         )
-        song.close()
+        # image 列存在且留空：dump 不含图片，由后端更新时写入。
+        check("image 列留空待更新", db.execute("SELECT image FROM subjects WHERE id = 8").fetchone()[0], "")
+        db.close()
 
 
 def test_build_guard() -> None:

@@ -54,20 +54,43 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
-def setup_song(db: sqlite3.Connection):
+def setup_database(db: sqlite3.Connection):
+    """建**一个**库承载两个玩法的全部数据。
+
+    此前 `subjects` 在歌库与角色库里各存一份（动画两边都有），更新时要改两处且可能
+    不一致；库改为可写、由后端自己更新之后必须收口成一份。
+
+    `music_subjects` / `music_search` 已删除：运行时零读取（曲目信息来自
+    `subject_music_relations` 的 title/artist/kind），白占近十万行。
+    """
     db.executescript("""
       PRAGMA journal_mode=DELETE;
       PRAGMA synchronous=OFF;
       CREATE TABLE subjects (
         id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
-        name_cn TEXT NOT NULL, infobox TEXT NOT NULL, summary TEXT NOT NULL,
-        date TEXT NOT NULL, nsfw INTEGER NOT NULL, tags TEXT NOT NULL,
-        meta_tags TEXT NOT NULL, score REAL NOT NULL, rank INTEGER NOT NULL,
-        heat INTEGER NOT NULL, image TEXT NOT NULL
+        name_cn TEXT NOT NULL, aliases TEXT NOT NULL,
+        infobox TEXT NOT NULL, summary TEXT NOT NULL, date TEXT NOT NULL,
+        nsfw INTEGER NOT NULL,
+        -- 歌库口径：标签名数组，供结算摘要展示。
+        tags TEXT NOT NULL,
+        -- 角色库口径（原版 details.raw_tags）：全类型、未过滤的 {标签: 票数}。
+        -- 原版的 details.tags（只对动画(2)/游戏(4)填充、且剔除含 "20" 的年份型标签）
+        -- 由它 + 类型在运行时导出 —— 存两份会制造漂移。
+        raw_tags TEXT NOT NULL,
+        meta_tags TEXT NOT NULL, score REAL NOT NULL,
+        -- 投票人数：登场作品按它降序，`shared_appearances` 的第一个共同作品依赖该顺序。
+        -- dump 没有 rating.total，用评分直方图 score_details 求和（已与线上 API 对过）。
+        rating_count INTEGER NOT NULL,
+        -- 热度：出题时按它降序取前 topNSubjects 个候选作品。dump 没有热度字段，
+        -- 用收藏分布 favorite 五个桶求和近似。
+        heat INTEGER NOT NULL, rank INTEGER NOT NULL,
+        -- 图片原始 URL：dump 不含 images，构建期留空，由后端更新时写入。
+        image TEXT NOT NULL
       );
-      CREATE TABLE music_subjects (
-        id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_cn TEXT NOT NULL,
-        score REAL NOT NULL, rank INTEGER NOT NULL
+      CREATE TABLE characters (
+        id INTEGER PRIMARY KEY, role INTEGER NOT NULL, name TEXT NOT NULL,
+        name_cn TEXT NOT NULL, gender TEXT NOT NULL, aliases TEXT NOT NULL,
+        summary TEXT NOT NULL, comments INTEGER NOT NULL, collects INTEGER NOT NULL
       );
       CREATE TABLE subject_music_relations (
         subject_id INTEGER NOT NULL, music_id INTEGER NOT NULL,
@@ -75,80 +98,43 @@ def setup_song(db: sqlite3.Connection):
         title TEXT NOT NULL, artist TEXT, kind TEXT NOT NULL,
         PRIMARY KEY(subject_id, music_id)
       );
-      CREATE INDEX subjects_type_date ON subjects(type, date);
-      CREATE INDEX subjects_heat ON subjects(heat DESC);
-      CREATE INDEX relations_subject_order ON subject_music_relations(subject_id, relation_order);
-      CREATE INDEX relations_kind ON subject_music_relations(subject_id, kind);
-      CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram');
-      CREATE VIRTUAL TABLE music_search USING fts5(name, name_cn, content='music_subjects', content_rowid='id', tokenize='trigram');
-    """)
-
-
-def setup_character(db: sqlite3.Connection):
-    db.executescript("""
-      PRAGMA journal_mode=DELETE;
-      PRAGMA synchronous=OFF;
-      CREATE TABLE characters (
-        id INTEGER PRIMARY KEY, role INTEGER NOT NULL, name TEXT NOT NULL,
-        name_cn TEXT NOT NULL, gender TEXT NOT NULL, aliases TEXT NOT NULL,
-        summary TEXT NOT NULL, comments INTEGER NOT NULL, collects INTEGER NOT NULL
-      );
-      CREATE TABLE subjects (
-        id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
-        name_cn TEXT NOT NULL, aliases TEXT NOT NULL, date TEXT NOT NULL, nsfw INTEGER NOT NULL,
-        -- 原版 `details.raw_tags`：全类型、未过滤的 {标签: 票数}。
-        -- 原版的 `details.tags`（只对动画(2)/游戏(4)填充、且剔除含 "20" 的年份型标签）
-        -- 由它 + 类型在运行时导出 —— 存两份会制造漂移。
-        raw_tags TEXT NOT NULL, meta_tags TEXT NOT NULL, score REAL NOT NULL,
-        -- 投票人数：登场作品按它降序，`shared_appearances` 的第一个共同作品依赖该顺序。
-        -- dump 没有 `rating.total`，用评分直方图 `score_details` 求和（已与线上 API 对过）。
-        rating_count INTEGER NOT NULL,
-        -- 热度：出题时按它降序取前 `topNSubjects` 个候选作品（原版 `POST /v0/search/subjects`
-        -- 的 `sort: "heat"`）。dump 没有热度字段，用收藏分布 `favorite` 五个桶求和近似
-        -- —— 与歌库的 `heat` 同一个口径。
-        heat INTEGER NOT NULL, rank INTEGER NOT NULL
-      );
       CREATE TABLE character_subject_relations (
         character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
         relation_type INTEGER NOT NULL, relation_order INTEGER NOT NULL,
         PRIMARY KEY(character_id, subject_id)
       );
-      -- CCB 角色标签，来自上游 id_tags 快照（32705 角色 / 421 标签）。
-      -- position 是它在 id_tags 数组里的下标：原版按 `slice(0, characterTagNum)` 取前若干个。
+      -- CCB 角色标签，来自上游 id_tags 快照。position 是它在 id_tags 数组里的下标。
       CREATE TABLE character_tags (
         character_id INTEGER NOT NULL, position INTEGER NOT NULL, tag TEXT NOT NULL,
         PRIMARY KEY(character_id, tag)
       );
-      -- CCB 声优：只保留作品类型为动画(2)/游戏(4)的配音关系，与原版
-      -- `persons.filter(p => p.subject_type === 2 || p.subject_type === 4)` 对齐。
-      -- position 是遍历顺序（原版把 `animeVAs` 当有序数组发给前端，顺序有意义）。
+      -- CCB 声优：只保留作品类型为动画(2)/游戏(4)的配音关系。position 是遍历顺序。
       CREATE TABLE character_vas (
         character_id INTEGER NOT NULL, position INTEGER NOT NULL,
         person_id INTEGER NOT NULL, name TEXT NOT NULL, name_cn TEXT NOT NULL,
         PRIMARY KEY(character_id, person_id)
       );
+      CREATE TABLE character_extra_tags (
+        character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
+        section_position INTEGER NOT NULL, tag_position INTEGER NOT NULL,
+        section TEXT NOT NULL, tag TEXT NOT NULL,
+        PRIMARY KEY(character_id, subject_id, section_position, tag_position)
+      );
+      CREATE INDEX subjects_type_date ON subjects(type, date);
+      CREATE INDEX subjects_heat ON subjects(heat DESC);
+      CREATE INDEX relations_subject_order ON subject_music_relations(subject_id, relation_order);
+      CREATE INDEX relations_kind ON subject_music_relations(subject_id, kind);
       CREATE INDEX csr_character ON character_subject_relations(character_id, relation_order);
       -- 出题 stage 2 要「按作品取角色」，方向与上面那条相反，必须单独建。
       CREATE INDEX csr_subject ON character_subject_relations(subject_id, relation_order);
       CREATE INDEX csubjects_type_date ON subjects(type, date);
       CREATE INDEX characters_collects ON characters(collects DESC);
       CREATE INDEX character_tags_tag ON character_tags(tag, character_id);
-      -- 注意：不要给 character_vas 再加 (character_id, person_id) 索引，
-      -- 主键已经就是这两列，重复索引只会白占体积。
+      CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, aliases, content='subjects', content_rowid='id', tokenize='trigram');
       CREATE VIRTUAL TABLE character_search USING fts5(name, name_cn, aliases, content='characters', content_rowid='id', tokenize='trigram');
     """)
-    setup_character_extra_tags(db)
 
 
-def setup_character_extra_tags(db: sqlite3.Connection):
-    db.execute("""
-      CREATE TABLE character_extra_tags (
-        character_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
-        section_position INTEGER NOT NULL, tag_position INTEGER NOT NULL,
-        section TEXT NOT NULL, tag TEXT NOT NULL,
-        PRIMARY KEY(character_id, subject_id, section_position, tag_position)
-      )
-    """)
 
 
 KIND_PATTERNS = [
@@ -494,6 +480,23 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             nsfw_subject_ids.add(item["id"])
     print(f"[character db] dump 内 nsfw 作品 {len(nsfw_subject_ids)} 部，只从角色库剔除")
 
+    # ---- 裁剪：算出「本项目用得到的作品」----
+    # 没有角色关联、也没有关联音乐的作品，既不会出现在 CCB 的登场作品里，也出不了
+    # 猜歌的题，却占了全库九成以上（实测 92.8%）。留着只是白占体积与索引成本。
+    useful_subject_ids: set[int] = set()
+    for rel in lines(dump / "subject-characters.jsonlines"):
+        if rel.get("subject_id") is not None:
+            useful_subject_ids.add(rel["subject_id"])
+    for rel in lines(dump / "subject-relations.jsonlines"):
+        a_item, b_item = subjects.get(rel.get("subject_id"), {}), subjects.get(rel.get("related_subject_id"), {})
+        # 关联是双向记录的，取 type=2（动画）那一侧。
+        if a_item.get("type") == 2 and b_item.get("type") == 3:
+            useful_subject_ids.add(rel["subject_id"])
+        elif b_item.get("type") == 2 and a_item.get("type") == 3:
+            useful_subject_ids.add(rel["related_subject_id"])
+    print(f"[db] 有用作品 {len(useful_subject_ids):,} / 全量 {len(subjects):,}"
+          f"（丢弃 {len(subjects) - len(useful_subject_ids):,}）")
+
     character_tags = load_character_tags(tags_source)
     print(f"[character db] 角色标签 {len(character_tags)} 个角色，来自 {tags_source}")
     extra_tags = load_character_extra_tags(extra_tags_source)
@@ -504,14 +507,18 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
     # 文件）；② 清理临时目录必须 ignore_errors，否则删不掉时抛出的 PermissionError
     # 会把真正的失败原因（下面的填充率守卫）整个吞掉。
     temp = tempfile.mkdtemp(dir=out)
-    song_path = Path(temp) / "bangumi-song.sqlite"
-    char_path = Path(temp) / "bangumi-character.sqlite"
-    song = sqlite3.connect(song_path)
-    char = sqlite3.connect(char_path)
+    db_path = Path(temp) / "bangumi.sqlite"
+    db = sqlite3.connect(db_path)
     try:
-        setup_song(song); setup_character(char)
-        song_sub = song.cursor(); char_sub = char.cursor()
+        setup_database(db)
+        sub = db.cursor()
         for item in subjects.values():
+            # 裁剪第一道：没角色也没音乐的作品不入库。
+            if item["id"] not in useful_subject_ids:
+                continue
+            # 裁剪第二道：nsfw 一律不进（合规硬要求）。
+            if item["id"] in nsfw_subject_ids:
+                continue
             tags = json.dumps([x.get("name", "") for x in item.get("tags", [])], ensure_ascii=False)
             # 角色库存的是原版 `details.raw_tags`：**全类型、未过滤**的 {标签: 票数}。
             # 原版的 `details.tags`（只对动画/游戏填充、且剔除含 "20" 的年份型标签）
@@ -526,14 +533,6 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
             item["_rating_count"] = rating_count
             fav = item.get("favorite", {})
             heat = sum(int(fav.get(k, 0) or 0) for k in ("wish", "done", "doing", "on_hold", "dropped"))
-            row = (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), item.get("infobox", ""), item.get("summary", ""), item.get("date", ""), int(bool(item.get("nsfw", False))), tags, meta, float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0), heat, "")
-            if item.get("type") == 2: song_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
-            elif item.get("type") == 3: song_sub.execute("INSERT INTO music_subjects VALUES (?,?,?,?,?)", (item["id"], item.get("name", ""), item.get("name_cn", ""), float(item.get("score", 0) or 0), int(item.get("rank", 0) or 0)))
-            # 角色库收**全部类型**的条目（含音乐 3）：原版的登场作品在「按大类过滤后为空」
-            # 时会回退到全部类型，那时音乐/书籍/三次元的标签也要参与计算。
-            # 但 **nsfw 一律不进角色库** —— 进了就会出现在反馈的登场作品里。
-            if item["id"] in nsfw_subject_ids:
-                continue
             singles, alias_blocks = parse_infobox(item.get("infobox", ""))
             aliases = [item.get("name_cn", "")]
             # 与 subject search 的 extractAliases/GetWikiValues 保持一致：
@@ -543,7 +542,16 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
                 aliases.append(clean_infobox_value(alias_value))
             aliases.extend(alias_blocks.get("别名", []))
             aliases = json.dumps(aliases, ensure_ascii=False)
-            char_sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases, item.get("date", ""), int(bool(item.get("nsfw", False))), raw_tags, meta, float(item.get("score", 0) or 0), rating_count, heat, int(item.get("rank", 0) or 0)))
+            # 单库单份 subjects：歌库的 infobox/标签数组与角色库的别名/raw_tags 合并到一行。
+            # image 列留空 —— dump 没有 images，由后端更新时写入。
+            sub.execute("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                item["id"], item.get("type", 0), item.get("name", ""), item.get("name_cn", ""), aliases,
+                item.get("infobox", ""), item.get("summary", ""), item.get("date", ""),
+                int(bool(item.get("nsfw", False))), tags, raw_tags, meta,
+                float(item.get("score", 0) or 0), rating_count,
+                # 顺序与建表一致：heat 在 rank 之前。
+                heat, int(item.get("rank", 0) or 0), "",
+            ))
         # 音乐条目的艺术家只在条目自身的 infobox 里（两张音乐表都没有该列）。
         # 预先按 music_id 解析一次，避免每条反向关系都重跑一遍 infobox 解析。
         music_artists = {
@@ -553,6 +561,9 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
         for rel in lines(dump / "subject-relations.jsonlines"):
             a_item, b_item = subjects.get(rel["subject_id"], {}), subjects.get(rel["related_subject_id"], {})
             if a_item.get("type") == 2 and b_item.get("type") == 3:
+                # 没被裁剪掉的动画才需要曲目关系。
+                if rel["subject_id"] not in useful_subject_ids:
+                    continue
                 title = b_item.get("name_cn") or b_item.get("name") or ""
                 artist = music_artists.get(b_item.get("id")) or None
                 relation_type = int(rel.get("relation_type", 0) or 0)
@@ -560,18 +571,20 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
                 # 3005 插入歌、3002 角色歌、3006 印象曲、3001 主题歌/原声带。
                 # 旧映射把 3002~3005 整体错位一格，导致片头曲被标成 ED、角色歌被标成 OP。
                 kind = {3001: "theme", 3002: "character", 3003: "opening", 3004: "ending", 3005: "insert", 3006: "image"}.get(relation_type, track_kind(title))
-                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, artist, kind))
+                sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (rel["subject_id"], rel["related_subject_id"], relation_type, rel.get("order", 0), title, artist, kind))
         for item in subjects.values():
             if item.get("type") != 2: continue
+            # 被裁掉的动画连它的 infobox 曲目一起丢，否则会留下指向不存在作品的悬空行。
+            if item["id"] not in useful_subject_ids: continue
             for order, (title, artist, kind) in enumerate(parse_infobox_tracks(item.get("infobox", ""))):
-                song_sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
+                sub.execute("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)", (item["id"], -((item["id"] * 10000) + order + 1), 0, order, title, artist, kind))
         # ---- CCB 角色 ↔ 作品关联（登场作品与标签池都由运行时联表算）----
         # 主键 (character_id, subject_id) + INSERT OR IGNORE 已经去重，无需在内存里再判一次。
         for rel in lines(dump / "subject-characters.jsonlines"):
             # 已剔除的 nsfw 作品连关联一起丢：留着就是指向不存在作品的悬空行。
             if rel["subject_id"] in nsfw_subject_ids:
                 continue
-            char_sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
+            sub.execute("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)", (rel["character_id"], rel["subject_id"], rel.get("type", 0), rel.get("order", 0)))
 
         # ---- CCB 声优（person-characters + person） ----
         # person.jsonlines 同样没有 name_cn 列，中文名也要落到 infobox 解析上。
@@ -601,7 +614,7 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
                 (rel["person_id"], person[0], person[1])
             )
         for character_id, entries in vas_by_character.items():
-            char_sub.executemany(
+            sub.executemany(
                 "INSERT INTO character_vas VALUES (?,?,?,?,?)",
                 (
                     (character_id, position, person_id, name, name_cn)
@@ -617,7 +630,7 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
         for item in lines(dump / "character.jsonlines"):
             character_id = item["id"]
             name_cn, gender, aliases = parse_character_infobox(item.get("infobox", ""))
-            char_sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
+            sub.execute("INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)", (
                 character_id, int(item.get("role", 0) or 0), item.get("name", ""), name_cn, gender,
                 json.dumps(aliases, ensure_ascii=False), item.get("summary", ""),
                 item.get("comments", 0), item.get("collects", 0),
@@ -625,23 +638,22 @@ def build(dump: Path, out: Path, tags_source: str = DEFAULT_TAGS_URL,
 
         # ---- CCB 角色标签（上游 id_tags 快照） ----
         for character_id, tags in character_tags.items():
-            char_sub.executemany(
+            sub.executemany(
                 "INSERT OR IGNORE INTO character_tags VALUES (?,?,?)",
                 ((character_id, position, tag) for position, tag in enumerate(tags)),
             )
-        char_sub.executemany("INSERT INTO character_extra_tags VALUES (?,?,?,?,?,?)", extra_tags)
+        sub.executemany("INSERT INTO character_extra_tags VALUES (?,?,?,?,?,?)", extra_tags)
 
-        song.executescript("INSERT INTO subject_search(rowid,name,name_cn) SELECT id,name,name_cn FROM subjects; INSERT INTO music_search(rowid,name,name_cn) SELECT id,name,name_cn FROM music_subjects;")
-        char.execute("INSERT INTO character_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM characters;")
-        song.commit(); char.commit()
+        db.executescript("INSERT INTO subject_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM subjects;"
+                         "INSERT INTO character_search(rowid,name,name_cn,aliases) SELECT id,name,name_cn,aliases FROM characters;")
+        db.commit()
         # 填充率守卫：任一项为 0 都在这里抛错，由 finally 收拾现场。
-        report_character_stats(char)
+        report_character_stats(db)
 
-        song.close(); char.close()
-        for source, target in ((song_path, out / song_path.name), (char_path, out / char_path.name)):
-            source.replace(target)
+        db.close()
+        db_path.replace(out / db_path.name)
     finally:
-        song.close(); char.close()
+        db.close()
         shutil.rmtree(temp, ignore_errors=True)
 
 
