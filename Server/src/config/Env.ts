@@ -20,8 +20,8 @@ export interface AppEnv {
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
   bangumiImageUrl: string;
-  bangumiSongDbPath?: string;
-  bangumiCharacterDbPath?: string;
+  /** 本地数据集路径：猜歌与 CCB 共用同一个库。 */
+  bangumiDbPath?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
@@ -171,8 +171,7 @@ export const readEnv = (): AppEnv => {
     sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
-    bangumiSongDbPath: resolve(import.meta.dir, "../../data/bangumi-song.sqlite"),
-    bangumiCharacterDbPath: resolve(import.meta.dir, "../../data/bangumi-character.sqlite"),
+    bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
     ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,

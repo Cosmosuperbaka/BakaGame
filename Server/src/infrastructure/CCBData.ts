@@ -45,7 +45,8 @@ export interface CCBDataProvider {
 }
 
 export interface CCBDataOptions {
-  characterPath: string;
+  /** 唯一的数据集路径：与猜歌共用同一个库（见 tools/build_bangumi_db.py）。 */
+  dbPath: string;
   enrichmentPath?: string;
   apiBase?: string;
   imageBase?: string;

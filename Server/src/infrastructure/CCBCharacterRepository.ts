@@ -24,11 +24,11 @@ export class CCBCharacterRepository implements CCBDataProvider {
   private closed = false;
 
   constructor(options: CCBDataOptions) {
-    this.db = new Database(options.characterPath, { readonly: true });
+    this.db = new Database(options.dbPath, { readonly: true });
     try { this.enrichment = new CCBEnrichment(options); } catch (error) { this.db.close(); throw error; }
     this.now = options.now ?? Date.now;
     this.search = options.meilisearch ? new CCBMeilisearch(options.meilisearch) : undefined;
-    this.ready = this.search?.initialize(this.db, options.characterPath) ?? Promise.resolve();
+    this.ready = this.search?.initialize(this.db, options.dbPath) ?? Promise.resolve();
   }
 
   async initialize(): Promise<void> { await this.ready; }

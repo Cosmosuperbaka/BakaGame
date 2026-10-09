@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { CCBCharacterWorkerProvider } from "../src/infrastructure/CCBCharacterWorkerProvider";
+import { BangumiWorkerProvider } from "../src/infrastructure/BangumiWorkerProvider";
 import { BangumiDataWorkerClient } from "../src/infrastructure/BangumiDataWorkerClient";
 import { createDefaultCCBSettings } from "../src/shared/CCB";
 import { createCCBCharacterFixture } from "./CCBCharacterFixtures";
@@ -9,22 +10,18 @@ import { createCCBCharacterFixture } from "./CCBCharacterFixtures";
 const rejectionOf = (request: Promise<unknown>) => request.then(() => null, (error: unknown) => error);
 
 /**
- * CCB 与猜歌共用同一个 Worker，但两侧初始化分别容错：这里故意给猜歌一个不存在的库，
- * 验证它失败时 CCB 仍然可用（反之亦然）。
+ * CCB 与猜歌共用同一个 Worker、**同一个数据集文件**（单库）。
+ * 初始化仍分别容错：库缺失时两个门面各报自己的错误码，不互相顶替。
  */
-const startCcb = (characterPath: string) => {
+const startCcb = (dbPath: string) => {
   const client = new BangumiDataWorkerClient();
-  const ready = client.init({
-    method: "init",
-    song: { songPath: `missing-song-${crypto.randomUUID()}.sqlite`, characterPath },
-    ccb: { characterPath },
-  });
+  const ready = client.init({ method: "init", song: { dbPath }, ccb: { dbPath } });
   return { client, provider: new CCBCharacterWorkerProvider(client, ready) };
 };
 
 test("角色工作线程并发查询隔离对象且关闭后拒绝请求", async () => {
   const fixture = createCCBCharacterFixture();
-  const { client, provider } = startCcb(fixture.characterPath);
+  const { client, provider } = startCcb(fixture.dbPath);
   try {
     const settings = { ...createDefaultCCBSettings(), startYear: 2020, endYear: 2020, topNSubjects: 1 };
     const [characters, subjects, selected] = await Promise.all([
@@ -54,14 +51,17 @@ test("缺失数据文件的初始化失败以业务错误返回，不产生未�
   await client.close();
 });
 
-test("猜歌库缺失不影响 CCB，CCB 库缺失也不影响猜歌侧的隔离", async () => {
-  const fixture = createCCBCharacterFixture();
-  const { client, provider } = startCcb(fixture.characterPath);
+test("库缺失时两个门面各报自己的错误码，不互相顶替", async () => {
+  const missing = `missing-${crypto.randomUUID()}.sqlite`;
+  const client = new BangumiDataWorkerClient();
+  const ready = client.init({ method: "init", song: { dbPath: missing }, ccb: { dbPath: missing } });
+  const song = new BangumiWorkerProvider(client, ready);
+  const ccb = new CCBCharacterWorkerProvider(client, ready);
   try {
-    // 上面 startCcb 给的 songPath 不存在，CCB 仍应正常返回，证明两侧容错隔离。
-    expect((await provider.searchCharacters("牧濑")).map((row) => row.id)).toEqual([1]);
+    // 两侧初始化各自记错：猜歌报 BANGUMI_*、CCB 报 CCB_*，错误码不会串到对面。
+    expect(await rejectionOf(song.searchSubjects("测试"))).toMatchObject({ code: "BANGUMI_DATA_UNAVAILABLE" });
+    expect(await rejectionOf(ccb.searchCharacters("角色"))).toMatchObject({ code: "CCB_DATA_UNAVAILABLE" });
   } finally {
     await client.close();
-    await rm(fixture.directory, { recursive: true, force: true });
   }
 }, 30_000);

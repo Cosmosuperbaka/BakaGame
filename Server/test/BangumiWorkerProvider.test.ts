@@ -62,7 +62,7 @@ describe("BangumiWorkerProvider", () => {
     db.close(); new Database(characterPath).close();
     // 猜歌与 CCB 共用同一个 Worker：这里走真实装配路径，顺便验证两边能共存。
     const client = new BangumiDataWorkerClient();
-    const ready = client.init({ method: "init", song: { songPath, characterPath }, ccb: { characterPath } });
+    const ready = client.init({ method: "init", song: { dbPath: songPath }, ccb: { dbPath: songPath } });
     const provider = new BangumiWorkerProvider(client, ready);
     const rows = await provider.searchSubjects("测试中", 3);
     expect(rows.length).toBeGreaterThan(0);
@@ -76,7 +76,7 @@ describe("BangumiWorkerProvider", () => {
     const spy = spyOn(globalThis, "setTimeout");
     await withWorker(SilentWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      client.init({ method: "init", song: { songPath: "unused-song.sqlite", characterPath: "unused-character.sqlite" }, ccb: { characterPath: "unused-character.sqlite" } });
+      client.init({ method: "init", song: { dbPath: "unused.sqlite" }, ccb: { dbPath: "unused.sqlite" } });
       const delays = spy.mock.calls.map((call) => Number(call[1]));
       // 索引重建分钟级：init 必须是长窗口，否则 ready 被拒后所有查询永久失败。
       // 窗口取 CCB 那侧更长的口径（1 小时），猜歌与 CCB 现在共用一次 init。
@@ -89,7 +89,7 @@ describe("BangumiWorkerProvider", () => {
   test("慢初始化期间查询等待而非失败，初始化完成后正常返回", async () => {
     await withWorker(DeferredWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      const ready = client.init({ method: "init", song: { songPath: "unused-song.sqlite", characterPath: "unused-character.sqlite" }, ccb: { characterPath: "unused-character.sqlite" } });
+      const ready = client.init({ method: "init", song: { dbPath: "unused.sqlite" }, ccb: { dbPath: "unused.sqlite" } });
       const provider = new BangumiWorkerProvider(client, ready);
       const worker = DeferredWorker.latest!;
       const pending = provider.searchSubjects("关键词", 3);

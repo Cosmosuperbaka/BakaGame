@@ -6,7 +6,7 @@ const active: CCBEnrichment[] = [];
 // 长条图只认 large > common：fixture 必须给 large，给 medium 等于「上游没图」。
 const imageResponse = () => Response.json({ name: '补充角色', images: { large: 'https://images.invalid/1.jpg' } });
 function create(options: Partial<CCBDataOptions> = {}) {
-  const enrichment = new CCBEnrichment({ characterPath: ':memory:', apiBase: 'https://bgm.invalid', fetcher: async () => imageResponse(), ...options });
+  const enrichment = new CCBEnrichment({ dbPath: ':memory:', apiBase: 'https://bgm.invalid', fetcher: async () => imageResponse(), ...options });
   active.push(enrichment); return enrichment;
 }
 afterEach(async () => { await Promise.all(active.splice(0).map(item => item.close())); });

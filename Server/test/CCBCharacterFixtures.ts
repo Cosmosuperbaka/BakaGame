@@ -5,9 +5,10 @@ import { join } from "node:path";
 
 export function createCCBCharacterFixture() {
   const directory = mkdtempSync(join(tmpdir(), "bakagame-ccb-data-"));
-  const characterPath = join(directory, "characters.sqlite");
+  // 单库：猜歌与 CCB 共用同一个数据集文件（见 tools/build_bangumi_db.py）。
+  const dbPath = join(directory, "bangumi.sqlite");
   const enrichmentPath = join(directory, "enrichment.sqlite");
-  const db = new Database(characterPath);
+  const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE characters(id INTEGER PRIMARY KEY,role INTEGER,name TEXT,name_cn TEXT,gender TEXT,aliases TEXT,summary TEXT,comments INTEGER,collects INTEGER);
     CREATE TABLE subjects(id INTEGER PRIMARY KEY,type INTEGER,name TEXT,name_cn TEXT,date TEXT,nsfw INTEGER,raw_tags TEXT,meta_tags TEXT,score REAL,rating_count INTEGER,heat INTEGER);
@@ -48,5 +49,5 @@ export function createCCBCharacterFixture() {
   }
   db.exec("INSERT INTO character_tags VALUES (1,0,'蓝发'),(1,1,'眼镜'); INSERT INTO character_vas VALUES (1,0,100,'声優甲','声优甲')");
   db.close();
-  return { directory, characterPath, enrichmentPath };
+  return { directory, dbPath, enrichmentPath };
 }

@@ -20,8 +20,8 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await
 
 describe("CCB 本地角色资料", () => {
   test("额外游戏作品保留独立判定关系和外部标签，不混入动画数量及标签池", async () => {
-    const { repository, characterPath } = create();
-    const fixture = new Database(characterPath);
+    const { repository, dbPath } = create();
+    const fixture = new Database(dbPath);
     fixture.query("INSERT INTO subjects VALUES (?,4,?,?,?,0,?,?,9,500,500)").run(284157, "Genshin", "原神", "2020-09-28", '{}', '[]');
     fixture.query("INSERT INTO character_subject_relations VALUES (?,284157,1,0)").run(1);
     fixture.query("INSERT INTO character_extra_tags VALUES (1,284157,0,0,?,?)").run('属性', '风');
@@ -118,7 +118,7 @@ describe("CCB 本地角色资料", () => {
 
   test("目录只在显式导入时联网，完整分页落库后抽题且报告缺失作品", async () => {
     const requested: number[] = [];
-    const { repository, characterPath, enrichmentPath } = create({ apiBase: "https://bgm.invalid", fetcher: async (input) => {
+    const { repository, dbPath, enrichmentPath } = create({ apiBase: "https://bgm.invalid", fetcher: async (input) => {
       const offset = Number(new URL(String(input)).searchParams.get("offset")); requested.push(offset);
       return Response.json({ total: 3, data: offset === 0 ? [{ id: 11 }, { id: 999 }] : [{ id: 15 }] });
     } });
@@ -127,14 +127,14 @@ describe("CCB 本地角色资料", () => {
     expect(await repository.importDirectory(8)).toEqual({ id: 8, subjectIds: [11], missingSubjectIds: [999,15], importedAt: now });
     expect(requested).toEqual([0,2]);
     expect((await repository.chooseRandomCharacter(configuration, () => 0)).id).toBe(3);
-    const reopened = new CCBCharacterRepository({ characterPath, enrichmentPath, now: () => now });
+    const reopened = new CCBCharacterRepository({ dbPath, enrichmentPath, now: () => now });
     try { expect((await reopened.chooseRandomCharacter(configuration, () => 0)).id).toBe(3); }
     finally { await reopened.close(); }
   });
 
   test("头像请求合并并持久化白名单资料，旧快照不变、缺失字段不覆盖本地值", async () => {
     let calls = 0;
-    const { repository, characterPath, enrichmentPath } = create({ apiBase: "https://bgm.invalid", imageBase: "https://images.invalid", fetcher: async () => {
+    const { repository, dbPath, enrichmentPath } = create({ apiBase: "https://bgm.invalid", imageBase: "https://images.invalid", fetcher: async () => {
       calls++;
       return Response.json({ name: "Updated", summary: "更新的简介", images: { large: "https://lain.bgm.tv/pic/crt/l/1.jpg?x=1#crop", grid: "https://lain.bgm.tv/pic/crt/g/1.jpg?x=1#crop" },
         infobox: [{ key: "别名", value: [{ k: "英文名", v: "NewAlias" }] }], stat: { collects: 500, comments: 2 } });
@@ -150,9 +150,9 @@ describe("CCB 本地角色资料", () => {
     expect(before.name).toBe("Makise"); expect(before.imageUrl).toBeUndefined(); expect(before.popularity).toBe(107);
     expect(after.name).toBe("Updated"); expect(after.popularity).toBe(502); expect(after.gender).toBe("female"); expect(after.nameCn).toBe("牧濑红莉栖");
     expect((await repository.searchCharacters("NewAlias"))[0].id).toBe(1);
-    const base = new Database(characterPath, { readonly: true });
+    const base = new Database(dbPath, { readonly: true });
     try { expect(base.query("SELECT name FROM characters WHERE id=1").get()).toEqual({ name: "Makise" }); } finally { base.close(); }
-    const reopened = new CCBCharacterRepository({ characterPath, enrichmentPath, imageBase: "https://other.invalid" });
+    const reopened = new CCBCharacterRepository({ dbPath, enrichmentPath, imageBase: "https://other.invalid" });
     try { expect(await reopened.resolveCharacterImage(1)).toBe("https://other.invalid/pic/crt/l/1.jpg?x=1#crop"); }
     finally { await reopened.close(); }
   });
@@ -173,8 +173,8 @@ describe("CCB 本地角色资料", () => {
 
 test("角色搜索每个候选只读一次补充资料，冷热排序保留改名精确命中", async () => {
   for (const size of [20, 50]) {
-    const { repository, characterPath } = create();
-    const fixture = new Database(characterPath);
+    const { repository, dbPath } = create();
+    const fixture = new Database(dbPath);
     for (let index = 0; index < size; index++) {
       const id = 100 + index, name = `命中${index}`;
       fixture.query("INSERT INTO characters VALUES (?,1,?,?,'?','[]','',0,?)").run(id, name, name, index);

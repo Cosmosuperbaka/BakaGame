@@ -15,10 +15,10 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
   }
-  // 猜歌与 CCB 共用同一个数据 Worker（写操作收口到单一线程，见 CreateBangumiData）。
+  // 猜歌与 CCB 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
   const data = createBangumiData({
-    song: { songPath: env.bangumiSongDbPath!, characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
-    ccb: { characterPath: env.bangumiCharacterDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
+    song: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
+    ccb: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
   });
   const local = data.song;
   const music = new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock });
