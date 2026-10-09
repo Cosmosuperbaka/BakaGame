@@ -185,12 +185,23 @@ export const SonGuessrMessageSchemas = {
       { additionalProperties: false },
     ),
   ),
-  "song.auth.qr.create": createMessageSchema("song.auth.qr.create", EmptyPayloadSchema),
+  "song.auth.qr.create": createMessageSchema(
+    "song.auth.qr.create",
+    t.Object(
+      {
+        platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq")])),
+        type: t.Optional(t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")])),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   "song.auth.qr.check": createMessageSchema(
     "song.auth.qr.check",
     t.Object(
       {
-        key: t.String({ minLength: 1, maxLength: 256 }),
+        platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq")])),
+        key: t.String({ minLength: 1, maxLength: 512 }),
+        type: t.Optional(t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")])),
       },
       { additionalProperties: false },
     ),
@@ -199,12 +210,21 @@ export const SonGuessrMessageSchemas = {
     "song.auth.useCookie",
     t.Object(
       {
+        platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq")])),
         cookie: t.String({ minLength: 1, maxLength: MAX_SONGUESSR_COOKIE_LENGTH }),
       },
       { additionalProperties: false },
     ),
   ),
-  "song.auth.clear": createMessageSchema("song.auth.clear", EmptyPayloadSchema),
+  "song.auth.clear": createMessageSchema(
+    "song.auth.clear",
+    t.Object(
+      {
+        platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq"), t.Literal("all")])),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   "song.music.search": createMessageSchema(
     "song.music.search",
     t.Object(

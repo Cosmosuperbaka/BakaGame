@@ -23,6 +23,23 @@ export interface AggregatedMusicProviderOptions {
   logger?: EventLogger;
 }
 
+const resolvePlatformCookie = (cookie?: any, platform?: "netease" | "qq"): string | undefined => {
+  if (!cookie) return undefined;
+  if (typeof cookie === "object" && cookie !== null) {
+    return platform === "qq" ? cookie.qq : cookie.netease;
+  }
+  if (typeof cookie === "string") {
+    if (cookie.startsWith("{") && (cookie.includes("netease") || cookie.includes("qq"))) {
+      try {
+        const obj = JSON.parse(cookie);
+        return platform === "qq" ? obj.qq : obj.netease;
+      } catch {}
+    }
+    return cookie;
+  }
+  return undefined;
+};
+
 export class AggregatedMusicProvider implements MusicProvider {
   private readonly neteaseProvider: MusicProvider;
   private readonly qqProvider: MusicProvider;
@@ -34,14 +51,17 @@ export class AggregatedMusicProvider implements MusicProvider {
     this.logger = options.logger;
   }
 
-  async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
+  async search(keyword: string, limit = 20, cookie?: any): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
 
+    const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+    const qqCookie = resolvePlatformCookie(cookie, "qq");
+
     // 双端并行检索并做单边熔断与容错保护
     const [neteaseSettled, qqSettled] = await Promise.allSettled([
-      this.neteaseProvider.search(normalized, limit, cookie),
-      this.qqProvider.search(normalized, limit, cookie),
+      this.neteaseProvider.search(normalized, limit, neteaseCookie),
+      this.qqProvider.search(normalized, limit, qqCookie),
     ]);
 
     const neteaseSongs: (SongSearchResult & { upstreamRank?: number })[] =
@@ -83,12 +103,13 @@ export class AggregatedMusicProvider implements MusicProvider {
     return aggregateAndDeduplicateSongs(allCandidates, normalized, limit);
   }
 
-  async getSong(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSong(songId: string, cookie?: any): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
 
     if (platform === "netease") {
       try {
-        const details = await this.neteaseProvider.getSong(rawId, cookie);
+        const details = await this.neteaseProvider.getSong(rawId, platformCookie);
         return {
           ...details,
           id: buildSongUrn("netease", rawId),
@@ -99,7 +120,8 @@ export class AggregatedMusicProvider implements MusicProvider {
           ...describeError(error),
         });
         // 尝试按歌名+歌手在 QQ 音乐中兜底检索并播放
-        const fallback = await this.tryFailover(songId, this.qqProvider, cookie);
+        const qqCookie = resolvePlatformCookie(cookie, "qq");
+        const fallback = await this.tryFailover(songId, this.qqProvider, qqCookie);
         if (fallback) return fallback;
         throw error;
       }
@@ -107,7 +129,7 @@ export class AggregatedMusicProvider implements MusicProvider {
 
     if (platform === "qq") {
       try {
-        const details = await this.qqProvider.getSong(rawId, cookie);
+        const details = await this.qqProvider.getSong(rawId, platformCookie);
         return {
           ...details,
           id: buildSongUrn("qq", rawId),
@@ -117,7 +139,8 @@ export class AggregatedMusicProvider implements MusicProvider {
           songId,
           ...describeError(error),
         });
-        const fallback = await this.tryFailover(songId, this.neteaseProvider, cookie);
+        const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+        const fallback = await this.tryFailover(songId, this.neteaseProvider, neteaseCookie);
         if (fallback) return fallback;
         throw error;
       }
@@ -160,30 +183,32 @@ export class AggregatedMusicProvider implements MusicProvider {
     }
   }
 
-  async refreshSongAudio(songId: string, cookie?: string): Promise<string> {
+  async refreshSongAudio(songId: string, cookie?: any): Promise<string> {
     const { platform, rawId } = parseSongUrn(songId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
       return (
-        this.neteaseProvider.refreshSongAudio?.(rawId, cookie) ??
-        (await this.neteaseProvider.getSong(rawId, cookie)).audioUrl
+        this.neteaseProvider.refreshSongAudio?.(rawId, platformCookie) ??
+        (await this.neteaseProvider.getSong(rawId, platformCookie)).audioUrl
       );
     }
     return (
-      this.qqProvider.refreshSongAudio?.(rawId, cookie) ??
-      (await this.qqProvider.getSong(rawId, cookie)).audioUrl
+      this.qqProvider.refreshSongAudio?.(rawId, platformCookie) ??
+      (await this.qqProvider.getSong(rawId, platformCookie)).audioUrl
     );
   }
 
-  async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSongMetadata(songId: string, cookie?: any): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
-      const res = await this.neteaseProvider.getSongMetadata(rawId, cookie);
+      const res = await this.neteaseProvider.getSongMetadata(rawId, platformCookie);
       return {
         ...res,
         id: buildSongUrn("netease", rawId),
       };
     }
-    const res = await this.qqProvider.getSongMetadata(rawId, cookie);
+    const res = await this.qqProvider.getSongMetadata(rawId, platformCookie);
     return {
       ...res,
       id: buildSongUrn("qq", rawId),
@@ -312,15 +337,24 @@ export class AggregatedMusicProvider implements MusicProvider {
     }));
   }
 
-  createQrLogin(): Promise<MusicQrLogin> {
-    return this.neteaseProvider.createQrLogin!();
+  createQrLogin(platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLogin> {
+    if (platform === "qq") {
+      return this.qqProvider.createQrLogin!(platform, type);
+    }
+    return this.neteaseProvider.createQrLogin!(platform, type);
   }
 
-  checkQrLogin(key: string): Promise<MusicQrLoginCheck> {
-    return this.neteaseProvider.checkQrLogin!(key);
+  checkQrLogin(key: string, platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLoginCheck> {
+    if (platform === "qq") {
+      return this.qqProvider.checkQrLogin!(key, platform, type);
+    }
+    return this.neteaseProvider.checkQrLogin!(key, platform, type);
   }
 
-  getLoginStatus(cookie: string): Promise<MusicLoginSession> {
-    return this.neteaseProvider.getLoginStatus!(cookie);
+  getLoginStatus(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession> {
+    if (platform === "qq") {
+      return this.qqProvider.getLoginStatus!(cookie, platform);
+    }
+    return this.neteaseProvider.getLoginStatus!(cookie, platform);
   }
 }

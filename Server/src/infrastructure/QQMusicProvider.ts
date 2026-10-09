@@ -620,54 +620,162 @@ export class QQMusicProvider implements MusicProvider {
     return searchRes;
   }
 
-  async createQrLogin(): Promise<MusicQrLogin> {
-    const res = await qqmusic.login_qr_create({ type: "qq" });
+  async createQrLogin(_platform?: "netease" | "qq", type: "qq" | "wx" | "mobile" = "qq"): Promise<MusicQrLogin> {
+    const qrType = type || "qq";
+    const res = await qqmusic.login_qr_create({ type: qrType });
+    if (qrType === "qq") {
+      const qrsig = res.body?.qrsig || "";
+      const ptqrtoken = res.body?.ptqrtoken !== undefined ? String(res.body.ptqrtoken) : "";
+      return {
+        key: `${qrsig}:::${ptqrtoken}`,
+        qrUrl: res.body?.url || "",
+        qrImage: res.body?.qrimg || "",
+      };
+    }
+    if (qrType === "wx") {
+      const uuid = res.body?.uuid || "";
+      const qrurl = res.body?.qrurl || `https://open.weixin.qq.com/connect/qrcode/${uuid}`;
+      return {
+        key: uuid,
+        qrUrl: qrurl,
+        qrImage: qrurl,
+      };
+    }
+    // mobile
+    const qrcodeID = res.body?.qrcodeID || "";
     return {
-      key: res.body.qrsig || "",
-      qrUrl: res.body.url || "",
-      qrImage: res.body.qrimg || "",
+      key: qrcodeID,
+      qrUrl: "https://y.qq.com",
+      qrImage: res.body?.qrcode || "",
     };
   }
 
-  async checkQrLogin(key: string): Promise<MusicQrLoginCheck> {
-    const res = await qqmusic.login_qr_check({ type: "qq", qrsig: key });
-    const code = res.body.code;
+  async checkQrLogin(
+    key: string,
+    _platform?: "netease" | "qq",
+    type: "qq" | "wx" | "mobile" = "qq"
+  ): Promise<MusicQrLoginCheck> {
+    const qrType = type || "qq";
+    let res: any;
+    if (qrType === "qq") {
+      const [qrsig, ptqrtoken] = key.split(":::");
+      res = await qqmusic.login_qr_check({
+        type: "qq",
+        qrsig,
+        ptqrtoken: ptqrtoken || undefined,
+      });
+    } else if (qrType === "wx") {
+      res = await qqmusic.login_qr_check({
+        type: "wx",
+        uuid: key,
+      });
+    } else {
+      res = await qqmusic.login_qr_check({
+        type: "mobile",
+        qrcodeID: key,
+      });
+    }
 
+    const code = res?.body?.code;
     if (code === 200) {
+      const cookieStr = res.body?.cookieStr || "";
+      const session = await this.getLoginStatus(cookieStr);
       return {
         status: "authorized",
         message: "登录成功",
-        session: {
-          cookie: res.body.cookieStr || "",
-          account: {
-            userId: res.body.uin,
-            nickname: `QQ用户_${res.body.uin?.slice(-4) || ""}`,
-            vipStatus: "unknown",
-          },
-        },
+        session,
       };
     }
     if (code === 800) {
-      return { status: "expired", message: "二维码已过期" };
+      return { status: "expired", message: "二维码已过期，请点击刷新" };
     }
-    if (code === 67) {
+    if (code === 802 || code === 67) {
       return { status: "scanned", message: "已扫码，等待确认" };
     }
-    return { status: "waiting", message: "等待扫码" };
+    return { status: "waiting", message: res?.body?.message || "等待扫码" };
   }
 
   async getLoginStatus(cookie: string): Promise<MusicLoginSession> {
-    const res = await qqmusic.login_status({ cookie });
-    const isLogin = Boolean(res.body?.isLogin);
-    const userInfo = res.body?.userInfo || {};
+    let uin = "";
+    let nickname = "";
+    let avatarUrl: string | undefined = undefined;
+
+    try {
+      const statusRes = await qqmusic.login_status({ cookie });
+      const userData = statusRes.body?.data?.user || statusRes.body?.data || {};
+      uin = String(userData.uin || userData.encryptUin || "").trim();
+      nickname = userData.nick || userData.nickname || "";
+      avatarUrl = userData.headurl || userData.avatar;
+    } catch {}
+
+    if (!uin) {
+      const parsed = qqmusic.cookieToJson(cookie);
+      uin = parsed.uin || parsed.qqmusic_uin || parsed.wxuin || "";
+    }
+
+    try {
+      const detailRes = await qqmusic.user_detail({ uin, cookie });
+      const header = detailRes.body?.data?.data || detailRes.body?.data || {};
+      if (header.nick) nickname = header.nick;
+      if (header.headurl) avatarUrl = header.headurl;
+    } catch {}
+
+    if (!nickname) {
+      nickname = uin ? `QQ用户_${uin.slice(-4)}` : "QQ音乐用户";
+    }
+
+    let vipStatus: "vip" | "nonVip" | "unknown" = "nonVip";
+    let vipTier: "svip" | "vip" | "musicPackage" | undefined = undefined;
+    let vipLevel: number | undefined = undefined;
+    let vipExpireTime: number | undefined = undefined;
+
+    try {
+      const vipRes = await qqmusic.user_vip_info({ cookie });
+      const vipData = vipRes.body?.data || {};
+      const identity = vipData.identity || {};
+      const svip = Number(vipData.svip || 0);
+      const isVip = Number(identity.HugeVip || identity.vip || 0);
+      const isPackage = Number(identity.twelve || identity.eight || 0);
+      const level = Number(identity.level || 0);
+
+      if (svip > 0) {
+        vipStatus = "vip";
+        vipTier = "svip";
+        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 8) : 1;
+      } else if (isVip > 0) {
+        vipStatus = "vip";
+        vipTier = "vip";
+        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 8) : 1;
+      } else if (isPackage > 0) {
+        vipStatus = "vip";
+        vipTier = "musicPackage";
+      }
+
+      const expireTs = Number(vipData.userinfo?.expire || 0);
+      if (expireTs > 0) {
+        vipExpireTime = expireTs * 1000;
+      } else if (identity.HugeVipEnd) {
+        const parsed = Date.parse(identity.HugeVipEnd);
+        if (!isNaN(parsed)) vipExpireTime = parsed;
+      } else if (identity.twelveEnd) {
+        const parsed = Date.parse(identity.twelveEnd);
+        if (!isNaN(parsed)) vipExpireTime = parsed;
+      }
+    } catch {
+      vipStatus = "unknown";
+    }
 
     return {
       cookie,
       account: {
-        userId: res.body?.uin || userInfo.uin,
-        nickname: userInfo.nick || `QQ用户_${res.body?.uin?.slice(-4) || ""}`,
-        avatarUrl: userInfo.headurl,
-        vipStatus: userInfo.vip ? "vip" : "nonVip",
+        platform: "qq",
+        userId: uin,
+        nickname,
+        avatarUrl,
+        vipStatus,
+        vipTier,
+        vipLevel,
+        vipExpireTime,
       },
     };
   }

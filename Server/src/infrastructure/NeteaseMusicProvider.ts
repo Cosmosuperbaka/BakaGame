@@ -54,9 +54,9 @@ export interface MusicProvider {
   getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
   getAmllTtmlLyrics?(songId: string): Promise<string | undefined>;
   searchAmllTtmlLyrics?(songName: string, artistName?: string): Promise<string | undefined>;
-  createQrLogin?(): Promise<MusicQrLogin>;
-  checkQrLogin?(key: string): Promise<MusicQrLoginCheck>;
-  getLoginStatus?(cookie: string): Promise<MusicLoginSession>;
+  createQrLogin?(platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLogin>;
+  checkQrLogin?(key: string, platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLoginCheck>;
+  getLoginStatus?(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession>;
   uploadDeviceInfo?(cookie: string, deviceName?: string): Promise<boolean>;
   getPlaylistSongs?(playlistId: string, cookie?: string): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
   searchArtists?(keyword: string, limit?: number, cookie?: string): Promise<SongArtistSearchResult[]>;

@@ -191,19 +191,22 @@ export interface SonGuessrSettings {
 }
 
 export interface SonGuessrMusicAccount {
+  platform?: "netease" | "qq";
   userId?: string;
   nickname: string;
   avatarUrl?: string;
-  /** 当前账号会员状态；未知表示网易云会员接口暂时不可用。 */
+  /** 当前账号会员状态；未知表示音乐平台会员接口暂时不可用。 */
   vipStatus?: "vip" | "nonVip" | "unknown";
   vipType?: number;
   vipExpireTime?: number;
   /**
-   * 展示用的会员档位，按网易云客户端的优先级取最高的一档：超级黑胶（`redplus`）> 黑胶（`associator`）> 音乐包。
+   * 展示用的会员档位，按优先级取最高的一档：
+   * 网易云：超级黑胶（svip）> 黑胶（vip）> 音乐包（musicPackage）；
+   * QQ音乐：超级会员（svip）> 豪华绿钻（vip）> 音乐包（musicPackage）。
    * 到期时间 `vipExpireTime` 与之对应；非会员或状态未知时缺席。
    */
   vipTier?: SonGuessrVipTier;
-  /** 黑胶成长等级 1–7（`redVipLevel`），决定官方徽章上的「壹」至「柒」；音乐包没有等级 */
+  /** 成长等级：网易云 1–7，QQ音乐 1–8；音乐包没有等级 */
   vipLevel?: number;
 }
 
@@ -413,6 +416,11 @@ export interface SonGuessrRoomSnapshot {
   hostPlayerId: string;
   testMode: boolean;
   musicAccountReady: boolean;
+  qqMusicAccountReady?: boolean;
+  musicAccounts?: {
+    netease?: SonGuessrMusicAccount;
+    qq?: SonGuessrMusicAccount;
+  };
   settings: SonGuessrSettings;
   phase: SonGuessrPhase;
   roundNumber: number;
@@ -491,10 +499,22 @@ export type SonGuessrClientMessage =
   | ClientEnvelope<"song.room.kick", { playerId: string }>
   | ClientEnvelope<"song.room.transferHost", { playerId: string }>
   | ClientEnvelope<"song.chat.send", { text: string }>
-  | ClientEnvelope<"song.auth.qr.create", Record<string, never>>
-  | ClientEnvelope<"song.auth.qr.check", { key: string }>
-  | ClientEnvelope<"song.auth.useCookie", { cookie: string }>
-  | ClientEnvelope<"song.auth.clear", Record<string, never>>
+  | ClientEnvelope<
+      "song.auth.qr.create",
+      { platform?: "netease" | "qq"; type?: "qq" | "wx" | "mobile" } | Record<string, never>
+    >
+  | ClientEnvelope<
+      "song.auth.qr.check",
+      { platform?: "netease" | "qq"; key: string; type?: "qq" | "wx" | "mobile" }
+    >
+  | ClientEnvelope<
+      "song.auth.useCookie",
+      { platform?: "netease" | "qq"; cookie: string }
+    >
+  | ClientEnvelope<
+      "song.auth.clear",
+      { platform?: "netease" | "qq" | "all" } | Record<string, never>
+    >
   | ClientEnvelope<"song.music.search", { keyword: string }>
   | ClientEnvelope<"song.music.playlist.resolve", { value: string }>
   | ClientEnvelope<"song.music.artist.search", { keyword: string }>
