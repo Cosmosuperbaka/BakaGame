@@ -1,6 +1,7 @@
 import { AppError } from "../domain/Errors";
 import { CCBCharacterRepository } from "./CCBCharacterRepository";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
+import { scheduleDatasetBackup } from "./DatasetBackup";
 import type { AnimeAutoFilters } from "../shared/Index";
 import type { BangumiProviderInit } from "./LocalBangumiProvider";
 import type { CCBDataInit } from "./CCBData";
@@ -43,6 +44,8 @@ let song: LocalBangumiProvider | undefined;
 let ccb: CCBCharacterRepository | undefined;
 let songError: AppError | undefined;
 let ccbError: AppError | undefined;
+/** 备份定时器的停止函数；两条链路读的是同一个库，只起一份备份。 */
+let stopBackup: (() => void) | undefined;
 
 /**
  * 两条链路共用一次 init，但**分别容错**：猜歌的库缺失不该让 CCB 一起不可用
@@ -83,8 +86,16 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         ccb = undefined;
         ccbError = asAppError(error, "CCB_DATA_UNAVAILABLE");
       }
+      // 库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。
+      stopBackup = scheduleDatasetBackup({
+        dbPath: request.song.dbPath,
+        backupPath: `${request.song.dbPath}.backup`,
+        logger: { warn: (message) => console.warn(message) },
+      });
       value = true;
     } else if (request.method === "close") {
+      stopBackup?.();
+      stopBackup = undefined;
       await Promise.allSettled([ccb?.close(), song?.close()]);
       song = undefined;
       ccb = undefined;

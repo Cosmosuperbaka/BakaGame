@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { openDataset } from "./OpenDataset";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
@@ -151,7 +152,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
     this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
     this.fetcher = options.fetcher ?? fetch;
-    this.db = new Database(options.dbPath, { readonly: true });
+    this.db = openDataset(options.dbPath);
     if (options.enrichmentPath) {
       // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
       // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。

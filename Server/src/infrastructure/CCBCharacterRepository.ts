@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { openDataset } from "./OpenDataset";
 import { AppError } from "../domain/Errors";
 import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
@@ -24,7 +25,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
   private closed = false;
 
   constructor(options: CCBDataOptions) {
-    this.db = new Database(options.dbPath, { readonly: true });
+    this.db = openDataset(options.dbPath);
     try { this.enrichment = new CCBEnrichment(options); } catch (error) { this.db.close(); throw error; }
     this.now = options.now ?? Date.now;
     this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
