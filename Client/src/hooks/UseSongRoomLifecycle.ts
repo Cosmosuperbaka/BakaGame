@@ -93,7 +93,10 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const leavingRef = useRef(false);
   const entryRef = useRef<AbortController | null>(null);
   const [mountTime] = useState(() => Date.now());
-  const musicSessionTaskRef = useRef<MusicSessionTask | null>(null);
+  const musicSessionTasksRef = useRef<{
+    netease: MusicSessionTask | null;
+    qq: MusicSessionTask | null;
+  }>({ netease: null, qq: null });
   const inFlightCommandsRef = useRef<Set<string>>(new Set());
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
 
@@ -101,43 +104,56 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     sendCommandRef.current = sendCommand;
   }, [sendCommand]);
 
-  /** 终止当前装载事务：在途请求与待执行的退避都作废，下一次快照变化可重新发起。 */
-  const cancelMusicSessionUpload = useCallback(() => {
-    const task = musicSessionTaskRef.current;
-    if (task) task.cancelled = true;
-    musicSessionTaskRef.current = null;
+  /** 终止指定或全部平台的当前装载事务：在途请求与待执行的退避都作废，下一次快照变化可重新发起。 */
+  const cancelMusicSessionUpload = useCallback((platform?: "netease" | "qq") => {
+    if (!platform || platform === "netease") {
+      const task = musicSessionTasksRef.current.netease;
+      if (task) task.cancelled = true;
+      musicSessionTasksRef.current.netease = null;
+    }
+    if (!platform || platform === "qq") {
+      const task = musicSessionTasksRef.current.qq;
+      if (task) task.cancelled = true;
+      musicSessionTasksRef.current.qq = null;
+    }
   }, []);
 
   const uploadMusicSession = useCallback(
-    async (task: MusicSessionTask, storedSession: StoredSongMusicSession) => {
+    async (
+      task: MusicSessionTask,
+      platform: "netease" | "qq",
+      storedSession: StoredSongMusicSession,
+    ) => {
+      const platformName = platform === "qq" ? "QQ音乐" : "网易云";
       for (let attempt = 0; ; attempt += 1) {
         if (task.cancelled) return;
         try {
           const result = await sendCommand<{ account: SonGuessrMusicAccount }>(
             "song.auth.useCookie",
-            { cookie: storedSession.cookie },
+            { cookie: storedSession.cookie, platform },
           );
           if (task.cancelled) return;
           task.settled = true;
           if (!result?.account) return;
           saveSongMusicSession(
-            { cookie: storedSession.cookie, account: result.account },
+            { cookie: storedSession.cookie, account: { ...result.account, platform } },
             storedSession.persistent,
+            platform,
           );
           return;
         } catch (error) {
           if (task.cancelled) return;
           const appError = error as { code?: string; message?: string };
           if (appError.code === "MUSIC_SESSION_INVALID") {
-            cancelMusicSessionUpload();
-            clearStoredSongMusicSession();
-            setNotice("网易云登录状态已失效，请重新扫码登录", "error");
+            cancelMusicSessionUpload(platform);
+            clearStoredSongMusicSession(platform);
+            setNotice(`${platformName}登录状态已失效，请重新扫码登录`, "error");
             return;
           }
           const delay = MUSIC_SESSION_RETRY_DELAYS_MS[attempt];
           if (delay === undefined || !isTransientMusicSessionError(appError)) {
             // 重试用尽或确定性拒绝：交回给下一次快照变化（房间活动或周期校准）再装一次。
-            cancelMusicSessionUpload();
+            cancelMusicSessionUpload(platform);
             return;
           }
           await new Promise<void>((resolve) => {
@@ -357,19 +373,23 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       cancelMusicSessionUpload();
       return;
     }
-    const storedSession = getStoredSongMusicSession();
-    if (!storedSession) {
-      cancelMusicSessionUpload();
-      return;
+
+    const platforms: ("netease" | "qq")[] = ["netease", "qq"];
+    for (const platform of platforms) {
+      const storedSession = getStoredSongMusicSession(platform);
+      if (!storedSession) {
+        cancelMusicSessionUpload(platform);
+        continue;
+      }
+      const mountKey = `${snapshot.roomId}:${privateState.playerId}:${platform}:${storedSession.cookie}`;
+      const active = musicSessionTasksRef.current[platform];
+      // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
+      if (active?.key === mountKey && (active.settled || !active.cancelled)) continue;
+      cancelMusicSessionUpload(platform);
+      const task: MusicSessionTask = { key: mountKey, cancelled: false, settled: false };
+      musicSessionTasksRef.current[platform] = task;
+      void uploadMusicSession(task, platform, storedSession);
     }
-    const mountKey = `${snapshot.roomId}:${privateState.playerId}:${storedSession.cookie}`;
-    const active = musicSessionTaskRef.current;
-    // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
-    if (active?.key === mountKey && (active.settled || !active.cancelled)) return;
-    cancelMusicSessionUpload();
-    const task: MusicSessionTask = { key: mountKey, cancelled: false, settled: false };
-    musicSessionTaskRef.current = task;
-    void uploadMusicSession(task, storedSession);
   }, [
     cancelMusicSessionUpload,
     connected,
