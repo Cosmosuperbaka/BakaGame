@@ -73,4 +73,14 @@ Server/data/*.sqlite
 # tools/build_bangumi_images.py 重跑（支持断点续传）。
 Server/data/images/
 Server/data/*.sqlite.backup
+Server/data/tag-diff-state.json
+
+# 本地构建工具不进 Git：CI 只需要 build_bangumi_db.py 与它的自测
+# （见 .github/workflows/bangumi-data.yml 的「Build SQLite databases」），
+# 其余三个都是本地/一次性跑的，放在工作区即可。
+# apply_tag_diff 的应用逻辑会在后端（Server/src）以 TS 实现 —— 运行时能力
+# 必须随部署走，不能依赖一个不跟踪的脚本。
+tools/apply_tag_diff.py
+tools/build_bangumi_images.py
+tools/refresh_subject_tags.py
 /tasks
