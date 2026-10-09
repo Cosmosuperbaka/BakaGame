@@ -4,7 +4,7 @@ import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtr
 import type { CCBDataOptions, CCBDataProvider, CCBRawAppearance, CCBRawCharacter } from "./CCBData";
 import { CCBEnrichment } from "./CCBEnrichment";
 import { deriveCCBCharacter, resolveCCBSubjectTypes } from "./CCBCharacterDerivation";
-import { CCBMeilisearch } from "./CCBMeilisearch";
+import { BangumiSearchIndex } from "./BangumiSearchIndex";
 
 interface CharacterRow { id: number; name: string; name_cn: string; gender: string; aliases: string; summary: string; comments: number; collects: number }
 interface SubjectRow { id: number; type: number; name: string; name_cn: string; date: string; raw_tags: string; meta_tags: string; score: number; rating_count: number; heat: number; relation_type?: number }
@@ -19,7 +19,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
   private readonly enrichment: CCBEnrichment;
   private readonly now: () => number;
   private readonly directoryImports = new Map<number, Promise<CCBDirectoryResult>>();
-  private readonly search?: CCBMeilisearch;
+  private readonly search?: BangumiSearchIndex;
   private readonly ready: Promise<void>;
   private closed = false;
 
@@ -27,7 +27,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
     this.db = new Database(options.dbPath, { readonly: true });
     try { this.enrichment = new CCBEnrichment(options); } catch (error) { this.db.close(); throw error; }
     this.now = options.now ?? Date.now;
-    this.search = options.meilisearch ? new CCBMeilisearch(options.meilisearch) : undefined;
+    this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
     this.ready = this.search?.initialize(this.db, options.dbPath) ?? Promise.resolve();
   }
 
@@ -92,7 +92,7 @@ export class CCBCharacterRepository implements CCBDataProvider {
     if (!selected.length) return [];
     const query = keyword.trim().slice(0, 80);
     if (this.search) {
-      const result = await this.search.searchSubjects(query, boundedLimit(limit), selected);
+      const result = await this.search.searchSubjects({ keyword: query, limit: boundedLimit(limit), types: selected });
       if (!result.ids.length) return [];
       const placeholders = result.ids.map(() => "?").join(",");
       const rows = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders})`).all(...result.ids) as SubjectRow[];

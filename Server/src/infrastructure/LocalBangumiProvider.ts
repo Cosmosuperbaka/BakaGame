@@ -4,8 +4,8 @@ import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import { isBangumiCreditsEntry } from "../shared/Index";
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
-import { BangumiMeilisearch } from "./BangumiMeilisearch";
-import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
+import { BangumiSearchIndex } from "./BangumiSearchIndex";
+import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 
 export interface BangumiDataProvider {
   initialize?: () => Promise<void>;
@@ -126,12 +126,12 @@ export interface LocalBangumiProviderOptions {
   enrichmentPath?: string;
   imageBase?: string;
   apiBase?: string;
-  meilisearch?: CCBMeilisearchOptions;
+  meilisearch?: BangumiSearchOptions;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
-export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & { meilisearch?: Omit<CCBMeilisearchOptions, "client"> };
+export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & { meilisearch?: Omit<BangumiSearchOptions, "client"> };
 
 /** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
 const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
@@ -144,7 +144,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   private readonly imageCache = new Map<string, string>();
   private readonly imageMissUntil = new Map<string, number>();
-  private readonly search?: BangumiMeilisearch;
+  private readonly search?: BangumiSearchIndex;
   private readonly searchReady: Promise<void>;
 
   constructor(options: LocalBangumiProviderOptions) {
@@ -166,7 +166,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       `);
       this.enrichment = enrichment;
     }
-    this.search = options.meilisearch ? new BangumiMeilisearch(options.meilisearch) : undefined;
+    this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
     this.searchReady = this.search ? this.search.initialize(this.db, options.dbPath) : Promise.resolve();
   }
 
@@ -279,7 +279,11 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     let rows: SubjectRow[];
     if (this.search) {
       await this.searchReady;
-      const ids = await this.search.searchSubjects(q, Math.min(50, Math.max(1, limit)), filters);
+      // 猜歌只关心动画（type=2）；无关键词时按热度排序，供随机出题取候选。
+      const { ids } = await this.search.searchSubjects({
+        keyword: q, limit: Math.min(50, Math.max(1, limit)), types: [2],
+        startYear: filters.startYear, endYear: filters.endYear, sortByHeat: !q.trim(),
+      });
       if (!ids.length) return [];
       const placeholders = ids.map(() => "?").join(",");
       const found = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`).all(...ids) as SubjectRow[];

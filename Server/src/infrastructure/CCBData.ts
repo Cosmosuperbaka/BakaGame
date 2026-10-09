@@ -1,5 +1,5 @@
 import type { CCBCharacterSummary, CCBCharacterView, CCBDirectoryResult, CCBExtraTagSection, CCBImageSize, CCBSettings, CCBSubjectSummary } from "../shared/CCB";
-import type { CCBMeilisearchOptions } from "./CCBMeilisearch";
+import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
 export interface CCBRawAppearance {
@@ -52,7 +52,7 @@ export interface CCBDataOptions {
   imageBase?: string;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   now?: () => number;
-  meilisearch?: CCBMeilisearchOptions;
+  meilisearch?: BangumiSearchOptions;
 }
 
-export type CCBDataInit = Omit<CCBDataOptions, "fetcher" | "now" | "meilisearch"> & { meilisearch?: Omit<CCBMeilisearchOptions, "client"> };
+export type CCBDataInit = Omit<CCBDataOptions, "fetcher" | "now" | "meilisearch"> & { meilisearch?: Omit<BangumiSearchOptions, "client"> };
