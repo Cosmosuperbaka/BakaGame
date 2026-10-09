@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { CCBCharacterWorkerProvider } from "../src/infrastructure/CCBCharacterWorkerProvider";
 import { BangumiWorkerProvider } from "../src/infrastructure/BangumiWorkerProvider";
 import { BangumiDataWorkerClient } from "../src/infrastructure/BangumiDataWorkerClient";
@@ -46,13 +48,13 @@ test("角色工作线程并发查询隔离对象且关闭后拒绝请求", async
 }, 30_000);
 
 test("缺失数据文件的初始化失败以业务错误返回，不产生未处理拒绝", async () => {
-  const { client, provider } = startCcb(`missing-${crypto.randomUUID()}.sqlite`);
+  const { client, provider } = startCcb(join(tmpdir(), `missing-${crypto.randomUUID()}.sqlite`));
   expect(await rejectionOf(provider.searchCharacters("角色"))).toMatchObject({ code: "CCB_DATA_UNAVAILABLE" });
   await client.close();
 });
 
 test("库缺失时两个门面各报自己的错误码，不互相顶替", async () => {
-  const missing = `missing-${crypto.randomUUID()}.sqlite`;
+  const missing = join(tmpdir(), `missing-${crypto.randomUUID()}.sqlite`);
   const client = new BangumiDataWorkerClient();
   const ready = client.init({ method: "init", song: { dbPath: missing }, ccb: { dbPath: missing } });
   const song = new BangumiWorkerProvider(client, ready);
