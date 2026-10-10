@@ -22,13 +22,24 @@ CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色�
 ```bash
 BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_URL=
+# 自建图床：avif 分片所在目录，缺省 Server/data/images
+BANGUMI_IMAGES_DIR=
+# 图床回源前缀（缺省跟随 BANGUMI_IMAGE_URL 的绝对地址）
+BANGUMI_IMAGE_SOURCE=
+# 运行时更新器：缺省只在生产开启（测试与本地开发不打线上上游）
+BANGUMI_UPDATER_ENABLED=
+BANGUMI_UPDATER_MIN_RATE=10
+BANGUMI_UPDATER_MAX_RATE=100
+BANGUMI_UPDATER_PLAYER_SCALE=20
 # 选填：Bangumi API 回填缓存落点，默认 Server/storage/bangumi-enrichment.sqlite
 BANGUMI_ENRICHMENT_PATH=
 ```
 
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像（**具体地址属于部署配置，不进仓库**）。
-`BANGUMI_IMAGE_URL` 为空时保留原始图片地址；配置后，服务端只重写主机名为 `lain.bgm.tv`
-的图片链接。重写结果使用镜像源和原链接的 pathname、query、hash，其他主机名和无效 URL 原样返回。
+`BANGUMI_IMAGE_URL` 为空时保留原始图片地址；配置后，服务端按 `BangumiImagePaths` 把
+`lain.bgm.tv` 的原始地址换成「前缀 + 图床缓存路径」（方形一律 `grid`、长条一律 `large`，
+作品封面向下降档），映射不了的形状原样返回。把 `BANGUMI_IMAGE_URL` 指向本站的
+`/bangumi-images` 即切到自建图床，届时**必须**另给 `BANGUMI_IMAGE_SOURCE`，否则回源会指回自己。
 
 镜像端点的两个实测要点（与具体域名无关）：`GET /v0/characters/{id}` 返回完整角色 JSON，
 其中 `images.medium` 仍指向 `lain.bgm.tv`（必须靠 `BANGUMI_IMAGE_URL` 重写）；
@@ -72,6 +83,37 @@ CCB 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共
 `GET /v0/subjects/{id}`，规则与角色立绘相同：请求按 `实体:编号` 合并，无图或 404 只进 5 分钟内存负缓存，其他失败原样报错。
 作品列表查询（搜作品、按编号取作品）只读已回填的封面、不回源；缺图的条目由客户端滚进视口时经 `ccb.subject.image` 按需补，
 本地不存在或 NSFW 的条目直接返回 `undefined`。
+
+## 自建图床与运行时更新
+
+数据集不再由 CI 每周重建：**库是可写的，后端自己更新**（构建工具在 `tools/`，不进 Git）。
+图床与更新器都跑在数据 Worker 里，写操作因此收口在单一线程。
+
+### 自建图床
+
+- 分片存储 `Server/data/images/images-XX.sqlite`（`crc32(path) % 分片数`，分片数按目录里
+  实际存在的文件推断，与构建脚本一致）。表 `images(path, bytes, content_type, fetched_at)`。
+- 路由 `GET /bangumi-images/*`：**命中直接回 avif**（`immutable` 长缓存），缺失才回源
+  （`Accept: image/avif`），回源结果转交 Worker 落库 —— 主线程只读分片，单写者不变。
+- 只认 avif 魔数：上游返回错误页 / jpeg 时**绝不入库**（坏字节一旦入库就再也不会重下）。
+- 路径与 Bangumi 源站一致，所以切换 `BANGUMI_IMAGE_URL` 不需要改任何 URL 改写逻辑。
+
+### 运行时更新器（`SubjectUpdater`）
+
+- **三层**：按热度排名分位划分间隔（前 20% 两天 / 前 50% 一周 / 其余一个月），
+  分位**每轮按当前热度分布重算**，作品变热自动刷得更勤。
+- **按玩家数限速**：0 人 → `MIN_RATE`（10 req/s，字面意义上慢慢更新），
+  在线玩家达到 `PLAYER_SCALE`（20）→ `MAX_RATE`（100 req/s），中间线性。
+  所有回源（含补图）都过同一个时隙队列。
+- **按需**：玩家点开过的条目登记进队列，下一轮优先刷新且不受单轮上限挤掉；
+  只对「确实过期」的条目发请求。
+- **索引同步**：落库后只把 id 写进 `bangumi_index_pending`，轮末批量 flush 到 Meilisearch；
+  失败计数重试，超过 5 次丢弃（下一轮刷新会重新入队）。
+- **失败退避**：1h → 2h → 4h … 封顶一周；成功即清零。
+- **nsfw 守卫**：上游标成 nsfw 的条目**不落库**，并推后 30 天再问。
+- **备份期间暂停**：`VACUUM INTO` 出一致快照时不写库。
+- 状态表建在数据集里（`bangumi_refresh` / `bangumi_index_pending`），与它描述的数据同生共死。
+- 部署首轮会先把现有作品登记为「此刻已刷新」（`markDatasetFresh`），**不会**一上线就把全库刷一遍。
 
 ## 请求边界
 
