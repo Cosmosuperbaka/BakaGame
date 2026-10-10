@@ -7,6 +7,7 @@ import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { CCBCharacterWorkerProvider } from "../infrastructure/CCBCharacterWorkerProvider";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
+import { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { AppError } from "../domain/Errors";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
@@ -19,7 +20,32 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const data = createBangumiData({
     song: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
     ccb: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
+    imagesDir: env.bangumiImagesDir,
+    tagDiff: env.bangumiTagDiffUrl
+      ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
+      : undefined,
+    // 更新器只在显式开启（生产默认）且有上游地址时装配：E2E 与本地开发不该打线上 API。
+    updater: env.bangumiUpdaterEnabled && env.bangumiApiUrl
+      ? {
+          base: env.bangumiApiUrl, imageSource: env.bangumiImageSource,
+          minRate: env.bangumiUpdaterMinRate, maxRate: env.bangumiUpdaterMaxRate,
+          playerScale: env.bangumiUpdaterPlayerScale,
+        }
+      : undefined,
   });
+  // 自建图床读取侧：`BANGUMI_IMAGE_URL` 指向 `/bangumi-images` 前缀后，业务侧的 URL
+  // 改写零改动（路径与源站一致）。主线程只读分片，新抓到的图转交数据 Worker 落库（单写者）。
+  const images = env.bangumiImagesDir
+    ? new BangumiImageService({
+        directory: env.bangumiImagesDir,
+        sourceBase: env.bangumiImageSource,
+        logger,
+        persist: (path, image) => {
+          void data.client.request({ method: "images.put", path, bytes: image.bytes })
+            .catch((error: unknown) => { logger.warn("图床落库失败（本次仍正常返回）", { path, error: String(error) }); });
+        },
+      })
+    : undefined;
   const local = data.song;
   const music = new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock });
   // 音乐链路预热不阻塞启动：第一位带着本机凭据进房的玩家不该替整个进程垫付接口包冷加载与首个上游建连。
@@ -31,9 +57,19 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const bangumi = env.meilisearchKey ? local : new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi });
   const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
-  return createApp({ ...options, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
-    const results = await Promise.allSettled([ccb.close(), data.client.close()]);
+  const app = createApp({ ...options, bangumiImages: images, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
+    const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
   } });
+  return {
+    ...app,
+    /**
+     * 把在线玩家数报给数据 Worker：更新器据此调整上游速率（没人玩就慢慢更新）。
+     * 上报失败无所谓 —— 顶多这一分钟按旧速率跑。
+     */
+    reportBangumiLoad: (players: number): void => {
+      void data.client.request({ method: "updater.reportLoad", players }).catch(() => {});
+    },
+  };
 }

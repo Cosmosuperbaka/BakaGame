@@ -177,6 +177,30 @@ export class BangumiSearchIndex {
     await waitForIndexTask(this.subjects.updateDocuments([document], { primaryKey: "id" }));
   }
 
+  /**
+   * 批量更新作品索引（更新器的待同步队列用）。
+   *
+   * 用 `addDocuments` 而不是逐条 `updateDocuments`：Meilisearch 的每次写都是
+   * 一个异步任务，逐条发会让任务队列被几十万条小任务撑爆，批量写能把
+   * 「一轮刷新」压成几次任务。
+   */
+  async updateSubjects(documents: SubjectSearchDocument[]): Promise<void> {
+    if (!documents.length) return;
+    await this.addBatches(this.subjects, documents);
+  }
+
+  /** 构造索引文档。更新器落库后按同一份映射回写索引，避免两处口径漂移。 */
+  toSubjectDocument(row: Record<string, unknown>): SubjectSearchDocument {
+    return {
+      id: Number(row.id), name: String(row.name),
+      aliases: uniqueStrings(String(row.name_cn ?? ""), parseJsonStrings(row.aliases)),
+      tag: parseJsonStrings(row.tags), meta_tag: parseJsonStrings(row.meta_tags),
+      date: parseDate(String(row.date ?? "")), score: Number(row.score ?? 0),
+      rating_count: Number(row.rating_count ?? 0), heat: Number(row.heat ?? 0),
+      rank: Number(row.rank ?? 0), type: Number(row.type ?? 0),
+    };
+  }
+
   private async configureIndex<T extends Record<string, unknown>>(
     index: Index<T>, rankingRules: string[], searchableAttributes: string[], filterableAttributes: string[], sortableAttributes: string[],
   ): Promise<void> {
@@ -236,11 +260,11 @@ async function waitForIndexTask(task: EnqueuedTaskPromise): Promise<void> {
   if (result.status !== "succeeded") throw new Error(`搜索索引任务失败: ${result.error?.code ?? result.status}`);
 }
 
-function uniqueStrings(...values: Array<string | string[]>): string[] {
+export function uniqueStrings(...values: Array<string | string[]>): string[] {
   return [...new Set(values.flatMap((value) => Array.isArray(value) ? value : [value]).map((value) => value.trim()).filter(Boolean))];
 }
 
-function parseJsonStrings(value: unknown): string[] {
+export function parseJsonStrings(value: unknown): string[] {
   try {
     const parsed = JSON.parse(String(value ?? "[]"));
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
@@ -249,7 +273,7 @@ function parseJsonStrings(value: unknown): string[] {
   }
 }
 
-function parseDate(value: string): number {
+export function parseDate(value: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   return match ? Number(`${match[1]}${match[2]}${match[3]}`) : 0;
 }

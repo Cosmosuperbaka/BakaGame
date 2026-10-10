@@ -143,6 +143,52 @@ describe("readEnv 环境变量与启动断言", () => {
       else delete Bun.env.BANGUMI_IMAGE_URL;
     }
   });
+
+  it("图床回源缺省跟随绝对地址的对外前缀，切到自建图床时必须显式指定", () => {
+    const keys = ["BANGUMI_IMAGE_URL", "BANGUMI_IMAGE_SOURCE"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      delete Bun.env.BANGUMI_IMAGE_SOURCE;
+      // 对外前缀是反代：它本身就是最佳回源。
+      Bun.env.BANGUMI_IMAGE_URL = "https://mirror.example.test/";
+      expect(readEnv().bangumiImageSource).toBe("https://mirror.example.test");
+      // 切到自建图床后不能再拿它当回源（否则自己回自己的死循环）。
+      Bun.env.BANGUMI_IMAGE_URL = "/bangumi-images";
+      expect(readEnv().bangumiImageSource).toBe("");
+      delete Bun.env.BANGUMI_IMAGE_URL;
+      expect(readEnv().bangumiImageSource).toBe("");
+      // 显式指定永远优先。
+      Bun.env.BANGUMI_IMAGE_SOURCE = "https://upstream.example.test/";
+      expect(readEnv().bangumiImageSource).toBe("https://upstream.example.test");
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
+  it("运行时更新器缺省只在生产开启，速率与玩家规模可调", () => {
+    const keys = ["BANGUMI_UPDATER_ENABLED", "BANGUMI_UPDATER_MIN_RATE", "BANGUMI_UPDATER_MAX_RATE", "BANGUMI_UPDATER_PLAYER_SCALE"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      // 缺省走的是「非生产不开」：E2E 与本地开发不该打线上上游。
+      expect(readEnv().bangumiUpdaterEnabled).toBe(false);
+      expect(readEnv()).toMatchObject({ bangumiUpdaterMinRate: 10, bangumiUpdaterMaxRate: 100, bangumiUpdaterPlayerScale: 20 });
+      Bun.env.BANGUMI_UPDATER_ENABLED = "true";
+      expect(readEnv().bangumiUpdaterEnabled).toBe(true);
+      Bun.env.BANGUMI_UPDATER_MIN_RATE = "5";
+      Bun.env.BANGUMI_UPDATER_MAX_RATE = "50";
+      Bun.env.BANGUMI_UPDATER_PLAYER_SCALE = "10";
+      expect(readEnv()).toMatchObject({ bangumiUpdaterMinRate: 5, bangumiUpdaterMaxRate: 50, bangumiUpdaterPlayerScale: 10 });
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
 });
 
 const deploymentKeys = ["DEPLOYMENT_ENVIRONMENT", "OTEL_DEPLOYMENT_ENVIRONMENT", "OTEL_RESOURCE_ATTRIBUTES", "NODE_ENV"] as const;

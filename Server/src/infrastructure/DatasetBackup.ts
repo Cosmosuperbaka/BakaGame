@@ -18,6 +18,14 @@ export interface DatasetBackupOptions {
    * 当前挂的是「发现并导入新条目」。
    */
   onDailyTask?: () => Promise<void>;
+  /**
+   * 备份前后通知更新器暂停/恢复。
+   *
+   * `VACUUM INTO` 在事务里出一致快照，期间另一条连接持续写入会让两边互相等待
+   * （写等读事务、读事务被拉长），快的时候只是变慢，慢的时候直接撞上
+   * `busy_timeout`。先停一下写，快照出得干净也更快。
+   */
+  onBackup?: { pause: () => void; resume: () => void };
 }
 
 /**
@@ -33,6 +41,7 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
   let stopped = false;
 
   const runBackup = () => {
+    options.onBackup?.pause();
     try {
       // 必须先查存在性：SQLite 打开不存在的路径会**默默建一个空库**，
       // 于是「源库缺失」会被伪装成一次成功的空备份——比失败更危险。
@@ -50,6 +59,9 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
     } catch (error) {
       // 备份失败绝不阻断主流程：库本身还在，缺一次快照不是可用性问题。
       options.logger?.warn(`数据集备份失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // 备份失败也必须恢复：更新器卡在暂停态会让数据集永远不再更新。
+      options.onBackup?.resume();
     }
   };
 

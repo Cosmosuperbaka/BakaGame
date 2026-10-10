@@ -40,7 +40,7 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, dispose, sonGuessrService, ccbService } = createServer({
+const { app, dispose, sonGuessrService, ccbService, reportBangumiLoad } = createServer({
   env,
   whoIsFakerService,
   logger,
@@ -78,10 +78,13 @@ function reportRuntimeMetrics(): void {
   const faker = whoIsFakerService.getHealthSnapshot();
   const songuessr = sonGuessrService.getHealthSnapshot();
   const ccb = ccbService.getHealthSnapshot();
+  const onlinePlayerCount = faker.onlinePlayerCount + songuessr.onlinePlayerCount + ccb.onlinePlayerCount;
   gaugeServerMetric(
     "bakagame.players.online",
-    faker.onlinePlayerCount + songuessr.onlinePlayerCount + ccb.onlinePlayerCount,
+    onlinePlayerCount,
   );
+  // 数据更新器按玩家数调整上游速率：有人玩才跑得快，空闲时只慢慢更新。
+  reportBangumiLoad(onlinePlayerCount);
   gaugeServerMetric(
     "bakagame.rooms.active",
     faker.roomCount + songuessr.roomCount + ccb.roomCount,

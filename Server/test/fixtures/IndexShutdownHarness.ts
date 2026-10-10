@@ -70,6 +70,8 @@ export async function createIndexShutdownHarness(options: {
       return {
         app: { listen: () => ({ server: { hostname: "127.0.0.1", port: 1 } }), stop: (force: boolean) => execute("stop", force) },
         dispose: () => execute("dispose"), sonGuessrService: service("song"), ccbService: service("ccb"),
+        // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。
+        reportBangumiLoad: () => {},
       };
     } },
   };

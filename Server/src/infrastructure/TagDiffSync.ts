@@ -30,6 +30,49 @@ export interface TagDiffResult {
   targetSha256?: string;
 }
 
+/**
+ * 定时拉取标签增量：CCB-TagsCI 每天产一次 diff，6 小时一拉足够新鲜。
+ *
+ * 用递归 `setTimeout` 而不是 `setInterval`：一轮跑得慢（或上游卡住）时不会
+ * 叠加出并发的拉取，下一轮始终从这一轮结束开始计时。
+ * 首跑延后一分钟 —— 刚起来时索引正在重建，别去抢它的窗口。
+ */
+const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const FIRST_DELAY_MS = 60_000;
+
+export function scheduleTagDiffSync(options: {
+  /** 取仓库的回调：初始化可能失败或尚未完成，用时再取。 */
+  repository: () => Pick<CCBCharacterRepository, "applyTagChanges">;
+  diffUrl: string;
+  statePath: string;
+  fetcher?: typeof fetch;
+  logger?: { warn?: (message: string) => void; info?: (message: string) => void };
+}): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = async (): Promise<void> => {
+    try {
+      const result = await syncTagDiff({
+        repository: options.repository(), diffUrl: options.diffUrl, statePath: options.statePath, fetcher: options.fetcher,
+      });
+      if (result.applied) {
+        options.logger?.info?.(`角色标签增量已应用：${result.replaced} 条变更 / ${result.removed} 条移除`);
+      } else if (result.reason) {
+        options.logger?.info?.(`角色标签增量未应用：${result.reason}`);
+      }
+    } catch (error) {
+      // 增量同步失败不影响服务：下一轮会重试，库里的标签仍是上一版。
+      options.logger?.warn?.(`角色标签增量同步失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  const schedule = (delay: number): void => {
+    if (stopped) return;
+    timer = setTimeout(async () => { await run(); schedule(SYNC_INTERVAL_MS); }, delay);
+  };
+  schedule(FIRST_DELAY_MS);
+  return () => { stopped = true; if (timer) clearTimeout(timer); };
+}
+
 export function readTagDiffState(statePath: string): TagDiffState {
   try {
     return JSON.parse(readFileSync(statePath, "utf8")) as TagDiffState;

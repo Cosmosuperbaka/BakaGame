@@ -19,9 +19,28 @@ export interface AppEnv {
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
+  /** 对外图片前缀；指向 `/bangumi-images` 时走自建图床。 */
   bangumiImageUrl: string;
+  /**
+   * 图床回源前缀：`/bangumi-images` 缺失时从这里抓 avif。
+   *
+   * 必须能与 Bangumi 的图床路径（`/pic/cover/...`、`/r/200/...`）拼接，且支持
+   * `Accept: image/avif`。**缺省跟随 `bangumiImageUrl`**（它指向反代时，反代
+   * 本身就是最佳回源）；一旦把 `bangumiImageUrl` 切到自建图床就必须显式指定
+   * 本变量，否则会变成自己回自己的回环。仓库里不落任何远端地址。
+   */
+  bangumiImageSource?: string;
   /** 本地数据集路径：猜歌与 CCB 共用同一个库。 */
   bangumiDbPath?: string;
+  /** 自建图床分片目录（`/bangumi-images` 路由与更新器共用）；缺省跟随数据集目录。 */
+  bangumiImagesDir?: string;
+  /** 运行时更新器（阶段 6）：缺省只在生产开启。 */
+  bangumiUpdaterEnabled?: boolean;
+  bangumiUpdaterMinRate?: number;
+  bangumiUpdaterMaxRate?: number;
+  bangumiUpdaterPlayerScale?: number;
+  /** CCB-TagsCI 的角色标签增量地址（gh-proxy 通道，raw 直连国内不可用）。 */
+  bangumiTagDiffUrl?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
@@ -154,6 +173,7 @@ export const readEnv = (): AppEnv => {
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
   // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
   const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
+  const imageUrl = (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, "");
 
   return {
     clientUrl,
@@ -170,8 +190,24 @@ export const readEnv = (): AppEnv => {
     sentryDsn,
     sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
-    bangumiImageUrl: (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, ""),
+    bangumiImageUrl: imageUrl,
+    // 没显式给回源地址时，只有「对外前缀本身是绝对地址」才跟它（相对路径的
+    // `/bangumi-images` 会把回源指向自己，宁可留空 = 只服务已缓存的图）。
+    bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? (/^https?:\/\//.test(imageUrl) ? imageUrl : "")).replace(/\/+$/, ""),
     bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
+    bangumiImagesDir: Bun.env.BANGUMI_IMAGES_DIR
+      ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
+      : resolve(import.meta.dir, "../../data/images"),
+    // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。
+    bangumiUpdaterEnabled: Bun.env.BANGUMI_UPDATER_ENABLED !== undefined
+      ? Bun.env.BANGUMI_UPDATER_ENABLED === "true"
+      : otelDeploymentEnvironment === "production",
+    bangumiUpdaterMinRate: Number(Bun.env.BANGUMI_UPDATER_MIN_RATE ?? 10),
+    bangumiUpdaterMaxRate: Number(Bun.env.BANGUMI_UPDATER_MAX_RATE ?? 100),
+    bangumiUpdaterPlayerScale: Number(Bun.env.BANGUMI_UPDATER_PLAYER_SCALE ?? 20),
+    // raw.githubusercontent 在国内不可用（实测 12s 只下到 1/4）；gh-proxy 直通且新鲜。
+    bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL
+      ?? "https://gh-proxy.com/https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.diff.json",
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
     ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,

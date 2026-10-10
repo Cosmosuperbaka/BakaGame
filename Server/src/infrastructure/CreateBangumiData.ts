@@ -4,6 +4,7 @@ import { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 import type { BangumiProviderInit } from "./LocalBangumiProvider";
 import type { CCBDataInit } from "./CCBData";
 import type { TagDiffOptions } from "./BangumiDataWorker";
+import type { SubjectUpdaterInit } from "./SubjectUpdater";
 
 export interface BangumiDataBundle {
   /** 猜歌侧门面，实现 `BangumiDataProvider`。 */
@@ -21,10 +22,10 @@ export interface BangumiDataBundle {
  * 数据集改为可写、且要由后端自己更新之后，两个进程同写一个库文件会出现写写冲突；
  * 这里让两边共用同一进程，写操作因此天然串行，不需要额外的跨 Worker 队列。
  */
-export function createBangumiData(options: { song: BangumiProviderInit; ccb: CCBDataInit; tagDiff?: TagDiffOptions }): BangumiDataBundle {
+export function createBangumiData(options: { song: BangumiProviderInit; ccb: CCBDataInit; tagDiff?: TagDiffOptions; imagesDir?: string; updater?: SubjectUpdaterInit }): BangumiDataBundle {
   const client = new BangumiDataWorkerClient();
   // 一次 init 同时建两边的数据源；两个门面共用这个 Promise，不会各发起一次。
-  const ready = client.init({ method: "init", song: options.song, ccb: options.ccb, tagDiff: options.tagDiff });
+  const ready = client.init({ method: "init", song: options.song, ccb: options.ccb, tagDiff: options.tagDiff, imagesDir: options.imagesDir, updater: options.updater });
   return {
     client,
     song: new BangumiWorkerProvider(client, ready),
