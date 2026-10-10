@@ -1,19 +1,26 @@
 import { UserRound } from "lucide-react";
-import type { CCBCharacterSummary, CCBSubjectSummary } from "@bakagame/shared";
+import type { CCBCharacterSummary, CCBImageSize, CCBSubjectSummary } from "@bakagame/shared";
 import { useCCBStore } from "@/stores/UseCCBStore";
 import { LazyImage } from "@/components/common/LazyImage";
 import { cn } from "@/lib/Utils";
 
-/** 角色图：列表里的方形缩略图，取方格图，避免竖版大图被裁到只剩头顶。 */
-export function CCBCharacterImage({ character, className }: { character: CCBCharacterSummary; className?: string }) {
+/**
+ * 角色图。两档尺寸：列表的方形框用 `grid`（竖版大图会被裁到只剩头顶）；
+ * 答案卡那种竖版大框用 `large`。
+ *
+ * 列表带下来的 `imageUrl` 是方格图，取 `large` 时先拿它顶着、同时把大图要回来，
+ * 中间不闪占位图标。
+ */
+export function CCBCharacterImage({ character, className, size = "grid" }: { character: CCBCharacterSummary; className?: string; size?: CCBImageSize }) {
   return <LazyImage
-    cacheKey={`ccb-character:${character.id}`}
+    cacheKey={`ccb-character:${character.id}:${size}`}
     initial={character.imageUrl}
+    upgrade={size === "large" && Boolean(character.imageUrl)}
     className={cn("h-10 w-10", className)}
     imageClassName="object-top"
     fallback={<UserRound aria-hidden="true" />}
     request={async () => {
-      const { imageUrl } = await useCCBStore.getState().sendCommand("ccb.character.image", { characterId: character.id, size: "grid" });
+      const { imageUrl } = await useCCBStore.getState().sendCommand("ccb.character.image", { characterId: character.id, size });
       return imageUrl;
     }}
   />;

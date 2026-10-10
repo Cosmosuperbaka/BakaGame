@@ -7,6 +7,9 @@ import { cn } from "@/lib/Utils";
  * 只读数据集不含图片地址，搜索结果默认没有封面，逐条回源又会撞上游限流；
  * 这里让「看得见的那几条」才真正发起请求。同一张图按 `cacheKey` 全局合并、
  * 有界缓存；图没回来或加载失败时显示 `fallback`，不阻断文字选择。
+ *
+ * `upgrade` 用于「手上是缩略图、这里要清晰那一档」的情形：即使 `initial` 已经有值
+ * 也再请求一次，请求回来前仍然显示 `initial`，不会先闪一下占位图标。
  */
 const CACHE_LIMIT = 256;
 const resolvedImages = new Map<string, string>();
@@ -29,12 +32,14 @@ function resolveImage(cacheKey: string, request: () => Promise<string | undefine
   return pending;
 }
 
-export function LazyImage({ cacheKey, initial, request, className, imageClassName, fallback }: {
-  /** 全局去重与缓存的键：同一张图跨列表、跨重渲染只请求一次。 */
+export function LazyImage({ cacheKey, initial, request, className, imageClassName, fallback, upgrade = false }: {
+  /** 全局去重与缓存的键：同一张图跨列表、跨重渲染只请求一次（不同尺寸要各自带后缀）。 */
   cacheKey: string;
   /** 服务端已经带回来的地址；有了就不必等到滚进视口。 */
   initial?: string;
   request: () => Promise<string | undefined>;
+  /** 已有的 `initial` 只是缩略图时置真：先用它占位，同时把清晰的那份取回来。 */
+  upgrade?: boolean;
   className?: string;
   imageClassName?: string;
   fallback: ReactNode;
@@ -46,16 +51,16 @@ export function LazyImage({ cacheKey, initial, request, className, imageClassNam
   const latestRequest = useRef(request);
   useEffect(() => { latestRequest.current = request; }, [request]);
   useEffect(() => {
-    if (initial || image || !container.current || typeof IntersectionObserver === "undefined") return;
+    if ((!upgrade && (initial || image)) || !container.current || typeof IntersectionObserver === "undefined") return;
     let active = true;
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
       observer.disconnect();
-      void resolveImage(cacheKey, () => latestRequest.current()).then((url) => { if (active) setImage(url); }).catch(() => { /* 图片失败不阻断文字选择。 */ });
+      void resolveImage(cacheKey, () => latestRequest.current()).then((url) => { if (active && url) setImage(url); }).catch(() => { /* 图片失败不阻断文字选择。 */ });
     });
     observer.observe(container.current);
     return () => { active = false; observer.disconnect(); };
-  }, [cacheKey, initial, image]);
+  }, [cacheKey, initial, image, upgrade]);
   return <span ref={container} className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground", className)}>
     {image && !failed
       ? <img src={image} alt="" className={cn("h-full w-full object-cover", imageClassName)} loading="lazy" decoding="async" onError={() => setFailed(true)} />

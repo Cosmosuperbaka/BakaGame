@@ -28,7 +28,7 @@ export function CCBAnswerCard({ answer, sealed = false }: { answer: CCBCharacter
   const title = answer.nameCn || answer.name;
   const info = (
     <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
-      <CCBCharacterImage key={answer.id} character={answer} className="h-32 w-24 bg-background" />
+      <CCBCharacterImage key={answer.id} character={answer} size="large" className="h-32 w-24 bg-background" />
       <div className="w-full min-w-0 flex-1 space-y-3">
         <div className="space-y-0.5">
           <h3 className="break-words text-xl font-semibold">{title}</h3>
