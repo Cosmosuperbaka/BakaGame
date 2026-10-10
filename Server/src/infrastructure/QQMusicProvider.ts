@@ -3,6 +3,7 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
 import qqmusic from "qqmusic-api-enhanced";
+import user_vip_info from "qqmusic-api-enhanced/module/user_vip_info.js";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import { parseTTML, sanitizeLyrics } from "./NeteaseMusicProvider";
@@ -623,18 +624,19 @@ export class QQMusicProvider implements MusicProvider {
   async createQrLogin(_platform?: "netease" | "qq", type: "qq" | "wx" | "mobile" = "qq"): Promise<MusicQrLogin> {
     const qrType = type || "qq";
     const res = await qqmusic.login_qr_create({ type: qrType });
+    const body = res.body as any;
     if (qrType === "qq") {
-      const qrsig = res.body?.qrsig || "";
-      const ptqrtoken = res.body?.ptqrtoken !== undefined ? String(res.body.ptqrtoken) : "";
+      const qrsig = body?.qrsig || "";
+      const ptqrtoken = body?.ptqrtoken !== undefined ? String(body.ptqrtoken) : "";
       return {
         key: `${qrsig}:::${ptqrtoken}`,
-        qrUrl: res.body?.url || "",
-        qrImage: res.body?.qrimg || "",
+        qrUrl: body?.url || "",
+        qrImage: body?.qrimg || "",
       };
     }
     if (qrType === "wx") {
-      const uuid = res.body?.uuid || "";
-      const qrurl = res.body?.qrurl || `https://open.weixin.qq.com/connect/qrcode/${uuid}`;
+      const uuid = body?.uuid || "";
+      const qrurl = body?.qrurl || `https://open.weixin.qq.com/connect/qrcode/${uuid}`;
       return {
         key: uuid,
         qrUrl: qrurl,
@@ -642,11 +644,11 @@ export class QQMusicProvider implements MusicProvider {
       };
     }
     // mobile
-    const qrcodeID = res.body?.qrcodeID || "";
+    const qrcodeID = body?.qrcodeID || "";
     return {
       key: qrcodeID,
       qrUrl: "https://y.qq.com",
-      qrImage: res.body?.qrcode || "",
+      qrImage: body?.qrcode || "",
     };
   }
 
@@ -663,7 +665,7 @@ export class QQMusicProvider implements MusicProvider {
         type: "qq",
         qrsig,
         ptqrtoken: ptqrtoken || undefined,
-      });
+      } as any);
     } else if (qrType === "wx") {
       res = await qqmusic.login_qr_check({
         type: "wx",
@@ -673,7 +675,7 @@ export class QQMusicProvider implements MusicProvider {
       res = await qqmusic.login_qr_check({
         type: "mobile",
         qrcodeID: key,
-      });
+      } as any);
     }
 
     const code = res?.body?.code;
@@ -702,7 +704,8 @@ export class QQMusicProvider implements MusicProvider {
 
     try {
       const statusRes = await qqmusic.login_status({ cookie });
-      const userData = statusRes.body?.data?.user || statusRes.body?.data || {};
+      const statusBody = statusRes.body as any;
+      const userData = statusBody?.data?.user || statusBody?.data || statusBody?.userInfo || {};
       uin = String(userData.uin || userData.encryptUin || "").trim();
       nickname = userData.nick || userData.nickname || "";
       avatarUrl = userData.headurl || userData.avatar;
@@ -731,8 +734,8 @@ export class QQMusicProvider implements MusicProvider {
     let vipYear: boolean | undefined = undefined;
 
     try {
-      const vipRes = await qqmusic.user_vip_info({ cookie });
-      const vipData = vipRes.body?.data || {};
+      const vipRes = await user_vip_info({ cookie });
+      const vipData = (vipRes.body as any)?.data || {};
       const identity = vipData.identity || {};
       const svip = Number(vipData.svip || 0);
       const isVip = Number(identity.HugeVip || identity.vip || 0);
