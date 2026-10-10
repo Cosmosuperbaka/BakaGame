@@ -12,6 +12,7 @@ import {
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
 import { listItem } from "@/lib/Motion";
+import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { ccbPresets } from "./CCBPresets";
 import { CCBSubjectSearch } from "./CCBSearch";
@@ -103,7 +104,11 @@ export function CCBGameSettings({ settings, waiting, readOnly = false }: { setti
         : draft.useIndex && draft.indexId !== syncedIndexId ? "目录需要先同步，同步后自动保存"
           : "";
 
-  useAutoSave(draft, (value) => useCCBStore.getState().sendCommand("ccb.room.settings", { settings: value }), {
+  useAutoSave(draft, (value) => {
+    // 记住整份玩法设置，下次创建的房间由等待页重放。
+    saveRoomSettingsMemory("ccb", { settings: value });
+    return useCCBStore.getState().sendCommand("ccb.room.settings", { settings: value });
+  }, {
     enabled: !readOnly && waiting && !validation,
     onError: (error) => useCCBStore.getState().setNotice(ccbErrorMessage(error)),
   });

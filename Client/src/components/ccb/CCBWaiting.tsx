@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 恢复函数与等待页共享同一份目录同步规则，放一起改动时不会漏掉一边。 */
 import { useState } from "react";
 import { Check, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
 import type { CCBPrivateState, CCBRoomSnapshot } from "@bakagame/shared";
@@ -5,14 +6,29 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { SettingReveal, SettingSwitchRow, SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCCBAction } from "@/hooks/UseCCBAction";
+import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { ccbRoomPath } from "@/lib/CCBSession";
+import type { CCBRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { CCBGameSettings } from "./CCBGameSettings";
 import { CCBTeamPicker } from "./CCBTeamPicker";
+
+/**
+ * 套用上局的玩法设置：用了 Bangumi 目录时先同步入库（服务端只从已落库的成员出题），
+ * 目录同步失败即整体放弃——宁可用服务端默认值，也不要一份抽不出题的设置。
+ */
+export async function restoreCCBSettings(memory: CCBRoomSettingsMemory): Promise<void> {
+  const { settings } = memory;
+  if (settings.useIndex && settings.indexId !== null) {
+    await useCCBStore.getState().sendCommand("ccb.directory.import", { indexId: settings.indexId });
+  }
+  await useCCBStore.getState().sendCommand("ccb.room.settings", { settings });
+}
 
 /**
  * CCB 等待页，与另外两个游戏同一结构：房主在折叠面板里直接改设置（防抖自动保存），底部只有开始按钮，
@@ -59,6 +75,10 @@ export function CCBWaiting({ snapshot, privateState }: { snapshot: CCBRoomSnapsh
     enabled: isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
     onError: (error) => setRoomNotice(ccbErrorMessage(error)),
   });
+
+  // 新建房间的首次进房：先套用上局的玩法设置（标记匹配才触发），落定前不让设置面板先挂载。
+  const restoring = useRoomSettingsRestore("ccb", snapshot.roomId, (memory) => restoreCCBSettings(memory));
+  if (restoring) return <RoomRestoreFallback />;
 
   // 非房主读当前快照；房主读草稿。
   const roomValues = isHost ? roomDraft : { visibility: snapshot.visibility, allowSpectators: snapshot.allowSpectators };

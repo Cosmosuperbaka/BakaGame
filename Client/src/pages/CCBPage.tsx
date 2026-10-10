@@ -7,6 +7,7 @@ import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
 import { CCB_SOURCE_LABELS } from "@/lib/CCBSession";
+import { markPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 import type { CCBRoomSummary, CCBSource } from "@bakagame/shared";
 
 /** 大厅只区分「等待中」与「游戏中」；原版房带来源徽章，旁观人数由上游提供时才显示。 */
@@ -77,7 +78,21 @@ export default function CCBPage() {
     joinRoom: (roomId, name, password, signal) => useCCBStore.getState().joinRoom(roomId, name, password, signal),
     reconnectRoom: (roomId, signal) => useCCBStore.getState().reconnectRoom(roomId, signal),
     showError: (message) => useCCBStore.getState().setNotice(message, "error"),
+    // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的玩法设置套进新房间。
+    onRoomCreated: (roomId, params) => {
+      saveRoomCreateDefaults("ccb", {
+        visibility: params.visibility,
+        // 原版房不允许禁止旁观：按实际提交值记忆，下次沿用才不会与开关的真实含义错位。
+        allowSpectators: server === "original" ? true : params.allowSpectators,
+        source: server,
+      });
+      markPendingRestore("ccb", roomId);
+    },
   });
+
+  // 上次的选项只在同一种服务器上沿用：原版房的「不公开」与增强房的「私密」不是一回事。
+  const rememberedCreate = readRoomCreateDefaults("ccb");
+  const createDefaults = rememberedCreate && rememberedCreate.source === server ? rememberedCreate : null;
 
   return (
     <LobbyPage
@@ -115,6 +130,7 @@ export default function CCBPage() {
           }}
           privacy={server === "original" ? "unlisted" : "password"}
           spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止旁观" : undefined}
+          defaults={createDefaults}
           onCreate={(params) => handleCreateRoom(params)}
         />
         <JoinPasswordDialog
