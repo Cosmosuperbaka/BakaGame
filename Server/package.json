@@ -20,7 +20,6 @@
     "@applemusic-like-lyrics/ttml": "^1.0.1",
     "@elysiajs/cors": "^1.4.2",
     "@neteasecloudmusicapienhanced/api": "4.41.1",
-    "qqmusic-api-enhanced": "^1.0.2",
     "@sentry/bun": "^10.75.1",
     "@sinclair/typebox": "^0.34.52",
     "@xmldom/xmldom": "^0.9.12",
@@ -30,6 +29,7 @@
     "lru-cache": "^11.5.3",
     "meilisearch": "0.62.0",
     "p-queue": "^9.3.3",
+    "qqmusic-api-enhanced": "^1.0.2",
     "sharp": "^0.35.4",
     "socket.io-client": "^4.8.3"
   },
