@@ -7,8 +7,11 @@ import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { SettingStepper, SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
+import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
+import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import type { RoleConfig, RoleLimits, WhoIsFakerRoomSnapshot } from "@/types";
 
 const notifyCopyFailed = () => useWhoIsFakerStore.getState().addToast("复制失败，请手动复制", "error");
@@ -54,6 +57,15 @@ export function WaitingPhase() {
       setStarting(false);
     }
   }, [sendCommand, addToast, starting]);
+
+  // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
+  const restoring = useRoomSettingsRestore("faker", snapshot.roomId, async (memory) => {
+    await sendCommand("room.updateSettings", {
+      revealRoleOnDeath: memory.revealRoleOnDeath,
+      roleConfig: memory.roleConfig,
+    });
+  });
+  if (restoring) return <RoomRestoreFallback />;
 
   if (isHost) {
     return (
@@ -203,7 +215,11 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
     allowSpectators: draft.allowSpectators,
     revealRoleOnDeath: draft.revealRoleOnDeath,
     roleConfig: effectiveRoleConfig(draft, limits),
-  }, (payload) => sendCommand("room.updateSettings", payload), {
+  }, (payload) => {
+    // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
+    saveRoomSettingsMemory("faker", { revealRoleOnDeath: payload.revealRoleOnDeath, roleConfig: payload.roleConfig });
+    return sendCommand("room.updateSettings", payload);
+  }, {
     enabled:
       !readOnly &&
       snapshot.status.phase === "waiting" &&

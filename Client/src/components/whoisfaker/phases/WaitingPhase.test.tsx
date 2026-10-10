@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import { markPendingRestore, readRoomSettingsMemory, saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WaitingPhase } from "./WaitingPhase";
@@ -73,6 +74,8 @@ describe("waiting room sharing", () => {
       cleanup();
     } finally {
       useWhoIsFakerStore.setState(initialStoreState, true);
+      // 恢复标记与设置记忆是 localStorage 全局状态，不能跨用例残留。
+      window.localStorage.clear();
       if (originalClipboardDescriptor) {
         Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
       } else {
@@ -210,5 +213,57 @@ describe("waiting room sharing", () => {
 
     resolve({});
     expect(await screen.findByRole("button", { name: "准备" })).toBeEnabled();
+  });
+
+  it("房主调整设置后记住这次的房间内设置", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<WaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+
+    // 修改经防抖保存进服务端，同时把这次的房间内设置写进记忆，供下次创建时重放。
+    await waitFor(() =>
+      expect(readRoomSettingsMemory("faker")).toEqual({
+        revealRoleOnDeath: false,
+        roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+      }),
+    );
+    expect(sendCommand).toHaveBeenCalledWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false }),
+    );
+  });
+
+  it("新建房间的等待页先套用上次设置，落定后才出设置面板", async () => {
+    markPendingRestore("faker", "1234");
+    saveRoomSettingsMemory("faker", {
+      revealRoleOnDeath: false,
+      roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+    });
+    let resolve: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn(() => new Promise<Record<string, unknown>>((r) => { resolve = r; }));
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<WaitingPhase />);
+    // 恢复在途：占位先行，设置面板还没挂载；重放的正是上次保存的那份设置。
+    expect(screen.getByRole("status", { name: "正在恢复上次的房间设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "身份设置" })).not.toBeInTheDocument();
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
+      revealRoleOnDeath: false,
+      roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+    });
+
+    await act(async () => { resolve({}); });
+    expect(screen.queryByRole("status", { name: "正在恢复上次的房间设置" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "身份设置" })).toBeInTheDocument();
+    expect(sendCommand).toHaveBeenCalledTimes(1);
   });
 });
