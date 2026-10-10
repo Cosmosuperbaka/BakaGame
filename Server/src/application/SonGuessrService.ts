@@ -1923,7 +1923,7 @@ export class SonGuessrService {
     const session = this.installMusicSession(room, player.id, result);
     this.touch(room);
     this.publishRoom(room);
-    return { account: session.account };
+    return { account: session.account, cookie: session.cookie };
   }
 
   private clearMusicAccount(

@@ -3,7 +3,6 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
 import qqmusic from "qqmusic-api-enhanced";
-import user_vip_info from "qqmusic-api-enhanced/module/user_vip_info.js";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import { parseTTML, sanitizeLyrics } from "./NeteaseMusicProvider";
@@ -665,7 +664,7 @@ export class QQMusicProvider implements MusicProvider {
         type: "qq",
         qrsig,
         ptqrtoken: ptqrtoken || undefined,
-      } as any);
+      });
     } else if (qrType === "wx") {
       res = await qqmusic.login_qr_check({
         type: "wx",
@@ -675,7 +674,7 @@ export class QQMusicProvider implements MusicProvider {
       res = await qqmusic.login_qr_check({
         type: "mobile",
         qrcodeID: key,
-      } as any);
+      });
     }
 
     const code = res?.body?.code;
@@ -698,91 +697,31 @@ export class QQMusicProvider implements MusicProvider {
   }
 
   async getLoginStatus(cookie: string): Promise<MusicLoginSession> {
-    let uin = "";
-    let nickname = "";
-    let avatarUrl: string | undefined = undefined;
-
+    let currentCookie = cookie;
     try {
-      const statusRes = await qqmusic.login_status({ cookie });
-      const statusBody = statusRes.body as any;
-      const userData = statusBody?.data?.user || statusBody?.data || statusBody?.userInfo || {};
-      uin = String(userData.uin || userData.encryptUin || "").trim();
-      nickname = userData.nick || userData.nickname || "";
-      avatarUrl = userData.headurl || userData.avatar;
-    } catch {}
-
-    if (!uin) {
-      const parsed = qqmusic.cookieToJson(cookie);
-      uin = parsed.uin || parsed.qqmusic_uin || parsed.wxuin || "";
-    }
-
-    try {
-      const detailRes = await qqmusic.user_detail({ uin, cookie });
-      const header = detailRes.body?.data?.data || detailRes.body?.data || {};
-      if (header.nick) nickname = header.nick;
-      if (header.headurl) avatarUrl = header.headurl;
-    } catch {}
-
-    if (!nickname) {
-      nickname = uin ? `QQ用户_${uin.slice(-4)}` : "QQ音乐用户";
-    }
-
-    let vipStatus: "vip" | "nonVip" | "unknown" = "nonVip";
-    let vipTier: "svip" | "vip" | undefined = undefined;
-    let vipLevel: number | undefined = undefined;
-    let vipExpireTime: number | undefined = undefined;
-    let vipYear: boolean | undefined = undefined;
-
-    try {
-      const vipRes = await user_vip_info({ cookie });
-      const vipData = (vipRes.body as any)?.data || {};
-      const identity = vipData.identity || {};
-      const svip = Number(vipData.svip || 0);
-      const isVip = Number(identity.HugeVip || identity.vip || 0);
-      const level = Number(identity.level || 0);
-      const isYear = Boolean(
-        Number(identity.is_year || identity.year_vip || identity.HugeVipYear || identity.year || 0) > 0 ||
-        Number(vipData.year || vipData.is_year || 0) > 0
-      );
-
-      if (svip > 0) {
-        vipStatus = "vip";
-        vipTier = "svip";
-        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 10) : 1;
-        vipYear = isYear;
-      } else if (isVip > 0) {
-        vipStatus = "vip";
-        vipTier = "vip";
-        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 10) : 1;
-        vipYear = isYear;
-      }
-
-      const expireTs = Number(vipData.userinfo?.expire || 0);
-      if (expireTs > 0) {
-        vipExpireTime = expireTs * 1000;
-      } else if (identity.HugeVipEnd) {
-        const parsed = Date.parse(identity.HugeVipEnd);
-        if (!isNaN(parsed)) vipExpireTime = parsed;
-      } else if (identity.twelveEnd) {
-        const parsed = Date.parse(identity.twelveEnd);
-        if (!isNaN(parsed)) vipExpireTime = parsed;
+      const refreshRes = await qqmusic.login_refresh({ cookie });
+      if (refreshRes.body?.cookieStr) {
+        currentCookie = refreshRes.body.cookieStr;
       }
     } catch {
-      vipStatus = "unknown";
+      // 刷新失败时沿用原 Cookie 继续尝试读取状态
     }
 
+    const statusRes = await qqmusic.login_status({ cookie: currentCookie });
+    const acc = statusRes.body.account;
+
     return {
-      cookie,
+      cookie: currentCookie,
       account: {
         platform: "qq",
-        userId: uin,
-        nickname,
-        avatarUrl,
-        vipStatus,
-        vipTier,
-        vipLevel,
-        vipYear,
-        vipExpireTime,
+        userId: acc?.userId || "",
+        nickname: acc?.nickname || "QQ音乐用户",
+        avatarUrl: acc?.avatarUrl,
+        vipStatus: acc?.vipStatus || "unknown",
+        vipTier: acc?.vipTier,
+        vipLevel: acc?.vipLevel,
+        vipYear: acc?.vipYear,
+        vipExpireTime: acc?.vipExpireTime,
       },
     };
   }
