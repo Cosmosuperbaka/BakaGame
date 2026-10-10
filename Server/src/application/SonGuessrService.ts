@@ -2762,15 +2762,23 @@ export class SonGuessrService {
         if (!isUnusableSongCandidate(error)) throw error;
       }
 
+      /** 候选是否来自专辑兜底 —— 决定列表是只取最高分一首还是整张列出（见下方展示规则）。 */
+      let albumFallback = false;
       if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
         try {
           matchedCandidates = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
+          albumFallback = true;
         } catch (error) {
           if (!isUnusableSongCandidate(error)) throw error;
         }
       }
 
-      for (const song of matchedCandidates) {
+      // 手动选曲列表的展示规则：常规检索的候选已按原版优先分降序排列，每个条目只保留
+      // **最高分的那一个** —— 同一首歌在网易云常有原版 / 翻唱 / 现场 / 器乐等多个版本，
+      // 全部列出会把列表刷成「好几首一样的 OP」并把翻唱混进来（用户实测反馈）。
+      // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
+      // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
+      for (const song of albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)) {
         if (!seenSongIds.has(song.id)) {
           seenSongIds.add(song.id);
           const explicitKind = detectExplicitTrackKind(`${song.title} ${song.album ?? ""}`);
@@ -2778,7 +2786,6 @@ export class SonGuessrService {
             track: explicitKind ? { ...track, kind: explicitKind } : track,
             song,
           });
-          if (!isAlbumLikeTrackKind(track.kind)) break;
         }
       }
     }

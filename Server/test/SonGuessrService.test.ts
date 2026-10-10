@@ -357,6 +357,122 @@ describe("SonGuessrService", () => {
     expect(snapshot.currentRound?.audioUrl).toBe(secondSong.audioUrl);
   });
 
+  /** 建好房间并查询番剧的关联曲候选列表（手动出题的选曲面板走这条命令）。 */
+  const queryAnimeSongs = async (
+    musicProvider: MusicProvider,
+    bangumiProvider: BangumiDataProvider,
+    subjectId: string,
+    connectionId: string,
+  ) => {
+    const service = new SonGuessrService({ musicProvider, bangumiProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, connectionId);
+    await createRoom(service, host);
+    return execute<{ results: Array<{ song: SongSearchResult }> }>(service, host, {
+      id: "list",
+      type: "song.bangumi.songs",
+      roomId: "1234",
+      payload: { subjectId },
+    });
+  };
+
+  test("手动选曲列表同一曲目只显示最高分匹配", async () => {
+    // 同一首 OP 在网易云常有原版 / 翻唱 / 现场等多个版本，全部列出会把选曲列表刷成
+    // 「好几首一样的 OP」并把翻唱混进来。列表只保留按原版优先分排序后的首名。
+    const original: SongSearchResult = {
+      ...songs.answer,
+      id: "orig",
+      title: "答案歌",
+      artist: "测试歌手",
+      album: "答案歌",
+    };
+    const cover: SongSearchResult = {
+      ...songs.answer,
+      id: "cover",
+      title: "答案歌 (cover)",
+      artist: "翻唱歌手",
+      album: "答案歌 翻唱合集",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      // 翻唱版本排在搜索结果更前，验证列表取的是最高分而不是首个结果。
+      search: async () => [cover, original],
+    };
+    const result = await queryAnimeSongs(musicProvider, {
+      getSubject: async () => anime,
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider, anime.id, "anime-list-host");
+
+    expect(result.results.map((entry) => entry.song.id)).toEqual(["orig"]);
+  });
+
+  test("同一首歌被多个条目命中时只保留一个代表", async () => {
+    // 同一首歌同时挂在两条关联条目下（如「主题歌」与「单曲」）时，只由首条代表；
+    // 次条目被跨条目去重挡下后**不得顺延到它的次名候选** —— 那会把翻唱版本重新带回列表。
+    const original: SongSearchResult = {
+      ...songs.answer,
+      id: "orig",
+      title: "答案歌",
+      artist: "测试歌手",
+      album: "答案歌",
+    };
+    const cover: SongSearchResult = {
+      ...songs.answer,
+      id: "cover",
+      title: "答案歌 (cover)",
+      artist: "翻唱歌手",
+      album: "答案歌 翻唱合集",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [cover, original],
+    };
+    const result = await queryAnimeSongs(musicProvider, {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [
+          { title: "答案歌", artist: "测试歌手", kind: "opening" as const },
+          { title: "答案歌", artist: "测试歌手", kind: "ending" as const },
+        ],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider, anime.id, "anime-dedup-host");
+
+    expect(result.results.map((entry) => entry.song.id)).toEqual(["orig"]);
+  });
+
+  test("专辑型条目在手动选曲列表保留整张专辑的曲目", async () => {
+    // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多个版本），
+    // 「只保留最高分」的去重规则不适用，应全部保留供出题人挑选。
+    const trackA: SongSearchResult = {
+      ...songs.answer,
+      id: "album-a",
+      title: "角色歌 A",
+      artist: "声优A",
+      album: "角色歌合辑",
+    };
+    const trackB: SongSearchResult = {
+      ...songs.answer,
+      id: "album-b",
+      title: "角色歌 B",
+      artist: "声优B",
+      album: "角色歌合辑",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [],
+      searchAlbums: async () => [{ id: "album-1", name: "角色歌合辑", artist: "声优A" }],
+      getAlbumSongs: async () => [trackA, trackB],
+    };
+    const result = await queryAnimeSongs(musicProvider, {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider, anime.id, "anime-album-host");
+
+    expect(result.results.map((entry) => entry.song.id).sort()).toEqual(["album-a", "album-b"]);
+  });
 
   test("听歌猜番自动出题沿用 Bangumi 筛选并跳过无主题曲条目", async () => {
     const noMusicAnime: BangumiSubjectDetails = { ...wrongAnime, id: "anime-no-music", musicTracks: [] };
