@@ -347,7 +347,7 @@ describe("SongAccountSettings", () => {
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     expect(within(toggle).getByText("腾讯大佬")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "超级会员 · 捌" })).toHaveAttribute(
+    expect(within(toggle).getByRole("img", { name: "超级会员 · SVIP8" })).toHaveAttribute(
       "src",
       "/assets/qqmusic-vip/SVIP-8.png",
     );
@@ -356,7 +356,7 @@ describe("SongAccountSettings", () => {
     // 切换到 QQ 音乐平台查看展开详情
     fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
     expect(panel().getByText("腾讯大佬")).toBeInTheDocument();
-    expect(panel().getByRole("img", { name: "超级会员 · 捌" })).toHaveAttribute(
+    expect(panel().getByRole("img", { name: "超级会员 · SVIP8" })).toHaveAttribute(
       "src",
       "/assets/qqmusic-vip/SVIP-8.png",
     );
@@ -411,9 +411,45 @@ describe("SongAccountSettings", () => {
       "/assets/netease-vip/VIP-7.png",
     );
     expect(within(toggle).getByText("QQ达人")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "绿钻豪华版 · 捌" })).toHaveAttribute(
+    expect(within(toggle).getByRole("img", { name: "豪华绿钻 · LV8" })).toHaveAttribute(
       "src",
       "/assets/qqmusic-vip/VIP-8.png",
+    );
+  });
+
+  it("正确渲染 QQ 音乐年费绿钻6级官方徽章与年费超级会员", () => {
+    saveSongMusicSession(
+      {
+        cookie: "qq_token=test_year",
+        account: {
+          platform: "qq",
+          nickname: "年费达人",
+          vipStatus: "vip",
+          vipTier: "vip",
+          vipLevel: 6,
+          vipYear: true,
+        },
+      },
+      true,
+      "qq",
+    );
+
+    render(
+      <SongAccountSettings
+        snapshot={
+          {
+            roomId: "1234",
+            qqMusicAccountReady: true,
+          } as SonGuessrRoomSnapshot
+        }
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getByText("年费达人")).toBeInTheDocument();
+    expect(within(toggle).getByRole("img", { name: "年费绿钻 · LV6" })).toHaveAttribute(
+      "src",
+      "/assets/qqmusic-vip/VIP-6-Year.png",
     );
   });
 });

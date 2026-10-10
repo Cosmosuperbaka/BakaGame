@@ -1,9 +1,13 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import sharp from "sharp";
+
+const execFileAsync = promisify(execFile);
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.resolve(scriptDir, "..");
@@ -93,6 +97,42 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {},
   }));
 }
 
+async function isApng(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== ".png" && ext !== ".apng") return false;
+  try {
+    const data = await readFile(filePath);
+    return data.includes(Buffer.from("acTL"));
+  } catch {
+    return false;
+  }
+}
+
+async function encodeApngToWebp(source, target) {
+  try {
+    await execFileAsync("ffmpeg", ["-y", "-i", source, "-loop", "0", "-q:v", "82", target]);
+    return;
+  } catch {
+    try {
+      const pyScript = [
+        "import sys",
+        "from PIL import Image",
+        "im = Image.open(sys.argv[1])",
+        "frames = [im.copy() for _ in range(im.n_frames) if not im.seek(_)]",
+        "durations = [im.info.get('duration', 50) for _ in range(im.n_frames)]",
+        "frames[0].save(sys.argv[2], save_all=True, append_images=frames[1:], duration=durations, loop=0, quality=82)",
+      ].join("\n");
+      await execFileAsync("python", ["-c", pyScript, source, target]);
+      return;
+    } catch {
+      console.warn(`[prepare-public-webp] 无法调用 ffmpeg 或 python 转换 APNG 动画，降级使用 sharp: ${source}`);
+      await sharp(source, { animated: true })
+        .webp({ quality: 82, alphaQuality: 90, effort: 4 })
+        .toFile(target);
+    }
+  }
+}
+
 function createEncoder(concurrency) {
   let active = 0;
   const waiting = [];
@@ -100,9 +140,13 @@ function createEncoder(concurrency) {
     if (active >= concurrency) await new Promise((resolve) => waiting.push(resolve));
     else active += 1;
     try {
-      await sharp(source, { animated: true })
-        .webp({ quality: 82, alphaQuality: 90, effort: 4 })
-        .toFile(target);
+      if (await isApng(source)) {
+        await encodeApngToWebp(source, target);
+      } else {
+        await sharp(source, { animated: true })
+          .webp({ quality: 82, alphaQuality: 90, effort: 4 })
+          .toFile(target);
+      }
     } finally {
       const next = waiting.shift();
       if (next) next();

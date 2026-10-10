@@ -1,4 +1,6 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import { webpAssetPlugin } from "../../vite.config";
 import { preparePublicWebp } from "../../scripts/prepare-public-webp.mjs";
 
@@ -138,6 +140,11 @@ describe("preparePublicWebp", () => {
       expect(legacyUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png)$/);
       expect(webpUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.webp$/);
     }
+
+    // 验证动图 PNG（如 QQ 音乐 10 级徽章 APNG）转码后完整保留多帧动画，未被降级为单帧静态图
+    const vip10Path = path.join(publicDir, "assets/qqmusic-vip/VIP-10.webp");
+    const vip10Meta = await sharp(vip10Path, { animated: true }).metadata();
+    expect(vip10Meta.pages).toBeGreaterThan(1);
   }, TRANSCODE_TIMEOUT_MS);
 });
 

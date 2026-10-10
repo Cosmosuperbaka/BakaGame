@@ -725,9 +725,10 @@ export class QQMusicProvider implements MusicProvider {
     }
 
     let vipStatus: "vip" | "nonVip" | "unknown" = "nonVip";
-    let vipTier: "svip" | "vip" | "musicPackage" | undefined = undefined;
+    let vipTier: "svip" | "vip" | undefined = undefined;
     let vipLevel: number | undefined = undefined;
     let vipExpireTime: number | undefined = undefined;
+    let vipYear: boolean | undefined = undefined;
 
     try {
       const vipRes = await qqmusic.user_vip_info({ cookie });
@@ -735,20 +736,22 @@ export class QQMusicProvider implements MusicProvider {
       const identity = vipData.identity || {};
       const svip = Number(vipData.svip || 0);
       const isVip = Number(identity.HugeVip || identity.vip || 0);
-      const isPackage = Number(identity.twelve || identity.eight || 0);
       const level = Number(identity.level || 0);
+      const isYear = Boolean(
+        Number(identity.is_year || identity.year_vip || identity.HugeVipYear || identity.year || 0) > 0 ||
+        Number(vipData.year || vipData.is_year || 0) > 0
+      );
 
       if (svip > 0) {
         vipStatus = "vip";
         vipTier = "svip";
-        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 8) : 1;
+        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 10) : 1;
+        vipYear = isYear;
       } else if (isVip > 0) {
         vipStatus = "vip";
         vipTier = "vip";
-        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 8) : 1;
-      } else if (isPackage > 0) {
-        vipStatus = "vip";
-        vipTier = "musicPackage";
+        vipLevel = level > 0 ? Math.min(Math.max(level, 1), 10) : 1;
+        vipYear = isYear;
       }
 
       const expireTs = Number(vipData.userinfo?.expire || 0);
@@ -775,6 +778,7 @@ export class QQMusicProvider implements MusicProvider {
         vipStatus,
         vipTier,
         vipLevel,
+        vipYear,
         vipExpireTime,
       },
     };

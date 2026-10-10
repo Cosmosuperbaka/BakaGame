@@ -51,7 +51,12 @@ const NETEASE_VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
   vip: ["", "/assets/netease-vip/VIP-1.png", "/assets/netease-vip/VIP-2.png", "/assets/netease-vip/VIP-3.png", "/assets/netease-vip/VIP-4.png", "/assets/netease-vip/VIP-5.png", "/assets/netease-vip/VIP-6.png", "/assets/netease-vip/VIP-7.png"],
 };
 
-const QQ_VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
+const QQ_VIP_BADGE_SRC: {
+  svip: string[];
+  svipYear: string[];
+  vip: string[];
+  vipYear: string[];
+} = {
   svip: [
     "",
     "/assets/qqmusic-vip/SVIP-1.png",
@@ -62,6 +67,21 @@ const QQ_VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
     "/assets/qqmusic-vip/SVIP-6.png",
     "/assets/qqmusic-vip/SVIP-7.png",
     "/assets/qqmusic-vip/SVIP-8.png",
+    "/assets/qqmusic-vip/SVIP-9.png",
+    "/assets/qqmusic-vip/SVIP-10.png",
+  ],
+  svipYear: [
+    "",
+    "/assets/qqmusic-vip/SVIP-1-Year.png",
+    "/assets/qqmusic-vip/SVIP-2-Year.png",
+    "/assets/qqmusic-vip/SVIP-3-Year.png",
+    "/assets/qqmusic-vip/SVIP-4-Year.png",
+    "/assets/qqmusic-vip/SVIP-5-Year.png",
+    "/assets/qqmusic-vip/SVIP-6-Year.png",
+    "/assets/qqmusic-vip/SVIP-7-Year.png",
+    "/assets/qqmusic-vip/SVIP-8-Year.png",
+    "/assets/qqmusic-vip/SVIP-9-Year.png",
+    "/assets/qqmusic-vip/SVIP-10-Year.png",
   ],
   vip: [
     "",
@@ -73,18 +93,41 @@ const QQ_VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
     "/assets/qqmusic-vip/VIP-6.png",
     "/assets/qqmusic-vip/VIP-7.png",
     "/assets/qqmusic-vip/VIP-8.png",
+    "/assets/qqmusic-vip/VIP-9.png",
+    "/assets/qqmusic-vip/VIP-10.png",
+  ],
+  vipYear: [
+    "",
+    "/assets/qqmusic-vip/VIP-1-Year.png",
+    "/assets/qqmusic-vip/VIP-2-Year.png",
+    "/assets/qqmusic-vip/VIP-3-Year.png",
+    "/assets/qqmusic-vip/VIP-4-Year.png",
+    "/assets/qqmusic-vip/VIP-5-Year.png",
+    "/assets/qqmusic-vip/VIP-6-Year.png",
+    "/assets/qqmusic-vip/VIP-7-Year.png",
+    "/assets/qqmusic-vip/VIP-8-Year.png",
+    "/assets/qqmusic-vip/VIP-9-Year.png",
+    "/assets/qqmusic-vip/VIP-10-Year.png",
   ],
 };
 
 function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string } | null {
   const isQq = account.platform === "qq";
-  const maxLevel = isQq ? 8 : 7;
-  const level = Math.min(Math.max(account.vipLevel ?? 1, 1), maxLevel);
   if (isQq) {
-    if (account.vipTier === "svip") return { src: QQ_VIP_BADGE_SRC.svip[level], label: `超级会员 · ${LEVEL_NUMERALS[level]}` };
-    if (account.vipTier === "vip") return { src: QQ_VIP_BADGE_SRC.vip[level], label: `绿钻豪华版 · ${LEVEL_NUMERALS[level]}` };
-    if (account.vipTier === "musicPackage") return { src: "/assets/qqmusic-vip/musicPackage.png", label: "音乐包" };
+    const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 10);
+    const isYear = Boolean(account.vipYear);
+    if (account.vipTier === "svip") {
+      const src = isYear ? QQ_VIP_BADGE_SRC.svipYear[level] : QQ_VIP_BADGE_SRC.svip[level];
+      const prefix = isYear ? "年费超级会员" : "超级会员";
+      return { src, label: `${prefix} · SVIP${level}` };
+    }
+    if (account.vipTier === "vip") {
+      const src = isYear ? QQ_VIP_BADGE_SRC.vipYear[level] : QQ_VIP_BADGE_SRC.vip[level];
+      const prefix = isYear ? "年费绿钻" : "豪华绿钻";
+      return { src, label: `${prefix} · LV${level}` };
+    }
   } else {
+    const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
     if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}` };
     if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}` };
     if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包" };

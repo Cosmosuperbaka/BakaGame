@@ -1972,6 +1972,7 @@ export class SonGuessrService {
       vipExpireTime: session.account.vipExpireTime,
       vipTier: session.account.vipTier,
       vipLevel: session.account.vipLevel,
+      vipYear: session.account.vipYear,
     };
     if (isQq) {
       room.qqMusicSession = { ownerPlayerId, cookie, account };

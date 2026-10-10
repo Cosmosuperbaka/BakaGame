@@ -202,12 +202,14 @@ export interface SonGuessrMusicAccount {
   /**
    * 展示用的会员档位，按优先级取最高的一档：
    * 网易云：超级黑胶（svip）> 黑胶（vip）> 音乐包（musicPackage）；
-   * QQ音乐：超级会员（svip）> 豪华绿钻（vip）> 音乐包（musicPackage）。
+   * QQ音乐：超级会员（svip）> 豪华绿钻（vip）（QQ音乐已无音乐包档位）。
    * 到期时间 `vipExpireTime` 与之对应；非会员或状态未知时缺席。
    */
   vipTier?: SonGuessrVipTier;
-  /** 成长等级：网易云 1–7，QQ音乐 1–8；音乐包没有等级 */
+  /** 成长等级：网易云 1–7，QQ音乐 1–10；无等级档位缺席 */
   vipLevel?: number;
+  /** 是否年费会员（QQ音乐年费绿钻/年费超级会员） */
+  vipYear?: boolean;
 }
 
 export type SonGuessrVipTier = "svip" | "vip" | "musicPackage";
