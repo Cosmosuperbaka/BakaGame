@@ -6,7 +6,10 @@ import { CCBAnswerCard } from "./CCBAnswerCard";
 
 /** jsdom 没有 IntersectionObserver：这里把「被观察」直接当成已滚进视口。 */
 class ImmediateObserver {
-  constructor(private readonly callback: IntersectionObserverCallback) {}
+  private readonly callback: IntersectionObserverCallback;
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+  }
   observe(target: Element): void {
     this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
   }
