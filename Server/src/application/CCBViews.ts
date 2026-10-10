@@ -41,23 +41,24 @@ export function ccbPrivateState(room: CCBRoom, player: CCBPlayerRecord): CCBPriv
   const remaining = round ? Math.max(0, round.settings.maxAttempts - (unit?.attempts ?? 0)) : 0;
   const inGame = room.phase === 'guessing' && Boolean(unit) && player.status === 'playing';
   const canGuess = inGame && Boolean(!unit!.ended && (!round!.settings.syncMode || !unit!.completed));
-  const participants = ccbParticipants(room);
+  const inStartablePhase = room.phase === 'waiting' || room.phase === 'settled';
+  const participants = ccbParticipants(room, inStartablePhase ? null : room.setterPlayerId);
   // 能当出题人的：在线、且他出题后（连同队友一起观战）还留得下猜题者。逐人重算参与者是 O(n²)，
-  // 而私有状态每次广播要给每个连接各算一遍，所以只给房主、且只在手动出题的等待与选人阶段算。
   const isHost = player.id === room.hostPlayerId;
-  const needsCandidates = isHost && (room.phase === 'choosingSetter' || (room.phase === 'waiting' && room.settings.answerMode === 'manual'));
+  const needsCandidates = isHost && (room.phase === 'choosingSetter' || (inStartablePhase && room.settings.answerMode === 'manual'));
   const setterCandidates = needsCandidates
     ? [...room.players.values()].filter(candidate => candidate.online && ccbParticipants(room, candidate.id).length > 0) : [];
   const usedCharacterIds = new Set(round?.guesses.filter(guess => guess.playerId === player.id).map(guess => guess.character.id));
   return {
     playerId: player.id, canGuess,
     canSurrender: inGame && !unit!.ended,
-    // 随机出题要其他参与者都准备；手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
+    // 随机出题在等待阶段需其他参与者准备（结算阶段再来一轮直接沿用在线参与者）；
+    // 手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
     // 单人不能开局，只有测试房允许房主一个人试玩。
-    canStart: room.phase === 'waiting' && isHost && (participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0)) &&
+    canStart: inStartablePhase && isHost && (participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0)) &&
       (room.settings.answerMode === 'manual'
         ? setterCandidates.length > 0
-        : participants.every(member => member.id === room.hostPlayerId || member.ready)),
+        : room.phase === 'settled' || participants.every(member => member.id === room.hostPlayerId || member.ready)),
     canSetAnswer: room.phase === 'answering' && player.id === room.setterPlayerId,
     setterCandidateIds: room.phase === 'choosingSetter' && isHost ? setterCandidates.map(candidate => candidate.id) : [],
     guesses: visibleGuesses(room, player, observing),

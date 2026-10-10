@@ -352,7 +352,7 @@ function CCBScoreTable({ scores, guesses }: { scores: CCBScore[]; guesses: CCBGu
 }
 
 /**
- * 结算。增强房的「下一步」是回到等待阶段（可改设置、重新准备）；原版房按上游行为直接开下一局，
+ * 结算。增强房的「下一步」是回到等待阶段（可改设置、重新准备）或直接再来一轮；原版房按上游行为直接开下一局，
  * 手动出题时先进入指定出题人。非房主的说明按同一口径写。
  */
 function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; privateState: CCBPrivateState }) {
@@ -360,23 +360,48 @@ function CCBSettlement({ snapshot, privateState }: { snapshot: CCBRoomSnapshot; 
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, pending } = useCCBAction();
   const advancing = pending.has("ccb.game.next");
+  const starting = pending.has("ccb.game.start");
   const native = snapshot.source === "native";
   const manual = snapshot.settings.answerMode === "manual";
-  return <div className="mx-auto w-full max-w-2xl space-y-5">
-    <PhaseHeader icon={Trophy} title="答案揭晓" />
-    <CCBAnswerCard answer={summary.answer} sealed />
-    <CCBScoreTable scores={summary.scores} guesses={summary.guesses} />
-    <CCBFeedbackTable guesses={summary.guesses} showRound={snapshot.settings.syncMode} />
-    <div className="flex flex-wrap justify-center gap-2">
-      {isHost ? (
-        <Button size="lg" loading={advancing} onClick={() => void run("ccb.game.next", {})}>
-          {native ? "返回等待房间" : manual ? "指定下一局出题人" : "开始下一局"}
-        </Button>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {native ? "等待房主返回等待阶段" : manual ? "等待房主指定下一局出题人" : "等待房主开始下一局"}
-        </p>
-      )}
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-5">
+      <PhaseHeader icon={Trophy} title="答案揭晓" />
+      <CCBAnswerCard answer={summary.answer} sealed />
+      <CCBScoreTable scores={summary.scores} guesses={summary.guesses} />
+      <div className="flex flex-wrap justify-center gap-2">
+        {isHost ? (
+          native ? (
+            <>
+              <Button
+                variant="outline"
+                size="lg"
+                disabled={advancing || starting}
+                loading={advancing}
+                onClick={() => void run("ccb.game.next", {})}
+              >
+                返回等待房间
+              </Button>
+              <Button
+                size="lg"
+                disabled={!privateState.canStart || advancing || starting}
+                loading={starting}
+                onClick={() => void run("ccb.game.start", {})}
+              >
+                再来一轮
+              </Button>
+            </>
+          ) : (
+            <Button size="lg" loading={advancing} onClick={() => void run("ccb.game.next", {})}>
+              {manual ? "指定下一局出题人" : "开始下一局"}
+            </Button>
+          )
+        ) : (
+          <p className="text-center text-sm text-muted-foreground">
+            {native ? "等待房主开始下一轮" : manual ? "等待房主指定下一局出题人" : "等待房主开始下一局"}
+          </p>
+        )}
+      </div>
+      <CCBFeedbackTable guesses={summary.guesses} showRound={snapshot.settings.syncMode} />
     </div>
-  </div>;
+  );
 }

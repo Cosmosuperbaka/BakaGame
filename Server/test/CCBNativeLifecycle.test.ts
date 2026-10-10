@@ -233,4 +233,35 @@ describe('CCB 会话与异步边界', () => {
     expect(h.snapshot(host).players).toHaveLength(1);
     expect(h.service.getHealthSnapshot().onlinePlayerCount).toBe(1);
   });
+
+  test('结算阶段房主可直接发起再来一轮开局，无需退回等待房间', async () => {
+    const h = harness();
+    const host = await h.create(); const guest = await h.join('玩家');
+    await h.ready(guest); await h.send(host, 'ccb.game.start', {});
+    await h.guess(host, 1);
+    expect(h.snapshot(host).phase).toBe('settled');
+    expect(h.privateState(host).canStart).toBe(true);
+    expect(h.privateState(guest).canStart).toBe(false);
+    await expect(h.send(guest, 'ccb.game.start', {})).rejects.toMatchObject({ code: 'NOT_HOST' });
+    await h.send(host, 'ccb.game.start', {});
+    expect(h.snapshot(host).phase).toBe('guessing');
+    expect(h.snapshot(host).roundNumber).toBe(2);
+    expect(h.snapshot(host).roundSummary).toBeNull();
+  });
+
+  test('结算阶段手动出题模式再来一轮进入指定出题人阶段', async () => {
+    const h = harness();
+    const host = await h.create(); const guest = await h.join('玩家');
+    await h.configure(host, { answerMode: 'manual' });
+    await h.send(host, 'ccb.game.start', {});
+    expect(h.snapshot(host).phase).toBe('choosingSetter');
+    await h.send(host, 'ccb.game.chooseSetter', { playerId: host.id! });
+    await h.send(host, 'ccb.game.setAnswer', { characterId: 1, hints: [] });
+    await h.guess(guest, 1);
+    expect(h.snapshot(host).phase).toBe('settled');
+    expect(h.privateState(host).canStart).toBe(true);
+    await h.send(host, 'ccb.game.start', {});
+    expect(h.snapshot(host).phase).toBe('choosingSetter');
+    expect(h.snapshot(host).roundSummary).toBeNull();
+  });
 });

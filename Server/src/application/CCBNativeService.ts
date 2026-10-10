@@ -111,9 +111,11 @@ export class CCBNativeService {
   }
   /** 开始游戏：随机出题直接抽题开局；手动出题进入选出题人阶段，由房主在那里指定出题人。 */
   private async start(room: CCBRoom, player: CCBPlayerRecord): Promise<void> {
-    this.state.requireHost(room, player); this.state.requireWaiting(room);
+    this.state.requireHost(room, player);
+    if (room.phase !== 'waiting' && room.phase !== 'settled') throw new AppError('INVALID_PHASE', '当前阶段无法开始游戏');
     if (!ccbPrivateState(room, player).canStart) throw new AppError('PLAYERS_NOT_READY', '至少两名玩家在线，且其他参与者准备后才能开始');
     validateCCBSettings(room.settings);
+    room.round = null; room.summary = null; room.setterPlayerId = null;
     if (room.settings.answerMode === 'manual') { room.phase = 'choosingSetter'; return; }
     room.phase = 'preparing'; room.phaseDeadlineAt = this.now() + 30000;
     const preparationId = crypto.randomUUID(); room.preparationId = preparationId;

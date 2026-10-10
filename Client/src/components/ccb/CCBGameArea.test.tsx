@@ -267,7 +267,10 @@ describe("CCB 操作区", () => {
     expect(screen.queryByText("猜测中")).not.toBeInTheDocument();
   });
 
-  it("结算的下一步按来源区分：增强房回等待，原版房直接开下一局", () => {
+  it("结算的下一步按来源区分：增强房支持返回等待与再来一轮，原版房直接开下一局", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ccbWs, "send").mockResolvedValue({});
+    useCCBStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const answer: CCBCharacterView = {
       id: 1, name: "Nijika", nameCn: "伊地知虹夏", gender: "female", popularity: 0, summary: "",
       imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
@@ -277,9 +280,36 @@ describe("CCB 操作区", () => {
     const roundSummary = { answer, scores: [], guesses: [], winners: [] };
     const view = render(<CCBGameArea snapshot={room({ phase: "settled", roundSummary })} privateState={privateState({ playerId: "guest" })} />);
     expect(screen.getByRole("heading", { name: "答案揭晓" })).toBeInTheDocument();
-    expect(screen.getByText("等待房主返回等待阶段")).toBeInTheDocument();
+    expect(screen.getByText("等待房主开始下一轮")).toBeInTheDocument();
+
     view.rerender(<CCBGameArea snapshot={room({ phase: "settled", roundSummary })} privateState={privateState()} />);
-    expect(screen.getByRole("button", { name: "返回等待房间" })).toBeInTheDocument();
+    const returnButton = screen.getByRole("button", { name: "返回等待房间" });
+    const nextRoundButton = screen.getByRole("button", { name: "再来一轮" });
+    const scoreTable = screen.getByRole("table", { name: "本局得分" });
+    const feedbackRegion = screen.getByText("提交第一个猜测后，这里会显示线索");
+
+    // 验证按钮位于得分表之后、猜测表之前，且再来一轮位于返回等待房间右侧
+    expect(Boolean(scoreTable.compareDocumentPosition(returnButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(returnButton.compareDocumentPosition(feedbackRegion) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(returnButton.compareDocumentPosition(nextRoundButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+
+    // 点击返回等待房间发送 ccb.game.next
+    await user.click(returnButton);
+    expect(send).toHaveBeenCalledWith("ccb.game.next", {}, expect.any(Object));
+
+    // 点击再来一轮发送 ccb.game.start
+    await user.click(nextRoundButton);
+    expect(send).toHaveBeenCalledWith("ccb.game.start", {}, expect.any(Object));
+
+    // canStart 为 false 时再来一轮禁用
+    view.rerender(<CCBGameArea snapshot={room({ phase: "settled", roundSummary })} privateState={privateState({ canStart: false })} />);
+    expect(screen.getByRole("button", { name: "再来一轮" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "返回等待房间" })).toBeEnabled();
+
+    // 原版房直接开下一局（带退场过渡，等新阶段落定）
+    view.rerender(<CCBGameArea snapshot={room({ source: "original", phase: "settled", roundSummary })} privateState={privateState()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "开始下一局" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "返回等待房间" })).not.toBeInTheDocument();
   });
 
   it("设置面板覆盖四个玩法开关，且只在实际生效的阶段提交草稿", async () => {
