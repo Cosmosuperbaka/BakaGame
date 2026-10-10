@@ -13,6 +13,7 @@ import {
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/Motion";
+import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import type {
@@ -96,7 +97,11 @@ export function SongQuestionSettings({
       autoFilters: { playlist: draft.playlist, artists: draft.artists, minPopularity: draft.minPopularity },
       animeAutoFilters: draft.animeFilters,
     },
-    (payload) => saveWaitingSettings(snapshot.roomId, payload),
+    (payload) => {
+      // 记住题目设置（单人模式不参与多人房间的记忆），下次创建的房间由等待页重放。
+      if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, question: payload }));
+      return saveWaitingSettings(snapshot.roomId, payload);
+    },
     {
       enabled: !readOnly && snapshot.phase === "waiting",
       onError: (error) =>
@@ -322,7 +327,11 @@ export function SongGameSettings({
   const values = readOnly ? gameOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
-  useAutoSave(draft, (payload) => saveWaitingSettings(snapshot.roomId, payload), {
+  useAutoSave(draft, (payload) => {
+    // 与题目设置分开记，各存各的；同样只在多人房间里记忆。
+    if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, game: payload }));
+    return saveWaitingSettings(snapshot.roomId, payload);
+  }, {
     enabled: !readOnly && snapshot.phase === "waiting",
     onError: (error) =>
       setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { TeamPicker } from "@/components/common/room/TeamPicker";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
@@ -13,6 +14,7 @@ import {
   SongRoomSettings,
   songSettingsSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
+import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@/types";
 
@@ -175,6 +177,12 @@ export function SongWaitingPhase({
   run,
   isPending,
 }: SongWaitingPhaseProps) {
+  // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
+  const restoring = useRoomSettingsRestore("song", snapshot.roomId, async (memory) => {
+    await useSonGuessrStore.getState().sendCommand("song.room.updateSettings", { ...memory.question, ...memory.game });
+  });
+  if (restoring) return <RoomRestoreFallback />;
+
   if (snapshot.solo) {
     return <SongSoloWaitingPanel snapshot={snapshot} run={run} isPending={isPending} />;
   }
