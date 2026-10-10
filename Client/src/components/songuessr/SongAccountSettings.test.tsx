@@ -88,12 +88,11 @@ describe("SongAccountSettings", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
-  it("未登录时收起态只写未配置，媒体位仍是网易云图标", () => {
+  it("未登录时收起态双平台均显示未配置", () => {
     render(<SongAccountSettings snapshot={snapshot(false)} />);
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
 
-    expect(toggle).toHaveAccessibleDescription("未配置");
-    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
+    expect(within(toggle).getAllByText("未配置")).toHaveLength(2);
     expect(toggle.querySelector("svg")).toBeInTheDocument();
     expect(toggle.querySelector("img")).not.toBeInTheDocument();
   });
@@ -109,16 +108,17 @@ describe("SongAccountSettings", () => {
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     // 本机有凭据但还没装进房间：只说正在连接，不出现账号，也不再有「已连接」这类状态标。
-    expect(toggle).toHaveAccessibleDescription("正在连接网易云账号…");
+    expect(within(toggle).getByText("正在连接网易云账号…")).toBeInTheDocument();
+    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
     expect(screen.queryByText(/已连接|本机已登录/)).not.toBeInTheDocument();
 
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
-    // 收起态就是单行：头像、昵称、官方会员徽章图与到期日都直接出现在按钮里，不再走文本摘要。
-    expect(toggle).toHaveAccessibleDescription("黑胶账号 SVIP · 伍 2027/4/1 到期");
+    // 收起态就是单行：头像、昵称、官方会员徽章图与到期日都直接出现在按钮里，未配置的QQ音乐也清晰可见
     expect(toggle.querySelector("img[src='https://example.invalid/avatar.jpg']")).toBeInTheDocument();
     expect(within(toggle).getByText("黑胶账号")).toBeInTheDocument();
     expect(within(toggle).getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
     expect(within(toggle).getByText("2027/4/1 到期")).toBeInTheDocument();
+    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
 
     fireEvent.click(toggle);
     expect(panel().getByText("黑胶账号")).toBeInTheDocument();
@@ -452,4 +452,46 @@ describe("SongAccountSettings", () => {
       "/assets/qqmusic-vip/VIP-6-Year.png",
     );
   });
+
+  it("切换到QQ音乐Tab但未登录时，折叠态网易云账号不被污染，且QQ音乐显示未配置", () => {
+    saveSongMusicSession(
+      {
+        cookie: "MUSIC_U=test",
+        account: {
+          platform: "netease",
+          nickname: "网易云达人",
+          vipStatus: "vip",
+          vipTier: "vip",
+          vipLevel: 7,
+        },
+      },
+      true,
+      "netease",
+    );
+    render(
+      <SongAccountSettings
+        snapshot={
+          {
+            roomId: "1234",
+            musicAccountReady: true,
+            qqMusicAccountReady: false,
+          } as SonGuessrRoomSnapshot
+        }
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getByText("网易云达人")).toBeInTheDocument();
+    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
+
+    // 展开并切换到 QQ 音乐 Tab
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+
+    // 收起后网易云账号依然正常展示，QQ音乐依然显示未配置，不发生图标或昵称互串
+    fireEvent.click(toggle);
+    expect(within(toggle).getByText("网易云达人")).toBeInTheDocument();
+    expect(within(toggle).getByText("未配置")).toBeInTheDocument();
+  });
 });
+

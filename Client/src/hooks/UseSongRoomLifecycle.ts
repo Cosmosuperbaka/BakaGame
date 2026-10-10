@@ -128,7 +128,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       for (let attempt = 0; ; attempt += 1) {
         if (task.cancelled) return;
         try {
-          const result = await sendCommand<{ account: SonGuessrMusicAccount }>(
+          const result = await sendCommand<{ account: SonGuessrMusicAccount; cookie?: string }>(
             "song.auth.useCookie",
             { cookie: storedSession.cookie, platform },
           );
@@ -136,7 +136,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           task.settled = true;
           if (!result?.account) return;
           saveSongMusicSession(
-            { cookie: storedSession.cookie, account: { ...result.account, platform } },
+            { cookie: result.cookie || storedSession.cookie, account: { ...result.account, platform } },
             storedSession.persistent,
             platform,
           );

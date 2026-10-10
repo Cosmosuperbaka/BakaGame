@@ -34,12 +34,20 @@ function NeteaseCloudMusicIcon({ className }: { className?: string }) {
 }
 
 /**
- * QQ 音乐图标：官方 24×24 单色路径。
+ * QQ 音乐官方品牌图标：取自官方矢量（黄底太阳与绿音符双色几何）。
  */
 function QQMusicIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.8 6.5.02 4.4a2.7 2.7 0 1 1-2.12-2.64V7.5l4.8-1v2.5l-2.7.5zm-4.4 5.2a1.5 1.5 0 1 0 1.5 1.5 1.5 1.5 0 0 0-1.5-1.5z" />
+    <svg viewBox="0 0 170 178" aria-hidden="true" className={className}>
+      <g transform="translate(-14.693387,-35.461841)">
+        <g transform="matrix(2.519673,0,0,2.519673,-493.77296,1465.4508)">
+          <circle cx="235.34128" cy="-530.80383" r="33.542732" fill="#fdcd18" />
+          <path
+            d="m 240.45119,-527.94916 c -0.84214,-1.1847 -1.64146,-2.29803 -2.44077,-3.39709 -3.06881,-4.2535 -6.15188,-8.50701 -9.23496,-12.74624 -1.95547,-2.69769 -3.89667,-5.39538 -5.88068,-8.06453 -0.59949,-0.79931 -0.67086,-1.64145 -0.39966,-2.55496 0.55667,-1.89837 1.8841,-3.21153 3.45419,-4.29632 2.86897,-1.98402 6.10906,-2.99744 9.50615,-3.59692 2.95462,-0.51385 5.88068,-1.14188 8.46419,-2.76906 0.6994,-0.44248 1.28461,-1.04197 1.92692,-1.57009 0.17128,-0.14273 0.32829,-0.29974 0.65658,-0.58521 0.2141,1.04197 0.42821,1.91265 0.57094,2.78333 0.42821,2.56923 0.2712,5.0671 -0.88496,7.4365 -1.57008,3.19726 -4.13931,5.19555 -7.50786,6.22324 -2.05538,0.65659 -4.18213,0.81359 -6.33743,0.79932 -0.15701,0 -0.31402,0.0428 -0.58522,0.0714 0.52812,0.92778 0.99915,1.79846 1.51299,2.6406 2.06966,3.38282 4.13932,6.76564 6.19471,10.16273 l 6.76564,11.21897 c 0.58521,0.9706 1.19897,1.9412 1.76991,2.92607 1.32744,2.28376 2.29803,4.66744 2.11248,7.40795 -0.18556,2.68342 -1.15616,5.02427 -2.82616,7.07966 -2.72623,3.35427 -6.26606,5.29547 -10.49102,6.05196 -3.98231,0.6994 -7.77906,0.25693 -11.30461,-1.75564 -3.96804,-2.25521 -6.50872,-6.35171 -5.90923,-11.23324 0.38538,-3.21154 1.98401,-5.86641 4.33914,-8.05026 2.51214,-2.31231 5.4953,-3.72538 8.82103,-4.36769 2.45504,-0.4853 4.91008,-0.45675 7.33658,0.19983 0.0714,0.0143 0.157,-0.0143 0.37111,-0.0143 z"
+            fill="#0daf52"
+          />
+        </g>
+      </g>
     </svg>
   );
 }
@@ -365,58 +373,56 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const neteaseConnecting = Boolean(storedNetease) && !snapshot.musicAccountReady;
   const qqConnecting = Boolean(storedQq) && !snapshot.qqMusicAccountReady;
 
-  let headline: React.ReactNode;
-  if (neteaseAccount && qqAccount) {
-    const neteaseVip = vipText(neteaseAccount);
-    const neteaseBadge = vipBadge(neteaseAccount);
-    const qqVip = vipText(qqAccount);
-    const qqBadge = vipBadge(qqAccount);
-    headline = (
-      <div className="flex min-w-0 max-w-full items-center gap-2">
+  const renderAccountPill = (
+    platform: "netease" | "qq",
+    account?: SonGuessrMusicAccount,
+    connecting?: boolean,
+  ) => {
+    const isQq = platform === "qq";
+    const Icon = isQq ? QQMusicIcon : NeteaseCloudMusicIcon;
+    const iconClass = isQq ? "size-3.5 shrink-0" : "size-3.5 shrink-0 text-muted-foreground";
+
+    const platformName = isQq ? "QQ音乐" : "网易云";
+
+    if (account) {
+      const vip = vipText(account);
+      const badge = vipBadge(account);
+      return (
         <span className="flex min-w-0 items-center gap-1.5">
-          <AccountAvatar account={neteaseAccount} className="size-5" />
-          <span className="truncate text-sm font-medium" title={neteaseAccount.nickname}>{neteaseAccount.nickname}</span>
-          {" "}
-          <VipStatus vip={neteaseVip} badge={neteaseBadge} />
+          <Icon className={iconClass} />
+          <AccountAvatar account={account} className="size-4 shrink-0" />
+          <span className="truncate text-xs font-medium" title={account.nickname}>
+            {account.nickname}
+          </span>
+          <VipStatus vip={vip} badge={badge} />
         </span>
-        <span className="text-muted-foreground/30">|</span>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <AccountAvatar account={qqAccount} className="size-5" />
-          <span className="truncate text-sm font-medium" title={qqAccount.nickname}>{qqAccount.nickname}</span>
-          {" "}
-          <VipStatus vip={qqVip} badge={qqBadge} />
+      );
+    }
+
+    if (connecting) {
+      return (
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <Icon className={iconClass} />
+          <span>正在连接{platformName}账号…</span>
         </span>
-      </div>
+      );
+    }
+
+    return (
+      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={iconClass} />
+        <span>未配置</span>
+      </span>
     );
-  } else if (neteaseAccount) {
-    const vip = vipText(neteaseAccount);
-    const badge = vipBadge(neteaseAccount);
-    headline = (
-      <>
-        <AccountAvatar account={neteaseAccount} className="size-5" />
-        <span className="min-w-0 max-w-full truncate text-sm font-medium" title={neteaseAccount.nickname}>{neteaseAccount.nickname}</span>
-        {" "}
-        <VipStatus vip={vip} badge={badge} />
-      </>
-    );
-  } else if (qqAccount) {
-    const vip = vipText(qqAccount);
-    const badge = vipBadge(qqAccount);
-    headline = (
-      <>
-        <AccountAvatar account={qqAccount} className="size-5" />
-        <span className="min-w-0 max-w-full truncate text-sm font-medium" title={qqAccount.nickname}>{qqAccount.nickname}</span>
-        {" "}
-        <VipStatus vip={vip} badge={badge} />
-      </>
-    );
-  } else if (neteaseConnecting) {
-    headline = <span className="text-sm text-muted-foreground">正在连接网易云账号…</span>;
-  } else if (qqConnecting) {
-    headline = <span className="text-sm text-muted-foreground">正在连接QQ音乐账号…</span>;
-  } else {
-    headline = <span className="text-sm text-muted-foreground">未配置</span>;
-  }
+  };
+
+  const headline = (
+    <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
+      {renderAccountPill("netease", neteaseAccount, neteaseConnecting)}
+      <span className="shrink-0 text-muted-foreground/30">|</span>
+      {renderAccountPill("qq", qqAccount, qqConnecting)}
+    </div>
+  );
 
   const toggle = (next: boolean) => {
     if (!next) { cancelLogin(); setOpen(false); return; }
@@ -433,13 +439,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       title="音乐账号配置"
       open={open}
       onOpenChange={toggle}
-      media={
-        activePlatform === "qq" ? (
-          <QQMusicIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <NeteaseCloudMusicIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        )
-      }
       headline={headline}
     >
       {/* 平台切换器 */}
