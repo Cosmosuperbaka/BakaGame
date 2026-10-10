@@ -234,7 +234,9 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;
   const isCurrentReady = activePlatform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
-  const currentAccount = isCurrentReady ? currentStored?.account : undefined;
+  const currentAccount = isCurrentReady
+    ? (snapshot.musicAccounts?.[activePlatform] ?? currentStored?.account)
+    : undefined;
   const showQr = !currentStored;
 
   const completeLogin = useCallback((platform: SongMusicPlatform, session: { cookie: string; account: SonGuessrMusicAccount }) => {
@@ -368,10 +370,10 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     if (open) void createQr(platform, qqScanType);
   };
 
-  const neteaseAccount = snapshot.musicAccountReady ? storedNetease?.account : undefined;
-  const qqAccount = snapshot.qqMusicAccountReady ? storedQq?.account : undefined;
-  const neteaseConnecting = Boolean(storedNetease) && !snapshot.musicAccountReady;
-  const qqConnecting = Boolean(storedQq) && !snapshot.qqMusicAccountReady;
+  const neteaseAccount = snapshot.musicAccounts?.netease ?? (snapshot.musicAccountReady ? storedNetease?.account : undefined);
+  const qqAccount = snapshot.musicAccounts?.qq ?? (snapshot.qqMusicAccountReady ? storedQq?.account : undefined);
+  const neteaseConnecting = Boolean(storedNetease) && !snapshot.musicAccountReady && !snapshot.musicAccounts?.netease;
+  const qqConnecting = Boolean(storedQq) && !snapshot.qqMusicAccountReady && !snapshot.musicAccounts?.qq;
 
   const renderAccountPill = (
     platform: "netease" | "qq",

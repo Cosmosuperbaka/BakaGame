@@ -434,8 +434,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       const appError = error as { code?: string; message?: string };
       if (appError.code === "MUSIC_SESSION_INVALID") {
         cancelMusicSessionUpload();
-        clearStoredSongMusicSession();
-        setNotice("网易云登录状态已失效，请重新扫码登录", "error");
+        setNotice(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
         return;
       }
       setNotice(appError.message ?? "操作失败", "error");

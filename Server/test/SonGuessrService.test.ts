@@ -4867,6 +4867,70 @@ describe("SonGuessr service 音乐认证意图", () => {
       });
     }
   }
+  test("网易云与QQ音乐双平台账号并发认证不互斥且共存", async () => {
+    let capturedSearchCookie: any;
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie, platform) => ({
+          cookie,
+          account: {
+            platform: platform === "qq" ? "qq" : "netease",
+            nickname: platform === "qq" ? "QQ用户" : "网易云用户",
+            vipStatus: "vip",
+          },
+        }),
+        search: async (_query, _limit, cookie) => {
+          capturedSearchCookie = cookie;
+          return [];
+        },
+      },
+    });
+    const host = connection(service, "dual-host");
+    await createRoom(service, host);
+
+    const [neteaseRes, qqRes] = await Promise.all([
+      execute(service, host, {
+        id: "auth-netease",
+        type: "song.auth.useCookie",
+        roomId: "1234",
+        payload: { cookie: "netease-cookie", platform: "netease" },
+      }),
+      execute(service, host, {
+        id: "auth-qq",
+        type: "song.auth.useCookie",
+        roomId: "1234",
+        payload: { cookie: "qq-cookie", platform: "qq" },
+      }),
+    ]);
+
+    expect(neteaseRes).toMatchObject({ account: { platform: "netease" } });
+    expect(qqRes).toMatchObject({ account: { platform: "qq" } });
+
+    await execute(service, host, { id: "sync", type: "song.room.requestSync", roomId: "1234", payload: {} });
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.musicAccountReady).toBe(true);
+    expect(snapshot.qqMusicAccountReady).toBe(true);
+    expect(snapshot.musicAccounts?.netease?.nickname).toBe("网易云用户");
+    expect(snapshot.musicAccounts?.qq?.nickname).toBe("QQ用户");
+
+    await execute(service, host, { id: "search", type: "song.music.search", roomId: "1234", payload: { keyword: "test" } });
+    expect(capturedSearchCookie).toEqual({
+      netease: "netease-cookie",
+      qq: "qq-cookie",
+    });
+
+    await execute(service, host, {
+      id: "clear-netease",
+      type: "song.auth.clear",
+      roomId: "1234",
+      payload: { platform: "netease" },
+    });
+    const snapshotAfterClear = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshotAfterClear.musicAccountReady).toBe(false);
+    expect(snapshotAfterClear.qqMusicAccountReady).toBe(true);
+    expect(snapshotAfterClear.musicAccounts?.qq?.nickname).toBe("QQ用户");
+  });
 });
 
 describe("SonGuessr service 设置原子更新", () => {

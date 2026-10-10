@@ -174,7 +174,10 @@ interface SonGuessrRoomRecord {
   currentRound?: SonGuessrRoundRecord;
   roundSummary?: SonGuessrRoundSummary;
   finalScores?: SonGuessrScore[];
-  musicAuthOperation?: symbol;
+  musicAuthOperations?: {
+    netease?: symbol;
+    qq?: symbol;
+  };
   musicSession?: {
     ownerPlayerId: string;
     cookie: string;
@@ -1422,7 +1425,7 @@ export class SonGuessrService {
       try {
         const refreshedSong = await this.options.musicProvider.getSong(
           activeRound.song.id,
-          room.musicSession?.cookie,
+          this.getSongCookie(room, activeRound.song.id),
         );
         if (room.phase === "playing" && room.currentRound === activeRound) {
           activeRound.song.audioUrl = refreshedSong.audioUrl;
@@ -1637,7 +1640,7 @@ export class SonGuessrService {
       results: await this.options.musicProvider.search(
         keyword,
         undefined,
-        room.musicSession?.cookie,
+        this.getAggregatedSearchCookie(room),
       ),
     };
   }
@@ -1648,7 +1651,7 @@ export class SonGuessrService {
     const playlistId = this.parsePlaylistId(value);
     const resolve = this.options.musicProvider.getPlaylistSongs;
     if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
-    const result = await resolve.call(this.options.musicProvider, playlistId, room.musicSession?.cookie);
+    const result = await resolve.call(this.options.musicProvider, playlistId, this.getSongCookie(room, playlistId));
     return { playlist: result.info };
   }
 
@@ -1658,7 +1661,7 @@ export class SonGuessrService {
     const search = this.options.musicProvider.searchArtists;
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
     return {
-      results: await search.call(this.options.musicProvider, keyword, 20, room.musicSession?.cookie),
+      results: await search.call(this.options.musicProvider, keyword, 20, this.getAggregatedSearchCookie(room)),
     };
   }
 
@@ -1824,7 +1827,7 @@ export class SonGuessrService {
     if (!target || !target.online || target.membership !== "active") {
       throw new AppError("INVALID_TARGET", "只能转让给在线正式玩家");
     }
-    room.musicAuthOperation = undefined;
+    room.musicAuthOperations = undefined;
     room.automaticRoundOperation = undefined;
     room.automaticRoundLoading = false;
     room.hostPlayerId = target.id;
@@ -1890,7 +1893,7 @@ export class SonGuessrService {
     if (!key || key.length > 512) throw new AppError("INVALID_LOGIN", "二维码登录密钥无效");
     const checkQrLogin = this.options.musicProvider.checkQrLogin;
     if (!checkQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
-    const verify = this.beginMusicAuthentication(room, player, connection);
+    const verify = this.beginMusicAuthentication(room, player, connection, platform);
     const result = await checkQrLogin.call(this.options.musicProvider, key, platform, type);
     verify();
     if (result.status !== "authorized" || !result.session) {
@@ -1917,7 +1920,7 @@ export class SonGuessrService {
     const cookie = this.requireMusicCookie(cookieValue);
     const getLoginStatus = this.options.musicProvider.getLoginStatus;
     if (!getLoginStatus) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
-    const verify = this.beginMusicAuthentication(room, player, connection);
+    const verify = this.beginMusicAuthentication(room, player, connection, platform);
     const result = await getLoginStatus.call(this.options.musicProvider, cookie, platform);
     verify();
     const session = this.installMusicSession(room, player.id, result);
@@ -1942,13 +1945,23 @@ export class SonGuessrService {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
     connection: ConnectionRecord,
+    platform: "netease" | "qq" = "netease",
   ) {
-    const operation = Symbol("musicAuthentication");
-    room.musicAuthOperation = operation;
+    const operation = Symbol(`musicAuthentication_${platform}`);
+    if (!room.musicAuthOperations) {
+      room.musicAuthOperations = {};
+    }
+    room.musicAuthOperations[platform] = operation;
     return () => {
-      if (this.rooms.get(room.id) !== room || room.musicAuthOperation !== operation
-        || room.hostPlayerId !== player.id || room.players[player.id] !== player
-        || !player.online || connection.roomId !== room.id || connection.playerId !== player.id) {
+      if (
+        this.rooms.get(room.id) !== room ||
+        room.musicAuthOperations?.[platform] !== operation ||
+        room.hostPlayerId !== player.id ||
+        room.players[player.id] !== player ||
+        !player.online ||
+        connection.roomId !== room.id ||
+        connection.playerId !== player.id
+      ) {
         throw new AppError("MUSIC_SESSION_INVALID", "音乐登录操作已失效，请重新登录");
       }
     };
@@ -2000,15 +2013,16 @@ export class SonGuessrService {
         return false;
       }
     }
-    room.musicAuthOperation = undefined;
     let cleared = false;
     if (platform === "qq" || platform === "all") {
+      if (room.musicAuthOperations) room.musicAuthOperations.qq = undefined;
       if (room.qqMusicSession) {
         room.qqMusicSession = undefined;
         cleared = true;
       }
     }
     if (platform === "netease" || platform === "all") {
+      if (room.musicAuthOperations) room.musicAuthOperations.netease = undefined;
       if (room.musicSession) {
         room.musicSession = undefined;
         cleared = true;
@@ -2025,13 +2039,13 @@ export class SonGuessrService {
   }
 
   private getAggregatedSearchCookie(room: SonGuessrRoomRecord): any {
-    if (room.musicSession?.cookie || room.qqMusicSession?.cookie) {
+    if (room.musicSession?.cookie && room.qqMusicSession?.cookie) {
       return {
-        netease: room.musicSession?.cookie,
-        qq: room.qqMusicSession?.cookie,
+        netease: room.musicSession.cookie,
+        qq: room.qqMusicSession.cookie,
       };
     }
-    return undefined;
+    return room.musicSession?.cookie ?? room.qqMusicSession?.cookie;
   }
 
   private addBots(connection: ConnectionRecord, countValue?: number) {
@@ -2107,13 +2121,11 @@ export class SonGuessrService {
       }
       const musicSession = room.musicSession;
       const qqMusicSession = room.qqMusicSession;
-      const authOperation = room.musicAuthOperation;
-      const verifySession = () => {
+      const neteaseOperation = room.musicAuthOperations?.netease;
+      const qqOperation = room.musicAuthOperations?.qq;
+      const verifySession = (platform?: "netease" | "qq") => {
         if (
           this.rooms.get(room.id) !== room ||
-          room.musicSession !== musicSession ||
-          room.qqMusicSession !== qqMusicSession ||
-          room.musicAuthOperation !== authOperation ||
           room.hostPlayerId !== player.id ||
           connection.roomId !== room.id ||
           connection.playerId !== player.id ||
@@ -2121,18 +2133,28 @@ export class SonGuessrService {
         ) {
           throw new AppError("MUSIC_SESSION_INVALID", "音乐会话已变更，请重新开始");
         }
+        if ((platform === "netease" || platform === undefined) && musicSession) {
+          if (room.musicSession !== musicSession || room.musicAuthOperations?.netease !== neteaseOperation) {
+            throw new AppError("MUSIC_SESSION_INVALID", "网易云音乐会话已变更，请重新开始");
+          }
+        }
+        if ((platform === "qq" || platform === undefined) && qqMusicSession) {
+          if (room.qqMusicSession !== qqMusicSession || room.musicAuthOperations?.qq !== qqOperation) {
+            throw new AppError("MUSIC_SESSION_INVALID", "QQ音乐会话已变更，请重新开始");
+          }
+        }
       };
       if (musicSession) {
         try {
           const session = await getLoginStatus.call(this.options.musicProvider, musicSession.cookie, "netease");
-          verifySession();
+          verifySession("netease");
           musicSession.account = session.account;
         } catch (error) {
           if (error instanceof AppError) {
             if (
               error.code === "MUSIC_SESSION_INVALID" &&
               room.musicSession === musicSession &&
-              room.musicAuthOperation === authOperation
+              room.musicAuthOperations?.netease === neteaseOperation
             ) {
               this.clearMusicSession(room, undefined, "netease");
               this.publishRoom(room);
@@ -2145,14 +2167,14 @@ export class SonGuessrService {
       if (qqMusicSession) {
         try {
           const session = await getLoginStatus.call(this.options.musicProvider, qqMusicSession.cookie, "qq");
-          verifySession();
+          verifySession("qq");
           qqMusicSession.account = session.account;
         } catch (error) {
           if (error instanceof AppError) {
             if (
               error.code === "MUSIC_SESSION_INVALID" &&
               room.qqMusicSession === qqMusicSession &&
-              room.musicAuthOperation === authOperation
+              room.musicAuthOperations?.qq === qqOperation
             ) {
               this.clearMusicSession(room, undefined, "qq");
               this.publishRoom(room);
@@ -4016,7 +4038,7 @@ export class SonGuessrService {
         .filter((player) => player.online && player.membership !== "kicked" && !player.isBot)
         .sort((left, right) => left.joinedAt - right.joinedAt)[0];
     if (next) {
-      room.musicAuthOperation = undefined;
+      room.musicAuthOperations = undefined;
       room.automaticRoundOperation = undefined;
       room.automaticRoundLoading = false;
       room.hostPlayerId = next.id;
