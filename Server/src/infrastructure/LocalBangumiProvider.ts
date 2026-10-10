@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
+import { bangumiImageUrl } from "./BangumiImagePaths";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
@@ -71,16 +72,8 @@ const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack[
   if (/艺人|album/.test(text)) return "artistAlbum";
   return "theme";
 };
-const rewriteImage = (value: unknown, imageBase: string) => {
-  if (typeof value !== "string" || !value) return undefined;
-  try {
-    const parsed = new URL(value);
-    if (!imageBase || parsed.hostname !== "lain.bgm.tv") return value;
-    return `${imageBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return undefined;
-  }
-};
+/** 上游原始 URL → 对外 URL：镜像前缀 + 图床缓存路径（档位选定见 BangumiImagePaths）。 */
+const rewriteImage = (value: unknown, imageBase: string) => bangumiImageUrl(value, imageBase);
 /** `subjects` 表的行形状：SQLite 返回的是裸对象，这里显式钉住字段，避免 `any` 一路扩散。 */
 export interface SubjectRow {
   id: number | string;
@@ -129,6 +122,13 @@ export interface LocalBangumiProviderOptions {
   apiBase?: string;
   meilisearch?: BangumiSearchOptions;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  /**
+   * 玩家请求条目时的回调：交给更新器异步回源刷新（阶段 6）。
+   *
+   * 只在 Worker 内部注入 —— 函数是没法跨线程结构化克隆的，所以它不属于
+   * 可序列化的 `BangumiProviderInit`。
+   */
+  onSubjectView?: (subjectId: number) => void;
 }
 
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
@@ -147,6 +147,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly imageMissUntil = new Map<string, number>();
   private readonly search?: BangumiSearchIndex;
   private readonly searchReady: Promise<void>;
+  private readonly onSubjectView?: (subjectId: number) => void;
 
   constructor(options: LocalBangumiProviderOptions) {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
@@ -169,6 +170,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     }
     this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
     this.searchReady = this.search ? this.search.initialize(this.db, options.dbPath) : Promise.resolve();
+    this.onSubjectView = options.onSubjectView;
   }
 
   /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
@@ -302,6 +304,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
     const row = this.db.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id) as SubjectRow | undefined;
     if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    // 有人在看这条 = 它值得尽快变新鲜。只登记、不等结果：出题路径上绝不加网络等待。
+    this.onSubjectView?.(id);
     // 只取真实音乐实体（music_id > 0）。负数 music_id 是 Bangumi 关联条目里的
     // 合成占位行——版权署名、制作委员会、动画师/作家署名等，共 7762 条，
     // 全被标成 opening 而排在真实曲目之前，实测会把《Music For All》这类

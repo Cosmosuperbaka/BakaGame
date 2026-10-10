@@ -50,7 +50,8 @@ describe("LocalBangumiProvider", () => {
     const fetcher = async () => new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/8_test.jpg" } }), { status: 200 });
     const provider = new LocalBangumiProvider({ dbPath: songPath, imageBase: "https://img.example", apiBase: "https://api.example", fetcher });
     const detail = await provider.getSubject("8");
-    expect(detail.imageUrl).toBe("https://img.example/pic/cover/l/aa/bb/8_test.jpg");
+    // 对外 URL = 镜像前缀 + 缓存档位路径（作品 /r/200/），与自建图床逐字对齐。
+    expect(detail.imageUrl).toBe("https://img.example/r/200/pic/cover/l/aa/bb/8_test.jpg");
     provider.close();
     for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
   });
@@ -137,7 +138,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
       return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const provider = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });
-    expect(await provider.resolveCharacterImage(12393)).toBe("https://mirror.example/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await provider.resolveCharacterImage(12393)).toBe("https://mirror.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     expect(requested).toEqual(["https://api.example/v0/characters/12393"]);
     // 非法 id 不得回源
     expect(await provider.resolveCharacterImage(0)).toBeUndefined();
@@ -157,7 +158,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
       return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const first = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, apiBase: "https://api.example", fetcher });
-    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     expect(calls).toBe(1);
     // 进程内第二次走内存缓存，同样不回源
     await first.resolveCharacterImage(12393);
@@ -165,7 +166,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     first.close();
 
     const second = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, apiBase: "https://api.example", fetcher });
-    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     expect(calls).toBe(1);
     second.close();
     await removeFiles(songPath, enrichmentPath);
@@ -178,7 +179,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
       dbPath: songPath, enrichmentPath, apiBase: "https://api.example",
       fetcher: async () => new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 }),
     });
-    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await first.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     first.close();
 
     let calls = 0;
@@ -186,7 +187,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
       dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example",
       fetcher: async () => { calls++; throw new Error("换了镜像不该再回源"); },
     });
-    expect(await second.resolveCharacterImage(12393)).toBe("https://mirror.example/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await second.resolveCharacterImage(12393)).toBe("https://mirror.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     expect(calls).toBe(0);
     second.close();
     await removeFiles(songPath, enrichmentPath);
@@ -211,7 +212,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     // 关键断言：失败没有落盘。新进程必须重新回源并能拿到图片——
     // 历史实现把失败永久缓存，一次瞬时超时会让该条目再也拿不到图片。
     const second = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, apiBase: "https://api.example", fetcher: flaky });
-    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await second.resolveCharacterImage(12393)).toBe("https://lain.bgm.tv/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
     expect(calls).toBe(2);
     second.close();
     await removeFiles(songPath, enrichmentPath);

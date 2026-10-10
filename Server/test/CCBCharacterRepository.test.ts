@@ -142,7 +142,7 @@ describe("CCB 本地角色资料", () => {
     const before = await repository.getCharacter(1, settings());
     const images = await Promise.all([repository.resolveCharacterImage(1), repository.resolveCharacterImage(1)]);
     expect(calls).toBe(1);
-    expect(images).toEqual(["https://images.invalid/pic/crt/l/1.jpg?x=1#crop", "https://images.invalid/pic/crt/l/1.jpg?x=1#crop"]);
+    expect(images).toEqual(["https://images.invalid/r/400/pic/crt/l/1.jpg?x=1#crop", "https://images.invalid/r/400/pic/crt/l/1.jpg?x=1#crop"]);
     // 一次回源写齐两档：随后按方格图再取，命中同一份缓存，不再打上游。
     expect(await repository.resolveCharacterImage(1, "grid")).toBe("https://images.invalid/pic/crt/g/1.jpg?x=1#crop");
     expect(calls).toBe(1);
@@ -153,7 +153,7 @@ describe("CCB 本地角色资料", () => {
     const base = new Database(dbPath, { readonly: true });
     try { expect(base.query("SELECT name FROM characters WHERE id=1").get()).toEqual({ name: "Makise" }); } finally { base.close(); }
     const reopened = new CCBCharacterRepository({ dbPath, enrichmentPath, imageBase: "https://other.invalid" });
-    try { expect(await reopened.resolveCharacterImage(1)).toBe("https://other.invalid/pic/crt/l/1.jpg?x=1#crop"); }
+    try { expect(await reopened.resolveCharacterImage(1)).toBe("https://other.invalid/r/400/pic/crt/l/1.jpg?x=1#crop"); }
     finally { await reopened.close(); }
   });
 

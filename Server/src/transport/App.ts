@@ -21,6 +21,8 @@ import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
+import { bangumiImageRoutes } from "./routes/BangumiImages";
+import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -31,6 +33,8 @@ export interface AppDependencies {
   disposeResources?: () => Promise<void>;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
+  /** 自建图床读取服务：提供时挂载 `/bangumi-images/*`（未提供时该路由 404）。 */
+  bangumiImages?: BangumiImageService;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -428,6 +432,7 @@ export const createApp = ({
   isShuttingDown,
   onTriggerShutdown,
   disposeResources,
+  bangumiImages,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -534,6 +539,8 @@ export const createApp = ({
         logger,
       }),
     )
+    // ==================== 自建图床（avif 分片缓存） ====================
+    .use(bangumiImageRoutes(bangumiImages))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
