@@ -118,6 +118,21 @@ describe("SongSearch", () => {
     await flushDebounce();
     expect(screen.getByRole("alert")).toHaveTextContent("网易云暂时不可用");
   });
+
+  it("检索候选展示对应音源平台标识徽章（QQ音乐与网易云）", async () => {
+    const user = setup();
+    const qqSong: SongSearchResult = { id: "qq:001", title: "晴天", artist: "周杰伦" };
+    const neteaseSong: SongSearchResult = { id: "netease:002", title: "七里香", artist: "周杰伦" };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([qqSong, neteaseSong]) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+    await user.type(input, "周杰伦");
+    await flushDebounce();
+
+    expect(screen.getByRole("option", { name: /晴天.*QQ音乐/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /七里香.*网易云/ })).toBeInTheDocument();
+  });
 });
 
 describe("AnimeSearch", () => {

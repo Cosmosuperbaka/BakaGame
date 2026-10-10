@@ -288,4 +288,132 @@ describe("SongAccountSettings", () => {
     ]);
   });
 
+  it("切换至 QQ 音乐标签页支持三种扫码方式切换并请求对应二维码", async () => {
+    sendCommand.mockResolvedValue(qrResponse("qq-qr-default"));
+    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+
+    // 点击切换到 QQ 音乐平台
+    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+    await waitFor(() => {
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "qq" });
+    });
+    expect(screen.getByText("请使用手机 QQ 扫码")).toBeInTheDocument();
+
+    // 切换为微信扫码
+    sendCommand.mockResolvedValueOnce(qrResponse("wx-qr"));
+    fireEvent.click(screen.getByRole("button", { name: "微信扫码" }));
+    await waitFor(() => {
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "wx" });
+    });
+    expect(screen.getByText("请使用微信扫码")).toBeInTheDocument();
+
+    // 切换为 QQ 音乐 App 扫码
+    sendCommand.mockResolvedValueOnce(qrResponse("mobile-qr"));
+    fireEvent.click(screen.getByRole("button", { name: "QQ音乐扫码" }));
+    await waitFor(() => {
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "mobile" });
+    });
+    expect(screen.getByText("请使用 QQ 音乐 App 扫码")).toBeInTheDocument();
+  });
+
+  it("QQ 音乐登录后正确显示超级会员 8 级徽章及到期日", () => {
+    saveSongMusicSession(
+      {
+        cookie: "qq_token=123",
+        account: {
+          platform: "qq",
+          nickname: "腾讯大佬",
+          vipStatus: "vip",
+          vipTier: "svip",
+          vipLevel: 8,
+          vipExpireTime: Date.UTC(2028, 5, 1, 0, 0, 0),
+        },
+      },
+      true,
+      "qq",
+    );
+    render(
+      <SongAccountSettings
+        snapshot={
+          {
+            roomId: "1234",
+            musicAccountReady: false,
+            qqMusicAccountReady: true,
+          } as SonGuessrRoomSnapshot
+        }
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getByText("腾讯大佬")).toBeInTheDocument();
+    expect(within(toggle).getByRole("img", { name: "超级会员 · 捌" })).toHaveAttribute(
+      "src",
+      "/assets/qqmusic-vip/SVIP-8.png",
+    );
+
+    fireEvent.click(toggle);
+    // 切换到 QQ 音乐平台查看展开详情
+    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+    expect(panel().getByText("腾讯大佬")).toBeInTheDocument();
+    expect(panel().getByRole("img", { name: "超级会员 · 捌" })).toHaveAttribute(
+      "src",
+      "/assets/qqmusic-vip/SVIP-8.png",
+    );
+  });
+
+  it("双账号同时在线时收起态标题行同时展示网易云和QQ音乐徽章", () => {
+    saveSongMusicSession(
+      {
+        cookie: "MUSIC_U=test",
+        account: {
+          platform: "netease",
+          nickname: "网易云达人",
+          vipStatus: "vip",
+          vipTier: "vip",
+          vipLevel: 7,
+        },
+      },
+      true,
+      "netease",
+    );
+    saveSongMusicSession(
+      {
+        cookie: "qq_token=test",
+        account: {
+          platform: "qq",
+          nickname: "QQ达人",
+          vipStatus: "vip",
+          vipTier: "vip",
+          vipLevel: 8,
+        },
+      },
+      true,
+      "qq",
+    );
+
+    render(
+      <SongAccountSettings
+        snapshot={
+          {
+            roomId: "1234",
+            musicAccountReady: true,
+            qqMusicAccountReady: true,
+          } as SonGuessrRoomSnapshot
+        }
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getByText("网易云达人")).toBeInTheDocument();
+    expect(within(toggle).getByRole("img", { name: "VIP · 柒" })).toHaveAttribute(
+      "src",
+      "/assets/netease-vip/VIP-7.png",
+    );
+    expect(within(toggle).getByText("QQ达人")).toBeInTheDocument();
+    expect(within(toggle).getByRole("img", { name: "绿钻豪华版 · 捌" })).toHaveAttribute(
+      "src",
+      "/assets/qqmusic-vip/VIP-8.png",
+    );
+  });
 });

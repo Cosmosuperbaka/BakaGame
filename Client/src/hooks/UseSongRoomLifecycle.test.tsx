@@ -218,4 +218,28 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     expect(uploads).toBe(1);
     h.unmount();
   });
+
+  it("同时保存双平台凭据时并行自动装载到房间", async () => {
+    saveSongMusicSession(
+      { cookie: "QQ_COOKIE=test", account: { ...SONG_ACCOUNTS.vip, platform: "qq" } },
+      true,
+      "qq",
+    );
+    const uploadedPlatforms: string[] = [];
+    send.mockImplementation(async (type: string, payload?: Record<string, unknown>) => {
+      if (type === "song.room.join") return hostReceipt();
+      if (type === "song.auth.useCookie") {
+        uploadedPlatforms.push(String(payload?.platform));
+        return { account: SONG_ACCOUNTS.vip };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    expect(uploadedPlatforms).toContain("netease");
+    expect(uploadedPlatforms).toContain("qq");
+    expect(uploadCalls()).toHaveLength(2);
+    h.unmount();
+  });
 });
