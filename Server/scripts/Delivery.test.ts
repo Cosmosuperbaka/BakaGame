@@ -44,10 +44,13 @@ test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验
     expect(workflow).toContain('REF="$DEPLOY_REV"');
     expect(workflow).toContain('git reset --hard "$DEPLOY_REV"');
     expect(workflow).not.toContain('origin/$REF');
-    // 数据分发自 R2 迁移后不再有 raw URL 拼接：下载地址取自 runner 从 manifest 解析的变量，
-    // 脚本只做格式校验，落盘按 sha256 兜底（数据与代码修订解耦，但同样不可被移动引用替换）。
-    expect(workflow).toContain('check_url "$BG_CHAR_URL"');
+    // 数据实体不再随代码分发：部署绝不搬走/替换服务器上的库（后端在持续更新它），
+    // 只有「缺库 + 清单提供 dataset」时才按基线补发——下载地址取自 runner 从 manifest
+    // 解析的变量，脚本只做格式校验、落盘按 sha256 兜底，数据引用同样不可被移动引用替换。
+    expect(workflow).toContain('check_url "$BG_DATA_URL"');
     expect(workflow).toContain('"$(want_url "$b")"');
+    expect(workflow).toContain("保留服务器现有数据库");
+    expect(workflow).toContain('DATA_SYNC');
   } finally { await rm(directory, { recursive: true, force: true }); }
 }, 20_000);
 
@@ -57,7 +60,12 @@ test("部署数据变量在写入侧与转发侧同名（GITHUB_ENV 大小写敏
   // 曾经以 BG_CHAR_url 写入、以 BG_CHAR_URL 转发，真实部署在脚本首行校验即中止。
   const writes = workflow.match(/echo "\$\{var\}_[A-Za-z]+=/g) ?? [];
   expect(writes).toEqual(['echo "${var}_URL=', 'echo "${var}_SHA=', 'echo "${var}_SIZE=']);
-  expect(workflow).toContain("envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_CHAR_URL,BG_CHAR_SHA,BG_CHAR_SIZE,BG_SONG_URL,BG_SONG_SHA,BG_SONG_SIZE");
+  // resolve_one 的 var 实参、跳过分支写入的空值占位与转发名必须逐字同名（单库后为 BG_DATA_*）。
+  expect(workflow).toContain("resolve_one dataset BG_DATA");
+  expect(workflow).toContain("envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_DATA_URL,BG_DATA_SHA,BG_DATA_SIZE");
+  for (const name of ["BG_DATA_URL", "BG_DATA_SHA", "BG_DATA_SIZE"]) {
+    expect(workflow).toContain(`echo "${name}=" >> "$GITHUB_ENV"`);
+  }
 });
 
 test("环境白名单拒绝合成账号、遥测与代理，数据库落临时目录", () => {
@@ -155,16 +163,19 @@ for (const valid of [true, false]) test(`三协议部署 ACK ${valid ? "成功" 
   } finally { fixture.stop(true); }
 });
 
-test("工作流 YAML 可解析且手动发布与 Python PR 入口契约明确", async () => {
+test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", async () => {
   const root = path.resolve(import.meta.dir, "../..");
-  for (const name of ["ci", "deploy", "bangumi-data"]) {
+  // 数据集不再由 CI 生产（每周发布流程已删除，tools/ 不进版本控制），工作流仅剩 ci 与 deploy。
+  for (const name of ["ci", "deploy"]) {
     const parsed = Bun.YAML.parse(await Bun.file(path.join(root, `.github/workflows/${name}.yml`)).text()) as { jobs: Record<string, unknown>; on: Record<string, unknown> };
     expect(Object.keys(parsed.jobs).length).toBeGreaterThan(0);
     expect(Object.keys(parsed.on).length).toBeGreaterThan(0);
     if (name === "ci") {
-      expect(parsed.jobs).toHaveProperty("tools");
       const ci = JSON.stringify(parsed);
-      expect(ci).toContain("python3 -B tools/test_build_bangumi_db.py");
+      // E2E 起真实服务端：从 R2 基线 manifest 取 dataset 并按 sha256 校验；缺条目时给出可操作报错。
+      expect(ci).toContain("fetch_one dataset bangumi.sqlite");
+      expect(ci).toContain("sha256sum --check --strict");
+      expect(ci).toContain("manifest 缺少 $id 条目");
       expect(ci).toContain("bun --no-env-file run scripts/ProductionSmoke.ts");
     }
     if (name === "deploy") {
