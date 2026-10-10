@@ -698,16 +698,19 @@ export class QQMusicProvider implements MusicProvider {
 
   async getLoginStatus(cookie: string): Promise<MusicLoginSession> {
     let currentCookie = cookie;
-    try {
-      const refreshRes = await qqmusic.login_refresh({ cookie });
-      if (refreshRes.body?.cookieStr) {
-        currentCookie = refreshRes.body.cookieStr;
+    let statusRes = await qqmusic.login_status({ cookie: currentCookie });
+    if (!statusRes.body?.isLogin) {
+      try {
+        const refreshRes = await qqmusic.login_refresh({ cookie });
+        if (refreshRes.body?.cookieStr) {
+          currentCookie = refreshRes.body.cookieStr;
+          statusRes = await qqmusic.login_status({ cookie: currentCookie });
+        }
+      } catch {
+        // 刷新失败时沿用原状态结果
       }
-    } catch {
-      // 刷新失败时沿用原 Cookie 继续尝试读取状态
     }
 
-    const statusRes = await qqmusic.login_status({ cookie: currentCookie });
     const acc = statusRes.body.account;
 
     return {

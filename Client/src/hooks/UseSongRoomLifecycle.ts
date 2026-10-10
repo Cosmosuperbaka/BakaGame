@@ -49,6 +49,7 @@ const isTransientMusicSessionError = (error: { code?: string }): boolean =>
 /** 同一房间、席位与凭据只允许一个装载事务；`settled` 表示已经落定，不再重复上传。 */
 interface MusicSessionTask {
   key: string;
+  keyPrefix?: string;
   cancelled: boolean;
   settled: boolean;
 }
@@ -135,8 +136,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           if (task.cancelled) return;
           task.settled = true;
           if (!result?.account) return;
+          const nextCookie = result.cookie || storedSession.cookie;
+          if (task.keyPrefix) {
+            task.key = `${task.keyPrefix}:${nextCookie}`;
+          }
           saveSongMusicSession(
-            { cookie: result.cookie || storedSession.cookie, account: { ...result.account, platform } },
+            { cookie: nextCookie, account: { ...result.account, platform } },
             storedSession.persistent,
             platform,
           );
@@ -381,12 +386,21 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         cancelMusicSessionUpload(platform);
         continue;
       }
-      const mountKey = `${snapshot.roomId}:${privateState.playerId}:${platform}:${storedSession.cookie}`;
+      const keyPrefix = `${snapshot.roomId}:${privateState.playerId}:${platform}`;
+      const mountKey = `${keyPrefix}:${storedSession.cookie}`;
       const active = musicSessionTasksRef.current[platform];
       // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
       if (active?.key === mountKey && (active.settled || !active.cancelled)) continue;
+
+      // 如果当前房间内该平台账号已就绪，且用户身份一致，且本次装载任务已落定，不再重复发起上传
+      const isReady = platform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
+      const roomAccount = snapshot.musicAccounts?.[platform];
+      if (isReady && roomAccount?.userId && roomAccount.userId === storedSession.account?.userId && active?.settled) {
+        continue;
+      }
+
       cancelMusicSessionUpload(platform);
-      const task: MusicSessionTask = { key: mountKey, cancelled: false, settled: false };
+      const task: MusicSessionTask = { key: mountKey, keyPrefix, cancelled: false, settled: false };
       musicSessionTasksRef.current[platform] = task;
       void uploadMusicSession(task, platform, storedSession);
     }

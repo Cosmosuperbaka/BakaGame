@@ -76,10 +76,16 @@ export const saveSongMusicSession = (
   if (typeof window === "undefined") return;
   const targetPlatform = platform ?? session.account.platform ?? "netease";
   const keys = STORAGE_KEYS[targetPlatform] ?? STORAGE_KEYS.netease;
+  const targetStorage = persistent ? window.localStorage : window.sessionStorage;
+  const otherStorage = persistent ? window.sessionStorage : window.localStorage;
+  const serialized = JSON.stringify({ cookie: session.cookie, account: session.account });
+  const existing = targetStorage.getItem(persistent ? keys.local : keys.session);
+  if (existing === serialized && !otherStorage.getItem(persistent ? keys.session : keys.local)) {
+    return;
+  }
   window.localStorage.removeItem(keys.local);
   window.sessionStorage.removeItem(keys.session);
-  const serialized = JSON.stringify({ cookie: session.cookie, account: session.account });
-  (persistent ? window.localStorage : window.sessionStorage).setItem(
+  targetStorage.setItem(
     persistent ? keys.local : keys.session,
     serialized,
   );
