@@ -148,7 +148,7 @@ MEILISEARCH_KEY=
 CCB_ORIGINAL_AES_SECRET=
 ```
 
-`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片的对外前缀。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。图片在服务端按配置重写；**留空且图床有分片时默认走与后端同源的 `/bangumi-images`**，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器，细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
+`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片的对外前缀。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。图片在服务端按配置重写；**留空且图床有分片时默认走与后端同源的 `/api/bangumi`**，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器，细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
 
 `MEILISEARCH_KEY` 供 CCB 与 SonGuessr 共用的内部搜索，生产环境必填；Meilisearch 的 master key 必须设为相同值，
 并与本服务共享 `127.0.0.1:7700` 网络空间（独立容器不能直接使用各自的 `localhost`）。搜索连接地址

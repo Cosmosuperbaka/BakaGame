@@ -33,7 +33,7 @@ export interface AppDependencies {
   disposeResources?: () => Promise<void>;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
-  /** 自建图床读取服务：提供时挂载 `/bangumi-images/*`（未提供时该路由 404）。 */
+  /** 自建图床读取服务：提供时挂载 `/api/bangumi/*`（未提供时该路由 404）。 */
   bangumiImages?: BangumiImageService;
 }
 

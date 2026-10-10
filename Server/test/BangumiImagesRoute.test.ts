@@ -30,7 +30,7 @@ test("缓存命中直接回 avif，并带长缓存头", async () => {
 
     const service = new BangumiImageService({ directory: join(directory, "images"), now: () => 0 });
     const app = bangumiImageRoutes(service);
-    const response = await app.handle(new Request("http://localhost/bangumi-images/r/200/pic/cover/l/ab/cd/1.jpg"));
+    const response = await app.handle(new Request("http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/1.jpg"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/avif");
     expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
@@ -59,7 +59,7 @@ test("缺失时回源抓 avif 并转交 Worker 落库", async () => {
       now: () => 0,
     });
     const app = bangumiImageRoutes(service);
-    const response = await app.handle(new Request("http://localhost/bangumi-images/r/400/pic/crt/l/ab/cd/2.jpg"));
+    const response = await app.handle(new Request("http://localhost/api/bangumi/r/400/pic/crt/l/ab/cd/2.jpg"));
     expect(response.status).toBe(200);
     expect(seen).toEqual(["https://bangumi.baka.website/r/400/pic/crt/l/ab/cd/2.jpg"]);
     expect(persisted).toHaveLength(1);
@@ -82,7 +82,7 @@ test("回源拿到非 avif（错误页 / jpeg）不入库也不返回", async ()
       now: () => 0,
     });
     const app = bangumiImageRoutes(service);
-    const response = await app.handle(new Request("http://localhost/bangumi-images/r/200/pic/cover/l/ab/cd/3.jpg"));
+    const response = await app.handle(new Request("http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/3.jpg"));
     expect(response.status).toBe(404);
     expect(persisted).toBe(0);
     service.close();
@@ -93,13 +93,13 @@ test("回源拿到非 avif（错误页 / jpeg）不入库也不返回", async ()
 
 test("非法路径直接 400，不带图床时路由 404（不是 500）", async () => {
   const app = bangumiImageRoutes(undefined);
-  expect((await app.handle(new Request("http://localhost/bangumi-images/r/200/pic/cover/l/a.jpg"))).status).toBe(404);
+  expect((await app.handle(new Request("http://localhost/api/bangumi/r/200/pic/cover/l/a.jpg"))).status).toBe(404);
   const withService = bangumiImageRoutes(new BangumiImageService({
     directory: join(tmpdir(), `bakagame-missing-${crypto.randomUUID()}`), sourceBase: "", now: () => 0,
   }));
   // 双斜杠会被原样带进通配参数（裸 `..` 早在 URL 解析阶段就被规范化了），
   // 宁可 400 也不能拿去拼上游地址。
-  expect((await withService.handle(new Request("http://localhost/bangumi-images//secret.jpg"))).status).toBe(400);
+  expect((await withService.handle(new Request("http://localhost/api/bangumi//secret.jpg"))).status).toBe(400);
 });
 
 test("在途请求合并：同一张图并发只回源一次", async () => {

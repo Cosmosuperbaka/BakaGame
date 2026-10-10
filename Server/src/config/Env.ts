@@ -6,7 +6,8 @@ import { AppError } from "../domain/Errors";
 const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"]);
 
 /** 自建图床对外路由；业务侧只认这个前缀，路径与 Bangumi 源站一致。 */
-const BANGUMI_IMAGE_ROUTE = "/bangumi-images";
+/** 图床对外前缀：挂在 `/api` 下，边缘已整体放行 `/api/*`，不必逐条配边缘规则。 */
+const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
 /** 图床分片文件名，与 `tools/build_bangumi_images.py` 一致。 */
 const IMAGE_SHARD_PATTERN = /^images-\d+\.sqlite$/;
 
@@ -38,14 +39,14 @@ export interface AppEnv {
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
   /**
-   * 对外图片前缀；指向 `/bangumi-images` 时走自建图床。
+   * 对外图片前缀；指向 `/api/bangumi` 时走自建图床。
    *
-   * 没显式配时，**图床目录里有分片就默认走 `/bangumi-images`**：图片不再出去
+   * 没显式配时，**图床目录里有分片就默认走 `/api/bangumi`**：图片不再出去
    * Bangumi 源站，只读自己那份 avif 缓存。详见 `Agents/BangumiApi.md`。
    */
   bangumiImageUrl: string;
   /**
-   * 图床回源前缀：`/bangumi-images` 缺失时从这里抓 avif。
+   * 图床回源前缀：`/api/bangumi` 缺失时从这里抓 avif。
    *
    * 必须能与 Bangumi 的图床路径（`/pic/cover/...`、`/r/200/...`）拼接，且支持
    * `Accept: image/avif`。**缺省跟随 `bangumiImageUrl`**（它指向反代时，反代
@@ -55,7 +56,7 @@ export interface AppEnv {
   bangumiImageSource?: string;
   /** 本地数据集路径：猜歌与 CCB 共用同一个库。 */
   bangumiDbPath?: string;
-  /** 自建图床分片目录（`/bangumi-images` 路由与更新器共用）；缺省跟随数据集目录。 */
+  /** 自建图床分片目录（`/api/bangumi` 路由与更新器共用）；缺省跟随数据集目录。 */
   bangumiImagesDir?: string;
   /** 运行时更新器（阶段 6）：缺省只在生产开启。 */
   bangumiUpdaterEnabled?: boolean;
@@ -222,7 +223,7 @@ export const readEnv = (): AppEnv => {
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: imageUrl,
     // 没显式给回源地址时，只有「对外前缀本身是绝对地址」才跟它（相对路径的
-    // `/bangumi-images` 会把回源指向自己，宁可留空 = 只服务已缓存的图）。
+    // `/api/bangumi` 会把回源指向自己，宁可留空 = 只服务已缓存的图）。
     bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? (/^https?:\/\//.test(imageUrl) ? imageUrl : "")).replace(/\/+$/, ""),
     bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
     bangumiImagesDir,

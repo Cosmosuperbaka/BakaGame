@@ -33,7 +33,7 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
         }
       : undefined,
   });
-  // 自建图床读取侧：`BANGUMI_IMAGE_URL` 指向 `/bangumi-images` 前缀后，业务侧的 URL
+  // 自建图床读取侧：`BANGUMI_IMAGE_URL` 指向 `/api/bangumi` 前缀后，业务侧的 URL
   // 改写零改动（路径与源站一致）。主线程只读分片，新抓到的图转交数据 Worker 落库（单写者）。
   const images = env.bangumiImagesDir
     ? new BangumiImageService({

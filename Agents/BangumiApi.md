@@ -38,13 +38,30 @@ BANGUMI_ENRICHMENT_PATH=
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像（**具体地址属于部署配置，不进仓库**）。
 
 `BANGUMI_IMAGE_URL` 是唯一的人工开关：**没配、且图床目录里确实有分片时，默认就用自带的图床
-`/bangumi-images`**（与后端同源，直接读本机那份 avif 缓存；缺失得自己回源见下），
+`/api/bangumi`**（与后端同源，直接读本机那份 avif 缓存；缺失得自己回源见下），
 不再把 Bangumi 源站地址发给浏览器 —— `lain.bgm.tv` 在国内多数网络根本连不上，等于没有封面。
 图床目录没有分片时保持旧行为（不改写）；显式配了就以它为准。
 配置后的改写规则：`lain.bgm.tv` 原始地址 → 「前缀 + 图床缓存路径」（方形一律 `grid`、长条一律
 `large`，作品封面向下降档），映射不了的形状原样返回；前缀为空即不重写。
-**注意**：前缀设成相对路径 `/bangumi-images` 时图的回源会因忌讳自环而留空（只服务已缓存的图），
-要让图床自己去抓缺失的那几张，得另给 `BANGUMI_IMAGE_SOURCE`（或把前缀写成绝对地址）。
+**注意**：前缀设成相对路径 `/api/bangumi` 时图的回源会因忌讳自环而留空（只服务已缓存的图），
+要让图床自己去抓缺失的那几张，得另给 `BANGUMI_IMAGE_SOURCE`。
+
+## 生产部署：为什么图床要挂在 `/api` 下
+
+前端挂在阿里云 ESA（`game.baka.website`，站点 `baka.website`），由一个**边缘函数** `bakagame-esa`
+托管 SPA；它的函数路由 `game-frontend` 的匹配条件是「**非** `/api`、非 `/health` `/readyz` `/livez`
+的所有路径」。也就是说：**任何不落在 `/api` 下的服务端路径都会被这个函数吃掉**——请求根本到不了后端，
+直接返回 SPA 兜底的 HTML，`<img>` 拿到网页字节就是裂图（实测 `200 text/html 4578B`，与首页同尺寸）。
+
+所以图床对外前缀用 `/api/bangumi`：**`/api/*` 本来就在放行名单里，边缘不需要任何改动，也不需要额外的
+回源规则**（实测：默认源站直接出 avif；曾经为此专门加过的回源规则是多余的，已删）。
+**新增后端路径请一律挂在 `/api/` 下**，能省掉一次边缘配置。
+
+排查同类问题的顺序（`ListSiteRoutes` → `GetOriginRule` 全局配置 → `ListSiteFunctions`）：
+先确认请求有没有被边缘函数路由拦截，再谈回源。ESA 配置改动约 30–60 秒下发。
+
+回源端只要满足两点就能用：`GET <源站路径>` 带 `Accept: image/avif` 时返回 avif（ ESA 类反代会实时转码，
+实测 `ftypavif`），且保留源站路径与查询串——图床入库前会校验 avif 魔数，拿到 jpeg / 错误页一律丢弃不入库。
 
 镜像端点的两个实测要点（与具体域名无关）：`GET /v0/characters/{id}` 返回完整角色 JSON，
 其中 `images.medium` 仍指向 `lain.bgm.tv`（必须靠 `BANGUMI_IMAGE_URL` 重写）；
@@ -98,7 +115,7 @@ CCB 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共
 
 - 分片存储 `Server/data/images/images-XX.sqlite`（`crc32(path) % 分片数`，分片数按目录里
   实际存在的文件推断，与构建脚本一致）。表 `images(path, bytes, content_type, fetched_at)`。
-- 路由 `GET /bangumi-images/*`：**命中直接回 avif**（`immutable` 长缓存），缺失才回源
+- 路由 `GET /api/bangumi/*`：**命中直接回 avif**（`immutable` 长缓存），缺失才回源
   （`Accept: image/avif`），回源结果转交 Worker 落库 —— 主线程只读分片，单写者不变。
 - 只认 avif 魔数：上游返回错误页 / jpeg 时**绝不入库**（坏字节一旦入库就再也不会重下）。
 - 路径与 Bangumi 源站一致，所以切换 `BANGUMI_IMAGE_URL` 不需要改任何 URL 改写逻辑。

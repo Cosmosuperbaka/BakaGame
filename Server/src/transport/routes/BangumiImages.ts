@@ -2,7 +2,11 @@ import { Elysia } from "elysia";
 import type { BangumiImageService } from "../../infrastructure/BangumiImageService";
 
 /**
- * 自建图床路由：`/bangumi-images/<源站路径>`。
+ * 自建图床路由：`/api/bangumi/<源站路径>`。
+ *
+ * 挂在 `/api` 下是为了与其它后端路径（WebSocket、监控上报）保持一致：`/api/*`
+ * 在边缘已经整体放行（前端的边缘函数路由把它排除在外），新增后端路径不必再
+ * 逐条去边缘配置。
  *
  * 路径与 Bangumi 源站一致（含构建期选定的尺寸档：作品 `/r/200/`、角色
  * `/r/400/` 与方格图 `/pic/crt/g/`），所以业务代码只需要把 `BANGUMI_IMAGE_URL`
@@ -15,7 +19,7 @@ const IMAGE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
 export const bangumiImageRoutes = (images?: BangumiImageService) =>
   new Elysia({ name: "bangumi-images" }).get(
-    "/bangumi-images/*",
+    "/api/bangumi/*",
     async ({ params, set }) => {
       const rest = typeof params["*"] === "string" ? params["*"] : "";
       const path = `/${rest}`;

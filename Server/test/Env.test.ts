@@ -158,7 +158,7 @@ describe("readEnv 环境变量与启动断言", () => {
       writeFileSync(join(seededDir, "images-00.sqlite"), "");
       Bun.env.BANGUMI_IMAGES_DIR = seededDir;
       delete Bun.env.BANGUMI_IMAGE_URL;
-      expect(readEnv().bangumiImageUrl).toBe("/bangumi-images");
+      expect(readEnv().bangumiImageUrl).toBe("/api/bangumi");
       // 运维显式指定的去处永远赢过缺省值。
       Bun.env.BANGUMI_IMAGE_URL = "https://lain.example.test/";
       expect(readEnv().bangumiImageUrl).toBe("https://lain.example.test");
@@ -180,7 +180,7 @@ describe("readEnv 环境变量与启动断言", () => {
       Bun.env.BANGUMI_IMAGE_URL = "https://mirror.example.test/";
       expect(readEnv().bangumiImageSource).toBe("https://mirror.example.test");
       // 切到自建图床后不能再拿它当回源（否则自己回自己的死循环）。
-      Bun.env.BANGUMI_IMAGE_URL = "/bangumi-images";
+      Bun.env.BANGUMI_IMAGE_URL = "/api/bangumi";
       expect(readEnv().bangumiImageSource).toBe("");
       delete Bun.env.BANGUMI_IMAGE_URL;
       expect(readEnv().bangumiImageSource).toBe("");

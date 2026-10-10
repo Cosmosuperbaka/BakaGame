@@ -489,7 +489,7 @@ export default defineConfig(async ({ command }) => {
     // 图床与 /api 一样挂在后端进程上，两处都要转发：少一条 dev 环境的封面就全 404。
     server: {
       proxy: {
-        '/bangumi-images': {
+        '/api/bangumi': {
           target: 'http://localhost:4850',
           changeOrigin: true,
         },
@@ -505,11 +505,7 @@ export default defineConfig(async ({ command }) => {
           changeOrigin: true,
           ws: true,
         },
-        // 图床同样挂在后端：缺这一条时 dev/preview 会把 /bangumi-images 当静态资源 404。
-        '/bangumi-images': {
-          target: 'http://localhost:4850',
-          changeOrigin: true,
-        },
+        // 图床前缀 `/api/bangumi` 已被上面这条 /api 规则覆盖，无需重复声明。
       },
     },
     plugins: [
