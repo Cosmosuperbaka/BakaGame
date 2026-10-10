@@ -1,6 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { peekPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrRoomSummary } from "@bakagame/shared";
 import SonGuessrPage from "./SonGuessrPage";
@@ -53,6 +55,8 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
 
   afterEach(() => {
     useSonGuessrStore.setState(initialStoreState, true);
+    // 创建记忆与恢复标记落在 localStorage，避免跨用例残留。
+    window.localStorage.clear();
   });
 
   it("当房间列表为空且已连接时渲染空状态提示", () => {
@@ -115,5 +119,34 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(second).toHaveAttribute("tabindex", "0");
     expect(first).not.toHaveAttribute("aria-disabled", "true");
 
+  });
+
+  it("创建时沿用上次的开关、创建成功后记住本次选项并登记恢复", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("bakagame:username", "玩家");
+    saveRoomCreateDefaults("song", { visibility: "private", allowSpectators: false });
+    const createRoom = vi.fn().mockResolvedValue(undefined);
+    useSonGuessrStore.setState({ rooms: mockRooms, connected: true, lobbyReady: true, createRoom });
+    renderPage();
+
+    // 弹窗打开：私密与旁观沿用上次创建的选择。
+    act(() => screen.getAllByRole("button", { name: "创建房间" })[0].click());
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("switch", { name: "私密房间" })).toBeChecked();
+    expect(within(dialog).getByRole("switch", { name: "允许旁观" })).not.toBeChecked();
+
+    // 这次改成公开、允许旁观后再创建。
+    await user.click(within(dialog).getByRole("switch", { name: "私密房间" }));
+    await user.click(within(dialog).getByRole("switch", { name: "允许旁观" }));
+    await user.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(screen.getByTestId("room-target")).toBeInTheDocument());
+    expect(createRoom).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "public", allowSpectators: true }),
+      expect.any(AbortSignal),
+    );
+    // 新选项覆盖记忆，并为这间新房登记待恢复的标记。
+    expect(readRoomCreateDefaults("song")).toEqual({ visibility: "public", allowSpectators: true });
+    expect(peekPendingRestore("song")).toBe(String(createRoom.mock.calls[0]?.[0]?.roomId));
   });
 });

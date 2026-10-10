@@ -77,9 +77,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page).toHaveURL(/\/ccb\/room\/\d{4}$/);
     const roomUrl = page.url();
+    // 直链进房自动加入（与另外两个游戏一致），不再拦截「设置用户名」：先写入访客名再进入。
+    await guest.addInitScript((name) => window.localStorage.setItem("bakagame:username", name), guestName);
     await guest.goto(roomUrl);
-    await guest.getByRole("textbox", { name: "用户名" }).fill(guestName);
-    await guest.getByRole("button", { name: "进入房间", exact: true }).click();
     await expect(guest.getByRole("heading", { name: "等待开始" })).toBeVisible();
     await expect(page.getByTitle(guestName, { exact: true })).toBeVisible();
 
@@ -185,9 +185,8 @@ test("直链测试房在房间不存在时就地创建并允许单人开局", as
   const checkQuality = watchQuality(page);
   // 测试房不进大厅、没有创建入口；冷启动的隔离服务里它必然不存在。
   // 直链进入必须用同一房号就地建起它，否则永远停在「房间不存在或已经关闭」。
+  // 直链进房自动加入（与另外两个游戏一致），不再拦截「设置用户名」。
   await page.goto("/ccb/room/Oblivionis");
-  await page.getByRole("textbox", { name: "用户名" }).fill(`测试房主${Date.now().toString(36)}`);
-  await page.getByRole("button", { name: "进入房间", exact: true }).click();
   await expect(page.getByRole("heading", { name: "等待玩家加入" })).toBeVisible();
   // 单人测试房允许房主一人试玩：普通房此处是禁用的「等待玩家加入」。
   const start = page.getByRole("button", { name: "开始游戏", exact: true });

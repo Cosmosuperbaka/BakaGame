@@ -1,9 +1,18 @@
 import { TEST_ROOM_ID } from "@/config/Constants";
 
-const USERNAME_KEY = "wif_username";
-const SESSION_PREFIX = "wif_session_";
+/**
+ * 存储键命名空间。
+ *
+ * 用户名（`bakagame:username`）是三个游戏共用的玩家身份，不归属任何单一玩法；
+ * 会话凭据按玩法分前缀，与路由、API 路径的 `whoisfaker` / `songuessr` 口径一致。
+ * 旧键 `wif_username` / `wif_session_` 只在 `migrateLegacyKeys` 里出现一次，用于一次性搬迁。
+ */
+const USERNAME_KEY = "bakagame:username";
+const SESSION_PREFIX = "whoisfaker_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
 const SOLO_ROOM_KEY = "songuessr_solo_room";
+const LEGACY_USERNAME_KEY = "wif_username";
+const LEGACY_SESSION_PREFIX = "wif_session_";
 
 /**
  * 房号规范化：去掉首尾空白，测试房号统一成服务端使用的规范大小写。
@@ -43,8 +52,48 @@ function getLocalStorage(): Storage | null {
   }
 }
 
+/**
+ * 一次性搬迁历史 `wif_*` 键：把共用用户名与当前标签页的卧底会话凭据搬到新键名，随后删掉旧键。
+ * 只在目标键为空时搬迁，避免覆盖新版本写入的值；存储被禁用或读写出错时静默放弃，
+ * 旧键原样保留（不影响功能，只是本次没迁成）。
+ * 幂等且开销极小（旧键一旦搬走就再无命中），因此每次读取都可安全调用，不依赖模块级状态。
+ */
+function migrateLegacyKeys(): void {
+  const local = getLocalStorage();
+  const session = getSessionStorage();
+  if (!local && !session) return;
+
+  try {
+    const legacyName = local?.getItem(LEGACY_USERNAME_KEY);
+    if (legacyName !== null && legacyName !== undefined && !local?.getItem(USERNAME_KEY)) {
+      local?.setItem(USERNAME_KEY, legacyName);
+    }
+    local?.removeItem(LEGACY_USERNAME_KEY);
+
+    // 会话凭据：sessionStorage 里现存的所有 wif_session_<roomId> 逐条改名。
+    if (session) {
+      const legacySessionKeys: string[] = [];
+      for (let i = 0; i < session.length; i += 1) {
+        const key = session.key(i);
+        if (key && key.startsWith(LEGACY_SESSION_PREFIX)) legacySessionKeys.push(key);
+      }
+      for (const legacyKey of legacySessionKeys) {
+        const token = session.getItem(legacyKey);
+        const roomId = legacyKey.slice(LEGACY_SESSION_PREFIX.length);
+        if (token !== null && !session.getItem(SESSION_PREFIX + roomId)) {
+          session.setItem(SESSION_PREFIX + roomId, token);
+        }
+        session.removeItem(legacyKey);
+      }
+    }
+  } catch {
+    // 存储被禁用或中途失败：保留旧键，视为未搬迁。
+  }
+}
+
 export function getSavedUsername(): string {
   try {
+    migrateLegacyKeys();
     return getLocalStorage()?.getItem(USERNAME_KEY) ?? "";
   } catch {
     return "";
@@ -59,8 +108,17 @@ export function saveUsername(name: string): void {
   }
 }
 
+/**
+ * 直链进房且本地没存过名字时的兜底用户名：与另外两个游戏一致，不弹设置用户名弹窗。
+ * 用 4 位随机数避免同房重名，长度落在协议上限（32）内。
+ */
+export function guestName(): string {
+  return `玩家${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
 export function getSessionToken(roomId: string): string | null {
   try {
+    migrateLegacyKeys();
     return getSessionStorage()?.getItem(getSessionKey(roomId)) ?? null;
   } catch {
     return null;

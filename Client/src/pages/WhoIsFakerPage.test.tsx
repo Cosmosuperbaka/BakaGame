@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { peekPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerRoomSummary } from "@/types";
 import WhoIsFakerPage from "./WhoIsFakerPage";
@@ -53,6 +55,8 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
   afterEach(() => {
     useWhoIsFakerStore.setState(initialStoreState, true);
+    // 创建记忆与恢复标记落在 localStorage，避免跨用例残留。
+    window.localStorage.clear();
   });
 
   it("当房间列表为空且已连接时渲染空状态提示", () => {
@@ -134,7 +138,7 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
   });
 
   it("用户名为空时创建与进房都就地拦下：标红输入框、聚焦并关联错误文案，不打开弹窗", () => {
-    localStorage.removeItem("wif_username");
+    localStorage.removeItem("bakagame:username");
     useWhoIsFakerStore.setState({ rooms: mockRooms, connected: true, lobbyReady: true });
     const joinRoom = vi.fn();
     useWhoIsFakerStore.setState({ joinRoom, reconnectRoom: vi.fn().mockResolvedValue(false) });
@@ -154,5 +158,35 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     // 一输入就撤下错误。
     fireEvent.change(name, { target: { value: "玩家" } });
     expect(name).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("创建时沿用上次的开关、创建成功后记住本次选项并登记恢复", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("bakagame:username", "玩家");
+    saveRoomCreateDefaults("faker", { visibility: "private", allowSpectators: false });
+    const createRoom = vi.fn().mockResolvedValue(undefined);
+    useWhoIsFakerStore.setState({ rooms: mockRooms, connected: true, lobbyReady: true, createRoom });
+    renderPage();
+
+    // 弹窗打开：私密与旁观沿用上次创建的选择。
+    act(() => screen.getAllByRole("button", { name: "创建房间" })[0].click());
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("switch", { name: "私密房间" })).toBeChecked();
+    expect(within(dialog).getByRole("switch", { name: "允许旁观" })).not.toBeChecked();
+
+    // 这次改成公开、允许旁观后再创建。
+    await user.click(within(dialog).getByRole("switch", { name: "私密房间" }));
+    await user.click(within(dialog).getByRole("switch", { name: "允许旁观" }));
+    await user.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(screen.getByTestId("room-target")).toBeInTheDocument());
+    expect(createRoom).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "public", allowSpectators: true }),
+      expect.any(AbortSignal),
+    );
+    // 新选项覆盖记忆，并为这间新房登记待恢复的标记。
+    expect(readRoomCreateDefaults("faker")).toEqual({ visibility: "public", allowSpectators: true });
+    const roomId = String(createRoom.mock.calls[0]?.[0]?.roomId);
+    expect(peekPendingRestore("faker")).toBe(roomId);
   });
 });

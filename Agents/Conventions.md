@@ -8,7 +8,7 @@
 
 ### 1.1 核心业务实体与专有名词常量命名
 
-- **谁是卧底**: 全栈统一命名为 `WhoIsFaker`（缩写 `wif` 用于缓存/存储前缀如 `wif_session_`）。
+- **谁是卧底**: 全栈统一命名为 `WhoIsFaker`。会话凭据存储前缀用全称口径 **`whoisfaker_session_`**，不使用旧缩写 `wif_`（历史 `wif_*` 键由 `Client/src/lib/Storage.ts` 的 `migrateLegacyKeys` 一次性搬迁）。
 - **猜歌游戏**: 全栈统一命名为 **`SonGuessr`（漏G版）**。
   - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。命名以本节为准；删除旧别名的约束见 [Spec §4](Spec.md)。
   - **常量命名 (Constants)**：`SonGuessr` 为专有名词，常量一律使用 **`SONGUESSR_XXX`** 前缀（例如 `SONGUESSR_PHASES`, `SONGUESSR_MUSIC_SESSION_CHANGED`），严禁拆分为 `SON_GUESSR_`。
@@ -143,12 +143,12 @@ CLIENT_URL=http://localhost:5173
 SERVER_URL=http://localhost:4850
 SERVER_PORT=4850
 BANGUMI_API_URL=https://api.bgm.tv
-BANGUMI_IMAGE_URL=
+BANGUMI_IMAGE_SOURCE=
 MEILISEARCH_KEY=
 CCB_ORIGINAL_AES_SECRET=
 ```
 
-`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口，`BANGUMI_IMAGE_URL` 是番剧图片的对外前缀。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。图片在服务端按配置重写；**留空且图床有分片时默认走与后端同源的 `/api/bangumi`**，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器，细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
+`BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。**番剧图片的对外前缀写死 `/api/bangumi`（自建图床），不提供环境变量开关** —— 前缀可配就必然有人配出边缘不放行的路径，线上整站图片会变成 SPA HTML。图片在服务端按固定前缀重写，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器；`BANGUMI_IMAGE_SOURCE` 只决定图床缺图时去哪补（留空 = 只服务已缓存的图），细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
 
 `MEILISEARCH_KEY` 供 CCB 与 SonGuessr 共用的内部搜索，生产环境必填；Meilisearch 的 master key 必须设为相同值，
 并与本服务共享 `127.0.0.1:7700` 网络空间（独立容器不能直接使用各自的 `localhost`）。搜索连接地址
