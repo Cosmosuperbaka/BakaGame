@@ -417,9 +417,8 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   };
 
   const headline = (
-    <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
+    <div className="flex min-w-0 w-full flex-col gap-1.5 overflow-hidden">
       {renderAccountPill("netease", neteaseAccount, neteaseConnecting)}
-      <span className="shrink-0 text-muted-foreground/30">|</span>
       {renderAccountPill("qq", qqAccount, qqConnecting)}
     </div>
   );
@@ -435,7 +434,6 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
 
   return (
     <SettingsAccordion
-      icon={UserRound}
       title="音乐账号配置"
       open={open}
       onOpenChange={toggle}

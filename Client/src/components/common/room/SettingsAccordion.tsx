@@ -27,7 +27,7 @@ export function SettingsAccordion({
   headline,
   children,
 }: {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   title: string;
   summary?: string[];
   open: boolean;
@@ -64,7 +64,7 @@ export function SettingsAccordion({
         aria-describedby={describedBy}
         className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
       >
-        {media ?? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        {media ?? (Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null)}
         <span className="min-w-0 flex-1">
           {headline ? (
             <>
@@ -83,8 +83,8 @@ export function SettingsAccordion({
                       className="col-start-1 row-start-1 text-sm font-medium" aria-hidden="true">{title}</motion.span>
                   ) : (
                     <motion.span key="headline" variants={readoutSwap} initial="initial" animate="animate" exit="exit"
-                      className="col-start-1 row-start-1 flex min-w-0 items-center gap-x-2">
-                      <span id={headlineId} className="flex min-w-0 items-center gap-x-2">{headline}</span>
+                      className="col-start-1 row-start-1 flex min-w-0 w-full">
+                      <span id={headlineId} className="min-w-0 w-full">{headline}</span>
                     </motion.span>
                   )}
                 </AnimatePresence>
