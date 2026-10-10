@@ -5,6 +5,7 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/Dialog";
 import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import type { OriginPoint } from "@/lib/Motion";
+import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 
 /**
  * 房间类型开关（CCB 的「兼容原版」）：开启后房间建在另一种服务器上，下面的私密、旁观与名称上限随之切换含义。
@@ -45,6 +46,8 @@ export interface CreateRoomDialogProps {
   privacy?: RoomPrivacy;
   /** 当前服务器不支持禁止观战时给出原因：开关禁用并常驻显示原因。 */
   spectatorsDisabledReason?: string;
+  /** 上次创建沿用的选项：私密与旁观的初始值；密码与名称一律不沿用（用户明确）。 */
+  defaults?: RoomCreateDefaults | null;
   onCreate: (params: {
     name: string;
     visibility: "public" | "private";
@@ -66,6 +69,7 @@ export function CreateRoomDialog({
   roomMode,
   privacy,
   spectatorsDisabledReason,
+  defaults,
   onCreate,
 }: CreateRoomDialogProps) {
   // 表单随弹窗挂载/卸载，状态由初始值直接建立，无需打开后再同步。
@@ -83,6 +87,7 @@ export function CreateRoomDialog({
           roomMode={roomMode}
           privacy={privacy}
           spectatorsDisabledReason={spectatorsDisabledReason}
+          defaults={defaults}
           onCreate={onCreate}
         />
       </DialogContent>
@@ -93,7 +98,7 @@ export function CreateRoomDialog({
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
   | "defaultName" | "nameMaxLength" | "onOpenChange" | "roomMode"
-  | "privacy" | "spectatorsDisabledReason" | "onCreate"
+  | "privacy" | "spectatorsDisabledReason" | "defaults" | "onCreate"
 >;
 
 function CreateRoomForm({
@@ -103,17 +108,22 @@ function CreateRoomForm({
   roomMode,
   privacy = "password",
   spectatorsDisabledReason,
+  defaults,
   onCreate,
 }: CreateRoomFormProps) {
   // 默认名称由用户名拼成，可能超过上限；切换服务器后上限也可能变小，提交时再按当前上限截一次。
   const [roomName, setRoomName] = useState(() => defaultName.slice(0, nameMaxLength));
   // 开关状态记下它属于哪种含义：切换服务器后两种「私密」不是一回事，开关回到关闭，不沿用上一种的选择。
-  const [privateChoice, setPrivateChoice] = useState<{ privacy: RoomPrivacy; on: boolean }>({ privacy, on: false });
+  // 初次打开时沿用上次创建的选择（`defaults`），此后以本次弹窗内的操作为准。
+  const [privateChoice, setPrivateChoice] = useState<{ privacy: RoomPrivacy; on: boolean }>({
+    privacy,
+    on: defaults?.visibility === "private",
+  });
   const isPrivate = privateChoice.privacy === privacy && privateChoice.on;
   const needsPassword = isPrivate && privacy === "password";
   const privacyCopy = PRIVACY_COPY[privacy];
   const [password, setPassword] = useState("");
-  const [allowSpectators, setAllowSpectators] = useState(true);
+  const [allowSpectators, setAllowSpectators] = useState(defaults?.allowSpectators ?? true);
   const [loading, setLoading] = useState(false);
   // 两类失败分开放：缺密码落在密码框上（标红并关联文案）；服务端返回的失败归不到字段，只在表单末尾给一行文案。
   const [passwordError, setPasswordError] = useState<string | null>(null);

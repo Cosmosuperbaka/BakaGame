@@ -11,7 +11,7 @@ function setup(overrides = {}) {
   const hook = renderHook((props) => useLobbySession(props), { initialProps: options });
   return { ...hook, options };
 }
-beforeEach(() => { navigate.mockClear(); localStorage.setItem("wif_username", "玩家"); });
+beforeEach(() => { navigate.mockClear(); localStorage.setItem("bakagame:username", "玩家"); });
 describe("大厅入房事务", () => {
   it("恢复拒绝被统一接住，不继续加入或导航", async () => {
     const h=setup({ reconnectRoom: vi.fn().mockRejectedValue({ code: "DISCONNECTED", message: "连接已断开" }) });
@@ -42,9 +42,9 @@ describe("大厅入房事务", () => {
     act(()=>{task=h.result.current.handlePasswordJoin();});act(()=>h.result.current.setJoinTarget(null));
     await act(async()=>{ack.resolve();await task;});expect(navigate).not.toHaveBeenCalled();expect(h.result.current.joinTarget).toBeNull();
   });
-  it("创建 ACK 在卸载后不导航", async()=>{
-    const ack=deferred<void>();const h=setup({createRoom:vi.fn(()=>ack.promise)});let task!:Promise<void>;
-    act(()=>{task=h.result.current.handleCreateRoom({name:"新房",visibility:"public",allowSpectators:true});});h.unmount();ack.resolve();await task;expect(navigate).not.toHaveBeenCalled();
+  it("创建 ACK 在卸载后不导航、也不登记恢复", async()=>{
+    const ack=deferred<void>();const onRoomCreated=vi.fn();const h=setup({createRoom:vi.fn(()=>ack.promise),onRoomCreated});let task!:Promise<void>;
+    act(()=>{task=h.result.current.handleCreateRoom({name:"新房",visibility:"public",allowSpectators:true});});h.unmount();ack.resolve();await task;expect(navigate).not.toHaveBeenCalled();expect(onRoomCreated).not.toHaveBeenCalled();
   });
   it("恢复成功直接导航而不再加入", async()=>{
     const h=setup({reconnectRoom:vi.fn().mockResolvedValue(true)});
@@ -91,4 +91,16 @@ it("建房失败抛回给弹窗、不另弹 Toast", async () => {
     await expect(h.result.current.handleCreateRoom({ name: "新房", visibility: "public", allowSpectators: true })).rejects.toThrow("房间已满");
   });
   expect(h.options.showError).not.toHaveBeenCalled();
+});
+it("创建成功后把房号与本次选项交给回调，供记录与登记恢复", async () => {
+  const onRoomCreated = vi.fn();
+  const h = setup({ onRoomCreated });
+  await act(async () => {
+    await h.result.current.handleCreateRoom({ name: "新房", visibility: "private", allowSpectators: false, password: "1234" });
+  });
+  const roomId = String(navigate.mock.calls[0]?.[0]).split("/").pop();
+  expect(onRoomCreated).toHaveBeenCalledExactlyOnceWith(
+    roomId,
+    expect.objectContaining({ name: "新房", visibility: "private", allowSpectators: false, password: "1234" }),
+  );
 });

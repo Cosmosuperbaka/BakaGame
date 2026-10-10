@@ -100,4 +100,29 @@ describe("CreateRoomDialog", () => {
     expect(screen.getByRole("textbox", { name: "房间名称" })).not.toHaveAttribute("aria-invalid");
     expect(onValidationError).not.toHaveBeenCalled();
   });
+
+  it("打开弹窗时沿用上次创建的选项，密码仍从空开始", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn(async () => {});
+    render(
+      <CreateRoomDialog
+        open
+        onOpenChange={() => {}}
+        defaultName="测试房间"
+        defaults={{ visibility: "private", allowSpectators: false }}
+        onCreate={onCreate}
+      />,
+    );
+
+    expect(screen.getByRole("switch", { name: "私密房间" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "允许旁观" })).not.toBeChecked();
+    // 私密沿用后仍每次手填密码：不预填、不自动带入上一次的密码。
+    const password = await screen.findByLabelText("房间密码");
+    expect(password).toHaveValue("");
+    await user.type(password, "5678");
+    await user.click(screen.getByRole("button", { name: "创建" }));
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "private", password: "5678", allowSpectators: false }),
+    );
+  });
 });
