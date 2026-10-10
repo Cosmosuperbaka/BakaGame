@@ -183,10 +183,10 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 `Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`、`CCBService`）的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
-听歌猜番还需要在服务端配置 `BANGUMI_API_URL` 和可选的 `BANGUMI_IMAGE_URL`。这两个地址
-只允许由服务端访问；客户端不得直连 Bangumi，代理也不得把 `lain.bgm.tv` 原始图片地址暴露
-给浏览器（`BANGUMI_IMAGE_URL` 未配而图床有分片时会自动走自建图床 `/api/bangumi`，
-**前提是代理层把 `/api/bangumi` 转发到后端**）。发布前应验证镜像支持 `/v0/search/subjects`
+听歌猜番还需要在服务端配置 `BANGUMI_API_URL`（可选再配 `BANGUMI_IMAGE_SOURCE` 让图床缺图自愈）。
+该地址只允许由服务端访问；客户端不得直连 Bangumi，代理也不得把 `lain.bgm.tv` 原始图片地址暴露
+给浏览器 —— 图片对外前缀**写死**为自建图床 `/api/bangumi`（不可配，见 [Conventions](Conventions.md#6-环境变量规范-environment-variables)），
+**前提是代理层把 `/api/*` 转发到后端**。发布前应验证镜像支持 `/v0/search/subjects`
 与 `/v0/subjects/{id}`，并确认图片保留原始路径、查询参数和片段。
 
 ## 带宽与容量基线

@@ -29,7 +29,7 @@ cd BakaGame
 # 启动服务端，默认端口 4850
 cd Server
 cp .env.example .env
-# 按需修改 BANGUMI_API_URL 与 BANGUMI_IMAGE_URL
+# 按需修改 BANGUMI_API_URL（图片前缀固定走自建图床 /api/bangumi）
 bun install
 bun run dev
 

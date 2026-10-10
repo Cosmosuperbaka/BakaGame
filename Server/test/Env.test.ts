@@ -121,26 +121,20 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
-  it("读取 Bangumi API 与图床镜像地址并移除尾斜杠", () => {
-    const keys = ["BANGUMI_API_URL", "BANGUMI_IMAGE_URL", "BANGUMI_IMAGES_DIR"] as const;
+  it("读取 Bangumi API 地址并移除尾斜杠，图床前缀恒为 /api/bangumi", () => {
+    const keys = ["BANGUMI_API_URL", "BANGUMI_IMAGES_DIR"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
-    // 空目录：没下载过图的分片，缺省不该改写成图床路由。
     const emptyDir = mkdtempSync(join(tmpdir(), "env-no-images-"));
     try {
       delete Bun.env.BANGUMI_API_URL;
-      delete Bun.env.BANGUMI_IMAGE_URL;
       Bun.env.BANGUMI_IMAGES_DIR = emptyDir;
       expect(readEnv()).toMatchObject({
         bangumiApiUrl: "https://api.bgm.tv",
-        bangumiImageUrl: "",
+        bangumiImageUrl: "/api/bangumi",
       });
 
       Bun.env.BANGUMI_API_URL = "https://api.example.test///";
-      Bun.env.BANGUMI_IMAGE_URL = "https://lain.example.test/";
-      expect(readEnv()).toMatchObject({
-        bangumiApiUrl: "https://api.example.test",
-        bangumiImageUrl: "https://lain.example.test",
-      });
+      expect(readEnv().bangumiApiUrl).toBe("https://api.example.test");
     } finally {
       rmSync(emptyDir, { recursive: true, force: true });
       for (const key of keys) {
@@ -150,7 +144,7 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
-  it("图床已有分片时缺省走自带图床，显式地址仍然优先", () => {
+  it("图床前缀写死：图床目录空不空、有没有人想改，都只能是 /api/bangumi", () => {
     const keys = ["BANGUMI_IMAGE_URL", "BANGUMI_IMAGES_DIR"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
     const seededDir = mkdtempSync(join(tmpdir(), "env-images-"));
@@ -159,9 +153,9 @@ describe("readEnv 环境变量与启动断言", () => {
       Bun.env.BANGUMI_IMAGES_DIR = seededDir;
       delete Bun.env.BANGUMI_IMAGE_URL;
       expect(readEnv().bangumiImageUrl).toBe("/api/bangumi");
-      // 运维显式指定的去处永远赢过缺省值。
+      // 前缀可配就必然有人配出边缘不放行的路径（线上整站图片变 SPA HTML），所以不认。
       Bun.env.BANGUMI_IMAGE_URL = "https://lain.example.test/";
-      expect(readEnv().bangumiImageUrl).toBe("https://lain.example.test");
+      expect(readEnv().bangumiImageUrl).toBe("/api/bangumi");
     } finally {
       rmSync(seededDir, { recursive: true, force: true });
       for (const key of keys) {
@@ -171,20 +165,13 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
-  it("图床回源缺省跟随绝对地址的对外前缀，切到自建图床时必须显式指定", () => {
-    const keys = ["BANGUMI_IMAGE_URL", "BANGUMI_IMAGE_SOURCE"] as const;
+  it("图床回源没有缺省值，只能由 BANGUMI_IMAGE_SOURCE 显式指定", () => {
+    const keys = ["BANGUMI_IMAGE_SOURCE"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
     try {
+      // 对外前缀是相对路径，跟着它回源 = 自己回自己的死循环，所以缺省留空（只服务已缓存的图）。
       delete Bun.env.BANGUMI_IMAGE_SOURCE;
-      // 对外前缀是反代：它本身就是最佳回源。
-      Bun.env.BANGUMI_IMAGE_URL = "https://mirror.example.test/";
-      expect(readEnv().bangumiImageSource).toBe("https://mirror.example.test");
-      // 切到自建图床后不能再拿它当回源（否则自己回自己的死循环）。
-      Bun.env.BANGUMI_IMAGE_URL = "/api/bangumi";
       expect(readEnv().bangumiImageSource).toBe("");
-      delete Bun.env.BANGUMI_IMAGE_URL;
-      expect(readEnv().bangumiImageSource).toBe("");
-      // 显式指定永远优先。
       Bun.env.BANGUMI_IMAGE_SOURCE = "https://upstream.example.test/";
       expect(readEnv().bangumiImageSource).toBe("https://upstream.example.test");
     } finally {

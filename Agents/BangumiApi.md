@@ -21,10 +21,9 @@ CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色�
 
 ```bash
 BANGUMI_API_URL=https://api.bgm.tv
-BANGUMI_IMAGE_URL=
-# 自建图床：avif 分片所在目录，缺省 Server/data/images；目录里有分片时图片自动走它
+# 自建图床：avif 分片所在目录，缺省 Server/data/images
 BANGUMI_IMAGES_DIR=
-# 图床回源前缀（缺省跟随 BANGUMI_IMAGE_URL 的绝对地址）
+# 图床回源前缀：留空 = 只服务已缓存的图；要缺图自愈才配
 BANGUMI_IMAGE_SOURCE=
 # 运行时更新器：缺省只在生产开启（测试与本地开发不打线上上游）
 BANGUMI_UPDATER_ENABLED=
@@ -37,14 +36,14 @@ BANGUMI_ENRICHMENT_PATH=
 
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像（**具体地址属于部署配置，不进仓库**）。
 
-`BANGUMI_IMAGE_URL` 是唯一的人工开关：**没配、且图床目录里确实有分片时，默认就用自带的图床
-`/api/bangumi`**（与后端同源，直接读本机那份 avif 缓存；缺失得自己回源见下），
-不再把 Bangumi 源站地址发给浏览器 —— `lain.bgm.tv` 在国内多数网络根本连不上，等于没有封面。
-图床目录没有分片时保持旧行为（不改写）；显式配了就以它为准。
-配置后的改写规则：`lain.bgm.tv` 原始地址 → 「前缀 + 图床缓存路径」（方形一律 `grid`、长条一律
-`large`，作品封面向下降档），映射不了的形状原样返回；前缀为空即不重写。
-**注意**：前缀设成相对路径 `/api/bangumi` 时图的回源会因忌讳自环而留空（只服务已缓存的图），
-要让图床自己去抓缺失的那几张，得另给 `BANGUMI_IMAGE_SOURCE`。
+**图片前缀写死 `/api/bangumi`，没有环境变量开关**：所有 Bangumi 图片都改写到自建图床
+（与后端同源，直接读本机那份 avif 缓存），不再把 Bangumi 源站地址发给浏览器 ——
+`lain.bgm.tv` 在国内多数网络根本连不上，等于没有封面。
+改写规则：`lain.bgm.tv` 原始地址 → 「`/api/bangumi` + 图床缓存路径」（方形一律 `grid`、
+长条一律 `large`，作品封面向下降档），映射不了的形状原样返回。
+**注意**：对外前缀是相对路径，回源因此**没有缺省值**（跟着它回源 = 自己回自己的死循环），
+要让图床自己去抓缺失的那几张，得显式给 `BANGUMI_IMAGE_SOURCE`。
+前缀刻意不开放配置：一旦可配就必然有人配出边缘不放行的路径，线上整站图片会变成 SPA HTML。
 
 ## 生产部署：为什么图床要挂在 `/api` 下
 
@@ -64,7 +63,7 @@ BANGUMI_ENRICHMENT_PATH=
 实测 `ftypavif`），且保留源站路径与查询串——图床入库前会校验 avif 魔数，拿到 jpeg / 错误页一律丢弃不入库。
 
 镜像端点的两个实测要点（与具体域名无关）：`GET /v0/characters/{id}` 返回完整角色 JSON，
-其中 `images.medium` 仍指向 `lain.bgm.tv`（必须靠 `BANGUMI_IMAGE_URL` 重写）；
+其中 `images.medium` 仍指向 `lain.bgm.tv`（由写死的 `/api/bangumi` 前缀重写）；
 **它的 `infobox` 是 `[{ key, value }]` 数组**，与归档 dump 的 wikitext 字符串形态不同，
 **两套解析器不可混用**。
 
@@ -83,8 +82,8 @@ Server/storage/bangumi-enrichment.sqlite      （可写，不进 Git；`.gitigno
 
 **四条必须遵守的规则：**
 
-1. **只存上游原始 URL，不在缓存里存镜像地址**。镜像地址在读取时用 `BANGUMI_IMAGE_URL` 重写，
-   所以换镜像源不需要清缓存、也不需要重新回源。反过来把重写后的 URL 写进缓存，
+1. **只存上游原始 URL，不在缓存里存镜像地址**。镜像地址在读取时按 `/api/bangumi` 前缀重写，
+   所以换图床不需要清缓存、也不需要重新回源。反过来把重写后的 URL 写进缓存，
    等于把镜像地址钉死在数据里。
 2. **失败绝不固化**。上游超时/报错/非 2xx/无图，既不写回填缓存，也不进内存正缓存，
    只记 **5 分钟内存负缓存**（`NEGATIVE_CACHE_TTL_MS`）挡住重复打爆上游，进程重启即失效。
@@ -118,7 +117,7 @@ CCB 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共
 - 路由 `GET /api/bangumi/*`：**命中直接回 avif**（`immutable` 长缓存），缺失才回源
   （`Accept: image/avif`），回源结果转交 Worker 落库 —— 主线程只读分片，单写者不变。
 - 只认 avif 魔数：上游返回错误页 / jpeg 时**绝不入库**（坏字节一旦入库就再也不会重下）。
-- 路径与 Bangumi 源站一致，所以切换 `BANGUMI_IMAGE_URL` 不需要改任何 URL 改写逻辑。
+- 路径与 Bangumi 源站一致，所以图床换部署形态（同源 / 反代 / 上游）都不需要改 URL 改写逻辑。
 
 ### 运行时更新器（`SubjectUpdater`）
 

@@ -222,7 +222,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 
 ### 10.6 绝对凭据隔离与防私有服务及密钥泄漏铁律 (Zero-Secrets & Credential/Mirror Isolation Invariant)
 - **严禁向 Git 仓库提交真实凭据与私有域名**：无论属于公钥、私钥、Token、项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），还是开发者个人或自建的私有服务端点（如自建 Bangumi 图床镜像、私有反向代理域名、内网穿透与自建 API 地址），一律绝对严禁写入被 Git 追踪的任何文件。
-- **示例文件与测试用例全量 Dummy 化与安全缺省**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`、`https://mirror.example.com`）或留空安全缺省值（如 `BANGUMI_IMAGE_URL=`），严禁粘贴任何真实环境的 DSN、实际项目标识与私有镜像域名。
+- **示例文件与测试用例全量 Dummy 化与安全缺省**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`、`https://mirror.example.com`）或留空安全缺省值（如 `BANGUMI_IMAGE_SOURCE=`），严禁粘贴任何真实环境的 DSN、实际项目标识与私有镜像域名。
 - **私有凭据与自建服务单一物理隔离**：真实配置必须且只能存在于被 `.gitignore` 严格忽略的本地私有 `.env`、`.env.local` 文件或云原生容器平台环境变量中。代码默认值与 Fallback 严禁携带任何现网项目标识或自建私有域名。
 - **本地未推送提交泄漏必须立即净化提交历史**：若在本地尚未推送到远端的提交中误写入了私有凭据或私有域名，严禁通过仅仅追加一个覆盖提交草草掩盖，必须在分支推送前通过变基（Rebase）彻底净化未推送提交历史，从 Git 对象树根源消灭泄露痕迹。
 

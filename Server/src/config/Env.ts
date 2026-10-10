@@ -1,27 +1,17 @@
-import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { AppError } from "../domain/Errors";
 
 const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"]);
 
-/** 自建图床对外路由；业务侧只认这个前缀，路径与 Bangumi 源站一致。 */
-/** 图床对外前缀：挂在 `/api` 下，边缘已整体放行 `/api/*`，不必逐条配边缘规则。 */
-const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
-/** 图床分片文件名，与 `tools/build_bangumi_images.py` 一致。 */
-const IMAGE_SHARD_PATTERN = /^images-\d+\.sqlite$/;
-
 /**
- * 图床是否真的有货：**只有目录里确实躺着分片才算可用** —— 空目录也当成图床会让每张图
- * 都 404，比维持「不改写、保留上游原始地址」的旧行为更糟。
+ * 图床对外前缀：**写死，不提供环境变量开关**。
+ *
+ * 挂在 `/api` 下是刻意的：边缘（阿里云 ESA）的 SPA 兜底函数吃掉 `game.baka.website`
+ * 下所有非 `/api` 路径，新前缀必须落在 `/api/*` 里才能到得了源站。详见
+ * `Agents/Deployment.md`。
  */
-const hasBangumiImageCache = (directory: string): boolean => {
-  try {
-    return existsSync(directory) && readdirSync(directory).some((name) => IMAGE_SHARD_PATTERN.test(name));
-  } catch {
-    return false;
-  }
-};
+const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
 
 export interface AppEnv {
   clientUrl: string;
@@ -39,19 +29,19 @@ export interface AppEnv {
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
   /**
-   * 对外图片前缀；指向 `/api/bangumi` 时走自建图床。
+   * 对外图片前缀：恒为 `/api/bangumi`，即自建图床。
    *
-   * 没显式配时，**图床目录里有分片就默认走 `/api/bangumi`**：图片不再出去
-   * Bangumi 源站，只读自己那份 avif 缓存。详见 `Agents/BangumiApi.md`。
+   * 路径与 Bangumi 源站一致，所以 URL 改写逻辑零改动；不提供环境变量开关 ——
+   * 前缀一旦可配，就必然有人配出边缘不放行的路径（线上踩过一次，整站图片变
+   * SPA HTML）。详见 `Agents/BangumiApi.md`。
    */
   bangumiImageUrl: string;
   /**
    * 图床回源前缀：`/api/bangumi` 缺失时从这里抓 avif。
    *
    * 必须能与 Bangumi 的图床路径（`/pic/cover/...`、`/r/200/...`）拼接，且支持
-   * `Accept: image/avif`。**缺省跟随 `bangumiImageUrl`**（它指向反代时，反代
-   * 本身就是最佳回源）；一旦把 `bangumiImageUrl` 切到自建图床就必须显式指定
-   * 本变量，否则会变成自己回自己的回环。仓库里不落任何远端地址。
+   * `Accept: image/avif`。**缺省为空**（只服务已缓存的图）：对外前缀是相对路径，
+   * 跟着它回源会变成自己回自己的死循环。需要缺图自愈时才配，仓库里不落任何远端地址。
    */
   bangumiImageSource?: string;
   /** 本地数据集路径：猜歌与 CCB 共用同一个库。 */
@@ -197,14 +187,9 @@ export const readEnv = (): AppEnv => {
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
   // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
   const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
-  const explicitImageUrl = (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, "");
   const bangumiImagesDir = Bun.env.BANGUMI_IMAGES_DIR
     ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
     : resolve(import.meta.dir, "../../data/images");
-  // 图片默认走自带的缓存图床，除非运维显式改了去处：图床与后端同机部署、路径与源站一致，
-  // 而 Bangumi 原始地址（`lain.bgm.tv`）在国内多数网络连不上，留着等于没有封面。
-  // 图床没货时不改写（保持旧行为），免得空目录把每张图都变成 404。
-  const imageUrl = explicitImageUrl || (hasBangumiImageCache(bangumiImagesDir) ? BANGUMI_IMAGE_ROUTE : "");
 
   return {
     clientUrl,
@@ -221,10 +206,9 @@ export const readEnv = (): AppEnv => {
     sentryDsn,
     sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
-    bangumiImageUrl: imageUrl,
-    // 没显式给回源地址时，只有「对外前缀本身是绝对地址」才跟它（相对路径的
-    // `/api/bangumi` 会把回源指向自己，宁可留空 = 只服务已缓存的图）。
-    bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? (/^https?:\/\//.test(imageUrl) ? imageUrl : "")).replace(/\/+$/, ""),
+    bangumiImageUrl: BANGUMI_IMAGE_ROUTE,
+    // 回源没有缺省值：对外前缀是相对路径的 `/api/bangumi`，跟它回源就是自己回自己。
+    bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? "").replace(/\/+$/, ""),
     bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
     bangumiImagesDir,
     // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。

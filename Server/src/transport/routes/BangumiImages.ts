@@ -9,8 +9,8 @@ import type { BangumiImageService } from "../../infrastructure/BangumiImageServi
  * 逐条去边缘配置。
  *
  * 路径与 Bangumi 源站一致（含构建期选定的尺寸档：作品 `/r/200/`、角色
- * `/r/400/` 与方格图 `/pic/crt/g/`），所以业务代码只需要把 `BANGUMI_IMAGE_URL`
- * 指向本路由的前缀，URL 改写逻辑一行不用动。
+ * `/r/400/` 与方格图 `/pic/crt/g/`），所以对外前缀写死成本路由（见
+ * `Env.BANGUMI_IMAGE_ROUTE`）后，URL 改写逻辑一行不用动。
  *
  * 命中缓存直接回 avif；未命中回源抓一份（尽力而为）并异步落库。
  * 路径即内容、内容不变，可以放心长缓存 + immutable。
