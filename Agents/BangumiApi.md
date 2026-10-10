@@ -22,7 +22,7 @@ CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色�
 ```bash
 BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_URL=
-# 自建图床：avif 分片所在目录，缺省 Server/data/images
+# 自建图床：avif 分片所在目录，缺省 Server/data/images；目录里有分片时图片自动走它
 BANGUMI_IMAGES_DIR=
 # 图床回源前缀（缺省跟随 BANGUMI_IMAGE_URL 的绝对地址）
 BANGUMI_IMAGE_SOURCE=
@@ -36,10 +36,15 @@ BANGUMI_ENRICHMENT_PATH=
 ```
 
 `BANGUMI_API_URL` 应指向兼容 Bangumi v0 API 的镜像（**具体地址属于部署配置，不进仓库**）。
-`BANGUMI_IMAGE_URL` 为空时保留原始图片地址；配置后，服务端按 `BangumiImagePaths` 把
-`lain.bgm.tv` 的原始地址换成「前缀 + 图床缓存路径」（方形一律 `grid`、长条一律 `large`，
-作品封面向下降档），映射不了的形状原样返回。把 `BANGUMI_IMAGE_URL` 指向本站的
-`/bangumi-images` 即切到自建图床，届时**必须**另给 `BANGUMI_IMAGE_SOURCE`，否则回源会指回自己。
+
+`BANGUMI_IMAGE_URL` 是唯一的人工开关：**没配、且图床目录里确实有分片时，默认就用自带的图床
+`/bangumi-images`**（与后端同源，直接读本机那份 avif 缓存；缺失得自己回源见下），
+不再把 Bangumi 源站地址发给浏览器 —— `lain.bgm.tv` 在国内多数网络根本连不上，等于没有封面。
+图床目录没有分片时保持旧行为（不改写）；显式配了就以它为准。
+配置后的改写规则：`lain.bgm.tv` 原始地址 → 「前缀 + 图床缓存路径」（方形一律 `grid`、长条一律
+`large`，作品封面向下降档），映射不了的形状原样返回；前缀为空即不重写。
+**注意**：前缀设成相对路径 `/bangumi-images` 时图的回源会因忌讳自环而留空（只服务已缓存的图），
+要让图床自己去抓缺失的那几张，得另给 `BANGUMI_IMAGE_SOURCE`（或把前缀写成绝对地址）。
 
 镜像端点的两个实测要点（与具体域名无关）：`GET /v0/characters/{id}` 返回完整角色 JSON，
 其中 `images.medium` 仍指向 `lain.bgm.tv`（必须靠 `BANGUMI_IMAGE_URL` 重写）；

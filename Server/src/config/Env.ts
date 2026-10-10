@@ -1,8 +1,26 @@
+import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { AppError } from "../domain/Errors";
 
 const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"]);
+
+/** 自建图床对外路由；业务侧只认这个前缀，路径与 Bangumi 源站一致。 */
+const BANGUMI_IMAGE_ROUTE = "/bangumi-images";
+/** 图床分片文件名，与 `tools/build_bangumi_images.py` 一致。 */
+const IMAGE_SHARD_PATTERN = /^images-\d+\.sqlite$/;
+
+/**
+ * 图床是否真的有货：**只有目录里确实躺着分片才算可用** —— 空目录也当成图床会让每张图
+ * 都 404，比维持「不改写、保留上游原始地址」的旧行为更糟。
+ */
+const hasBangumiImageCache = (directory: string): boolean => {
+  try {
+    return existsSync(directory) && readdirSync(directory).some((name) => IMAGE_SHARD_PATTERN.test(name));
+  } catch {
+    return false;
+  }
+};
 
 export interface AppEnv {
   clientUrl: string;
@@ -19,7 +37,12 @@ export interface AppEnv {
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
   bangumiApiUrl: string;
-  /** 对外图片前缀；指向 `/bangumi-images` 时走自建图床。 */
+  /**
+   * 对外图片前缀；指向 `/bangumi-images` 时走自建图床。
+   *
+   * 没显式配时，**图床目录里有分片就默认走 `/bangumi-images`**：图片不再出去
+   * Bangumi 源站，只读自己那份 avif 缓存。详见 `Agents/BangumiApi.md`。
+   */
   bangumiImageUrl: string;
   /**
    * 图床回源前缀：`/bangumi-images` 缺失时从这里抓 avif。
@@ -173,7 +196,14 @@ export const readEnv = (): AppEnv => {
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
   // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
   const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
-  const imageUrl = (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, "");
+  const explicitImageUrl = (Bun.env.BANGUMI_IMAGE_URL ?? "").replace(/\/+$/, "");
+  const bangumiImagesDir = Bun.env.BANGUMI_IMAGES_DIR
+    ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
+    : resolve(import.meta.dir, "../../data/images");
+  // 图片默认走自带的缓存图床，除非运维显式改了去处：图床与后端同机部署、路径与源站一致，
+  // 而 Bangumi 原始地址（`lain.bgm.tv`）在国内多数网络连不上，留着等于没有封面。
+  // 图床没货时不改写（保持旧行为），免得空目录把每张图都变成 404。
+  const imageUrl = explicitImageUrl || (hasBangumiImageCache(bangumiImagesDir) ? BANGUMI_IMAGE_ROUTE : "");
 
   return {
     clientUrl,
@@ -195,9 +225,7 @@ export const readEnv = (): AppEnv => {
     // `/bangumi-images` 会把回源指向自己，宁可留空 = 只服务已缓存的图）。
     bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? (/^https?:\/\//.test(imageUrl) ? imageUrl : "")).replace(/\/+$/, ""),
     bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
-    bangumiImagesDir: Bun.env.BANGUMI_IMAGES_DIR
-      ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
-      : resolve(import.meta.dir, "../../data/images"),
+    bangumiImagesDir,
     // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。
     bangumiUpdaterEnabled: Bun.env.BANGUMI_UPDATER_ENABLED !== undefined
       ? Bun.env.BANGUMI_UPDATER_ENABLED === "true"

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { readEnv } from "../src/config/Env";
 import { createServer } from "../src/application/CreateServer";
@@ -120,11 +122,14 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 
   it("读取 Bangumi API 与图床镜像地址并移除尾斜杠", () => {
-    const originalApiUrl = Bun.env.BANGUMI_API_URL;
-    const originalImageUrl = Bun.env.BANGUMI_IMAGE_URL;
+    const keys = ["BANGUMI_API_URL", "BANGUMI_IMAGE_URL", "BANGUMI_IMAGES_DIR"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    // 空目录：没下载过图的分片，缺省不该改写成图床路由。
+    const emptyDir = mkdtempSync(join(tmpdir(), "env-no-images-"));
     try {
       delete Bun.env.BANGUMI_API_URL;
       delete Bun.env.BANGUMI_IMAGE_URL;
+      Bun.env.BANGUMI_IMAGES_DIR = emptyDir;
       expect(readEnv()).toMatchObject({
         bangumiApiUrl: "https://api.bgm.tv",
         bangumiImageUrl: "",
@@ -137,10 +142,32 @@ describe("readEnv 环境变量与启动断言", () => {
         bangumiImageUrl: "https://lain.example.test",
       });
     } finally {
-      if (originalApiUrl !== undefined) Bun.env.BANGUMI_API_URL = originalApiUrl;
-      else delete Bun.env.BANGUMI_API_URL;
-      if (originalImageUrl !== undefined) Bun.env.BANGUMI_IMAGE_URL = originalImageUrl;
-      else delete Bun.env.BANGUMI_IMAGE_URL;
+      rmSync(emptyDir, { recursive: true, force: true });
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
+  it("图床已有分片时缺省走自带图床，显式地址仍然优先", () => {
+    const keys = ["BANGUMI_IMAGE_URL", "BANGUMI_IMAGES_DIR"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const seededDir = mkdtempSync(join(tmpdir(), "env-images-"));
+    try {
+      writeFileSync(join(seededDir, "images-00.sqlite"), "");
+      Bun.env.BANGUMI_IMAGES_DIR = seededDir;
+      delete Bun.env.BANGUMI_IMAGE_URL;
+      expect(readEnv().bangumiImageUrl).toBe("/bangumi-images");
+      // 运维显式指定的去处永远赢过缺省值。
+      Bun.env.BANGUMI_IMAGE_URL = "https://lain.example.test/";
+      expect(readEnv().bangumiImageUrl).toBe("https://lain.example.test");
+    } finally {
+      rmSync(seededDir, { recursive: true, force: true });
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
     }
   });
 

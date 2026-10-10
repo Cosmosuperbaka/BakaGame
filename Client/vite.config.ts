@@ -486,6 +486,15 @@ export default defineConfig(async ({ command }) => {
 
   return {
     publicDir,
+    // 图床与 /api 一样挂在后端进程上，两处都要转发：少一条 dev 环境的封面就全 404。
+    server: {
+      proxy: {
+        '/bangumi-images': {
+          target: 'http://localhost:4850',
+          changeOrigin: true,
+        },
+      },
+    },
     // E2E 跑在 vite preview（生产构建）上：客户端生产包走同源相对路径，
     // preview 站内没有后端，把 /api（含 WebSocket 升级）转发给本地 Bun 服务。
     // 本地若存在 .env（VITE_SERVER_URL 指向 4850）则客户端直连，代理不参与。
@@ -495,6 +504,11 @@ export default defineConfig(async ({ command }) => {
           target: 'http://localhost:4850',
           changeOrigin: true,
           ws: true,
+        },
+        // 图床同样挂在后端：缺这一条时 dev/preview 会把 /bangumi-images 当静态资源 404。
+        '/bangumi-images': {
+          target: 'http://localhost:4850',
+          changeOrigin: true,
         },
       },
     },
