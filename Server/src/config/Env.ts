@@ -53,7 +53,13 @@ export interface AppEnv {
   bangumiUpdaterMinRate?: number;
   bangumiUpdaterMaxRate?: number;
   bangumiUpdaterPlayerScale?: number;
-  /** CCB-TagsCI 的角色标签增量地址（gh-proxy 通道，raw 直连国内不可用）。 */
+  /**
+   * CCB-TagsCI 的角色标签增量地址；**不给就不跑增量同步**（不配 = 不拉）。
+   *
+   * 上游并不保证这条产物长期存在（仓库 `outputs/` 下只稳定发布 `id_tags.js` /
+   * `id_tags.json`，diff 产物会随 CI 调整消失），写死默认地址只会在每次启动后
+   * 打一条连不上的告警，所以这里留空由运维按当时可用的地址显式开启。
+   */
   bangumiTagDiffUrl?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
@@ -218,9 +224,9 @@ export const readEnv = (): AppEnv => {
     bangumiUpdaterMinRate: Number(Bun.env.BANGUMI_UPDATER_MIN_RATE ?? 10),
     bangumiUpdaterMaxRate: Number(Bun.env.BANGUMI_UPDATER_MAX_RATE ?? 100),
     bangumiUpdaterPlayerScale: Number(Bun.env.BANGUMI_UPDATER_PLAYER_SCALE ?? 20),
-    // raw.githubusercontent 在国内不可用（实测 12s 只下到 1/4）；gh-proxy 直通且新鲜。
-    bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL
-      ?? "https://gh-proxy.com/https://raw.githubusercontent.com/Cosmosuperbaka/CCB-TagsCI/master/outputs/id_tags.diff.json",
+    // 不配就不跑：上游 diff 产物并不长期存在（实测 2026-10-11 仓库 outputs/ 下只有
+    // id_tags.js / id_tags.json），写死默认地址只会让每次启动都报「连不上」。
+    bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
     ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,

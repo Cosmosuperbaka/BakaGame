@@ -182,6 +182,22 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
+  it("标签增量地址不配就不跑，配了才同步", () => {
+    const saved = Bun.env.BANGUMI_TAG_DIFF_URL;
+    try {
+      // 上游 diff 产物并不长期存在，写死默认地址只会每次启动都报「连不上」。
+      delete Bun.env.BANGUMI_TAG_DIFF_URL;
+      expect(readEnv().bangumiTagDiffUrl).toBeUndefined();
+      Bun.env.BANGUMI_TAG_DIFF_URL = "https://mirror.example.test/id_tags.diff.json";
+      expect(readEnv().bangumiTagDiffUrl).toBe("https://mirror.example.test/id_tags.diff.json");
+      Bun.env.BANGUMI_TAG_DIFF_URL = "   ";
+      expect(readEnv().bangumiTagDiffUrl).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete Bun.env.BANGUMI_TAG_DIFF_URL;
+      else Bun.env.BANGUMI_TAG_DIFF_URL = saved;
+    }
+  });
+
   it("运行时更新器缺省只在生产开启，速率与玩家规模可调", () => {
     const keys = ["BANGUMI_UPDATER_ENABLED", "BANGUMI_UPDATER_MIN_RATE", "BANGUMI_UPDATER_MAX_RATE", "BANGUMI_UPDATER_PLAYER_SCALE"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));

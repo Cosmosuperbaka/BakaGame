@@ -25,6 +25,8 @@ BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGES_DIR=
 # 图床回源前缀：留空 = 只服务已缓存的图；要缺图自愈才配
 BANGUMI_IMAGE_SOURCE=
+# 选填：角色标签增量地址；不配就不跑增量同步（上游 diff 产物并不长期存在）
+BANGUMI_TAG_DIFF_URL=
 # 运行时更新器：缺省只在生产开启（测试与本地开发不打线上上游）
 BANGUMI_UPDATER_ENABLED=
 BANGUMI_UPDATER_MIN_RATE=10
