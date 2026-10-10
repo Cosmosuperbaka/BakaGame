@@ -1,13 +1,11 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
+import WebPMux from "node-webpmux";
 import sharp from "sharp";
-
-const execFileAsync = promisify(execFile);
+import UPNG from "upng-js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.resolve(scriptDir, "..");
@@ -109,28 +107,36 @@ async function isApng(filePath) {
 }
 
 async function encodeApngToWebp(source, target) {
-  try {
-    await execFileAsync("ffmpeg", ["-y", "-i", source, "-loop", "0", "-q:v", "82", target]);
-    return;
-  } catch {
-    try {
-      const pyScript = [
-        "import sys",
-        "from PIL import Image",
-        "im = Image.open(sys.argv[1])",
-        "frames = [im.copy() for _ in range(im.n_frames) if not im.seek(_)]",
-        "durations = [im.info.get('duration', 50) for _ in range(im.n_frames)]",
-        "frames[0].save(sys.argv[2], save_all=True, append_images=frames[1:], duration=durations, loop=0, quality=82)",
-      ].join("\n");
-      await execFileAsync("python", ["-c", pyScript, source, target]);
-      return;
-    } catch {
-      console.warn(`[prepare-public-webp] 无法调用 ffmpeg 或 python 转换 APNG 动画，降级使用 sharp: ${source}`);
-      await sharp(source, { animated: true })
-        .webp({ quality: 82, alphaQuality: 90, effort: 4 })
-        .toFile(target);
-    }
+  const buf = await readFile(source);
+  const apng = UPNG.decode(buf);
+  const rgbaFrames = UPNG.toRGBA8(apng);
+  const delays = apng.frames.map((f) => f.delay);
+
+  const frames = [];
+  for (let i = 0; i < rgbaFrames.length; i++) {
+    const webpBuf = await sharp(Buffer.from(rgbaFrames[i]), {
+      raw: { width: apng.width, height: apng.height, channels: 4 },
+    })
+      .webp({ quality: 82, alphaQuality: 90, effort: 4 })
+      .toBuffer();
+
+    const frame = await WebPMux.Image.generateFrame({
+      buffer: webpBuf,
+      delay: delays[i] || 50,
+      blend: false,
+      dispose: true,
+    });
+    frames.push(frame);
   }
+
+  const outputBuffer = await WebPMux.Image.save(null, {
+    frames,
+    width: apng.width,
+    height: apng.height,
+    loops: 0,
+    bgColor: [0, 0, 0, 0],
+  });
+  await writeFile(target, outputBuffer);
 }
 
 function createEncoder(concurrency) {
@@ -156,7 +162,7 @@ function createEncoder(concurrency) {
 }
 
 export async function preparePublicWebp() {
-  await rm(outputDir, { recursive: true, force: true });
+  await rm(outputDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   const assetMap = {};
   // 所有目录共用一个编码队列，避免递归 Promise.all 同时耗尽原生线程。
   const encode = createEncoder(4);
