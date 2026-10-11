@@ -229,8 +229,12 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
     // 只对**非业务错误**打日志：`CCB_CHARACTER_NOT_FOUND` 这类是正常返回路径，
     // 打出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
     if (!(error instanceof AppError)) console.error("Bangumi data worker query failed", error);
+    // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
+    // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CCB 的 code。
+    const isSongRequest = request.method.startsWith("song.");
+    const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CCB_DATA_UNAVAILABLE";
     self.postMessage({ id: request.id, ok: false,
-      code: error instanceof AppError ? error.code : "CCB_DATA_UNAVAILABLE",
+      code,
       message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",
     } satisfies BangumiDataReply);
   }

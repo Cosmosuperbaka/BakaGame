@@ -54,9 +54,10 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const qq = new QQMusicProvider({ logger });
   const music = new AggregatedMusicProvider({ neteaseProvider: netease, qqProvider: qq, logger });
   const remote = new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl });
-  // 生产启用 Meilisearch 时必须保持本地索引的确定性排序；搜索服务故障应显式暴露，
-  // 不能静默切换到官方 API 的另一套召回和排序。未配置密钥的本地开发仍保留回源能力。
-  const bangumi = env.meilisearchKey ? local : new FallbackBangumiProvider({ local, remote, logger });
+  // 生产也保留回源兜底：Meilisearch / 本地数据集故障时，猜番至少还能靠官方 API 开局，
+  // 而不是整局卡死（10-11 生产事故：sort 字段未声明导致搜索 400，猜番完全无法开局）。
+  // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
+  const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi });
   const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
   const app = createApp({ ...options, bangumiImages: images, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {

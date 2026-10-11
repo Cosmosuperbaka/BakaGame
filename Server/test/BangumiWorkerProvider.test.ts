@@ -42,6 +42,21 @@ class DeferredWorker {
   terminate() {}
 }
 
+/** 假 Worker：所有查询按给定 code 失败，用来验证错误 code 原样透传给 Fallback。 */
+class FailingWorker {
+  static code = "BANGUMI_DATA_UNAVAILABLE";
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: unknown) => void) | null = null;
+  postMessage(message: unknown) {
+    const { id, method } = message as { id: number; method: string };
+    const reply = method === "song.searchSubjects"
+      ? { id, ok: false, code: FailingWorker.code, message: "本地 Bangumi 数据读取失败" }
+      : { id, ok: true, value: true };
+    queueMicrotask(() => this.onmessage?.({ data: reply } as MessageEvent));
+  }
+  terminate() {}
+}
+
 const withWorker = async <T>(Stub: new () => unknown, run: () => Promise<T>): Promise<T> => {
   const originalWorker = globalThis.Worker;
   globalThis.Worker = Stub as unknown as typeof Worker;
@@ -101,6 +116,19 @@ describe("BangumiWorkerProvider", () => {
       expect(worker.searches).toBe(1);
       expect(rows.length).toBe(1);
       expect(rows[0].id).toBe("7");
+      await client.close();
+    });
+  });
+
+  test("猜歌查询的 worker 错误 code 原样透传，供 FallbackBangumiProvider 识别降级", async () => {
+    // 生产事故回归：搜索服务（Meilisearch）故障时，worker 必须把猜歌请求的错误归一成
+    // BANGUMI_DATA_UNAVAILABLE —— FallbackBangumiProvider 只认这个 code 才会回源官方 API。
+    // 若被错记成 CCB_DATA_UNAVAILABLE（曾经的兜底分支写法），猜歌就永远无法降级。
+    await withWorker(FailingWorker, async () => {
+      const client = new BangumiDataWorkerClient();
+      const ready = client.init({ method: "init", song: { dbPath: "unused.sqlite" }, ccb: { dbPath: "unused.sqlite" } });
+      const provider = new BangumiWorkerProvider(client, ready);
+      await expect(provider.searchSubjects("关键词", 3)).rejects.toMatchObject({ code: "BANGUMI_DATA_UNAVAILABLE" });
       await client.close();
     });
   });
