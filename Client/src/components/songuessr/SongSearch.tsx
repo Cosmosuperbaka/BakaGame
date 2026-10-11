@@ -37,7 +37,7 @@ function SongRow({ song, guessed, badge }: { song: SongSearchResult; guessed?: b
       <QQMusicIcon className="size-4 shrink-0" />
     </span>
   ) : isNeteaseSong ? (
-    <span title="网易云" aria-label="网易云" className="inline-flex items-center text-rose-500">
+    <span title="网易云" aria-label="网易云" className="inline-flex items-center">
       <NeteaseCloudMusicIcon className="size-4 shrink-0" />
     </span>
   ) : null;
