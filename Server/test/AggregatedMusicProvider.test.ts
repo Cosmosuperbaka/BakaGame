@@ -1,6 +1,6 @@
 import { describe, expect, test, mock } from "bun:test";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
-import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import type { MusicProvider, MusicLoginSession, MusicQrLoginCheck } from "../src/infrastructure/NeteaseMusicProvider";
 import type { AggregatedSongSearchResult } from "../src/infrastructure/MusicDeduplicator";
 import type { SongDetails, SongPlaylistInfo, SongSearchResult } from "../src/shared/SonGuessr";
 
@@ -331,16 +331,16 @@ describe("AggregatedMusicProvider", () => {
   test("扫码登录按平台路由到对应 provider", async () => {
     const neteaseMock = createMockProvider("netease", {
       createQrLogin: mock(async () => ({ key: "ncm", qrUrl: "ncm://qr", qrImage: "ncm-img" })),
-      checkQrLogin: mock(async () => ({ status: "waiting", message: "ncm" })),
-      getLoginStatus: mock(async () => ({
+      checkQrLogin: mock(async (): Promise<MusicQrLoginCheck> => ({ status: "waiting", message: "ncm" })),
+      getLoginStatus: mock(async (): Promise<MusicLoginSession> => ({
         cookie: "ncm_cookie",
-        account: { platform: "netease", userId: "1", nickname: "NCM", vipStatus: "none" },
+        account: { platform: "netease", userId: "1", nickname: "NCM", vipStatus: "nonVip" },
       })),
     });
     const qqMock = createMockProvider("qq", {
       createQrLogin: mock(async () => ({ key: "qq", qrUrl: "qq://qr", qrImage: "qq-img" })),
-      checkQrLogin: mock(async () => ({ status: "authorized", message: "qq" })),
-      getLoginStatus: mock(async () => ({
+      checkQrLogin: mock(async (): Promise<MusicQrLoginCheck> => ({ status: "authorized", message: "qq" })),
+      getLoginStatus: mock(async (): Promise<MusicLoginSession> => ({
         cookie: "qq_cookie",
         account: { platform: "qq", userId: "2", nickname: "QQ", vipStatus: "vip" },
       })),
