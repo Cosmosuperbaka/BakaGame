@@ -45,10 +45,34 @@ export const stripHtmlTags = (val: unknown): string => {
   return val.replace(/<[^>]+>/g, "").trim();
 };
 
+/**
+ * 从 XML 包裹的 QRC 中剥出 `LyricContent` 属性值；已是裸格式则原样返回。
+ *
+ * 属性值里的 `\n` 是字面量转义（XML 属性不能含真实换行），需还原成真实换行，
+ * 否则所有行会被拼成一行。
+ *
+ * 注意用「提取属性值」而非「剔除标签」：剥离标签的正则会把开标签
+ * `<Lyric_1 [0,500]…` 与结尾 `/>` 之间的整段歌词一并吃掉（实测结果为空）。
+ */
+export const extractQrcPayload = (raw: string): string => {
+  const attr = /LyricContent="([\s\S]*?)"/.exec(raw);
+  const payload = attr ? attr[1] : raw;
+  return payload.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
+};
+
+/**
+ * 解析 QQ 音乐逐字歌词（QRC）。
+ *
+ * 上游有两种形态：裸 QRC 文本（`[行起,行长]字(起,长)...`），以及被
+ * `<QrcInfos><LyricInfo><Lyric_1 LyricContent="...">` 包裹的 XML（解密后的原始返回）。
+ * AMLL 的 `parseQrc` 只认裸格式，直接喂 XML 会得到空数组 —— 因此这里先剥出
+ * `LyricContent` 属性值，再交给 `parseQrc`，两种形态都能解析。
+ */
 export const parseQrcLyrics = (raw: string): SongLyricLine[] => {
   if (!raw || !raw.trim()) return [];
+  const normalized = extractQrcPayload(raw);
   try {
-    const amllLines = amllParseQrc(raw);
+    const amllLines = amllParseQrc(normalized);
     return amllLines
       .map((line) => {
         const text =
@@ -176,7 +200,9 @@ export class QQMusicProvider implements MusicProvider {
       const dataBody = body?.data?.body || body?.body || body?.data || body;
       const songItems = body?.songs || dataBody?.item_song || dataBody?.song?.list || [];
       const rawSongs = (Array.isArray(songItems) ? songItems : songItems?.items || []) as any[];
-      return rawSongs.map((item): SongSearchResult => {
+      // 先剔除无 mid 的脏项再映射：`buildSongUrn` 对空 id 抛异常，若不预过滤，
+      // 上游返回的任意一条缺 mid 记录都会让整次搜索失败（而非只丢那一条）。
+      return rawSongs.filter((item) => item && String(item.mid || item.songmid || "").trim()).map((item): SongSearchResult => {
         const mid = String(item.mid || item.songmid || "").trim();
         const rawTitle = String(item.title || item.name || item.songname || "").trim();
         const title = stripHtmlTags(rawTitle);
@@ -518,7 +544,7 @@ export class QQMusicProvider implements MusicProvider {
       const trackBody = trackRes.body as any;
       const rawSongs = (trackBody?.songs || detailBody?.songlist || []) as any[];
 
-      const songs: SongSearchResult[] = rawSongs.map((item): SongSearchResult => {
+      const songs: SongSearchResult[] = rawSongs.filter((item) => item && String(item.songmid || item.mid || "").trim()).map((item): SongSearchResult => {
         const mid = String(item.songmid || item.mid || "").trim();
         const rawTitle = String(item.songname || item.name || item.title || "").trim();
         const title = stripHtmlTags(rawTitle);
@@ -572,7 +598,7 @@ export class QQMusicProvider implements MusicProvider {
       const singerItems = dataBody?.singer || dataBody?.item_singer || [];
       const items = (Array.isArray(singerItems) ? singerItems : singerItems?.items || []) as any[];
 
-      return items.map((item): SongArtistSearchResult => {
+      return items.filter((item) => item && String(item.singerMID || item.mid || "").trim()).map((item): SongArtistSearchResult => {
         const singerMid = item.singerMID || item.mid || "";
         const singerId = Number(item.singerID || item.id);
         const avatarUrl = singerId
@@ -598,7 +624,7 @@ export class QQMusicProvider implements MusicProvider {
       const songsBody = songsRes.body as any;
       const rawSongs = (songsBody?.songs || songsBody?.data?.songList || []) as any[];
 
-      return rawSongs.map((item): SongSearchResult => {
+      return rawSongs.filter((item) => item && String(item.songInfo?.mid || item.mid || "").trim()).map((item): SongSearchResult => {
         const songMid = String(item.songInfo?.mid || item.mid || "").trim();
         const rawTitle = String(item.songInfo?.name || item.songInfo?.title || item.name || "").trim();
         const title = stripHtmlTags(rawTitle);
@@ -639,7 +665,7 @@ export class QQMusicProvider implements MusicProvider {
       const albumItems = dataBody?.item_album || dataBody?.album || [];
       const items = (Array.isArray(albumItems) ? albumItems : albumItems?.items || []) as any[];
 
-      return items.map((item): SongAlbumSearchResult => {
+      return items.filter((item) => item && String(item.albumMID || item.mid || "").trim()).map((item): SongAlbumSearchResult => {
         const albumMid = item.albumMID || item.mid || "";
         const albumId = Number(item.albumID || item.id);
         const pictureUrl = albumId

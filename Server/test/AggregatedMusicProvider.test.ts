@@ -241,4 +241,116 @@ describe("AggregatedMusicProvider", () => {
     await agg.getAlbumSongs("qq:30", aggregatedCookie);
     expect(qqMock.getAlbumSongs).toHaveBeenCalledWith("30", "qc_cookie_456");
   });
+
+  test("getSong 主平台失败时按歌名+歌手跨平台 Failover", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async () => {
+        throw new Error("netease song unavailable");
+      }),
+      getSongMetadata: mock(async () => ({
+        id: "netease:1001",
+        title: "反方向的钟",
+        artist: "周杰伦",
+        album: "范特西",
+        durationMs: 258000,
+        lyrics: [],
+        audioUrl: "",
+        encyclopedia: { tags: [] },
+      })),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:hit", title: "反方向的钟", artist: "周杰伦", durationMs: 258500 },
+      ]),
+      getSong: mock(async (id: string) => ({
+        id: `qq:${id}`,
+        title: "反方向的钟",
+        artist: "周杰伦",
+        album: "范特西",
+        durationMs: 258500,
+        lyrics: [],
+        audioUrl: "https://cdn.example/qq-failover.mp3",
+        encyclopedia: { tags: [] },
+      })),
+    });
+
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const song = await agg.getSong("netease:1001");
+    expect(song.audioUrl).toBe("https://cdn.example/qq-failover.mp3");
+    expect(qqMock.search).toHaveBeenCalled();
+  });
+
+  test("getSong 主平台失败且备选平台也取不到时抛原错误", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async () => {
+        throw new Error("primary down");
+      }),
+      getSongMetadata: mock(async () => ({
+        id: "netease:1001",
+        title: "无人知",
+        artist: "无名",
+        album: "",
+        durationMs: 100000,
+        lyrics: [],
+        audioUrl: "",
+        encyclopedia: { tags: [] },
+      })),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => []),
+    });
+
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    await expect(agg.getSong("netease:1001")).rejects.toThrow("primary down");
+  });
+
+  test("refreshSongAudio 优先直连 provider 的刷新能力，并按平台路由", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      refreshSongAudio: mock(async () => "https://cdn.example/ncm-refresh.mp3"),
+    });
+    const qqMock = createMockProvider("qq", {
+      refreshSongAudio: mock(async () => "https://cdn.example/qq-refresh.mp3"),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    expect(await agg.refreshSongAudio("netease:1")).toBe("https://cdn.example/ncm-refresh.mp3");
+    expect(await agg.refreshSongAudio("qq:2")).toBe("https://cdn.example/qq-refresh.mp3");
+  });
+
+  test("searchAmllTtmlLyrics 先问网易、为空再问 QQ", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      searchAmllTtmlLyrics: mock(async () => undefined),
+    });
+    const qqMock = createMockProvider("qq", {
+      searchAmllTtmlLyrics: mock(async () => "<tt>qq 歌词</tt>"),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    expect(await agg.searchAmllTtmlLyrics("歌名", "歌手")).toBe("<tt>qq 歌词</tt>");
+  });
+
+  test("扫码登录按平台路由到对应 provider", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      createQrLogin: mock(async () => ({ key: "ncm", qrUrl: "ncm://qr", qrImage: "ncm-img" })),
+      checkQrLogin: mock(async () => ({ status: "waiting", message: "ncm" })),
+      getLoginStatus: mock(async () => ({
+        cookie: "ncm_cookie",
+        account: { platform: "netease", userId: "1", nickname: "NCM", vipStatus: "none" },
+      })),
+    });
+    const qqMock = createMockProvider("qq", {
+      createQrLogin: mock(async () => ({ key: "qq", qrUrl: "qq://qr", qrImage: "qq-img" })),
+      checkQrLogin: mock(async () => ({ status: "authorized", message: "qq" })),
+      getLoginStatus: mock(async () => ({
+        cookie: "qq_cookie",
+        account: { platform: "qq", userId: "2", nickname: "QQ", vipStatus: "vip" },
+      })),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    expect((await agg.createQrLogin("qq", "qq")).key).toBe("qq");
+    expect((await agg.createQrLogin("netease")).key).toBe("ncm");
+    expect((await agg.checkQrLogin("k", "qq")).status).toBe("authorized");
+    expect((await agg.getLoginStatus("c", "qq")).account.nickname).toBe("QQ");
+    expect((await agg.getLoginStatus("c", "netease")).account.nickname).toBe("NCM");
+  });
 });
