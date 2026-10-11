@@ -280,9 +280,8 @@ export const SonGuessrMessageSchemas = {
     "song.game.submitSong",
     t.Object(
       {
-        // 限定字符集：任意 64 字符都会被当成歌曲 ID 打到网易云并成为缓存键，
-        // 反过来污染缓存。歌曲 ID 只可能是数字，这里放宽到常见 ID 形态以保持兼容。
-        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+        // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
+        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" }),
       },
       { additionalProperties: false },
     ),
@@ -292,7 +291,7 @@ export const SonGuessrMessageSchemas = {
     t.Object(
       {
         subjectId: t.String({ minLength: 1, maxLength: 32 }),
-        songId: t.Optional(t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" })),
+        songId: t.Optional(t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" })),
       },
       { additionalProperties: false },
     ),
@@ -317,9 +316,8 @@ export const SonGuessrMessageSchemas = {
     "song.game.guess",
     t.Object(
       {
-        // 限定字符集：任意 64 字符都会被当成歌曲 ID 打到网易云并成为缓存键，
-        // 反过来污染缓存。歌曲 ID 只可能是数字，这里放宽到常见 ID 形态以保持兼容。
-        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+        // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
+        songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" }),
       },
       { additionalProperties: false },
     ),

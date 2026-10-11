@@ -281,3 +281,56 @@ test("局部自动筛选输入和完整房间状态拥有不同契约", async ()
   expect(Value.Check(SongAutoFiltersSchema, partial)).toBe(false);
   expect(parseSonGuessrMessage({ id: "filters", type: "song.room.updateSettings", payload: { autoFilters: partial } })).toMatchObject({ payload: { autoFilters: partial } });
 });
+
+test("SonGuessr 协议正确放行网易云与 QQ 音乐统一 URN 歌曲 ID (含冒号)", () => {
+  // 1. song.game.submitSong
+  expect(parseSonGuessrMessage({
+    id: "submit-netease",
+    type: "song.game.submitSong",
+    roomId: "1234",
+    payload: { songId: "netease:1899705498" },
+  })).toMatchObject({
+    type: "song.game.submitSong",
+    payload: { songId: "netease:1899705498" },
+  });
+
+  expect(parseSonGuessrMessage({
+    id: "submit-qq",
+    type: "song.game.submitSong",
+    roomId: "1234",
+    payload: { songId: "qq:0017K7gL4WYnw2" },
+  })).toMatchObject({
+    type: "song.game.submitSong",
+    payload: { songId: "qq:0017K7gL4WYnw2" },
+  });
+
+  // 2. song.game.guess
+  expect(parseSonGuessrMessage({
+    id: "guess-qq",
+    type: "song.game.guess",
+    roomId: "1234",
+    payload: { songId: "qq:0017K7gL4WYnw2" },
+  })).toMatchObject({
+    type: "song.game.guess",
+    payload: { songId: "qq:0017K7gL4WYnw2" },
+  });
+
+  // 3. song.game.submitAnime (带 URN)
+  expect(parseSonGuessrMessage({
+    id: "anime-urn",
+    type: "song.game.submitAnime",
+    roomId: "1234",
+    payload: { subjectId: "10380", songId: "netease:1899705498" },
+  })).toMatchObject({
+    type: "song.game.submitAnime",
+    payload: { subjectId: "10380", songId: "netease:1899705498" },
+  });
+
+  // 4. 拒绝包含特殊字符或超长的非法 ID
+  expect(() => parseSonGuessrMessage({
+    id: "dirty-song-id",
+    type: "song.game.submitSong",
+    payload: { songId: "qq:001<script>" },
+  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+

@@ -18,7 +18,7 @@
         "lru-cache": "^11.5.3",
         "meilisearch": "0.62.0",
         "p-queue": "^9.3.3",
-        "qqmusic-api-enhanced": "^1.0.4",
+        "qqmusic-api-enhanced": "^1.0.5",
         "sharp": "^0.35.4",
         "socket.io-client": "^4.8.3",
       },
@@ -553,7 +553,7 @@
 
     "punycode": ["punycode@2.3.1", "", {}, "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg=="],
 
-    "qqmusic-api-enhanced": ["qqmusic-api-enhanced@1.0.4", "", { "dependencies": { "mqtt": "^5.16.0", "ws": "^8.22.0" } }, "sha512-3H7ALnN0DsAVmqKgIlizBmovcDAv85bgxe60pG6rrFM2RfyWuvlLzPnPCB0olFpGgunQaT0xpoBRARD34YGaFg=="],
+    "qqmusic-api-enhanced": ["qqmusic-api-enhanced@1.0.5", "", { "dependencies": { "mqtt": "^5.16.0", "ws": "^8.22.0" } }, "sha512-l+gaC0bWC6X1hzQ458as2MRPSJZt2PglZ7UI/zjKoANcieXcqfuGN27uu7v4nWHhsQ2jWMfMEsqtcNxR6PE6VA=="],
 
     "qrcode": ["qrcode@1.5.4", "", { "dependencies": { "dijkstrajs": "^1.0.1", "pngjs": "^5.0.0", "yargs": "^15.3.1" }, "bin": { "qrcode": "bin/qrcode" } }, "sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg=="],
 
