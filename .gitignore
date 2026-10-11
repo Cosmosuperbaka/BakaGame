@@ -73,6 +73,7 @@ Server/data/*.sqlite
 # tools/build_bangumi_images.py 重跑（支持断点续传）。
 Server/data/images/
 Server/data/*.sqlite.backup
+Server/data/*.sqlite.backup-journal
 Server/data/tag-diff-state.json
 
 # 本地构建工具不进 Git。数据集只在首次部署时构建一次（本地跑），之后由后端
