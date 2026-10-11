@@ -82,7 +82,14 @@ export const CHARACTER_RANKING_RULES = [
  * **`nsfw` 已去掉**：匿名请求拿不到 nsfw 条目，数据里不存在，留着只是多一个高基数 facet。
  */
 export const SUBJECT_FILTERABLE = ["tag", "meta_tag", "date", "score", "rating_count", "rank", "type"];
-export const SUBJECT_SORTABLE = ["date", "score", "rating_count", "heat", "rank"];
+/**
+ * 可排序字段。**`id` 必须在列**：无关键词出题时的 sort 用 `id:asc` 做最终稳定
+ * 兜底（同 heat/rank/score 时保证结果确定），而 Meilisearch 的 sort 字段必须
+ * 显式声明为 sortable，否则整个查询被 400 拒绝（`invalid_search_sort`）。
+ * `id` 也是 rankingRules 里 `id:asc` 的引用字段 —— 那里引用未声明的字段不会报错，
+ * 但查询侧 sort 会，两者语义不同，故 id 只在 sortable 里补，不进 rankingRules 之外。
+ */
+export const SUBJECT_SORTABLE = ["id", "date", "score", "rating_count", "heat", "rank"];
 export const SUBJECT_SEARCHABLE = ["name", "aliases"];
 /** 角色索引：官方 filterable 只有 nsfw，去掉后为空。 */
 export const CHARACTER_FILTERABLE: string[] = [];

@@ -9,6 +9,7 @@ import {
   CHARACTER_RANKING_RULES,
   SUBJECT_FILTERABLE,
   SUBJECT_RANKING_RULES,
+  SUBJECT_SORTABLE,
 } from "../src/infrastructure/BangumiSearchIndex";
 
 /** 只记录 search 调用的假 client；这些用例不触发 init，不需要其余索引方法。 */
@@ -90,6 +91,21 @@ describe("统一搜索索引契约", () => {
       "exactness", "words", "typo", "proximity", "attribute", "sort", "id:asc", "rank:asc", "score:desc",
     ]);
     expect(SUBJECT_FILTERABLE).toEqual(["tag", "meta_tag", "date", "score", "rating_count", "rank", "type"]);
+  });
+
+  test("查询侧 sort 用到的字段必须全部声明为 sortable，否则 Meilisearch 400 拒绝", async () => {
+    // 生产事故回归：无关键词出题时 sort 带 `id:asc` 稳定兜底，但 id 不在 sortable 里，
+    // Meilisearch 直接以 `invalid_search_sort` 400 拒绝整个搜索，猜番无法开局。
+    // 假 client 不校验 sortable，所以这里显式断言「sort 字段 ⊆ sortable」这条契约。
+    const { client, requests } = createClient();
+    const search = new BangumiSearchIndex({ client });
+
+    await search.searchSubjects({ keyword: "", limit: 50, types: [2], sortByHeat: true });
+    const sort = (requests[0].options as { sort?: string[] }).sort ?? [];
+    const sortKeys = sort.map((clause) => clause.split(":")[0]);
+    expect(sortKeys.length).toBeGreaterThan(0);
+    for (const key of sortKeys) expect(SUBJECT_SORTABLE).toContain(key);
+    expect(SUBJECT_SORTABLE).toContain("id");
   });
 
   test("作品文档的 tag 取标签名数组（官方口径），不是 raw_tags 的票数对象", async () => {
