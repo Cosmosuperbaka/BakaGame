@@ -99,8 +99,8 @@ npx playwright test e2e/App.spec.ts
 
 ## 依赖与浏览器
 
-- 服务端只使用 `Server/bun.lock`，安装时运行 `bun install --frozen-lockfile`。
-- 客户端只使用 `Client/package-lock.json`，安装时运行 `npm ci`。
+- 依赖安装只有一个入口：仓库根的 `pnpm install`（CI 用 `pnpm install --frozen-lockfile`），锁文件权威是根级 `pnpm-lock.yaml`。`Client/package-lock.json` 与 `Server/bun.lock` 已删除，不要再引入。
+- 安装会把依赖提升到根 `node_modules/`；**Server 下没有 `Server/node_modules`**。依赖包内附带的数据文件必须用模块解析定位，不得写死 `Server/node_modules` 路径（见 [Conventions §4](Conventions.md#依赖路径不得写死-servernode_modules)）。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
 - 常规 Playwright 自动启动服务端与生产 `vite preview`：后端探活 `http://127.0.0.1:4850/health`，前端探活 `http://127.0.0.1:5173`，页面基址 `http://127.0.0.1:5173`。单独运行 Playwright 前先构建；`test:e2e` 已包含 build。歌词套件另用 Vite 5177。
@@ -157,14 +157,14 @@ npx playwright test e2e/App.spec.ts
 ## CI 推荐顺序
 
 ```bash
-cd Server
-bun install --frozen-lockfile
-bun run verify
+# 仓库根：安装由 pnpm 统一完成（锁文件 = pnpm-lock.yaml）
+pnpm install --frozen-lockfile
 
-cd ../Client
-npm ci
-npx playwright install --with-deps chromium
-npm run verify
+# Server：pnpm 只转发，运行时仍是 Bun
+pnpm --filter server verify          # = server check + test:coverage
+
+# Client：Node 工具链
+pnpm --filter client verify          # = lint + test:coverage + build + test:e2e
 ```
 
 服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 当前依次执行 ESLint、Vitest 覆盖率、build、`test:e2e`（内部再次 build，再运行 Playwright 与歌词回归）。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。

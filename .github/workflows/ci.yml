@@ -59,21 +59,21 @@ jobs:
       # Server 测试全部使用隔离夹具（见 test/ 的 *Fixtures），不读 Server/data，
       # 因此不再下载数据集 —— 它只服务 E2E（下方 e2e 作业）与生产首启的基线补发。
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      # Server 是 workspace 成员（包名 server），依赖由根级 pnpm-lock.yaml 单点锁定；
+      # 安装用 pnpm，运行时仍是 Bun —— 根级 pnpm 不会替换 `bun test` 与 Bun 原生 API。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
-      - name: Install server dependencies
-        working-directory: Server
-        run: bun install --frozen-lockfile
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Type check server
-        working-directory: Server
-        run: bun run check
+        run: pnpm --filter server check
 
       - name: Run server tests with coverage
-        working-directory: Server
-        run: bun run test:coverage
+        run: pnpm --filter server test:coverage
 
+      # 冒烟脚本直接用 Bun 起进程（脚本内 spawn 的是 bun），保持原样。
       - name: Smoke test production server
         working-directory: Server
         run: bun --no-env-file run scripts/ProductionSmoke.ts
@@ -95,32 +95,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # jsdom 30.1.1 的 engines 为 ^22.22.2 || ^24.15.0 || >=26.0.0，
+      # 用 pnpm 安装时 engines 不满足会硬失败，Node 必须 ≥22.22.2。
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: Client/package-lock.json
+          cache: pnpm
 
-      - name: Install client dependencies
-        working-directory: Client
-        run: npm ci
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Verify CI path filter fixtures
         working-directory: Client
         run: node --test ../Server/scripts/ClientCiFilter.mjs
 
       - name: Lint client
-        working-directory: Client
-        run: npm run lint
+        run: pnpm --filter client lint
 
       - name: Run client tests with coverage
-        working-directory: Client
-        run: npm run test:coverage
+        run: pnpm --filter client test:coverage
 
       - name: Build client
-        working-directory: Client
-        run: npm run build
+        run: pnpm --filter client build
 
       - name: Smoke test production assets
         working-directory: Client
@@ -128,8 +128,7 @@ jobs:
 
       # 组件截图工具的构建冒烟：故事随组件改动失效时在 CI 暴露。
       - name: Build Storybook
-        working-directory: Client
-        run: npm run build-storybook
+        run: pnpm --filter client build-storybook
 
       - name: Upload client coverage
         uses: actions/upload-artifact@v4
@@ -173,31 +172,27 @@ jobs:
         env:
           BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: Client/package-lock.json
+          cache: pnpm
 
-      - name: Install server dependencies
-        working-directory: Server
-        run: bun install --frozen-lockfile
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
-      - name: Install client dependencies
-        working-directory: Client
-        run: npm ci
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
         working-directory: Client
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
-        working-directory: Client
-        run: npm run test:e2e
+        run: pnpm --filter client test:e2e
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

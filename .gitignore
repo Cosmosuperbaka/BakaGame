@@ -17,11 +17,11 @@ lerna-debug.log*
 node_modules
 /.pnp
 .pnp.js
+# 锁文件权威关系（详见 Agents/Conventions.md §4）：
+#   唯一权威 = 根级 pnpm-lock.yaml（workspace 安装锁，进 Git）
+#   package-lock.json / bun.lock 为历史残留，一律不保留、不进 Git
 package-lock.json
-!Client/package-lock.json
 bun.lock
-!Server/bun.lock
-pnpm-lock.yaml
 
 # Build outputs
 dist

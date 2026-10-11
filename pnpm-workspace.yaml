@@ -1,0 +1,11 @@
+# 根级 pnpm workspace 成员。Server 与 Client 是仅有的两个真实包；
+# apps/* 与 packages/* 预留给未来的可执行应用与可发布共享包，当前不存在对应目录，
+# pnpm 会忽略不匹配任何 package.json 的 glob（不报错）。
+#
+# 安装期行为（node-linker、postinstall 放行）在根 .npmrc，改动前先读那里的注释。
+
+packages:
+  - 'Client'
+  - 'Server'
+  - 'apps/*'
+  - 'packages/*'

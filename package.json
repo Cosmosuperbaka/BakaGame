@@ -1,0 +1,30 @@
+{
+  "name": "bakagame",
+  "private": true,
+  "//": "pnpm 只做安装与编排：Server 仍由 Bun 运行（bun run / bun test / Bun 原生 API），Client 仍由 Node + Vite 运行。两条脚本链互不代跑，禁止用根脚本把某一端的运行时换成另一端的。",
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream dev",
+    "dev:client": "pnpm --filter client dev",
+    "dev:server": "pnpm --filter server dev",
+    "start:server": "pnpm --filter server start",
+    "build": "pnpm --filter server check && pnpm --filter client build",
+    "build:client": "pnpm --filter client build",
+    "build:storybook": "pnpm --filter client build-storybook",
+    "check": "pnpm -r check",
+    "check:client": "pnpm --filter client check",
+    "check:server": "pnpm --filter server check",
+    "test": "pnpm --filter server test && pnpm --filter client test",
+    "test:server": "pnpm --filter server test",
+    "test:client": "pnpm --filter client test",
+    "lint": "pnpm --filter client lint",
+    "coverage": "pnpm --filter server test:coverage && pnpm --filter client test:coverage",
+    "e2e": "pnpm --filter client test:e2e",
+    "verify": "pnpm --filter server verify && pnpm --filter client verify"
+  }
+}

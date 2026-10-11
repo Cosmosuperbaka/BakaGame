@@ -63,12 +63,29 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 
 ## 4. 工作区架构与运行环境 (Workspace Structure & Runtime)
 
-本项目由两个完全独立的包组成，**没有根目录级的 package.json 或共享脚本**：
+本项目是一个**根级 pnpm workspace**：根目录有 `package.json` 与 `pnpm-workspace.yaml`，`Client/` 与 `Server/` 是两个成员包。**pnpm 只做依赖安装与任务编排，不替换任一端的运行时**：
 
-| 包名 | 运行时 / 包管理器 | 源码目录 | 默认端口 |
-|---|---|---|---|
-| `bakagame-server` | Bun (`bun:test`, `Bun.env`, `Bun.sleep`) | `Server/` | `4850` |
-| `whoisfaker-client` | Node / npm (Vite, React 19, Vitest) | `Client/` | `5173` |
+| 包名 | 目录 | 运行时 / 包管理器 | 源码目录 | 默认端口 |
+|---|---|---|---|---|
+| `server` | `Server/` | **Bun**（`bun run`、`bun:test`、`Bun.env`、`Bun.sleep`、`Bun.spawn`） | `Server/` | `4850` |
+| `client` | `Client/` | **Node / Vite**（React 19、Vitest、Playwright） | `Client/` | `5173` |
+
+### 脚本边界（必须维持）
+
+- **Server 一律由 Bun 执行**：`Server/package.json` 的每个脚本都以 `bun` 开头，`pnpm --filter server <script>` 只是把这条命令转发出去；根级脚本不得把 Server 的目标换成 node/tsx。
+- **Client 一律由 Node 执行**：Vite/Vitest/Playwright 及 `Client/scripts/*.mjs` 都走 Node，根级脚本不得改用 Bun 跑。
+- 根目录的 `dev` / `build` / `check` / `test` / `lint` / `coverage` / `e2e` / `verify` 是**编排壳**，内部一律 `pnpm --filter <client|server> <script>`，逐个转发到上面两条链，不合并签名、不代跑。
+
+### 依赖安装与锁文件权威关系
+
+- **唯一权威锁文件 = 根级 `pnpm-lock.yaml`**，由 `pnpm install --frozen-lockfile` 消费（CI 与本机一致）。
+- **不再保留 `package-lock.json` 与 `bun.lock`**：两者都会在 CI 里制造「装的是哪份锁」的歧义，且 workspace 下 npm/bun 已不再负责安装。历史上 `Client/package-lock.json` 与 `Server/bun.lock` 已删除，`.gitignore` 一并忽略两者。
+- 根级 `.npmrc` 的两条设置是运行前提，改动前先读文件内注释：`node-linker=hoisted`（避免软链破坏 Server 的容器 bind-mount 与单文件打包）与 `enable-pre-post-scripts=true`（放行 `bun`/`esbuild` 的 postinstall，否则 Server 的 `bun <script>` 会命中上游预置的「postinstall 未运行」占位脚本）。
+- 依赖版本约束（如 `typescript` 5.9.x、AMLL 0.5.2、`jsdom` 30 的 Node 下限、`@neteasecloudmusicapienhanced/api` ≥ 4.41.0）仍然是升级门禁，见下方「依赖版本约束」。
+
+### 依赖路径不得写死 `Server/node_modules`
+
+workspace 会把依赖提升到**仓库根** `node_modules/`，Server 下通常**不存在** `Server/node_modules`。因此运行期读取依赖包内附带数据文件时，**必须走 Node 模块解析**（`createRequire(import.meta.url).resolve("<pkg>/package.json")` 再取同级文件），不得写死 `../../node_modules/...` —— 写死路径会静默拿到空内容并退化成兜底行为（`NeteaseMusicProvider` 的 CN IP 段即此坑）。独立安装（无 workspace）时同一写法仍命中 `Server/node_modules`。
 
 ### 共享协议与契约映射机制 (`@bakagame/shared`)
 - **单一真相源位置**：全库的共享定义统一位于 `Server/src/shared/`（平台 `Model.ts`、`Protocol.ts` 与各游戏契约），两端共用同一份代码实体。
@@ -102,7 +119,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 |---|---|---|
 | `typescript` | 两端均 5.9.x | 已核对版本的 `typescript-eslint`（含 `canary`）peer 上限为 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
 | `@applemusic-like-lyrics/core` / `react` | 0.5.2 | `0.6.0` 上游把 `vitest ^4.1.10` 误写进 `dependencies`（0.5.2 是干净的，写在 `devDependencies`），且 registry 上没有修复版本。升级会让测试框架进入生产依赖树，而 `0.6.0` 的导出面与 `0.5.2` 逐符号比对完全一致、零功能收益。 |
-| `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；若 CI 的 Node 降到 22.22.2 以下，`npm ci` 会失败。 |
+| `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；`pnpm install` 在 engines 不满足时硬失败，因此 CI 的 Node 不得降到 22.22.2 以下（根 `package.json` 的 `engines.node` 同口径声明）。 |
 | `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
 | `@neteasecloudmusicapienhanced/api` | ≥ 4.41.0 | 设备名上报依赖该包的原生 `deviceinfo_center_upload` 模块，`4.40.x` 及更早没有它。低于此版本只能退回「直接导入包内 `util/request`/`util/option` 自拼 EAPI」，违反 [NeteaseMusicApi](NeteaseMusicApi.md) 的「只用公开接口」规则，因此下限不可回退。 |
 
@@ -117,7 +134,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
   `/health` 就绪 12.1s，热缓存仅 0.94s（1.3.x 冷启动 2.45s）。`ProductionSmoke.ts` 的探活
   超时是 15s 且 spawn 的 `stdout/stderr` 全为 `ignore`（崩溃时看不到任何日志），
   所以换 bun 后第一次跑冒烟可能假红——**先重跑一次再判断**。
-- `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿 10 分钟以上且零输出（连日志 mtime 都停住）；同一状态加 `--verbose` 后实测 1 秒内跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。
+- `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿 10 分钟以上且零输出（连日志 mtime 都停住）；同一状态加 `--verbose` 后实测 1 秒内跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。本仓库日常安装走根级 `pnpm install`，此条只在独立调试 `bun install` 时适用。
 - 升级前在受影响包运行基线，升级后用同一组检查比较；共享工具链或跨端契约升级覆盖两端。具体范围见 [Testing](Testing.md#验证范围)。
 - 预检优于装完再测：把新旧 tarball 解到 `.workbuddy/tmp/` 直接比 `.d.mts` 导出面与 `dependencies` 字段，可在不触碰 `node_modules` 的前提下否掉一次升级（AMLL 0.6.0 即如此否掉）。注意过滤 `.d.ts` 会漏掉 `.d.mts`/`.d.cts`。
 
@@ -125,7 +142,22 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 
 ## 5. 开发与构建命令
 
-命令定义以 [Server/package.json](../Server/package.json) 和 [Client/package.json](../Client/package.json) 为准，在对应目录执行：
+命令定义以根级 [package.json](../package.json)、[Server/package.json](../Server/package.json) 和 [Client/package.json](../Client/package.json) 为准。
+
+**推荐在仓库根用 workspace 编排**（内部即转发到各包脚本）：
+
+| 目的 | 根级命令 | 等价单包命令 |
+|---|---|---|
+| 装依赖 | `pnpm install` | ——（根级唯一入口） |
+| 起全部开发服务 | `pnpm dev` | `pnpm --filter server dev` + `pnpm --filter client dev` |
+| 仅起一端 | `pnpm dev:server` / `pnpm dev:client` | `bun run dev` / `npm run dev` |
+| 类型检查 | `pnpm check` | `pnpm --filter server check` / `pnpm --filter client check` |
+| 构建 | `pnpm build`（先 server check 再 client build） | `pnpm --filter client build` |
+| 测试 | `pnpm test` | `pnpm --filter server test` / `pnpm --filter client test` |
+| 覆盖率 | `pnpm coverage` | 各包 `test:coverage` |
+| Lint | `pnpm lint` | `pnpm --filter client lint` |
+
+**也可以直接进入单包目录按原方式执行**（迁移期兼容，行为不变）：
 
 | 包 | 开发 | 生产运行或预览 | 类型与构建 |
 |---|---|---|---|
