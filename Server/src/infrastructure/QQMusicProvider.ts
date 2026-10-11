@@ -162,7 +162,9 @@ export class QQMusicProvider implements MusicProvider {
       });
 
       const body = res.body as any;
-      const rawSongs = (body?.songs || body?.data?.body?.item_song?.items || []) as any[];
+      const dataBody = body?.data?.body || body?.body || body?.data || body;
+      const songItems = body?.songs || dataBody?.item_song || dataBody?.song?.list || [];
+      const rawSongs = (Array.isArray(songItems) ? songItems : songItems?.items || []) as any[];
       return rawSongs.map((item): SongSearchResult => {
         const mid = String(item.mid || item.songmid || "").trim();
         const title = String(item.title || item.name || item.songname || "").trim();
@@ -549,7 +551,10 @@ export class QQMusicProvider implements MusicProvider {
 
     const res = await this.queue.add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 1, limit, cookie });
-      const items = (searchRes.body?.data?.body?.singer?.items || []) as any[];
+      const searchResBody = searchRes.body as any;
+      const dataBody = searchResBody?.data?.body || searchResBody?.body || searchResBody?.data || searchResBody;
+      const singerItems = dataBody?.singer || dataBody?.item_singer || [];
+      const items = (Array.isArray(singerItems) ? singerItems : singerItems?.items || []) as any[];
 
       return items.map((item): SongArtistSearchResult => {
         const singerMid = item.singerMID || item.mid || "";
@@ -611,7 +616,10 @@ export class QQMusicProvider implements MusicProvider {
 
     const res = await this.queue.add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 2, limit, cookie });
-      const items = (searchRes.body?.data?.body?.item_album?.items || []) as any[];
+      const searchResBody = searchRes.body as any;
+      const dataBody = searchResBody?.data?.body || searchResBody?.body || searchResBody?.data || searchResBody;
+      const albumItems = dataBody?.item_album || dataBody?.album || [];
+      const items = (Array.isArray(albumItems) ? albumItems : albumItems?.items || []) as any[];
 
       return items.map((item): SongAlbumSearchResult => {
         const albumMid = item.albumMID || item.mid || "";

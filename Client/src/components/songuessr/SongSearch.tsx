@@ -8,6 +8,7 @@ import { LazyImage } from "@/components/common/LazyImage";
 import { Badge } from "@/components/ui/Badge";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
+import { NeteaseCloudMusicIcon, QQMusicIcon } from "./SongAccountSettings";
 
 const messageOf = (error: unknown, fallback: string) => (error as { message?: string } | null)?.message ?? fallback;
 // 自动搜索要求稳定的错误文案函数：写在模块级，不随渲染重建。
@@ -31,14 +32,14 @@ const songDetail = (song: SongSearchResult) => [song.artist, song.album].filter(
 function SongRow({ song, guessed, badge }: { song: SongSearchResult; guessed?: boolean; badge?: string }) {
   const isQqSong = song.id.startsWith("qq:");
   const isNeteaseSong = song.id.startsWith("netease:");
-  const platformBadge = isQqSong ? (
-    <Badge variant="outline" size="xs" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
-      QQ音乐
-    </Badge>
+  const platformLogo = isQqSong ? (
+    <span title="QQ音乐" aria-label="QQ音乐" className="inline-flex items-center">
+      <QQMusicIcon className="size-4 shrink-0" />
+    </span>
   ) : isNeteaseSong ? (
-    <Badge variant="outline" size="xs" className="border-rose-500/40 text-rose-600 dark:text-rose-400">
-      网易云
-    </Badge>
+    <span title="网易云" aria-label="网易云" className="inline-flex items-center text-rose-500">
+      <NeteaseCloudMusicIcon className="size-4 shrink-0" />
+    </span>
   ) : null;
 
   return (
@@ -47,11 +48,10 @@ function SongRow({ song, guessed, badge }: { song: SongSearchResult; guessed?: b
       title={song.title}
       subtitle={songDetail(song) || undefined}
       trailing={guessed ? "已猜过" : (
-        platformBadge || badge || song.requiresVip ? (
-          <span className="flex items-center gap-1">
-            {platformBadge}
+        platformLogo || badge ? (
+          <span className="flex items-center gap-1.5">
+            {platformLogo}
             {badge ? <Badge variant="outline" size="xs">{badge}</Badge> : null}
-            {song.requiresVip ? <Badge variant="restricted" size="xs">会员专享</Badge> : null}
           </span>
         ) : undefined
       )}
