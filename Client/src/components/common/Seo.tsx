@@ -44,7 +44,7 @@ export function Seo({ path, description, image, keywords, indexable = true, stru
   }
 
   const canonical = `${SITE_ORIGIN}${path}`;
-  const resolvedImage = image ?? meta?.image ?? `${SITE_ORIGIN}/assets/logo.webp`;
+  const resolvedImage = image ?? meta?.image ?? `${SITE_ORIGIN}/og/logo.jpg`;
   const resolvedKeywords = keywords ?? meta?.keywords;
   const resolvedStructuredData = structuredData ?? meta?.structuredData;
   const structuredDataJson = resolvedStructuredData ? JSON.stringify(resolvedStructuredData) : null;

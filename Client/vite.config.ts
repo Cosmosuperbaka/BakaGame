@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { execSync } from 'child_process'
 import fs from 'fs'
+import sharp from 'sharp'
 import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
 import { PAGE_META, REPOSITORY_URL, SITE_NAME, SITE_ORIGIN } from './src/data/PageMeta.ts'
 import {
@@ -414,7 +415,7 @@ function staticShellPlugin() {
       const pages = PAGE_META.map((meta) => {
         const canonical = `${SITE_ORIGIN}${meta.path}`
         const description = escapeHtml(meta.description)
-        const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/assets/logo.webp`)
+        const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`)
         const head = [
           `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           ...(meta.keywords && meta.keywords.length > 0
@@ -480,6 +481,123 @@ function staticShellPlugin() {
   }
 }
 
+// ==================== Vite 插件：SEO 产物生成（站点地图与分享图） ====================
+// 两个产物、同一个来源：PageMeta。
+//
+// 站点地图曾手写在 public/sitemap.xml：新增可收录页面靠人记得同步，漏改没有任何报错，
+// 而缺页只会让搜索引擎更晚发现新内容——静默漂移。改为构建末尾按 PAGE_META 生成，
+// URL 集合回到单一真相源；lastmod 由各页在文案显著变更时手动维护，不随构建刷新
+// （每次构建都变的 lastmod 会被搜索引擎判定不可信，进而整体忽略）。
+//
+// 分享图：全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图。
+// 这里为 PageMeta.image 指向的每张站内分享图转制一份 jpg（/og/<名>.jpg，源图为
+// public/assets 下的同名文件，png / jpg / gif / webp 均可；gif 取第一帧）。
+// 外链分享图原样放行，不转制。
+
+const OG_IMAGE_ROUTE = '/og/'
+const OG_SOURCE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
+
+function seoArtifactsPlugin() {
+  return {
+    name: 'seo-artifacts',
+    apply: 'build' as const,
+    async closeBundle() {
+      const distDir = path.resolve(import.meta.dirname, 'dist')
+
+      // ---- 站点地图 ----
+      const seenPaths = new Set<string>()
+      for (const page of PAGE_META) {
+        if (!page.path.startsWith('/')) {
+          throw new Error(`SEO 产物：页面路径必须以 / 开头（${page.path}）`)
+        }
+        if (seenPaths.has(page.path)) {
+          throw new Error(`SEO 产物：页面路径重复（${page.path}）`)
+        }
+        seenPaths.add(page.path)
+        if (page.lastmod && !/^\d{4}-\d{2}-\d{2}$/.test(page.lastmod)) {
+          throw new Error(`SEO 产物：${page.path} 的 lastmod 必须是 YYYY-MM-DD（${page.lastmod}）`)
+        }
+      }
+
+      const sitemap = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        ...PAGE_META.map((page) =>
+          [
+            '  <url>',
+            `    <loc>${SITE_ORIGIN}${page.path}</loc>`,
+            ...(page.lastmod ? [`    <lastmod>${page.lastmod}</lastmod>`] : []),
+            '    <changefreq>weekly</changefreq>',
+            // priority 已被主流搜索引擎忽略，保留只是与既有的手写站点地图保持同构。
+            `    <priority>${page.path === '/' ? '1.0' : '0.9'}</priority>`,
+            '  </url>',
+          ].join('\n'),
+        ),
+        '</urlset>',
+        '',
+      ].join('\n')
+
+      const sitemapPath = path.join(distDir, 'sitemap.xml')
+      fs.writeFileSync(sitemapPath, sitemap)
+
+      // 回读逐条确认：登记过的页面一个都不许从站点地图里漏掉。
+      const writtenSitemap = fs.readFileSync(sitemapPath, 'utf8')
+      for (const page of PAGE_META) {
+        const loc = `<loc>${SITE_ORIGIN}${page.path}</loc>`
+        if (!writtenSitemap.includes(loc)) {
+          throw new Error(`SEO 产物：站点地图缺少 ${loc}`)
+        }
+      }
+
+      // ---- 分享图 ----
+      const sourceDir = path.resolve(import.meta.dirname, 'public/assets')
+      const sourceFiles = fs.readdirSync(sourceDir)
+      const ogPrefix = `${SITE_ORIGIN}${OG_IMAGE_ROUTE}`
+
+      const produced = await Promise.all(
+        PAGE_META.map(async (page) => {
+          const image = page.image
+          if (!image) return null
+          if (!image.startsWith(SITE_ORIGIN)) return null // 外链分享图原样使用
+
+          if (!image.startsWith(ogPrefix) || !image.endsWith('.jpg')) {
+            console.warn(
+              `SEO 产物：${page.path} 的分享图不在 /og/*.jpg 约定下（${image}），未转制——` +
+                '部分分享抓取器（如 QQ）可能因格式不受支持而显示不出图。',
+            )
+            return null
+          }
+
+          const name = image.slice(ogPrefix.length, -'.jpg'.length)
+          const sourceFile = sourceFiles.find(
+            (file) =>
+              path.parse(file).name === name &&
+              OG_SOURCE_EXTENSIONS.includes(path.extname(file).toLowerCase()),
+          )
+          if (!sourceFile) {
+            throw new Error(`SEO 产物：${page.path} 的分享图找不到同名源图（public/assets/${name}.*）`)
+          }
+
+          const target = path.join(distDir, 'og', `${name}.jpg`)
+          fs.mkdirSync(path.dirname(target), { recursive: true })
+          // 分享卡片本来就是静态图：gif 源只取第一帧（sharp 默认行为）。
+          await sharp(path.join(sourceDir, sourceFile)).jpeg({ quality: 88 }).toFile(target)
+
+          if (fs.statSync(target).size === 0) {
+            throw new Error(`SEO 产物：分享图 ${name}.jpg 是空文件`)
+          }
+          return `${OG_IMAGE_ROUTE}${name}.jpg`
+        }),
+      )
+      const producedImages = produced.filter((item): item is string => item !== null)
+
+      console.log(
+        `SEO 产物生成完成：站点地图 ${PAGE_META.length} 条 URL、分享图 ${producedImages.length} 张（${producedImages.join('、')}）`,
+      )
+    },
+  }
+}
+
 export default defineConfig(async ({ command }) => {
   const { publicDir, assetMap } = await preparePublicWebp()
   const emojiDir = path.resolve(import.meta.dirname, './public/emojis')
@@ -516,6 +634,7 @@ export default defineConfig(async ({ command }) => {
       stickerManifestPlugin(emojiDir),
       webpAssetPlugin(assetMap),
       staticShellPlugin(),
+      seoArtifactsPlugin(),
     ],
     resolve: {
       // 共享源码的运行依赖按客户端安装边界解析。

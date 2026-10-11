@@ -32,9 +32,19 @@ export interface PageShell {
 export interface PageMeta {
   /** 站内路径；静态外壳按它决定落盘位置 */
   path: string;
+  /**
+   * 站点地图的 lastmod（YYYY-MM-DD）。只在页面文案或结构有显著变更时更新：
+   * 每次构建都刷新会让搜索引擎判定该字段不可信，进而整体忽略它（不写比写错好）。
+   */
+  lastmod?: string;
   /** meta description 与 og:description */
   description: string;
-  /** 社交媒体预览大图（绝对地址或相对站内路径） */
+  /**
+   * 社交媒体分享图（og:image）。本站图统一用 `${SITE_ORIGIN}/og/<名>.jpg`：
+   * 全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图；
+   * 构建期 `seo-artifacts` 插件会从 `public/assets/<名>.*` 的同名源图转出 jpg。
+   * 也接受外链绝对地址（原样使用，不转制）。
+   */
   image?: string;
   /** 供爬虫索引与归类的关键词列表（用户不可见） */
   keywords?: string[];
@@ -46,9 +56,10 @@ export interface PageMeta {
 export const PAGE_META: PageMeta[] = [
   {
     path: "/",
+    lastmod: "2026-10-04",
     description:
       "叫上朋友即刻开黑！BakaGame 专为聚会与二次元同好打造的多人联机对战站：涵盖谁是卧底语言博弈、动漫与流行歌曲/番剧竞猜（Songuessr）、以及 Bangumi 角色线索竞猜（CCB）。拉个房间随时开局，找回纯粹的联机快乐！",
-    image: `${SITE_ORIGIN}/assets/logo.webp`,
+    image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame",
       "派对游戏",
@@ -85,9 +96,10 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/whoisfaker",
+    lastmod: "2026-10-04",
     description:
       "聚会必备的语言推理与心理博弈！在线谁是卧底（Who is Faker）支持 4~16 人实时联机，自带自由出题、全员投票、平票加赛与夜晚行动；更有 8 人局专属白板背水反杀与天使双词护盾机制。带好演技进房，看看这局谁在一本正经胡说八道！",
-    image: `${SITE_ORIGIN}/assets/Faker.webp`,
+    image: `${SITE_ORIGIN}/og/Faker.jpg`,
     keywords: [
       "谁是卧底",
       "在线版谁是卧底",
@@ -131,9 +143,10 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/songuessr",
+    lastmod: "2026-10-04",
     description:
       "不仅是听歌猜歌，更是番剧阅历的大考！Songuessr 联动网易云音乐与 Bangumi，支持「猜歌名」与「猜番剧」双赛道。享受逐字渐变点亮歌词演出，在年份、热度与标签偏差的线索收敛中锁定答案，支持单人练习挑战与多人同屏血战抢答。",
-    image: `${SITE_ORIGIN}/assets/SongGuessr.webp`,
+    image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
     keywords: [
       "Songuessr",
       "听歌猜歌",
@@ -178,9 +191,10 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/ccb",
+    lastmod: "2026-10-04",
     description:
       "二次元阅历的终极考场！CCB（二刺猿笑传之猜猜呗）猜动漫角色游戏。基于百万级 Bangumi 资料库，全员同房竞猜唯一角色。从性别、年代、作品评分、声优到作品标签层层排除，更有组队对抗、角色全局 BP 与原版协议互通。测测你的二次元浓度上限！",
-    image: `${SITE_ORIGIN}/assets/CCB.webp`,
+    image: `${SITE_ORIGIN}/og/CCB.jpg`,
     keywords: [
       "CCB",
       "二刺猿笑传之猜猜呗",

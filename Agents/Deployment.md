@@ -86,12 +86,18 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - **文案单一真相源**：`PageMeta.ts` 同时被页面组件的 `Seo`（运行时写 head）与插件（构建期写 HTML）
   消费，改了描述两处一起变。页面侧调用因此简化为 `<Seo path="/" />`；未登记的路径（房间页、
   单人页）必须显式传 `description`，否则组件当场抛错。
-- 新增开放大厅须同步 `PageMeta`、主页游戏介绍与链接、站点地图、资源冒烟和 SEO E2E；运行时
+- 新增开放大厅须同步 `PageMeta`、主页游戏介绍与链接、资源冒烟和 SEO E2E（站点地图由构建期
+  从 `PageMeta` 生成，无需手改；分享图素材放 `public/assets` 同名文件）；运行时
   `description` 与 `og:description` 必须读取同一份解析后的文案。房间页保持 `noindex`，并在
   `robots.txt` 排除对应房间路径，CCB 的增强房与原版房共用 `/ccb/room/` 规则。
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
+- **站点地图与分享图随构建生成**：`dist/sitemap.xml` 与 `dist/og/*.jpg` 由 `seo-artifacts` 插件在
+  构建末尾产出。站点地图的 URL 集合与 `lastmod` 取自 `PageMeta`——`lastmod` 只在页面文案或结构
+  显著变更时更新、不随构建刷新（手写在 `public/sitemap.xml` 的旧版已删除）；分享图从
+  `public/assets` 的同名源图转 jpg（全站图片管线只产 webp，而 QQ 等分享抓取器不认 webp，
+  卡片实测显示不出图），`PageMeta.image` 一律写 `${SITE_ORIGIN}/og/<名>.jpg`，外链图原样放行。
 - **正文外壳必须在首次绘制之前消失**：外壳插在 `#root` 内，紧随其后是一段 parser-blocking
   内联脚本 `document.getElementById("root").replaceChildren()`，随解析同步清空。入口是 defer 的
   module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后——只靠它替换 `#root`，
