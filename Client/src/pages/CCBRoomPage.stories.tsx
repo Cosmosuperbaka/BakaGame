@@ -227,21 +227,22 @@ export const Connecting: Story = {
   beforeEach: () => presetCCB(),
 };
 
+/** 直链进房自动加入：不再有「设置用户名」步，无凭据时直接显示加入中。 */
 export const JoinDialog: Story = {
-  name: "加入房间弹窗",
+  name: "加入房间中",
   tags: ["!page", "overlay"],
   beforeEach: () => {
-    // 没有本房凭据也没有快照：页面生命周期判定需要重新加入。
+    // 没有本房凭据也没有快照：页面生命周期自动用本地用户名（或访客名）加入。
     removeCCBSession(CCB_NATIVE_ROOM_ID);
     presetCCB({ connected: true, lobbyReady: true, originalAvailable: true });
     return presetSavedUsername();
   },
   play: async () => {
-    await screen.findByRole("dialog", { name: "设置用户名" });
+    await screen.findByText("正在加入房间...");
   },
 };
 
-/** 私密房分两步：填好名字后再输密码；是否私密取自大厅列表。 */
+/** 私密房：直链自动加入被服务端要求密码，直接落到输入密码步；是否私密取自大厅列表。 */
 export const JoinPassword: Story = {
   name: "加入房间弹窗 · 输入密码",
   tags: ["!page", "overlay"],
@@ -251,11 +252,10 @@ export const JoinPassword: Story = {
       connected: true, lobbyReady: true, originalAvailable: true,
       rooms: CCB_LOBBY_ROOMS.map((room) => room.roomId === CCB_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
     });
+    useCCBStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }) });
     return presetSavedUsername();
   },
   play: async () => {
-    const dialog = await screen.findByRole("dialog", { name: "设置用户名" });
-    await userEvent.click(within(dialog).getByRole("button", { name: "进入房间" }));
     await screen.findByRole("dialog", { name: "输入房间密码" });
   },
 };
@@ -274,8 +274,6 @@ export const JoinPasswordWrong: Story = {
     return presetSavedUsername();
   },
   play: async () => {
-    const nameDialog = await screen.findByRole("dialog", { name: "设置用户名" });
-    await userEvent.click(within(nameDialog).getByRole("button", { name: "进入房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "输入房间密码" }));
     await userEvent.type(dialog.getByLabelText("房间密码"), "1234");
     await userEvent.click(dialog.getByRole("button", { name: "加入房间" }));

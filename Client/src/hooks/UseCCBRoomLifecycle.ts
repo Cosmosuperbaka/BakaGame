@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { TEST_ROOM_ID } from "@/config/Constants";
-import { getSavedUsername, saveUsername } from "@/lib/Storage";
+import { getSavedUsername, guestName, saveUsername } from "@/lib/Storage";
 import { normalizeCCBRoomId } from "@/lib/CCBSession";
 import { ccbErrorMessage, useCCBStore } from "@/stores/UseCCBStore";
 import { isProtocolError } from "@/lib/WebsocketClient";
@@ -30,37 +30,14 @@ export function useCCBRoomLifecycle() {
   const manualJoin = useRef<AbortController | null>(null);
   useEffect(() => () => { manualJoin.current?.abort(); }, [roomId]);
 
-  useEffect(() => {
-    if (!roomId || closed) { navigate("/ccb", { replace: true }); return; }
-    if (!connected || !lobbyReady) return;
-    if (attempted.current === roomId) return;
-    attempted.current = roomId;
-    const controller = new AbortController();
-    const restore = async () => {
-      const store = useCCBStore.getState();
-      if (store.roomId === roomId && store.snapshot) {
-        setJoining(false); return;
-      }
-      try {
-        const restored = await store.reconnectRoom(roomId, controller.signal);
-        if (!controller.signal.aborted) setNeedsJoin(!restored);
-      } catch (failure) {
-        if (!controller.signal.aborted) { fail(failure); setNeedsJoin(true); }
-      } finally { if (!controller.signal.aborted) setJoining(false); }
-    };
-    void restore();
-    return () => { controller.abort(); attempted.current = ""; };
-  }, [roomId, connected, lobbyReady, closed, navigate]);
-
   /**
    * 直链进入：房号未命中（服务重启后房间随内存清空、测试房、已关闭房间的分享链接）时，
    * 用同一房号就地开一间增强房再进入，与另外两个游戏的直链行为一致。
    * 密码错误、重名等其它业务拒绝保持原样报错，不触发建房。
    */
-  const joinOrCreate = async (targetRoomId: string, controller: AbortController) => {
-    const userName = name.trim();
+  const joinOrCreate = async (targetRoomId: string, userName: string, passwordDraft: string, controller: AbortController) => {
     try {
-      await useCCBStore.getState().joinRoom(targetRoomId, userName, password, controller.signal);
+      await useCCBStore.getState().joinRoom(targetRoomId, userName, passwordDraft, controller.signal);
     } catch (failure) {
       if (!isProtocolError(failure) || failure.code !== "ROOM_NOT_FOUND") throw failure;
       await useCCBStore.getState().createRoom({
@@ -75,13 +52,50 @@ export function useCCBRoomLifecycle() {
     }
   };
 
+  /**
+   * 直链自动进房：没存过名字就用访客名，与另外两个游戏一致，不弹设置用户名。
+   * 密码错误、房间已满等业务拒绝在此报出，页面按错误码决定是否转入密码步。
+   */
+  const autoJoin = async (targetRoomId: string, controller: AbortController) => {
+    const userName = name.trim() || guestName();
+    try {
+      await joinOrCreate(targetRoomId, userName, "", controller);
+      if (controller.signal.aborted) return;
+      saveUsername(userName); setName(userName); setNeedsJoin(false);
+    } catch (failure) { if (!controller.signal.aborted) fail(failure); }
+  };
+
+  useEffect(() => {
+    if (!roomId || closed) { navigate("/ccb", { replace: true }); return; }
+    if (!connected || !lobbyReady) return;
+    if (attempted.current === roomId) return;
+    attempted.current = roomId;
+    const controller = new AbortController();
+    const restore = async () => {
+      const store = useCCBStore.getState();
+      if (store.roomId === roomId && store.snapshot) {
+        setJoining(false); return;
+      }
+      try {
+        const restored = await store.reconnectRoom(roomId, controller.signal);
+        if (controller.signal.aborted) return;
+        if (!restored) await autoJoin(roomId, controller);
+      } catch (failure) {
+        if (!controller.signal.aborted) { fail(failure); setNeedsJoin(true); }
+      } finally { if (!controller.signal.aborted) setJoining(false); }
+    };
+    void restore();
+    return () => { controller.abort(); attempted.current = ""; };
+  }, [roomId, connected, lobbyReady, closed, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 手动确认（密码步提交）：用表单里的名字与密码重试。 */
   const join = async () => {
     if (!roomId || !name.trim() || joining || manualJoin.current) return;
     const controller = new AbortController();
     manualJoin.current = controller;
     setJoining(true); setError(""); setErrorCode("");
     try {
-      await joinOrCreate(roomId, controller);
+      await joinOrCreate(roomId, name.trim(), password, controller);
       if (controller.signal.aborted) return;
       saveUsername(name.trim()); setNeedsJoin(false);
     } catch (failure) { if (!controller.signal.aborted) fail(failure); }

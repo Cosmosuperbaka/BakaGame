@@ -18,9 +18,7 @@ export default function CCBRoomPage() {
   const lifecycle = useCCBRoomLifecycle();
   const snapshot = useCCBStore((state) => state.snapshot);
   const privateState = useCCBStore((state) => state.privateState);
-  const rooms = useCCBStore((state) => state.rooms);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
-  const [named, setNamed] = useState(false);
   const showError = (error: unknown) => useCCBStore.getState().setNotice(ccbErrorMessage(error));
   const sendChat = async (text: string) => { await useCCBStore.getState().sendCommand("ccb.chat.send", { text }); };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
@@ -39,28 +37,24 @@ export default function CCBRoomPage() {
   }, [lifecycle.error, passwordFailure]);
 
   if (!ready) {
-    // 进房分两步：先填名字，私密房再输密码。是否私密取大厅列表（私密房带锁进大厅）；
-    // 列表里查不到时（刚转私密）由服务端的缺密码 / 密码错误应答（错误码）把人带到第二步。
-    const locked = rooms.some((room) => room.roomId === lifecycle.roomId && room.hasPassword);
-    const awaiting = lifecycle.needsJoin && !lifecycle.joining;
-    const needsPassword = lifecycle.needsJoin && named && (locked || passwordFailure);
+    // 与另外两个游戏一致：直链进房自动用本地用户名（没存过就取访客名）加入，不再拦「设置用户名」弹窗。
+    // 只剩私密房要输密码这一步——是否私密取大厅列表（私密房带锁进大厅）；列表里查不到时
+    // （刚转私密）由服务端的缺密码 / 密码错误应答（错误码）把人带到这一步。
+    const needsPassword = lifecycle.needsJoin && passwordFailure;
     return (
       <RoomJoinGate
         roomId={lifecycle.roomId ?? ""}
-        needsName={awaiting && !needsPassword}
+        needsName={false}
         needsPassword={needsPassword}
         nameDraft={lifecycle.name}
         onNameDraftChange={lifecycle.setName}
-        onConfirmName={() => {
-          setNamed(true);
-          if (!locked) void lifecycle.join();
-        }}
+        onConfirmName={() => void lifecycle.join()}
         passwordDraft={lifecycle.password}
         onPasswordDraftChange={lifecycle.setPassword}
         onConfirmPassword={() => void lifecycle.join()}
         onExit={() => void lifecycle.leave()}
         nameMaxLength={32}
-        pending={lifecycle.joining && named}
+        pending={lifecycle.joining}
         // 刚到密码步时的「需要密码」不算失败，不标红；密码错误与尝试过多写在框下。
         passwordError={passwordFailure && lifecycle.errorCode !== "PASSWORD_REQUIRED"
           ? { message: lifecycle.error, invalid: lifecycle.errorCode === "PASSWORD_INCORRECT" } : null}
