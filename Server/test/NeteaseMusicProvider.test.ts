@@ -2744,4 +2744,31 @@ describe("网易云上游预热与登录态复用", () => {
     });
     expect(statusCalls).toBe(2);
   });
+
+  test("传入对象或聚合 Cookie 时不会因 cookie?.trim 崩溃且能正确命中", async () => {
+    let passedCookie: any = null;
+    const provider = new NeteaseMusicProvider({
+      randomCNIP: false,
+      minRequestIntervalMs: 0,
+      loadApi: async () => ({
+        ...anonApi(),
+        playlist_detail: async (options: any) => {
+          passedCookie = options?.cookie;
+          return {
+            body: {
+              playlist: {
+                id: 100,
+                name: "聚合测试歌单",
+                tracks: [{ id: 1, name: "曲目", ar: [{ name: "歌手" }] }],
+              },
+            },
+          };
+        },
+      }),
+    });
+
+    const res = await (provider as any).getPlaylistSongs("100", { netease: "MUSIC_U=obj_test", qq: "qq_test" });
+    expect(res.info.name).toBe("聚合测试歌单");
+    expect(passedCookie).toBe("MUSIC_U=obj_test");
+  });
 });

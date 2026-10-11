@@ -28,6 +28,7 @@ import {
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { BangumiMusicTrack, SongSearchResult } from "../src/shared/SonGuessr";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
@@ -5046,6 +5047,66 @@ describe("SonGuessr service 音乐认证意图", () => {
     expect(snapshotAfterClear.musicAccountReady).toBe(false);
     expect(snapshotAfterClear.qqMusicAccountReady).toBe(true);
     expect(snapshotAfterClear.musicAccounts?.qq?.nickname).toBe("QQ用户");
+  });
+
+  test("配置双平台账号后单人自动模式开局正常，不触发 cookie?.trim 崩溃且凭据正确解构", async () => {
+    let capturedNeteaseCookie: any;
+    const testSong = makeSong("netease:1", "自动选曲测试", 2022);
+    const neteaseMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie: string) => ({
+        cookie,
+        account: { platform: "netease" as const, nickname: "网易云用户", vipStatus: "vip" as const },
+      }),
+      getPlaylistSongs: async (id: string, cookie?: string) => {
+        capturedNeteaseCookie = cookie;
+        expect(typeof cookie).toBe("string");
+        return {
+          info: { id, name: "默认自动歌单", songCount: 1 },
+          songs: [{ id: "netease:1", title: "自动选曲测试", artist: "测试歌手" }],
+        };
+      },
+      getSong: async (id: string, cookie?: string) => {
+        expect(typeof cookie).toBe("string");
+        return testSong;
+      },
+    };
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie: string) => ({
+        cookie,
+        account: { platform: "qq" as const, nickname: "QQ用户", vipStatus: "vip" as const },
+      }),
+    };
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+    const service = new SonGuessrService({ musicProvider: aggregated });
+    const solo = connection(service, "dual-solo");
+    await createRoom(service, solo, { roomId: "9999", name: "双平台单人房", userName: "独狼", solo: true });
+
+    await Promise.all([
+      execute(service, solo, {
+        id: "auth-netease",
+        type: "song.auth.useCookie",
+        roomId: "9999",
+        payload: { cookie: "MUSIC_U=netease-token", platform: "netease" },
+      }),
+      execute(service, solo, {
+        id: "auth-qq",
+        type: "song.auth.useCookie",
+        roomId: "9999",
+        payload: { cookie: "qm_keyst=qq-token", platform: "qq" },
+      }),
+    ]);
+
+    await execute(service, solo, { id: "start", type: "song.game.start", roomId: "9999", payload: {} });
+
+    expect(capturedNeteaseCookie).toBe("MUSIC_U=netease-token");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    expect(snapshot.phase).toBe("playing");
+    expect(snapshot.currentRound?.audioUrl).toBe(testSong.audioUrl);
   });
 });
 

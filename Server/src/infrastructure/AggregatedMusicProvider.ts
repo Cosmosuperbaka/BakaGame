@@ -26,14 +26,23 @@ export interface AggregatedMusicProviderOptions {
 const resolvePlatformCookie = (cookie?: any, platform?: "netease" | "qq"): string | undefined => {
   if (!cookie) return undefined;
   if (typeof cookie === "object" && cookie !== null) {
-    return platform === "qq" ? cookie.qq : cookie.netease;
+    const val = platform === "qq" ? cookie.qq : cookie.netease;
+    return typeof val === "string" ? val : undefined;
   }
   if (typeof cookie === "string") {
     if (cookie.startsWith("{") && (cookie.includes("netease") || cookie.includes("qq"))) {
       try {
         const obj = JSON.parse(cookie);
-        return platform === "qq" ? obj.qq : obj.netease;
+        const val = platform === "qq" ? obj.qq : obj.netease;
+        return typeof val === "string" ? val : undefined;
       } catch {}
+    }
+    // 单平台特定凭据特征检查：避免将特定平台的凭据传递给互斥平台
+    if (platform === "qq" && (cookie.includes("MUSIC_U") || cookie.includes("NMTID"))) {
+      return undefined;
+    }
+    if (platform === "netease" && (cookie.includes("qm_keyst") || cookie.includes("musickey") || cookie.includes("qqmusic_key"))) {
+      return undefined;
     }
     return cookie;
   }
@@ -121,7 +130,8 @@ export class AggregatedMusicProvider implements MusicProvider {
         });
         // 尝试按歌名+歌手在 QQ 音乐中兜底检索并播放
         const qqCookie = resolvePlatformCookie(cookie, "qq");
-        const fallback = await this.tryFailover(songId, this.qqProvider, qqCookie);
+        const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+        const fallback = await this.tryFailover(songId, this.qqProvider, neteaseCookie, qqCookie);
         if (fallback) return fallback;
         throw error;
       }
@@ -140,7 +150,8 @@ export class AggregatedMusicProvider implements MusicProvider {
           ...describeError(error),
         });
         const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-        const fallback = await this.tryFailover(songId, this.neteaseProvider, neteaseCookie);
+        const qqCookie = resolvePlatformCookie(cookie, "qq");
+        const fallback = await this.tryFailover(songId, this.neteaseProvider, qqCookie, neteaseCookie);
         if (fallback) return fallback;
         throw error;
       }
@@ -152,18 +163,19 @@ export class AggregatedMusicProvider implements MusicProvider {
   private async tryFailover(
     originalSongId: string,
     targetProvider: MusicProvider,
-    cookie?: string
+    originCookie?: string,
+    targetCookie?: string,
   ): Promise<SongDetails | null> {
     try {
       // 1. 尝试读取原歌曲元数据
-      const originMeta = await this.getSongMetadata(originalSongId, cookie);
+      const originMeta = await this.getSongMetadata(originalSongId, originCookie);
       if (!originMeta.title) return null;
 
       // 2. 在备选平台检索
       const candidates = await targetProvider.search(
         `${originMeta.title} ${originMeta.artist}`,
         5,
-        cookie
+        targetCookie,
       );
       if (!candidates || candidates.length === 0) return null;
 
@@ -177,7 +189,7 @@ export class AggregatedMusicProvider implements MusicProvider {
 
       const bestCandidate = matched || candidates[0];
       const parsed = parseSongUrn(bestCandidate.id);
-      return await targetProvider.getSong(parsed.rawId, cookie);
+      return await targetProvider.getSong(parsed.rawId, targetCookie);
     } catch {
       return null;
     }
@@ -215,20 +227,22 @@ export class AggregatedMusicProvider implements MusicProvider {
     };
   }
 
-  async getSongPopularity(songId: string, cookie?: string): Promise<number | undefined> {
+  async getSongPopularity(songId: string, cookie?: any): Promise<number | undefined> {
     const { platform, rawId } = parseSongUrn(songId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
-      return this.neteaseProvider.getSongPopularity?.(rawId, cookie);
+      return this.neteaseProvider.getSongPopularity?.(rawId, platformCookie);
     }
-    return this.qqProvider.getSongPopularity?.(rawId, cookie);
+    return this.qqProvider.getSongPopularity?.(rawId, platformCookie);
   }
 
-  async getSongChorus(songId: string, cookie?: string): Promise<SongChorus | undefined> {
+  async getSongChorus(songId: string, cookie?: any): Promise<SongChorus | undefined> {
     const { platform, rawId } = parseSongUrn(songId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
-      return this.neteaseProvider.getSongChorus?.(rawId, cookie);
+      return this.neteaseProvider.getSongChorus?.(rawId, platformCookie);
     }
-    return this.qqProvider.getSongChorus?.(rawId, cookie);
+    return this.qqProvider.getSongChorus?.(rawId, platformCookie);
   }
 
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
@@ -248,12 +262,13 @@ export class AggregatedMusicProvider implements MusicProvider {
 
   async getPlaylistSongs(
     playlistId: string,
-    cookie?: string
+    cookie?: any,
   ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }> {
     const trimmed = playlistId.trim();
     if (trimmed.startsWith("qq:") || /y\.qq\.com/i.test(trimmed)) {
       const rawId = trimmed.startsWith("qq:") ? trimmed.slice(3) : trimmed;
-      const res = await this.qqProvider.getPlaylistSongs!(rawId, cookie);
+      const qqCookie = resolvePlatformCookie(cookie, "qq");
+      const res = await this.qqProvider.getPlaylistSongs!(rawId, qqCookie);
       return {
         info: { ...res.info, id: res.info.id.startsWith("qq:") ? res.info.id : buildSongUrn("qq", res.info.id) },
         songs: res.songs.map((s) => ({
@@ -263,7 +278,8 @@ export class AggregatedMusicProvider implements MusicProvider {
       };
     }
     const rawId = trimmed.startsWith("netease:") ? trimmed.slice(8) : trimmed;
-    const res = await this.neteaseProvider.getPlaylistSongs!(rawId, cookie);
+    const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+    const res = await this.neteaseProvider.getPlaylistSongs!(rawId, neteaseCookie);
     return {
       info: { ...res.info, id: res.info.id.startsWith("netease:") ? res.info.id : buildSongUrn("netease", res.info.id) },
       songs: res.songs.map((s) => ({
@@ -273,10 +289,12 @@ export class AggregatedMusicProvider implements MusicProvider {
     };
   }
 
-  async searchArtists(keyword: string, limit = 20, cookie?: string): Promise<SongArtistSearchResult[]> {
+  async searchArtists(keyword: string, limit = 20, cookie?: any): Promise<SongArtistSearchResult[]> {
+    const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+    const qqCookie = resolvePlatformCookie(cookie, "qq");
     const [netease, qq] = await Promise.allSettled([
-      this.neteaseProvider.searchArtists?.(keyword, limit, cookie),
-      this.qqProvider.searchArtists?.(keyword, limit, cookie),
+      this.neteaseProvider.searchArtists?.(keyword, limit, neteaseCookie),
+      this.qqProvider.searchArtists?.(keyword, limit, qqCookie),
     ]);
     const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
       ...a,
@@ -289,26 +307,29 @@ export class AggregatedMusicProvider implements MusicProvider {
     return [...list1, ...list2].slice(0, limit);
   }
 
-  async getArtistSongs(artistId: string, cookie?: string): Promise<SongSearchResult[]> {
+  async getArtistSongs(artistId: string, cookie?: any): Promise<SongSearchResult[]> {
     const { platform, rawId } = parseSongUrn(artistId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
-      const songs = await this.neteaseProvider.getArtistSongs!(rawId, cookie);
+      const songs = await this.neteaseProvider.getArtistSongs!(rawId, platformCookie);
       return songs.map((s) => ({
         ...s,
         id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
       }));
     }
-    const songs = await this.qqProvider.getArtistSongs!(rawId, cookie);
+    const songs = await this.qqProvider.getArtistSongs!(rawId, platformCookie);
     return songs.map((s) => ({
       ...s,
       id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
     }));
   }
 
-  async searchAlbums(keyword: string, limit = 10, cookie?: string): Promise<SongAlbumSearchResult[]> {
+  async searchAlbums(keyword: string, limit = 10, cookie?: any): Promise<SongAlbumSearchResult[]> {
+    const neteaseCookie = resolvePlatformCookie(cookie, "netease");
+    const qqCookie = resolvePlatformCookie(cookie, "qq");
     const [netease, qq] = await Promise.allSettled([
-      this.neteaseProvider.searchAlbums?.(keyword, limit, cookie),
-      this.qqProvider.searchAlbums?.(keyword, limit, cookie),
+      this.neteaseProvider.searchAlbums?.(keyword, limit, neteaseCookie),
+      this.qqProvider.searchAlbums?.(keyword, limit, qqCookie),
     ]);
     const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
       ...a,
@@ -321,16 +342,17 @@ export class AggregatedMusicProvider implements MusicProvider {
     return [...list1, ...list2].slice(0, limit);
   }
 
-  async getAlbumSongs(albumId: string, cookie?: string): Promise<SongSearchResult[]> {
+  async getAlbumSongs(albumId: string, cookie?: any): Promise<SongSearchResult[]> {
     const { platform, rawId } = parseSongUrn(albumId);
+    const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "netease") {
-      const songs = await this.neteaseProvider.getAlbumSongs!(rawId, cookie);
+      const songs = await this.neteaseProvider.getAlbumSongs!(rawId, platformCookie);
       return songs.map((s) => ({
         ...s,
         id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
       }));
     }
-    const songs = await this.qqProvider.getAlbumSongs!(rawId, cookie);
+    const songs = await this.qqProvider.getAlbumSongs!(rawId, platformCookie);
     return songs.map((s) => ({
       ...s,
       id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),

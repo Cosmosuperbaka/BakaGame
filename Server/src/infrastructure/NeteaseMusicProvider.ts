@@ -2747,9 +2747,16 @@ export class NeteaseMusicProvider implements MusicProvider {
     return readVipAccount(body, account, this.now());
   }
 
-  private cacheKey(namespace: string, cookie: string | undefined, ...parts: unknown[]) {
-    const scope = cookie?.trim()
-      ? createHash("sha256").update(cookie.trim()).digest("hex").slice(0, 16)
+  private cacheKey(namespace: string, cookie: unknown, ...parts: unknown[]) {
+    const cookieStr = typeof cookie === "string"
+      ? cookie.trim()
+      : typeof cookie === "object" && cookie !== null
+        ? ("netease" in cookie && typeof (cookie as any).netease === "string"
+            ? (cookie as any).netease.trim()
+            : stableStringify(cookie))
+        : "";
+    const scope = cookieStr
+      ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
       : "anonymous";
     return [namespace, scope, ...parts].map(String).join(":");
   }
@@ -3020,7 +3027,12 @@ export class NeteaseMusicProvider implements MusicProvider {
   /** cookie 参数是否真的带了凭证；空串与空对象一律按匿名处理，避免落进房主那一桶。 */
   private hasCookie(cookie?: string | Record<string, unknown>) {
     if (typeof cookie === "string") return cookie.trim().length > 0;
-    if (cookie && typeof cookie === "object") return Object.keys(cookie).length > 0;
+    if (cookie && typeof cookie === "object") {
+      if ("netease" in cookie && typeof (cookie as any).netease === "string") {
+        return (cookie as any).netease.trim().length > 0;
+      }
+      return Object.keys(cookie).length > 0;
+    }
     return false;
   }
 
@@ -3045,7 +3057,9 @@ export class NeteaseMusicProvider implements MusicProvider {
     const cookieStr = typeof cookie === "string"
       ? cookie.trim()
       : typeof cookie === "object" && cookie !== null
-        ? stableStringify(cookie)
+        ? ("netease" in cookie && typeof (cookie as any).netease === "string"
+            ? (cookie as any).netease.trim()
+            : stableStringify(cookie))
         : "";
     return cookieStr
       ? `host:${createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)}`
@@ -3074,7 +3088,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     loginScope?: string,
     ipScope?: string,
   ): Record<string, unknown> {
-    const requestCookie = cookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
+    const rawCookie = typeof cookie === "object" && cookie !== null && "netease" in cookie
+      ? (cookie as any).netease
+      : cookie;
+    const requestCookie = rawCookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     // scope 由调用方在调度前算好并透传：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
     const scope = ipScope ?? this.resolveIpScope(cookie, loginScope);
     return {

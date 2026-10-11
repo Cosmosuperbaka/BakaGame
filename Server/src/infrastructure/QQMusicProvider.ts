@@ -99,6 +99,15 @@ export const parseLrcLyrics = (raw: string): SongLyricLine[] => {
   }
 };
 
+const extractQqCookie = (cookie?: unknown): string | undefined => {
+  if (typeof cookie === "string") return cookie;
+  if (typeof cookie === "object" && cookie !== null && "qq" in cookie) {
+    const val = (cookie as any).qq;
+    return typeof val === "string" ? val : undefined;
+  }
+  return undefined;
+};
+
 export class QQMusicProvider implements MusicProvider {
   private readonly cache: LRUCache<string, any>;
   private readonly amllCache: LRUCache<string, any>;
@@ -135,7 +144,8 @@ export class QQMusicProvider implements MusicProvider {
     return trimmed;
   }
 
-  async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
+  async search(keyword: string, limit = 20, rawCookie?: any): Promise<SongSearchResult[]> {
+    const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
@@ -186,7 +196,8 @@ export class QQMusicProvider implements MusicProvider {
     return result;
   }
 
-  async getSong(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSong(songId: string, rawCookie?: any): Promise<SongDetails> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const meta = await this.getSongMetadata(mid, cookie);
     const audioUrl = await this.loadAudioUrl(mid, cookie);
@@ -203,14 +214,16 @@ export class QQMusicProvider implements MusicProvider {
     };
   }
 
-  async refreshSongAudio(songId: string, cookie?: string): Promise<string> {
+  async refreshSongAudio(songId: string, rawCookie?: any): Promise<string> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const cacheKey = `audio:${cookie || ""}:${mid}`;
     this.cache.delete(cacheKey);
     return this.loadAudioUrl(mid, cookie);
   }
 
-  async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSongMetadata(songId: string, rawCookie?: any): Promise<SongDetails> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const cacheKey = `metadata:${mid}`;
     const cached = this.cache.get(cacheKey) as SongDetails | undefined;
@@ -268,13 +281,15 @@ export class QQMusicProvider implements MusicProvider {
     return res;
   }
 
-  async getSongPopularity(songId: string, cookie?: string): Promise<number | undefined> {
+  async getSongPopularity(songId: string, rawCookie?: any): Promise<number | undefined> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const meta = await this.getSongMetadata(mid, cookie);
     return meta.popularity;
   }
 
-  async getSongChorus(songId: string, cookie?: string): Promise<SongChorus | undefined> {
+  async getSongChorus(songId: string, rawCookie?: any): Promise<SongChorus | undefined> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const meta = await this.getSongMetadata(mid, cookie);
     return meta.chorus;
@@ -466,8 +481,9 @@ export class QQMusicProvider implements MusicProvider {
 
   async getPlaylistSongs(
     playlistId: string,
-    cookie?: string
+    rawCookie?: any
   ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }> {
+    const cookie = extractQqCookie(rawCookie);
     const trimmed = playlistId.trim();
     // 提取纯数字歌单 ID
     const match = trimmed.match(/\b(\d{7,12})\b/);
@@ -526,7 +542,8 @@ export class QQMusicProvider implements MusicProvider {
     return res;
   }
 
-  async searchArtists(keyword: string, limit = 20, cookie?: string): Promise<SongArtistSearchResult[]> {
+  async searchArtists(keyword: string, limit = 20, rawCookie?: any): Promise<SongArtistSearchResult[]> {
+    const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
 
@@ -552,7 +569,8 @@ export class QQMusicProvider implements MusicProvider {
     return res ?? [];
   }
 
-  async getArtistSongs(artistId: string, cookie?: string): Promise<SongSearchResult[]> {
+  async getArtistSongs(artistId: string, rawCookie?: any): Promise<SongSearchResult[]> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(artistId);
     const res = await this.queue.add(async () => {
       const songsRes = await qqmusic.artist_songs({ id: mid, limit: 100, cookie });
@@ -586,7 +604,8 @@ export class QQMusicProvider implements MusicProvider {
     return res ?? [];
   }
 
-  async searchAlbums(keyword: string, limit = 10, cookie?: string): Promise<SongAlbumSearchResult[]> {
+  async searchAlbums(keyword: string, limit = 10, rawCookie?: any): Promise<SongAlbumSearchResult[]> {
+    const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
 
@@ -614,7 +633,8 @@ export class QQMusicProvider implements MusicProvider {
     return res ?? [];
   }
 
-  async getAlbumSongs(albumId: string, cookie?: string): Promise<SongSearchResult[]> {
+  async getAlbumSongs(albumId: string, rawCookie?: any): Promise<SongSearchResult[]> {
+    const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(albumId);
     const searchRes = await this.search(mid, 50, cookie);
     return searchRes;
@@ -696,12 +716,13 @@ export class QQMusicProvider implements MusicProvider {
     return { status: "waiting", message: res?.body?.message || "等待扫码" };
   }
 
-  async getLoginStatus(cookie: string): Promise<MusicLoginSession> {
-    let currentCookie = cookie;
+  async getLoginStatus(rawCookie: any): Promise<MusicLoginSession> {
+    const extracted = extractQqCookie(rawCookie);
+    let currentCookie = extracted !== undefined ? extracted : String(rawCookie || "");
     let statusRes = await qqmusic.login_status({ cookie: currentCookie });
     if (!statusRes.body?.isLogin) {
       try {
-        const refreshRes = await qqmusic.login_refresh({ cookie });
+        const refreshRes = await qqmusic.login_refresh({ cookie: currentCookie });
         if (refreshRes.body?.cookieStr) {
           currentCookie = refreshRes.body.cookieStr;
           statusRes = await qqmusic.login_status({ cookie: currentCookie });

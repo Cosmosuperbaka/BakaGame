@@ -145,4 +145,100 @@ describe("AggregatedMusicProvider", () => {
     expect(qqList.songs[0]?.id).toBe("qq:2");
     expect(qqMock.getPlaylistSongs).toHaveBeenCalledWith("88888", undefined);
   });
+
+  test("双平台聚合 Cookie 正确解构并透传给对应提供商", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      getPlaylistSongs: mock(async (id: string, cookie?: string) => ({
+        info: { id, name: "NCM Playlist", songCount: 1 },
+        songs: [{ id: "netease:1", title: "NCM Track", artist: "Artist" }],
+      })),
+      getSongPopularity: mock(async (id: string, cookie?: string) => 999),
+      getSongChorus: mock(async (id: string, cookie?: string) => ({ startTime: 1000, endTime: 5000 })),
+      searchArtists: mock(async (keyword: string, limit?: number, cookie?: string) => [
+        { id: "netease:10", name: "Artist A" },
+      ]),
+      getArtistSongs: mock(async (id: string, cookie?: string) => [
+        { id: "netease:1", title: "Artist Track", artist: "Artist A" },
+      ]),
+      searchAlbums: mock(async (keyword: string, limit?: number, cookie?: string) => [
+        { id: "netease:20", name: "Album A" },
+      ]),
+      getAlbumSongs: mock(async (id: string, cookie?: string) => [
+        { id: "netease:1", title: "Album Track", artist: "Artist A" },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      getPlaylistSongs: mock(async (id: string, cookie?: string) => ({
+        info: { id, name: "QQ Playlist", songCount: 1 },
+        songs: [{ id: "qq:2", title: "QQ Track", artist: "Artist" }],
+      })),
+      getSongPopularity: mock(async (id: string, cookie?: string) => 888),
+      getSongChorus: mock(async (id: string, cookie?: string) => ({ startTime: 2000, endTime: 6000 })),
+      searchArtists: mock(async (keyword: string, limit?: number, cookie?: string) => [
+        { id: "qq:20", name: "Artist B" },
+      ]),
+      getArtistSongs: mock(async (id: string, cookie?: string) => [
+        { id: "qq:2", title: "Artist Track QQ", artist: "Artist B" },
+      ]),
+      searchAlbums: mock(async (keyword: string, limit?: number, cookie?: string) => [
+        { id: "qq:30", name: "Album B" },
+      ]),
+      getAlbumSongs: mock(async (id: string, cookie?: string) => [
+        { id: "qq:2", title: "Album Track QQ", artist: "Artist B" },
+      ]),
+    });
+
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+
+    const aggregatedCookie = { netease: "nc_cookie_123", qq: "qc_cookie_456" };
+
+    // 1. getPlaylistSongs
+    await agg.getPlaylistSongs("netease:12345", aggregatedCookie);
+    expect(neteaseMock.getPlaylistSongs).toHaveBeenCalledWith("12345", "nc_cookie_123");
+
+    await agg.getPlaylistSongs("qq:88888", aggregatedCookie);
+    expect(qqMock.getPlaylistSongs).toHaveBeenCalledWith("88888", "qc_cookie_456");
+
+    // 2. getSongPopularity & getSongChorus
+    const ncmPop = await agg.getSongPopularity("netease:100", aggregatedCookie);
+    expect(ncmPop).toBe(999);
+    expect(neteaseMock.getSongPopularity).toHaveBeenCalledWith("100", "nc_cookie_123");
+
+    const qqPop = await agg.getSongPopularity("qq:200", aggregatedCookie);
+    expect(qqPop).toBe(888);
+    expect(qqMock.getSongPopularity).toHaveBeenCalledWith("200", "qc_cookie_456");
+
+    const ncmChorus = await agg.getSongChorus("netease:100", aggregatedCookie);
+    expect(ncmChorus?.startTime).toBe(1000);
+    expect(neteaseMock.getSongChorus).toHaveBeenCalledWith("100", "nc_cookie_123");
+
+    const qqChorus = await agg.getSongChorus("qq:200", aggregatedCookie);
+    expect(qqChorus?.startTime).toBe(2000);
+    expect(qqMock.getSongChorus).toHaveBeenCalledWith("200", "qc_cookie_456");
+
+    // 3. searchArtists & getArtistSongs
+    await agg.searchArtists("周杰伦", 10, aggregatedCookie);
+    expect(neteaseMock.searchArtists).toHaveBeenCalledWith("周杰伦", 10, "nc_cookie_123");
+    expect(qqMock.searchArtists).toHaveBeenCalledWith("周杰伦", 10, "qc_cookie_456");
+
+    await agg.getArtistSongs("netease:10", aggregatedCookie);
+    expect(neteaseMock.getArtistSongs).toHaveBeenCalledWith("10", "nc_cookie_123");
+
+    await agg.getArtistSongs("qq:20", aggregatedCookie);
+    expect(qqMock.getArtistSongs).toHaveBeenCalledWith("20", "qc_cookie_456");
+
+    // 4. searchAlbums & getAlbumSongs
+    await agg.searchAlbums("范特西", 5, aggregatedCookie);
+    expect(neteaseMock.searchAlbums).toHaveBeenCalledWith("范特西", 5, "nc_cookie_123");
+    expect(qqMock.searchAlbums).toHaveBeenCalledWith("范特西", 5, "qc_cookie_456");
+
+    await agg.getAlbumSongs("netease:20", aggregatedCookie);
+    expect(neteaseMock.getAlbumSongs).toHaveBeenCalledWith("20", "nc_cookie_123");
+
+    await agg.getAlbumSongs("qq:30", aggregatedCookie);
+    expect(qqMock.getAlbumSongs).toHaveBeenCalledWith("30", "qc_cookie_456");
+  });
 });
