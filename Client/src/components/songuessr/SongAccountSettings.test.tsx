@@ -406,15 +406,14 @@ describe("SongAccountSettings", () => {
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     expect(within(toggle).getByText("网易云达人")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "VIP · 柒" })).toHaveAttribute(
-      "src",
-      "/assets/netease-vip/VIP-7.png",
-    );
+    const neteaseBadge = within(toggle).getByRole("img", { name: "VIP · 柒" });
+    expect(neteaseBadge).toHaveAttribute("src", "/assets/netease-vip/VIP-7.png");
+    expect(neteaseBadge).toHaveClass("h-4");
+
     expect(within(toggle).getByText("QQ达人")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "豪华绿钻 · LV8" })).toHaveAttribute(
-      "src",
-      "/assets/qqmusic-vip/VIP-8.png",
-    );
+    const qqBadge = within(toggle).getByRole("img", { name: "豪华绿钻 · LV8" });
+    expect(qqBadge).toHaveAttribute("src", "/assets/qqmusic-vip/VIP-8.png");
+    expect(qqBadge).toHaveClass("h-[26px]");
   });
 
   it("正确渲染 QQ 音乐年费绿钻6级官方徽章与年费超级会员", () => {
@@ -447,10 +446,12 @@ describe("SongAccountSettings", () => {
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     expect(within(toggle).getByText("年费达人")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "年费绿钻 · LV6" })).toHaveAttribute(
+    const yearBadge = within(toggle).getByRole("img", { name: "年费绿钻 · LV6" });
+    expect(yearBadge).toHaveAttribute(
       "src",
       "/assets/qqmusic-vip/VIP-6-Year.png",
     );
+    expect(yearBadge).toHaveClass("h-[26px]");
   });
 
   it("切换到QQ音乐Tab但未登录时，折叠态网易云账号不被污染，且QQ音乐显示未配置", () => {

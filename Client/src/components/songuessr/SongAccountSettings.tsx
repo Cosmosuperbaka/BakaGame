@@ -119,7 +119,7 @@ const QQ_VIP_BADGE_SRC: {
   ],
 };
 
-function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string } | null {
+function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string; platform: SongMusicPlatform } | null {
   const isQq = account.platform === "qq";
   if (isQq) {
     const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 10);
@@ -127,18 +127,18 @@ function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string 
     if (account.vipTier === "svip") {
       const src = isYear ? QQ_VIP_BADGE_SRC.svipYear[level] : QQ_VIP_BADGE_SRC.svip[level];
       const prefix = isYear ? "年费超级会员" : "超级会员";
-      return { src, label: `${prefix} · SVIP${level}` };
+      return { src, label: `${prefix} · SVIP${level}`, platform: "qq" };
     }
     if (account.vipTier === "vip") {
       const src = isYear ? QQ_VIP_BADGE_SRC.vipYear[level] : QQ_VIP_BADGE_SRC.vip[level];
       const prefix = isYear ? "年费绿钻" : "豪华绿钻";
-      return { src, label: `${prefix} · LV${level}` };
+      return { src, label: `${prefix} · LV${level}`, platform: "qq" };
     }
   } else {
     const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
-    if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}` };
-    if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}` };
-    if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包" };
+    if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
+    if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
+    if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包", platform: "netease" };
   }
   return null;
 }
@@ -165,11 +165,28 @@ function AccountAvatar({ account, className }: { account: SonGuessrMusicAccount;
   );
 }
 
-/** 官方会员徽章（没有徽章的档位退回文字）与到期日：折叠单行与展开卡共用，保证两处的图片与排版一致。 */
-function VipStatus({ vip, badge }: { vip: { label: string; expire: string }; badge: { src: string; label: string } | null }) {
+/** 官方会员徽章（没有徽章的档位退回文字）与到期日：折叠单行与展开卡共用，保证两处的图片与排版一致。
+ *  QQ 音乐官方母版 PNG 画布高 46px 但徽章实体仅占 28px（上下含 9px 透明边距），
+ *  需将图像高放大约 1.64 倍至 26px 并配合 -my-[5px] 负外边距，使视觉实体高度与网易云（无透明边距 16px）绝对对齐且不撑高外层行高。 */
+function VipStatus({
+  vip,
+  badge,
+}: {
+  vip: { label: string; expire: string };
+  badge: { src: string; label: string; platform?: SongMusicPlatform } | null;
+}) {
+  const isQq = badge?.platform === "qq" || Boolean(badge?.src.includes("qqmusic-vip"));
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-      {badge ? <img src={badge.src} alt={badge.label} className="h-4 w-auto" /> : <span className="font-medium text-foreground">{vip.label}</span>}
+      {badge ? (
+        <img
+          src={badge.src}
+          alt={badge.label}
+          className={cn("w-auto shrink-0", isQq ? "h-[26px] -my-[5px]" : "h-4")}
+        />
+      ) : (
+        <span className="font-medium text-foreground">{vip.label}</span>
+      )}
       {vip.expire ? <>{" "}<span className="tabular-nums">{vip.expire}</span></> : null}
     </span>
   );
@@ -382,7 +399,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   ) => {
     const isQq = platform === "qq";
     const Icon = isQq ? QQMusicIcon : NeteaseCloudMusicIcon;
-    const iconClass = isQq ? "size-3.5 shrink-0" : "size-3.5 shrink-0 text-muted-foreground";
+    const iconClass = "size-3.5 shrink-0";
 
     const platformName = isQq ? "QQ音乐" : "网易云";
 
