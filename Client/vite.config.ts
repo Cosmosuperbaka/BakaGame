@@ -6,7 +6,7 @@ import { execSync } from 'child_process'
 import fs from 'fs'
 import sharp from 'sharp'
 import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
-import { PAGE_META, REPOSITORY_URL, SITE_NAME, SITE_ORIGIN } from './src/data/PageMeta.ts'
+import { PAGE_META, REPOSITORY_URL, SITE_NAME, SITE_ORIGIN, buildFaqStructuredData } from './src/data/PageMeta.ts'
 import {
   COMMIT_HISTORY_LIMIT,
   commitsApiUrl,
@@ -371,7 +371,7 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
 // 为什么不是「让 Helmet 接管」：react-helmet-async v3 在 React 19 下不走 DOM 复用路径
 // （client.ts 里按 isEqualNode 复用旧标签的逻辑只在旧路径生效），它会直接渲染新标签，
 // 静态标签留在原地就会变成重复 canonical —— 搜索引擎遇到重复 canonical 会判定整组失效。
-// JSON-LD 例外：它用固定 id，Seo 的 useEffect 按同一 id 覆盖内容，不产生重复。
+// JSON-LD 例外：结构化数据与 FAQPage 各用一个固定 id，Seo 的 useEffect 按同一 id 覆盖内容，不产生重复。
 //
 // 正文外壳必须在**首次绘制之前**从执行 JS 的客户端里消失，否则用户进站会先看到一段裸文本。
 // 入口是 defer 的 module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后，
@@ -384,6 +384,7 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
 // 也不用 <noscript>：目标恰恰是不执行 JS 的爬虫，而 noscript 里的内容在多数引擎眼中信号更弱。
 const STATIC_SEO_ATTRIBUTE = 'data-static-seo'
 const STRUCTURED_DATA_ID = 'bakagame-structured-data'
+const FAQ_STRUCTURED_DATA_ID = 'bakagame-faq-structured-data'
 // 清空外壳的内联脚本（构建后必须存在，缺失即断言失败）
 const SHELL_CLEAR_CODE = 'document.getElementById("root").replaceChildren()'
 
@@ -412,10 +413,29 @@ function staticShellPlugin() {
         throw new Error('静态外壳：dist/index.html 里找不到 </head>')
       }
 
+      // FAQ 是每页的必备内容：缺问答、空条目或重复问题，直接让构建失败——
+      // 这块内容用户不可见，坏了不会有任何观感反馈，只能靠断言拦在部署前。
+      for (const meta of PAGE_META) {
+        if (meta.faq.length === 0) {
+          throw new Error(`静态外壳：${meta.path} 缺少 FAQ 问答文案`)
+        }
+        const questions = new Set<string>()
+        for (const item of meta.faq) {
+          if (!item.q.trim() || !item.a.trim()) {
+            throw new Error(`静态外壳：${meta.path} 的 FAQ 存在空问题或空答案`)
+          }
+          if (questions.has(item.q)) {
+            throw new Error(`静态外壳：${meta.path} 的 FAQ 问题重复（${item.q}）`)
+          }
+          questions.add(item.q)
+        }
+      }
+
       const pages = PAGE_META.map((meta) => {
         const canonical = `${SITE_ORIGIN}${meta.path}`
         const description = escapeHtml(meta.description)
         const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`)
+        const faqStructuredData = buildFaqStructuredData(meta.faq)
         const head = [
           `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           ...(meta.keywords && meta.keywords.length > 0
@@ -434,6 +454,9 @@ function staticShellPlugin() {
           `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
           `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
+          ...(faqStructuredData
+            ? [`<script id="${FAQ_STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(faqStructuredData)}</script>`]
+            : []),
         ].join('\n    ')
 
         const body = [
@@ -442,6 +465,9 @@ function staticShellPlugin() {
           `<ul>${meta.shell.links
             .map((link) => `<li><a href="${link.href}">${escapeHtml(link.label)}</a></li>`)
             .join('')}</ul>`,
+          `<section><h2>常见问题</h2>${meta.faq
+            .map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`)
+            .join('')}</section>`,
         ].join('')
 
         const html = original
@@ -469,7 +495,7 @@ function staticShellPlugin() {
         }
         const primary = path.join(distDir, page.outputs[0])
         const written = fs.readFileSync(primary, 'utf8')
-        for (const marker of ['<div id="root"><main>', SHELL_CLEAR_CODE, `${STATIC_SEO_ATTRIBUTE}="1"`, STRUCTURED_DATA_ID]) {
+        for (const marker of ['<div id="root"><main>', SHELL_CLEAR_CODE, `${STATIC_SEO_ATTRIBUTE}="1"`, STRUCTURED_DATA_ID, FAQ_STRUCTURED_DATA_ID, '常见问题']) {
           if (!written.includes(marker)) {
             throw new Error(`静态外壳：${page.outputs[0]} 缺少 ${marker}`)
           }

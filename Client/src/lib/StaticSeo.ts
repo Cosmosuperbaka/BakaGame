@@ -9,7 +9,7 @@
  * 见 client.ts 的 updateTags 只在旧路径生效），静态标签留在原地就会变成**重复标签**；
  * 搜索引擎遇到重复 canonical 会判定整组失效，比缺失更糟。
  *
- * JSON-LD 不在此列：它用固定 id，`Seo` 的 useEffect 按同一 id 覆盖内容，不会重复。
+ * JSON-LD 不在此列：结构化数据与 FAQPage 均用固定 id，`Seo` 的 useEffect 按同一 id 覆盖内容，不会重复。
  */
 export function stripStaticSeo() {
   for (const element of document.head.querySelectorAll("[data-static-seo]")) {

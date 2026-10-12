@@ -86,9 +86,9 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - **文案单一真相源**：`PageMeta.ts` 同时被页面组件的 `Seo`（运行时写 head）与插件（构建期写 HTML）
   消费，改了描述两处一起变。页面侧调用因此简化为 `<Seo path="/" />`；未登记的路径（房间页、
   单人页）必须显式传 `description`，否则组件当场抛错。
-- 新增开放大厅须同步 `PageMeta`、主页游戏介绍与链接、资源冒烟和 SEO E2E（站点地图由构建期
-  从 `PageMeta` 生成，无需手改；分享图素材放 `public/assets` 同名文件）；运行时
-  `description` 与 `og:description` 必须读取同一份解析后的文案。房间页保持 `noindex`，并在
+- 新增开放大厅须同步 `PageMeta`（含每页 FAQ 问答与结构化数据）、主页游戏介绍与链接、资源冒烟和
+  SEO E2E（站点地图由构建期从 `PageMeta` 生成，无需手改；分享图素材放 `public/assets` 同名文件）；
+  运行时 `description` 与 `og:description` 必须读取同一份解析后的文案。房间页保持 `noindex`，并在
   `robots.txt` 排除对应房间路径，CCB 的增强房与原版房共用 `/ccb/room/` 规则。
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
@@ -98,6 +98,10 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   显著变更时更新、不随构建刷新（手写在 `public/sitemap.xml` 的旧版已删除）；分享图从
   `public/assets` 的同名源图转 jpg（全站图片管线只产 webp，而 QQ 等分享抓取器不认 webp，
   卡片实测显示不出图），`PageMeta.image` 一律写 `${SITE_ORIGIN}/og/<名>.jpg`，外链图原样放行。
+- **FAQ 与组织实体结构化数据**：每页的常见问答（`PageMeta.faq`）由构建期写进静态外壳正文并派生
+  FAQPage JSON-LD，运行时 `Seo` 按固定 id 重建同一份数据；问答随外壳在首帧前一起清空，用户不可见。
+  缺问答、空条目或重复问题会让构建直接失败——这块内容坏了没有观感反馈，只能靠断言拦在部署前。
+  首页 WebSite 结构化数据内含 Organization 实体（`sameAs` 指向 `REPOSITORY_URL`），用于 AI 搜索的实体识别。
 - **正文外壳必须在首次绘制之前消失**：外壳插在 `#root` 内，紧随其后是一段 parser-blocking
   内联脚本 `document.getElementById("root").replaceChildren()`，随解析同步清空。入口是 defer 的
   module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后——只靠它替换 `#root`，
@@ -111,7 +115,8 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   再由 react-helmet-async 按当前路由写入真值。**不要改成「让 Helmet 接管静态标签」**——
   react-helmet-async v3 在 React 19 下不走 DOM 复用路径（复用旧标签的逻辑只在旧路径生效），
   它会直接渲染新标签，静态标签留在原地就变成重复 canonical——搜索引擎判定整组失效，比缺失更糟。
-  JSON-LD 例外：用固定 id `bakagame-structured-data`，`Seo` 的 useEffect 按同一 id 覆盖内容，不重复。
+  JSON-LD 例外：结构化数据与 FAQPage 各用一个固定 id（`bakagame-structured-data` 与
+  `bakagame-faq-structured-data`），`Seo` 的 useEffect 按同一 id 覆盖内容，不重复。
 - 不注入的页面：房间页与单人页——内容由服务端实时状态驱动，没有可静态化的正文，且已标 `noindex`。
 - 自校验：插件在注入点缺失或产物缺少标记时直接让构建失败；`scripts/asset-smoke.mjs` 逐路由断言
   外壳存在（无浏览器，跑在 CI 的 client job）；「有没有产生重复标签」由 E2E 用真实浏览器断言

@@ -82,6 +82,10 @@ try {
       `<meta name="description"`,
       'type="application/ld+json"',
       '<title>BakaGame</title>',
+      // FAQ：每页问答正文 + FAQPage 结构化数据（构建期由 static-shell 插件注入，用户不可见）
+      'id="bakagame-faq-structured-data"',
+      '"@type":"FAQPage"',
+      "常见问题",
       text,
     ];
     for (const marker of markers) {
@@ -120,7 +124,7 @@ try {
 
   console.log(
     `资源冒烟通过：${required.length} 个固定资源、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、` +
-      `${shellChecks.length} 个静态外壳、${sitemapLocs.length} 条站点地图、${ogImages.length} 张分享图`,
+      `${shellChecks.length} 个静态外壳（含 FAQ 问答）、${sitemapLocs.length} 条站点地图、${ogImages.length} 张分享图`,
   );
 } finally {
   await preview.close();

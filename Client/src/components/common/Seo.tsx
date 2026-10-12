@@ -1,9 +1,36 @@
 import { useEffect } from "react";
 import { Helmet } from "react-helmet-async";
-import { SITE_NAME, SITE_ORIGIN, findPageMeta } from "@/data/PageMeta";
+import { SITE_NAME, SITE_ORIGIN, buildFaqStructuredData, findPageMeta } from "@/data/PageMeta";
 
-/** JSON-LD 脚本在 <head> 中的固定 id，用于跨页面切换时先移除旧数据再写入新数据。 */
+/** 结构化数据脚本在 <head> 中的固定 id，用于跨页面切换时先移除旧数据再写入新数据。 */
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
+/** FAQPage 结构化数据的固定 id；与构建期静态外壳写入的脚本共用同一套「按 id 覆盖」机制。 */
+const FAQ_STRUCTURED_DATA_ID = "bakagame-faq-structured-data";
+
+/**
+ * 按固定 id 管理 <head> 里的一份 JSON-LD：已存在则原地覆盖内容，内容为空则移除。
+ *
+ * 为什么不让 Helmet 承载：Helmet 在 React 19 下把 <script> 渲染成 React 元素，
+ * 交给 React 的 head 提升机制插入，该行为依赖运行时实现、在预渲染与测试环境下
+ * 会落到 <body> 里，位置不可控。JSON-LD 必须稳定落在 <head>，因此手动管理。
+ * 构建期静态外壳已写入同 id 的脚本，这里按 id 复用并覆盖内容，不会产生重复标签。
+ */
+function useStructuredDataScript(id: string, json: string | null) {
+  useEffect(() => {
+    const existing = document.getElementById(id);
+    if (!json) {
+      existing?.remove();
+      return;
+    }
+
+    const script = (existing as HTMLScriptElement | null) ?? document.createElement("script");
+    script.id = id;
+    script.type = "application/ld+json";
+    script.textContent = json;
+
+    if (!existing) document.head.appendChild(script);
+  }, [id, json]);
+}
 
 interface SeoProps {
   /** 站内路径（以 / 开头）；用于生成 canonical 与 og:url，并据此查 PageMeta。 */
@@ -48,25 +75,11 @@ export function Seo({ path, description, image, keywords, indexable = true, stru
   const resolvedKeywords = keywords ?? meta?.keywords;
   const resolvedStructuredData = structuredData ?? meta?.structuredData;
   const structuredDataJson = resolvedStructuredData ? JSON.stringify(resolvedStructuredData) : null;
+  const faqStructuredData = buildFaqStructuredData(meta?.faq);
+  const faqStructuredDataJson = faqStructuredData ? JSON.stringify(faqStructuredData) : null;
 
-  // 结构化数据不走 Helmet：Helmet 在 React 19 下把 <script> 渲染成 React 元素，
-  // 交给 React 的 head 提升机制插入，该行为依赖运行时实现、在预渲染与测试环境下
-  // 会落到 <body> 里，位置不可控。JSON-LD 必须稳定落在 <head>，因此手动管理。
-  // 构建期静态外壳已写入同 id 的脚本，这里按 id 复用并覆盖内容，不会产生重复标签。
-  useEffect(() => {
-    const existing = document.getElementById(STRUCTURED_DATA_ID);
-    if (!structuredDataJson) {
-      existing?.remove();
-      return;
-    }
-
-    const script = (existing as HTMLScriptElement | null) ?? document.createElement("script");
-    script.id = STRUCTURED_DATA_ID;
-    script.type = "application/ld+json";
-    script.textContent = structuredDataJson;
-
-    if (!existing) document.head.appendChild(script);
-  }, [structuredDataJson]);
+  useStructuredDataScript(STRUCTURED_DATA_ID, structuredDataJson);
+  useStructuredDataScript(FAQ_STRUCTURED_DATA_ID, faqStructuredDataJson);
 
   return (
     <Helmet prioritizeSeoTags>

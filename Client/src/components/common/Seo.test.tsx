@@ -117,6 +117,25 @@ describe("Seo", () => {
     expect(document.body.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
+  it("登记页面的常见问答注入为 FAQPage 结构化数据", async () => {
+    renderSeo({ path: "/whoisfaker" });
+    const faq = findPageMeta("/whoisfaker")!.faq;
+
+    await waitFor(() => {
+      const script = document.getElementById("bakagame-faq-structured-data");
+      expect(script).not.toBeNull();
+      const parsed = JSON.parse(script!.textContent ?? "");
+      expect(parsed["@type"]).toBe("FAQPage");
+      expect(parsed.mainEntity).toHaveLength(faq.length);
+      expect(parsed.mainEntity[0].name).toBe(faq[0].q);
+      expect(parsed.mainEntity[0].acceptedAnswer.text).toBe(faq[0].a);
+    });
+
+    // 与结构化数据脚本各用各的固定 id，互不干扰；两者都必须落在 head。
+    expect(document.getElementById("bakagame-structured-data")).not.toBeNull();
+    expect(document.body.querySelector('script[type="application/ld+json"]')).toBeNull();
+  });
+
   it("页面切换时结构化数据被替换而不是叠加", async () => {
     const first = renderSeo({
       description: "描述",
@@ -125,7 +144,8 @@ describe("Seo", () => {
     });
 
     await waitFor(() => {
-      expect(document.head.querySelectorAll('script[type="application/ld+json"]').length).toBe(1);
+      // 首页的 WebSite 与 FAQPage 各注入一份，互不叠加。
+      expect(document.head.querySelectorAll('script[type="application/ld+json"]').length).toBe(2);
     });
 
     first.result.unmount();
@@ -137,10 +157,14 @@ describe("Seo", () => {
 
     await waitFor(() => {
       const scripts = document.head.querySelectorAll('script[type="application/ld+json"]');
-      expect(scripts.length).toBe(1);
-      expect(JSON.parse(scripts[0].textContent ?? "").name).toBe("第二个");
+      expect(scripts.length).toBe(2);
+      expect(JSON.parse(document.getElementById("bakagame-structured-data")!.textContent ?? "").name).toBe("第二个");
+      expect(JSON.parse(document.getElementById("bakagame-faq-structured-data")!.textContent ?? "")["@type"]).toBe(
+        "FAQPage",
+      );
     });
   });
+
   it("页面切换到无结构化数据时移除旧 JSON-LD", async () => {
     const first = renderSeo({
       description: "描述",
@@ -148,9 +172,19 @@ describe("Seo", () => {
       structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "旧页面" },
     });
     await waitFor(() => expect(document.getElementById("bakagame-structured-data")).not.toBeNull());
+    await waitFor(() => expect(document.getElementById("bakagame-faq-structured-data")).not.toBeNull());
     first.result.unmount();
     renderSeo({ description: "房间", path: "/whoisfaker/room/demo", indexable: false });
-    await waitFor(() => expect(document.getElementById("bakagame-structured-data")).toBeNull());
+    await waitFor(() => {
+      expect(document.getElementById("bakagame-structured-data")).toBeNull();
+      expect(document.getElementById("bakagame-faq-structured-data")).toBeNull();
+    });
   });
 
+  it("未登记路径既不注入结构化数据也不注入 FAQPage", async () => {
+    renderSeo({ description: "房间", path: "/ccb/room/1234", indexable: false });
+    await waitFor(() => {
+      expect(document.head.querySelector('script[type="application/ld+json"]')).toBeNull();
+    });
+  });
 });

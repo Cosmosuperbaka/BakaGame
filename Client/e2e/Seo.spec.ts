@@ -49,10 +49,19 @@ test.describe("页面 SEO 元信息", () => {
     );
     await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute("href", "https://game.baka.website/ccb");
     await expect(page.locator('head meta[name="robots"]')).toHaveAttribute("content", "index,follow");
-    const structuredData = page.locator('head script[type="application/ld+json"]');
+    // 结构化数据与 FAQPage 各用固定 id 管理：运行时按 id 覆盖后仍各只有一份，不产生重复标签。
+    const structuredData = page.locator('head script[id="bakagame-structured-data"]');
     await expect(structuredData).toHaveCount(1);
     expect(JSON.parse((await structuredData.textContent())!)).toMatchObject({
       "@type": "SoftwareApplication", name: "CCB 猜动漫角色", url: "https://game.baka.website/ccb",
+    });
+    const faqData = page.locator('head script[id="bakagame-faq-structured-data"]');
+    await expect(faqData).toHaveCount(1);
+    expect(JSON.parse((await faqData.textContent())!)).toMatchObject({
+      "@type": "FAQPage",
+      mainEntity: expect.arrayContaining([
+        expect.objectContaining({ name: "在线猜动漫角色怎么玩？" }),
+      ]),
     });
   });
 
@@ -79,4 +88,15 @@ test.describe("页面 SEO 元信息", () => {
       await expect(page.locator("#root")).toBeEmpty();
     });
   }
+
+  // FAQ 走「外壳正文 + FAQPage 结构化数据」双通道：不执行 JS 的爬虫两种信号都能读到，
+  // 而正文位于 #root 内，随外壳在首帧前一起清空（由上面的清空用例覆盖）。
+  test("四个大厅的静态外壳均含 FAQ 问答与 FAQPage 结构化数据", async ({ page }) => {
+    for (const route of ["/", "/whoisfaker", "/songuessr", "/ccb"]) {
+      const raw = await (await getLoopback(page.request, route)).text();
+      expect(raw).toContain("常见问题");
+      expect(raw).toContain('"@type":"FAQPage"');
+      expect(raw).toContain('id="bakagame-faq-structured-data"');
+    }
+  });
 });
