@@ -1,3 +1,4 @@
+import type { GameRecorder } from '../src/domain/GameRecord';
 import { CCBNativeService } from '../src/application/CCBNativeService';
 import { AppError } from '../src/domain/Errors';
 import type { CCBDataProvider } from '../src/infrastructure/CCBData';
@@ -18,7 +19,7 @@ export const character = (id: number, shared = false): CCBCharacterView => ({
 type Packet = { type?: string; event?: string; payload?: unknown };
 export interface CCBTestClient { record: ConnectionRecord; sent: Packet[]; closed: Array<{ code?: number; reason?: string }>; token?: string; id?: string }
 /** `roomId` 默认普通房号；单人开局的用例传测试房号（普通房至少两人才能开局）。 */
-export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHints?: CCBImageHints, { roomId: defaultRoomId = '1234' }: { roomId?: string } = {}) {
+export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHints?: CCBImageHints, { roomId: defaultRoomId = '1234', gameRecorder }: { roomId?: string; gameRecorder?: GameRecorder } = {}) {
   let clock = 1_000_000;
   const getCalls: number[] = [];
   const data: CCBDataProvider = {
@@ -30,7 +31,7 @@ export function ccbTestHarness(overrides: Partial<CCBDataProvider> = {}, imageHi
     chooseRandomCharacter: async () => character(1), importDirectory: async id => ({ id, subjectIds: [100], missingSubjectIds: [], importedAt: clock }),
     resolveCharacterImage: async id => `https://images.invalid/${id}.jpg`, resolveSubjectImage: async id => `https://images.invalid/s${id}.jpg`, close: () => {}, ...overrides,
   };
-  const service = new CCBNativeService({ data, now: () => clock, random: () => 0, imageHints });
+  const service = new CCBNativeService({ data, now: () => clock, random: () => 0, imageHints, gameRecorder });
   const connect = (name: string): CCBTestClient => {
     const sent: Packet[] = [], closed: CCBTestClient['closed'] = [];
     const record: ConnectionRecord = { id: `${name}-${crypto.randomUUID()}`, lobbySubscribed: false,

@@ -16,6 +16,7 @@ import { createAuth } from "../infrastructure/auth/Auth";
 import { createMailer } from "../infrastructure/auth/Mailer";
 import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
 import { AccountService } from "./AccountService";
+import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
 import { DatabaseFeedbackRepository, DatabaseUserSettingRepository } from "../infrastructure/db/UserDataRepository";
@@ -25,8 +26,8 @@ import type { AppEnv } from "../config/Env";
 import type { EventLogger } from "../infrastructure/EventLogger";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
-export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database }) {
-  const { env, logger, database, ...appOptions } = options;
+export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database; gameRecords?: GameRecordService }) {
+  const { env, logger, database, gameRecords, ...appOptions } = options;
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
   }
@@ -78,10 +79,12 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   // 而不是整局卡死（10-11 生产事故：sort 字段未声明导致搜索 400，猜番完全无法开局）。
   // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
-  const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi });
-  const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
+  const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi, gameRecorder: gameRecords });
+  const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret, gameRecorder: gameRecords });
   const account = createAccount(env, database, logger);
   const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, account, disposeResources: async () => {
+    // 先等在途对局记录写完再关数据库连接。
+    await gameRecords?.close();
     const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");

@@ -1,3 +1,4 @@
+import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
@@ -158,6 +159,8 @@ interface SonGuessrRoundRecord {
    * 本字段若在玩家能答题之前就耗尽，房间会在倒计时还剩几十秒时直接结算。
    */
   hardDeadlineAt?: number;
+  /** 装题时刻，仅供对局记录。 */
+  startedAt: number;
 }
 
 interface SonGuessrRoomRecord {
@@ -211,6 +214,8 @@ export interface SonGuessrServiceOptions {
   now?: () => number;
   random?: RandomSource;
   eventLogger?: EventLogger;
+  /** 未配置数据库时为空：对局记录不落库。 */
+  gameRecorder?: GameRecorder;
 }
 
 const clampInt = (value: number, minimum: number, maximum: number) =>
@@ -2904,6 +2909,7 @@ export class SonGuessrService {
       audioPreparationDeadlineAt: this.now() + AUDIO_READY_GRACE_MS,
       audioReadyDeadlineAt: undefined,
       hardDeadlineAt: undefined,
+      startedAt: this.now(),
     };
     room.pendingSubmitterPlayerId = undefined;
     room.roundSummary = undefined;
@@ -3581,10 +3587,46 @@ export class SonGuessrService {
       scores: this.buildScores(room, round.startScores),
     };
     room.phase = "roundResult";
+    this.recordRound(room, round, room.roundSummary, skipped);
     this.touch(room);
     this.log("song.game.round_finished", room.id, round.submitterPlayerId, {
       roundNumber: round.number,
       correctCount: round.correctPlayerIds.length,
+    });
+  }
+
+  /** 结算快照转成对局记录：摘要放答案与出题人，时间线为逐次猜测。 */
+  private recordRound(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord, summary: SonGuessrRoundSummary, skipped: boolean) {
+    const nameOf = (playerId: string) => room.players[playerId]?.name ?? playerId;
+    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
+      game: "song",
+      roomId: room.id,
+      roundNumber: round.number,
+      startedAt: round.startedAt,
+      endedAt: this.now(),
+      players: summary.scores.map((score) => ({
+        playerId: score.playerId,
+        userId: room.players[score.playerId]?.account?.userId ?? null,
+        name: score.playerName,
+        score: score.delta,
+      })),
+      summary: {
+        questionType: round.settings.questionType,
+        song: { id: round.song.id, title: round.song.title, artist: round.song.artist },
+        ...(round.anime ? { anime: { id: round.anime.id, name: round.anime.name, nameCn: round.anime.nameCn } } : {}),
+        submitter: nameOf(round.submitterPlayerId),
+        correct: round.correctPlayerIds.map(nameOf),
+        skipped,
+        solo: room.solo,
+      },
+      timeline: round.attempts.map((attempt) => ({
+        at: attempt.createdAt,
+        type: "guess",
+        name: attempt.playerName,
+        result: attempt.result,
+        ...(attempt.guessedSong ? { song: `${attempt.guessedSong.title} - ${attempt.guessedSong.artist}` } : {}),
+        ...(attempt.guessedAnime ? { anime: attempt.guessedAnime.nameCn || attempt.guessedAnime.name } : {}),
+      })),
     });
   }
 

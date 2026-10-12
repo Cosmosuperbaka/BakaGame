@@ -12,6 +12,8 @@ import {
 } from "./infrastructure/Sentry";
 import { createDatabase } from "./infrastructure/db/Database";
 import { DatabaseWordBankRepository } from "./infrastructure/WordBankRepository";
+import { DatabaseGameRecordRepository } from "./infrastructure/db/GameRecordRepository";
+import { GameRecordService } from "./application/GameRecordService";
 import { createServer } from "./application/CreateServer";
 
 // ==================== 服务启动 ====================
@@ -40,9 +42,14 @@ database?.ready.then(
   () => logger.info("数据库迁移完成"),
   (error: unknown) => logger.error("数据库迁移失败，账号与记录功能不可用", describeError(error)),
 );
+const gameRecords = database
+  ? new GameRecordService({ repository: new DatabaseGameRecordRepository(database), logger })
+  : undefined;
+gameRecords?.start();
 const whoIsFakerService = new WhoIsFakerService({
   eventLogger: logger,
   wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,
+  gameRecorder: gameRecords,
 });
 
 let isShuttingDown = false;
@@ -50,6 +57,7 @@ let isShuttingDown = false;
 const { app, dispose, sonGuessrService, ccbService, reportBangumiLoad } = createServer({
   env,
   database,
+  gameRecords,
   whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,

@@ -1,4 +1,5 @@
 import { AppError } from "../domain/Errors";
+import { NOOP_GAME_RECORDER, type GameRecordEvent, type GameRecorder } from "../domain/GameRecord";
 import type {
   ChatChannel,
   BlankGuessRecord,
@@ -18,6 +19,7 @@ import type {
   RoleConfig,
   RoundFeedback,
   RoundHistoryEntry,
+  RoundSummary,
   WhoIsFakerRoomRecord,
   WhoIsFakerRoomSnapshot,
   WhoIsFakerRoomSummary,
@@ -89,6 +91,8 @@ export interface WhoIsFakerServiceOptions {
   /** 未配置数据库（本地开发、隔离测试）时为空：词对不落库。 */
   wordBankRepository?: WordBankRepository;
   eventLogger: EventLogger;
+  /** 未配置数据库时为空：对局记录不落库。 */
+  gameRecorder?: GameRecorder;
 }
 
 export class WhoIsFakerService {
@@ -101,6 +105,8 @@ export class WhoIsFakerService {
   private readonly commandHandlers: CommandHandler[];
   private readonly publishedPhaseKeyByRoomId = new Map<string, string>();
   private readonly gameOverAdvanceAllowedAtByRoomId = new Map<string, number>();
+  /** 对局记录用的开局时间，按回合 ID 索引；结算或删房时移除。 */
+  private readonly roundStartedAtById = new Map<string, number>();
   private readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
   /**
    * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
@@ -2234,6 +2240,7 @@ export class WhoIsFakerService {
       pendingDisconnectPlayerIds: [],
       history: [],
     };
+    this.roundStartedAtById.set(room.round.id, this.now());
 
     this.touchRoom(room);
 
@@ -2692,6 +2699,7 @@ export class WhoIsFakerService {
       })),
       history: structuredClone(round.history),
     };
+    this.recordRound(room, round, round.summary);
 
     for (const player of Object.values(room.players)) {
       // 结算后统一重置为“未准备”，房主返回等待阶段后由全员重新确认。
@@ -2713,6 +2721,56 @@ export class WhoIsFakerService {
     // 结算必然改变阶段与摘要，这里统一发布快照；对局小结只走状态通道，
     // 调用方无需也不得再补发 game.roundSummary 事件。
     this.publishRoomState(room);
+  }
+
+  /** 结算快照转成对局记录：摘要放胜负与词对，时间线按时间合并发言与全局历史。 */
+  private recordRound(room: WhoIsFakerRoomRecord, round: GameRound, summary: RoundSummary) {
+    const startedAt = this.roundStartedAtById.get(round.id) ?? this.now();
+    this.roundStartedAtById.delete(round.id);
+    const deltas = new Map(summary.awardedScores.map((item) => [item.playerId, item.delta]));
+    const nameOf = (playerId: string) => room.players[playerId]?.name ?? playerId;
+    const timeline: GameRecordEvent[] = [
+      ...summary.descriptions.map((item) => ({
+        at: item.createdAt, type: "description", playerId: item.playerId, name: item.playerName, kind: item.kind, text: item.text,
+      })),
+      ...(summary.history ?? []).map((entry): GameRecordEvent => {
+        switch (entry.kind) {
+          case "vote":
+            return { at: entry.createdAt, type: "vote", day: entry.day, tieBreak: entry.tieBreak ?? false,
+              votes: entry.votes.map((vote) => ({ ...vote })), eliminated: entry.eliminatedPlayerIds.map(nameOf) };
+          case "night":
+            return { at: entry.createdAt, type: "night", day: entry.day,
+              actions: entry.actions.map((action) => ({ ...action })), eliminated: entry.eliminatedPlayerIds.map(nameOf) };
+          case "blankGuess":
+            return { at: entry.createdAt, type: "blankGuess", day: entry.day, name: nameOf(entry.playerId),
+              guessedWords: [...entry.guessedWords], success: entry.success };
+          case "removal":
+            return { at: entry.createdAt, type: "removal", day: entry.day, name: nameOf(entry.playerId), reason: entry.reason };
+        }
+      }),
+    ].sort((left, right) => left.at - right.at);
+    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
+      game: "faker",
+      roomId: room.id,
+      roundNumber: room.roundCount ?? 1,
+      startedAt,
+      endedAt: this.now(),
+      players: Object.keys(round.assignments).flatMap((playerId) => {
+        const player = room.players[playerId];
+        return player ? [{
+          playerId, userId: player.account?.userId ?? null, name: player.name, score: deltas.get(playerId) ?? 0,
+        }] : [];
+      }),
+      summary: {
+        winner: summary.winner,
+        reason: summary.reason,
+        words: summary.words ?? null,
+        questioner: round.questionerPlayerId ? nameOf(round.questionerPlayerId) : null,
+        roles: summary.revealedRoles.map((item) => ({ name: nameOf(item.playerId), role: item.role })),
+        days: round.day,
+      },
+      timeline,
+    });
   }
 
   private async handlePlayerOffline(
@@ -3049,6 +3107,7 @@ export class WhoIsFakerService {
     }
 
     this.rooms.delete(room.id);
+    if (room.round) this.roundStartedAtById.delete(room.round.id);
     this.publishedPhaseKeyByRoomId.delete(room.id);
     this.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
     await this.log({

@@ -1,4 +1,5 @@
 
+import type { GameRecorder } from "../src/domain/GameRecord";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ConnectionRecord } from "../src/domain/Model";
@@ -11,9 +12,10 @@ export interface TestConnection {
 }
 
 // 为每条测试创建独立的服务实例和可控时钟，避免用例互相污染。
-export const createTestContext = () => {
+export const createTestContext = (options: { gameRecorder?: GameRecorder } = {}) => {
   let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
   const service = new WhoIsFakerService({
+    gameRecorder: options.gameRecorder,
     now: () => currentTime,
     random: {
       nextInt: (maxExclusive: number) => Math.max(maxExclusive - 1, 0),

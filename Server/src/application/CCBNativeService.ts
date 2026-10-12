@@ -1,3 +1,4 @@
+import type { GameRecorder } from '../domain/GameRecord';
 import type { CCBClientMessage, CCBCharacterView, ConnectionRecord } from '../shared/Index';
 import { AppError } from '../domain/Errors';
 import type { CCBPlayerRecord, CCBRoom } from '../domain/CCBModel';
@@ -18,9 +19,9 @@ export class CCBNativeService {
   private readonly inFlight = new Set<string>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   constructor(options: { data: CCBDataProvider; now?: () => number; random?: () => number; imageHints?: CCBImageHints;
-    isRoomIdReserved?: (roomId: string) => boolean }) {
+    isRoomIdReserved?: (roomId: string) => boolean; gameRecorder?: GameRecorder }) {
     this.data = options.data; this.now = options.now ?? Date.now; this.random = options.random ?? Math.random;
-    this.imageHints = options.imageHints ?? new CCBImageHints(); this.state = new CCBRooms(this.now, options.isRoomIdReserved);
+    this.imageHints = options.imageHints ?? new CCBImageHints(); this.state = new CCBRooms(this.now, options.isRoomIdReserved, options.gameRecorder);
   }
   registerConnection(connection: ConnectionRecord) { this.state.registerConnection(connection); }
   unregisterConnection(connectionId: string) { this.state.unregisterConnection(connectionId); this.rescheduleAll(); }

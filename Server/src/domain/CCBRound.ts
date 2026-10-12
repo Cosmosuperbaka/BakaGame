@@ -33,7 +33,7 @@ export function beginCCBRound(room: CCBRoom, answer: CCBCharacterView, hints: st
     id: crypto.randomUUID(), answer: structuredClone(answer), settings: structuredClone(room.settings),
     hints: hints === null ? createCCBHints(answer.summary, room.settings.useHints.length, random) : hints.slice(0, room.settings.useHints.length),
     units, participants: participants.map(player => player.id), guesses: [], characters: new Map([[answer.id, structuredClone(answer)]]),
-    winners: [], syncRound: 1, roundStartRank: 1, initialCount: participants.length,
+    winners: [], syncRound: 1, roundStartRank: 1, initialCount: participants.length, startedAt: now,
     tagOwners: new Map(), pendingTagOwners: new Map(),
   };
 }

@@ -1,3 +1,4 @@
+import type { GameRecorder } from '../domain/GameRecord';
 import type { CCBClientMessage, CCBRoomEnterResult, CCBRoomSummary, ConnectionRecord } from '../shared/Index';
 import { AppError } from '../domain/Errors';
 import type { CCBDataProvider } from '../infrastructure/CCBData';
@@ -25,7 +26,9 @@ export class CCBService {
   private remoteFetchedAt = Number.NEGATIVE_INFINITY;
   private remoteRequest: Promise<void> | null = null;
   private lastLobby = '';
-  constructor(private readonly options: { data: CCBDataProvider; eventLogger?: EventLogger; serverUrl?: string; aesSecret?: string; now?: () => number; random?: () => number; originalService?: CCBOriginalService }) {
+  constructor(private readonly options: { data: CCBDataProvider; eventLogger?: EventLogger; serverUrl?: string; aesSecret?: string; now?: () => number; random?: () => number; originalService?: CCBOriginalService;
+    /** 只记录增强房：原版房的对局在上游服务器进行，本端拿不到完整答案与全员猜测。 */
+    gameRecorder?: GameRecorder }) {
     this.now = options.now ?? Date.now;
     this.directory = new CCBRoomDirectory(roomId => this.native.state.rooms.has(roomId));
     this.native = new CCBNativeService({ ...options, isRoomIdReserved: roomId => this.directory.isAliasTaken(roomId) });

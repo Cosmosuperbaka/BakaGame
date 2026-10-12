@@ -56,6 +56,8 @@ export async function createIndexShutdownHarness(options: {
     "./application/WhoIsFakerService": { WhoIsFakerService: class { constructor() { return service("faker"); } } },
     "./infrastructure/WordBankRepository": { DatabaseWordBankRepository: class {} },
     "./infrastructure/db/Database": { createDatabase: () => { throw new Error("夹具未配置数据库"); } },
+    "./infrastructure/db/GameRecordRepository": { DatabaseGameRecordRepository: class {} },
+    "./application/GameRecordService": { GameRecordService: class {} },
     "./infrastructure/EventLogger": { EventLogger: Logger, describeError: (error: Error) => ({ name: error.name, message: error.message, stack: error.stack, cause: error.cause }) },
     "./infrastructure/OtlpExporter": { OtlpExporter: class {
       sendHeartbeatTrace() { return Promise.resolve(); }

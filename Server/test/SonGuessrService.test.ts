@@ -26,6 +26,7 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
+import type { GameRoundRecord } from "../src/domain/GameRecord";
 import type { BangumiMusicTrack, SongSearchResult } from "../src/shared/SonGuessr";
 import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
@@ -1656,6 +1657,37 @@ describe("SonGuessrService", () => {
       },
     });
     expect(lastEvent<SonGuessrPrivateState>(refreshed, "song.game.privateState").canGiveUp).toBe(true);
+  });
+
+  test("回合结算写入一条对局记录：答案、猜测时间线与本轮得分", async () => {
+    const records: GameRoundRecord[] = [];
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      gameRecorder: { record: (round) => records.push(structuredClone(round)) },
+    });
+    const host = connection(service, "record-host");
+    const guest = connection(service, "record-guest");
+    guest.record.account = { userId: "user-guest", image: null };
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "记录玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, { id: "record-audio", type: "song.game.audioReady", roomId: "1234", payload: { roundNumber: 1 } });
+    await execute(service, guest, { id: "record-wrong", type: "song.game.guess", roomId: "1234", payload: { songId: "wrong" } });
+    await execute(service, guest, { id: "record-right", type: "song.game.guess", roomId: "1234", payload: { songId: "answer" } });
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
+
+    expect(records).toHaveLength(1);
+    const [record] = records;
+    expect(record).toMatchObject({
+      game: "song", roomId: "1234", roundNumber: 1,
+      summary: { song: { id: "answer" }, submitter: "房主", correct: ["记录玩家"], skipped: false },
+    });
+    expect(record!.timeline.map((event) => event.result)).toEqual(["wrong", "correct"]);
+    const guestRecord = record!.players.find((player) => player.name === "记录玩家");
+    expect(guestRecord).toMatchObject({ userId: "user-guest" });
+    expect(guestRecord!.score).toBeGreaterThan(0);
   });
 
   test("结算后补发旧 audioReady 会被幂等忽略", async () => {

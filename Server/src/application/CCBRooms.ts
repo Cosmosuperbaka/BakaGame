@@ -1,5 +1,6 @@
 import { ConnectionRegistry } from './ConnectionRegistry';
 import { AppError } from '../domain/Errors';
+import { NOOP_GAME_RECORDER, type GameRecorder } from '../domain/GameRecord';
 import { type CCBPlayerRecord, type CCBRoom } from '../domain/CCBModel';
 import { advanceCCBRound, getCCBUnit, surrenderCCB } from '../domain/CCBRound';
 import { createDefaultCCBSettings, isValidRoomId, ROOM_ID_TEST_MODE, SERVER_SHUTDOWN_MESSAGE,
@@ -24,8 +25,30 @@ export class CCBRooms {
   private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
     windowMs: CCB_JOIN_PASSWORD_WINDOW_MS, maxRequests: CCB_JOIN_PASSWORD_MAX_ATTEMPTS,
   });
+  /** 已交给对局记录的结算摘要：结算后的多次发布只记一次。 */
+  private readonly recordedSummaries = new WeakSet<object>();
   /** `isRoomIdReserved` 由统一房号目录提供：该号已分配给原版房时增强房不能占用。 */
-  constructor(readonly now: () => number, private readonly isRoomIdReserved: (roomId: string) => boolean = () => false) {}
+  constructor(readonly now: () => number, private readonly isRoomIdReserved: (roomId: string) => boolean = () => false,
+    private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER) {}
+  private recordSettled(room: CCBRoom): void {
+    const { round, summary } = room;
+    if (!round || !summary || this.recordedSummaries.has(summary)) return;
+    this.recordedSummaries.add(summary);
+    const nameOf = (playerId: string) => room.players.get(playerId)?.name ?? playerId;
+    this.gameRecorder.record({
+      game: 'ccb', roomId: room.id, roundNumber: room.roundNumber, startedAt: round.startedAt, endedAt: this.now(),
+      players: summary.scores.map(score => ({ playerId: score.playerId, userId: room.players.get(score.playerId)?.account?.userId ?? null,
+        name: score.playerName, score: score.score })),
+      summary: {
+        answer: { id: summary.answer.id, name: summary.answer.name, nameCn: summary.answer.nameCn },
+        setter: room.setterPlayerId ? nameOf(room.setterPlayerId) : null,
+        winners: summary.winners.map(winner => ({ name: nameOf(winner.playerId), rank: winner.rank, score: winner.score })),
+        mode: { sync: round.settings.syncMode, nonstop: round.settings.nonstopMode, answer: round.settings.answerMode },
+      },
+      timeline: summary.guesses.map(guess => ({ at: guess.createdAt, type: 'guess', name: guess.playerName,
+        character: guess.character.nameCn || guess.character.name, correct: guess.correct, partial: guess.partial })),
+    });
+  }
   getHealthSnapshot() {
     return { roomCount: this.rooms.size, playerCount: [...this.rooms.values()].reduce((sum, room) => sum + room.players.size, 0),
       onlinePlayerCount: [...this.rooms.values()].reduce((sum, room) => sum + [...room.players.values()].filter(player => player.online).length, 0),
@@ -140,6 +163,8 @@ export class CCBRooms {
   }
   publish(room: CCBRoom): void {
     if (!this.rooms.has(room.id)) return;
+    // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
+    if (room.phase === 'settled') this.recordSettled(room);
     const snapshot = ccbSnapshot(room);
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;

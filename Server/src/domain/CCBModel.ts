@@ -14,7 +14,7 @@ export interface CCBRound {
   id: string; answer: CCBCharacterView; settings: CCBSettings; hints: string[];
   units: Map<string, CCBUnit>; participants: string[]; guesses: CCBGuess[];
   characters: Map<number, CCBCharacterView>; winners: CCBWinner[]; syncRound: number;
-  roundStartRank: number; initialCount: number;
+  roundStartRank: number; initialCount: number; startedAt: number;
   tagOwners: Map<string, Set<string>>; pendingTagOwners: Map<string, Set<string>>;
 }
 export interface CCBRoom {
