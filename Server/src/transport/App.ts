@@ -22,6 +22,7 @@ import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
+import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 
 export interface AppDependencies {
@@ -35,6 +36,8 @@ export interface AppDependencies {
   onTriggerShutdown?: () => Promise<void> | void;
   /** 自建图床读取服务：提供时挂载 `/api/bangumi/*`（未提供时该路由 404）。 */
   bangumiImages?: BangumiImageService;
+  /** 账号系统（登录、oRPC、头像代理）：未提供时相关路由回 503 `ACCOUNT_DISABLED`。 */
+  account?: AccountDependencies;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -213,7 +216,7 @@ const executeWithDeduplication = async ({
   }
 };
 
-const isAllowedOrigin = (
+export const isAllowedOrigin = (
   origin: string | null | undefined,
   clientUrl?: string,
 ): boolean => {
@@ -433,6 +436,7 @@ export const createApp = ({
   onTriggerShutdown,
   disposeResources,
   bangumiImages,
+  account,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -508,7 +512,7 @@ export const createApp = ({
       let errorCode = "INTERNAL_ERROR";
       let message = "服务器内部错误";
       if (isAppError(error)) {
-        statusCode = error.code === "FORBIDDEN_ORIGIN" ? 403 : 400; errorCode = error.code; message = error.message;
+        statusCode = statusOfAppError(error.code); errorCode = error.code; message = error.message;
       } else if (code === "PARSE") {
         statusCode = 400; errorCode = "INVALID_JSON"; message = "请求必须为合法 JSON";
       } else if (String(code) === "VALIDATION" && (!(error instanceof ValidationError) || error.type !== "response")) {
@@ -541,6 +545,8 @@ export const createApp = ({
     )
     // ==================== 自建图床（avif 分片缓存） ====================
     .use(bangumiImageRoutes(bangumiImages))
+    // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
+    .use(accountRoutes(account, logger))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,

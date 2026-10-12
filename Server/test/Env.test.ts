@@ -40,6 +40,40 @@ describe("readEnv 环境变量与启动断言", () => {
     expect(() => createServer(options)).toThrow(/DATABASE_URL/);
   });
 
+  it("账号配置随数据库启用：密钥必填，SMTP 三项须成套，ADMIN_QQ 校验号码", () => {
+    const keys = ["DATABASE_URL", "BETTER_AUTH_SECRET", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "MAIL_DEV_CONSOLE", "ADMIN_QQ"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      expect(readEnv().account).toBeUndefined();
+      Bun.env.DATABASE_URL = "mysql://fixture:fixture@db.invalid:4000/bakagame";
+      expect(() => readEnv()).toThrow(/BETTER_AUTH_SECRET/);
+      Bun.env.BETTER_AUTH_SECRET = "x".repeat(32);
+      expect(readEnv().account).toEqual({ secret: "x".repeat(32), adminQqNumbers: [], mail: { kind: "none" } });
+      Bun.env.MAIL_DEV_CONSOLE = "true";
+      Bun.env.ADMIN_QQ = "10001, 123456789";
+      expect(readEnv().account).toMatchObject({ adminQqNumbers: ["10001", "123456789"], mail: { kind: "console" } });
+      Bun.env.SMTP_HOST = "smtp.fixture.invalid";
+      expect(() => readEnv()).toThrow(/SMTP_HOST、SMTP_USER、SMTP_PASS/);
+      Bun.env.SMTP_USER = "noreply@fixture.invalid";
+      Bun.env.SMTP_PASS = "fixture-pass";
+      expect(readEnv().account?.mail).toEqual({ kind: "smtp", smtp: { host: "smtp.fixture.invalid", port: 465, user: "noreply@fixture.invalid", pass: "fixture-pass", from: "noreply@fixture.invalid" } });
+      Bun.env.ADMIN_QQ = "0123";
+      expect(() => readEnv()).toThrow(/ADMIN_QQ/);
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
+  it("生产服务的账号系统必须配置 SMTP", () => {
+    const base = { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: "fixture-search-key" };
+    const options = { env: { ...base, account: { secret: "x".repeat(32), adminQqNumbers: [], mail: { kind: "console" } } }, database: {} } as unknown as Parameters<typeof createServer>[0];
+    expect(() => createServer(options)).toThrow(/SMTP_HOST/);
+  });
+
   it("对非法端口号抛出 CONFIG_ERROR 快速失败", () => {
     const originalPort = Bun.env.SERVER_PORT;
     try {

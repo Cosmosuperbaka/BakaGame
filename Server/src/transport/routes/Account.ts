@@ -1,0 +1,120 @@
+import { ORPCError, implement } from "@orpc/server";
+import { RPCHandler } from "@orpc/server/fetch";
+import { Elysia } from "elysia";
+
+import type { AccountService } from "../../application/AccountService";
+import { isAppError } from "../../domain/Errors";
+import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
+import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
+import { ACCOUNT_AVATAR_PATH, AUTH_BASE_PATH } from "../../shared/Account";
+import { apiContract } from "../../shared/ApiContract";
+
+export const RPC_BASE_PATH = "/api/rpc";
+
+/** 账号系统运行时依赖：只有配置了数据库才装配。 */
+export interface AccountDependencies {
+  auth: Auth;
+  service: AccountService;
+  /** 数据库迁移完成后才对外服务账号请求。 */
+  ready: Promise<void>;
+}
+
+interface RpcContext {
+  headers: Headers;
+}
+
+/** 业务错误码 → HTTP 状态（HTTP 全局错误钩子与 oRPC 共用）；未列出的业务错误按 400。 */
+const STATUS_BY_CODE: Record<string, number> = {
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  FORBIDDEN_ORIGIN: 403,
+  NOT_FOUND: 404,
+  RATE_LIMITED: 429,
+  MAIL_UNAVAILABLE: 503,
+  AVATAR_UNAVAILABLE: 503,
+  ACCOUNT_DISABLED: 503,
+};
+
+export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
+
+const createRpcRouter = (service: AccountService, logger: EventLogger) => {
+  const base = implement(apiContract).$context<RpcContext>().use(async ({ next, path }) => {
+    try {
+      return await next();
+    } catch (error) {
+      if (error instanceof ORPCError) throw error;
+      if (isAppError(error)) {
+        throw new ORPCError(error.code, { status: statusOfAppError(error.code), message: error.message });
+      }
+      logger.error(`RPC 内部异常 [${path.join(".")}]`, describeError(error));
+      throw new ORPCError("INTERNAL_ERROR", { status: 500, message: "服务器内部错误" });
+    }
+  });
+  const signedIn = base.use(async ({ context, next }) => {
+    const userId = await service.currentUserId(context.headers);
+    if (!userId) throw new ORPCError("UNAUTHORIZED", { status: 401, message: "请先登录" });
+    return next({ context: { userId } });
+  });
+
+  return base.router({
+    account: {
+      requestLoginCode: base.account.requestLoginCode.handler(({ input }) => service.requestLoginCode(input.qqNumber)),
+      me: base.account.me.handler(async ({ context }) => {
+        const userId = await service.currentUserId(context.headers);
+        return userId ? service.me(userId) : null;
+      }),
+      updateProfile: signedIn.account.updateProfile.handler(({ context, input }) => service.updateProfile(context.userId, input)),
+      publicProfile: base.account.publicProfile.handler(({ input }) => service.publicProfile(input.userId)),
+    },
+  });
+};
+
+const accountDisabled = () => new Response(
+  JSON.stringify({ error: { code: "ACCOUNT_DISABLED", message: "账号系统未启用" } }),
+  { status: 503, headers: { "content-type": "application/json" } },
+);
+
+const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
+
+/**
+ * 账号 HTTP 入口：Better Auth 白名单端点、oRPC、站内头像代理。
+ *
+ * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端据此隐藏登录入口，游客游玩不受影响。
+ */
+export const accountRoutes = (account: AccountDependencies | undefined, logger: EventLogger) => {
+  const rpc = account ? new RPCHandler(createRpcRouter(account.service, logger)) : undefined;
+  return new Elysia({ name: "account-routes" })
+    .all(`${AUTH_BASE_PATH}/*`, async ({ request }) => {
+      if (!account) return accountDisabled();
+      const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
+      if (!AUTH_HTTP_PATHS.has(path)) {
+        return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "请求资源不存在" } }), {
+          status: 404, headers: { "content-type": "application/json" },
+        });
+      }
+      await account.ready;
+      return account.auth.handler(request);
+    }, { parse: "none", detail: { hide: true } })
+    .all(`${RPC_BASE_PATH}/*`, async ({ request }) => {
+      if (!account || !rpc) return accountDisabled();
+      await account.ready;
+      const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });
+      return matched ? response : new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "请求资源不存在" } }), {
+        status: 404, headers: { "content-type": "application/json" },
+      });
+    }, { parse: "none", detail: { hide: true } })
+    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query }) => {
+      if (!account) return accountDisabled();
+      await account.ready;
+      const size = AVATAR_SIZES[(query.size ?? "640") as keyof typeof AVATAR_SIZES] ?? 640;
+      const { image, current } = await account.service.avatar(params.userId, size, query.v);
+      return new Response(image.bytes, {
+        headers: {
+          "content-type": image.contentType,
+          // 版本号与当前摘要一致时 URL 内容永不变化；否则（旧链接、未带版本）只短缓存。
+          "cache-control": current ? "public, max-age=31536000, immutable" : "public, max-age=300",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }, { detail: { hide: true } });
+};

@@ -237,15 +237,17 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `MEILISEARCH_URL` | 独立 Meili 容器下回环地址不可达：搜索与出题链路初始化失败（**不降级**，不可用） | Meili 与 app 同网络命名空间时可不设（默认 `http://127.0.0.1:7700`）；独立容器设为容器可达地址（如 `http://<meili 容器名>:7700`），与 `MEILISEARCH_KEY` 同批核对 |
 | `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
 | `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；首次上线后在容器内执行一次 `bun run db:import-word-bank` 迁移旧词库，见 [Database](Database.md) |
+| `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时服务拒绝启动 | 至少 32 字符随机串，`openssl rand -hex 32` 生成；更换会使全部登录会话失效 |
+| `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#6-配置) |
 
 存在性自查（只计数、不打印值）：
 
 ```bash
 sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET|DATABASE_URL)='
+  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET|DATABASE_URL|BETTER_AUTH_SECRET|SMTP_HOST|SMTP_USER|SMTP_PASS)='
 ```
 
-完整生产配置输出 7，未启用原版房时为 6。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
+完整生产配置输出 11，未启用原版房时为 10（`SMTP_PORT`、`MAIL_FROM`、`ADMIN_QQ` 为选填，不计入）。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
 
 **首次从「来源 IP 校验」旧版迁移**：Bearer 版脚本对旧版服务必然收到 403，首次部署会在第 4 步安全中止——不重启容器、线上保持旧版，且工作区已完成代码与数据的对齐校验（含 release 元数据生成），属预期行为而非故障。运维在确认中止后手动重启（或重建）容器令新版上线——**重建前逐项核对上表**（`MAINTENANCE_TOKEN` 名称与取值、独立 Meili 容器下的 `MEILISEARCH_URL` 可达性）——再以同一获验 CI run 重新触发部署，即可完成端到端验证；此后链路对新版原生可用。该迁移已于 2026-10-09 实际完成（step4 维护通知授权成功、部署 23 秒全程通过），本节保留为迁移期行为说明。
 

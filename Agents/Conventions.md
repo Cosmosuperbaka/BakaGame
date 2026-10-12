@@ -179,6 +179,14 @@ BANGUMI_IMAGE_SOURCE=
 MEILISEARCH_KEY=
 CCB_ORIGINAL_AES_SECRET=
 DATABASE_URL=
+BETTER_AUTH_SECRET=
+SMTP_HOST=
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=
+MAIL_DEV_CONSOLE=
+ADMIN_QQ=
 ```
 
 `BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。**番剧图片的对外前缀写死 `/api/bangumi`（自建图床），不提供环境变量开关** —— 前缀可配就必然有人配出边缘不放行的路径，线上整站图片会变成 SPA HTML。图片在服务端按固定前缀重写，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器；`BANGUMI_IMAGE_SOURCE` 只决定图床缺图时去哪补（留空 = 只服务已缓存的图），细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
@@ -188,7 +196,7 @@ DATABASE_URL=
 和 5 秒请求超时由代码固定，不向客户端暴露。启动会校验 Meilisearch 健康状态并维护搜索索引；
 未设置搜索密钥仅供本地开发和隔离测试使用本地搜索。`CCB_ORIGINAL_AES_SECRET` 仅供原版兼容房使用。
 
-`DATABASE_URL` 是 TiDB（MySQL 协议）连接串，必须带库名，生产必填；未配置时账号、云同步、后台与对局记录关闭。连接、迁移与导入见 [Database](Database.md)。
+`DATABASE_URL` 是 TiDB（MySQL 协议）连接串，必须带库名，生产必填；未配置时账号、云同步、后台与对局记录关闭。连接、迁移与导入见 [Database](Database.md)。账号系统随数据库启用，`BETTER_AUTH_SECRET`、SMTP、`MAIL_DEV_CONSOLE` 与 `ADMIN_QQ` 的规则见 [Account](Account.md#6-配置)。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash

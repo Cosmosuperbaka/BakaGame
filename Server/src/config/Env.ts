@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { AppError } from "../domain/Errors";
+import { QQ_NUMBER_PATTERN } from "../shared/Account";
 
 const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"]);
 
@@ -20,6 +21,8 @@ export interface AppEnv {
   serverPort: number;
   /** TiDB 连接串；未配置时账号、云同步、后台与对局记录整体关闭（生产必填）。 */
   databaseUrl?: string;
+  /** 账号系统配置：随数据库一同启用，缺数据库时为空。 */
+  account?: AccountEnv;
   otelEndpoint?: string;
   otelHeaders?: Record<string, string>;
   otelServiceName?: string;
@@ -70,7 +73,59 @@ export interface AppEnv {
   meilisearchKey?: string;
 }
 
+export interface SmtpEnv {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  /** 发件人，如 `BakaGame <noreply@baka.website>`；缺省用 SMTP_USER。 */
+  from: string;
+}
+
+export interface AccountEnv {
+  /** Better Auth 会话签名密钥（≥ 32 字符）。 */
+  secret: string;
+  /** 启动时提升为管理员的 QQ 号。 */
+  adminQqNumbers: string[];
+  /** 验证码投递：SMTP，或仅限非生产环境的控制台输出（`MAIL_DEV_CONSOLE=true`）。 */
+  mail: { kind: "smtp"; smtp: SmtpEnv } | { kind: "console" } | { kind: "none" };
+}
+
 // ==================== 环境变量解析 ====================
+
+const readSmtpEnv = (): SmtpEnv | undefined => {
+  const host = Bun.env.SMTP_HOST?.trim();
+  const user = Bun.env.SMTP_USER?.trim();
+  const pass = Bun.env.SMTP_PASS ?? "";
+  if (!host && !user && !pass) return undefined;
+  if (!host || !user || !pass) {
+    throw new AppError("CONFIG_ERROR", "SMTP_HOST、SMTP_USER、SMTP_PASS 必须同时配置");
+  }
+  const rawPort = Bun.env.SMTP_PORT?.trim() || "465";
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new AppError("CONFIG_ERROR", `环境变量 SMTP_PORT 必须为合法端口号，收到: "${rawPort}"`);
+  }
+  return { host, port, user, pass, from: Bun.env.MAIL_FROM?.trim() || user };
+};
+
+const readAccountEnv = (databaseUrl: string | undefined): AccountEnv | undefined => {
+  if (!databaseUrl) return undefined;
+  const secret = Bun.env.BETTER_AUTH_SECRET?.trim() ?? "";
+  if (secret.length < 32) {
+    throw new AppError("CONFIG_ERROR", "配置 DATABASE_URL 时 BETTER_AUTH_SECRET 必须为至少 32 字符的随机串");
+  }
+  const adminQqNumbers = (Bun.env.ADMIN_QQ ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  const invalidAdmin = adminQqNumbers.find((item) => !QQ_NUMBER_PATTERN.test(item));
+  if (invalidAdmin) throw new AppError("CONFIG_ERROR", `ADMIN_QQ 含非法 QQ 号: "${invalidAdmin}"`);
+  const smtp = readSmtpEnv();
+  const devConsole = Bun.env.MAIL_DEV_CONSOLE === "true";
+  return {
+    secret,
+    adminQqNumbers,
+    mail: smtp ? { kind: "smtp", smtp } : devConsole ? { kind: "console" } : { kind: "none" },
+  };
+};
 
 const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
   if (!raw) return {};
@@ -190,12 +245,15 @@ export const readEnv = (): AppEnv => {
     ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
     : resolve(import.meta.dir, "../../data/images");
 
+  const databaseUrl = Bun.env.DATABASE_URL?.trim() || undefined;
+
   return {
     clientUrl,
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
-    databaseUrl: Bun.env.DATABASE_URL?.trim() || undefined,
+    databaseUrl,
+    account: readAccountEnv(databaseUrl),
     otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),
     otelServiceName,

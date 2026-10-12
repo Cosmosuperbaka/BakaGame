@@ -10,6 +10,15 @@ import { QQMusicProvider } from "../infrastructure/QQMusicProvider";
 import { AggregatedMusicProvider } from "../infrastructure/AggregatedMusicProvider";
 import { AppError } from "../domain/Errors";
 import type { Database } from "../infrastructure/db/Database";
+import * as schema from "../infrastructure/db/Schema";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuth } from "../infrastructure/auth/Auth";
+import { createMailer } from "../infrastructure/auth/Mailer";
+import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
+import { AccountService } from "./AccountService";
+import { isAllowedOrigin } from "../transport/App";
+import type { AppEnv } from "../config/Env";
+import type { EventLogger } from "../infrastructure/EventLogger";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
 export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database }) {
@@ -19,6 +28,9 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   }
   if (env.otelDeploymentEnvironment === "production" && !database) {
     throw new AppError("CONFIG_ERROR", "生产环境需要 DATABASE_URL");
+  }
+  if (env.otelDeploymentEnvironment === "production" && env.account?.mail.kind !== "smtp") {
+    throw new AppError("CONFIG_ERROR", "生产环境账号系统需要 SMTP_HOST / SMTP_USER / SMTP_PASS（且不得启用 MAIL_DEV_CONSOLE）");
   }
   // 猜歌与 CCB 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
   const data = createBangumiData({
@@ -64,7 +76,8 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi });
   const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
-  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
+  const account = createAccount(env, database, logger);
+  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, account, disposeResources: async () => {
     const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
@@ -80,3 +93,25 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
     },
   };
 }
+
+/** 账号系统随数据库启用；`readEnv` 已保证有数据库时账号配置齐备。 */
+const createAccount = (env: AppEnv, database: Database | undefined, logger: EventLogger) => {
+  if (!database || !env.account) return undefined;
+  const mailer = createMailer(env.account.mail, logger);
+  const auth = createAuth({
+    database: drizzleAdapter(database.db, { provider: "mysql", schema: { user: schema.user, session: schema.session, account: schema.account, verification: schema.verification } }),
+    secret: env.account.secret,
+    baseURL: env.serverUrl,
+    isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
+    secureCookies: env.otelDeploymentEnvironment === "production",
+    adminQqNumbers: env.account.adminQqNumbers,
+    mailer,
+  });
+  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), logger });
+  const adminQqNumbers = env.account.adminQqNumbers;
+  // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
+  void database.ready
+    .then(() => service.promoteAdmins(adminQqNumbers))
+    .catch((error: unknown) => logger.error("管理员引导失败", { error: String(error) }));
+  return { auth, service, ready: database.ready };
+};
