@@ -172,6 +172,27 @@ describe("正常房间手动主持的白板生命周期", () => {
     expect(h.snapshot().status.phaseTimer).toBeUndefined();
   });
 
+  test("后台控制口：移出出题人中止本局并换房主，关房通知全员", async () => {
+    const h = await setup();
+    const [room] = h.service.adminListRooms();
+    expect(room).toMatchObject({ game: "faker", roomId: "8931", hidden: false, roundNumber: 1 });
+    expect(room!.players).toHaveLength(9);
+    expect(room!.players.find(player => player.host)?.name).toBe("房主");
+
+    await h.service.adminKickPlayer("8931", h.host.record.playerId!);
+    expect(getLastEventPayload<{ reason: string }>(h.host, "room.closed")).toMatchObject({ reason: "kicked" });
+    expect(h.snapshot().summary?.winner).toBe("aborted");
+    expect(h.snapshot().summary?.reason).toBe("出题人被管理员移出，本局中止");
+    expect(h.snapshot().hostPlayerId).not.toBe(h.host.record.playerId);
+    expect(h.service.adminListRooms()[0]!.players).toHaveLength(8);
+    await expect(h.service.adminKickPlayer("8931", h.host.record.playerId!)).rejects.toMatchObject({ code: "PLAYER_NOT_FOUND" });
+
+    await h.service.adminCloseRoom("8931");
+    expect(getLastEventPayload<{ reason: string }>(h.observer, "room.closed")).toMatchObject({ reason: "admin_closed" });
+    expect(h.service.adminListRooms()).toEqual([]);
+    await expect(h.service.adminCloseRoom("8931")).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+  });
+
   for (const adjudicating of [false, true]) for (const cancelFallback of [false, true]) {
     test(`白板掉线待决→等待60秒；${cancelFallback ? "取消后主持仍有重开出口" : "默认到期自动恢复"}（裁定${adjudicating}）`, async () => {
       const h = await setup(); await h.enter(); if (adjudicating) await h.pendingReview();

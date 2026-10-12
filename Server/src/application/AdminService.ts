@@ -1,5 +1,6 @@
 import type { Where } from "better-auth";
 
+import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
@@ -9,6 +10,7 @@ import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/Us
 import { normalizeAccountName } from "../shared/Account";
 import type {
   AdminFeedback,
+  AdminRoom,
   AdminFeedbackDetail,
   AdminUser,
   AdminUserDetail,
@@ -39,6 +41,8 @@ export interface AdminServiceOptions {
   feedback: FeedbackRepository;
   gameRecords: GameRecordRepository;
   audit: AuditLogRepository;
+  /** 三款游戏的实时房间控制口；房间不落库，后台只经由它们读写。 */
+  rooms: Record<RecordedGame, AdminRoomControl>;
   now?: () => number;
 }
 
@@ -56,6 +60,12 @@ const toAdminUser = (row: UserRow): AdminUser => ({
 });
 
 const toRef = (row: UserRow): UserRef => ({ id: row.id, name: row.name, qqNumber: row.qqNumber, image: row.image ?? null });
+
+const toAdminRoom = (room: AdminRoomView): AdminRoom => ({
+  ...room,
+  createdAt: new Date(room.createdAt).toISOString(),
+  lastActiveAt: new Date(room.lastActiveAt).toISOString(),
+});
 
 const toGameItem = (record: GameRecordListItem): GameRecordItem => ({
   id: record.id,
@@ -250,6 +260,42 @@ export class AdminService {
     await this.options.feedback.update(record.id, { status: input.status, updatedAt: new Date(this.now()) });
     const users = await this.usersById([record.userId]);
     return this.toAdminFeedback({ ...record, status: input.status }, users);
+  }
+
+  // ==================== 实时房间 ====================
+
+  listRooms(game?: RecordedGame): AdminRoom[] {
+    const games = game ? [game] : (Object.keys(this.options.rooms) as RecordedGame[]);
+    return games.flatMap((kind) => this.options.rooms[kind].adminListRooms())
+      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+      .map(toAdminRoom);
+  }
+
+  /** 审计记房名与人数快照：房间关闭后就查不到了。 */
+  private requireRoom(game: RecordedGame, roomId: string): AdminRoomView {
+    const room = this.options.rooms[game].adminListRooms().find((item) => item.roomId === roomId);
+    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
+    return room;
+  }
+
+  async closeRoom(actorId: string, input: { game: RecordedGame; roomId: string }): Promise<{ ok: true }> {
+    const room = this.requireRoom(input.game, input.roomId);
+    await this.audit(actorId, "room.close", "room", `${input.game}:${room.roomId}`, {
+      name: room.name, phase: room.phase, players: room.players.map((player) => player.name),
+    });
+    await this.options.rooms[input.game].adminCloseRoom(room.roomId);
+    return { ok: true };
+  }
+
+  async kickPlayer(actorId: string, input: { game: RecordedGame; roomId: string; playerId: string }): Promise<{ ok: true }> {
+    const room = this.requireRoom(input.game, input.roomId);
+    const player = room.players.find((item) => item.id === input.playerId);
+    if (!player) throw new AppError("PLAYER_NOT_FOUND", "玩家不在房间中");
+    await this.audit(actorId, "room.kick", "room", `${input.game}:${room.roomId}`, {
+      playerId: player.id, name: player.name, userId: player.userId,
+    });
+    await this.options.rooms[input.game].adminKickPlayer(room.roomId, player.id);
+    return { ok: true };
   }
 
   // ==================== 对局记录与审计 ====================

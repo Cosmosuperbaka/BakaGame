@@ -22,6 +22,6 @@ export interface CCBRoom {
   hostPlayerId: string; players: Map<string, CCBPlayerRecord>; settings: CCBSettings;
   phase: CCBPhase; roundNumber: number; setterPlayerId: string | null;
   phaseDeadlineAt: number | null; preparationId?: string; round: CCBRound | null; summary: CCBRoundSummary | null;
-  chat: ChatMessage[]; lastActiveAt: number; emptyAt?: number; hostDeadlineAt?: number;
+  chat: ChatMessage[]; createdAt: number; lastActiveAt: number; emptyAt?: number; hostDeadlineAt?: number;
 }
 export const ccbUnitId = (player: Pick<CCBPlayer, 'id' | 'team'>): string => player.team === null ? player.id : `team:${player.team}`;

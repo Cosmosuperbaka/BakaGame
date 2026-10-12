@@ -879,6 +879,30 @@ describe("SonGuessrService", () => {
     expect(texts).toContain("第二句主歌词");
   });
 
+  test("后台控制口：列出隐藏房，移走房主后重选房主，关房通知全员", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "host");
+    const guest = connection(service, "guest");
+    await createRoom(service, host);
+    const guestState = await joinRoom(service, guest, "玩家");
+    const hostId = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId;
+
+    const [room] = service.adminListRooms();
+    expect(room).toMatchObject({ game: "song", roomId: "1234", name: "猜歌房", hidden: false, visibility: "public" });
+    expect(room!.players.map((player) => [player.name, player.host])).toEqual([["房主", true], ["玩家", false]]);
+
+    await service.adminKickPlayer("1234", hostId);
+    expect(lastEvent<{ roomId: string }>(host, "song.room.kicked")).toEqual({ roomId: "1234" });
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").hostPlayerId).toBe(guestState.playerId);
+    expect(service.adminListRooms()[0]!.players.map((player) => player.name)).toEqual(["玩家"]);
+    await expect(service.adminKickPlayer("1234", hostId)).rejects.toMatchObject({ code: "PLAYER_NOT_FOUND" });
+
+    await service.adminCloseRoom("1234");
+    expect(lastEvent<{ reason: string }>(guest, "song.room.closed")).toMatchObject({ reason: "admin_closed" });
+    expect(service.adminListRooms()).toEqual([]);
+    await expect(service.adminCloseRoom("1234")).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+  });
+
   test("房间在线人数不设上限", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");

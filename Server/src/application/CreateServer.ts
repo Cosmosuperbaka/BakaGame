@@ -27,6 +27,8 @@ import { captureServerFeedback } from "../infrastructure/Sentry";
 import { isAllowedOrigin } from "../transport/App";
 import type { AppEnv } from "../config/Env";
 import type { EventLogger } from "../infrastructure/EventLogger";
+import type { AdminRoomControl } from "../domain/AdminRoom";
+import type { RecordedGame } from "../domain/GameRecord";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
 export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database; gameRecords?: GameRecordService }) {
@@ -84,7 +86,7 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi, gameRecorder: gameRecords });
   const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret, gameRecorder: gameRecords });
-  const account = createAccount(env, database, logger);
+  const account = createAccount(env, database, logger, { faker: appOptions.whoIsFakerService, song, ccb });
   const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, account, disposeResources: async () => {
     // 先等在途对局记录写完再关数据库连接。
     await gameRecords?.close();
@@ -105,7 +107,7 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
 }
 
 /** 账号系统随数据库启用；`readEnv` 已保证有数据库时账号配置齐备。 */
-const createAccount = (env: AppEnv, database: Database | undefined, logger: EventLogger) => {
+const createAccount = (env: AppEnv, database: Database | undefined, logger: EventLogger, rooms: Record<RecordedGame, AdminRoomControl>) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
   const auth = createAuth({
@@ -137,6 +139,7 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     feedback,
     gameRecords: new DatabaseGameRecordRepository(database),
     audit: new DatabaseAuditLogRepository(database),
+    rooms,
   });
   return { auth, service, userData, admin, ready: database.ready };
 };

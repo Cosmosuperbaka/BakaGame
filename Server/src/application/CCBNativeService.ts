@@ -27,6 +27,12 @@ export class CCBNativeService {
   unregisterConnection(connectionId: string) { this.state.unregisterConnection(connectionId); this.rescheduleAll(); }
   getHealthSnapshot() { return this.state.getHealthSnapshot(); }
   listRooms() { return this.state.listRooms(); }
+  adminListRooms() { return this.state.adminList(); }
+  adminCloseRoom(roomId: string) { this.state.adminClose(roomId); this.rescheduleAll(); }
+  adminKickPlayer(roomId: string, playerId: string) {
+    this.state.adminKick(roomId, playerId);
+    const room = this.state.rooms.get(roomId); if (room) this.schedule(room); else this.rescheduleAll();
+  }
   notifyShutdown() { this.state.notifyShutdown(); }
   close() { for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); }
   runHousekeeping() {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { GameRecordRepository, StoredGameRecord } from "../src/infrastructure/db/GameRecordRepository";
 import { createAccountTestApp } from "./AccountFixtures";
+import { createConnection, execute, getLastEventPayload } from "./Helpers";
 
 const ADMIN_QQ = "90001";
 
@@ -146,6 +147,43 @@ describe("反馈管理", () => {
     expect((await rpc("admin/feedback/list", { status: "resolved" }, adminCookie)).body.total).toBe(1);
     expect((await rpc("admin/feedback/reply", { id, content: "  " }, adminCookie)).status).toBe(400);
     expect((await rpc("admin/feedback/get", { id: "missing" }, adminCookie)).status).toBe(404);
+  });
+});
+
+describe("实时房间管理", () => {
+  test("跨游戏列出房间，关房与移人先审计再交给游戏服务", async () => {
+    const { rpc, adminCookie, adminId, audit, whoIsFakerService } = await setup();
+    const host = createConnection(whoIsFakerService, "faker-host");
+    const guest = createConnection(whoIsFakerService, "faker-guest");
+    await execute(whoIsFakerService, host, { id: "c", type: "room.create", payload: {
+      roomId: "5678", name: "后台测试房", userName: "房主", visibility: "public", allowSpectators: true,
+    } });
+    await execute(whoIsFakerService, guest, { id: "j", type: "room.join", roomId: "5678", payload: { userName: "路人" } });
+
+    const listed = await rpc("admin/rooms/list", {}, adminCookie);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject([{ game: "faker", roomId: "5678", name: "后台测试房", createdAt: expect.any(String) }]);
+    expect((await rpc("admin/rooms/list", { game: "song" }, adminCookie)).body as unknown).toEqual([]);
+
+    const guestId = guest.record.playerId!;
+    expect((await rpc("admin/rooms/kick", { game: "faker", roomId: "5678", playerId: guestId }, adminCookie)).body).toEqual({ ok: true });
+    expect(getLastEventPayload<{ reason: string }>(guest, "room.closed")).toMatchObject({ reason: "kicked" });
+    expect((await rpc("admin/rooms/kick", { game: "faker", roomId: "5678", playerId: guestId }, adminCookie)).status).toBe(404);
+
+    audit.failNext = true;
+    expect((await rpc("admin/rooms/close", { game: "faker", roomId: "5678" }, adminCookie)).status).toBe(500);
+    expect(whoIsFakerService.adminListRooms()).toHaveLength(1);
+
+    expect((await rpc("admin/rooms/close", { game: "faker", roomId: "5678" }, adminCookie)).body).toEqual({ ok: true });
+    expect(getLastEventPayload<{ reason: string }>(host, "room.closed")).toMatchObject({ reason: "admin_closed" });
+    expect((await rpc("admin/rooms/close", { game: "faker", roomId: "5678" }, adminCookie)).status).toBe(404);
+    expect((await rpc("admin/rooms/close", { game: "song", roomId: "5678" }, adminCookie)).status).toBe(404);
+
+    expect(audit.entries.map((entry) => [entry.actorId, entry.action, entry.targetId])).toEqual([
+      [adminId, "room.kick", "faker:5678"],
+      [adminId, "room.close", "faker:5678"],
+    ]);
+    expect(audit.entries[1]!.detail).toEqual({ name: "后台测试房", phase: "waiting", players: ["房主"] });
   });
 });
 

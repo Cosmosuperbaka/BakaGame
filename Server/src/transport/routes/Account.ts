@@ -34,6 +34,8 @@ const STATUS_BY_CODE: Record<string, number> = {
   ACCOUNT_BANNED: 403,
   FORBIDDEN_ORIGIN: 403,
   NOT_FOUND: 404,
+  ROOM_NOT_FOUND: 404,
+  PLAYER_NOT_FOUND: 404,
   RATE_LIMITED: 429,
   MAIL_UNAVAILABLE: 503,
   AVATAR_UNAVAILABLE: 503,
@@ -97,6 +99,11 @@ const createRpcRouter = ({ service, userData, admin }: AccountDependencies, logg
         setRole: adminOnly.admin.users.setRole.handler(({ context, input }) => admin.setRole(context.userId, input)),
         revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) => admin.revokeSessions(context.userId, input.userId)),
         rename: adminOnly.admin.users.rename.handler(({ context, input }) => admin.renameUser(context.userId, input)),
+      },
+      rooms: {
+        list: adminOnly.admin.rooms.list.handler(({ input }) => admin.listRooms(input.game)),
+        close: adminOnly.admin.rooms.close.handler(({ context, input }) => admin.closeRoom(context.userId, input)),
+        kick: adminOnly.admin.rooms.kick.handler(({ context, input }) => admin.kickPlayer(context.userId, input)),
       },
       feedback: {
         list: adminOnly.admin.feedback.list.handler(({ input }) => admin.listFeedback(input)),

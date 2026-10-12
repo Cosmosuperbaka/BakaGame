@@ -11,6 +11,7 @@ import {
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
+import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import {
   ensureRoomId,
@@ -975,7 +976,7 @@ export const createSongLyricClip = (
   };
 };
 
-export class SonGuessrService {
+export class SonGuessrService implements AdminRoomControl {
   private readonly rooms = new Map<string, SonGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
   private readonly now: () => number;
@@ -1802,7 +1803,12 @@ export class SonGuessrService {
     if (targetPlayerId === player.id) throw new AppError("INVALID_TARGET", "房主不能踢出自己");
     const target = room.players[targetPlayerId];
     if (!target || target.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
+    this.kickPlayer(room, target);
+    return { kicked: true };
+  }
 
+  /** 房主踢人与后台移人共用；后台可能移走房主，此时按掉线口径重选房主。 */
+  private kickPlayer(room: SonGuessrRoomRecord, target: SonGuessrPlayerRecord) {
     this.clearMusicSession(room, target.id);
     target.membership = "kicked";
     target.online = false;
@@ -1819,11 +1825,54 @@ export class SonGuessrService {
       room.pendingSubmitterPlayerId = undefined;
       room.phase = "choosingSubmitter";
     }
+    if (room.hostPlayerId === target.id) this.reassignHost(room);
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
-    return { kicked: true };
+  }
+
+  adminListRooms(): AdminRoomView[] {
+    return [...this.rooms.values()].map((room) => ({
+      game: "song",
+      roomId: room.id,
+      name: room.name,
+      phase: room.phase,
+      visibility: room.visibility,
+      hasPassword: Boolean(room.password),
+      hidden: this.isTestRoom(room) || room.solo,
+      roundNumber: room.roundNumber,
+      createdAt: room.createdAt,
+      lastActiveAt: room.lastActivityAt,
+      players: Object.values(room.players)
+        .filter((player) => player.membership !== "kicked")
+        .map((player) => ({
+          id: player.id,
+          name: player.name,
+          online: player.online,
+          membership: player.membership,
+          host: player.id === room.hostPlayerId,
+          bot: player.isBot,
+          userId: player.account?.userId ?? null,
+        })),
+    }));
+  }
+
+  async adminCloseRoom(roomId: string): Promise<void> {
+    this.closeRoom(this.requireAdminRoom(roomId), ADMIN_CLOSE_REASON);
+  }
+
+  async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
+    const room = this.requireAdminRoom(roomId);
+    const target = room.players[playerId];
+    if (!target || target.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
+    this.kickPlayer(room, target);
+  }
+
+  private requireAdminRoom(roomId: string): SonGuessrRoomRecord {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
+    return room;
   }
 
   private transferHost(connection: ConnectionRecord, targetPlayerId: string) {

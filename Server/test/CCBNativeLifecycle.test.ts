@@ -88,6 +88,26 @@ describe('CCB 会话与异步边界', () => {
     expect(h.snapshot(recovered).players.find(player => player.id === guest.id)?.attempts).toBe(0);
   });
 
+  test('后台控制口：移走房主后重选房主并推进同步局，关房通知全员', async () => {
+    const h = harness(); const host = await h.create(); const guest = await h.join('玩家'); const third = await h.join('第三人');
+    await h.configure(host, { syncMode: true, nonstopMode: true }); await h.ready(guest, third); await h.send(host, 'ccb.game.start', {});
+    await h.guess(guest, 3); await h.guess(third, 3);
+    const [room] = h.service.adminListRooms();
+    expect(room).toMatchObject({ game: 'ccb', roomId: '1234', phase: 'guessing', hidden: false });
+    expect(room!.players.filter(player => player.host).map(player => player.name)).toEqual(['房主']);
+
+    h.service.adminKickPlayer('1234', host.id!);
+    expect(host.sent.find(packet => packet.event === 'ccb.player.kicked')?.payload).toEqual({ reason: '你已被管理员移出房间' });
+    expect(h.snapshot(guest).hostPlayerId).toBe(guest.id!);
+    expect(h.snapshot(guest).syncRound).toBe(2);
+    expect(() => h.service.adminKickPlayer('1234', host.id!)).toThrow(expect.objectContaining({ code: 'PLAYER_NOT_FOUND' }));
+
+    h.service.adminCloseRoom('1234');
+    expect(third.sent.find(packet => packet.event === 'ccb.room.closed')?.payload).toEqual({ reason: '房间已被管理员关闭' });
+    expect(h.service.adminListRooms()).toEqual([]);
+    expect(() => h.service.adminCloseRoom('1234')).toThrow(expect.objectContaining({ code: 'ROOM_NOT_FOUND' }));
+  });
+
   test('踢出等待者解除同步阻塞，旧令牌失效且被踢者不能继续猜测', async () => {
     const h = harness(); const host = await h.create(); const guest = await h.join('玩家');
     await h.configure(host, { syncMode: true, nonstopMode: true }); await h.ready(guest); await h.send(host, 'ccb.game.start', {});

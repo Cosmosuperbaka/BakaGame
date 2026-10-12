@@ -2,6 +2,8 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
+import type { AdminRoomControl } from "../src/domain/AdminRoom";
+import type { RecordedGame } from "../src/domain/GameRecord";
 import { UserDataService, type FeedbackSink } from "../src/application/UserDataService";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
@@ -150,6 +152,8 @@ export const createAccountTestApp = (options: {
   adminQqNumbers?: string[];
   now?: () => number;
   gameRecords?: GameRecordRepository;
+  /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
+  rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
 } = {}) => {
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
@@ -192,17 +196,20 @@ export const createAccountTestApp = (options: {
     now: options.now,
   });
   const audit = new MemoryAuditLogRepository();
+  const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
+  const rooms = { faker: whoIsFakerService, song: emptyRooms, ccb: emptyRooms, ...options.rooms };
   const admin = new AdminService({
     auth,
     feedback,
     gameRecords: options.gameRecords ?? emptyGameRecords,
     audit,
+    rooms,
     now: options.now,
   });
   const { app } = createTestApp({
     env,
     logger,
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    whoIsFakerService,
     account: { auth, service, userData, admin, ready: Promise.resolve() },
   });
 
@@ -229,7 +236,13 @@ export const createAccountTestApp = (options: {
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, admin, audit, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+  return { app, auth, service, userData, admin, audit, whoIsFakerService, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+};
+
+const emptyRooms: AdminRoomControl = {
+  adminListRooms: () => [],
+  adminCloseRoom: async () => {},
+  adminKickPlayer: async () => {},
 };
 
 const emptyGameRecords: GameRecordRepository = {

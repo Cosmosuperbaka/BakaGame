@@ -1,3 +1,4 @@
+import type { AdminRoomControl, AdminRoomView } from '../domain/AdminRoom';
 import type { GameRecorder } from '../domain/GameRecord';
 import type { CCBClientMessage, CCBRoomEnterResult, CCBRoomSummary, ConnectionRecord } from '../shared/Index';
 import { AppError } from '../domain/Errors';
@@ -12,7 +13,7 @@ import { CCBRoomDirectory, normalizeCCBRoomId, type CCBRoomTarget } from './CCBR
 /** 上游房间列表的缓存时长；失败后同样等待该时长再重试，避免每次房号未命中都回源。 */
 const REMOTE_ROOMS_TTL_MS = 5000;
 
-export class CCBService {
+export class CCBService implements AdminRoomControl {
   readonly native: CCBNativeService;
   readonly original: CCBOriginalService;
   /** 统一房号目录：增强房与原版房共用一个 4 位号空间，客户端只见到这一个号。 */
@@ -66,6 +67,12 @@ export class CCBService {
       try { return await this.original.execute(id, message); } finally { this.broadcastLobby(); }
     }
     try { return await this.native.execute(id, message); } finally { this.broadcastLobby(); }
+  }
+  /** 后台只管增强房：原版房在上游服务器，本端没有关房与移人的权限。 */
+  adminListRooms(): AdminRoomView[] { return this.native.adminListRooms(); }
+  async adminCloseRoom(roomId: string): Promise<void> { this.native.adminCloseRoom(roomId); }
+  async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
+    try { this.native.adminKickPlayer(roomId, playerId); } finally { this.broadcastLobby(); }
   }
   /** 大厅：增强房（含带锁的私密房）在前，原版服务器的公开房按上游顺序在后。 */
   listRooms(): CCBRoomSummary[] {

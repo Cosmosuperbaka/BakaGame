@@ -159,6 +159,28 @@ export const adminFeedbackDetailSchema = adminFeedbackSchema.extend({
   replies: z.array(feedbackReplySchema.extend({ author: userRefSchema.nullable() })),
 });
 
+export const adminRoomSchema = z.object({
+  game: recordedGameSchema,
+  roomId: z.string(),
+  name: z.string(),
+  phase: z.string(),
+  visibility: z.enum(["public", "private"]),
+  hasPassword: z.boolean(),
+  hidden: z.boolean(),
+  roundNumber: z.number(),
+  createdAt: z.string(),
+  lastActiveAt: z.string(),
+  players: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    online: z.boolean(),
+    membership: z.string(),
+    host: z.boolean(),
+    bot: z.boolean(),
+    userId: z.string().nullable(),
+  })),
+});
+
 export const auditEntrySchema = z.object({
   id: z.number().int(),
   actor: userRefSchema.nullable(),
@@ -205,6 +227,14 @@ const adminContract = {
     setStatus: oc
       .input(z.object({ id: z.string().min(1).max(36), status: feedbackStatusSchema }))
       .output(adminFeedbackSchema),
+  },
+  rooms: {
+    /** 实时房间（不分页，进程内全量）；CCB 只含增强房。 */
+    list: oc.input(z.object({ game: recordedGameSchema.optional() })).output(z.array(adminRoomSchema)),
+    close: oc.input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32) })).output(z.object({ ok: z.literal(true) })),
+    kick: oc
+      .input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32), playerId: z.string().min(1).max(64) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   games: {
     list: oc
@@ -289,4 +319,5 @@ export type GameRecordDetail = z.infer<typeof gameRecordDetailSchema>;
 export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
 export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
+export type AdminRoom = z.infer<typeof adminRoomSchema>;
 

@@ -1,3 +1,4 @@
+import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecordEvent, type GameRecorder } from "../domain/GameRecord";
 import type {
@@ -95,7 +96,7 @@ export interface WhoIsFakerServiceOptions {
   gameRecorder?: GameRecorder;
 }
 
-export class WhoIsFakerService {
+export class WhoIsFakerService implements AdminRoomControl {
   // ==================== 房间与状态机总控 ====================
 
   private readonly rooms = new Map<string, WhoIsFakerRoomRecord>();
@@ -347,6 +348,49 @@ export class WhoIsFakerService {
       .filter((room) => room.id !== ROOM_ID_TEST_MODE)
       .map((room) => this.buildRoomSummary(room))
       .sort((left, right) => left.roomId.localeCompare(right.roomId));
+  }
+
+  adminListRooms(): AdminRoomView[] {
+    return [...this.rooms.values()].map((room) => ({
+      game: "faker",
+      roomId: room.id,
+      name: room.settings.name,
+      phase: room.round?.phase ?? "waiting",
+      visibility: room.settings.visibility,
+      hasPassword: Boolean(room.settings.password),
+      hidden: room.id === ROOM_ID_TEST_MODE,
+      roundNumber: room.roundCount ?? 0,
+      createdAt: room.createdAt,
+      lastActiveAt: room.lastActivityAt,
+      players: Object.values(room.players)
+        .filter((player) => player.membership !== "kicked")
+        .map((player) => ({
+          id: player.id,
+          name: player.name,
+          online: player.online,
+          membership: player.membership,
+          host: player.id === room.hostPlayerId,
+          bot: player.isBot,
+          userId: player.account?.userId ?? null,
+        })),
+    }));
+  }
+
+  async adminCloseRoom(roomId: string): Promise<void> {
+    await this.closeRoom(this.requireAdminRoom(roomId), ADMIN_CLOSE_REASON);
+  }
+
+  async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
+    const room = this.requireAdminRoom(roomId);
+    const target = room.players[playerId];
+    if (!target || target.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
+    await this.kickPlayer(room, target, "管理员");
+  }
+
+  private requireAdminRoom(roomId: string): WhoIsFakerRoomRecord {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
+    return room;
   }
 
   private async handleRoomCreate(
@@ -601,17 +645,21 @@ export class WhoIsFakerService {
       throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
     }
 
+    await this.kickPlayer(room, target, "房主");
+    return { playerId: target.id };
+  }
+
+  /** 房主踢人与后台移人共用：出题人被移出时本局中止，其余按强制移除结算。 */
+  private async kickPlayer(room: WhoIsFakerRoomRecord, target: WhoIsFakerPlayerRecord, by: "房主" | "管理员") {
     if (this.isRoundActive(room) && room.round?.questionerPlayerId === target.id) {
-      await this.finishRound(room, "aborted", "出题人被房主移出，本局中止");
+      await this.finishRound(room, "aborted", `出题人被${by}移出，本局中止`);
     }
 
-    await this.forceRemovePlayer(room, target.id, "房主已将其移出房间");
+    await this.forceRemovePlayer(room, target.id, `${by}已将其移出房间`);
 
     this.publishRoomState(room);
     this.publishLobby();
     await this.runBots(room);
-
-    return { playerId: target.id };
   }
 
   private async handleAssignQuestioner(connection: ConnectionRecord, targetPlayerId: string) {

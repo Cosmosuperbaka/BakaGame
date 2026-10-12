@@ -1,4 +1,5 @@
 import { ConnectionRegistry } from './ConnectionRegistry';
+import { ADMIN_CLOSE_MESSAGE, ADMIN_KICK_MESSAGE, type AdminRoomView } from '../domain/AdminRoom';
 import { AppError } from '../domain/Errors';
 import { NOOP_GAME_RECORDER, type GameRecorder } from '../domain/GameRecord';
 import { type CCBPlayerRecord, type CCBRoom } from '../domain/CCBModel';
@@ -78,7 +79,7 @@ export class CCBRooms {
     const player = this.player(userName);
     const room: CCBRoom = { id, name, visibility: payload.visibility, allowSpectators: payload.allowSpectators,
       hostPlayerId: player.id, players: new Map([[player.id, player]]), settings: createDefaultCCBSettings(), phase: 'waiting',
-      roundNumber: 0, setterPlayerId: null, phaseDeadlineAt: null, round: null, summary: null, chat: [], lastActiveAt: this.now() };
+      roundNumber: 0, setterPlayerId: null, phaseDeadlineAt: null, round: null, summary: null, chat: [], createdAt: this.now(), lastActiveAt: this.now() };
     this.rooms.set(id, room);
     try {
       if (password) room.passwordHash = await Bun.password.hash(password);
@@ -125,8 +126,26 @@ export class CCBRooms {
   leave(connection: ConnectionRecord, room: CCBRoom, player: CCBPlayerRecord): void { this.connections.detach(connection); this.remove(room, player); }
   kick(room: CCBRoom, actor: CCBPlayerRecord, id: string): void {
     this.requireHost(room, actor); if (id === actor.id) throw new AppError('INVALID_PLAYER', '不能移除自己');
-    const target = this.member(room, id); const connection = target.connectionId ? this.connections.findConnection(target.connectionId) : undefined;
-    if (connection) { connection.send({ type: 'event', event: 'ccb.player.kicked', payload: { reason: '你已被房主移出房间' } }); this.connections.detach(connection); }
+    this.evict(room, this.member(room, id), '你已被房主移出房间');
+  }
+  adminList(): AdminRoomView[] {
+    return [...this.rooms.values()].map(room => ({ game: 'ccb', roomId: room.id, name: room.name, phase: room.phase,
+      visibility: room.visibility, hasPassword: Boolean(room.passwordHash), hidden: room.id === ROOM_ID_TEST_MODE,
+      roundNumber: room.roundNumber, createdAt: room.createdAt, lastActiveAt: room.lastActiveAt,
+      players: [...room.players.values()].map(player => ({ id: player.id, name: player.name, online: player.online,
+        membership: player.membership, host: player.id === room.hostPlayerId, bot: false, userId: player.account?.userId ?? null })) }));
+  }
+  adminClose(roomId: string): void { this.closeRoom(this.adminRoom(roomId), ADMIN_CLOSE_MESSAGE); }
+  /** 后台移人可以移走房主：`remove` 会按掉线口径重选房主。 */
+  adminKick(roomId: string, playerId: string): void {
+    const room = this.adminRoom(roomId); this.evict(room, this.member(room, playerId), ADMIN_KICK_MESSAGE);
+  }
+  private adminRoom(roomId: string): CCBRoom {
+    const room = this.rooms.get(roomId); if (!room) throw new AppError('ROOM_NOT_FOUND', '房间不存在或已经关闭'); return room;
+  }
+  private evict(room: CCBRoom, target: CCBPlayerRecord, reason: string): void {
+    const connection = target.connectionId ? this.connections.findConnection(target.connectionId) : undefined;
+    if (connection) { connection.send({ type: 'event', event: 'ccb.player.kicked', payload: { reason } }); this.connections.detach(connection); }
     this.remove(room, target);
   }
   transfer(room: CCBRoom, actor: CCBPlayerRecord, id: string): void {
