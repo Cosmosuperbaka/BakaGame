@@ -56,6 +56,7 @@ export function createAppRouter() {
             { path: "*", element: <Navigate to="/ccb" replace /> },
           ],
         },
+        { path: "/admin", lazy: page(() => import("@/pages/AdminPage"), "admin") },
         // 其余无法识别的路径一律回落地页
         { path: "*", element: <Navigate to="/" replace /> },
       ],

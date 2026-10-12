@@ -73,6 +73,7 @@
 - 管理接口挂在 oRPC `admin.*`（`application/AdminService.ts`），覆盖用户（查询、封禁、解封、角色、强制下线、改名）、反馈（列表、详情、回复、状态）、对局记录与审计查询。每次调用按 ID 读库校验 `role=admin` 且未封禁；会话读取一律跳过 Cookie 缓存，降级、封禁与强制下线立即生效。
 - 不能对自己封禁或改角色，不能封禁管理员（先降级）；被封用户须先解封才能提为管理员。封禁同时删除其全部会话；封禁中的账号发码直接回 403 `ACCOUNT_BANNED`，不消耗发信额度，限时封禁到期后由 Better Auth 在登录时自动解除。
 - 每个写操作**先写审计再执行**（`audit_log`）：审计写入失败则操作不做。审计不记 IP，理由同 §3。
+- 前端后台页 `/admin`（`pages/AdminPage.tsx` 与 `components/admin/`）覆盖以上全部接口，布局见 [Design §7.4](Design.md#74-管理后台)。
 - 管理员回复反馈后，用户侧出现未读；状态为 `open` 的反馈被回复时自动转为 `processing`。
 - 实时房间经 `admin.rooms.*` 列出、关闭与移人。三款游戏各自实现 `domain/AdminRoom.ts` 的 `AdminRoomControl`，后台不直接改房间状态：关房复用各游戏的关房通知（谁是卧底、猜歌原因码 `admin_closed`，CCB 直接给文案），移人复用房主踢人的结算口径，且允许移走房主（按各游戏规则重选）。CCB 只管增强房，原版房在上游服务器。房间视图不含会话令牌与对局秘密；测试房、猜歌单人房带 `hidden` 照常列出。
 - 概览 `admin.stats.overview`：账号数、反馈积压、三款游戏实时房间与在线人数，以及按北京时间自然日（1–90 天，不缺日）的访客、浏览、新注册与对局数。对局数受对局记录 7 天保留期限制（`gameRecordDays`），见 [GameRecord](GameRecord.md)。
@@ -105,5 +106,5 @@
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
 - `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
 - `test/QQNickname.test.ts` 以假 QQ 网页接口（`createQQWebFetcher`：二维码、轮询码、`check_sig` 跳转、GBK 昵称、登录失效）覆盖协议辅助函数、扫码登录与审计先行、登录态加密、注册预填、访问刷新间隔、失效标记与批量刷新。真实扫码与昵称接口只能人工验收。
-- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称与 QQ 昵称预填、就地报错）与 `components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）。
+- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称与 QQ 昵称预填、就地报错）、`components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）与 `pages/AdminPage.test.tsx`（权限分层、概览、用户详情封禁、关房确认与失败、查询号扫码轮询）。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。

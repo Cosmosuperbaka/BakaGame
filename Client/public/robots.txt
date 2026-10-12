@@ -12,6 +12,9 @@ Disallow: /ccb/room/
 # 观战席与单人练习页同理
 Disallow: /songuessr/solo
 
+# 管理后台
+Disallow: /admin
+
 Sitemap: https://game.baka.website/sitemap.xml
 
 # LLM 与 AI 搜索爬虫速查指引（遵循 llms.txt 事实规范）
