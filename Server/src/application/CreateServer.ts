@@ -16,6 +16,10 @@ import { createAuth } from "../infrastructure/auth/Auth";
 import { createMailer } from "../infrastructure/auth/Mailer";
 import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
 import { AccountService } from "./AccountService";
+import { UserDataService } from "./UserDataService";
+import { SettingCipher } from "../infrastructure/auth/SettingCipher";
+import { DatabaseFeedbackRepository, DatabaseUserSettingRepository } from "../infrastructure/db/UserDataRepository";
+import { captureServerFeedback } from "../infrastructure/Sentry";
 import { isAllowedOrigin } from "../transport/App";
 import type { AppEnv } from "../config/Env";
 import type { EventLogger } from "../infrastructure/EventLogger";
@@ -113,5 +117,13 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
   void database.ready
     .then(() => service.promoteAdmins(adminQqNumbers))
     .catch((error: unknown) => logger.error("管理员引导失败", { error: String(error) }));
-  return { auth, service, ready: database.ready };
+  const userData = new UserDataService({
+    settings: new DatabaseUserSettingRepository(database),
+    feedback: new DatabaseFeedbackRepository(database),
+    cipher: new SettingCipher(env.account.secret),
+    nameOf: (userId) => service.nameOf(userId),
+    feedbackSink: captureServerFeedback,
+    logger,
+  });
+  return { auth, service, userData, ready: database.ready };
 };

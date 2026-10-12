@@ -280,6 +280,30 @@ export const captureServerException = (
   });
 };
 
+/**
+ * 站内反馈同步为 Sentry User Feedback；只带账号 ID 与昵称，不带邮箱（邮箱即 QQ 号）。
+ * 未启用 Sentry 时返回 `null`，反馈本身照常落库。
+ */
+export const captureServerFeedback = (feedback: {
+  message: string;
+  name: string;
+  userId: string;
+  url?: string;
+  tags: Record<string, string>;
+}): string | null => {
+  if (!isInitialized) return null;
+  return Sentry.withScope((scope) => {
+    scope.setUser({ id: feedback.userId, username: feedback.name });
+    return Sentry.captureFeedback({
+      message: feedback.message,
+      name: feedback.name,
+      source: "bakagame-site",
+      ...(feedback.url ? { url: feedback.url } : {}),
+      tags: feedback.tags,
+    }, undefined, scope);
+  });
+};
+
 export const captureServerMessage = (
   message: string,
   level: "info" | "warning" | "error" = "info",

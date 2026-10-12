@@ -3,6 +3,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { Elysia } from "elysia";
 
 import type { AccountService } from "../../application/AccountService";
+import type { UserDataService } from "../../application/UserDataService";
 import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
 import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
@@ -15,6 +16,7 @@ export const RPC_BASE_PATH = "/api/rpc";
 export interface AccountDependencies {
   auth: Auth;
   service: AccountService;
+  userData: UserDataService;
   /** 数据库迁移完成后才对外服务账号请求。 */
   ready: Promise<void>;
 }
@@ -37,7 +39,7 @@ const STATUS_BY_CODE: Record<string, number> = {
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
 
-const createRpcRouter = (service: AccountService, logger: EventLogger) => {
+const createRpcRouter = ({ service, userData }: AccountDependencies, logger: EventLogger) => {
   const base = implement(apiContract).$context<RpcContext>().use(async ({ next, path }) => {
     try {
       return await next();
@@ -66,6 +68,19 @@ const createRpcRouter = (service: AccountService, logger: EventLogger) => {
       updateProfile: signedIn.account.updateProfile.handler(({ context, input }) => service.updateProfile(context.userId, input)),
       publicProfile: base.account.publicProfile.handler(({ input }) => service.publicProfile(input.userId)),
     },
+    settings: {
+      get: signedIn.settings.get.handler(({ context }) => userData.settings(context.userId)),
+      savePreferences: signedIn.settings.savePreferences.handler(({ context, input }) =>
+        userData.savePreferences(context.userId, input.value)),
+      saveMusicSession: signedIn.settings.saveMusicSession.handler(({ context, input }) =>
+        userData.saveMusicSession(context.userId, input.platform, input.session)),
+    },
+    feedback: {
+      create: signedIn.feedback.create.handler(({ context, input }) =>
+        userData.createFeedback(context.userId, { ...input, userAgent: context.headers.get("user-agent") })),
+      listMine: signedIn.feedback.listMine.handler(({ context }) => userData.listMyFeedback(context.userId)),
+      get: signedIn.feedback.get.handler(({ context, input }) => userData.myFeedback(context.userId, input.id)),
+    },
   });
 };
 
@@ -82,7 +97,7 @@ const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
  * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端据此隐藏登录入口，游客游玩不受影响。
  */
 export const accountRoutes = (account: AccountDependencies | undefined, logger: EventLogger) => {
-  const rpc = account ? new RPCHandler(createRpcRouter(account.service, logger)) : undefined;
+  const rpc = account ? new RPCHandler(createRpcRouter(account, logger)) : undefined;
   return new Elysia({ name: "account-routes" })
     .all(`${AUTH_BASE_PATH}/*`, async ({ request }) => {
       if (!account) return accountDisabled();

@@ -1,16 +1,88 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
+import { UserDataService, type FeedbackSink } from "../src/application/UserDataService";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
 import { createAuth } from "../src/infrastructure/auth/Auth";
 import type { Mailer } from "../src/infrastructure/auth/Mailer";
 import { QQAvatarService } from "../src/infrastructure/auth/QQAvatar";
+import { SettingCipher } from "../src/infrastructure/auth/SettingCipher";
+import type {
+  FeedbackFilter,
+  FeedbackRecord,
+  FeedbackReplyRecord,
+  FeedbackRepository,
+  StoredSetting,
+  UserSettingRepository,
+} from "../src/infrastructure/db/UserDataRepository";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { isAllowedOrigin } from "../src/transport/App";
 import { createTestApp } from "./AppFixtures";
 
 export const ACCOUNT_TEST_SECRET = "fixture-secret-fixture-secret-fixture-secret";
+
+/** 仅测试使用的内存仓储：与数据库实现同一接口，行为口径以 Drizzle 实现为准。 */
+export class MemoryUserSettingRepository implements UserSettingRepository {
+  readonly rows = new Map<string, StoredSetting & { userId: string }>();
+
+  async list(userId: string): Promise<StoredSetting[]> {
+    return [...this.rows.values()].filter((row) => row.userId === userId)
+      .map(({ key, value, updatedAt }) => ({ key, value: structuredClone(value), updatedAt }));
+  }
+
+  async put(userId: string, key: string, value: unknown, now: Date): Promise<void> {
+    this.rows.set(`${userId}:${key}`, { userId, key, value: structuredClone(value), updatedAt: now });
+  }
+
+  async remove(userId: string, key: string): Promise<void> {
+    this.rows.delete(`${userId}:${key}`);
+  }
+}
+
+export class MemoryFeedbackRepository implements FeedbackRepository {
+  readonly records = new Map<string, FeedbackRecord>();
+  readonly replyRows: FeedbackReplyRecord[] = [];
+
+  async create(record: FeedbackRecord): Promise<void> {
+    this.records.set(record.id, { ...record });
+  }
+
+  async update(id: string, patch: Parameters<FeedbackRepository["update"]>[1]): Promise<void> {
+    const record = this.records.get(id);
+    if (record) Object.assign(record, patch);
+  }
+
+  async get(id: string): Promise<FeedbackRecord | null> {
+    const record = this.records.get(id);
+    return record ? { ...record } : null;
+  }
+
+  async list(filter: FeedbackFilter): Promise<{ items: FeedbackRecord[]; total: number }> {
+    const matched = [...this.records.values()]
+      .filter((record) => (!filter.status || record.status === filter.status)
+        && (!filter.kind || record.kind === filter.kind)
+        && (!filter.userId || record.userId === filter.userId))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return { items: matched.slice(filter.offset, filter.offset + filter.limit).map((record) => ({ ...record })), total: matched.length };
+  }
+
+  async countUnread(userId: string): Promise<number> {
+    return [...this.records.values()].filter((record) => record.userId === userId && record.lastReplyAt
+      && (!record.userSeenAt || record.userSeenAt < record.lastReplyAt)).length;
+  }
+
+  async addReply(reply: Omit<FeedbackReplyRecord, "id">): Promise<FeedbackReplyRecord> {
+    const row = { ...reply, id: this.replyRows.length + 1 };
+    this.replyRows.push(row);
+    return { ...row };
+  }
+
+  async replies(feedbackId: string): Promise<FeedbackReplyRecord[]> {
+    return this.replyRows.filter((reply) => reply.feedbackId === feedbackId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((reply) => ({ ...reply }));
+  }
+}
 
 /** 记录发出的验证码，测试据此完成登录。 */
 export class CapturedMailer implements Mailer {
@@ -71,11 +143,29 @@ export const createAccountTestApp = (options: { adminQqNumbers?: string[]; now?:
     mailer,
   });
   const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(avatarFetcher.fetcher), logger, now: options.now });
+  const settings = new MemoryUserSettingRepository();
+  const feedback = new MemoryFeedbackRepository();
+  const sentFeedback: Array<Parameters<FeedbackSink>[0]> = [];
+  const sentry = { enabled: true, fail: false };
+  const userData = new UserDataService({
+    settings,
+    feedback,
+    cipher: new SettingCipher(ACCOUNT_TEST_SECRET),
+    nameOf: (userId) => service.nameOf(userId),
+    feedbackSink: (item) => {
+      if (sentry.fail) throw new Error("sentry down");
+      if (!sentry.enabled) return null;
+      sentFeedback.push(item);
+      return `event-${sentFeedback.length}`;
+    },
+    logger,
+    now: options.now,
+  });
   const { app } = createTestApp({
     env,
     logger,
     whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
-    account: { auth, service, ready: Promise.resolve() },
+    account: { auth, service, userData, ready: Promise.resolve() },
   });
 
   const rpc = async (path: string, input?: unknown, cookie?: string) => {
@@ -101,7 +191,7 @@ export const createAccountTestApp = (options: { adminQqNumbers?: string[]; now?:
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, mailer, avatarFetcher, db, rpc, signIn };
+  return { app, auth, service, userData, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
 };
 
 /** 把 Set-Cookie 折叠成请求用的 Cookie 头。 */

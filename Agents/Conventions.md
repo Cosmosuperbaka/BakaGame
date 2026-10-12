@@ -196,7 +196,7 @@ ADMIN_QQ=
 和 5 秒请求超时由代码固定，不向客户端暴露。启动会校验 Meilisearch 健康状态并维护搜索索引；
 未设置搜索密钥仅供本地开发和隔离测试使用本地搜索。`CCB_ORIGINAL_AES_SECRET` 仅供原版兼容房使用。
 
-`DATABASE_URL` 是 TiDB（MySQL 协议）连接串，必须带库名，生产必填；未配置时账号、云同步、后台与对局记录关闭。连接、迁移与导入见 [Database](Database.md)。账号系统随数据库启用，`BETTER_AUTH_SECRET`、SMTP、`MAIL_DEV_CONSOLE` 与 `ADMIN_QQ` 的规则见 [Account](Account.md#7-配置)。
+`DATABASE_URL` 是 TiDB（MySQL 协议）连接串，必须带库名，生产必填；未配置时账号、云同步、后台与对局记录关闭。连接、迁移与导入见 [Database](Database.md)。账号系统随数据库启用，`BETTER_AUTH_SECRET`、SMTP、`MAIL_DEV_CONSOLE` 与 `ADMIN_QQ` 的规则见 [Account](Account.md#9-配置)。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash

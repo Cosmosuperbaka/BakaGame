@@ -124,6 +124,11 @@ export class AccountService {
     return toProfile(await this.refreshAvatar(row));
   }
 
+  /** 账号当前昵称（读库，不取会话缓存）；账号已注销返回 `null`。 */
+  async nameOf(userId: string): Promise<string | null> {
+    return (await this.findUser(userId))?.name ?? null;
+  }
+
   async updateProfile(userId: string, input: { name?: string; showQq?: boolean }): Promise<AccountProfile> {
     const patch: Record<string, unknown> = {};
     if (input.name !== undefined) {

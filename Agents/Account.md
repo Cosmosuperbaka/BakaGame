@@ -1,6 +1,6 @@
 # 账号
 
-涉及登录、账号资料、头像、账号 HTTP API（oRPC）或管理员身份时查阅。存储层见 [Database](Database.md)。
+涉及登录、账号资料、头像、账号 HTTP API（oRPC）、云同步设置、站内反馈或管理员身份时查阅。存储层见 [Database](Database.md)。
 
 ## 1. 身份与边界
 
@@ -42,11 +42,23 @@
 - 玩家接管座位（加入、重连、顶号）时 `player.account` 取当前连接的账号，三款游戏的玩家视图原样透出。登录或退出后前端须重连 WebSocket 才会刷新身份。
 - 房间快照只带 `userId` 与头像地址，不带账号昵称与 QQ 号；资料卡由前端按 `userId` 调 `account.publicProfile`。每名登录玩家约增加 80 字节全量快照，差量只在变化时发送。
 
-## 6. 管理员
+## 6. 云同步设置
+
+- `user_setting` 一行一个键，整体覆盖，不做字段级合并：`preferences` 是前端自定的轻量偏好文档（音量、房间设置记忆等，序列化后 ≤ 32 KB，`PREFERENCES_MAX_BYTES`），服务端不解释其中字段。
+- 猜歌音乐账号按平台分键 `music.netease` / `music.qq`，内容含平台 cookie，由 `SettingCipher` 以 AES-256-GCM 加密后落库：密钥自 `BETTER_AUTH_SECRET` 经 HKDF 派生，附加数据绑定「用户 ID + 键」。密文挪行、篡改或密钥轮换后一律视为云端无数据并记告警，用户重新登录音乐账号即覆盖。
+- 只有本人能读写自己的设置（`settings.*` 全部要求登录）；`saveMusicSession` 传 `session: null` 表示退出该平台并删除云端副本。
+
+## 7. 站内反馈
+
+- 只有登录用户能提交（`feedback.create`），每人每小时 5 条；标题 ≤ 60、正文 ≤ 2000 字符。
+- 落库后同步为 Sentry User Feedback（`captureServerFeedback`），只带账号 ID 与昵称，不带邮箱与 QQ 号；Sentry 未启用或投递失败不影响站内反馈，`sentryEventId` 留空。
+- 未读口径：`lastReplyAt` 晚于 `userSeenAt`。`feedback.get` 读取本人反馈详情并标记已读；他人的反馈一律 404。
+
+## 8. 管理员
 
 - `ADMIN_QQ`（逗号分隔）中的 QQ 号建号时即为 `admin`，启动时把已注册的同名单账号提升为 `admin`。只提升不降级：后续角色变更在管理后台完成。
 
-## 7. 配置
+## 9. 配置
 
 | 变量 | 说明 |
 |---|---|
@@ -58,7 +70,8 @@
 
 会话 Cookie 前缀 `bakagame`，有效期 30 天、每日续期；生产强制 `Secure`。来源判定与 WebSocket 共用 `isAllowedOrigin`。
 
-## 8. 测试
+## 10. 测试
 
 - `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、昵称校验、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
+- `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。

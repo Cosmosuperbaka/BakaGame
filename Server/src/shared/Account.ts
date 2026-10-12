@@ -39,3 +39,9 @@ export const normalizeAccountName = (raw: string): string =>
   Array.from(raw.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, "").replace(/\s+/g, " ").trim())
     .slice(0, ACCOUNT_NAME_MAX_LENGTH)
     .join("");
+
+/** 云同步偏好文档上限：只放轻量键值（音量、房间设置记忆等），不承载大对象。 */
+export const PREFERENCES_MAX_BYTES = 32 * 1024;
+export const FEEDBACK_TITLE_MAX_LENGTH = 60;
+export const FEEDBACK_CONTENT_MAX_LENGTH = 2000;
+export const FEEDBACK_REPLY_MAX_LENGTH = 2000;
