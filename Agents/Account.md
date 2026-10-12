@@ -62,6 +62,16 @@
 - 每个写操作**先写审计再执行**（`audit_log`）：审计写入失败则操作不做。审计不记 IP，理由同 §3。
 - 管理员回复反馈后，用户侧出现未读；状态为 `open` 的反馈被回复时自动转为 `processing`。
 - 实时房间经 `admin.rooms.*` 列出、关闭与移人。三款游戏各自实现 `domain/AdminRoom.ts` 的 `AdminRoomControl`，后台不直接改房间状态：关房复用各游戏的关房通知（谁是卧底、猜歌原因码 `admin_closed`，CCB 直接给文案），移人复用房主踢人的结算口径，且允许移走房主（按各游戏规则重选）。CCB 只管增强房，原版房在上游服务器。房间视图不含会话令牌与对局秘密；测试房、猜歌单人房带 `hidden` 照常列出。
+- 概览 `admin.stats.overview`：账号数、反馈积压、三款游戏实时房间与在线人数，以及按北京时间自然日（1–90 天，不缺日）的访客、浏览、新注册与对局数。对局数受对局记录 7 天保留期限制（`gameRecordDays`），见 [GameRecord](GameRecord.md)。
+- `admin.stats.sentry` 由服务端以 `SENTRY_API_TOKEN` 代查 Sentry（`infrastructure/SentryApi.ts`）：组织与区域从 `SENTRY_DSN` 读出，项目取隧道白名单（前后端两个项目）；近 24 小时错误数、未解决问题前 5、调用最多的事务 p75/p95。三个查询各自容错，结果缓存 60 秒；令牌只在服务端，返回与日志都不含令牌。
+
+### 访问统计
+
+- 前端每次载入页面调用一次公开接口 `site.visit`（`visitorId` 为浏览器本地随机值）；账号系统未启用时接口 503，前端静默忽略。
+- `SiteStatsService` 在进程内聚合、每分钟刷写 `site_visit_daily` / `site_page_daily`，关闭时先刷写再关数据库；写库失败丢弃该窗口。
+- 访客 ID 落库前与「HKDF 派生密钥 + 北京时间当天」做 HMAC：跨天不可关联、库内还原不出原 ID。不记录 IP；已登录访客关联账号 ID。
+- 页面只按板块统计（`/whoisfaker`、`/songuessr/room`、`/admin` 等），房号折叠、未知路径记为 `other`，统计表不会按房号膨胀。
+- 单窗口最多跟踪 5000 个新访客，超出只计页面浏览，保护进程内存；访客行保留 90 天，页面汇总不含个人数据、长期保留。
 
 ## 9. 配置
 
@@ -72,6 +82,7 @@
 | `MAIL_FROM` | 发件人，缺省为 `SMTP_USER` |
 | `MAIL_DEV_CONSOLE` | 仅非生产：`true` 时验证码写入服务日志，便于本地联调；生产启用即拒绝启动 |
 | `ADMIN_QQ` | 管理员 QQ 号名单 |
+| `SENTRY_API_TOKEN` | 选填：后台概览代查 Sentry 的只读令牌（`org:read`、`project:read`、`event:read`）；须同时配置 `SENTRY_DSN`，只支持 sentry.io 的 DSN |
 
 会话 Cookie 前缀 `bakagame`，有效期 30 天、每日续期；生产强制 `Secure`。来源判定与 WebSocket 共用 `isAllowedOrigin`。
 
@@ -79,5 +90,5 @@
 
 - `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、昵称校验、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
-- `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
+- `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。

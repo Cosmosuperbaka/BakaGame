@@ -2,6 +2,11 @@ import type { Where } from "better-auth";
 
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
+import { beijingDay } from "./SiteStatsService";
+import { GAME_RECORD_RETENTION_MS } from "./GameRecordService";
+import { RECORDED_GAMES } from "../domain/GameRecord";
+import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
+import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
 import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
@@ -10,6 +15,7 @@ import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/Us
 import { normalizeAccountName } from "../shared/Account";
 import type {
   AdminFeedback,
+  AdminOverview,
   AdminRoom,
   AdminFeedbackDetail,
   AdminUser,
@@ -19,6 +25,7 @@ import type {
   FeedbackStatus,
   GameRecordDetail,
   GameRecordItem,
+  SentryOverview,
 } from "../shared/ApiContract";
 
 interface UserRow {
@@ -43,6 +50,9 @@ export interface AdminServiceOptions {
   audit: AuditLogRepository;
   /** 三款游戏的实时房间控制口；房间不落库，后台只经由它们读写。 */
   rooms: Record<RecordedGame, AdminRoomControl>;
+  siteStats: SiteStatsRepository;
+  /** 未配置 `SENTRY_API_TOKEN` 时为 null，概览展示未配置。 */
+  sentry: SentryApiClient | null;
   now?: () => number;
 }
 
@@ -296,6 +306,64 @@ export class AdminService {
     });
     await this.options.rooms[input.game].adminKickPlayer(room.roomId, player.id);
     return { ok: true };
+  }
+
+  // ==================== 站点概览 ====================
+
+  async overview(days: number): Promise<AdminOverview> {
+    const now = this.now();
+    const dayList = Array.from({ length: days }, (_, index) => beijingDay(now - (days - 1 - index) * 86_400_000));
+    const firstDay = dayList[0]!;
+    // 北京时间当天 0 点对应的 UTC 时刻：库内时间一律 UTC。
+    const startOf = (day: string) => new Date(`${day}T00:00:00+08:00`);
+    const today = dayList.at(-1)!;
+    const { internalAdapter } = await this.context();
+    const [total, admins, banned, newToday, feedback, visits, pages, signups, games] = await Promise.all([
+      internalAdapter.countTotalUsers([]),
+      internalAdapter.countTotalUsers([{ field: "role", value: "admin" }]),
+      internalAdapter.countTotalUsers([{ field: "banned", value: true }]),
+      internalAdapter.countTotalUsers([{ field: "createdAt", operator: "gte", value: startOf(today) }]),
+      this.options.feedback.countByStatus(),
+      this.options.siteStats.daily(firstDay),
+      this.options.siteStats.pages(firstDay, 20),
+      this.options.siteStats.newUsers(startOf(firstDay)),
+      this.options.gameRecords.dailyCounts(startOf(firstDay)),
+    ]);
+    const visitsByDay = new Map(visits.map((row) => [row.day, row]));
+    const signupsByDay = new Map(signups.map((row) => [row.day, row.count]));
+    const live = Object.fromEntries(RECORDED_GAMES.map((game) => {
+      const rooms = this.options.rooms[game].adminListRooms();
+      return [game, {
+        rooms: rooms.length,
+        onlinePlayers: rooms.reduce((sum, room) => sum + room.players.filter((player) => player.online && !player.bot).length, 0),
+      }];
+    })) as AdminOverview["live"];
+    return {
+      users: { total, admins, banned, newToday },
+      feedback: {
+        open: feedback.open ?? 0, processing: feedback.processing ?? 0, resolved: feedback.resolved ?? 0, closed: feedback.closed ?? 0,
+      },
+      live,
+      daily: dayList.map((day) => {
+        const dayGames = games.filter((row) => row.day === day);
+        const roundsOf = (game: RecordedGame) => dayGames.find((row) => row.game === game)?.rounds ?? 0;
+        return {
+          day,
+          visitors: visitsByDay.get(day)?.visitors ?? 0,
+          signedInVisitors: visitsByDay.get(day)?.signedInVisitors ?? 0,
+          views: visitsByDay.get(day)?.views ?? 0,
+          newUsers: signupsByDay.get(day) ?? 0,
+          rounds: { faker: roundsOf("faker"), song: roundsOf("song"), ccb: roundsOf("ccb") },
+          roundPlayers: dayGames.reduce((sum, row) => sum + row.players, 0),
+        };
+      }),
+      pages,
+      gameRecordDays: GAME_RECORD_RETENTION_MS / 86_400_000,
+    };
+  }
+
+  sentryOverview(): Promise<SentryOverview> {
+    return this.options.sentry ? this.options.sentry.overview() : Promise.resolve(SENTRY_NOT_CONFIGURED);
   }
 
   // ==================== 对局记录与审计 ====================

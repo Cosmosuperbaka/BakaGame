@@ -19,6 +19,9 @@ import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
 import { AdminService } from "./AdminService";
+import { SiteStatsService } from "./SiteStatsService";
+import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
+import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
@@ -90,6 +93,7 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, account, disposeResources: async () => {
     // 先等在途对局记录写完再关数据库连接。
     await gameRecords?.close();
+    await account?.visits.close();
     const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
@@ -134,12 +138,19 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     feedbackSink: captureServerFeedback,
     logger,
   });
+  const siteStats = new DatabaseSiteStatsRepository(database);
   const admin = new AdminService({
     auth,
     feedback,
     gameRecords: new DatabaseGameRecordRepository(database),
     audit: new DatabaseAuditLogRepository(database),
     rooms,
+    siteStats,
+    sentry: env.sentryApiToken && env.sentryDsn
+      ? new SentryApiClient(deriveSentryApiConfig(env.sentryDsn, env.sentryAllowedProjectIds ?? [], env.sentryApiToken), logger)
+      : null,
   });
-  return { auth, service, userData, admin, ready: database.ready };
+  const visits = new SiteStatsService({ repository: siteStats, secret: env.account.secret, logger });
+  visits.start();
+  return { auth, service, userData, admin, visits, ready: database.ready };
 };

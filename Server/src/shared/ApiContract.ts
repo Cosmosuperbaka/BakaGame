@@ -181,6 +181,57 @@ export const adminRoomSchema = z.object({
   })),
 });
 
+const perGame = <T extends z.ZodType>(item: T) => z.object({ faker: item, song: item, ccb: item });
+
+export const adminOverviewSchema = z.object({
+  users: z.object({ total: z.number(), admins: z.number(), banned: z.number(), newToday: z.number() }),
+  feedback: z.record(feedbackStatusSchema, z.number()),
+  live: perGame(z.object({ rooms: z.number(), onlinePlayers: z.number() })),
+  /** 按北京时间自然日，升序且不缺日；对局数受记录保留期限制（`gameRecordDays`）。 */
+  daily: z.array(z.object({
+    day: z.string(),
+    visitors: z.number(),
+    signedInVisitors: z.number(),
+    views: z.number(),
+    newUsers: z.number(),
+    rounds: perGame(z.number()),
+    roundPlayers: z.number(),
+  })),
+  pages: z.array(z.object({ path: z.string(), views: z.number() })),
+  gameRecordDays: z.number(),
+});
+
+export const sentryOverviewSchema = z.object({
+  /** 服务端未配置 `SENTRY_API_TOKEN` 时为 false，其余字段为空。 */
+  configured: z.boolean(),
+  /** 近 24 小时错误事件数（前后端项目合计）。 */
+  errors24h: z.number().nullable(),
+  unresolvedIssues: z.number().nullable(),
+  issues: z.array(z.object({
+    id: z.string(),
+    shortId: z.string(),
+    title: z.string(),
+    culprit: z.string().nullable(),
+    level: z.string(),
+    count: z.number(),
+    userCount: z.number(),
+    lastSeen: z.string(),
+    permalink: z.string().nullable(),
+    project: z.string().nullable(),
+  })),
+  /** 近 24 小时调用最多的事务及其耗时分位（毫秒）。 */
+  transactions: z.array(z.object({
+    name: z.string(),
+    project: z.string().nullable(),
+    count: z.number(),
+    p75: z.number().nullable(),
+    p95: z.number().nullable(),
+  })).nullable(),
+  /** 部分查询失败时的说明，不含凭据。 */
+  warnings: z.array(z.string()),
+  fetchedAt: z.string().nullable(),
+});
+
 export const auditEntrySchema = z.object({
   id: z.number().int(),
   actor: userRefSchema.nullable(),
@@ -253,9 +304,20 @@ const adminContract = {
       }))
       .output(paged(auditEntrySchema)),
   },
+  stats: {
+    overview: oc.input(z.object({ days: z.number().int().min(1).max(90).default(14) })).output(adminOverviewSchema),
+    /** 服务端以只读令牌代查 Sentry，结果缓存 60 秒；令牌不出服务端。 */
+    sentry: oc.output(sentryOverviewSchema),
+  },
 };
 
 export const apiContract = {
+  site: {
+    /** 前端每次载入页面报一次；`visitorId` 是浏览器本地随机值，路径只按板块统计。 */
+    visit: oc
+      .input(z.object({ visitorId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/), path: z.string().max(512) }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
   account: {
     /** 发送登录验证码；`registered` 决定前端是否要求填写昵称。 */
     requestLoginCode: oc
@@ -320,4 +382,6 @@ export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
 export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;
+export type AdminOverview = z.infer<typeof adminOverviewSchema>;
+export type SentryOverview = z.infer<typeof sentryOverviewSchema>;
 

@@ -24,4 +24,6 @@ export type {
   AdminFeedbackDetail,
   AuditEntry,
   AdminRoom,
+  AdminOverview,
+  SentryOverview,
 } from "./ApiContract";

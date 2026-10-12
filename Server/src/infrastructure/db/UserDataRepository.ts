@@ -82,6 +82,8 @@ export interface FeedbackRepository {
   list(filter: FeedbackFilter): Promise<{ items: FeedbackRecord[]; total: number }>;
   /** 本人提交后、管理员回复晚于本人查看时间的条数。 */
   countUnread(userId: string): Promise<number>;
+  /** 各状态条数，供后台概览；没有记录的状态不出现。 */
+  countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>>;
   addReply(reply: Omit<FeedbackReplyRecord, "id">): Promise<FeedbackReplyRecord>;
   replies(feedbackId: string): Promise<FeedbackReplyRecord[]>;
 }
@@ -133,6 +135,13 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
       sql`(${feedback.userSeenAt} is null or ${feedback.userSeenAt} < ${feedback.lastReplyAt})`,
     ));
     return Number(row?.total ?? 0);
+  }
+
+  async countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>> {
+    await this.database.ready;
+    const rows = await this.database.db.select({ status: feedback.status, total: sql<number>`count(*)` })
+      .from(feedback).groupBy(feedback.status);
+    return Object.fromEntries(rows.map((row) => [row.status, Number(row.total)]));
   }
 
   async addReply(reply: Omit<FeedbackReplyRecord, "id">): Promise<FeedbackReplyRecord> {

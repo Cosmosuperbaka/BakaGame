@@ -24,6 +24,7 @@
 - 表结构唯一真相源：`Server/src/infrastructure/db/Schema.ts`。属性名即 Better Auth 字段名（适配器按属性名映射），列名蛇形。
 - 时间列一律 `datetime(3)`，不用 `timestamp`（2038 溢出，远期封禁时间放不下）。
 - 修改 schema 后在 `Server/` 执行 `bun run db:generate` 生成迁移（不连库），迁移文件 `Server/drizzle/` 进 Git；服务启动时自动应用。不手写或手改已发布的迁移 SQL。
+- 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，TiDB 的 `only_full_group_by` 视为不同表达式而报错。内存仓储测不出，此类查询须经真实 TiDB 冒烟。
 - 词对表 `word_pair` 以 `(word_a, word_b)` 唯一，入库前经 `normalizeWordPair` 规范化并按字典序排列；重复提交累加 `use_count`、刷新 `last_used_at`。
 
 ## 4. 数据导入

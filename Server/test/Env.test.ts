@@ -40,6 +40,24 @@ describe("readEnv 环境变量与启动断言", () => {
     expect(() => createServer(options)).toThrow(/DATABASE_URL/);
   });
 
+  it("SENTRY_API_TOKEN 需要 SENTRY_DSN", () => {
+    const keys = ["SENTRY_DSN", "SENTRY_API_TOKEN", "SENTRY_ALLOWED_PROJECT_IDS"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      expect(readEnv().sentryApiToken).toBeUndefined();
+      Bun.env.SENTRY_API_TOKEN = "fixture-token";
+      expect(() => readEnv()).toThrow(/SENTRY_DSN/);
+      Bun.env.SENTRY_DSN = "https://key@o1.ingest.us.sentry.io/2";
+      expect(readEnv()).toMatchObject({ sentryApiToken: "fixture-token", sentryAllowedProjectIds: ["2"] });
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
   it("账号配置随数据库启用：密钥必填，SMTP 三项须成套，ADMIN_QQ 校验号码", () => {
     const keys = ["DATABASE_URL", "BETTER_AUTH_SECRET", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "MAIL_DEV_CONSOLE", "ADMIN_QQ"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));

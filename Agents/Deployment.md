@@ -239,6 +239,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；首次上线后在容器内执行一次 `bun run db:import-word-bank` 迁移旧词库，见 [Database](Database.md) |
 | `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时服务拒绝启动 | 至少 32 字符随机串，`openssl rand -hex 32` 生成；更换会使全部登录会话失效 |
 | `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#9-配置) |
+| `SENTRY_API_TOKEN` | 后台概览的 Sentry 卡片显示「未配置」（可控降级） | 专用只读令牌（`org:read`、`project:read`、`event:read`），不复用个人全权令牌 |
 
 存在性自查（只计数、不打印值）：
 

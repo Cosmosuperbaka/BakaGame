@@ -4,6 +4,7 @@ import { Elysia } from "elysia";
 
 import type { AccountService } from "../../application/AccountService";
 import type { AdminService } from "../../application/AdminService";
+import type { SiteStatsService } from "../../application/SiteStatsService";
 import type { UserDataService } from "../../application/UserDataService";
 import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
@@ -19,6 +20,7 @@ export interface AccountDependencies {
   service: AccountService;
   userData: UserDataService;
   admin: AdminService;
+  visits: SiteStatsService;
   /** 数据库迁移完成后才对外服务账号请求。 */
   ready: Promise<void>;
 }
@@ -44,7 +46,7 @@ const STATUS_BY_CODE: Record<string, number> = {
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
 
-const createRpcRouter = ({ service, userData, admin }: AccountDependencies, logger: EventLogger) => {
+const createRpcRouter = ({ service, userData, admin, visits }: AccountDependencies, logger: EventLogger) => {
   const base = implement(apiContract).$context<RpcContext>().use(async ({ next, path }) => {
     try {
       return await next();
@@ -68,6 +70,12 @@ const createRpcRouter = ({ service, userData, admin }: AccountDependencies, logg
   });
 
   return base.router({
+    site: {
+      visit: base.site.visit.handler(async ({ context, input }) => {
+        visits.record({ ...input, userId: await service.currentUserId(context.headers) });
+        return { ok: true as const };
+      }),
+    },
     account: {
       requestLoginCode: base.account.requestLoginCode.handler(({ input }) => service.requestLoginCode(input.qqNumber)),
       me: base.account.me.handler(async ({ context }) => {
@@ -117,6 +125,10 @@ const createRpcRouter = ({ service, userData, admin }: AccountDependencies, logg
       },
       audit: {
         list: adminOnly.admin.audit.list.handler(({ input }) => admin.listAudit(input)),
+      },
+      stats: {
+        overview: adminOnly.admin.stats.overview.handler(({ input }) => admin.overview(input.days)),
+        sentry: adminOnly.admin.stats.sentry.handler(() => admin.sentryOverview()),
       },
     },
   });

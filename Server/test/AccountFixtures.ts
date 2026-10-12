@@ -2,6 +2,9 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
+import { SiteStatsService } from "../src/application/SiteStatsService";
+import type { SentryApiClient } from "../src/infrastructure/SentryApi";
+import type { PageDelta, SiteStatsRepository, VisitorDelta } from "../src/infrastructure/db/SiteStatsRepository";
 import type { AdminRoomControl } from "../src/domain/AdminRoom";
 import type { RecordedGame } from "../src/domain/GameRecord";
 import { UserDataService, type FeedbackSink } from "../src/application/UserDataService";
@@ -22,6 +25,7 @@ import type {
   UserSettingRepository,
 } from "../src/infrastructure/db/UserDataRepository";
 import { EventLogger } from "../src/infrastructure/EventLogger";
+import type { FeedbackStatus } from "../src/shared/ApiContract";
 import { isAllowedOrigin } from "../src/transport/App";
 import { createTestApp } from "./AppFixtures";
 
@@ -100,6 +104,12 @@ export class MemoryFeedbackRepository implements FeedbackRepository {
       && (!record.userSeenAt || record.userSeenAt < record.lastReplyAt)).length;
   }
 
+  async countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>> {
+    const counts: Partial<Record<FeedbackStatus, number>> = {};
+    for (const record of this.records.values()) counts[record.status] = (counts[record.status] ?? 0) + 1;
+    return counts;
+  }
+
   async addReply(reply: Omit<FeedbackReplyRecord, "id">): Promise<FeedbackReplyRecord> {
     const row = { ...reply, id: this.replyRows.length + 1 };
     this.replyRows.push(row);
@@ -109,6 +119,62 @@ export class MemoryFeedbackRepository implements FeedbackRepository {
   async replies(feedbackId: string): Promise<FeedbackReplyRecord[]> {
     return this.replyRows.filter((reply) => reply.feedbackId === feedbackId)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((reply) => ({ ...reply }));
+  }
+}
+
+/** 按主键累加，口径同 Drizzle 实现的 `ON DUPLICATE KEY UPDATE`。 */
+export class MemorySiteStatsRepository implements SiteStatsRepository {
+  readonly visitors = new Map<string, VisitorDelta>();
+  readonly pageRows = new Map<string, PageDelta>();
+  readonly userCreatedAt: Date[] = [];
+  failNext = false;
+
+  async addVisits(visitors: VisitorDelta[], pages: PageDelta[]): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error("db down");
+    }
+    for (const row of visitors) {
+      const key = `${row.day}:${row.visitorHash}`;
+      const current = this.visitors.get(key);
+      this.visitors.set(key, current
+        ? { ...current, views: current.views + row.views, userId: row.userId ?? current.userId }
+        : { ...row });
+    }
+    for (const row of pages) {
+      const key = `${row.day}:${row.path}`;
+      const current = this.pageRows.get(key);
+      this.pageRows.set(key, { ...row, views: (current?.views ?? 0) + row.views });
+    }
+  }
+
+  async purgeVisitors(beforeDay: string, batch: number): Promise<number> {
+    const stale = [...this.visitors.keys()].filter((key) => this.visitors.get(key)!.day < beforeDay).slice(0, batch);
+    for (const key of stale) this.visitors.delete(key);
+    return stale.length;
+  }
+
+  async daily(sinceDay: string) {
+    const byDay = new Map<string, { day: string; visitors: number; signedInVisitors: number; views: number }>();
+    for (const row of this.visitors.values()) {
+      if (row.day < sinceDay) continue;
+      const entry = byDay.get(row.day) ?? { day: row.day, visitors: 0, signedInVisitors: 0, views: 0 };
+      entry.visitors += 1;
+      entry.signedInVisitors += row.userId ? 1 : 0;
+      entry.views += row.views;
+      byDay.set(row.day, entry);
+    }
+    return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  async pages(sinceDay: string, limit: number) {
+    const byPath = new Map<string, number>();
+    for (const row of this.pageRows.values()) if (row.day >= sinceDay) byPath.set(row.path, (byPath.get(row.path) ?? 0) + row.views);
+    return [...byPath].map(([path, views]) => ({ path, views })).sort((a, b) => b.views - a.views).slice(0, limit);
+  }
+
+  async newUsers(): Promise<Array<{ day: string; count: number }>> {
+    return [];
   }
 }
 
@@ -154,6 +220,7 @@ export const createAccountTestApp = (options: {
   gameRecords?: GameRecordRepository;
   /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
   rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
+  sentry?: SentryApiClient;
 } = {}) => {
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
@@ -196,6 +263,7 @@ export const createAccountTestApp = (options: {
     now: options.now,
   });
   const audit = new MemoryAuditLogRepository();
+  const siteStats = new MemorySiteStatsRepository();
   const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
   const rooms = { faker: whoIsFakerService, song: emptyRooms, ccb: emptyRooms, ...options.rooms };
   const admin = new AdminService({
@@ -204,13 +272,16 @@ export const createAccountTestApp = (options: {
     gameRecords: options.gameRecords ?? emptyGameRecords,
     audit,
     rooms,
+    siteStats,
+    sentry: options.sentry ?? null,
     now: options.now,
   });
+  const visits = new SiteStatsService({ repository: siteStats, secret: ACCOUNT_TEST_SECRET, logger, now: options.now });
   const { app } = createTestApp({
     env,
     logger,
     whoIsFakerService,
-    account: { auth, service, userData, admin, ready: Promise.resolve() },
+    account: { auth, service, userData, admin, visits, ready: Promise.resolve() },
   });
 
   const rpc = async (path: string, input?: unknown, cookie?: string) => {
@@ -236,7 +307,7 @@ export const createAccountTestApp = (options: {
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, admin, audit, whoIsFakerService, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
 };
 
 const emptyRooms: AdminRoomControl = {

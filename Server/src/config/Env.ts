@@ -31,6 +31,8 @@ export interface AppEnv {
   maintenanceToken?: string;
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
+  /** 管理后台概览代查 Sentry 用的只读令牌（org:read、project:read、event:read）；不配则后台显示未配置。 */
+  sentryApiToken?: string;
   bangumiApiUrl: string;
   /**
    * 对外图片前缀：恒为 `/api/bangumi`，即自建图床。
@@ -238,6 +240,9 @@ export const readEnv = (): AppEnv => {
     } catch { /* 非法 DSN 由 Sentry 初始化阶段处理 */ }
   }
 
+  const sentryApiToken = Bun.env.SENTRY_API_TOKEN?.trim() || undefined;
+  if (sentryApiToken && !sentryDsn) throw new AppError("CONFIG_ERROR", "SENTRY_API_TOKEN 需要同时配置 SENTRY_DSN（从中读取组织与区域）");
+
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
   // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
   const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
@@ -261,6 +266,7 @@ export const readEnv = (): AppEnv => {
     otelDeploymentEnvironment,
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     sentryDsn,
+    sentryApiToken,
     sentryAllowedProjectIds,
     bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
     bangumiImageUrl: BANGUMI_IMAGE_ROUTE,
