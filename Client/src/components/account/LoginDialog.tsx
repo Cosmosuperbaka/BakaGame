@@ -42,7 +42,8 @@ function useCountdown() {
  * 登录 / 注册弹窗（首次登录即注册，见 Agents/Account.md §1）。
  *
  * 第一步填 QQ 号并直接展示 qlogo 头像请用户确认「是不是你」——此时 QQ 号就是用户自己刚输入的；
- * 确认后向 `QQ号@qq.com` 发验证码。第二步填验证码，新账号同时填写账号昵称（与游戏昵称互不捆绑）。
+ * 确认后向 `QQ号@qq.com` 发验证码。第二步填验证码，新账号同时填写账号昵称（与游戏昵称互不捆绑），
+ * 服务端查到 QQ 昵称时预填、可改（见 Agents/Account.md §4）。
  */
 export function LoginDialog({ open, onOpenChange, origin }: { open: boolean; onOpenChange: (open: boolean) => void; origin?: OriginPoint | null }) {
   // QQ 号留在外层：关掉再打开仍保留上次输入；其余状态随弹窗内容每次打开重新开始。
@@ -59,6 +60,8 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
   const [step, setStep] = useState<Step>({ kind: "qq" });
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  /** 昵称框里是服务端查到的 QQ 昵称（用户改动后清除提示）。 */
+  const [prefilled, setPrefilled] = useState(false);
   const [busy, setBusy] = useState<"send" | "resend" | "sign-in" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -73,6 +76,10 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
       const result = await api.account.requestLoginCode({ qqNumber: qq });
       countdown.start(result.resendAfterSeconds);
       setStep({ kind: "code", registered: result.registered });
+      if (!result.registered && result.qqName && !name.trim()) {
+        setName(result.qqName);
+        setPrefilled(true);
+      }
     } catch (cause) {
       setError(apiErrorMessage(cause, "验证码发送失败，请稍后重试"));
     } finally {
@@ -183,8 +190,12 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
                 <SettingTextField
                   label="账号昵称"
                   value={name}
-                  onChange={setName}
+                  onChange={(value) => {
+                    setName(value);
+                    setPrefilled(false);
+                  }}
                   placeholder="显示在资料卡上，与游戏内昵称无关"
+                  description={prefilled ? "已填入你的 QQ 昵称，可以改成别的" : undefined}
                   maxLength={ACCOUNT_NAME_MAX_LENGTH}
                   inputClassName="h-10"
                 />

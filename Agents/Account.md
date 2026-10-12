@@ -105,5 +105,5 @@
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
 - `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
 - `test/QQNickname.test.ts` 以假 QQ 网页接口（`createQQWebFetcher`：二维码、轮询码、`check_sig` 跳转、GBK 昵称、登录失效）覆盖协议辅助函数、扫码登录与审计先行、登录态加密、注册预填、访问刷新间隔、失效标记与批量刷新。真实扫码与昵称接口只能人工验收。
-- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称、就地报错）与 `components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）。
+- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称与 QQ 昵称预填、就地报错）与 `components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。
