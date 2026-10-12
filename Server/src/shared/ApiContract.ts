@@ -124,6 +124,8 @@ export const adminUserSchema = z.object({
   banReason: z.string().nullable(),
   banExpires: z.string().nullable(),
   showQq: z.boolean(),
+  /** 经查询号获取的 QQ 昵称；未查到为空。 */
+  qqName: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -232,6 +234,23 @@ export const sentryOverviewSchema = z.object({
   fetchedAt: z.string().nullable(),
 });
 
+/** 后台扫码登录的 QQ 查询号：用它的 QQ 空间登录态查注册用户的 QQ 昵称。 */
+export const qqLookupStatusSchema = z.object({
+  state: z.enum(["signedOut", "active", "expired"]),
+  uin: z.string().nullable(),
+  nickname: z.string().nullable(),
+  loggedInAt: z.string().nullable(),
+  expiredAt: z.string().nullable(),
+});
+
+export const qqLoginPollSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("waiting") }),
+  z.object({ state: z.literal("scanned") }),
+  z.object({ state: z.literal("expired") }),
+  z.object({ state: z.literal("failed"), message: z.string() }),
+  z.object({ state: z.literal("success"), status: qqLookupStatusSchema }),
+]);
+
 export const auditEntrySchema = z.object({
   id: z.number().int(),
   actor: userRefSchema.nullable(),
@@ -304,6 +323,16 @@ const adminContract = {
       }))
       .output(paged(auditEntrySchema)),
   },
+  qq: {
+    status: oc.output(qqLookupStatusSchema),
+    /** 申请扫码二维码（PNG data URL）；`loginId` 用于之后轮询。 */
+    startLogin: oc.output(z.object({ loginId: z.string(), image: z.string() })),
+    /** 前端每 2 秒轮询一次，直到成功、失效或失败。成功即替换原查询号。 */
+    pollLogin: oc.input(z.object({ loginId: z.string().uuid() })).output(qqLoginPollSchema),
+    logout: oc.output(z.object({ ok: z.literal(true) })),
+    /** 刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。 */
+    refreshNames: oc.output(z.object({ checked: z.number().int(), updated: z.number().int(), remaining: z.number().int() })),
+  },
   stats: {
     overview: oc.input(z.object({ days: z.number().int().min(1).max(90).default(14) })).output(adminOverviewSchema),
     /** 服务端以只读令牌代查 Sentry，结果缓存 60 秒；令牌不出服务端。 */
@@ -319,10 +348,10 @@ export const apiContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   account: {
-    /** 发送登录验证码；`registered` 决定前端是否要求填写昵称。 */
+    /** 发送登录验证码；`registered` 决定前端是否要求填写昵称，新号附带查到的 QQ 昵称供预填（查不到为空）。 */
     requestLoginCode: oc
       .input(z.object({ qqNumber }))
-      .output(z.object({ registered: z.boolean(), resendAfterSeconds: z.number().int() })),
+      .output(z.object({ registered: z.boolean(), resendAfterSeconds: z.number().int(), qqName: z.string().nullable() })),
     /** 当前登录资料；未登录返回 `null`。顺带按节流刷新 QQ 头像（每次访问调用一次即可）。 */
     me: oc.output(accountProfileSchema.nullable()),
     updateProfile: oc
@@ -384,4 +413,6 @@ export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;
 export type AdminOverview = z.infer<typeof adminOverviewSchema>;
 export type SentryOverview = z.infer<typeof sentryOverviewSchema>;
+export type QQLookupStatus = z.infer<typeof qqLookupStatusSchema>;
+export type QQLoginPollResult = z.infer<typeof qqLoginPollSchema>;
 

@@ -5,7 +5,7 @@
 ## 1. 定位与边界
 
 - 托管库为 TiDB Serverless（MySQL 协议），ORM 为 Drizzle（`drizzle-orm/mysql2`）。连接串来自 `DATABASE_URL`，必须包含库名（当前为 `bakagame`）。
-- 数据库承载账号、用户设置、词库、对局记录、审计、反馈与访问统计。**房间与对局实时状态仍为纯内存**，不读写数据库。
+- 数据库承载账号、用户设置、站点配置、词库、对局记录、审计、反馈与访问统计。**房间与对局实时状态仍为纯内存**，不读写数据库。
 - 游客游玩不依赖数据库：`/readyz` 只看停机标志，不检查数据库；数据库故障时账号相关功能报错，游戏照常。
 - 生产（`DEPLOYMENT_ENVIRONMENT=production`）缺 `DATABASE_URL` 时 `createServer` 抛 `CONFIG_ERROR` 拒绝启动。本地开发与隔离测试不配置时，词对不落库，账号相关功能整体关闭；隔离服务（`scripts/IsolatedServer.ts`）显式清空该变量。
 
@@ -25,6 +25,7 @@
 - 时间列一律 `datetime(3)`，不用 `timestamp`（2038 溢出，远期封禁时间放不下）。
 - 修改 schema 后在 `Server/` 执行 `bun run db:generate` 生成迁移（不连库），迁移文件 `Server/drizzle/` 进 Git；服务启动时自动应用。不手写或手改已发布的迁移 SQL。
 - 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，TiDB 的 `only_full_group_by` 视为不同表达式而报错。内存仓储测不出，此类查询须经真实 TiDB 冒烟。
+- 站点配置表 `site_config` 是全站单例配置的键值表（`config_key` 主键、`value` 为 JSON），当前只有 QQ 查询号登录态 `qq.lookupSession`（密文，见 [Account](Account.md#qq-昵称查询号)）。
 - 词对表 `word_pair` 以 `(word_a, word_b)` 唯一，入库前经 `normalizeWordPair` 规范化并按字典序排列；重复提交累加 `use_count`、刷新 `last_used_at`。
 
 ## 4. 数据导入

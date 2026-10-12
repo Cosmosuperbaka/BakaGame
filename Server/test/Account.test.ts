@@ -35,7 +35,7 @@ describe("验证码登录", () => {
   test("首次登录必须带昵称，校验失败不消耗验证码；成功后派生 QQ 号与站内头像", async () => {
     const { app, rpc, mailer, avatarFetcher } = createAccountTestApp();
     const sent = await rpc("account/requestLoginCode", { qqNumber: QQ });
-    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60 } });
+    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60, qqName: null } });
     const code = mailer.lastCodeFor(EMAIL);
     expect(code).toMatch(/^\d{6}$/);
 

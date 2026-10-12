@@ -15,6 +15,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuth } from "../infrastructure/auth/Auth";
 import { createMailer } from "../infrastructure/auth/Mailer";
 import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
+import { QQWebLoginClient } from "../infrastructure/auth/QQWebLogin";
+import { DatabaseSiteConfigRepository } from "../infrastructure/db/SiteConfigRepository";
+import { QQNicknameService } from "./QQNicknameService";
 import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
@@ -123,7 +126,14 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     adminQqNumbers: env.account.adminQqNumbers,
     mailer,
   });
-  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), logger });
+  const nicknames = new QQNicknameService({
+    auth,
+    client: new QQWebLoginClient(),
+    config: new DatabaseSiteConfigRepository(database),
+    cipher: new SettingCipher(env.account.secret),
+    logger,
+  });
+  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), nicknames, logger });
   const adminQqNumbers = env.account.adminQqNumbers;
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
   void database.ready
@@ -146,6 +156,7 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     audit: new DatabaseAuditLogRepository(database),
     rooms,
     siteStats,
+    qq: nicknames,
     sentry: env.sentryApiToken && env.sentryDsn
       ? new SentryApiClient(deriveSentryApiConfig(env.sentryDsn, env.sentryAllowedProjectIds ?? [], env.sentryApiToken), logger)
       : null,

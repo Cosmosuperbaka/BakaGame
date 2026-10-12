@@ -41,6 +41,8 @@ const STATUS_BY_CODE: Record<string, number> = {
   RATE_LIMITED: 429,
   MAIL_UNAVAILABLE: 503,
   AVATAR_UNAVAILABLE: 503,
+  QQ_LOGIN_UNAVAILABLE: 503,
+  QQ_LOOKUP_DISABLED: 503,
   ACCOUNT_DISABLED: 503,
 };
 
@@ -125,6 +127,13 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
       },
       audit: {
         list: adminOnly.admin.audit.list.handler(({ input }) => admin.listAudit(input)),
+      },
+      qq: {
+        status: adminOnly.admin.qq.status.handler(() => admin.qqStatus()),
+        startLogin: adminOnly.admin.qq.startLogin.handler(() => admin.qqStartLogin()),
+        pollLogin: adminOnly.admin.qq.pollLogin.handler(({ context, input }) => admin.qqPollLogin(context.userId, input.loginId)),
+        logout: adminOnly.admin.qq.logout.handler(({ context }) => admin.qqLogout(context.userId)),
+        refreshNames: adminOnly.admin.qq.refreshNames.handler(({ context }) => admin.qqRefreshNames(context.userId)),
       },
       stats: {
         overview: adminOnly.admin.stats.overview.handler(({ input }) => admin.overview(input.days)),

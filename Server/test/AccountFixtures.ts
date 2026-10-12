@@ -2,6 +2,9 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
+import { QQNicknameService } from "../src/application/QQNicknameService";
+import { QQWebLoginClient, gtkOf, ptqrToken } from "../src/infrastructure/auth/QQWebLogin";
+import type { SiteConfigRepository } from "../src/infrastructure/db/SiteConfigRepository";
 import { SiteStatsService } from "../src/application/SiteStatsService";
 import type { SentryApiClient } from "../src/infrastructure/SentryApi";
 import type { PageDelta, SiteStatsRepository, VisitorDelta } from "../src/infrastructure/db/SiteStatsRepository";
@@ -178,6 +181,77 @@ export class MemorySiteStatsRepository implements SiteStatsRepository {
   }
 }
 
+export class MemorySiteConfigRepository implements SiteConfigRepository {
+  readonly rows = new Map<string, unknown>();
+
+  async get(key: string): Promise<unknown | null> {
+    return this.rows.has(key) ? structuredClone(this.rows.get(key)) : null;
+  }
+
+  async put(key: string, value: unknown): Promise<void> {
+    this.rows.set(key, structuredClone(value));
+  }
+
+  async remove(key: string): Promise<void> {
+    this.rows.delete(key);
+  }
+}
+
+/** 由字符串与原始字节片段拼出响应体（昵称接口是 GBK 编码，测试里直接写字节）。 */
+const bytesOf = (...parts: Array<string | number[]>) =>
+  new Uint8Array(parts.flatMap((part) => (typeof part === "string" ? [...new TextEncoder().encode(part)] : part)));
+
+/**
+ * 假的 QQ 网页登录：二维码、轮询、check_sig 跳转与 QQ 空间昵称接口。
+ * `login` 控制轮询返回码，`expired` 让昵称接口报登录失效，`names` 是可查到的昵称（值为原始响应片段）。
+ */
+export const createQQWebFetcher = () => {
+  const state = {
+    login: "66" as "66" | "67" | "65" | "0" | "10006",
+    expired: false,
+    names: new Map<string, string | number[]>([
+      ["10001", "&#38463;&#29432;"],
+      ["20002", [0xc7, 0xeb, 0xcf, 0xc8]],
+    ]),
+    portraitCalls: [] as string[][],
+  };
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const cookie = new Headers(init?.headers).get("cookie") ?? "";
+    if (url.pathname === "/ptqrshow") {
+      return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "set-cookie": "qrsig=SIG-1; Path=/" } });
+    }
+    if (url.pathname === "/ptqrlogin") {
+      if (!cookie.includes("qrsig=SIG-1") || url.searchParams.get("ptqrtoken") !== String(ptqrToken("SIG-1"))) return new Response("ptuiCB('65','0','','0','二维码已失效。', '')");
+      if (state.login !== "0") return new Response(`ptuiCB('${state.login}','0','','0','提示', '')`);
+      const headers = new Headers();
+      headers.append("set-cookie", "uin=o0012345; Path=/; Domain=qq.com");
+      headers.append("set-cookie", "skey=@SKEY; Path=/; Domain=qq.com");
+      return new Response("ptuiCB('0','0','https://ptlogin2.qzone.qq.com/check_sig?uin=12345&ptsigx=x','0','登录成功！', '查询号')", { headers });
+    }
+    if (url.pathname === "/check_sig") {
+      const headers = new Headers({ location: "https://qzs.qq.com/qzone/v5/loginsucc.html?para=izone" });
+      headers.append("set-cookie", "p_skey=PSKEY; Path=/; Domain=qzone.qq.com");
+      headers.append("set-cookie", "p_uin=o0012345; Path=/; Domain=qzone.qq.com");
+      return new Response(null, { status: 302, headers });
+    }
+    if (url.pathname === "/fcg-bin/cgi_get_portrait.fcg") {
+      const uins = (url.searchParams.get("uins") ?? "").split(",");
+      state.portraitCalls.push(uins);
+      const authorized = cookie.includes("p_skey=PSKEY") && url.searchParams.get("g_tk") === String(gtkOf("PSKEY"));
+      if (state.expired || !authorized) return new Response(bytesOf("_Callback({\"error\":{\"type\":\"need login\",\"msg\":\"\"}});"));
+      const parts: Array<string | number[]> = ["portraitCallBack({"];
+      uins.filter((uin) => state.names.has(uin)).forEach((uin, index) => {
+        parts.push(`${index ? "," : ""}"${uin}":["http://qlogo",0,-1,0,0,0,"`, state.names.get(uin)!, "\",0]");
+      });
+      parts.push("})");
+      return new Response(bytesOf(...parts));
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  return { fetcher, state };
+};
+
 /** 记录发出的验证码，测试据此完成登录。 */
 export class CapturedMailer implements Mailer {
   readonly sent: Array<{ to: string; code: string }> = [];
@@ -243,7 +317,18 @@ export const createAccountTestApp = (options: {
     adminQqNumbers: options.adminQqNumbers ?? [],
     mailer,
   });
-  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(avatarFetcher.fetcher), logger, now: options.now });
+  const qqWeb = createQQWebFetcher();
+  const siteConfig = new MemorySiteConfigRepository();
+  const nicknames = new QQNicknameService({
+    auth,
+    client: new QQWebLoginClient(qqWeb.fetcher),
+    config: siteConfig,
+    cipher: new SettingCipher(ACCOUNT_TEST_SECRET),
+    logger,
+    now: options.now,
+    batchDelayMs: 0,
+  });
+  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(avatarFetcher.fetcher), nicknames, logger, now: options.now });
   const settings = new MemoryUserSettingRepository();
   const feedback = new MemoryFeedbackRepository();
   const sentFeedback: Array<Parameters<FeedbackSink>[0]> = [];
@@ -274,6 +359,7 @@ export const createAccountTestApp = (options: {
     rooms,
     siteStats,
     sentry: options.sentry ?? null,
+    qq: nicknames,
     now: options.now,
   });
   const visits = new SiteStatsService({ repository: siteStats, secret: ACCOUNT_TEST_SECRET, logger, now: options.now });
@@ -307,7 +393,7 @@ export const createAccountTestApp = (options: {
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, qqWeb, siteConfig, nicknames, db, rpc, signIn };
 };
 
 const emptyRooms: AdminRoomControl = {

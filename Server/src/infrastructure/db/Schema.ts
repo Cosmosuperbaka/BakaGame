@@ -46,6 +46,9 @@ export const user = mysqlTable("user", {
   /** QQ 头像内容摘要；变化即换代头像 URL，浏览器缓存随之失效。 */
   avatarHash: varchar("avatar_hash", { length: 64 }),
   avatarCheckedAt: datetime("avatar_checked_at", { mode: "date", fsp: 3 }),
+  /** QQ 昵称（经后台扫码登录的查询号获取，只给管理员看与注册预填）；与账号昵称互不覆盖。 */
+  qqName: varchar("qq_name", { length: 64 }),
+  qqNameCheckedAt: datetime("qq_name_checked_at", { mode: "date", fsp: 3 }),
 });
 
 export const session = mysqlTable("session", {
@@ -94,6 +97,13 @@ export const userSetting = mysqlTable("user_setting", {
   value: json("value").notNull(),
   updatedAt: updatedAt(),
 }, (table) => [primaryKey({ columns: [table.userId, table.key] })]);
+
+/** 站点级配置：一行一个键，值为完整 JSON 文档；敏感值由应用层加密后写入。 */
+export const siteConfig = mysqlTable("site_config", {
+  key: varchar("config_key", { length: 48 }).primaryKey(),
+  value: json("value").notNull(),
+  updatedAt: updatedAt(),
+});
 
 // ==================== 游戏数据 ====================
 

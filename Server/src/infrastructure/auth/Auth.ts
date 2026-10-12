@@ -52,6 +52,8 @@ export const createAuth = (options: AuthOptions) => {
         showQq: { type: "boolean", required: false, defaultValue: false, input: false },
         avatarHash: { type: "string", required: false, input: false, returned: false },
         avatarCheckedAt: { type: "date", required: false, input: false, returned: false },
+        qqName: { type: "string", required: false, input: false, returned: false },
+        qqNameCheckedAt: { type: "date", required: false, input: false, returned: false },
       },
     },
     session: {

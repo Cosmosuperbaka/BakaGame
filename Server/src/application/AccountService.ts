@@ -6,6 +6,7 @@ import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { Auth } from "../infrastructure/auth/Auth";
 import type { Mailer } from "../infrastructure/auth/Mailer";
 import type { AvatarImage, AvatarSize, QQAvatarService } from "../infrastructure/auth/QQAvatar";
+import type { QQNicknameService } from "./QQNicknameService";
 import {
   accountAvatarUrlOf,
   LOGIN_CODE_RESEND_SECONDS,
@@ -28,6 +29,8 @@ interface AccountRow {
   showQq?: boolean | null;
   avatarHash?: string | null;
   avatarCheckedAt?: Date | null;
+  qqName?: string | null;
+  qqNameCheckedAt?: Date | null;
 }
 
 export interface AccountServiceOptions {
@@ -35,8 +38,13 @@ export interface AccountServiceOptions {
   mailer: Mailer;
   avatars: QQAvatarService;
   logger: EventLogger;
+  /** QQ 昵称查询号：新号预填账号昵称、访问时刷新 QQ 昵称；缺省或未登录时一律退回手填。 */
+  nicknames?: QQNicknameService | null;
   now?: () => number;
 }
+
+/** 注册预填等昵称的上限：查询号慢或挂了，验证码照常返回，用户手填即可。 */
+const NICKNAME_PREFILL_TIMEOUT_MS = 3_000;
 
 /** 同一账号头像回源的最小间隔：用户每次访问会触发一次，短时间内反复刷新页面不重复抓。 */
 const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -78,7 +86,7 @@ export class AccountService {
     });
   }
 
-  async requestLoginCode(qqNumber: string): Promise<{ registered: boolean; resendAfterSeconds: number }> {
+  async requestLoginCode(qqNumber: string): Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }> {
     const email = qqEmailOf(qqNumber);
     const now = this.now();
     if (!this.globalLimiter.allow("global", now)) {
@@ -96,6 +104,8 @@ export class AccountService {
     if (existing?.banned && (!existing.banExpires || new Date(existing.banExpires).getTime() > now)) {
       throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
     }
+    // 新号的 QQ 昵称与发信并行查，用作账号昵称的预填；查不到不影响发码。
+    const prefill = existing ? Promise.resolve(null) : this.prefillName(qqNumber);
     const code = await this.options.auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
     try {
       await this.options.mailer.sendLoginCode({ to: email, code });
@@ -104,7 +114,14 @@ export class AccountService {
       this.options.logger.error("登录验证码投递失败", { error: String(error) });
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
-    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS };
+    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName: await prefill };
+  }
+
+  private async prefillName(qqNumber: string): Promise<string | null> {
+    const nicknames = this.options.nicknames;
+    if (!nicknames) return null;
+    const timeout = new Promise<null>((resolve) => setTimeout(resolve, NICKNAME_PREFILL_TIMEOUT_MS, null));
+    return Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout]);
   }
 
   /**
@@ -130,6 +147,9 @@ export class AccountService {
   async me(userId: string): Promise<AccountProfile | null> {
     const row = await this.findUser(userId);
     if (!row) return null;
+    // QQ 昵称只给后台与预填用，后台刷新即可，不拖慢本次请求。
+    void this.options.nicknames?.refreshUser(row).catch((error: unknown) =>
+      this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) }));
     return toProfile(await this.refreshAvatar(row));
   }
 

@@ -26,4 +26,6 @@ export type {
   AdminRoom,
   AdminOverview,
   SentryOverview,
+  QQLookupStatus,
+  QQLoginPollResult,
 } from "./ApiContract";

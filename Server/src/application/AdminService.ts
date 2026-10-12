@@ -6,6 +6,7 @@ import { beijingDay } from "./SiteStatsService";
 import { GAME_RECORD_RETENTION_MS } from "./GameRecordService";
 import { RECORDED_GAMES } from "../domain/GameRecord";
 import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
+import type { QQNicknameService } from "./QQNicknameService";
 import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
@@ -25,6 +26,8 @@ import type {
   FeedbackStatus,
   GameRecordDetail,
   GameRecordItem,
+  QQLoginPollResult,
+  QQLookupStatus,
   SentryOverview,
 } from "../shared/ApiContract";
 
@@ -39,6 +42,7 @@ interface UserRow {
   banExpires?: Date | null;
   qqNumber: string;
   showQq?: boolean | null;
+  qqName?: string | null;
 }
 
 type UserRef = { id: string; name: string; qqNumber: string; image: string | null };
@@ -53,6 +57,8 @@ export interface AdminServiceOptions {
   siteStats: SiteStatsRepository;
   /** 未配置 `SENTRY_API_TOKEN` 时为 null，概览展示未配置。 */
   sentry: SentryApiClient | null;
+  /** QQ 昵称查询号；缺省时 `admin.qq.*` 回 503。 */
+  qq?: QQNicknameService | null;
   now?: () => number;
 }
 
@@ -66,6 +72,7 @@ const toAdminUser = (row: UserRow): AdminUser => ({
   banReason: row.banned ? row.banReason ?? null : null,
   banExpires: row.banned && row.banExpires ? new Date(row.banExpires).toISOString() : null,
   showQq: Boolean(row.showQq),
+  qqName: row.qqName ?? null,
   createdAt: new Date(row.createdAt).toISOString(),
 });
 
@@ -309,6 +316,40 @@ export class AdminService {
   }
 
   // ==================== 站点概览 ====================
+
+  // ==================== QQ 昵称查询号 ====================
+
+  private requireQq(): QQNicknameService {
+    if (!this.options.qq) throw new AppError("QQ_LOOKUP_DISABLED", "QQ 昵称查询未启用");
+    return this.options.qq;
+  }
+
+  qqStatus(): Promise<QQLookupStatus> {
+    return this.requireQq().status();
+  }
+
+  qqStartLogin(): Promise<{ loginId: string; image: string }> {
+    return this.requireQq().startLogin();
+  }
+
+  /** 登录态落库前写审计：查询号影响全站昵称来源，换号必须可追溯。 */
+  qqPollLogin(actorId: string, loginId: string): Promise<QQLoginPollResult> {
+    return this.requireQq().pollLogin(loginId, (uin) => this.audit(actorId, "qq.login", "site", "qq.lookup", { uin }));
+  }
+
+  async qqLogout(actorId: string): Promise<{ ok: true }> {
+    const qq = this.requireQq();
+    const status = await qq.status();
+    await this.audit(actorId, "qq.logout", "site", "qq.lookup", { uin: status.uin });
+    await qq.logout();
+    return { ok: true };
+  }
+
+  async qqRefreshNames(actorId: string): Promise<{ checked: number; updated: number; remaining: number }> {
+    const qq = this.requireQq();
+    await this.audit(actorId, "qq.refreshNames", "site", "qq.lookup");
+    return qq.refreshAll();
+  }
 
   async overview(days: number): Promise<AdminOverview> {
     const now = this.now();

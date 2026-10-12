@@ -6,7 +6,7 @@
 
 - 账号以 **QQ 号**为身份锚点：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由 Better Auth 建号钩子从邮箱派生，客户端无法自报。
 - 只有邮箱验证码一种登录方式（6 位、5 分钟有效、每枚最多试 3 次、库内只存摘要）。首次登录即注册，必须填写账号昵称。
-- 账号昵称与游戏内昵称互不捆绑；账号昵称由用户填写（QQ 昵称接口需 QQ 登录态，不可用）。
+- 账号昵称与游戏内昵称互不捆绑；账号昵称由用户填写，后台登录了查询号时注册页预填 QQ 昵称（可改，见 §4）。
 - 游客游玩不受影响：账号系统随 `DATABASE_URL` 启用，未启用时 `/api/auth/*`、`/api/rpc/*`、`/api/account/avatar/*` 统一回 503 `ACCOUNT_DISABLED`（RPC 前缀按 oRPC 错误编码，客户端从 `ORPCError.code` 识别），前端据此隐藏登录入口。
 - 代码入口：`infrastructure/auth/Auth.ts`（Better Auth 配置）、`application/AccountService.ts`（发码、资料、头像）、`transport/routes/Account.ts`（HTTP 入口）、`shared/Account.ts` 与 `shared/ApiContract.ts`（前后端共享常量与契约）。
 - 前端入口：`lib/Api.ts`（oRPC 客户端、Better Auth 登录与错误文案）、`stores/UseAccountStore.ts`（`loading` / `unavailable` / `guest` / `signedIn`）、`hooks/UseAccountBootstrap.ts`（根布局里载入账号、登录期间运行云同步、上报访问）、`components/account/`（登录、资料、反馈弹窗与主页入口）。账号接口失败（`ACCOUNT_DISABLED` 以外）按游客处理并记告警，绝不挡住游玩。
@@ -36,6 +36,14 @@
 - 浏览器只拿站内代理地址 `/api/account/avatar/<userId>?v=<摘要>`；qlogo 的 `nk=QQ号` 不出现在任何他人可见的响应里。注册确认页直接展示 qlogo 是例外：那时 QQ 号就是用户自己刚输入的。
 - 刷新时机：前端每次访问调用一次 `account.me`，服务端距上次回源不足 10 分钟则跳过；字节摘要变化才改 `image`（URL 换版本）。回源失败保留旧头像，只记告警。
 - 头像字节只缓存在进程内存（总量 32 MB、6 小时），不落库。
+
+### QQ 昵称（查询号）
+
+- QQ 昵称接口要 QQ 登录态，匿名不可用。管理员在后台扫码登录**一个**查询用的 QQ 号，服务端用它的 Cookie 查所有注册用户的昵称（`infrastructure/auth/QQWebLogin.ts`、`application/QQNicknameService.ts`）。走纯 HTTP 的 QQ 空间网页登录（ptlogin 扫码 → 跟随 `check_sig` 拿 `p_skey`），不部署 QQ 客户端。
+- 查询号登录态（Cookie）以 `SettingCipher` 加密存入 `site_config` 的 `qq.lookupSession`（附加数据为站点作用域），日志与接口响应都不含 Cookie。昵称接口报未登录即标记失效、停止请求，等管理员重新扫码。
+- 用户的 QQ 昵称单独存 `user.qq_name`，**不覆盖账号昵称**：新号发码时并行查询、限时 3 秒，结果随 `requestLoginCode` 的 `qqName` 返回给注册页预填；之后每次 `account.me` 距上次检查满 24 小时才后台刷新，查不到时保留旧值。`qqName` 只出现在发码响应（本人刚输入的 QQ 号）与后台用户列表，资料卡与房间快照都不带。
+- 风控保护：全站每分钟最多 30 次查询、每次最多 20 个号；后台「刷新全部」单次最多 200 个、批间隔 1 秒，同一时刻只跑一轮，某批没查成即停。查询号未登录、失效、超配额或接口失败时一律退回手填，绝不挡住登录。
+- 后台接口 `admin.qq.*`：`status`、`startLogin`（二维码 data URL + `loginId`）、`pollLogin`（`waiting` / `scanned` / `expired` / `failed` / `success`，前端每 2 秒轮询）、`logout`、`refreshNames`。登录、退出与批量刷新按 §8 先写审计（`qq.login` / `qq.logout` / `qq.refreshNames`）。
 
 ## 5. 游戏内身份
 
@@ -96,5 +104,6 @@
 - `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、昵称校验、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
 - `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
+- `test/QQNickname.test.ts` 以假 QQ 网页接口（`createQQWebFetcher`：二维码、轮询码、`check_sig` 跳转、GBK 昵称、登录失效）覆盖协议辅助函数、扫码登录与审计先行、登录态加密、注册预填、访问刷新间隔、失效标记与批量刷新。真实扫码与昵称接口只能人工验收。
 - 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称、就地报错）与 `components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。
