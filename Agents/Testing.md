@@ -26,7 +26,7 @@
 
 当前已落地的门禁：
 
-- 测试夹具在清理临时目录前会排空词库异步写队列；结算流程和资源路径均有回归覆盖。
+- 服务测试不连接真实数据库：仓储为可选注入，未注入即不落库（见 [Database](Database.md#5-测试)）；结算流程和资源路径均有回归覆盖。
 - 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
 - 服务端与客户端覆盖率命令已进入 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 会保留两端 lcov/HTML 报告。
 - `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
@@ -39,7 +39,7 @@
 
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
-| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`WordBankRepository.test.ts`、`Server/test/LocalBangumiProvider.test.ts`、`Server/test/FallbackBangumiProvider.test.ts`、`Server/test/BangumiProvider.test.ts`、`Server/test/BangumiWorkerProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、词库去重与并发持久化、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
+| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`Server/test/LocalBangumiProvider.test.ts`、`Server/test/FallbackBangumiProvider.test.ts`、`Server/test/BangumiProvider.test.ts`、`Server/test/BangumiWorkerProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
 | 后端服务回归 | `Server/test/WhoIsFakerService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts`、`Server/test/CCBNativeLifecycle.test.ts`、`Server/test/CCBNativeModes.test.ts`、`Server/test/CCBNativeBoundaries.test.ts`、`Server/test/CCBOriginalService.test.ts`、`Server/test/CCBOriginalRounds.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
 | 协议与传输集成 | `Server/test/WhoIsFakerProtocol.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts`、`Server/test/CCBProtocol.test.ts`、`Server/test/CCBTransport.test.ts`、`Server/test/CCBOriginalProtocol.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |

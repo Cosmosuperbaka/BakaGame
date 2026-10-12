@@ -32,6 +32,8 @@
     "@fortawesome/fontawesome-svg-core": "7.3.1",
     "@fortawesome/free-brands-svg-icons": "7.3.1",
     "@fortawesome/react-fontawesome": "3.5.0",
+    "@orpc/client": "1.15.6",
+    "@orpc/contract": "1.15.6",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-popover": "^1.1.23",
@@ -45,6 +47,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@sentry/react": "^10.75.1",
     "@sinclair/typebox": "^0.34.52",
+    "better-auth": "1.7.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "compare-versions": "^6.1.1",
@@ -57,6 +60,7 @@
     "react-helmet-async": "^3.0.0",
     "react-router-dom": "^7.18.4",
     "tailwind-merge": "^3.7.0",
+    "zod": "4.6.7",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

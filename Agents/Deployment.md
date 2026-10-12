@@ -210,7 +210,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 
 ## 隔离启动与交付回归
 
-- `ProductionSmoke.ts` 与 Playwright 后端共用 `scripts/IsolatedServer.ts`：禁用 Bun `.env` 自动加载、环境白名单、清空遥测/账号、临时词库与 enrichment、自有子进程退出竞赛及仅 preload 注入的随机所有者端点；烟测使用独立端口。Playwright 后端与 preview 都不复用现有服务。
+- `ProductionSmoke.ts` 与 Playwright 后端共用 `scripts/IsolatedServer.ts`：禁用 Bun `.env` 自动加载、环境白名单、清空遥测/账号与数据库连接、临时 enrichment、自有子进程退出竞赛及仅 preload 注入的随机所有者端点；烟测使用独立端口。Playwright 后端与 preview 都不复用现有服务。
 - 仅测试 preload 阻断主动 fetch、WebSocket、Node TCP/TLS/HTTP/DNS/UDP 与 Bun.connect/udpSocket，拒绝派生进程并向 Worker 传播守卫；真实第三方测试另行授权，不通过增加重试或放开出口修复测试。该守卫不是操作系统沙箱，不承诺隔离原生扩展或未纳入守卫的新网络 API；常规夹具不得调用这些出口。
 - 离线 `bun --no-env-file test scripts/Delivery.test.ts` 覆盖门禁反例、移动分支与固定 SHA、退出假绿、所有者标记、临时目录回收、合成环境与出口拒绝；不运行正式 Index。真实 E2E 的外部图片/音乐需求应由专用 Provider 夹具接替，不可重新放开网络。`ClientCiFilter.mjs` 在 client CI 使用已安装的 picomatch 跑路径反例；Python 构建夹具在普通 PR CI 独立执行，无下载和数据提交。
 
@@ -236,15 +236,16 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `MEILISEARCH_KEY` | 搜索降级为本地 FTS/LIKE 与官方回退（无 Meilisearch 增强） | 与 Meilisearch master key 一致；网络前提见下节；首次启用涉及索引构建，须单独验证，不与其它变更同批 |
 | `MEILISEARCH_URL` | 独立 Meili 容器下回环地址不可达：搜索与出题链路初始化失败（**不降级**，不可用） | Meili 与 app 同网络命名空间时可不设（默认 `http://127.0.0.1:7700`）；独立容器设为容器可达地址（如 `http://<meili 容器名>:7700`），与 `MEILISEARCH_KEY` 同批核对 |
 | `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
+| `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；首次上线后在容器内执行一次 `bun run db:import-word-bank` 迁移旧词库，见 [Database](Database.md) |
 
 存在性自查（只计数、不打印值）：
 
 ```bash
 sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET)='
+  | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET|DATABASE_URL)='
 ```
 
-完整生产配置输出 6，未启用原版房时为 5。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
+完整生产配置输出 7，未启用原版房时为 6。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
 
 **首次从「来源 IP 校验」旧版迁移**：Bearer 版脚本对旧版服务必然收到 403，首次部署会在第 4 步安全中止——不重启容器、线上保持旧版，且工作区已完成代码与数据的对齐校验（含 release 元数据生成），属预期行为而非故障。运维在确认中止后手动重启（或重建）容器令新版上线——**重建前逐项核对上表**（`MAINTENANCE_TOKEN` 名称与取值、独立 Meili 容器下的 `MEILISEARCH_URL` 可达性）——再以同一获验 CI run 重新触发部署，即可完成端到端验证；此后链路对新版原生可用。该迁移已于 2026-10-09 实际完成（step4 维护通知授权成功、部署 23 秒全程通过），本节保留为迁移期行为说明。
 

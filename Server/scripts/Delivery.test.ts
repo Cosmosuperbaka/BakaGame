@@ -71,7 +71,7 @@ test("部署数据变量在写入侧与转发侧同名（GITHUB_ENV 大小写敏
 test("环境白名单拒绝合成账号、遥测与代理，数据库落临时目录", () => {
   const env = isolatedEnvironment({ PATH: "fixture-path", SENTRY_DSN: "https://dummy.invalid", OTEL_EXPORTER_OTLP_ENDPOINT: "https://dummy.invalid", HTTPS_PROXY: "https://dummy.invalid", NETEASE_COOKIE: "dummy" }, 12345, tmpdir(), "owner");
   expect(env.PATH).toBe("fixture-path"); expect(env.SENTRY_DSN).toBe(""); expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("");
-  expect(env.NETEASE_COOKIE).toBe(""); expect(env.HTTPS_PROXY).toBeUndefined(); expect(env.WORD_BANK_PATH).toBe(path.join(tmpdir(), "words.sqlite"));
+  expect(env.NETEASE_COOKIE).toBe(""); expect(env.HTTPS_PROXY).toBeUndefined(); expect(env.DATABASE_URL).toBe("");
 });
 
 // 与真实进程生命周期一致：15s 探活 + 最多 3s 停机，不能被 Bun 默认 5s 提前中断。

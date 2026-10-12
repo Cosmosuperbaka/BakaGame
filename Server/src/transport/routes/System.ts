@@ -194,18 +194,10 @@ export const systemRoutes = ({
     )
     .get(
       "/readyz",
-      async ({ status }) => {
+      ({ status }) => {
         if (isShuttingDown?.()) {
           return status(503, {
             status: "shutting_down" as const,
-            ready: false,
-          });
-        }
-
-        const storageOk = fakerService ? await fakerService.checkStorageReadiness() : true;
-        if (!storageOk) {
-          return status(503, {
-            status: "storage_degraded" as const,
             ready: false,
           });
         }
@@ -219,11 +211,11 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "K8s / 反代就绪探针 (Readiness)",
-          description: "检测持久化依赖就绪度与进程停机标志，未就绪或停机中返回 503 触发摘流。",
+          description: "检测进程停机标志，停机中返回 503 触发摘流。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。",
         },
         response: {
           200: t.Object({ status: t.Literal("ok"), ready: t.Literal(true) }),
-          503: t.Object({ status: t.Union([t.Literal("shutting_down"), t.Literal("storage_degraded")]), ready: t.Literal(false) }),
+          503: t.Object({ status: t.Literal("shutting_down"), ready: t.Literal(false) }),
         },
       },
     )

@@ -3,7 +3,6 @@ import { expect, test } from "bun:test";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { createTestApp as createApp } from './AppFixtures';
 import { createAck, createErrorPacket, createEvent } from "../src/transport/Packets";
 import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
@@ -225,7 +224,6 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
   const logger = new EventLogger();
   const whoIsFakerService = new WhoIsFakerService({
     eventLogger: logger,
-    wordBankRepository: new WordBankRepository(":memory:"),
   });
   const { app } = createApp({
     env: {
@@ -233,7 +231,6 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       serverUrl: "http://127.0.0.1:4850",
       serverListenHost: "127.0.0.1",
       serverPort: 4850,
-      wordBankPath: ":memory:",
       bangumiApiUrl: "https://api.bgm.tv",
       bangumiImageUrl: "",
     },

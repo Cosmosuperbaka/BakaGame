@@ -4,7 +4,6 @@ import { CCBService } from '../src/application/CCBService';
 import { CCBOriginalService } from '../src/application/CCBOriginalService';
 import { WhoIsFakerService } from '../src/application/WhoIsFakerService';
 import { EventLogger } from '../src/infrastructure/EventLogger';
-import { WordBankRepository } from '../src/infrastructure/WordBankRepository';
 import { createDefaultCCBSettings, SERVER_SHUTDOWN_MESSAGE, type CCBClientMessage, type CCBCommand,
   type CCBPayload, type CCBPrivateState, type CCBRoomEnterResult, type CCBRoomSnapshot,
   type CCBRoomSummary, type CCBSource, type StateSyncPayload } from '../src/shared/Index';
@@ -93,8 +92,8 @@ function setup(options: { fetcher?: typeof fetch; initialClock?: number } = {}) 
   const service = new CCBService({ data: originalData, now: () => clock, originalService: original, eventLogger: logger });
   const { app } = createTestApp({
     env: { clientUrl: 'http://localhost:5173', serverUrl: 'http://127.0.0.1', serverListenHost: '127.0.0.1', serverPort: 0,
-      wordBankPath: ':memory:', bangumiApiUrl: 'https://bangumi.invalid', bangumiImageUrl: '' },
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger, wordBankRepository: new WordBankRepository(':memory:') }),
+      bangumiApiUrl: 'https://bangumi.invalid', bangumiImageUrl: '' },
+    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
     ccbService: service, logger,
   });
   app.listen({ hostname: '127.0.0.1', port: 0 });

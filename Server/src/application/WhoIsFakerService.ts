@@ -53,7 +53,7 @@ import type { LogEntry } from "../infrastructure/EventLogger";
 
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
-import { WordBankRepository } from "../infrastructure/WordBankRepository";
+import type { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
 import { SERVER_SHUTDOWN_MESSAGE } from "../shared/Index";
 import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
@@ -86,7 +86,8 @@ import { createTestCommandHandler } from "./handlers/TestCommandHandler";
 export interface WhoIsFakerServiceOptions {
   now?: () => number;
   random?: RandomSource;
-  wordBankRepository: WordBankRepository;
+  /** 未配置数据库（本地开发、隔离测试）时为空：词对不落库。 */
+  wordBankRepository?: WordBankRepository;
   eventLogger: EventLogger;
 }
 
@@ -726,7 +727,7 @@ export class WhoIsFakerService {
     this.touchRoom(room);
 
     // 异步后台保存词库，避免阻塞 WebSocket 主流程
-    void this.options.wordBankRepository.savePair(words).catch((error: unknown) => {
+    void this.options.wordBankRepository?.savePair(words).catch((error: unknown) => {
       this.options.eventLogger.error("词库异步保存失败", {
         ...describeError(error),
         roomId: room.id,
@@ -4412,12 +4413,8 @@ export class WhoIsFakerService {
     return candidates[this.random.nextInt(candidates.length)];
   }
 
-  async checkStorageReadiness(): Promise<boolean> {
-    return this.options.wordBankRepository.checkHealth();
-  }
-
   async drainPendingWrites(): Promise<void> {
-    await this.options.wordBankRepository.drainWrites();
+    await this.options.wordBankRepository?.drainWrites();
   }
 
   private async log(entry: LogEntry) {

@@ -12,7 +12,7 @@ export function isolatedEnvironment(source: Record<string, string | undefined>, 
   return Object.assign(env, {
     NODE_ENV: "test", SERVER_PORT: String(port), SERVER_LISTEN_HOST: "127.0.0.1",
     SERVER_URL: `http://127.0.0.1:${port}`, CLIENT_URL: "http://localhost:5173",
-    WORD_BANK_PATH: path.join(directory, "words.sqlite"),
+    DATABASE_URL: "",
     BANGUMI_ENRICHMENT_PATH: path.join(directory, "enrichment.sqlite"),
     BANGUMI_API_URL: "http://127.0.0.1:9", BANGUMI_IMAGE_SOURCE: "",
     CCB_ORIGINAL_SERVER_URL: "", CCB_ORIGINAL_AES_SECRET: "", MEILISEARCH_KEY: "", ENABLE_GENERAL_UNBLOCK: "false",

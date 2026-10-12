@@ -1,12 +1,6 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach } from "bun:test";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { WhoIsFakerClientMessage } from "../src/shared/Index";
 
@@ -16,9 +10,8 @@ export interface TestConnection {
   closed: Array<{ code?: number; reason?: string }>;
 }
 
-// 为每条测试创建独立的临时目录和可控时钟，避免用例互相污染。
+// 为每条测试创建独立的服务实例和可控时钟，避免用例互相污染。
 export const createTestContext = () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-"));
   let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
   const service = new WhoIsFakerService({
     now: () => currentTime,
@@ -26,17 +19,9 @@ export const createTestContext = () => {
       nextInt: (maxExclusive: number) => Math.max(maxExclusive - 1, 0),
     },
     eventLogger: new EventLogger(),
-    wordBankRepository: new WordBankRepository(join(tempDir, "word-bank.json")),
-  });
-
-  afterEach(async () => {
-    // 先排空生产写队列，再清理临时目录，避免异步 rename 竞态产生 ENOENT。
-    await service.drainPendingWrites();
-    rmSync(tempDir, { force: true, recursive: true });
   });
 
   return {
-    tempDir,
     service,
     advanceTime: (milliseconds: number) => {
       currentTime += milliseconds;

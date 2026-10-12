@@ -27,6 +27,8 @@
 | CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiApi |
 | 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
+| 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
+| 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
 | 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md) |
 | 选择验证范围、编写测试、覆盖率或 CI | [Testing](Agents/Testing.md) 的验证矩阵及相关专项 |
 

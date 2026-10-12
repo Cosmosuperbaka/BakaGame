@@ -9,12 +9,16 @@ import { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { QQMusicProvider } from "../infrastructure/QQMusicProvider";
 import { AggregatedMusicProvider } from "../infrastructure/AggregatedMusicProvider";
 import { AppError } from "../domain/Errors";
+import type { Database } from "../infrastructure/db/Database";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
-export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources">) {
-  const { env, logger } = options;
+export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database }) {
+  const { env, logger, database, ...appOptions } = options;
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
+  }
+  if (env.otelDeploymentEnvironment === "production" && !database) {
+    throw new AppError("CONFIG_ERROR", "生产环境需要 DATABASE_URL");
   }
   // 猜歌与 CCB 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
   const data = createBangumiData({
@@ -60,8 +64,8 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi });
   const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret });
-  const app = createApp({ ...options, bangumiImages: images, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
-    const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close())]);
+  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, disposeResources: async () => {
+    const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
   } });

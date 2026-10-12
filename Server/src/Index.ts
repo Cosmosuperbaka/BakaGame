@@ -10,7 +10,8 @@ import {
   initServerSentry,
   SERVER_HEARTBEAT_INTERVAL_MS,
 } from "./infrastructure/Sentry";
-import { WordBankRepository } from "./infrastructure/WordBankRepository";
+import { createDatabase } from "./infrastructure/db/Database";
+import { DatabaseWordBankRepository } from "./infrastructure/WordBankRepository";
 import { createServer } from "./application/CreateServer";
 
 // ==================== 服务启动 ====================
@@ -33,15 +34,22 @@ if (otlpExporter) {
 }
 
 const logger = new EventLogger(undefined, undefined, otlpExporter);
+// 数据库只承载账号、云同步、后台与对局记录：迁移失败只让这些功能报错，游客游玩照常。
+const database = env.databaseUrl ? createDatabase(env.databaseUrl) : undefined;
+database?.ready.then(
+  () => logger.info("数据库迁移完成"),
+  (error: unknown) => logger.error("数据库迁移失败，账号与记录功能不可用", describeError(error)),
+);
 const whoIsFakerService = new WhoIsFakerService({
   eventLogger: logger,
-  wordBankRepository: new WordBankRepository(env.wordBankPath),
+  wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,
 });
 
 let isShuttingDown = false;
 
 const { app, dispose, sonGuessrService, ccbService, reportBangumiLoad } = createServer({
   env,
+  database,
   whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,

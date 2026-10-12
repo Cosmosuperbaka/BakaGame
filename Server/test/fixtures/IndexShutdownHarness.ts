@@ -54,7 +54,8 @@ export async function createIndexShutdownHarness(options: {
   const modules: Record<string, unknown> = {
     "./config/Env": { readEnv: () => ({ otelEndpoint: options.otlpEnabled === false ? undefined : "fixture://no-network", serverPort: 1, serverListenHost: "127.0.0.1" }) },
     "./application/WhoIsFakerService": { WhoIsFakerService: class { constructor() { return service("faker"); } } },
-    "./infrastructure/WordBankRepository": { WordBankRepository: class {} },
+    "./infrastructure/WordBankRepository": { DatabaseWordBankRepository: class {} },
+    "./infrastructure/db/Database": { createDatabase: () => { throw new Error("夹具未配置数据库"); } },
     "./infrastructure/EventLogger": { EventLogger: Logger, describeError: (error: Error) => ({ name: error.name, message: error.message, stack: error.stack, cause: error.cause }) },
     "./infrastructure/OtlpExporter": { OtlpExporter: class {
       sendHeartbeatTrace() { return Promise.resolve(); }

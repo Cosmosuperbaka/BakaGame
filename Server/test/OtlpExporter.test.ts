@@ -3,7 +3,6 @@ import { OtlpExporter, OtlpShutdownError, toUnixNanoString, type OtlpFetcher, ty
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createTestApp as createApp } from './AppFixtures';
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
-import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { AppEnv } from "../src/config/Env";
 
 const exporters: OtlpExporter[] = [];
@@ -108,13 +107,11 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
 
   const whoIsFakerService = new WhoIsFakerService({
-    wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: logger,
   });
 
@@ -175,7 +172,6 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
     serverUrl: "http://127.0.0.1:4850",
     serverListenHost: "127.0.0.1",
     serverPort: 4850,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
@@ -183,7 +179,6 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
     env,
     whoIsFakerService: new WhoIsFakerService({
       eventLogger: new EventLogger(),
-      wordBankRepository: new WordBankRepository(":memory:"),
     }),
     logger: new EventLogger(),
   });
@@ -282,13 +277,11 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
 
   const whoIsFakerService = new WhoIsFakerService({
-    wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: logger,
   });
 
@@ -456,13 +449,11 @@ test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
 
   const whoIsFakerService = new WhoIsFakerService({
-    wordBankRepository: new WordBankRepository(":memory:"),
     eventLogger: mockLogger,
   });
 

@@ -34,6 +34,12 @@ describe("readEnv 环境变量与启动断言", () => {
     expect(() => createServer(options)).toThrow(/MEILISEARCH_KEY/);
   });
 
+  it("生产服务缺少数据库时拒绝启动", () => {
+    const options = { env: { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: "fixture-search-key" } } as Parameters<typeof createServer>[0];
+    expect(() => createServer(options)).toThrow(AppError);
+    expect(() => createServer(options)).toThrow(/DATABASE_URL/);
+  });
+
   it("对非法端口号抛出 CONFIG_ERROR 快速失败", () => {
     const originalPort = Bun.env.SERVER_PORT;
     try {
@@ -81,22 +87,18 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
-  it("默认词库基于模块目录稳定寻址，且支持 WORD_BANK_PATH 环境变量覆盖", () => {
-    const originalPath = Bun.env.WORD_BANK_PATH;
+  it("DATABASE_URL 修剪后为空视为未配置，非空原样保留", () => {
+    const original = Bun.env.DATABASE_URL;
     try {
-      delete Bun.env.WORD_BANK_PATH;
-      const env = readEnv();
-      expect(env.wordBankPath).toContain("storage");
-      expect(env.wordBankPath).toContain("word-bank.json");
-
-      Bun.env.WORD_BANK_PATH = "custom/path/bank.json";
-      const customEnv = readEnv();
-      expect(customEnv.wordBankPath).toBe(resolve(process.cwd(), "custom/path/bank.json"));
+      Bun.env.DATABASE_URL = "   ";
+      expect(readEnv().databaseUrl).toBeUndefined();
+      Bun.env.DATABASE_URL = " mysql://fixture:fixture@db.invalid:4000/bakagame ";
+      expect(readEnv().databaseUrl).toBe("mysql://fixture:fixture@db.invalid:4000/bakagame");
     } finally {
-      if (originalPath !== undefined) {
-        Bun.env.WORD_BANK_PATH = originalPath;
+      if (original !== undefined) {
+        Bun.env.DATABASE_URL = original;
       } else {
-        delete Bun.env.WORD_BANK_PATH;
+        delete Bun.env.DATABASE_URL;
       }
     }
   });

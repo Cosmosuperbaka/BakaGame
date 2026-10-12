@@ -189,7 +189,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 - **Liveness 探针 (`/livez`)**：轻量级存活探针。仅验证进程是否存活、事件循环是否运行，未死锁即返回 HTTP 200 `{ status: "ok" }`。探测开销必须为 `O(1)`，不得在此阶段挂载重型数据库或外部 I/O 检查，避免短暂抖动触发容器反复被杀重启。
 - **Readiness 探针 (`/readyz`)**：深度就绪探针。必须检测：
   1. **停机状态守卫**：若收到停机信号进入优雅停机流程，立即返回 HTTP 503 `{ status: "shutting_down", ready: false }`，使外部负载均衡器/反向代理（Nginx/Ingress）立即停止分配新连接与流量。
-  2. **关键持久化依赖**：检查词库仓储（`wordBankRepository.checkHealth()`）等底层持久化介质读写健康度。若底层磁盘损坏或权限缺失，返回 HTTP 503 `{ status: "storage_degraded", ready: false }`，避免故障节点继续承接业务流量。
+  2. **数据库不参与就绪判定**：数据库只承载账号、云同步、后台与对局记录，游客游玩不依赖它；数据库故障时相关功能报错，节点继续承接游戏流量，不因此摘流。边界见 [Database](Database.md)。
   3. **存量监控兼容**：保留 `/health` 路由，聚合房间、在线连接与玩家数指标，兼容常规监控大屏。
 
 ### 10.4 生产级优雅停机编排 (Graceful Shutdown & Watchdog Orchestration)
@@ -198,7 +198,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
   2. **清除后台轮询**：停止闲置房间清理、心跳超时扫描等定时器，阻止启动新的巡检。
   3. **在线长连接广播**：向所有在线玩家（WhoIsFaker、SonGuessr 与 CCB）全量广播 `server.shutdown` 事件，通知客户端准备重连。
   4. **流量摘除平滑缓冲窗口**：执行 3 秒（`await Bun.sleep(3000)`）等待，留出反向代理摘流切换与客户端接收停机事件的稳定网络窗口。
-  5. **排空写队列落盘**：等待词库异步持久化队列（`drainPendingWrites`）全部排空，杜绝进程退出引发磁盘文件截断或数据丢失。
+  5. **排空写队列**：等待已发起的数据库写入（词对、对局记录等，`drainPendingWrites`）全部落定，杜绝进程退出丢失已结算数据。
   6. **关闭端口与排空遥测**：依次 await 停止 HTTP/WebSocket 监听端口（`app.stop(true)`）、释放服务资源（`dispose`）、OTLP `shutdown`、Sentry `flush` 与 `close`；全部成功才以 0 退出。
 - **预通知与最终停机分离**：维护接口先广播停机事件并将 `isShuttingDown` 置为 `true`，只负责摘流，不提前退出或排空持久化队列。最终 signal 编排必须用独立的共享 `shutdownTask` 去重，不能以 readiness 标志判断是否已清理；后续 SIGTERM、重复 SIGTERM/SIGINT 或致命异常共用同一个任务，清定时器、最终广播、await 排空与资源释放各执行一次。预通知广播与 signal 的最终广播是两个阶段，不混为重复 signal 的额外通知。
 - **清理失败隔离**：广播、缓冲、写队列排空、停止监听、服务资源释放与各遥测清理阶段分别捕获并记录带阶段名和完整堆栈的错误；某一步拒绝不能跳过剩余资源的 close。Sentry flush/close 返回 `false` 同样算失败；完成其余清理后以 1 退出，不把失败伪装为正常完成。挂起而非拒绝的步骤仍由总看门狗强制退出，不承诺超时后继续释放。
@@ -275,7 +275,7 @@ Songuessr 当前唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/son
 
 ### 12.3 容器网络与部署寻址解耦 (Container Network Binding & Path Decoupling)
 - **监听网卡与公开地址解耦**：服务端内部套接字绑定主机（`serverListenHost`）必须与对外公开地址（`SERVER_URL`）解耦。在容器化环境中默认监听 `0.0.0.0` 全网卡，杜绝仅绑定 `127.0.0.1` 导致外部 Ingress 或 Docker 端口映射连接被拒（`Connection refused`），并支持 `SERVER_LISTEN_HOST` 覆盖。
-- **环境文件寻址必须基于模块定位**：持久化介质（词库 `wordBankPath`、文档导出路径等）默认必须基于当前模块文件路径（`import.meta.dir`）进行稳定相对寻址，杜绝依赖不可控的 `process.cwd()`；同时提供标准环境变量（如 `WORD_BANK_PATH`）以支持云原生外挂数据卷（Persistent Volume）。
+- **环境文件寻址必须基于模块定位**：本地持久化介质（Bangumi 数据集、enrichment 缓存、迁移目录、文档导出路径等）默认必须基于当前模块文件路径（`import.meta.dir`）进行稳定相对寻址，杜绝依赖不可控的 `process.cwd()`；需要外挂数据卷的介质提供标准环境变量（如 `BANGUMI_ENRICHMENT_PATH`）覆盖。
 - **环境变量强断言快速失败**：启动期解析环境变量（如 `SERVER_PORT`）时必须校验合法范围（1~65535），非法或空输入立即抛出 `AppError("CONFIG_ERROR", ...)` 快速中断退出，严禁静默回退为 0 导致随机占用系统临时端口。
 
 ### 12.4 跨域预检完整性与大载荷防 OOM (CORS Preflight & OOM Defense)

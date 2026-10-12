@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
@@ -13,7 +11,6 @@ import {
   formatSystemLog,
   redactData,
 } from "../src/infrastructure/EventLogger";
-import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import { createTestApp as createApp } from './AppFixtures';
 
@@ -126,13 +123,11 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 0,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
   const whoIsFakerService = new WhoIsFakerService({
     eventLogger: new EventLogger(),
-    wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
   const logger = new EventLogger();
   const { app } = createApp({
@@ -205,21 +200,18 @@ const startTestServer = (options?: {
   onTriggerShutdown?: () => Promise<void> | void;
   isShuttingDown?: () => boolean;
 }) => {
-  const tempDir = mkdtempSync(join(tmpdir(), "whoisfaker-app-"));
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
     clientUrl: "http://localhost:5173",
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 0,
-    wordBankPath: join(tempDir, "word-bank.json"),
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
   let shuttingDown = false;
   const whoIsFakerService = new WhoIsFakerService({
     eventLogger: new EventLogger(),
-    wordBankRepository: new WordBankRepository(env.wordBankPath),
   });
   const { app } = createApp({
     env,
@@ -240,7 +232,6 @@ const startTestServer = (options?: {
   const port = started.server?.port;
 
   if (!port) {
-    rmSync(tempDir, { force: true, recursive: true });
     throw new Error("未能获取测试端口");
   }
 
@@ -250,7 +241,6 @@ const startTestServer = (options?: {
     whoIsFakerService,
     stop: async () => {
       await started.stop(true);
-      rmSync(tempDir, { force: true, recursive: true });
     },
   };
 };
@@ -440,23 +430,13 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
     serverUrl: "http://127.0.0.1",
     serverListenHost: "127.0.0.1",
     serverPort: 4899,
-    wordBankPath: ":memory:",
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
   const logger = new EventLogger();
   let shuttingDown = false;
-  let storageHealthy = true;
 
-  const whoIsFakerService = new WhoIsFakerService({
-    wordBankRepository: {
-      checkHealth: async () => storageHealthy,
-      drainWrites: async () => {},
-      readAll: async () => [],
-      savePair: async () => {},
-    } as unknown as WordBankRepository,
-    eventLogger: logger,
-  });
+  const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
 
   const { app } = createApp({
     env,
@@ -475,14 +455,7 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
   expect(readyRes.status).toBe(200);
   expect(await readyRes.json()).toEqual({ status: "ok", ready: true });
 
-  // 3. 存储故障状态下 readyz 返回 503 触发反代摘流
-  storageHealthy = false;
-  const storageFailRes = await app.handle(new Request("http://localhost/readyz"));
-  expect(storageFailRes.status).toBe(503);
-  expect(await storageFailRes.json()).toEqual({ status: "storage_degraded", ready: false });
-
-  // 4. 停机流程启动后 readyz 返回 503
-  storageHealthy = true;
+  // 3. 停机流程启动后 readyz 返回 503（数据库不参与就绪判定，游客游玩不依赖它）
   shuttingDown = true;
   const shuttingDownRes = await app.handle(new Request("http://localhost/readyz"));
   expect(shuttingDownRes.status).toBe(503);

@@ -178,6 +178,7 @@ BANGUMI_API_URL=https://api.bgm.tv
 BANGUMI_IMAGE_SOURCE=
 MEILISEARCH_KEY=
 CCB_ORIGINAL_AES_SECRET=
+DATABASE_URL=
 ```
 
 `BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。**番剧图片的对外前缀写死 `/api/bangumi`（自建图床），不提供环境变量开关** —— 前缀可配就必然有人配出边缘不放行的路径，线上整站图片会变成 SPA HTML。图片在服务端按固定前缀重写，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器；`BANGUMI_IMAGE_SOURCE` 只决定图床缺图时去哪补（留空 = 只服务已缓存的图），细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
@@ -186,6 +187,8 @@ CCB_ORIGINAL_AES_SECRET=
 并与本服务共享 `127.0.0.1:7700` 网络空间（独立容器不能直接使用各自的 `localhost`）。搜索连接地址
 和 5 秒请求超时由代码固定，不向客户端暴露。启动会校验 Meilisearch 健康状态并维护搜索索引；
 未设置搜索密钥仅供本地开发和隔离测试使用本地搜索。`CCB_ORIGINAL_AES_SECRET` 仅供原版兼容房使用。
+
+`DATABASE_URL` 是 TiDB（MySQL 协议）连接串，必须带库名，生产必填；未配置时账号、云同步、后台与对局记录关闭。连接、迁移与导入见 [Database](Database.md)。
 
 ### 客户端 `Client/.env` (参考 `Client/.env.example`)
 ```bash

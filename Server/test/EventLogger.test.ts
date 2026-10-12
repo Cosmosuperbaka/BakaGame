@@ -59,7 +59,7 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
   try {
     initServerSentry({
       clientUrl: "http://localhost:5173", serverUrl: "http://127.0.0.1:1", serverListenHost: "127.0.0.1", serverPort: 1,
-      wordBankPath: ":memory:", bangumiApiUrl: "http://127.0.0.1:9", bangumiImageUrl: "", sentryDsn: "https://fixture@o000000.ingest.sentry.io/100001",
+      bangumiApiUrl: "http://127.0.0.1:9", bangumiImageUrl: "", sentryDsn: "https://fixture@o000000.ingest.sentry.io/100001",
     });
     exporter = new OtlpExporter({ endpoint: "http://127.0.0.1:9", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
       bodies.push(String(options?.body)); return new Response("{}");

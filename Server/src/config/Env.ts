@@ -18,7 +18,8 @@ export interface AppEnv {
   serverUrl: string;
   serverListenHost: string;
   serverPort: number;
-  wordBankPath: string;
+  /** TiDB 连接串；未配置时账号、云同步、后台与对局记录整体关闭（生产必填）。 */
+  databaseUrl?: string;
   otelEndpoint?: string;
   otelHeaders?: Record<string, string>;
   otelServiceName?: string;
@@ -131,21 +132,13 @@ const resolveListenHost = (serverUrl: URL): string => {
   return "0.0.0.0";
 };
 
-const resolveDefaultWordBankPath = (): string => {
-  if (Bun.env.WORD_BANK_PATH) {
-    return resolve(process.cwd(), Bun.env.WORD_BANK_PATH);
-  }
-  // 默认优先基于当前模块文件稳定寻址（Server/storage/word-bank.json）
-  return resolve(import.meta.dir, "../../storage/word-bank.json");
-};
-
 const DEFAULT_CLIENT_URL = "http://localhost:5173";
 
 const resolveDefaultBangumiEnrichmentPath = (): string => {
   if (Bun.env.BANGUMI_ENRICHMENT_PATH) {
     return resolve(process.cwd(), Bun.env.BANGUMI_ENRICHMENT_PATH);
   }
-  // 与词库同放 Server/storage：可写、不进 Git、不参与部署产物。
+  // 放 Server/storage：可写、不进 Git、不参与部署产物。
   return resolve(import.meta.dir, "../../storage/bangumi-enrichment.sqlite");
 };
 
@@ -202,7 +195,7 @@ export const readEnv = (): AppEnv => {
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
-    wordBankPath: resolveDefaultWordBankPath(),
+    databaseUrl: Bun.env.DATABASE_URL?.trim() || undefined,
     otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),
     otelServiceName,

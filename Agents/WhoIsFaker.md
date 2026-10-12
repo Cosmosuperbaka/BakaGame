@@ -23,11 +23,11 @@
 transport/       ← Elysia HTTP/WS 路由、封包解析 (WhoIsFakerProtocol.ts)、RFC 6902 差量同步 (StateSync.ts)
 application/     ← WhoIsFakerService 房间服务、命令处理器 (handlers/)、ConnectionRegistry 连接注册表
 domain/          ← Rules.ts (无副作用纯函数)、Model.ts (领域类型 re-export)、Errors.ts (统一错误定义)
-infrastructure/  ← WordBankRepository (持久化词库)、EventLogger (日志记录)
+infrastructure/  ← WordBankRepository (词对落库，未配置数据库时不注入)、EventLogger (日志记录)
 config/          ← Env.ts, Constants.ts
 ```
 
-- **纯内存状态机**：所有房间数据和游戏对局状态纯内存存储，无外部数据库依赖。
+- **纯内存状态机**：所有房间数据和游戏对局状态纯内存存储；数据库只异步记录出题词对与对局结果，不参与实时状态（见 [Database](Database.md)）。
 - **孤儿房间清理**：`runHousekeeping()` 以 10 秒为周期自动检测清理无人在线的过期空房间（测试房间除外）。
 
 ### 2.2 客户端状态与路由 (`Client/src/`)

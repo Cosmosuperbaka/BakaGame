@@ -1,22 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createTestApp } from "./AppFixtures";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
-import { WordBankRepository } from "../src/infrastructure/WordBankRepository";
 import { createDocumentationApp } from "../src/scripts/ExportOpenapi";
 
 function fixture(badHealth = false) {
-  const dir = mkdtempSync(join(tmpdir(), "framework-contract-"));
   const operations: Array<{ status: number }> = [];
   const logger = new EventLogger(() => {});
   logger.logOperation = (operation) => { operations.push({ status: operation.status ?? 200 }); };
-  const faker = new WhoIsFakerService({ eventLogger: logger, wordBankRepository: new WordBankRepository(join(dir, "words.json")) });
+  const faker = new WhoIsFakerService({ eventLogger: logger });
   if (badHealth) faker.getHealthSnapshot = () => ({ roomCount: Number.NaN, connectionCount: 0, onlinePlayerCount: 0 });
-  const runtime = createTestApp({ env: { clientUrl: "https://allowed.invalid", serverUrl: "http://localhost", serverListenHost: "127.0.0.1", serverPort: 0, wordBankPath: join(dir, "words.json"), bangumiApiUrl: "https://unused.invalid", bangumiImageUrl: "", maintenanceToken: "fixture-token" }, whoIsFakerService: faker, logger });
-  return { ...runtime, operations, cleanup: async () => { await runtime.dispose(); await faker.drainPendingWrites(); rmSync(dir, { recursive: true, force: true }); } };
+  const runtime = createTestApp({ env: { clientUrl: "https://allowed.invalid", serverUrl: "http://localhost", serverListenHost: "127.0.0.1", serverPort: 0, bangumiApiUrl: "https://unused.invalid", bangumiImageUrl: "", maintenanceToken: "fixture-token" }, whoIsFakerService: faker, logger });
+  return { ...runtime, operations, cleanup: async () => { await runtime.dispose(); } };
 }
 const post = (body: string) => new Request("http://localhost/api/monitoring/telemetry", { method: "POST", headers: { "content-type": "application/json" }, body });
 const completed = async () => { await new Promise(resolve => setImmediate(resolve)); };
