@@ -32,9 +32,21 @@ export interface ChatMessage {
   ghostRole?: "dead" | "spectator";
 }
 
+/**
+ * 已登录玩家在房间内公开的账号身份：只有用户 ID 与站内头像地址，资料卡再按 ID 拉取。
+ * 游戏昵称与账号昵称互不捆绑，这里不带账号昵称；QQ 号永不进入房间快照。
+ */
+export interface PlayerAccount {
+  userId: string;
+  /** 站内代理头像（`/api/account/avatar/<id>?v=<摘要>`）；首次抓取完成前为空。 */
+  image: string | null;
+}
+
 // 平台注册到连接池里的最小连接抽象。
 export interface ConnectionRecord {
   id: string;
+  /** 握手时由会话 Cookie 解析出的账号；游客为空。 */
+  account?: PlayerAccount;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

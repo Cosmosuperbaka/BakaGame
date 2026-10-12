@@ -201,6 +201,7 @@ export class CCBRooms {
   private attach(connection: ConnectionRecord, room: CCBRoom, player: CCBPlayerRecord): void {
     connection.resetStateSync?.(); this.connections.attach(connection, room.id, player.id);
     connection.lobbySubscribed = false; player.connectionId = connection.id; player.online = true;
+    player.account = connection.account;
     delete player.offlineAt; delete room.emptyAt;
     if (player.id === room.hostPlayerId) delete room.hostDeadlineAt;
     room.lastActiveAt = this.now();

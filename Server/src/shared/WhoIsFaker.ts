@@ -1,6 +1,7 @@
 import type { ClientEnvelope } from "./Protocol";
 import type {
   ChatMessage,
+  PlayerAccount,
   PlayerMembership,
   RoomVisibility,
 } from "./Model";
@@ -90,6 +91,8 @@ export interface WhoIsFakerPlayerRecord {
   joinedAt: number;
   lastSeenAt: number;
   connectionId?: string;
+  /** 最近一次接管座位的连接所登录的账号。 */
+  account?: PlayerAccount;
 }
 
 
@@ -405,6 +408,7 @@ export interface PublicPlayerView {
   isReady: boolean;
   isBot: boolean;
   isHost: boolean;
+  account?: PlayerAccount;
   roundStatus:
     | "waiting"
     | "questioner"

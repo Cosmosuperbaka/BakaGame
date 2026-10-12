@@ -19,7 +19,7 @@ import {
   shuffle,
   type RandomSource,
 } from "../domain/Rules";
-import { ROOM_ID_TEST_MODE, type ConnectionRecord, type RoomVisibility } from "../domain/Model";
+import { ROOM_ID_TEST_MODE, type ConnectionRecord, type PlayerAccount, type RoomVisibility } from "../domain/Model";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
@@ -117,6 +117,7 @@ interface SonGuessrPlayerRecord {
   joinedAt: number;
   lastSeenAt: number;
   connectionId?: string;
+  account?: PlayerAccount;
 }
 
 /**
@@ -3754,6 +3755,7 @@ export class SonGuessrService {
       isReady: player.isReady,
       isBot: player.isBot,
       isHost: room.hostPlayerId === player.id,
+      account: player.account,
       correctGuesses: player.correctGuesses,
       totalGuesses: player.totalGuesses,
       roundStatus,
@@ -3896,6 +3898,7 @@ export class SonGuessrService {
     }
     player.online = true;
     player.connectionId = connection.id;
+    player.account = connection.account;
     player.lastSeenAt = this.now();
     connection.resetStateSync?.();
     this.connections.attach(connection, room.id, player.id);

@@ -19,7 +19,7 @@ export function ccbSnapshot(room: CCBRoom): CCBRoomSnapshot {
     upstreamConnected: true, players: [...room.players.values()].map(player => ({
       id: player.id, name: player.name, online: player.online, ready: player.ready, team: player.team,
       membership: player.membership, score: player.score, status: player.status, attempts: player.attempts,
-      marks: player.marks, syncCompleted: player.syncCompleted,
+      marks: player.marks, syncCompleted: player.syncCompleted, account: player.account,
     })) };
 }
 function visibleGuesses(room: CCBRoom, player: CCBPlayerRecord, observing: boolean): CCBGuess[] {

@@ -3252,6 +3252,7 @@ export class WhoIsFakerService {
           isReady: player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
           isBot: player.isBot,
           isHost: room.hostPlayerId === player.id,
+          account: player.account,
           roundStatus,
           eliminatedAt: roundState && !roundState.alive ? roundState.eliminatedAt : undefined,
           revealedRole:
@@ -3466,6 +3467,7 @@ export class WhoIsFakerService {
     player.online = true;
     room.emptySinceAt = undefined;
     player.connectionId = connection.id;
+    player.account = connection.account;
     player.lastSeenAt = this.now();
     connection.resetStateSync?.();
     connection.roomId = room.id;

@@ -1,7 +1,7 @@
 import { schemaUnion } from "./SchemaUnion";
 import { Type as t, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { ChatMessage, RoomVisibility } from './Model';
+import type { ChatMessage, PlayerAccount, RoomVisibility } from './Model';
 import type { ClientEnvelope } from './Protocol';
 
 const strict = { additionalProperties: false } as const;
@@ -90,6 +90,7 @@ export interface CCBPlayer {
   id: string; name: string; online: boolean; ready: boolean; team: number | null;
   membership: 'active' | 'spectator'; score: number; status: CCBPlayerStatus;
   attempts: number; marks: string; syncCompleted: boolean;
+  account?: PlayerAccount;
 }
 export interface CCBScoreDetail {
   playerId: string; playerName: string; score: number; base: number; firstGuess: number;

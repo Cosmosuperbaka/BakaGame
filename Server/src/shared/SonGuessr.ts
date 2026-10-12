@@ -1,4 +1,4 @@
-import type { ChatMessage, RoomVisibility } from "./Model";
+import type { ChatMessage, PlayerAccount, RoomVisibility } from "./Model";
 
 export const SONGUESSR_PHASES = [
   "waiting",
@@ -387,6 +387,7 @@ export interface SonGuessrPlayerView {
   isReady: boolean;
   isBot: boolean;
   isHost: boolean;
+  account?: PlayerAccount;
   correctGuesses: number;
   totalGuesses: number;
   /** `teamCorrect`：队友已猜中，本人不再作答；`observing`：队友出题，本局观战。 */

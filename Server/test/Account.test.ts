@@ -148,3 +148,44 @@ describe("资料与头像", () => {
     expect((await app.handle(new Request("http://localhost/api/account/avatar/missing"))).status).toBe(404);
   });
 });
+
+describe("游戏内账号身份", () => {
+  const openRoom = async (port: number, cookie?: string) => {
+    // Bun 的 WebSocket 支持自定义握手头，用来模拟浏览器自动携带的会话 Cookie。
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`, {
+      headers: { origin: "http://localhost:5173", ...(cookie ? { cookie } : {}) },
+    } as unknown as string[]);
+    const messages: Array<{ event?: string; payload?: { mode?: string; state?: { players?: Array<Record<string, unknown>> } } }> = [];
+    socket.addEventListener("message", (event: MessageEvent<string>) => messages.push(JSON.parse(event.data)));
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), { once: true });
+    });
+    socket.send(JSON.stringify({ id: "create", type: "room.create", payload: { roomId: String(4000 + Math.floor(Math.random() * 5000)), name: "账号房", visibility: "public", allowSpectators: true, userName: "游戏昵称" } }));
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const snapshot = messages.find((item) => item.event === "room.snapshot" && item.payload?.mode === "full");
+      if (snapshot) { socket.close(); return snapshot.payload!.state!.players![0]!; }
+      await Bun.sleep(20);
+    }
+    socket.close();
+    throw new Error(`等待房间快照超时: ${JSON.stringify(messages).slice(0, 300)}`);
+  };
+
+  test("登录玩家的房间快照只带用户 ID 与站内头像，游客不带账号", async () => {
+    const { app, rpc, signIn } = createAccountTestApp();
+    const { cookie } = await signIn(QQ, "账号昵称");
+    const me = (await rpc("account/me", undefined, cookie)).body;
+    const server = app.listen({ hostname: "127.0.0.1", port: 0 });
+    try {
+      const port = server.server!.port!;
+      const player = await openRoom(port, cookie);
+      expect(player).toMatchObject({ name: "游戏昵称", account: { userId: me.id, image: me.image } });
+      expect(JSON.stringify(player)).not.toContain(QQ);
+      expect((await openRoom(port)).account).toBeUndefined();
+      expect((await openRoom(port, "bakagame.session_token=forged")).account).toBeUndefined();
+    } finally {
+      await server.stop(true);
+    }
+  });
+});

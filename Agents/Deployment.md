@@ -238,7 +238,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
 | `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；首次上线后在容器内执行一次 `bun run db:import-word-bank` 迁移旧词库，见 [Database](Database.md) |
 | `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时服务拒绝启动 | 至少 32 字符随机串，`openssl rand -hex 32` 生成；更换会使全部登录会话失效 |
-| `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#6-配置) |
+| `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#7-配置) |
 
 存在性自查（只计数、不打印值）：
 

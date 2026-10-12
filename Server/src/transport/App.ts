@@ -6,7 +6,7 @@ import { SonGuessrService } from "../application/SonGuessrService";
 import { CCBService } from "../application/CCBService";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
-import type { ConnectionRecord } from "../domain/Model";
+import type { ConnectionRecord, PlayerAccount } from "../domain/Model";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
 import { LRUCache } from "lru-cache";
 
@@ -293,18 +293,37 @@ const rejectDisallowedOrigin = (
   throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
 };
 
+/**
+ * 握手阶段解析登录身份，结果挂到升级上下文上（Elysia 会把上下文展开进 `ws.data`）。
+ * 账号系统故障只让本次连接以游客身份进入，绝不拦截游戏握手。
+ */
+const resolveSocketAccount = async (
+  context: { request: Request; account?: PlayerAccount },
+  account: AccountDependencies | undefined,
+  logger: EventLogger,
+): Promise<void> => {
+  if (!account || !context.request.headers.get("cookie")) return;
+  try {
+    context.account = await account.service.socketAccount(context.request.headers);
+  } catch (error) {
+    logger.warn("握手时解析登录状态失败，按游客处理", describeError(error));
+  }
+};
+
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
 const openGameConnection = (
   ws: GameSocketLike,
   register: (connection: ConnectionRecord) => void,
 ): void => {
   const connectionId = crypto.randomUUID();
+  const account = (ws.data as { account?: PlayerAccount }).account;
   (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender((payload) => {
     sendPacket(ws, payload as ServerMessage);
   });
   register({
     id: connectionId,
+    ...(account ? { account } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,
@@ -551,7 +570,10 @@ export const createApp = ({
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
       error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
-      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      upgrade: async (context) => {
+        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
+        await resolveSocketAccount(context, account, logger);
+      },
       open: (ws) => openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
       message: (ws, incoming) =>
         handleGameMessage(ws, incoming, logger, {
@@ -564,7 +586,10 @@ export const createApp = ({
     .ws("/api/ccb/ws", {
       body: CCBClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
       error: gameSocketError(logger, "CCB", parseCCBMessage),
-      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      upgrade: async (context) => {
+        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
+        await resolveSocketAccount(context, account, logger);
+      },
       open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
       message: (ws, incoming) => handleGameMessage(ws, normalizeCCBEnvelope(incoming), logger, {
         serviceName: 'CCB',
@@ -575,7 +600,10 @@ export const createApp = ({
     .ws("/api/songuessr/ws", {
       body: SonGuessrClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
       error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
-      upgrade: ({ headers, request }) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+      upgrade: async (context) => {
+        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
+        await resolveSocketAccount(context, account, logger);
+      },
       open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
       message: (ws, incoming) =>
         handleGameMessage(ws, incoming, logger, {

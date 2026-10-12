@@ -13,6 +13,7 @@ import {
   qqEmailOf,
 } from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
+import type { PlayerAccount } from "../shared/Model";
 
 /** 账号表在应用层可见的字段（Better Auth 适配器返回的原始行）。 */
 interface AccountRow {
@@ -105,6 +106,16 @@ export class AccountService {
   async currentUserId(headers: Headers): Promise<string | null> {
     const session = await this.options.auth.api.getSession({ headers });
     return session?.user.id ?? null;
+  }
+
+  /**
+   * WebSocket 握手用：会话对应的房间内公开身份。
+   * 头像按 ID 读库：会话 Cookie 缓存最长 5 分钟，新号首个头像与刷新后的头像都不在缓存里。
+   */
+  async socketAccount(headers: Headers): Promise<PlayerAccount | undefined> {
+    const userId = await this.currentUserId(headers);
+    const row = userId ? await this.findUser(userId) : null;
+    return row ? { userId: row.id, image: row.image ?? null } : undefined;
   }
 
   async me(userId: string): Promise<AccountProfile | null> {
