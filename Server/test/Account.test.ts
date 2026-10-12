@@ -19,11 +19,15 @@ describe("账号系统未启用", () => {
     const env = { clientUrl: "http://localhost:5173", serverUrl: "http://localhost:4850", serverListenHost: "127.0.0.1", serverPort: 0, bangumiApiUrl: "https://api.bgm.tv", bangumiImageUrl: "" } satisfies AppEnv;
     const logger = new EventLogger(() => {});
     const { app } = createTestApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) });
-    for (const url of ["/api/auth/get-session", "/api/rpc/account/me", "/api/account/avatar/someone"]) {
+    for (const url of ["/api/auth/get-session", "/api/account/avatar/someone"]) {
       const response = await app.handle(new Request(`http://localhost${url}`));
       expect(response.status).toBe(503);
       expect(await response.json()).toMatchObject({ error: { code: "ACCOUNT_DISABLED" } });
     }
+    // RPC 按 oRPC 错误编码，客户端解出的 ORPCError.code 即 ACCOUNT_DISABLED。
+    const rpc = await app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
+    expect(rpc.status).toBe(503);
+    expect(await rpc.json()).toEqual({ json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" } });
   });
 });
 

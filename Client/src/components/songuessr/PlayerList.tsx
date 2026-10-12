@@ -240,6 +240,7 @@ function SongPlayerRow({
       host={player.isHost}
       online={player.online}
       bot={player.isBot}
+      account={player.account}
       badges={status ? <PlayerStatusPill {...status} /> : null}
       actions={actions}
       layoutId={player.id}

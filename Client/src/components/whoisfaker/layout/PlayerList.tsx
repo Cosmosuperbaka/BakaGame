@@ -526,6 +526,7 @@ export function PlayerRow(props: PlayerRowProps) {
       host={player.isHost}
       online={player.online}
       bot={player.isBot}
+      account={player.account}
       eliminated={eliminated}
       badges={<>
         {actualRole ? (

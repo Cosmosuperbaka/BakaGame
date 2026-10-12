@@ -5,9 +5,11 @@ import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
+import { ProfileCard } from "@/components/common/ProfileCard";
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
+import type { PlayerAccount } from "@/types";
 
 /** 玩家行操作浮层里的一个动作。 */
 export interface PlayerRowAction {
@@ -27,6 +29,8 @@ export interface PlayerRowProps {
   host?: boolean;
   online?: boolean;
   bot?: boolean;
+  /** 登录玩家的账号身份：显示账号头像，点击整行在浮层顶部展示资料卡；游客为空 */
+  account?: PlayerAccount;
   /** 已出局：名字加删除线，次行补一个图标 */
   eliminated?: boolean;
   /** 次行的状态徽章（身份、准备、猜测中等），由各游戏传入 */
@@ -37,7 +41,7 @@ export interface PlayerRowProps {
   detail?: ReactNode;
   /** 操作浮层顶部内容（谁是卧底的身份猜测行） */
   actionsHeader?: ReactNode;
-  /** 操作浮层的动作；与 actionsHeader 同为空时整行不可操作 */
+  /** 操作浮层的动作；与 actionsHeader、account 同为空时整行不可操作 */
   actions?: PlayerRowAction[];
   /** 嵌入发言历史首列时去掉行自身的进出场动画，交由表格统一处理 */
   embedded?: boolean;
@@ -51,16 +55,17 @@ export interface PlayerRowProps {
 }
 
 /**
- * 三游戏共用的玩家行：左端首字头像，中间双行信息（名字与房主标识、状态徽章与补充文字），
- * 右侧分数；有操作权限时整行是可聚焦的原生按钮，点击打开操作浮层。
+ * 三游戏共用的玩家行：左端头像（登录玩家为账号头像，游客为首字），中间双行信息（名字与房主标识、状态徽章与补充文字），
+ * 右侧分数；登录玩家或有操作权限时整行是可聚焦的原生按钮，点击打开浮层：资料卡在上，操作在下。
  *
  * 行高由 `PLAYER_ROW_HEIGHT` 统一，供玩家列与发言历史逐行对齐；嵌入发言历史时不再套动画容器。
  */
 export function PlayerRow({
-  name, score, me = false, host = false, online = true, bot = false, eliminated = false,
+  name, score, me = false, host = false, online = true, bot = false, account, eliminated = false,
   badges, meta, detail, actionsHeader, actions, embedded = false, layoutId, ref,
 }: PlayerRowProps) {
-  const interactive = Boolean(actionsHeader || actions?.length);
+  const hasActions = Boolean(actionsHeader || actions?.length);
+  const interactive = Boolean(account) || hasActions;
   // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
   const [open, setOpen] = useState(false);
   const rowClass = cn(
@@ -77,7 +82,7 @@ export function PlayerRow({
   const body = (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
-      <PlayerAvatar name={name} me={me} />
+      <PlayerAvatar name={name} me={me} image={account?.image} />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex min-w-0 items-center gap-1">
           <span
@@ -111,7 +116,7 @@ export function PlayerRow({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
-        <motion.button type="button" aria-label={`${name} 操作`} {...headerTappable} className={rowClass}>
+        <motion.button type="button" aria-label={hasActions ? `${name} 操作` : `${name} 资料`} {...headerTappable} className={rowClass}>
           {body}
         </motion.button>
       </Popover.Trigger>
@@ -127,9 +132,10 @@ export function PlayerRow({
                 exit="exit"
                 className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
               >
-                {actionsHeader ? <div className="flex">{actionsHeader}</div> : null}
+                {account ? <ProfileCard account={account} playerName={name} /> : null}
+                {actionsHeader ? <div className={cn("flex", account && "border-t")}>{actionsHeader}</div> : null}
                 {actions?.length ? (
-                  <div className={cn("flex flex-col", actionsHeader && "border-t")}>
+                  <div className={cn("flex flex-col", (account || actionsHeader) && "border-t")}>
                     {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
                   </div>
                 ) : null}

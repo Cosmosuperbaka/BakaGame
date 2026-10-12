@@ -190,6 +190,7 @@ function CCBPlayerRow({ ref, player, snapshot, sharedInHeader, self, canManage, 
       me={self}
       host={snapshot.hostPlayerId === player.id}
       online={player.online}
+      account={player.account}
       badges={status ? <PlayerStatusPill {...status} /> : null}
       meta={detail ? <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span> : null}
       detail={!sharedInHeader && player.marks ? <CCBMarks marks={player.marks} name={player.name} /> : null}

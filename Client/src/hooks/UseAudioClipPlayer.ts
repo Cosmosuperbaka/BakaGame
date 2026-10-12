@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { notifyPreferencesChanged, PREFERENCES_APPLIED, SONG_VOLUME_KEY } from "@/lib/Storage";
 
-const SONG_VOLUME_KEY = "songuessr_volume";
 const DEFAULT_SONG_VOLUME = 0.65;
 
 /** 只采用 0–1 之间的有效存档；缺失、空串、无法解析或越界时用默认音量。 */
@@ -40,6 +40,13 @@ export function useAudioClipPlayer({
 }: AudioClipPlayerOptions) {
   const [volume, setVolumeState] = useState(readSavedVolume);
 
+  // 登录后云端音量写回本地：已在播放的房间同步改用新音量。
+  useEffect(() => {
+    const reload = () => setVolumeState(readSavedVolume());
+    window.addEventListener(PREFERENCES_APPLIED, reload);
+    return () => window.removeEventListener(PREFERENCES_APPLIED, reload);
+  }, []);
+
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
   const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">("idle");
   const [audioRetryToken, setAudioRetryToken] = useState(0);
@@ -59,7 +66,11 @@ export function useAudioClipPlayer({
   useEffect(() => {
     volumeRef.current = volume;
     try {
-      window.localStorage.setItem(SONG_VOLUME_KEY, String(volume));
+      const value = String(volume);
+      if (window.localStorage.getItem(SONG_VOLUME_KEY) !== value) {
+        window.localStorage.setItem(SONG_VOLUME_KEY, value);
+        notifyPreferencesChanged();
+      }
     } catch {
       // 忽略沙箱本地存储异常
     }

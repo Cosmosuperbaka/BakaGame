@@ -7,8 +7,10 @@
 - 账号以 **QQ 号**为身份锚点：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由 Better Auth 建号钩子从邮箱派生，客户端无法自报。
 - 只有邮箱验证码一种登录方式（6 位、5 分钟有效、每枚最多试 3 次、库内只存摘要）。首次登录即注册，必须填写账号昵称。
 - 账号昵称与游戏内昵称互不捆绑；账号昵称由用户填写（QQ 昵称接口需 QQ 登录态，不可用）。
-- 游客游玩不受影响：账号系统随 `DATABASE_URL` 启用，未启用时 `/api/auth/*`、`/api/rpc/*`、`/api/account/avatar/*` 统一回 503 `ACCOUNT_DISABLED`，前端据此隐藏登录入口。
+- 游客游玩不受影响：账号系统随 `DATABASE_URL` 启用，未启用时 `/api/auth/*`、`/api/rpc/*`、`/api/account/avatar/*` 统一回 503 `ACCOUNT_DISABLED`（RPC 前缀按 oRPC 错误编码，客户端从 `ORPCError.code` 识别），前端据此隐藏登录入口。
 - 代码入口：`infrastructure/auth/Auth.ts`（Better Auth 配置）、`application/AccountService.ts`（发码、资料、头像）、`transport/routes/Account.ts`（HTTP 入口）、`shared/Account.ts` 与 `shared/ApiContract.ts`（前后端共享常量与契约）。
+- 前端入口：`lib/Api.ts`（oRPC 客户端、Better Auth 登录与错误文案）、`stores/UseAccountStore.ts`（`loading` / `unavailable` / `guest` / `signedIn`）、`hooks/UseAccountBootstrap.ts`（根布局里载入账号、登录期间运行云同步、上报访问）、`components/account/`（登录、资料、反馈弹窗与主页入口）。账号接口失败（`ACCOUNT_DISABLED` 以外）按游客处理并记告警，绝不挡住游玩。
+- 前端只展示中文错误文案：oRPC 错误取 `message`（校验失败取首条中文问题），Better Auth 的英文错误码在 `AUTH_MESSAGES` 映射成中文，其余退回兜底文案。
 
 ## 2. HTTP 面
 
@@ -39,14 +41,17 @@
 
 - WebSocket 握手（三款游戏同一入口）带 Cookie 时解析会话，结果写入 `ConnectionRecord.account`（`PlayerAccount`：`userId` + 站内头像地址）。头像按 ID 读库，不用最长 5 分钟的会话 Cookie 缓存。
 - 账号系统故障或会话无效时以游客身份进入，绝不拦截游戏握手。
-- 玩家接管座位（加入、重连、顶号）时 `player.account` 取当前连接的账号，三款游戏的玩家视图原样透出。登录或退出后前端须重连 WebSocket 才会刷新身份。
+- 玩家接管座位（加入、重连、顶号）时 `player.account` 取当前连接的账号，三款游戏的玩家视图原样透出。登录或退出后前端须重连 WebSocket 才会刷新身份：`refreshSocketIdentities()` 关闭现有连接，交给各游戏既有的断线重连与回房逻辑，新握手带上新 Cookie。
 - 房间快照只带 `userId` 与头像地址，不带账号昵称与 QQ 号；资料卡由前端按 `userId` 调 `account.publicProfile`。每名登录玩家约增加 80 字节全量快照，差量只在变化时发送。
+- 前端：三款游戏共用的 `PlayerRow` 收 `player.account`，登录玩家显示账号头像（加载失败退回首字），整行可点，浮层顶部是资料卡（`ProfileCard`），房主操作排在其下。资料按用户在同一访问内只取一次（`lib/ProfileCache`），失败不缓存、卡内可重试；本人改资料后作废自己那一条。
 
 ## 6. 云同步设置
 
 - `user_setting` 一行一个键，整体覆盖，不做字段级合并：`preferences` 是前端自定的轻量偏好文档（音量、房间设置记忆等，序列化后 ≤ 32 KB，`PREFERENCES_MAX_BYTES`），服务端不解释其中字段。
 - 猜歌音乐账号按平台分键 `music.netease` / `music.qq`，内容含平台 cookie，由 `SettingCipher` 以 AES-256-GCM 加密后落库：密钥自 `BETTER_AUTH_SECRET` 经 HKDF 派生，附加数据绑定「用户 ID + 键」。密文挪行、篡改或密钥轮换后一律视为云端无数据并记告警，用户重新登录音乐账号即覆盖。
 - 只有本人能读写自己的设置（`settings.*` 全部要求登录）；`saveMusicSession` 传 `session: null` 表示退出该平台并删除云端副本。
+- 前端（`lib/CloudSync.ts`）只同步本地存储里的游戏昵称、猜歌音量与房间设置记忆（建房与房间设置两类前缀），不含房间恢复、访客 ID 等本机状态；值按原字符串放进 `preferences`。本地写入经 `PREFERENCES_CHANGED` 通知、防抖 2 秒整体上传，与上次上传相同或超出上限时跳过；写回本地后发 `PREFERENCES_APPLIED`，已挂载的组件（音量）据此重读。
+- 冲突口径：登录时偏好逐键合并、同键以云端为准，合并结果与云端不同才回传，两边都没有时不建文档；音乐账号按平台，云端有则写回本地（不回传），只有本地有则上传。之后本地登录或退出音乐账号即上传或删除云端副本。读取云端失败时本次访问不同步。
 
 ## 7. 站内反馈
 
@@ -67,7 +72,7 @@
 
 ### 访问统计
 
-- 前端每次载入页面调用一次公开接口 `site.visit`（`visitorId` 为浏览器本地随机值）；账号系统未启用时接口 503，前端静默忽略。
+- 前端每进入一个新板块调用一次公开接口 `site.visit`（`lib/VisitReport.ts`，`visitorId` 为浏览器本地随机值），同板块内换房不重复上报；账号系统未启用时接口 503，前端静默忽略。
 - `SiteStatsService` 在进程内聚合、每分钟刷写 `site_visit_daily` / `site_page_daily`，关闭时先刷写再关数据库；写库失败丢弃该窗口。
 - 访客 ID 落库前与「HKDF 派生密钥 + 北京时间当天」做 HMAC：跨天不可关联、库内还原不出原 ID。不记录 IP；已登录访客关联账号 ID。
 - 页面只按板块统计（`/whoisfaker`、`/songuessr/room`、`/admin` 等），房号折叠、未知路径记为 `other`，统计表不会按房号膨胀。
@@ -91,4 +96,5 @@
 - `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、昵称校验、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
 - `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
+- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号昵称、就地报错）与 `components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。

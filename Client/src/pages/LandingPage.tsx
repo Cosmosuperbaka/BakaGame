@@ -21,6 +21,7 @@ import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
+import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
 import {
   Dialog,
   DialogContent,
@@ -513,8 +514,10 @@ export default function LandingPage() {
   const versionDescription = `V${version ?? "∞"}${commit ? ` · ${commit}` : ""}`;
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+    <div className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <Seo path="/" />
+      {/* 账号入口浮在右上角，不占页头的纵向空间；账号系统未启用时不渲染 */}
+      <div className="absolute right-3 top-3 z-panel sm:right-5 sm:top-4"><AccountButton /></div>
       <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
           variants={listItem}
@@ -563,7 +566,7 @@ export default function LandingPage() {
           ))}
         </motion.div>
 
-        {/* 社区外链与版本详情 */}
+        {/* 社区外链、反馈与版本详情 */}
         <div className="flex items-center gap-2">
           <motion.div
             className="flex items-center gap-1"
@@ -586,8 +589,11 @@ export default function LandingPage() {
           >
             <span ref={versionRef} className="inline-block">{versionLabel}</span>
           </motion.button>
+          <FeedbackButton />
         </div>
       </footer>
+
+      <AccountDialogs />
 
       <Dialog open={infoOpen} onOpenChange={changeInfoOpen} origin={origin} fling>
         <DialogContent className="sm:max-w-2xl">

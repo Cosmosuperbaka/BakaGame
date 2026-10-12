@@ -7,7 +7,9 @@ import { TEST_ROOM_ID } from "@/config/Constants";
  * 会话凭据按玩法分前缀，与路由、API 路径的 `whoisfaker` / `songuessr` 口径一致。
  * 旧键 `wif_username` / `wif_session_` 只在 `migrateLegacyKeys` 里出现一次，用于一次性搬迁。
  */
-const USERNAME_KEY = "bakagame:username";
+export const USERNAME_KEY = "bakagame:username";
+/** 猜歌音量（0–1 的字符串）。 */
+export const SONG_VOLUME_KEY = "songuessr_volume";
 const SESSION_PREFIX = "whoisfaker_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
 const SOLO_ROOM_KEY = "songuessr_solo_room";
@@ -91,6 +93,17 @@ function migrateLegacyKeys(): void {
   }
 }
 
+/**
+ * 云同步偏好的变更通知（见 lib/CloudSync.ts）：写入同步范围内的本地键后派发，
+ * 已登录时由云同步合并上传；云端偏好写回本地后派发 `PREFERENCES_APPLIED`，让已挂载的读取方重读。
+ */
+export const PREFERENCES_CHANGED = "bakagame:preferences-changed";
+export const PREFERENCES_APPLIED = "bakagame:preferences-applied";
+
+export function notifyPreferencesChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(PREFERENCES_CHANGED));
+}
+
 export function getSavedUsername(): string {
   try {
     migrateLegacyKeys();
@@ -103,6 +116,7 @@ export function getSavedUsername(): string {
 export function saveUsername(name: string): void {
   try {
     getLocalStorage()?.setItem(USERNAME_KEY, name);
+    notifyPreferencesChanged();
   } catch {
     // 忽略
   }

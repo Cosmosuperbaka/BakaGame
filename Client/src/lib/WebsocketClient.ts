@@ -58,6 +58,9 @@ export function generateUuid(): string {
   });
 }
 
+/** 全部游戏连接：登录或退出后逐个重连，让服务端在握手时重新解析会话 Cookie。 */
+const clients = new Set<WebSocketClient>();
+
 export class WebSocketClient {
   private socket: WebSocket | null = null;
   private messageHandlers: MessageHandler[] = [];
@@ -71,6 +74,17 @@ export class WebSocketClient {
 
   constructor(path: string) {
     this.path = path;
+    clients.add(this);
+  }
+
+  /**
+   * 账号身份只在握手时解析（见 Agents/Account.md §5）：登录或退出后关掉现有连接，
+   * 走与掉线相同的重连路径，各游戏的重连逻辑随之重新接管座位并带上新身份。未连接时不做任何事。
+   */
+  refreshIdentity(): void {
+    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
+      this.socket.close();
+    }
   }
 
   connect(): void {
@@ -304,3 +318,7 @@ export class WebSocketClient {
 }
 
 export const createWebSocketClient = (path: string) => new WebSocketClient(path);
+
+export const refreshSocketIdentities = (): void => {
+  for (const client of clients) client.refreshIdentity();
+};

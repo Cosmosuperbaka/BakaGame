@@ -139,6 +139,12 @@ const accountDisabled = () => new Response(
   { status: 503, headers: { "content-type": "application/json" } },
 );
 
+/** RPC 前缀按 oRPC 错误编码回停用：客户端据 `code` 识别，不与网关自身的 503 混淆。 */
+const rpcAccountDisabled = () => new Response(
+  JSON.stringify({ json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" } }),
+  { status: 503, headers: { "content-type": "application/json" } },
+);
+
 const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
 
 /**
@@ -161,7 +167,7 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
       return account.auth.handler(request);
     }, { parse: "none", detail: { hide: true } })
     .all(`${RPC_BASE_PATH}/*`, async ({ request }) => {
-      if (!account || !rpc) return accountDisabled();
+      if (!account || !rpc) return rpcAccountDisabled();
       await account.ready;
       const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });
       return matched ? response : new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "请求资源不存在" } }), {

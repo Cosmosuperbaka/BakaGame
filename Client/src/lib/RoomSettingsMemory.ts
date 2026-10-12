@@ -1,3 +1,4 @@
+import { notifyPreferencesChanged } from "@/lib/Storage";
 import type {
   AnimeAutoFilters,
   CCBSettings,
@@ -68,6 +69,9 @@ const CREATE_PREFIX = "bakagame:room-create:";
 const SETTINGS_PREFIX = "bakagame:room-settings:";
 const RESTORE_PREFIX = "bakagame:room-restore:";
 
+/** 跟随账号云同步的记忆键前缀；待恢复标记只属于本机这一次建房，不同步。 */
+export const ROOM_MEMORY_SYNC_PREFIXES = [CREATE_PREFIX, SETTINGS_PREFIX] as const;
+
 const getLocalStorage = (): Storage | null => {
   try {
     if (typeof window === "undefined") return null;
@@ -89,6 +93,7 @@ const readJson = <T>(key: string): T | null => {
 const writeJson = (key: string, value: unknown): void => {
   try {
     getLocalStorage()?.setItem(key, JSON.stringify(value));
+    notifyPreferencesChanged();
   } catch {
     // 存储被禁用或写满时静默：记忆是增强，不影响建房主流程。
   }
