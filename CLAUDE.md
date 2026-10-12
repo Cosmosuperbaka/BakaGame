@@ -28,7 +28,7 @@
 | 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
 | 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
-| 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
+| 登录、账号资料、头像、账号 HTTP API 或管理员身份 | [Account](Agents/Account.md) |
 | 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md) |
 | 选择验证范围、编写测试、覆盖率或 CI | [Testing](Agents/Testing.md) 的验证矩阵及相关专项 |
 
