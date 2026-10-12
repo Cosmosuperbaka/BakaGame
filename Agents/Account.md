@@ -57,6 +57,10 @@
 ## 8. 管理员
 
 - `ADMIN_QQ`（逗号分隔）中的 QQ 号建号时即为 `admin`，启动时把已注册的同名单账号提升为 `admin`。只提升不降级：后续角色变更在管理后台完成。
+- 管理接口挂在 oRPC `admin.*`（`application/AdminService.ts`），覆盖用户（查询、封禁、解封、角色、强制下线、改名）、反馈（列表、详情、回复、状态）、对局记录与审计查询。每次调用按 ID 读库校验 `role=admin` 且未封禁；会话读取一律跳过 Cookie 缓存，降级、封禁与强制下线立即生效。
+- 不能对自己封禁或改角色，不能封禁管理员（先降级）；被封用户须先解封才能提为管理员。封禁同时删除其全部会话；封禁中的账号发码直接回 403 `ACCOUNT_BANNED`，不消耗发信额度，限时封禁到期后由 Better Auth 在登录时自动解除。
+- 每个写操作**先写审计再执行**（`audit_log`）：审计写入失败则操作不做。审计不记 IP，理由同 §3。
+- 管理员回复反馈后，用户侧出现未读；状态为 `open` 的反馈被回复时自动转为 `processing`。
 
 ## 9. 配置
 
@@ -74,4 +78,5 @@
 
 - `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、昵称校验、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
 - `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
+- `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）。
 - 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。

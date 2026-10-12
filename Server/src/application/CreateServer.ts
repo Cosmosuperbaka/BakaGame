@@ -18,6 +18,9 @@ import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
 import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
+import { AdminService } from "./AdminService";
+import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
+import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
 import { DatabaseFeedbackRepository, DatabaseUserSettingRepository } from "../infrastructure/db/UserDataRepository";
 import { captureServerFeedback } from "../infrastructure/Sentry";
@@ -120,13 +123,20 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
   void database.ready
     .then(() => service.promoteAdmins(adminQqNumbers))
     .catch((error: unknown) => logger.error("管理员引导失败", { error: String(error) }));
+  const feedback = new DatabaseFeedbackRepository(database);
   const userData = new UserDataService({
     settings: new DatabaseUserSettingRepository(database),
-    feedback: new DatabaseFeedbackRepository(database),
+    feedback,
     cipher: new SettingCipher(env.account.secret),
     nameOf: (userId) => service.nameOf(userId),
     feedbackSink: captureServerFeedback,
     logger,
   });
-  return { auth, service, userData, ready: database.ready };
+  const admin = new AdminService({
+    auth,
+    feedback,
+    gameRecords: new DatabaseGameRecordRepository(database),
+    audit: new DatabaseAuditLogRepository(database),
+  });
+  return { auth, service, userData, admin, ready: database.ready };
 };

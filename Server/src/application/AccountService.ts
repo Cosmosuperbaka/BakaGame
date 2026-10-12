@@ -90,6 +90,12 @@ export class AccountService {
     if (!this.hourlyLimiter.allow(email, now)) {
       throw new AppError("RATE_LIMITED", "验证码获取过于频繁，请一小时后再试");
     }
+    const existing = (await (await this.adapter()).findUserByEmail(email))?.user as
+      | { banned?: boolean | null; banExpires?: Date | null } | undefined;
+    // 封禁中的账号登录必然被拒，不为它消耗发信额度；到期的封禁由 Better Auth 在登录时自动解除。
+    if (existing?.banned && (!existing.banExpires || new Date(existing.banExpires).getTime() > now)) {
+      throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
+    }
     const code = await this.options.auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
     try {
       await this.options.mailer.sendLoginCode({ to: email, code });
@@ -98,13 +104,16 @@ export class AccountService {
       this.options.logger.error("登录验证码投递失败", { error: String(error) });
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
-    const registered = Boolean(await (await this.adapter()).findUserByEmail(email));
-    return { registered, resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS };
+    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS };
   }
 
-  /** 当前会话的账号 ID；未登录返回 `null`。资料本身由调用方按 ID 读库，不取会话缓存里的旧值。 */
+  /**
+   * 当前会话的账号 ID；未登录返回 `null`。
+   * 跳过会话 Cookie 缓存：封禁与吊销会删库内会话，缓存会让被封账号继续通过最长 5 分钟。
+   * 资料本身由调用方按 ID 读库，不取会话里的旧值。
+   */
   async currentUserId(headers: Headers): Promise<string | null> {
-    const session = await this.options.auth.api.getSession({ headers });
+    const session = await this.options.auth.api.getSession({ headers, query: { disableCookieCache: true } });
     return session?.user.id ?? null;
   }
 

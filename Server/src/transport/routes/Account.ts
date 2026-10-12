@@ -3,6 +3,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { Elysia } from "elysia";
 
 import type { AccountService } from "../../application/AccountService";
+import type { AdminService } from "../../application/AdminService";
 import type { UserDataService } from "../../application/UserDataService";
 import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
@@ -17,6 +18,7 @@ export interface AccountDependencies {
   auth: Auth;
   service: AccountService;
   userData: UserDataService;
+  admin: AdminService;
   /** 数据库迁移完成后才对外服务账号请求。 */
   ready: Promise<void>;
 }
@@ -29,6 +31,7 @@ interface RpcContext {
 const STATUS_BY_CODE: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  ACCOUNT_BANNED: 403,
   FORBIDDEN_ORIGIN: 403,
   NOT_FOUND: 404,
   RATE_LIMITED: 429,
@@ -39,7 +42,7 @@ const STATUS_BY_CODE: Record<string, number> = {
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
 
-const createRpcRouter = ({ service, userData }: AccountDependencies, logger: EventLogger) => {
+const createRpcRouter = ({ service, userData, admin }: AccountDependencies, logger: EventLogger) => {
   const base = implement(apiContract).$context<RpcContext>().use(async ({ next, path }) => {
     try {
       return await next();
@@ -56,6 +59,10 @@ const createRpcRouter = ({ service, userData }: AccountDependencies, logger: Eve
     const userId = await service.currentUserId(context.headers);
     if (!userId) throw new ORPCError("UNAUTHORIZED", { status: 401, message: "请先登录" });
     return next({ context: { userId } });
+  });
+  const adminOnly = signedIn.use(async ({ context, next }) => {
+    await admin.requireAdmin(context.userId);
+    return next();
   });
 
   return base.router({
@@ -80,6 +87,30 @@ const createRpcRouter = ({ service, userData }: AccountDependencies, logger: Eve
         userData.createFeedback(context.userId, { ...input, userAgent: context.headers.get("user-agent") })),
       listMine: signedIn.feedback.listMine.handler(({ context }) => userData.listMyFeedback(context.userId)),
       get: signedIn.feedback.get.handler(({ context, input }) => userData.myFeedback(context.userId, input.id)),
+    },
+    admin: {
+      users: {
+        list: adminOnly.admin.users.list.handler(({ input }) => admin.listUsers(input)),
+        get: adminOnly.admin.users.get.handler(({ input }) => admin.getUser(input.userId)),
+        ban: adminOnly.admin.users.ban.handler(({ context, input }) => admin.banUser(context.userId, input)),
+        unban: adminOnly.admin.users.unban.handler(({ context, input }) => admin.unbanUser(context.userId, input.userId)),
+        setRole: adminOnly.admin.users.setRole.handler(({ context, input }) => admin.setRole(context.userId, input)),
+        revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) => admin.revokeSessions(context.userId, input.userId)),
+        rename: adminOnly.admin.users.rename.handler(({ context, input }) => admin.renameUser(context.userId, input)),
+      },
+      feedback: {
+        list: adminOnly.admin.feedback.list.handler(({ input }) => admin.listFeedback(input)),
+        get: adminOnly.admin.feedback.get.handler(({ input }) => admin.getFeedback(input.id)),
+        reply: adminOnly.admin.feedback.reply.handler(({ context, input }) => admin.replyFeedback(context.userId, input)),
+        setStatus: adminOnly.admin.feedback.setStatus.handler(({ context, input }) => admin.setFeedbackStatus(context.userId, input)),
+      },
+      games: {
+        list: adminOnly.admin.games.list.handler(({ input }) => admin.listGames(input)),
+        get: adminOnly.admin.games.get.handler(({ input }) => admin.getGame(input.id)),
+      },
+      audit: {
+        list: adminOnly.admin.audit.list.handler(({ input }) => admin.listAudit(input)),
+      },
     },
   });
 };

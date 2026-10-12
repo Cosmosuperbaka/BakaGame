@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   ACCOUNT_NAME_MAX_LENGTH,
   FEEDBACK_CONTENT_MAX_LENGTH,
+  FEEDBACK_REPLY_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
   PREFERENCES_MAX_BYTES,
   QQ_NUMBER_PATTERN,
@@ -99,6 +100,131 @@ export const feedbackDetailSchema = feedbackSummarySchema.extend({
   replies: z.array(feedbackReplySchema),
 });
 
+// ==================== 管理后台 ====================
+
+const page = {
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).max(100_000).default(0),
+};
+const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), total: z.number().int() });
+const userId = z.string().min(1).max(64);
+export const recordedGameSchema = z.enum(["faker", "song", "ccb"]);
+const reason = z.string().trim().max(200);
+
+/** 后台只引用账号时的最小信息；账号已注销时为空。 */
+const userRefSchema = z.object({ id: z.string(), name: z.string(), qqNumber: z.string(), image: z.string().nullable() });
+
+export const adminUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  qqNumber: z.string(),
+  image: z.string().nullable(),
+  role: z.enum(["user", "admin"]),
+  banned: z.boolean(),
+  banReason: z.string().nullable(),
+  banExpires: z.string().nullable(),
+  showQq: z.boolean(),
+  createdAt: z.string(),
+});
+
+const gameRecordPlayerSchema = z.object({
+  playerId: z.string(), userId: z.string().nullable(), name: z.string(), score: z.number().int(),
+});
+export const gameRecordItemSchema = z.object({
+  id: z.string(),
+  game: recordedGameSchema,
+  roomId: z.string(),
+  roundNumber: z.number().int(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  players: z.array(gameRecordPlayerSchema),
+});
+export const adminUserDetailSchema = adminUserSchema.extend({
+  recentGames: z.array(gameRecordItemSchema),
+  feedbackCount: z.number().int(),
+});
+export const gameRecordDetailSchema = gameRecordItemSchema.extend({
+  summary: z.record(z.string(), z.unknown()),
+  timeline: z.array(z.looseObject({ at: z.number(), type: z.string() })),
+});
+
+export const adminFeedbackSchema = feedbackSummarySchema.omit({ unread: true }).extend({
+  user: userRefSchema.nullable(),
+  page: z.string().nullable(),
+  sentryEventId: z.string().nullable(),
+});
+export const adminFeedbackDetailSchema = adminFeedbackSchema.extend({
+  content: z.string(),
+  userAgent: z.string().nullable(),
+  replies: z.array(feedbackReplySchema.extend({ author: userRefSchema.nullable() })),
+});
+
+export const auditEntrySchema = z.object({
+  id: z.number().int(),
+  actor: userRefSchema.nullable(),
+  action: z.string(),
+  targetType: z.string(),
+  targetId: z.string(),
+  detail: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.string(),
+});
+
+const adminContract = {
+  users: {
+    /** `query` 为纯数字时按 QQ 号前缀匹配，否则按账号昵称包含匹配。 */
+    list: oc
+      .input(z.object({
+        query: z.string().trim().max(64).optional(),
+        role: z.enum(["user", "admin"]).optional(),
+        banned: z.boolean().optional(),
+        ...page,
+      }))
+      .output(paged(adminUserSchema)),
+    get: oc
+      .input(z.object({ userId }))
+      .output(adminUserDetailSchema),
+    /** 封禁同时吊销全部会话；`expiresInHours` 缺省为永久。不能封禁自己或其他管理员。 */
+    ban: oc
+      .input(z.object({ userId, reason: reason.min(1, "请填写封禁原因"), expiresInHours: z.number().int().min(1).max(24 * 3650).optional() }))
+      .output(adminUserSchema),
+    unban: oc.input(z.object({ userId })).output(adminUserSchema),
+    setRole: oc.input(z.object({ userId, role: z.enum(["user", "admin"]) })).output(adminUserSchema),
+    revokeSessions: oc.input(z.object({ userId })).output(z.object({ ok: z.literal(true) })),
+    /** 处理违规昵称。 */
+    rename: oc.input(z.object({ userId, name: accountName })).output(adminUserSchema),
+  },
+  feedback: {
+    list: oc
+      .input(z.object({ status: feedbackStatusSchema.optional(), kind: feedbackKindSchema.optional(), userId: userId.optional(), ...page }))
+      .output(paged(adminFeedbackSchema)),
+    get: oc.input(z.object({ id: z.string().min(1).max(36) })).output(adminFeedbackDetailSchema),
+    /** 回复后用户侧出现未读；待处理的反馈随之转为处理中。 */
+    reply: oc
+      .input(z.object({ id: z.string().min(1).max(36), content: z.string().trim().min(1, "请填写回复").max(FEEDBACK_REPLY_MAX_LENGTH) }))
+      .output(adminFeedbackDetailSchema),
+    setStatus: oc
+      .input(z.object({ id: z.string().min(1).max(36), status: feedbackStatusSchema }))
+      .output(adminFeedbackSchema),
+  },
+  games: {
+    list: oc
+      .input(z.object({ game: recordedGameSchema.optional(), roomId: z.string().max(32).optional(), userId: userId.optional(), ...page }))
+      .output(paged(gameRecordItemSchema)),
+    get: oc.input(z.object({ id: z.string().min(1).max(36) })).output(gameRecordDetailSchema),
+  },
+  audit: {
+    list: oc
+      .input(z.object({
+        actorId: userId.optional(),
+        action: z.string().max(64).optional(),
+        targetType: z.string().max(32).optional(),
+        targetId: z.string().max(128).optional(),
+        ...page,
+      }))
+      .output(paged(auditEntrySchema)),
+  },
+};
+
 export const apiContract = {
   account: {
     /** 发送登录验证码；`registered` 决定前端是否要求填写昵称。 */
@@ -141,6 +267,8 @@ export const apiContract = {
       .input(z.object({ id: z.string().min(1).max(36) }))
       .output(feedbackDetailSchema),
   },
+  /** 仅管理员；每次调用按 ID 读库校验角色与封禁状态。 */
+  admin: adminContract,
 };
 
 export type ApiContract = typeof apiContract;
@@ -153,4 +281,12 @@ export type FeedbackSummary = z.infer<typeof feedbackSummarySchema>;
 export type FeedbackDetail = z.infer<typeof feedbackDetailSchema>;
 export type FeedbackKind = z.infer<typeof feedbackKindSchema>;
 export type FeedbackStatus = z.infer<typeof feedbackStatusSchema>;
+export type RecordedGameKind = z.infer<typeof recordedGameSchema>;
+export type AdminUser = z.infer<typeof adminUserSchema>;
+export type AdminUserDetail = z.infer<typeof adminUserDetailSchema>;
+export type GameRecordItem = z.infer<typeof gameRecordItemSchema>;
+export type GameRecordDetail = z.infer<typeof gameRecordDetailSchema>;
+export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
+export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
+export type AuditEntry = z.infer<typeof auditEntrySchema>;
 

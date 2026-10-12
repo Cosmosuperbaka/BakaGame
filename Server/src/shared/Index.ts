@@ -15,4 +15,12 @@ export type {
   FeedbackDetail,
   FeedbackKind,
   FeedbackStatus,
+  RecordedGameKind,
+  AdminUser,
+  AdminUserDetail,
+  GameRecordItem,
+  GameRecordDetail,
+  AdminFeedback,
+  AdminFeedbackDetail,
+  AuditEntry,
 } from "./ApiContract";

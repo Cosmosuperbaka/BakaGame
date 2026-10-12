@@ -1,0 +1,284 @@
+import type { Where } from "better-auth";
+
+import { AppError } from "../domain/Errors";
+import type { RecordedGame } from "../domain/GameRecord";
+import type { Auth } from "../infrastructure/auth/Auth";
+import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
+import type { GameRecordListItem, GameRecordRepository } from "../infrastructure/db/GameRecordRepository";
+import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/UserDataRepository";
+import { normalizeAccountName } from "../shared/Account";
+import type {
+  AdminFeedback,
+  AdminFeedbackDetail,
+  AdminUser,
+  AdminUserDetail,
+  AuditEntry,
+  FeedbackKind,
+  FeedbackStatus,
+  GameRecordDetail,
+  GameRecordItem,
+} from "../shared/ApiContract";
+
+interface UserRow {
+  id: string;
+  name: string;
+  image?: string | null;
+  createdAt: Date;
+  role?: string | null;
+  banned?: boolean | null;
+  banReason?: string | null;
+  banExpires?: Date | null;
+  qqNumber: string;
+  showQq?: boolean | null;
+}
+
+type UserRef = { id: string; name: string; qqNumber: string; image: string | null };
+
+export interface AdminServiceOptions {
+  auth: Auth;
+  feedback: FeedbackRepository;
+  gameRecords: GameRecordRepository;
+  audit: AuditLogRepository;
+  now?: () => number;
+}
+
+const toAdminUser = (row: UserRow): AdminUser => ({
+  id: row.id,
+  name: row.name,
+  qqNumber: row.qqNumber,
+  image: row.image ?? null,
+  role: row.role === "admin" ? "admin" : "user",
+  banned: Boolean(row.banned),
+  banReason: row.banned ? row.banReason ?? null : null,
+  banExpires: row.banned && row.banExpires ? new Date(row.banExpires).toISOString() : null,
+  showQq: Boolean(row.showQq),
+  createdAt: new Date(row.createdAt).toISOString(),
+});
+
+const toRef = (row: UserRow): UserRef => ({ id: row.id, name: row.name, qqNumber: row.qqNumber, image: row.image ?? null });
+
+const toGameItem = (record: GameRecordListItem): GameRecordItem => ({
+  id: record.id,
+  game: record.game,
+  roomId: record.roomId,
+  roundNumber: record.roundNumber,
+  startedAt: record.startedAt.toISOString(),
+  endedAt: record.endedAt.toISOString(),
+  players: record.players,
+});
+
+/**
+ * 管理后台业务：用户、反馈、对局记录与审计。
+ *
+ * 每个写操作先写审计再执行：审计写不进去就不做，后台不存在「做了但查不到」的操作。
+ * 用户行与会话经 Better Auth 适配器读写，与账号自助同一套存储口径。
+ */
+export class AdminService {
+  private readonly now: () => number;
+
+  constructor(private readonly options: AdminServiceOptions) {
+    this.now = options.now ?? Date.now;
+  }
+
+  private async context() {
+    return this.options.auth.$context;
+  }
+
+  private async findUser(userId: string): Promise<UserRow | null> {
+    return (await (await this.context()).internalAdapter.findUserById(userId)) as UserRow | null;
+  }
+
+  private async requireUser(userId: string): Promise<UserRow> {
+    const row = await this.findUser(userId);
+    if (!row) throw new AppError("NOT_FOUND", "用户不存在");
+    return row;
+  }
+
+  private async usersById(ids: Array<string | null>): Promise<Map<string, UserRef>> {
+    const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+    if (!unique.length) return new Map();
+    const { adapter } = await this.context();
+    const rows = await adapter.findMany<UserRow>({ model: "user", where: [{ field: "id", operator: "in", value: unique }], limit: unique.length });
+    return new Map(rows.map((row) => [row.id, toRef(row)]));
+  }
+
+  private async audit(actorId: string, action: string, targetType: string, targetId: string, detail?: Record<string, unknown>) {
+    await this.options.audit.append({ actorId, action, targetType, targetId, detail: detail ?? null, createdAt: new Date(this.now()) });
+  }
+
+  /** 按 ID 读库校验：会话 Cookie 缓存里的角色可能已过期，降级与封禁必须立即生效。 */
+  async requireAdmin(userId: string): Promise<void> {
+    const row = await this.findUser(userId);
+    if (!row || row.role !== "admin" || row.banned) throw new AppError("FORBIDDEN", "需要管理员权限");
+  }
+
+  // ==================== 用户 ====================
+
+  async listUsers(input: { query?: string; role?: "user" | "admin"; banned?: boolean; limit: number; offset: number }) {
+    const where: Where[] = [];
+    const query = input.query?.trim();
+    if (query) where.push(/^\d+$/.test(query)
+      ? { field: "qqNumber", operator: "starts_with", value: query }
+      : { field: "name", operator: "contains", value: query });
+    if (input.role) where.push({ field: "role", value: input.role });
+    if (input.banned !== undefined) where.push({ field: "banned", value: input.banned });
+    const { internalAdapter } = await this.context();
+    const [rows, total] = await Promise.all([
+      internalAdapter.listUsers(input.limit, input.offset, { field: "createdAt", direction: "desc" }, where),
+      internalAdapter.countTotalUsers(where),
+    ]);
+    return { items: (rows as unknown as UserRow[]).map(toAdminUser), total };
+  }
+
+  async getUser(userId: string): Promise<AdminUserDetail> {
+    const row = await this.requireUser(userId);
+    const [games, feedback] = await Promise.all([
+      this.options.gameRecords.list({ userId, limit: 20, offset: 0 }),
+      this.options.feedback.list({ userId, limit: 1, offset: 0 }),
+    ]);
+    return { ...toAdminUser(row), recentGames: games.items.map(toGameItem), feedbackCount: feedback.total };
+  }
+
+  /** 不能对自己、也不能对其他管理员做封禁或降级：先在后台改角色，留下审计再处理。 */
+  private async requireTarget(actorId: string, userId: string, selfMessage: string): Promise<UserRow> {
+    if (actorId === userId) throw new AppError("CANNOT_TARGET_SELF", selfMessage);
+    return this.requireUser(userId);
+  }
+
+  async banUser(actorId: string, input: { userId: string; reason: string; expiresInHours?: number }): Promise<AdminUser> {
+    const row = await this.requireTarget(actorId, input.userId, "不能封禁自己");
+    if (row.role === "admin") throw new AppError("CANNOT_TARGET_ADMIN", "不能封禁管理员，请先取消其管理员身份");
+    const banExpires = input.expiresInHours ? new Date(this.now() + input.expiresInHours * 3_600_000) : null;
+    await this.audit(actorId, "user.ban", "user", row.id, {
+      reason: input.reason, expiresAt: banExpires?.toISOString() ?? null, name: row.name,
+    });
+    const { internalAdapter } = await this.context();
+    const updated = await internalAdapter.updateUser(row.id, { banned: true, banReason: input.reason, banExpires });
+    await internalAdapter.deleteUserSessions(row.id);
+    return toAdminUser(updated as unknown as UserRow);
+  }
+
+  async unbanUser(actorId: string, userId: string): Promise<AdminUser> {
+    const row = await this.requireUser(userId);
+    await this.audit(actorId, "user.unban", "user", row.id, { name: row.name });
+    const updated = await (await this.context()).internalAdapter.updateUser(row.id, { banned: false, banReason: null, banExpires: null });
+    return toAdminUser(updated as unknown as UserRow);
+  }
+
+  async setRole(actorId: string, input: { userId: string; role: "user" | "admin" }): Promise<AdminUser> {
+    const row = await this.requireTarget(actorId, input.userId, "不能修改自己的角色");
+    if (row.banned && input.role === "admin") throw new AppError("USER_BANNED", "请先解除封禁");
+    await this.audit(actorId, "user.setRole", "user", row.id, { from: row.role ?? "user", to: input.role, name: row.name });
+    const updated = await (await this.context()).internalAdapter.updateUser(row.id, { role: input.role });
+    return toAdminUser(updated as unknown as UserRow);
+  }
+
+  async revokeSessions(actorId: string, userId: string): Promise<{ ok: true }> {
+    const row = await this.requireUser(userId);
+    await this.audit(actorId, "user.revokeSessions", "user", row.id, { name: row.name });
+    await (await this.context()).internalAdapter.deleteUserSessions(row.id);
+    return { ok: true };
+  }
+
+  async renameUser(actorId: string, input: { userId: string; name: string }): Promise<AdminUser> {
+    const row = await this.requireUser(input.userId);
+    const name = normalizeAccountName(input.name);
+    if (!name) throw new AppError("ACCOUNT_NAME_REQUIRED", "请填写账号昵称");
+    await this.audit(actorId, "user.rename", "user", row.id, { from: row.name, to: name });
+    const updated = await (await this.context()).internalAdapter.updateUser(row.id, { name });
+    return toAdminUser(updated as unknown as UserRow);
+  }
+
+  // ==================== 反馈 ====================
+
+  private toAdminFeedback(record: FeedbackRecord, users: Map<string, UserRef>): AdminFeedback {
+    return {
+      id: record.id,
+      kind: record.kind,
+      title: record.title,
+      status: record.status,
+      createdAt: record.createdAt.toISOString(),
+      lastReplyAt: record.lastReplyAt?.toISOString() ?? null,
+      user: users.get(record.userId) ?? null,
+      page: record.page,
+      sentryEventId: record.sentryEventId,
+    };
+  }
+
+  async listFeedback(input: { status?: FeedbackStatus; kind?: FeedbackKind; userId?: string; limit: number; offset: number }) {
+    const { items, total } = await this.options.feedback.list(input);
+    const users = await this.usersById(items.map((item) => item.userId));
+    return { items: items.map((item) => this.toAdminFeedback(item, users)), total };
+  }
+
+  async getFeedback(id: string): Promise<AdminFeedbackDetail> {
+    const record = await this.options.feedback.get(id);
+    if (!record) throw new AppError("NOT_FOUND", "反馈不存在");
+    const replies = await this.options.feedback.replies(id);
+    const users = await this.usersById([record.userId, ...replies.map((reply) => reply.authorId)]);
+    return {
+      ...this.toAdminFeedback(record, users),
+      content: record.content,
+      userAgent: record.userAgent,
+      replies: replies.map((reply) => ({
+        id: reply.id,
+        content: reply.content,
+        createdAt: reply.createdAt.toISOString(),
+        author: reply.authorId ? users.get(reply.authorId) ?? null : null,
+      })),
+    };
+  }
+
+  async replyFeedback(actorId: string, input: { id: string; content: string }): Promise<AdminFeedbackDetail> {
+    const record = await this.options.feedback.get(input.id);
+    if (!record) throw new AppError("NOT_FOUND", "反馈不存在");
+    const now = new Date(this.now());
+    await this.audit(actorId, "feedback.reply", "feedback", record.id, { length: input.content.length });
+    await this.options.feedback.addReply({ feedbackId: record.id, authorId: actorId, content: input.content, createdAt: now });
+    await this.options.feedback.update(record.id, {
+      lastReplyAt: now,
+      updatedAt: now,
+      ...(record.status === "open" ? { status: "processing" as const } : {}),
+    });
+    return this.getFeedback(record.id);
+  }
+
+  async setFeedbackStatus(actorId: string, input: { id: string; status: FeedbackStatus }): Promise<AdminFeedback> {
+    const record = await this.options.feedback.get(input.id);
+    if (!record) throw new AppError("NOT_FOUND", "反馈不存在");
+    await this.audit(actorId, "feedback.setStatus", "feedback", record.id, { from: record.status, to: input.status });
+    await this.options.feedback.update(record.id, { status: input.status, updatedAt: new Date(this.now()) });
+    const users = await this.usersById([record.userId]);
+    return this.toAdminFeedback({ ...record, status: input.status }, users);
+  }
+
+  // ==================== 对局记录与审计 ====================
+
+  async listGames(input: { game?: RecordedGame; roomId?: string; userId?: string; limit: number; offset: number }) {
+    const { items, total } = await this.options.gameRecords.list(input);
+    return { items: items.map(toGameItem), total };
+  }
+
+  async getGame(id: string): Promise<GameRecordDetail> {
+    const record = await this.options.gameRecords.get(id);
+    if (!record) throw new AppError("NOT_FOUND", "对局记录不存在或已过期");
+    return { ...toGameItem(record), summary: record.summary, timeline: record.timeline };
+  }
+
+  async listAudit(input: { actorId?: string; action?: string; targetType?: string; targetId?: string; limit: number; offset: number }) {
+    const { items, total } = await this.options.audit.list(input);
+    const users = await this.usersById(items.map((item) => item.actorId));
+    return {
+      items: items.map((item): AuditEntry => ({
+        id: item.id,
+        actor: item.actorId ? users.get(item.actorId) ?? null : null,
+        action: item.action,
+        targetType: item.targetType,
+        targetId: item.targetId,
+        detail: item.detail,
+        createdAt: item.createdAt.toISOString(),
+      })),
+      total,
+    };
+  }
+}

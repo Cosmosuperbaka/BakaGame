@@ -1,6 +1,7 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
+import { AdminService } from "../src/application/AdminService";
 import { UserDataService, type FeedbackSink } from "../src/application/UserDataService";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
@@ -8,6 +9,8 @@ import { createAuth } from "../src/infrastructure/auth/Auth";
 import type { Mailer } from "../src/infrastructure/auth/Mailer";
 import { QQAvatarService } from "../src/infrastructure/auth/QQAvatar";
 import { SettingCipher } from "../src/infrastructure/auth/SettingCipher";
+import type { AuditEntry, AuditFilter, AuditLogRepository, StoredAuditEntry } from "../src/infrastructure/db/AuditLogRepository";
+import type { GameRecordRepository } from "../src/infrastructure/db/GameRecordRepository";
 import type {
   FeedbackFilter,
   FeedbackRecord,
@@ -37,6 +40,29 @@ export class MemoryUserSettingRepository implements UserSettingRepository {
 
   async remove(userId: string, key: string): Promise<void> {
     this.rows.delete(`${userId}:${key}`);
+  }
+}
+
+export class MemoryAuditLogRepository implements AuditLogRepository {
+  readonly entries: StoredAuditEntry[] = [];
+  failNext = false;
+
+  async append(entry: AuditEntry): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error("audit down");
+    }
+    this.entries.push({ ...entry, id: this.entries.length + 1 });
+  }
+
+  async list(filter: AuditFilter): Promise<{ items: StoredAuditEntry[]; total: number }> {
+    const matched = this.entries
+      .filter((entry) => (!filter.actorId || entry.actorId === filter.actorId)
+        && (!filter.action || entry.action === filter.action)
+        && (!filter.targetType || entry.targetType === filter.targetType)
+        && (!filter.targetId || entry.targetId === filter.targetId))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id);
+    return { items: matched.slice(filter.offset, filter.offset + filter.limit), total: matched.length };
   }
 }
 
@@ -120,7 +146,11 @@ export const createAvatarFetcher = () => {
   return { fetcher, calls, bump: (qq: string) => versions.set(qq, (versions.get(qq) ?? 1) + 1) };
 };
 
-export const createAccountTestApp = (options: { adminQqNumbers?: string[]; now?: () => number } = {}) => {
+export const createAccountTestApp = (options: {
+  adminQqNumbers?: string[];
+  now?: () => number;
+  gameRecords?: GameRecordRepository;
+} = {}) => {
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
     serverUrl: "http://localhost:4850",
@@ -161,11 +191,19 @@ export const createAccountTestApp = (options: { adminQqNumbers?: string[]; now?:
     logger,
     now: options.now,
   });
+  const audit = new MemoryAuditLogRepository();
+  const admin = new AdminService({
+    auth,
+    feedback,
+    gameRecords: options.gameRecords ?? emptyGameRecords,
+    audit,
+    now: options.now,
+  });
   const { app } = createTestApp({
     env,
     logger,
     whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
-    account: { auth, service, userData, ready: Promise.resolve() },
+    account: { auth, service, userData, admin, ready: Promise.resolve() },
   });
 
   const rpc = async (path: string, input?: unknown, cookie?: string) => {
@@ -191,7 +229,15 @@ export const createAccountTestApp = (options: { adminQqNumbers?: string[]; now?:
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+  return { app, auth, service, userData, admin, audit, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, db, rpc, signIn };
+};
+
+const emptyGameRecords: GameRecordRepository = {
+  insert: async () => {},
+  purge: async () => 0,
+  list: async () => ({ items: [], total: 0 }),
+  get: async () => null,
+  dailyCounts: async () => [],
 };
 
 /** 把 Set-Cookie 折叠成请求用的 Cookie 头。 */
