@@ -95,19 +95,16 @@ describe("用户管理", () => {
     expect((await rpc("admin/users/get", { userId: "missing" }, adminCookie)).status).toBe(404);
   });
 
-  test("改名、强制下线并留下审计", async () => {
+  test("强制下线并留下审计", async () => {
     const { rpc, adminCookie, adminId, bob, bobId, audit } = await setup();
-    expect((await rpc("admin/users/rename", { userId: bobId, name: "  新名字 " }, adminCookie)).body).toMatchObject({ name: "新名字" });
     expect((await rpc("admin/users/revokeSessions", { userId: bobId }, adminCookie)).body).toEqual({ ok: true });
     expect((await rpc("settings/get", undefined, bob.cookie)).status).toBe(401);
 
     expect(audit.entries.map((entry) => [entry.actorId, entry.action, entry.targetId])).toEqual([
-      [adminId, "user.rename", bobId],
       [adminId, "user.revokeSessions", bobId],
     ]);
-    expect(audit.entries[0]!.detail).toEqual({ from: "Bob", to: "新名字" });
 
-    const listed = await rpc("admin/audit/list", { action: "user.rename" }, adminCookie);
+    const listed = await rpc("admin/audit/list", { action: "user.revokeSessions" }, adminCookie);
     expect(listed.body.total).toBe(1);
     expect((listed.body.items as Array<{ actor: { name: string } }>)[0]!.actor.name).toBe("管理员");
   });

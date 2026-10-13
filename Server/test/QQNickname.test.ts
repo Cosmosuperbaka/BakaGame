@@ -77,6 +77,8 @@ describe("后台查询号", () => {
     const { rpc, adminCookie, signIn, loginLookup, audit, siteConfig } = await setup();
     const user = await signIn("10001", "Alice");
     expect((await rpc("admin/qq/status", undefined, user.cookie)).status).toBe(403);
+    // 注册用户会顺带登录查询号，这里先退出再完整走一遍扫码
+    await rpc("admin/qq/logout", undefined, adminCookie);
     expect((await rpc("admin/qq/status", undefined, adminCookie)).body).toMatchObject({ state: "signedOut", uin: null });
 
     const { started, result } = await loginLookup();
@@ -91,6 +93,7 @@ describe("后台查询号", () => {
 
   test("审计失败不保存登录态；登录 ID 用过即失效", async () => {
     const { rpc, adminCookie, audit, siteConfig, qqWeb } = await setup();
+    await rpc("admin/qq/logout", undefined, adminCookie);
     const loginId = String((await rpc("admin/qq/startLogin", undefined, adminCookie)).body.loginId);
     qqWeb.state.login = "0";
     audit.failNext = true;
@@ -111,67 +114,84 @@ describe("后台查询号", () => {
 });
 
 describe("昵称查询与同步", () => {
-  test("未登录查询号时注册不预填", async () => {
-    const { rpc, qqWeb } = await setup();
-    expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({ registered: false, qqName: null });
-    expect(qqWeb.state.portraitCalls).toEqual([]);
+  test("查询号未登录时新号发码被拒（停用注册），老账号登录不受影响", async () => {
+    let clock = Date.now();
+    const { rpc, nicknames, qqWeb } = await setup({ now: () => clock });
+    await nicknames.logout();
+    clock += 61_000; // 越过管理员账号的重发间隔
+
+    const rejected = await rpc("account/requestLoginCode", { qqNumber: "10001" });
+    expect(rejected.status).toBe(503);
+    expect(rejected.body).toMatchObject({ code: "QQ_NICKNAME_UNAVAILABLE" });
+    // 未登录不发起昵称请求（此前的 90001 是注册时查的）
+    expect(qqWeb.state.portraitCalls).toEqual([["90001"]]);
+    // 已注册账号不发查询，照常发码
+    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: null });
   });
 
-  test("新账号发码时预填 QQ 昵称，老账号不查", async () => {
+  test("新账号发码返回将使用的 QQ 昵称，老账号不查", async () => {
     let clock = Date.now();
-    const { rpc, loginLookup, qqWeb } = await setup({ now: () => clock });
-    await loginLookup();
+    const { rpc, qqWeb } = await setup({ now: () => clock });
     clock += 61_000; // 越过管理员账号的重发间隔
     expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({ registered: false, qqName: "阿狸" });
+    clock += 61_000;
     expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: null });
-    expect(qqWeb.state.portraitCalls).toEqual([["10001"]]);
+    expect(qqWeb.state.portraitCalls).toEqual([["90001"], ["10001"]]);
   });
 
-  test("访问时按间隔刷新本人 QQ 昵称，不覆盖账号昵称", async () => {
+  test("账号昵称 = QQ 昵称；QQ 昵称变化后按访问间隔同步", async () => {
     let clock = Date.now();
-    const { rpc, signIn, loginLookup, userOf, qqWeb } = await setup({ now: () => clock });
-    await loginLookup();
-    const { cookie } = await signIn("20002", "Bob");
-    // 发码预填刚查过，首次访问直接用缓存
-    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "Bob" });
+    const { rpc, signIn, userOf, qqWeb } = await setup({ now: () => clock });
+    // "20002" 的 QQ 昵称是 "请先"，注册名直接取它
+    const { cookie } = await signIn("20002");
+    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "请先" });
+    // 发码阶段刚查过：首次访问用缓存落库，不再请求
     await waitFor(() => userOf("20002")?.qqName === "请先");
-    expect(qqWeb.state.portraitCalls).toEqual([["20002"]]);
+    expect(qqWeb.state.portraitCalls).toEqual([["90001"], ["20002"]]);
 
     await rpc("account/me", undefined, cookie);
     await Bun.sleep(20);
-    expect(qqWeb.state.portraitCalls.length).toBe(1);
+    expect(qqWeb.state.portraitCalls.length).toBe(2);
 
     clock += QQ_NAME_REFRESH_INTERVAL_MS + 11 * 60 * 1000;
     qqWeb.state.names.set("20002", "&#26032;&#21517;");
     await rpc("account/me", undefined, cookie);
     await waitFor(() => userOf("20002")?.qqName === "新名");
-    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "Bob" });
+    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "新名" });
+    expect(qqWeb.state.portraitCalls).toEqual([["90001"], ["20002"], ["20002"]]);
   });
 
-  test("接口报登录失效后标记为失效，不再请求", async () => {
-    const { rpc, adminCookie, loginLookup, qqWeb } = await setup();
-    await loginLookup();
+  test("接口报登录失效后停用注册并标记失效，不再请求", async () => {
+    const { rpc, adminCookie, qqWeb } = await setup();
     qqWeb.state.expired = true;
-    expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({ qqName: null });
+    // 新号发码被拒：503，同时把查询号标记为失效
+    const rejected = await rpc("account/requestLoginCode", { qqNumber: "10001" });
+    expect(rejected.status).toBe(503);
+    expect(rejected.body).toMatchObject({ code: "QQ_NICKNAME_UNAVAILABLE", message: "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试" });
     expect((await rpc("admin/qq/status", undefined, adminCookie)).body).toMatchObject({ state: "expired", expiredAt: expect.any(String) });
-    expect((await rpc("account/requestLoginCode", { qqNumber: "20002" })).body).toMatchObject({ qqName: null });
-    expect(qqWeb.state.portraitCalls.length).toBe(1);
+    // 失效后不再请求：第二个新号发码同样被拒但不发查询
+    expect((await rpc("account/requestLoginCode", { qqNumber: "20002" })).status).toBe(503);
+    expect(qqWeb.state.portraitCalls).toEqual([["90001"], ["10001"]]);
     expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).status).toBe(400);
   });
 
-  test("后台批量刷新：分批查询、记审计，后台用户列表带 QQ 昵称", async () => {
-    const { rpc, adminCookie, signIn, loginLookup, audit, qqWeb } = await setup();
+  test("后台批量刷新：分批查询、同步账号昵称并记审计，后台用户列表带 QQ 昵称", async () => {
+    const { rpc, adminCookie, signIn, loginLookup, audit, qqWeb, nicknames } = await setup();
     for (let index = 0; index < 22; index += 1) await signIn(String(30000 + index), `玩家${index}`);
     await signIn("10001", "Alice");
+    // 未登录时报错，重新扫码后继续
+    await nicknames.logout();
     expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).status).toBe(400);
     await loginLookup();
+    // 改掉 Alice 的 QQ 昵称：刷新应同步账号昵称并计入 updated
+    qqWeb.state.names.set("10001", "Alice2");
     const refreshed = await rpc("admin/qq/refreshNames", undefined, adminCookie);
     expect(refreshed.body).toEqual({ checked: 24, updated: 1, remaining: 0 });
     expect(audit.entries.at(-1)).toMatchObject({ action: "qq.refreshNames" });
-    expect(qqWeb.state.portraitCalls.map((batch) => batch.length)).toEqual([20, 4]);
+    expect(qqWeb.state.portraitCalls.slice(-2).map((batch) => batch.length)).toEqual([20, 4]);
 
     const listed = await rpc("admin/users/list", { query: "10001" }, adminCookie);
-    expect(listed.body.items).toMatchObject([{ name: "Alice", qqName: "阿狸" }]);
+    expect(listed.body.items).toMatchObject([{ name: "Alice2", qqName: "Alice2" }]);
     expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).body).toEqual({ checked: 0, updated: 0, remaining: 0 });
   });
 });

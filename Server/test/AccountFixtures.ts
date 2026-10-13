@@ -308,6 +308,8 @@ export const createAccountTestApp = (options: {
   const mailer = new CapturedMailer();
   const avatarFetcher = createAvatarFetcher();
   const db: Record<string, unknown[]> = { user: [], session: [], account: [], verification: [] };
+  // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
+  let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
   const auth = createAuth({
     database: memoryAdapter(db as Record<string, never[]>),
     secret: ACCOUNT_TEST_SECRET,
@@ -316,6 +318,7 @@ export const createAccountTestApp = (options: {
     secureCookies: false,
     adminQqNumbers: options.adminQqNumbers ?? [],
     mailer,
+    resolveNickname: (qqNumber) => resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
   });
   const qqWeb = createQQWebFetcher();
   const siteConfig = new MemorySiteConfigRepository();
@@ -328,6 +331,7 @@ export const createAccountTestApp = (options: {
     now: options.now,
     batchDelayMs: 0,
   });
+  resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
   const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(avatarFetcher.fetcher), nicknames, logger, now: options.now });
   const settings = new MemoryUserSettingRepository();
   const feedback = new MemoryFeedbackRepository();
@@ -380,20 +384,41 @@ export const createAccountTestApp = (options: {
     return { status: response.status, body: body.json as Record<string, unknown> };
   };
 
-  /** 完整走一遍「发码 → 填码登录」，返回会话 Cookie。 */
+  /** 查询号已登录则直接返回；未登录或已失效时静默走一遍扫码流程（不经管理接口，不产生审计）。 */
+  const ensureLookup = async () => {
+    const status = await nicknames.status();
+    if (status.state === "active") return;
+    qqWeb.state.login = "0";
+    const { loginId } = await nicknames.startLogin();
+    await nicknames.pollLogin(loginId, async () => {});
+  };
+
+  /** 假昵称接口的响应按 GBK 解码：直接塞 UTF-8 中文会变成乱码，统一转成 HTML 实体（纯 ASCII）。 */
+  const entityEncode = (name: string) =>
+    [...name].map((char) => (char.codePointAt(0)! < 0x80 ? char : `&#${char.codePointAt(0)};`)).join("");
+
+  /** 让某个 QQ 号可注册：保证查询号在线，并让该号的 QQ 昵称可查到（传入 `name` 时覆盖）。 */
+  const prepareSignup = async (qqNumber: string, name?: string) => {
+    await ensureLookup();
+    if (name !== undefined) qqWeb.state.names.set(qqNumber, entityEncode(name));
+    else if (!qqWeb.state.names.has(qqNumber)) qqWeb.state.names.set(qqNumber, entityEncode(`玩家${qqNumber}`));
+  };
+
+  /** 完整走一遍「发码 → 填码登录」，返回会话 Cookie；`name` 会作为该 QQ 号查到的昵称，成为账号昵称。 */
   const signIn = async (qqNumber: string, name?: string) => {
+    await prepareSignup(qqNumber, name);
     const sent = await rpc("account/requestLoginCode", { qqNumber });
     if (sent.status !== 200) throw new Error(`发码失败: ${JSON.stringify(sent.body)}`);
     const email = `${qqNumber}@qq.com`;
     const response = await app.handle(new Request("http://localhost/api/auth/sign-in/email-otp", {
       method: "POST",
       headers: { "content-type": "application/json", origin: env.clientUrl },
-      body: JSON.stringify({ email, otp: mailer.lastCodeFor(email), ...(name ? { name } : {}) }),
+      body: JSON.stringify({ email, otp: mailer.lastCodeFor(email) }),
     }));
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, qqWeb, siteConfig, nicknames, db, rpc, signIn };
+  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, qqWeb, siteConfig, nicknames, db, rpc, signIn, prepareSignup };
 };
 
 const emptyRooms: AdminRoomControl = {

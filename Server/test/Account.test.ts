@@ -32,10 +32,11 @@ describe("账号系统未启用", () => {
 });
 
 describe("验证码登录", () => {
-  test("首次登录必须带昵称，校验失败不消耗验证码；成功后派生 QQ 号与站内头像", async () => {
-    const { app, rpc, mailer, avatarFetcher } = createAccountTestApp();
+  test("注册昵称强制取自 QQ 昵称（客户端自报被忽略）；成功后派生 QQ 号与站内头像", async () => {
+    const { app, rpc, mailer, avatarFetcher, prepareSignup } = createAccountTestApp();
+    await prepareSignup(QQ, "  笨蛋 玩家  ");
     const sent = await rpc("account/requestLoginCode", { qqNumber: QQ });
-    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60, qqName: null } });
+    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60, qqName: "笨蛋 玩家" } });
     const code = mailer.lastCodeFor(EMAIL);
     expect(code).toMatch(/^\d{6}$/);
 
@@ -44,11 +45,7 @@ describe("验证码登录", () => {
       headers: { "content-type": "application/json", origin: "http://localhost:5173" },
       body: JSON.stringify({ email: EMAIL, otp: code, ...body }),
     }));
-    const missingName = await signIn({ name: "   " });
-    expect(missingName.status).toBe(400);
-    expect(await missingName.json()).toMatchObject({ code: "ACCOUNT_NAME_REQUIRED" });
-
-    const ok = await signIn({ name: "  笨蛋​ 玩家  " });
+    const ok = await signIn({ name: "客户端自报的昵称" });
     expect(ok.status).toBe(200);
     const cookie = ok.headers.getSetCookie().map((item) => item.split(";")[0]).join("; ");
     expect(cookie).toContain("bakagame.session_token=");
@@ -92,7 +89,8 @@ describe("验证码登录", () => {
   });
 
   test("邮件投递失败明确返回 503 MAIL_UNAVAILABLE", async () => {
-    const { rpc, mailer } = createAccountTestApp();
+    const { rpc, mailer, prepareSignup } = createAccountTestApp();
+    await prepareSignup(QQ, "玩家");
     mailer.failNext = true;
     const response = await rpc("account/requestLoginCode", { qqNumber: QQ });
     expect(response.status).toBe(503);
@@ -113,7 +111,7 @@ describe("验证码登录", () => {
 });
 
 describe("资料与头像", () => {
-  test("QQ 号默认隐藏，本人公开后资料卡才显示；未登录不能改资料", async () => {
+  test("QQ 号默认隐藏，本人公开后资料卡才显示；昵称不可改，未登录不能改资料", async () => {
     const { rpc, signIn } = createAccountTestApp();
     const { cookie } = await signIn(QQ, "玩家");
     const me = await rpc("account/me", undefined, cookie);
@@ -121,9 +119,10 @@ describe("资料与头像", () => {
     expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ name: "玩家", qqNumber: null });
 
     expect((await rpc("account/updateProfile", { showQq: true })).status).toBe(401);
+    // 账号昵称不可修改：请求里带 name 也会被契约丢弃，改不动。
     const updated = await rpc("account/updateProfile", { showQq: true, name: "新昵称" }, cookie);
-    expect(updated.body).toMatchObject({ showQq: true, name: "新昵称" });
-    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ name: "新昵称", qqNumber: QQ });
+    expect(updated.body).toMatchObject({ showQq: true, name: "玩家" });
+    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ name: "玩家", qqNumber: QQ });
     expect((await rpc("account/publicProfile", { userId: "missing" })).status).toBe(404);
   });
 

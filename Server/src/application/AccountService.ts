@@ -10,7 +10,6 @@ import type { QQNicknameService } from "./QQNicknameService";
 import {
   accountAvatarUrlOf,
   LOGIN_CODE_RESEND_SECONDS,
-  normalizeAccountName,
   qqEmailOf,
 } from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
@@ -38,13 +37,13 @@ export interface AccountServiceOptions {
   mailer: Mailer;
   avatars: QQAvatarService;
   logger: EventLogger;
-  /** QQ 昵称查询号：新号预填账号昵称、访问时刷新 QQ 昵称；缺省或未登录时一律退回手填。 */
+  /** QQ 昵称查询号：新号发码前必须取到昵称，取不到即拒绝（停用注册）。 */
   nicknames?: QQNicknameService | null;
   now?: () => number;
 }
 
-/** 注册预填等昵称的上限：查询号慢或挂了，验证码照常返回，用户手填即可。 */
-const NICKNAME_PREFILL_TIMEOUT_MS = 3_000;
+/** 发码前取 QQ 昵称的限时：查询号慢或挂了直接拒绝注册，不让请求挂死。 */
+const NICKNAME_LOOKUP_TIMEOUT_MS = 3_000;
 
 /** 同一账号头像回源的最小间隔：用户每次访问会触发一次，短时间内反复刷新页面不重复抓。 */
 const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -104,8 +103,8 @@ export class AccountService {
     if (existing?.banned && (!existing.banExpires || new Date(existing.banExpires).getTime() > now)) {
       throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
     }
-    // 新号的 QQ 昵称与发信并行查，用作账号昵称的预填；查不到不影响发码。
-    const prefill = existing ? Promise.resolve(null) : this.prefillName(qqNumber);
+    // 账号昵称强制使用 QQ 昵称：新号发码前必须取到昵称，取不到即拒绝（停用注册）；老号登录不查。
+    const qqName = existing ? null : await this.requireNickname(qqNumber);
     const code = await this.options.auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
     try {
       await this.options.mailer.sendLoginCode({ to: email, code });
@@ -114,14 +113,16 @@ export class AccountService {
       this.options.logger.error("登录验证码投递失败", { error: String(error) });
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
-    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName: await prefill };
+    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName };
   }
 
-  private async prefillName(qqNumber: string): Promise<string | null> {
+  /** 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。 */
+  private async requireNickname(qqNumber: string): Promise<string> {
     const nicknames = this.options.nicknames;
-    if (!nicknames) return null;
-    const timeout = new Promise<null>((resolve) => setTimeout(resolve, NICKNAME_PREFILL_TIMEOUT_MS, null));
-    return Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout]);
+    const timeout = new Promise<null>((resolve) => setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null));
+    const name = nicknames ? await Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout]) : null;
+    if (!name) throw new AppError("QQ_NICKNAME_UNAVAILABLE", "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试");
+    return name;
   }
 
   /**
@@ -147,7 +148,7 @@ export class AccountService {
   async me(userId: string): Promise<AccountProfile | null> {
     const row = await this.findUser(userId);
     if (!row) return null;
-    // QQ 昵称只给后台与预填用，后台刷新即可，不拖慢本次请求。
+    // QQ 昵称刷新在后台跑，不拖慢本次请求；刷新到新昵称时会同步账号昵称。
     void this.options.nicknames?.refreshUser(row).catch((error: unknown) =>
       this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) }));
     return toProfile(await this.refreshAvatar(row));
@@ -158,13 +159,9 @@ export class AccountService {
     return (await this.findUser(userId))?.name ?? null;
   }
 
-  async updateProfile(userId: string, input: { name?: string; showQq?: boolean }): Promise<AccountProfile> {
+  /** 账号昵称强制取自 QQ 昵称（见 Agents/Account.md §4），不可修改；这里只接受 QQ 号公开开关。 */
+  async updateProfile(userId: string, input: { showQq?: boolean }): Promise<AccountProfile> {
     const patch: Record<string, unknown> = {};
-    if (input.name !== undefined) {
-      const name = normalizeAccountName(input.name);
-      if (!name) throw new AppError("ACCOUNT_NAME_REQUIRED", "请填写账号昵称");
-      patch.name = name;
-    }
     if (input.showQq !== undefined) patch.showQq = input.showQq;
     const adapter = await this.adapter();
     const row = Object.keys(patch).length

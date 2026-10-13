@@ -13,7 +13,6 @@ import type { Auth } from "../infrastructure/auth/Auth";
 import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import type { GameRecordListItem, GameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/UserDataRepository";
-import { normalizeAccountName } from "../shared/Account";
 import type {
   AdminFeedback,
   AdminOverview,
@@ -205,15 +204,6 @@ export class AdminService {
     await this.audit(actorId, "user.revokeSessions", "user", row.id, { name: row.name });
     await (await this.context()).internalAdapter.deleteUserSessions(row.id);
     return { ok: true };
-  }
-
-  async renameUser(actorId: string, input: { userId: string; name: string }): Promise<AdminUser> {
-    const row = await this.requireUser(input.userId);
-    const name = normalizeAccountName(input.name);
-    if (!name) throw new AppError("ACCOUNT_NAME_REQUIRED", "请填写账号昵称");
-    await this.audit(actorId, "user.rename", "user", row.id, { from: row.name, to: name });
-    const updated = await (await this.context()).internalAdapter.updateUser(row.id, { name });
-    return toAdminUser(updated as unknown as UserRow);
   }
 
   // ==================== 反馈 ====================

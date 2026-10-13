@@ -2,7 +2,6 @@ import { oc } from "@orpc/contract";
 import { z } from "zod";
 
 import {
-  ACCOUNT_NAME_MAX_LENGTH,
   FEEDBACK_CONTENT_MAX_LENGTH,
   FEEDBACK_REPLY_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
@@ -19,7 +18,6 @@ import {
  */
 
 const qqNumber = z.string().regex(QQ_NUMBER_PATTERN, "QQ 号格式不正确");
-const accountName = z.string().trim().min(1, "请填写账号昵称").max(ACCOUNT_NAME_MAX_LENGTH);
 
 export const accountProfileSchema = z.object({
   id: z.string(),
@@ -282,8 +280,6 @@ const adminContract = {
     unban: oc.input(z.object({ userId })).output(adminUserSchema),
     setRole: oc.input(z.object({ userId, role: z.enum(["user", "admin"]) })).output(adminUserSchema),
     revokeSessions: oc.input(z.object({ userId })).output(z.object({ ok: z.literal(true) })),
-    /** 处理违规昵称。 */
-    rename: oc.input(z.object({ userId, name: accountName })).output(adminUserSchema),
   },
   feedback: {
     list: oc
@@ -348,14 +344,18 @@ export const apiContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   account: {
-    /** 发送登录验证码；`registered` 决定前端是否要求填写昵称，新号附带查到的 QQ 昵称供预填（查不到为空）。 */
+    /**
+     * 发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；
+     * `qqName` 是新号注册后将使用的账号昵称，老号为 null。
+     */
     requestLoginCode: oc
       .input(z.object({ qqNumber }))
       .output(z.object({ registered: z.boolean(), resendAfterSeconds: z.number().int(), qqName: z.string().nullable() })),
     /** 当前登录资料；未登录返回 `null`。顺带按节流刷新 QQ 头像（每次访问调用一次即可）。 */
     me: oc.output(accountProfileSchema.nullable()),
+    /** 账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。 */
     updateProfile: oc
-      .input(z.object({ name: accountName.optional(), showQq: z.boolean().optional() }))
+      .input(z.object({ showQq: z.boolean().optional() }))
       .output(accountProfileSchema),
     publicProfile: oc
       .input(z.object({ userId: z.string().min(1).max(64) }))

@@ -117,6 +117,8 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
 const createAccount = (env: AppEnv, database: Database | undefined, logger: EventLogger, rooms: Record<RecordedGame, AdminRoomControl>) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
+  // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定。
+  let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
   const auth = createAuth({
     database: drizzleAdapter(database.db, { provider: "mysql", schema: { user: schema.user, session: schema.session, account: schema.account, verification: schema.verification } }),
     secret: env.account.secret,
@@ -125,6 +127,7 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     secureCookies: env.otelDeploymentEnvironment === "production",
     adminQqNumbers: env.account.adminQqNumbers,
     mailer,
+    resolveNickname: (qqNumber) => resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
   });
   const nicknames = new QQNicknameService({
     auth,
@@ -133,6 +136,7 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     cipher: new SettingCipher(env.account.secret),
     logger,
   });
+  resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
   const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), nicknames, logger });
   const adminQqNumbers = env.account.adminQqNumbers;
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。

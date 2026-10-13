@@ -43,6 +43,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   AVATAR_UNAVAILABLE: 503,
   QQ_LOGIN_UNAVAILABLE: 503,
   QQ_LOOKUP_DISABLED: 503,
+  QQ_NICKNAME_UNAVAILABLE: 503,
   ACCOUNT_DISABLED: 503,
 };
 
@@ -108,7 +109,6 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
         unban: adminOnly.admin.users.unban.handler(({ context, input }) => admin.unbanUser(context.userId, input.userId)),
         setRole: adminOnly.admin.users.setRole.handler(({ context, input }) => admin.setRole(context.userId, input)),
         revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) => admin.revokeSessions(context.userId, input.userId)),
-        rename: adminOnly.admin.users.rename.handler(({ context, input }) => admin.renameUser(context.userId, input)),
       },
       rooms: {
         list: adminOnly.admin.rooms.list.handler(({ input }) => admin.listRooms(input.game)),

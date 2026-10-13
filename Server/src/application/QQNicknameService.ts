@@ -31,6 +31,7 @@ interface LookupSession {
 
 interface UserRow {
   id: string;
+  name?: string | null;
   qqNumber?: string | null;
   qqName?: string | null;
   qqNameCheckedAt?: Date | null;
@@ -50,8 +51,8 @@ export interface QQNicknameServiceOptions {
 /**
  * 用后台扫码登录的一个 QQ 号查注册用户的 QQ 昵称（见 Agents/Account.md §4）。
  *
- * 昵称只用于注册时预填账号昵称与后台展示，不覆盖用户自己的账号昵称。
- * 查询号未登录、登录失效或接口失败时一律返回空，调用方退回手填：昵称是锦上添花，不能挡住登录。
+ * 账号昵称强制使用 QQ 昵称：注册时经 `resolveNickname` 取昵称，之后刷新到新昵称即同步账号昵称。
+ * 查询号未登录、登录失效或接口失败时一律返回空，调用方据此停用注册或保留旧昵称。
  */
 export class QQNicknameService {
   private readonly now: () => number;
@@ -170,11 +171,19 @@ export class QQNicknameService {
     return (await this.lookup([qqNumber]))?.get(qqNumber) ?? null;
   }
 
+  /**
+   * 建号钩子解析账号昵称：发码阶段已查过并进缓存，优先命中；缓存不在（如进程重启）时补一次实时查询。
+   * 返回 `null` 表示这次拿不到昵称，调用方拒绝注册。
+   */
+  async resolveNickname(qqNumber: string): Promise<string | null> {
+    return this.recent.get(qqNumber) ?? this.nicknameOf(qqNumber);
+  }
+
   private async adapter() {
     return (await this.options.auth.$context).internalAdapter;
   }
 
-  /** 每次访问时按间隔刷新本人的 QQ 昵称；查不到时只记检查时刻，保留旧值。 */
+  /** 每次访问时按间隔刷新本人的 QQ 昵称，查到时同步账号昵称；查不到时只记检查时刻，保留旧值。 */
   async refreshUser(row: UserRow): Promise<void> {
     if (!row.qqNumber) return;
     const checkedAt = row.qqNameCheckedAt ? new Date(row.qqNameCheckedAt).getTime() : 0;
@@ -183,7 +192,7 @@ export class QQNicknameService {
     const names = cached ? new Map([[row.qqNumber, cached]]) : await this.lookup([row.qqNumber]);
     if (!names) return;
     const name = names.get(row.qqNumber);
-    await (await this.adapter()).updateUser(row.id, name ? { qqName: name, qqNameCheckedAt: new Date(this.now()) } : { qqNameCheckedAt: new Date(this.now()) });
+    await (await this.adapter()).updateUser(row.id, name ? { qqName: name, name, qqNameCheckedAt: new Date(this.now()) } : { qqNameCheckedAt: new Date(this.now()) });
   }
 
   /**
@@ -214,9 +223,9 @@ export class QQNicknameService {
         const checkedAt = new Date(this.now());
         for (const row of chunk) {
           const name = names.get(row.qqNumber!);
-          await internal.updateUser(row.id, name ? { qqName: name, qqNameCheckedAt: checkedAt } : { qqNameCheckedAt: checkedAt });
+          await internal.updateUser(row.id, name ? { qqName: name, name, qqNameCheckedAt: checkedAt } : { qqNameCheckedAt: checkedAt });
           checked += 1;
-          if (name && name !== row.qqName) updated += 1;
+          if (name && name !== row.name) updated += 1;
         }
       }
       return { checked, updated, remaining: candidates.length - checked };

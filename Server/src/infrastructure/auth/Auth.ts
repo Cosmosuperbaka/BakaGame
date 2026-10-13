@@ -7,7 +7,6 @@ import {
   AUTH_BASE_PATH,
   LOGIN_CODE_LENGTH,
   LOGIN_CODE_TTL_SECONDS,
-  normalizeAccountName,
   qqNumberOfEmail,
 } from "../../shared/Account";
 import type { Mailer } from "./Mailer";
@@ -24,6 +23,11 @@ export interface AuthOptions {
   secureCookies: boolean;
   adminQqNumbers: readonly string[];
   mailer: Mailer;
+  /**
+   * 建号时解析账号昵称（即该 QQ 号的 QQ 昵称）；返回 `null` 时拒绝建号。
+   * 昵称查询接口不可用时停用注册（见 Agents/Account.md §4）。
+   */
+  resolveNickname: (qqNumber: string) => Promise<string | null>;
 }
 
 /**
@@ -32,7 +36,8 @@ export interface AuthOptions {
  * - 身份锚点是 QQ 号：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由建号钩子从邮箱派生，客户端无法自报。
  * - 只开放验证码登录：发码走 oRPC（`AccountService.requestLoginCode`，可见投递失败），
  *   Better Auth 自带的发码端点把投递异常吞进后台日志，不对外暴露（见 `AUTH_HTTP_PATHS`）。
- * - 头像与昵称以外的资料、管理操作都走服务端 API，HTTP 侧不开放 `update-user` 与 admin 端点。
+ * - 账号昵称强制使用 QQ 昵称（建号钩子经 `resolveNickname` 解析，客户端无法自报，查询不可用时拒绝建号）；
+ *   头像由服务端从 qlogo 同步；其余资料与管理操作都走服务端 API，HTTP 侧不开放 `update-user` 与 admin 端点。
  */
 export const createAuth = (options: AuthOptions) => {
   const admins = new Set(options.adminQqNumbers);
@@ -74,8 +79,11 @@ export const createAuth = (options: AuthOptions) => {
           before: async (user) => {
             const qqNumber = qqNumberOfEmail(user.email);
             if (!qqNumber) throw APIError.from("BAD_REQUEST", { code: "INVALID_QQ_EMAIL", message: "只支持 QQ 邮箱登录" });
-            const name = normalizeAccountName(user.name);
-            if (!name) throw APIError.from("BAD_REQUEST", { code: "ACCOUNT_NAME_REQUIRED", message: "请填写账号昵称" });
+            // 账号昵称强制取自 QQ 昵称，客户端自报的 name 一律忽略；查询不到时拒绝建号。
+            const name = await options.resolveNickname(qqNumber);
+            if (!name) {
+              throw APIError.from("SERVICE_UNAVAILABLE", { code: "QQ_NICKNAME_UNAVAILABLE", message: "暂时无法获取你的 QQ 昵称，请重新获取验证码后再试" });
+            }
             // 头像只由服务端从 qlogo 抓取后写入站内代理地址，不接受客户端提供的 URL。
             return { data: { ...user, name, image: null, qqNumber, showQq: false, role: admins.has(qqNumber) ? "admin" : "user" } };
           },
@@ -85,16 +93,11 @@ export const createAuth = (options: AuthOptions) => {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/sign-in/email-otp") return;
-        const body = (ctx.body ?? {}) as { email?: unknown; name?: unknown; image?: unknown };
+        const body = (ctx.body ?? {}) as { email?: unknown; image?: unknown };
         if (typeof body.email !== "string" || !qqNumberOfEmail(body.email)) {
           throw APIError.from("BAD_REQUEST", { code: "INVALID_QQ_EMAIL", message: "只支持 QQ 邮箱登录" });
         }
         if (body.image !== undefined) throw APIError.from("BAD_REQUEST", { code: "FIELD_NOT_ALLOWED", message: "头像由 QQ 自动同步" });
-        // 新号必须先带昵称：在消耗验证码之前拦下，避免用户白白作废一枚验证码。
-        const existing = await ctx.context.internalAdapter.findUserByEmail(body.email.trim().toLowerCase());
-        if (!existing && !normalizeAccountName(typeof body.name === "string" ? body.name : "")) {
-          throw APIError.from("BAD_REQUEST", { code: "ACCOUNT_NAME_REQUIRED", message: "请填写账号昵称" });
-        }
       }),
     },
     plugins: [
