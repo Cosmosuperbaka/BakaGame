@@ -133,3 +133,52 @@ describe("BangumiWorkerProvider", () => {
     });
   });
 });
+
+describe("BangumiWorkerProvider 其余门面方法", () => {
+  /** 假客户端：记录每个请求体并按方法返回预设值，门面本身不应有任何自有逻辑。 */
+  const createFacade = (respond: (payload: Record<string, unknown>) => unknown) => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = {
+      request: async (payload: Record<string, unknown>) => {
+        calls.push(payload);
+        return respond(payload);
+      },
+    };
+    return { calls, facade: new BangumiWorkerProvider(client as unknown as BangumiDataWorkerClient, Promise.resolve(true)) };
+  };
+
+  test("getSubject 与两个图片接口原样转发方法与参数，并透传返回值", async () => {
+    const { calls, facade } = createFacade((payload) => {
+      switch (payload.method) {
+        case "song.getSubject":
+          return { id: "1", name: "Hit", musicTracks: [] };
+        case "song.resolveCharacterImage":
+          return "https://img.example/r/400/x.jpg";
+        default:
+          return undefined;
+      }
+    });
+
+    expect((await facade.getSubject("1")).name).toBe("Hit");
+    expect(calls[0]).toEqual({ method: "song.getSubject", subjectId: "1" });
+
+    expect(await facade.resolveCharacterImage(123)).toBe("https://img.example/r/400/x.jpg");
+    expect(calls[1]).toEqual({ method: "song.resolveCharacterImage", characterId: 123 });
+
+    expect(await facade.resolveSubjectImage("5")).toBeUndefined();
+    expect(calls[2]).toEqual({ method: "song.resolveSubjectImage", subjectId: "5" });
+  });
+
+  test("chooseRandomSubject：搜索 + 详情两跳取一条，空候选报错", async () => {
+    const { facade } = createFacade((payload) => {
+      if (payload.method === "song.searchSubjects") return [{ id: "1" }, { id: "2" }];
+      return { id: payload.subjectId, name: `S-${payload.subjectId}`, musicTracks: [] };
+    });
+
+    expect((await facade.chooseRandomSubject({}, () => 0)).id).toBe("1");
+    expect((await facade.chooseRandomSubject({ subjectLimit: 99 }, () => 0.99)).id).toBe("2");
+
+    const empty = createFacade(() => []).facade;
+    await expect(empty.chooseRandomSubject()).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
+  });
+});

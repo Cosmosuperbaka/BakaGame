@@ -235,3 +235,77 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     await removeFiles(songPath, enrichmentPath);
   });
 });
+
+describe("LocalBangumiProvider · 图片接口与候选选取", () => {
+  test("resolveSubjectImage：合法 id 回源重写，非法输入不回源", async () => {
+    const { dbPath: songPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    const requested: string[] = [];
+    const fetcher = async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/8_x.jpg" } }), { status: 200 });
+    };
+    const provider = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });
+    expect(await provider.resolveSubjectImage("8")).toBe("https://mirror.example/r/200/pic/cover/l/aa/bb/8_x.jpg");
+    expect(requested).toEqual(["https://api.example/v0/subjects/8"]);
+    // 非法 id 不得回源
+    expect(await provider.resolveSubjectImage("abc")).toBeUndefined();
+    expect(await provider.resolveSubjectImage("0")).toBeUndefined();
+    expect(await provider.resolveSubjectImage("-2")).toBeUndefined();
+    expect(requested.length).toBe(1);
+    provider.close();
+    await removeFiles(songPath, enrichmentPath);
+  });
+
+  test("已回填的封面直接带进搜索结果，列表查询绝不回源", async () => {
+    const songPath = join(tmpdir(), `bangumi-persist-${crypto.randomUUID()}.sqlite`);
+    const characterPath = join(tmpdir(), `bangumi-persist-char-${crypto.randomUUID()}.sqlite`);
+    const songDb = new Database(songPath);
+    songDb.run("CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)");
+    songDb.run("CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)");
+    songDb.run("CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram')");
+    songDb.run("INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',8.5,10,100,'')");
+    songDb.run("INSERT INTO subject_search(rowid,name,name_cn) VALUES (1,'Test','测试中心')");
+    songDb.close();
+    new Database(characterPath).close();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    let fetcherCalls = 0;
+    const provider = new LocalBangumiProvider({
+      dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example",
+      fetcher: async () => { fetcherCalls++; throw new Error("列表查询不得回源"); },
+    });
+    // 先写入一张已回填的封面缓存，再走搜索：结果应直接带上，且不触发任何回源。
+    const cache = new Database(enrichmentPath);
+    cache.query("INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?)").run("subject", 1, JSON.stringify({ image: "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg" }), Date.now());
+    cache.close();
+    const rows = await provider.searchSubjects("测试中", 5);
+    expect(rows[0].imageUrl).toBe("https://mirror.example/r/200/pic/cover/l/aa/bb/1_x.jpg");
+    expect(fetcherCalls).toBe(0);
+    provider.close();
+    await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("chooseRandomSubject：空数据集报错，单条候选直达详情", async () => {
+    const songPath = join(tmpdir(), `bangumi-pick-${crypto.randomUUID()}.sqlite`);
+    const characterPath = join(tmpdir(), `bangumi-pick-char-${crypto.randomUUID()}.sqlite`);
+    const songDb = new Database(songPath);
+    songDb.run("CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)");
+    songDb.run("CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)");
+    songDb.close();
+    new Database(characterPath).close();
+
+    const empty = new LocalBangumiProvider({ dbPath: songPath });
+    await expect(empty.chooseRandomSubject()).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
+    empty.close();
+
+    const writer = new Database(songPath);
+    writer.run("INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',8.5,10,100,'')");
+    writer.close();
+    const provider = new LocalBangumiProvider({ dbPath: songPath });
+    const picked = await provider.chooseRandomSubject({}, () => 0.99);
+    expect(picked.id).toBe("1");
+    expect(picked.nameCn).toBe("测试中心");
+    provider.close();
+    await removeFiles(songPath, characterPath);
+  });
+});
