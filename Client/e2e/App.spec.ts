@@ -21,19 +21,28 @@ async function expectActionAreaScrollable(page: Page) {
 function installPageQualityGuards(page: Page) {
   const failures: string[] = [];
   let sentryRateLimitObserved = false;
+  // 隔离夹具后端不带数据库：账号（登录、oRPC）与站点统计路由按设计回 503
+  // ACCOUNT_DISABLED，前端据此隐藏登录入口、游客流程照常。这是夹具环境的
+  // 预期降级而非页面缺陷，503 与其自带的控制台回显一并豁免；其余 4xx/5xx 不豁免。
+  let accountLayerDisabledObserved = false;
   page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
-      !(message.text().includes("429 (Too Many Requests)") && sentryRateLimitObserved)
+      !(message.text().includes("429 (Too Many Requests)") && sentryRateLimitObserved) &&
+      !(message.text().includes("503 (Service Unavailable)") && accountLayerDisabledObserved)
     ) {
       failures.push(`console: ${message.text()}`);
     }
   });
   page.on("response", (response) => {
-    const isSentryTunnel = new URL(response.url()).pathname === "/api/monitoring/sentry";
-    if (isSentryTunnel && (response.status() === 429 || response.status() === 502 || response.status() === 504)) {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname === "/api/monitoring/sentry" && (response.status() === 429 || response.status() === 502 || response.status() === 504)) {
       if (response.status() === 429) sentryRateLimitObserved = true;
+      return;
+    }
+    if (response.status() === 503 && pathname.startsWith("/api/rpc/")) {
+      accountLayerDisabledObserved = true;
       return;
     }
     if (response.status() >= 400) {

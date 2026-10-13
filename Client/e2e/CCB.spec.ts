@@ -27,14 +27,28 @@ async function useLocalCharacterImages(page: Page) {
 function watchQuality(page: Page) {
   const failures: string[] = [];
   let telemetryRateLimited = false;
+  // 隔离夹具后端不带数据库：账号与站点统计 oRPC 按设计回 503 ACCOUNT_DISABLED，
+  // 属预期降级而非页面缺陷，503 与其控制台回显一并豁免（与 App.spec 同口径）。
+  let accountLayerDisabledObserved = false;
   page.on("pageerror", (error) => failures.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error" && !(telemetryRateLimited && message.text().includes("429 (Too Many Requests)"))) failures.push(message.text());
+    if (
+      message.type() === "error" &&
+      !(telemetryRateLimited && message.text().includes("429 (Too Many Requests)")) &&
+      !(accountLayerDisabledObserved && message.text().includes("503 (Service Unavailable)"))
+    ) {
+      failures.push(message.text());
+    }
   });
   page.on("response", (response) => {
+    const pathname = new URL(response.url()).pathname;
     // 同一服务连续跑浏览器用例会触发遥测独立限流，它不影响对局命令。
-    if (new URL(response.url()).pathname === "/api/monitoring/sentry" && response.status() === 429) {
+    if (pathname === "/api/monitoring/sentry" && response.status() === 429) {
       telemetryRateLimited = true;
+      return;
+    }
+    if (response.status() === 503 && pathname.startsWith("/api/rpc/")) {
+      accountLayerDisabledObserved = true;
       return;
     }
     if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`);
