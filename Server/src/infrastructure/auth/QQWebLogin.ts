@@ -19,6 +19,10 @@ const SUCCESS_URL = "https://qzs.qq.com/qzone/v5/loginsucc.html?para=izone";
 const TIMEOUT_MS = 8_000;
 /** 一次查询的 QQ 号上限：接口按逗号分隔接收，过长的请求会被拒。 */
 export const NICKNAME_BATCH_SIZE = 20;
+/** 伪装桌面 Chrome：QQ 风控按 UA/来源特征吊销「非浏览器」登录态（2026-10-13 两次会话分别 ~4h/89min 失效，QQ 侧记录的登录 UA 是 Bun）。 */
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+/** 扫码登录页地址：ptqrshow/ptqrlogin/check_sig 在真实浏览器里的 Referer。 */
+const LOGIN_REFERER = `https://xui.ptlogin2.qq.com/cgi-bin/xlogin?appid=${APP_ID}&daid=${DAID}&style=33&s_url=${encodeURIComponent(SUCCESS_URL)}`;
 
 export type QQLoginPoll =
   | { state: "waiting" }
@@ -93,7 +97,10 @@ export class QQWebLoginClient {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
   private request(url: string, init: RequestInit = {}) {
-    return this.fetcher(url, { redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS), ...init }).catch((error: unknown) => {
+    // 默认伪装浏览器 UA；各调用再以自己的 Referer/Cookie 覆盖（真实浏览器的同源语义）。
+    const headers = new Headers(init.headers);
+    if (!headers.has("user-agent")) headers.set("user-agent", BROWSER_UA);
+    return this.fetcher(url, { ...init, headers, redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) }).catch((error: unknown) => {
       throw new AppError("QQ_LOGIN_UNAVAILABLE", "QQ 登录服务暂时无法访问", { cause: String(error) });
     });
   }
@@ -101,7 +108,7 @@ export class QQWebLoginClient {
   /** 申请二维码：返回 PNG（data URL）与之后轮询要带的 `qrsig`。 */
   async createQrCode(): Promise<{ image: string; qrsig: string }> {
     const url = `https://ssl.ptlogin2.qq.com/ptqrshow?appid=${APP_ID}&e=2&l=M&s=3&d=72&v=4&t=${Math.random()}&daid=${DAID}&pt_3rd_aid=0`;
-    const response = await this.request(url);
+    const response = await this.request(url, { headers: { referer: LOGIN_REFERER } });
     const qrsig = collectCookies(response, {}).qrsig;
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (!response.ok || !qrsig || bytes.byteLength === 0) {
@@ -116,7 +123,7 @@ export class QQWebLoginClient {
       ptlang: "2052", action: `0-0-${Date.now()}`, js_ver: "24112817", js_type: "1", login_sig: "", pt_uistyle: "40",
       aid: APP_ID, daid: DAID, has_onekey: "1",
     });
-    const response = await this.request(`https://ssl.ptlogin2.qq.com/ptqrlogin?${params}`, { headers: { cookie: `qrsig=${qrsig}` } });
+    const response = await this.request(`https://ssl.ptlogin2.qq.com/ptqrlogin?${params}`, { headers: { cookie: `qrsig=${qrsig}`, referer: LOGIN_REFERER } });
     const cookies = collectCookies(response, {});
     const args = parsePtuiCallback(await response.text());
     if (!args) return { state: "failed", message: "QQ 登录返回格式异常" };
@@ -131,7 +138,7 @@ export class QQWebLoginClient {
     for (let hop = 0; hop < 3 && next; hop += 1) {
       const target = new URL(next);
       if (!/(^|\.)qq\.com$/.test(target.hostname)) break;
-      const step = await this.request(target.toString(), { headers: { cookie: cookieHeader(cookies) } });
+      const step = await this.request(target.toString(), { headers: { cookie: cookieHeader(cookies), referer: LOGIN_REFERER } });
       collectCookies(step, cookies);
       const location = step.status >= 300 && step.status < 400 ? step.headers.get("location") : null;
       next = location && !location.startsWith(SUCCESS_URL.split("?")[0]!) ? new URL(location, target).toString() : "";
