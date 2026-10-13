@@ -73,10 +73,10 @@ jobs:
       - name: Run server tests with coverage
         run: pnpm --filter server test:coverage
 
-      # 冒烟脚本直接用 Bun 起进程（脚本内 spawn 的是 bun），保持原样。
+      # 冒烟走工作区固定版 bun（devDependency 钉的 1.4.2，与测试链、生产容器同一枚）：
+      # pnpm 化后作业里不再有 Setup Bun，裸 `bun` 不在 PATH 上会以 127 直接退出。
       - name: Smoke test production server
-        working-directory: Server
-        run: bun --no-env-file run scripts/ProductionSmoke.ts
+        run: pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts
 
       - name: Upload server coverage
         uses: actions/upload-artifact@v4

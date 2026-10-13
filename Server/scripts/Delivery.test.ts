@@ -176,7 +176,8 @@ test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", 
       expect(ci).toContain("fetch_one dataset bangumi.sqlite");
       expect(ci).toContain("sha256sum --check --strict");
       expect(ci).toContain("manifest 缺少 $id 条目");
-      expect(ci).toContain("bun --no-env-file run scripts/ProductionSmoke.ts");
+      // 冒烟必须经工作区固定版 bun 调用：裸 `bun` 在 pnpm 化后的 PATH 上解析不到。
+      expect(ci).toContain("pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts");
     }
     if (name === "deploy") {
       expect(parsed.on).toHaveProperty("workflow_dispatch.inputs.ci_run_id.required", true);
