@@ -141,9 +141,12 @@ describe("readEnv 环境变量与启动断言", () => {
 
   it("DATABASE_URL 修剪后为空视为未配置，非空原样保留", () => {
     const original = Bun.env.DATABASE_URL;
+    const originalSecret = Bun.env.BETTER_AUTH_SECRET;
     try {
       Bun.env.DATABASE_URL = "   ";
       expect(readEnv().databaseUrl).toBeUndefined();
+      // 非空分支会走进账号配置校验：测试自带密钥，不依赖本地 .env（CI 干净环境没有该文件）。
+      Bun.env.BETTER_AUTH_SECRET = "fixture-secret-fixture-secret-12345678";
       Bun.env.DATABASE_URL = " mysql://fixture:fixture@db.invalid:4000/bakagame ";
       expect(readEnv().databaseUrl).toBe("mysql://fixture:fixture@db.invalid:4000/bakagame");
     } finally {
@@ -151,6 +154,11 @@ describe("readEnv 环境变量与启动断言", () => {
         Bun.env.DATABASE_URL = original;
       } else {
         delete Bun.env.DATABASE_URL;
+      }
+      if (originalSecret !== undefined) {
+        Bun.env.BETTER_AUTH_SECRET = originalSecret;
+      } else {
+        delete Bun.env.BETTER_AUTH_SECRET;
       }
     }
   });
