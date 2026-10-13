@@ -113,6 +113,12 @@ jobs:
         working-directory: Client
         run: node --test ../Server/scripts/ClientCiFilter.mjs
 
+      # 共享契约的解析边界：Server/src/shared 的裸导入必须能按「Client 独立安装」
+      # 布局解析（ESA 构建正是这种布局），细节与背景见脚本头注释。
+      - name: Verify shared dependency boundary
+        working-directory: Client
+        run: node scripts/check-shared-dependencies.mjs
+
       - name: Lint client
         run: pnpm --filter client lint
 

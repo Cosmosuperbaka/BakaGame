@@ -28,6 +28,19 @@
       "@bakagame/shared": ["../Server/src/shared/Index.ts"],
       "@sinclair/typebox": ["./node_modules/@sinclair/typebox"],
       "@sinclair/typebox/*": ["./node_modules/@sinclair/typebox/*"],
+      // 共享契约（Server/src/shared）的裸导入必须按「Client 自己的安装边界」解析：
+      // ESA 构建只在 Client 里 npm install，从 Server/src/shared 向上走不到任何
+      // node_modules。映射命中即用 Client 的副本；提升布局下映射落空会回退到
+      // 仓库根 node_modules，两种布局都由 check-shared-dependencies.mjs 守卫。
+      //
+      // @orpc/contract 是纯 exports 包（package.json 没有 main/types 字段）：
+      // paths 替换出的目录候选不适用 exports 解析（只认 legacy 字段），因此紧跟
+      // 一条指向真实声明文件的候选。版本已精确锁定（1.15.6），dist 布局随包固定。
+      // zod 带 legacy types 字段，目录候选即可命中，无需文件兜底。
+      "@orpc/contract": ["./node_modules/@orpc/contract", "./node_modules/@orpc/contract/dist/index.d.mts"],
+      "@orpc/contract/*": ["./node_modules/@orpc/contract/*"],
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"],
       "@/types": ["./src/types/Index.ts"],
       "@/*": ["./src/*"]
     }

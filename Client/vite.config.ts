@@ -663,8 +663,10 @@ export default defineConfig(async ({ command }) => {
       seoArtifactsPlugin(),
     ],
     resolve: {
-      // 共享源码的运行依赖按客户端安装边界解析。
-      dedupe: ["@sinclair/typebox"],
+      // 共享源码的运行依赖按客户端安装边界解析。ESA 构建只在 Client 里
+      // npm install：从 Server/src/shared 出发的裸导入必须落到这里的副本，
+      // 否则打包阶段同样解析不到（与 tsconfig paths 是同一份边界的两侧）。
+      dedupe: ["@sinclair/typebox", "@orpc/contract", "zod"],
       alias: [
         { find: '@bakagame/shared', replacement: path.resolve(import.meta.dirname, '../Server/src/shared/Index.ts') },
         { find: '@/types', replacement: path.resolve(import.meta.dirname, './src/types/Index.ts') },
