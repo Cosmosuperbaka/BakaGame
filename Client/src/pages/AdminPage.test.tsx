@@ -9,7 +9,7 @@ import AdminPage from "./AdminPage";
 const admin = vi.hoisted(() => ({
   stats: { overview: vi.fn(), sentry: vi.fn() },
   rooms: { list: vi.fn(), close: vi.fn(), kick: vi.fn() },
-  users: { list: vi.fn(), get: vi.fn(), ban: vi.fn(), unban: vi.fn(), setRole: vi.fn(), revokeSessions: vi.fn(), rename: vi.fn() },
+  users: { list: vi.fn(), get: vi.fn(), ban: vi.fn(), unban: vi.fn(), setRole: vi.fn(), revokeSessions: vi.fn() },
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },

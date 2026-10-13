@@ -40,7 +40,7 @@ describe("账号 API 客户端", () => {
     expect(apiErrorMessage(new TypeError("Failed to fetch"))).toBe("请求失败，请稍后重试");
   });
 
-  it("验证码登录：老账号不带昵称，Better Auth 的英文错误码映射成中文", async () => {
+  it("验证码登录：请求只带邮箱与验证码，Better Auth 的英文错误码映射成中文", async () => {
     const fetchMock = vi.fn(async (_url: URL, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({ email: "10001@qq.com", otp: "123456" });
       return json(400, { code: "INVALID_OTP", message: "Invalid OTP" });
@@ -56,6 +56,6 @@ describe("账号 API 客户端", () => {
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new TypeError("Failed to fetch");
     }));
-    await expect(signInWithCode({ email: "10001@qq.com", otp: "123456", name: "阿狸" })).rejects.toMatchObject({ code: "NETWORK_ERROR", message: "网络异常，请稍后重试" });
+    await expect(signInWithCode({ email: "10001@qq.com", otp: "123456" })).rejects.toMatchObject({ code: "NETWORK_ERROR", message: "网络异常，请稍后重试" });
   });
 });

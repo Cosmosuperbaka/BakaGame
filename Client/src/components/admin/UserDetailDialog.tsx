@@ -1,5 +1,4 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ACCOUNT_NAME_MAX_LENGTH, normalizeAccountName } from "@bakagame/shared";
 import type { AdminUserDetail } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +10,7 @@ import { api } from "@/lib/Api";
 import { BAN_DURATIONS, GAME_LABELS, ROLE_LABELS, formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
-type Mode = "view" | "ban" | "rename";
+type Mode = "view" | "ban";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -28,7 +27,6 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   const [mode, setMode] = useState<Mode>("view");
   const [reason, setReason] = useState("");
   const [hours, setHours] = useState("24");
-  const [name, setName] = useState(user.name);
   const action = useAdminAction();
   const after = (ok: boolean) => {
     if (!ok) return;
@@ -40,8 +38,6 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
     event.preventDefault();
     if (mode === "ban" && reason.trim()) {
       after(await action.run("ban", () => api.admin.users.ban({ userId: user.id, reason: reason.trim(), ...(hours !== "0" ? { expiresInHours: Number(hours) } : {}) })));
-    } else if (mode === "rename" && normalizeAccountName(name)) {
-      after(await action.run("rename", () => api.admin.users.rename({ userId: user.id, name: normalizeAccountName(name) })));
     }
   };
 
@@ -75,26 +71,16 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         ) : <p className="text-sm text-muted-foreground">近 7 天没有对局</p>}
       </section>
 
-      {mode !== "view" ? (
+      {mode === "ban" ? (
         <form onSubmit={(event) => void submit(event)} className="grid gap-3 rounded-md border bg-card p-3">
           <SettingsFields>
-            {mode === "ban" ? (
-              <>
-                <SettingTextField label="封禁原因" value={reason} onChange={setReason} placeholder="用户与审计里都能看到" maxLength={200} autoFocus inputClassName="h-10" />
-                <SettingSelect label="时长" value={hours} options={BAN_DURATIONS} onChange={setHours} />
-              </>
-            ) : (
-              <SettingTextField label="新的账号昵称" value={name} onChange={setName} placeholder="替换违规昵称" maxLength={ACCOUNT_NAME_MAX_LENGTH} autoFocus inputClassName="h-10" />
-            )}
+            <SettingTextField label="封禁原因" value={reason} onChange={setReason} placeholder="用户与审计里都能看到" maxLength={200} autoFocus inputClassName="h-10" />
+            <SettingSelect label="时长" value={hours} options={BAN_DURATIONS} onChange={setHours} />
           </SettingsFields>
           {action.error ? <p role="alert" className="text-sm text-destructive">{action.error}</p> : null}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" disabled={action.busy !== null} onClick={() => { setMode("view"); action.clearError(); }}>取消</Button>
-            {mode === "ban" ? (
-              <Button type="submit" variant="destructive" disabled={!reason.trim()} loading={action.busy === "ban"}>封禁并踢下线</Button>
-            ) : (
-              <Button type="submit" disabled={!normalizeAccountName(name) || normalizeAccountName(name) === user.name} loading={action.busy === "rename"}>保存昵称</Button>
-            )}
+            <Button type="submit" variant="destructive" disabled={!reason.trim()} loading={action.busy === "ban"}>封禁并踢下线</Button>
           </div>
         </form>
       ) : (
@@ -102,7 +88,6 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
           {action.error ? <p role="alert" className="text-sm text-destructive">{action.error}</p> : null}
           {self ? <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p> : null}
           <DialogFooter className="flex-wrap">
-            <Button type="button" variant="outline" disabled={action.busy !== null} onClick={() => setMode("rename")}>改昵称</Button>
             <Button type="button" variant="outline" loading={action.busy === "revoke"} disabled={action.busy !== null} onClick={() => void action.run("revoke", () => api.admin.users.revokeSessions({ userId: user.id })).then(after)}>强制下线</Button>
             {self ? null : (
               <Button
@@ -134,7 +119,7 @@ export function UserDetailDialog({ userId, onOpenChange, onChanged }: { userId: 
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>用户详情</DialogTitle>
-          <DialogDescription>封禁、改角色、强制下线与改昵称都会写入审计。</DialogDescription>
+          <DialogDescription>封禁、改角色与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。</DialogDescription>
         </DialogHeader>
         {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}
       </DialogContent>

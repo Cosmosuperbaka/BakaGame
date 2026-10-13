@@ -106,7 +106,7 @@ export function QQLookupPanel() {
     <div className="grid gap-4">
       <AdminToolbar title="QQ 昵称查询号" onReload={status.reload} loading={status.loading && Boolean(current)} />
       <p className="text-sm text-muted-foreground">
-        扫码登录一个 QQ 号，服务端用它的 QQ 空间登录态查询注册用户的 QQ 昵称：新用户注册时预填账号昵称，后台用户列表展示。
+        扫码登录一个 QQ 号，服务端用它的 QQ 空间登录态查询注册用户的 QQ 昵称：账号昵称强制取自 QQ 昵称，查询不可用时暂停新账号注册。
         建议使用小号；登录态加密保存，查询有频率上限，失效后需要重新扫码。
       </p>
       <QueryState loading={status.loading} error={status.error} empty={false} hasData={Boolean(current)} onRetry={status.reload} emptyText="" />

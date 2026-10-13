@@ -14,7 +14,7 @@ vi.mock("@/lib/Api", async (importOriginal) => ({
   api: { account: { requestLoginCode } },
 }));
 
-const signIn = vi.fn<(input: { email: string; otp: string; name?: string }) => Promise<void>>();
+const signIn = vi.fn<(input: { email: string; otp: string }) => Promise<void>>();
 const originalSignIn = useAccountStore.getState().signIn;
 
 beforeEach(() => {
@@ -52,8 +52,8 @@ describe("登录弹窗", () => {
     expect(send).toBeEnabled();
   });
 
-  it("新账号：发码后要求填写账号昵称，登录参数带上昵称，成功后关闭", async () => {
-    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60, qqName: null });
+  it("新账号：发码后冻结展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {
+    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60, qqName: "阿狸" });
     signIn.mockResolvedValue();
     const { user, onOpenChange } = renderDialog();
 
@@ -62,37 +62,32 @@ describe("登录弹窗", () => {
     expect(requestLoginCode).toHaveBeenCalledWith({ qqNumber: "12345" });
     expect(await screen.findByRole("heading", { name: "注册账号" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "60 秒后重发" })).toBeDisabled();
+    // 昵称强制取自 QQ、不可修改：只有只读展示，没有昵称输入框
+    expect(screen.getByText("账号昵称将使用你的 QQ 昵称")).toBeInTheDocument();
+    expect(screen.getByText("阿狸")).toBeInTheDocument();
+    expect(screen.queryByLabelText("账号昵称")).not.toBeInTheDocument();
 
     const submit = screen.getByRole("button", { name: "注册并登录" });
     await user.type(screen.getByLabelText("验证码"), "123456");
-    expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText("账号昵称"), "  阿狸  ");
     await user.click(submit);
 
-    expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "123456", name: "阿狸" });
+    expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "123456" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("新账号预填服务端查到的 QQ 昵称，可以改", async () => {
-    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60, qqName: "QQ昵称" });
-    signIn.mockResolvedValue();
+  it("昵称服务不可用时发码被拒，就地提示原因并留在原步骤", async () => {
+    requestLoginCode.mockRejectedValueOnce(new ORPCError("QQ_NICKNAME_UNAVAILABLE", { status: 503, message: "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试" }));
     const { user } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
     await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
-    const nameInput = await screen.findByLabelText("账号昵称");
-    expect(nameInput).toHaveValue("QQ昵称");
-    expect(screen.getByText("已填入你的 QQ 昵称，可以改成别的")).toBeInTheDocument();
 
-    await user.clear(nameInput);
-    await user.type(nameInput, "阿狸");
-    expect(screen.queryByText("已填入你的 QQ 昵称，可以改成别的")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("验证码"), "123456");
-    await user.click(screen.getByRole("button", { name: "注册并登录" }));
-    expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "123456", name: "阿狸" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试");
+    expect(screen.getByRole("button", { name: "是我，发送验证码" })).toBeEnabled();
+    expect(signIn).not.toHaveBeenCalled();
   });
 
-  it("老账号不填昵称；验证码错误就地提示并保留弹窗", async () => {
+  it("老账号不展示昵称信息；验证码错误就地提示并保留弹窗", async () => {
     requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60, qqName: null });
     signIn.mockRejectedValue(new AuthRequestError("INVALID_OTP", "验证码不正确", 400));
     const { user, onOpenChange } = renderDialog();
@@ -100,7 +95,7 @@ describe("登录弹窗", () => {
     await user.type(screen.getByLabelText("QQ 号"), "12345");
     await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
     await user.type(await screen.findByLabelText("验证码"), "000000");
-    expect(screen.queryByLabelText("账号昵称")).not.toBeInTheDocument();
+    expect(screen.queryByText("账号昵称将使用你的 QQ 昵称")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "登录" }));
 
     expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "000000" });

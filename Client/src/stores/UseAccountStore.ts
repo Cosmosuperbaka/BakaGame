@@ -22,7 +22,7 @@ interface AccountState {
   /** 未读的反馈回复数；由反馈弹窗与登录后的首次拉取维护。 */
   unreadFeedback: number;
   load: () => Promise<void>;
-  signIn: (input: { email: string; otp: string; name?: string }) => Promise<void>;
+  signIn: (input: { email: string; otp: string }) => Promise<void>;
   signOut: () => Promise<void>;
   setProfile: (profile: AccountProfile) => void;
   setUnreadFeedback: (count: number) => void;

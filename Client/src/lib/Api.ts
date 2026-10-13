@@ -90,8 +90,8 @@ const postAuth = async (path: string, body: Record<string, unknown>): Promise<vo
   throw new AuthRequestError(code, message, response.status);
 };
 
-/** 邮箱验证码登录；首次登录即注册，`name` 为账号昵称（老账号省略）。 */
-export const signInWithCode = (input: { email: string; otp: string; name?: string }) =>
-  postAuth("/sign-in/email-otp", input.name ? input : { email: input.email, otp: input.otp });
+/** 邮箱验证码登录；首次登录即注册，账号昵称由服务端强制取自 QQ 昵称，客户端不必也不可自报。 */
+export const signInWithCode = (input: { email: string; otp: string }) =>
+  postAuth("/sign-in/email-otp", input);
 
 export const signOut = () => postAuth("/sign-out", {});
