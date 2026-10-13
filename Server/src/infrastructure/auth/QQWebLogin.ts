@@ -41,7 +41,15 @@ export const gtkOf = (key: string): number => {
   return hash & 0x7fffffff;
 };
 
-/** 收集响应下发的 Cookie；值为空的是服务端在清除，一并丢弃。 */
+/**
+ * 收集响应下发的 Cookie。
+ *
+ * 空值（`name=; Expires=1970…`）是按域名作用域的删除指令，**不能**在平铺容器里当删除处理：
+ * 真实 check_sig 先下发 `p_skey=…; Domain=qzone.qq.com`，随后紧跟一条 `p_skey=; Domain=qq.com`
+ * 的删除指令；平铺容器无法区分作用域，按删除处理会把刚拿到的合法值一并清掉（2026-10-13 首次
+ * 真实扫码验收即因此丢失 p_skey，昵称接口恒报「请先登录」）。这里统一忽略空值——删除只作用于
+ * 自己的域，不影响其它域的同名值；平铺容器只服务 qzone 侧请求，保留非空值是安全且正确的近似。
+ */
 const collectCookies = (response: Response, into: Record<string, string>) => {
   for (const line of response.headers.getSetCookie()) {
     const pair = line.split(";")[0] ?? "";
@@ -50,7 +58,6 @@ const collectCookies = (response: Response, into: Record<string, string>) => {
     const name = pair.slice(0, index).trim();
     const value = pair.slice(index + 1).trim();
     if (value) into[name] = value;
-    else delete into[name];
   }
   return into;
 };

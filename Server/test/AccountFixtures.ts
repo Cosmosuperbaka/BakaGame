@@ -233,6 +233,9 @@ export const createQQWebFetcher = () => {
       const headers = new Headers({ location: "https://qzs.qq.com/qzone/v5/loginsucc.html?para=izone" });
       headers.append("set-cookie", "p_skey=PSKEY; Path=/; Domain=qzone.qq.com");
       headers.append("set-cookie", "p_uin=o0012345; Path=/; Domain=qzone.qq.com");
+      // 真实 check_sig 会紧跟一条 qq.com 域的删除指令（空值）；平铺收集必须忽略空值，
+      // 否则把 qzone 域的合法 p_skey 一并清掉（2026-10-13 真实扫码验收踩过的坑）。
+      headers.append("set-cookie", "p_skey=; Path=/; Domain=qq.com; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
       return new Response(null, { status: 302, headers });
     }
     if (url.pathname === "/fcg-bin/cgi_get_portrait.fcg") {
