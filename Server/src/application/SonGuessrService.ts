@@ -32,8 +32,8 @@ import {
 import {
   ALL_BANGUMI_TRACK_KINDS,
   SONGUESSR_MAX_TEAM,
-  detectExplicitTrackKind,
   isBangumiCreditsEntry,
+  refineTrackKindByText,
   MAX_MIN_POPULARITY,
   MAX_SONGUESSR_COOKIE_LENGTH,
   SERVER_SHUTDOWN_MESSAGE,
@@ -285,8 +285,14 @@ export const MIN_TRUNCATED_TITLE_RATIO = 0.6;
  * Bangumi 记 `メグメル／だんご大家族`（《CLANNAD》双 A 面单曲），网易云候选只是其中
  * 一首《だんご大家族》 —— 两者指同一张单曲、同一首可出的歌。这类并列必须先拆段再比对，
  * 否则会被「截断门槛」误判成「候选只是原名的一小段」而拒掉。
+ *
+ * **只认真正的曲目列表分隔符**（`/` `／` `・` 与合作署名），不认 `;` `&` `,` `、`：
+ * 后者常是**作品名内部的标点**，拆出来的「段」并不是歌名 —— 实测事故：条目
+ * `CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1` 被 `;` / `&` 拆段后，「chaos」成了
+ * 一个合法段，于是与它同名的无关曲《Chaos》(Parry Music) 靠这段匹配过了门禁出题
+ * （该番只有广播剧，本来就不该出题）。
  */
-const TITLE_SEGMENT_SEPARATOR_PATTERN = /[\/／・&＆+＋、,，;；]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
+const TITLE_SEGMENT_SEPARATOR_PATTERN = /[\/／・]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
 
 const splitTitleSegments = (value: string): string[] =>
   value.split(TITLE_SEGMENT_SEPARATOR_PATTERN).map(normalizeSongTitle).filter(Boolean);
@@ -346,7 +352,18 @@ const NON_ORIGINAL_VERSION_PATTERN = new RegExp(
  * 注意「ドラマチック / ドラマティック」（dramatic）是正常曲名，必须排除。
  */
 const DRAMA_TRACK_PATTERN =
-  /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|\bdrama\s*(?:cd|part|track)\b|ミニドラマ|ボイスドラマ|短編ドラマ|台詞|セリフ/iu;
+  /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|audio\s*drama|\bdrama\s*(?:cd|part|track)\b|ミニドラマ|ボイスドラマ|短編ドラマ|台詞|セリフ/iu;
+/**
+ * 电台 / 谈话节目分轨标记。
+ *
+ * 特典 CD 里塞整期广播节目的分轨很常见，实测事故：《四月は君の嘘 第8巻 特典CD》
+ * 整张就是「ラジオ 出張版」第 1~5 回（最短 139s、最长 1072s），全部是声优闲聊。
+ * 玩家听到一段日语谈话根本无从猜番，与台词轨同类。
+ *
+ * 只认「节目分轨」形态（ラジオ + 出張版 / 第 N 回 / #NN），不碰叫《ラジオ》的正常歌名。
+ */
+const RADIO_TALK_TRACK_PATTERN =
+  /ラジオ[^\n]{0,20}(?:出張版|第\s*\d+\s*回|#\s*\d+)|フリートーク|トーク\s*コーナー|\bradio\s*digest\b|广播节目|廣播節目/iu;
 /**
  * 纯编号音轨名（`M-815` / `Track 01` / `BGM 12`）。原声带里的曲目常只有编号，
  * 玩家听到的是一段配乐而不是一首歌。实测事故：《Dragon Ball Z ヒット曲集》被专辑路径
@@ -363,7 +380,7 @@ const TRACK_NUMBER_TITLE_PATTERN =
  * 更被 2013 年的粤语同名歌顶掉。真正的动画盘几乎总带这类发行标记。
  */
 const ANIME_RELEASE_CONTEXT_PATTERN =
-  /アニメ|animation|サウンドトラック|soundtrack|\bost\b|オリジナル|原声|原聲|主題歌|主题歌|テーマソング|キャラクターソング|キャラソン|特典|ソング集|ボーカル|vocal|ベスト|best|音楽|音乐|アルバム|album|コレクション|collection|コンプリート|complete|劇伴|cd|盤|盘/iu;
+  /アニメ|animation|オリジナルサウンドトラック|サウンドトラック|original\s*sound\s*track|sound\s*track|\bost\b|オリジナル|原声|原聲|主題歌|主题歌|テーマソング|キャラクターソング|キャラソン|特典|ソング集|ボーカル|vocal|ベスト|best|音楽|音乐|アルバム|album|コレクション|collection|コンプリート|complete|劇伴|cd|盤|盘/iu;
 /**
  * 器乐改编 / 二次演奏标记：管弦、交响、钢琴、八音盒等。它们与原唱原版
  * 完全不是同一次录音，即使曲名一模一样也必须排在原版之后。
@@ -454,6 +471,35 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
 };
 
 /**
+ * 「候选名只是条目名的一截」时，专辑名能否把候选锚到这条目 / 这部番上。
+ *
+ * 为什么不能只靠「出现在带番剧名的检索结果里」：网易云的模糊检索会把无关的同名曲
+ * 一起召回，那条信号对短名（尤其泛用词）几乎恒真。实测事故：Princess Principal 的
+ * 角色歌单曲条目《5 Moving Shadows》召回了《Moving Shadows》(Lessovsky / Max Vertigo，
+ * 专辑《5 (Five Years of Kiez Beats)》) 并出题。
+ *
+ * 认可的锚点：专辑名含**番剧名**（且带发行上下文，避免「同名自建盘」——见
+ * `albumNameScore` 的同一道闸门），或专辑名含**条目名**（官方盘与自建上传常直接以
+ * 条目名 / 曲名命名专辑）。
+ */
+const albumAnchorsWork = (
+  albumName: string | undefined,
+  track: BangumiMusicTrack,
+  animeNames: readonly string[],
+): boolean => {
+  if (!albumName) return false;
+  const normalizedAlbum = normalizeSongTitle(albumName);
+  if (!normalizedAlbum) return false;
+  const animeLinked = animeNames.some((name) => {
+    const normalizedName = normalizeSongTitle(name);
+    return normalizedName.length >= 4 && normalizedAlbum.includes(normalizedName);
+  });
+  if (animeLinked) return ANIME_RELEASE_CONTEXT_PATTERN.test(albumName);
+  const normalizedEntry = normalizeSongTitle(track.title);
+  return normalizedEntry.length >= 4 && normalizedAlbum.includes(normalizedEntry);
+};
+
+/**
  * 候选出现在「曲名 + 番剧名 / 中文名」检索结果里的加分。
  *
  * 取 3 是针对实测的错配场景定的：别人家的同名原创常拿满「曲名 + 专辑名」4 分，
@@ -529,16 +575,38 @@ const nameDigits = (value: string): Set<string> =>
  *   ——「作品名 + 特征词」双命中才认，单靠共享「角色歌集」这类通用词不算（已剔除）；
  *   同系列专辑只差一个序号，因此**数字词元命中额外 +20**，避免抽到隔壁那张
  *   （VERSE IN SONG **02** 与 **03** 的差别全在序号上）。
+ *
+ * 例外（直接 0）：专辑名恰好等于番剧名且没有发行上下文、歌手也对不上 —— 见函数内注释，
+ * 这种形态下「互相包含」是结构性必然，证据强度为零。
  */
+/** 专辑名与条目名归一化后**全等**的得分档：搜到的就是同名那张盘，证据最稳。 */
+const ALBUM_NAME_EXACT_SCORE = 100;
+
 export const albumNameScore = (
   albumName: string,
   trackTitle: string,
   animeNames: readonly string[] = [],
+  /**
+   * 专辑歌手与 Bangumi 条目歌手是否有交集。用来给「专辑名恰好等于番剧名」这个
+   * 高危形态留一条例外：官方同名盘（歌手与条目记录对得上）仍认，陌生歌手的
+   * 同名自建盘不认。
+   */
+  albumArtistMatches = false,
 ): number => {
   const normalizedAlbum = normalizeSongTitle(albumName);
   const normalizedTitle = normalizeSongTitle(trackTitle);
   if (!normalizedAlbum || !normalizedTitle) return 0;
-  if (normalizedAlbum === normalizedTitle) return 100;
+  if (normalizedAlbum === normalizedTitle) return ALBUM_NAME_EXACT_SCORE;
+  // 泛用名撞车：专辑名恰好等于**番剧名**（且完全没有发行上下文）时，条目名只会是
+  // 「番剧名 + 前后缀」，与它的「互相包含 / 共享特征词元」几乎是必然 —— 这条证据是
+  // 循环的，不能算。实测事故：网易云用户自建的《青春ブタ野郎はバニーガール先輩の
+  // 夢を見ない》（梁神，一首同名说唱）在专辑检索里拿到 60 分，压过官方
+  // 《… 4 Special CD》（35 分），被当成特典 CD 的曲目出题。
+  const bareWorkName = animeNames.some((name) => {
+    const normalizedName = normalizeSongTitle(name);
+    return Boolean(normalizedName) && normalizedName === normalizedAlbum;
+  });
+  if (bareWorkName && !albumArtistMatches && !ANIME_RELEASE_CONTEXT_PATTERN.test(albumName)) return 0;
   const shorter = normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
   const longer = shorter === normalizedAlbum ? normalizedTitle : normalizedAlbum;
   if (shorter.length >= 4 && longer.includes(shorter)) return 60;
@@ -671,10 +739,21 @@ export const isUnplayableAlbumTrack = (title: string): boolean =>
   NON_ORIGINAL_VERSION_PATTERN.test(title)
   || COVER_MARKER_PATTERN.test(title)
   || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title)
-  || DRAMA_TRACK_PATTERN.test(title);
+  || DRAMA_TRACK_PATTERN.test(title)
+  || RADIO_TALK_TRACK_PATTERN.test(title);
 
 /**
- * 该曲名是否属于**根本没有歌声**的音轨（台词轨 / 伴奏 / 纯音乐 / 卡拉 OK）。
+ * 专辑里的二次创作分轨标记：Remix / TV Size / Game Size / Short 版。
+ * 与 isUnplayableAlbumTrack 的区别：这些分轨仍是**可出的歌**（原版不在这张盘时
+ * 降级可出），但**原版存在时不得随机抢先** —— 专辑路径取回的曲目原本是纯
+ * shuffle，实测《TVアニメ 『Summer Pockets』 "leave a mark"》6 轨里 3 轨是
+ * Remix，一半概率直接出 Remix 而不是原版。
+ */
+const ALTERNATE_VERSION_PATTERN =
+  /\bremix(?:ed)?\b|リミックス|\btv\s*size\b|\bgame\s*size\b|\bshort\s*ver(?:sion)?\b|\bmovie\s*ver(?:sion)?\b/iu;
+
+/**
+ * 该曲名是否属于**根本没有歌声**的音轨（台词轨 / 电台谈话 / 伴奏 / 纯音乐 / 卡拉 OK）。
  *
  * 与 `isUnplayableAlbumTrack` 的区别：后者只在专辑路径做「选哪首」的粗筛，
  * 且包含的现场 / 不插电 / demo / 器乐改编等标记只是**版本不同**，仍有人声、
@@ -683,6 +762,7 @@ export const isUnplayableAlbumTrack = (title: string): boolean =>
  */
 export const isNonVocalTrack = (title: string): boolean =>
   DRAMA_TRACK_PATTERN.test(title)
+  || RADIO_TALK_TRACK_PATTERN.test(title)
   || NO_VOCAL_VERSION_PATTERN.test(title)
   || TRACK_NUMBER_TITLE_PATTERN.test(title);
 
@@ -705,26 +785,34 @@ export const isNonVocalTrack = (title: string): boolean =>
  * 2. 专辑名与原曲目名完全一致 → 有资格（即使曲名完全对不上）：Bangumi 会把**整张原声带**
  *    挂成一条关联曲目，此时条目名就是专辑名，官方曲目与条目名毫无文字交集。实测事故是
  *    帝玖管弦乐团的《交响组曲「君の名は。」》靠曲名命中顶掉了官方原声带；
- * 3. 曲名只部分命中 → 必须另有独立证据（歌手交集 / 番剧上下文命中）；
- * 4. 其余情况（曲名完全对不上、专辑名也对不上）→ 无资格；
- * 5. 非原唱标记的降权**不参与**准入：唯一候选是翻唱 / 改编时仍要能降级出题
+ * 3. 候选名**完整包含**条目名（`曲名 - 番剧名` / `曲名 (TV Size)`）→ 有资格，保持宽松；
+ * 4. 候选名只是条目名的**一截**（专辑型条目名的前后缀、双 A 面单曲的某一段）→ 必须另有
+ *    独立锚点（歌手交集 / 专辑指向本番，见 `albumAnchorsWork`）；
+ * 5. 其余情况（曲名完全对不上、专辑名也对不上）→ 无资格；
+ * 6. 非原唱标记的降权**不参与**准入：唯一候选是翻唱 / 改编时仍要能降级出题
  *    （既有语义「仅能召回翻唱版时仍可出题」），否则会退化成「该番剧没有可播放的关联歌曲」。
  *
- * 被第 3 条挡掉的正是实测的错配事故：《いつだってYELL》（忍者乱太郎 ED）被 2026 年
- * 无关的《Yell》顶掉、《ぼくらは小さな悪魔》被《ぼくら》顶掉，两者都只靠曲名部分命中
- * 就出了题。宁可这一首出不了题（上层会换下一首），也不能让玩家听到一首无关的歌。
+ * 被第 4 条挡掉的正是实测的错配事故：《いつだってYELL》（忍者乱太郎 ED）被 2026 年
+ * 无关的《Yell》顶掉、《ぼくらは小さな悪魔》被《ぼくら》顶掉、《5 Moving Shadows》
+ * （Princess Principal 角色歌单曲）被《Moving Shadows》(Lessovsky / Max Vertigo，
+ * 专辑《5 (Five Years of Kiez Beats)》) 顶掉 —— 最后这条说明「出现在带番剧名的检索
+ * 结果里」这个信号不足以锚定（网易云模糊检索会把无关同名曲一起召回）。宁可这一首
+ * 出不了题（上层会换下一首），也不能让玩家听到一首无关的歌。
  */
 export const hasAnimeSongEvidence = (
   candidate: SongSearchResult,
   track: BangumiMusicTrack,
-  options: { animeScoped?: boolean } = {},
+  options: { animeScoped?: boolean; animeNames?: readonly string[] } = {},
 ): boolean => {
   const titleScore = songTitleSimilarity(candidate.title, track.title);
   if (titleScore >= 2) return true;
   // 专辑名与原曲目名完全一致（见规则 2）。
   if (isSongAlbumMatch(candidate.album, track.title)) return true;
   if (titleScore < 1) return false;
-  return artistOverlap(candidate, track) === true || Boolean(options.animeScoped);
+  // 部分命中（候选是条目名的一截 / 条目名带后缀）必须另有独立锚点 —— 歌手交集或专辑指向
+  // 本条目的专辑；「出现在带番剧名的检索结果里」不算（见 albumAnchorsWork 的事故注释）。
+  return artistOverlap(candidate, track) === true
+    || albumAnchorsWork(candidate.album, track, options.animeNames ?? []);
 };
 
 /**
@@ -2398,6 +2486,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (anime.musicTracks.length === 0) {
       throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
     }
+    // 番剧名（原名 + 中文名）：既用于拼检索词，也用于「候选是否确属本番」的锚点判定。
+    const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
     const filters = room.settings.questionMode === "automatic"
       ? room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!
       : {};
@@ -2461,7 +2551,10 @@ export class SonGuessrService implements AdminRoomControl {
       // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
       const ranked = matched.candidates
         .map((candidate, index) => {
-          const options = { animeScoped: matched.animeScopedIds.has(candidate.id) };
+          const options = {
+            animeScoped: matched.animeScopedIds.has(candidate.id),
+            animeNames,
+          };
           return {
             candidate,
             index,
@@ -2482,8 +2575,13 @@ export class SonGuessrService implements AdminRoomControl {
         pool = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
       }
       // 最后一道兜底：条目级解析全部失败时，用番剧名检索该番的歌（见 resolveAnimeLevelCandidates）。
+      // 这条路拿到的歌**与本条目无关**（只是同一部番的其它曲目），因此条目分类也不能再用 ——
+      // 实测《四月は君の嘘 第8巻 特典CD》条目下的歌曲实际来自 OST 专辑，却因条目分类
+      // 显示成「Radio」。
+      let poolFromAnimeLevel = false;
       if (pool.length === 0) {
         pool = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
+        poolFromAnimeLevel = true;
       }
       // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
       if (pool.length === 0) continue;
@@ -2530,7 +2628,12 @@ export class SonGuessrService implements AdminRoomControl {
         }
         const resolved = {
           song,
-          track: { ...track, kind: this.refineTrackKind(track.kind, song) },
+          track: {
+            ...track,
+            // 番剧级兜底的歌不属于本条目，类型只能从歌曲自身文本推（与手动选曲列表同源）；
+            // 其余路径仍以条目分类为基准，再用歌曲文本细化。
+            kind: this.refineTrackKind(poolFromAnimeLevel ? "theme" : track.kind, song),
+          },
         } satisfies { song: SongDetails; track: BangumiMusicTrack };
         // 翻唱让位：网易云自标 `originCoverType === 2` 的版本是**别人的演唱录音**。
         // 文本维度在它面前全失效（翻唱常把曲名与专辑名照抄原曲，实测《裸の勇者》原版
@@ -2686,12 +2789,36 @@ export class SonGuessrService implements AdminRoomControl {
       return [...trackArtists].some((name) => albumArtists.has(name));
     };
     const album = [...unique.values()]
-      .map((entry) => ({ entry, score: albumNameScore(entry.name, track.title, animeNames) }))
-      .filter((item) => item.score > 0)
+      .map((entry) => {
+        const artistMatches = artistHit(entry);
+        return {
+          entry,
+          artistMatches,
+          score: albumNameScore(entry.name, track.title, animeNames, artistMatches),
+        };
+      })
+      .filter((item) => {
+        if (item.score <= 0) return false;
+        if (item.artistMatches) return true;
+        // 歌手对不上时只认两种归属证据：专辑名与条目名**全等**（搜到的就是同名那张盘），
+        // 或专辑名自带番剧归属（含番剧名 + 发行上下文）。
+        // 「专辑名 ⊂ 条目名」的**子串**命中在陌生歌手手里是同名顶替的高危形态 ——
+        // 实测事故：条目《TVアニメ Summer Pockets "leave a mark"》（角色歌集，艺人
+        // 是本作 CV）被 LUREKS 2026 年的无关同名专辑《Leave a Mark》以 60 分顶替，
+        // 专辑曲目直接出题。与 resolveAnimeLevelCandidates 的 belongsToAnime 同口径。
+        if (item.score >= ALBUM_NAME_EXACT_SCORE) return true;
+        const normalizedEntry = normalizeSongTitle(item.entry.name);
+        return animeNames.some((name) => {
+          const normalizedName = normalizeSongTitle(name);
+          return normalizedName.length >= 4
+            && normalizedEntry.includes(normalizedName)
+            && ANIME_RELEASE_CONTEXT_PATTERN.test(item.entry.name);
+        });
+      })
       // 同名专辑常有别人的版本，艺术家与 Bangumi 记录对得上的优先（数据集补录 artist
       // 之后这条才真正可用）；其余按名称相似度，序号命中因此能压过隔壁那张。
       .sort((left, right) =>
-        Number(artistHit(right.entry)) - Number(artistHit(left.entry)) || right.score - left.score)
+        Number(right.artistMatches) - Number(left.artistMatches) || right.score - left.score)
       .at(0)?.entry;
     if (!album || budget.search <= 0) return [];
 
@@ -2703,10 +2830,12 @@ export class SonGuessrService implements AdminRoomControl {
       if (!isUnusableSongCandidate(error)) throw error;
       return [];
     }
-    return shuffle(
-      songs.filter((song) => !isUnplayableAlbumTrack(song.title)),
-      this.random,
-    );
+    const playable = songs.filter((song) => !isUnplayableAlbumTrack(song.title));
+    // 原版优先：同盘里的 Remix / TV Size 分轨只是「版本不同」（整盘都是版本分轨时
+    // 兜底可出），但原版存在时不得随机抢先。
+    const originals = playable.filter((song) => !ALTERNATE_VERSION_PATTERN.test(song.title));
+    const alternates = playable.filter((song) => ALTERNATE_VERSION_PATTERN.test(song.title));
+    return [...shuffle(originals, this.random), ...shuffle(alternates, this.random)];
   }
 
   /**
@@ -2767,6 +2896,8 @@ export class SonGuessrService implements AdminRoomControl {
     const { room } = this.requireRoomPlayer(connection);
     const cookie = this.getAggregatedSearchCookie(room);
     if (anime.musicTracks.length === 0) return [];
+    // 与自动出题同源：番剧名既用于拼检索词，也用于「候选是否确属本番」的锚点判定。
+    const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
     const results: BangumiSongCandidate[] = [];
@@ -2802,7 +2933,10 @@ export class SonGuessrService implements AdminRoomControl {
         const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
         matchedCandidates = matched.candidates
           .map((candidate, index) => {
-            const options = { animeScoped: matched.animeScopedIds.has(candidate.id) };
+            const options = {
+            animeScoped: matched.animeScopedIds.has(candidate.id),
+            animeNames,
+          };
             return {
               candidate,
               index,
@@ -2836,9 +2970,12 @@ export class SonGuessrService implements AdminRoomControl {
       for (const song of albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)) {
         if (!seenSongIds.has(song.id)) {
           seenSongIds.add(song.id);
-          const explicitKind = detectExplicitTrackKind(`${song.title} ${song.album ?? ""}`);
+          // 类型同样按「歌曲自身文本」细化（与自动出题的 refineTrackKind 同源）。
           results.push({
-            track: explicitKind ? { ...track, kind: explicitKind } : track,
+            track: {
+              ...track,
+              kind: refineTrackKindByText(track.kind, `${song.title} ${song.album ?? ""}`),
+            },
             song,
           });
         }
@@ -2851,8 +2988,14 @@ export class SonGuessrService implements AdminRoomControl {
         for (const song of animeLevelSongs) {
           if (!seenSongIds.has(song.id)) {
             seenSongIds.add(song.id);
+            // 番剧级兜底没有「条目」可言，类型只能从歌曲自身文本推（原声带 / 特典 CD /
+            // 角色歌…）；推不出来时才落到主题曲。
             results.push({
-              track: { title: song.title, artist: song.artist, kind: "theme" },
+              track: {
+                title: song.title,
+                artist: song.artist,
+                kind: refineTrackKindByText("theme", `${song.title} ${song.album ?? ""}`),
+              },
               song,
             });
           }
@@ -2866,29 +3009,13 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
-    const text = `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`;
-    // 歌曲元数据里指向具体主题曲类型的信号（片头 / 片尾 / 插入歌），优先级高于
-    // Bangumi 关联条目的粗分类。Bangumi 常把官方 MV、单曲碟等归到「其他 → 主题曲」，
-    // 也常把片尾曲的专辑条目挂在「插入歌」下；此时以歌曲自身标注为准，
-    // 否则会出现「片尾曲的歌配着插曲徽章」这类错配。
-    const explicitKind = detectExplicitTrackKind(text);
-    if (explicitKind) return explicitKind;
-    if (kind !== "theme") return kind;
-    if (/原声|soundtrack|\bost\b/i.test(text)) return "ost";
-    if (/角色[歌曲]|character(?:\s*song)?/i.test(text)) return "character";
-    if (/\bremix\b|重混/i.test(text)) return "remix";
-    if (/同人/i.test(text)) return "doujin";
-    if (/印象[曲歌]|image(?:\s*song)?/i.test(text)) return "image";
-    if (/vocaloid/i.test(text)) return "vocaloid";
-    if (/\bdrama\b|广播剧|廣播劇/i.test(text)) return "drama";
-    if (/\bvocal\b/i.test(text)) return "vocal";
-    if (/\bradio\b|广播|廣播/i.test(text)) return "radio";
-    if (/\barrange\b|改编|改編|编曲|編曲/i.test(text)) return "arrange";
-    if (/单曲|單曲|\bsingle\b/i.test(text)) return "single";
-    if (/精选|精選|\bbest\b|collection/i.test(text)) return "collection";
-    if (/朗读|朗讀/i.test(text)) return "reading";
-    if (/艺人|藝人|album/i.test(text)) return "artistAlbum";
-    return kind;
+    // 歌曲元数据里指向具体主题曲类型的信号（片头 / 片尾 / 插入歌）优先于 Bangumi 关联
+    // 条目的粗分类，`theme` 这个桶再用发行形态细化（原声带 / 特典 CD / …）。
+    // 判定统一在 shared 的 `refineTrackKindByText`，服务端与客户端徽章共用同一份规则。
+    return refineTrackKindByText(
+      kind,
+      `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`,
+    );
   }
 
   private installRound(

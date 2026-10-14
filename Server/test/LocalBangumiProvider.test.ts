@@ -91,7 +91,7 @@ describe("LocalBangumiProvider", () => {
     for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
   });
 
-  test("关联类型码映射不得错位：片头曲 / 片尾曲 / 插入歌 / 角色歌", async () => {
+  test("关联类型码映射不得错位：片头曲 / 片尾曲 / 插入歌 / 角色歌 / 原声带 / 特典CD", async () => {
     // 复刻真实数据集；旧映射把 3002~3005 整体错位一格，实测会把片头曲标成 ED、
     // 角色歌标成 OP，按曲目类型筛选时选中完全错误的曲目。
     const songPath = join(tmpdir(), `bangumi-kind-${crypto.randomUUID()}.sqlite`);
@@ -100,7 +100,8 @@ describe("LocalBangumiProvider", () => {
     songDb.run("CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)");
     songDb.run("CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)");
     songDb.run("INSERT INTO subjects VALUES (245665,2,'鬼滅の刃','鬼灭之刃','','','2019-04-06',0,'[]','[]',0,0,0,'')");
-    // kind 列沿用当年的错误映射值，用于证明关系码才是真相源。
+    // kind 列写的是构建期的粗分类（3001 一律 theme），接口侧不再采信它 ——
+    // 类型由关系码 + 条目名在读取时现算，这里故意留着旧值以防回归。
     songDb.run("INSERT INTO subject_music_relations VALUES (245665,437001,3003,0,'紅蓮華',NULL,'ending')");
     songDb.run("INSERT INTO subject_music_relations VALUES (245665,437002,3004,0,'from the edge',NULL,'insert')");
     songDb.run("INSERT INTO subject_music_relations VALUES (245665,437003,3005,0,'竈門炭治郎のうた',NULL,'character')");
@@ -108,6 +109,10 @@ describe("LocalBangumiProvider", () => {
     songDb.run("INSERT INTO subject_music_relations VALUES (245665,437005,3001,0,'鬼滅の刃 オリジナルサウンドトラック',NULL,'theme')");
     // 未映射的关系码（3099 其他）沿用文本兜底分类
     songDb.run("INSERT INTO subject_music_relations VALUES (245665,437006,3099,0,'鬼滅の刃 Remix Collection',NULL,'remix')");
+    // 3001 是「主题歌」桶：Bangumi 把特典 CD / 广播剧 CD 一并挂在这里，条目名必须能
+    // 把它们从主题曲里分出来，否则玩家看到的「主题曲」会变成大杂烩。
+    songDb.run("INSERT INTO subject_music_relations VALUES (245665,437007,3001,0,'鬼滅の刃 第3巻 特典CD',NULL,'theme')");
+    songDb.run("INSERT INTO subject_music_relations VALUES (245665,437008,3007,0,'鬼滅の刃 ドラマCD 第一話',NULL,'theme')");
     songDb.close();
     new Database(characterPath).close();
 
@@ -119,8 +124,11 @@ describe("LocalBangumiProvider", () => {
     expect(kinds["from the edge"]).toBe("ending");
     expect(kinds["竈門炭治郎のうた"]).toBe("insert");
     expect(kinds["キャラクターソング Vol.1"]).toBe("character");
-    // 主题歌 / 原声带条目归 theme，再由歌曲自身标注细化为 OST。
-    expect(kinds["鬼滅の刃 オリジナルサウンドトラック"]).toBe("theme");
+    // 关系码 3001 只说明「主题歌桶」，条目名写着原声带的必须在读取时就细化为 OST ——
+    // 全库 18117 条 theme 里 5215 条是原声带、636 条是特典 CD，一律标主题曲就是误标。
+    expect(kinds["鬼滅の刃 オリジナルサウンドトラック"]).toBe("ost");
+    expect(kinds["鬼滅の刃 第3巻 特典CD"]).toBe("special");
+    expect(kinds["鬼滅の刃 ドラマCD 第一話"]).toBe("drama");
     // 未映射的关系码仍走文本兜底分类
     expect(kinds["鬼滅の刃 Remix Collection"]).toBe("remix");
     provider.close();

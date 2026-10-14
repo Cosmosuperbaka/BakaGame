@@ -15,7 +15,7 @@ import {
   resolveRecentSongWindow,
   SonGuessrService,
 } from "../src/application/SonGuessrService";
-import { detectExplicitTrackKind } from "../src/shared/Index";
+import { detectExplicitTrackKind, detectTrackKindFromText, refineTrackKindByText } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
@@ -617,6 +617,17 @@ describe("SonGuessrService", () => {
     expect(isSongTitleMatch("Shooting Star", "Shooting Star 完整版")).toBe(true);
   });
 
+  test("条目名内部的标点不构成「多曲并列」", () => {
+    // 实测事故：条目 `CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1` 被 `;` / `&` 拆段后
+    // 「chaos」成了一个合法段，毫不相关的《Chaos》(Parry Music) 靠这段匹配过了门禁 ——
+    // 该番只有广播剧，本来就不该出题。
+    expect(isSongTitleMatch("Chaos", "CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1")).toBe(false);
+    expect(isSongTitleMatch("Chaos", "CHAOS;CHILD ドラマCD 〜拓留と世莉架は力士シールの夢を見るか?〜")).toBe(false);
+    // 真正的多曲并列（双 A 面 / 合作曲）仍必须放行。
+    expect(isSongTitleMatch("だんご大家族", "メグメル／だんご大家族")).toBe(true);
+    expect(isSongTitleMatch("ごはんはおかず", "ごはんはおかず/U&I")).toBe(true);
+  });
+
   test("专辑名相似度认命名差异，但不认同番的其它专辑", () => {
     const animeNames = ["ひみつのアイプリ", "秘密的偶像公主"];
     const trackTitle = "TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03";
@@ -635,6 +646,23 @@ describe("SonGuessrService", () => {
     expect(albumNameScore("TVアニメ『别部番』キャラクターソング集", "TVアニメ『本番』キャラクターソング集", ["本番"])).toBe(0);
     // 不含番剧名的同名短专辑不该被认（旧的长度比例判据会误判）。
     expect(albumNameScore("另一部番 OST", "角色歌合辑", animeNames)).toBe(0);
+  });
+
+  test("专辑名恰好等于番剧名时不给分：同名撞车的「互相包含」是结构性必然", () => {
+    // 实测事故：网易云用户自建的《青春ブタ野郎はバニーガール先輩の夢を見ない》（梁神，
+    // 一首同名说唱）在专辑检索里靠「互相包含」拿到 60 分，压过官方《… 4 Special CD》
+    // （35 分），被当成特典 CD 的曲目出了题。番剧名与条目名互为前缀时这条证据恒真。
+    const entry = "青春ブタ野郎はバニーガール先輩の夢を見ない 特典CD Vol.4";
+    const animeNames = ["青春ブタ野郎はバニーガール先輩の夢を見ない", "青春猪头少年不会梦到兔女郎学姐"];
+    expect(albumNameScore("青春ブタ野郎はバニーガール先輩の夢を見ない", entry, animeNames)).toBe(0);
+    // 歌手与条目记录对得上时仍认：官方同名盘不能被这条规则连坐。
+    expect(albumNameScore("青春ブタ野郎はバニーガール先輩の夢を見ない", entry, animeNames, true))
+      .toBeGreaterThan(0);
+    // 带发行上下文（特典 CD / 原声带 / アニメ…）的同名盘照旧认。
+    expect(albumNameScore("青春ブタ野郎はバニーガール先輩の夢を見ない 特典CD", entry, animeNames))
+      .toBeGreaterThan(0);
+    // 条目名与专辑名全等时不受影响（官方盘点名就是作品名，如《君の名は。》）。
+    expect(albumNameScore("君の名は。", "君の名は。", ["君の名は。"])).toBe(100);
   });
 
   test("专辑型条目的检索词覆盖番剧名与类型关键词", () => {
@@ -3210,6 +3238,16 @@ describe("SonGuessr 非歌音轨否决", () => {
     expect(isNonVocalTrack("純音楽 version")).toBe(true);
   });
 
+  test("电台谈话分轨一律否决（特典 CD 里塞整期广播节目）", () => {
+    // 实测事故：《四月は君の嘘 第8巻 特典CD》整张就是「ラジオ 出張版」第 1~5 回，
+    // 五轨全是声优闲聊，专辑路径却把它当歌出了题。
+    expect(isNonVocalTrack("「四月」じゃないよ、「君嘘」だよ。ラジオ 出張版 Vol.3 #05")).toBe(true);
+    expect(isNonVocalTrack("○○ラジオ 第12回")).toBe(true);
+    // 正常歌名里的「ラジオ」不得误杀（只认节目分轨形态）。
+    expect(isNonVocalTrack("ラジオ")).toBe(false);
+    expect(isNonVocalTrack("深夜ラジオ")).toBe(false);
+  });
+
   test("有人声的版本（现场 / 不插电 / 器乐改编）不在否决范围，交由排序降权", () => {
     expect(isNonVocalTrack("God knows... (Live)")).toBe(false);
     expect(isNonVocalTrack("secret base ~君がくれたもの~ (Acoustic ver.)")).toBe(false);
@@ -3383,6 +3421,31 @@ describe("SonGuessr 曲名门禁与截断门槛一致性", () => {
     const theme = track("ここにいたこと", "AKB48");
     expect(hasAnimeSongEvidence(candidate("ここにいたこと"), theme)).toBe(true);
     expect(hasAnimeSongEvidence(candidate("ここにいたこと (TV Size)"), theme)).toBe(true);
+  });
+
+  test("只有「番剧上下文命中」不足以锚定截断命中的候选", () => {
+    // 实测事故：Princess Principal 的角色歌单曲条目《5 Moving Shadows》召回了
+    // 《Moving Shadows》(Lessovsky / Max Vertigo，专辑《5 (Five Years of Kiez Beats)》)。
+    // 「出现在带番剧名的检索结果里」对短名几乎恒真，不能单独充当准入证据。
+    const characterSong = track("5 Moving Shadows", "アンジェ(今村彩夏) / プリンセス(関根明良)");
+    const animeNames = ["プリンセス・プリンシパル", "Princess Principal"];
+    expect(hasAnimeSongEvidence(
+      candidate("Moving Shadows", "Lessovsky / Max Vertigo", "5 (Five Years of Kiez Beats)"),
+      characterSong,
+      { animeScoped: true, animeNames },
+    )).toBe(false);
+    // 专辑名指向本条目的专辑（官方盘 / 自建上传常直接以曲名命名专辑）→ 照旧准入。
+    expect(hasAnimeSongEvidence(
+      candidate("Moving Shadows", "某自建上传", "5 Moving Shadows"),
+      characterSong,
+      { animeNames },
+    )).toBe(true);
+    // 歌手与 Bangumi 记录对得上 → 准入。
+    expect(hasAnimeSongEvidence(
+      candidate("Moving Shadows", "アンジェ(今村彩夏)", "5 (Five Years of Kiez Beats)"),
+      characterSong,
+      { animeNames },
+    )).toBe(true);
   });
 });
 
@@ -3966,6 +4029,113 @@ describe("SonGuessrService 猜番原版优先", () => {
     await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
   });
 
+  test("专辑路径的子串命中在歌手对不上时须有番剧归属，同名无关专辑被拒", async () => {
+    // 实测事故：条目《TVアニメ Summer Pockets "leave a mark"》（角色歌集，艺人是
+    // 本作 CV）被 LUREKS 2026 年的无关同名专辑《Leave a Mark》以「专辑名 ⊂ 条目名」
+    // 的 60 分顶替出题。歌手对不上时，子串命中必须补番剧名 + 发行上下文。
+    const foreignTrack = {
+      ...songs.answer,
+      id: "foreign-track",
+      title: "Leave a Mark",
+      artist: "LUREKS",
+      album: "Leave a Mark",
+      audioUrl: "https://audio/foreign-track.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{
+          title: 'TVアニメ Answer Anime "leave a mark"',
+          artist: "加藤うみ(CV.田中あいみ)、空門蒼(CV.高森奈津美)",
+          kind: "character" as const,
+        }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [],
+      searchAlbums: async () => [{ id: "album-foreign", name: "Leave a Mark", artist: "LUREKS" }],
+      getAlbumSongs: async () => [foreignTrack],
+      getSong: async () => foreignTrack,
+    };
+
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+  });
+
+  test("专辑路径的子串命中在专辑名自带番剧归属时放行", async () => {
+    // 网易云的正版盘经常与 Bangumi 条目名对不齐（多/少副标题），但只要专辑名
+    // 含番剧名 + 发行上下文（OST / 角色歌 / テーマ…），就是确实属于本番的证据。
+    const legitTrack = {
+      ...songs.answer,
+      id: "legit-track",
+      title: "Answer Anime Main Theme",
+      artist: "测试歌手",
+      album: "「Answer Anime」オリジナルサウンドトラック",
+      audioUrl: "https://audio/legit-track.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "Answer Anime Original SoundTrack", kind: "ost" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [],
+      searchAlbums: async () => [{
+        id: "album-ost",
+        name: "「Answer Anime」オリジナルサウンドトラック",
+        artist: "V.A.",
+      }],
+      getAlbumSongs: async () => [legitTrack],
+      getSong: async () => legitTrack,
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/legit-track.mp3");
+  });
+
+  test("专辑路径优先出原版分轨，Remix / TV Size 排后", async () => {
+    // 专辑取回的曲目原本是纯 shuffle，Remix 与原版等概率被出 —— 实测
+    // 《TVアニメ 『Summer Pockets』 "leave a mark"》6 轨里 3 轨是 Remix，
+    // 一半概率直接出 Remix 而不是原版。版本分轨只降级不剔除。
+    const remixTrack = {
+      ...songs.answer,
+      id: "remix-track",
+      title: "答案歌 -KAIRUI Remix-",
+      artist: "测试歌手",
+      album: "「Answer Anime」キャラクターソング集",
+      audioUrl: "https://audio/remix-track.mp3",
+    };
+    const originalTrack = {
+      ...songs.answer,
+      id: "original-track",
+      title: "答案歌",
+      artist: "测试歌手",
+      album: "「Answer Anime」キャラクターソング集",
+      audioUrl: "https://audio/original-track.mp3",
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "「Answer Anime」キャラクターソング集", kind: "character" as const }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [],
+      searchAlbums: async () => [{ id: "album-chara", name: "「Answer Anime」キャラクターソング集", artist: "V.A." }],
+      getAlbumSongs: async () => [remixTrack, originalTrack],
+      getSong: async (id) => id === "remix-track" ? remixTrack : originalTrack,
+    };
+
+    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/original-track.mp3");
+  });
+
   const resolveInternals = (musicProvider: MusicProvider) => {
     const service = new SonGuessrService({
       musicProvider,
@@ -4238,6 +4408,65 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
 
     const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
     expect(summary.animeTrack?.kind).toBe("insert");
+  });
+
+  test("番剧级兜底拿回的歌按歌曲自身推类型，不沿用条目的电台分类", async () => {
+    // 条目是电台 CD（条目级检索必然落空），兜底按番剧名拿回的却是 OST 专辑里的曲目 ——
+    // 类型跟条目走会显示成 Radio（实测《四月は君の嘘 第8巻 特典CD》就是这样）。
+    const fallbackSong = {
+      ...songs.answer,
+      id: "fallback-ost",
+      title: "答案歌",
+      artist: "测试歌手",
+      album: "答案番剧 オリジナルサウンドトラック",
+      audioUrl: "https://audio/fallback-ost.mp3",
+    };
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async () => [fallbackSong],
+      getSong: async () => fallbackSong,
+    };
+    const bangumiProvider = {
+      getSubject: async () => ({
+        ...anime,
+        musicTracks: [{ title: "ラジオCD 出張版 Vol.1", artist: "测试歌手", kind: "radio" }],
+      }),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+
+    const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
+    expect(summary.animeTrack?.kind).toBe("ost");
+  });
+});
+
+describe("SonGuessr 曲目类型细化：主题曲桶不得吞掉原声带与特典 CD", () => {
+  test("带空格的 SOUND TRACK、特典 CD 不再标成主题曲", () => {
+    // 用户截图反馈的三条：K-ON!! OST 的校歌、四月是你的谎言特典 CD 的 アゲイン、
+    // 以及番剧级兜底召回的同名曲 —— 一律被标成「主题曲」。
+    expect(refineTrackKindByText("theme", "桜が丘女子高等学校校歌 百石元 K-ON!! ORIGINAL SOUND TRACK Vol.2")).toBe("ost");
+    expect(refineTrackKindByText("theme", "アゲイン 横山克 四月は君の嘘 第3巻 特典CD")).toBe("special");
+    expect(refineTrackKindByText("theme", "不可思議のカルテ (桜島麻衣ソロVer.) 瀬戸麻沙美 青春ブタ野郎はバニーガール先輩の夢を見ない 1 Special CD")).toBe("special");
+    // 真正的主题歌仍是主题曲。
+    expect(refineTrackKindByText("theme", "残酷な天使のテーゼ")).toBe("theme");
+    // 关系码已经给出具体类型时不被文本覆盖（片头 / 片尾 / 角色歌…）。
+    expect(refineTrackKindByText("opening", "君のせい the peggies")).toBe("opening");
+    expect(refineTrackKindByText("character", "キャラクターソング Vol.1")).toBe("character");
+    // 显式标注优先于 Bangumi 的粗分类（既有语义：片尾曲的歌不能配插曲徽章）。
+    expect(refineTrackKindByText("insert", "答案歌《答案番剧》TV动画片尾曲")).toBe("ending");
+  });
+
+  test("条目名里的广播剧 / 电台形态要分出来", () => {
+    // 旧规则只认拉丁 `drama` / `radio`，满篇 `ドラマCD`「ラジオCD」全落进主题曲桶。
+    expect(detectTrackKindFromText("ちょびっツ ドラマCD chapter.1")).toBe("drama");
+    expect(detectTrackKindFromText("CLANNAD ラジオCD 渚と早苗のおまえにレインボー Vol.1")).toBe("radio");
+    // 「ドラマチック」是正常曲名，不得误判成广播剧。
+    expect(detectTrackKindFromText("ドラマチック")).toBeUndefined();
+    // 原声带的关键词必须覆盖连写与带空格两种写法。
+    expect(detectTrackKindFromText("君の名は。オリジナルサウンドトラック")).toBe("ost");
+    expect(detectTrackKindFromText("K-ON!! ORIGINAL SOUND TRACK Vol.2")).toBe("ost");
+    // 英文形态的广播剧 / 电台盘同样要分出来（CHAOS;CHILD 整条关联都是这类盘）。
+    expect(detectTrackKindFromText("CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1")).toBe("drama");
+    expect(detectTrackKindFromText("○○ RADIO DIGEST Vol.2")).toBe("radio");
   });
 });
 

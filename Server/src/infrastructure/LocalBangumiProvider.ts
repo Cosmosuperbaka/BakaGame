@@ -4,7 +4,7 @@ import { bangumiImageUrl } from "./BangumiImagePaths";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
-import { isBangumiCreditsEntry } from "../shared/Index";
+import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index";
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
@@ -52,25 +52,14 @@ const RELATION_KINDS: Record<number, BangumiMusicTrack["kind"]> = {
 };
 const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack["kind"] => {
   const mapped = relationType ? RELATION_KINDS[relationType] : undefined;
-  if (mapped) return mapped;
-  const text = value.toLowerCase();
-  if (/片头|片頭|opening|\bop\b/.test(text)) return "opening";
-  if (/片尾|ending|\bed\d*\b/.test(text)) return "ending";
-  if (/插入|插曲|insert|\bin\d*\b/.test(text)) return "insert";
-  if (/原声|soundtrack|\bost\b/.test(text)) return "ost";
-  if (/角色|character/.test(text)) return "character";
-  if (/remix|重混/.test(text)) return "remix";
-  if (/同人/.test(text)) return "doujin";
-  if (/印象|image/.test(text)) return "image";
-  if (/vocaloid/.test(text)) return "vocaloid";
-  if (/drama|广播剧/.test(text)) return "drama";
-  if (/radio|广播/.test(text)) return "radio";
-  if (/arrange|改编|編曲/.test(text)) return "arrange";
-  if (/单曲|single/.test(text)) return "single";
-  if (/精选|collection|best/.test(text)) return "collection";
-  if (/朗读|reading/.test(text)) return "reading";
-  if (/艺人|album/.test(text)) return "artistAlbum";
-  return "theme";
+  // 3002~3006 是**具体类型**（角色歌 / 片头 / 片尾 / 插入歌 / 印象曲），直接采信。
+  if (mapped && mapped !== "theme") return mapped;
+  // 3001 是「主题歌」桶：Bangumi 把原声带、特典 CD、广播剧 CD 一并挂在它下面
+  // （实测本地数据集 38554 条关联曲目里 18117 条落在这个桶，其中 `ORIGINAL SOUND
+  // TRACK` 类 5215 条、特典 CD 636 条）。直接采信会让「主题曲」变成大杂烩 ——
+  // 必须再用**条目名**细化；只有推不出形态时才保留 theme。未映射的关系码（0 /
+  // 3007 / 3099）同样走这条文本兜底。
+  return detectTrackKindFromText(value) ?? "theme";
 };
 /** 上游原始 URL → 对外 URL：镜像前缀 + 图床缓存路径（档位选定见 BangumiImagePaths）。 */
 const rewriteImage = (value: unknown, imageBase: string) => bangumiImageUrl(value, imageBase);
@@ -91,11 +80,16 @@ export interface SubjectRow {
   rank?: number | null;
 }
 
-/** `subject_music_relations` 表的行形状。 */
+/**
+ * `subject_music_relations` 表的行形状。
+ *
+ * 刻意不读库里的 `kind` 列：它是构建期按关系码写死的粗分类（3001 一律写成
+ * `theme`），真相比它更细 —— 类型由 `normalizeKind` 在读取时按**关系码 + 条目名**
+ * 现算，避免「库里是主题曲、接口说原声带」这种双真相源。
+ */
 export interface MusicRelationRow {
   title: string;
   artist?: string | null;
-  kind?: string | null;
   relation_type?: number | null;
   relation_order?: number | null;
 }
@@ -311,9 +305,9 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     // 全被标成 opening 而排在真实曲目之前，实测会把《Music For All》这类
     // 完全无关的歌曲当成番剧 OP。文本规则 isBangumiCreditsEntry 作为第二道防线，
     // 同时覆盖联网 API 路径。
-    const relations = this.db.query("SELECT r.title, r.artist, r.kind, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id").all(id) as MusicRelationRow[];
+    const relations = this.db.query("SELECT r.title, r.artist, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id").all(id) as MusicRelationRow[];
     const seen = new Set<string>();
-    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.kind || m.title, Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
+    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.title.trim(), Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
     const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveEntityImage("subject", id);
     return { ...toResult({ ...row, image: imageUrl }, ""), summary: row.summary || undefined, locked: false, musicTracks };
   }

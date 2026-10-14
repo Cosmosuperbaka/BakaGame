@@ -10,7 +10,7 @@ import { followDelay, listItem, revealCard, springSettleMs } from "@/lib/Motion"
 import { cn } from "@/lib/Utils";
 import {
   BANGUMI_TRACK_KIND_LABELS,
-  detectExplicitTrackKind,
+  refineTrackKindByText,
   type BangumiMusicTrack,
   type BangumiMusicTrackKind,
   type SonGuessrPlayerView,
@@ -19,30 +19,18 @@ import {
   type SonGuessrRoundSummary,
 } from "@/types";
 
+/**
+ * 徽章文案：类型判定与服务端**共用同一份规则**（`refineTrackKindByText`），
+ * 客户端只负责把 kind 翻成中文标签。这里不再复刻一套正则 —— 两端各写一份的结果
+ * 是同一首歌在服务端算成「原声带」、客户端显示成「主题曲」（用户截图反馈过）。
+ */
 function formatTrackKind(
   kind?: BangumiMusicTrackKind,
   track?: BangumiMusicTrack,
   song?: SonGuessrRoundSummary["song"],
 ): string {
   const candidateText = `${track?.title ?? ""} ${song?.title ?? ""} ${song?.album ?? ""} ${song?.encyclopedia?.tags?.join(" ") ?? ""}`;
-  let effectiveKind: BangumiMusicTrackKind | undefined = detectExplicitTrackKind(candidateText) ?? track?.kind ?? kind;
-  if (!effectiveKind || effectiveKind === "theme") {
-    if (/原声|soundtrack|\bost\b/i.test(candidateText)) effectiveKind = "ost";
-    else if (/角色[歌曲]|character(?:\s*song)?/i.test(candidateText)) effectiveKind = "character";
-    else if (/\bremix\b|重混/i.test(candidateText)) effectiveKind = "remix";
-    else if (/同人/i.test(candidateText)) effectiveKind = "doujin";
-    else if (/印象[曲歌]|image(?:\s*song)?/i.test(candidateText)) effectiveKind = "image";
-    else if (/vocaloid/i.test(candidateText)) effectiveKind = "vocaloid";
-    else if (/\bdrama\b|广播剧|廣播劇/i.test(candidateText)) effectiveKind = "drama";
-    else if (/\bvocal\b/i.test(candidateText)) effectiveKind = "vocal";
-    else if (/\bradio\b|广播|廣播/i.test(candidateText)) effectiveKind = "radio";
-    else if (/\barrange\b|改编|改編|编曲|編曲/i.test(candidateText)) effectiveKind = "arrange";
-    else if (/单曲|單曲|\bsingle\b/i.test(candidateText)) effectiveKind = "single";
-    else if (/精选|精選|\bbest\b|collection/i.test(candidateText)) effectiveKind = "collection";
-    else if (/朗读|朗讀/i.test(candidateText)) effectiveKind = "reading";
-    else if (/艺人|藝人|album/i.test(candidateText)) effectiveKind = "artistAlbum";
-    else effectiveKind = "theme";
-  }
+  const effectiveKind = refineTrackKindByText(track?.kind ?? kind ?? "theme", candidateText);
   return BANGUMI_TRACK_KIND_LABELS[effectiveKind] ?? "主题曲";
 }
 
