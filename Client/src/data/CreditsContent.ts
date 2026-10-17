@@ -43,11 +43,13 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         url: "https://www.deepseek.com/news/v4-preview/",
       },
       {
-        // 0731 只有 API 更新记录，没有单独新闻页：退到官方文档的版本说明。
+        // 0731 没有单独新闻页：官方「新闻」栏目从 2026-04-24 直接跳到 2026-08-13，
+        // 唯一公开记录是更新日志里 2026-07-31 那一条。必须深链到该小节，只给日志首页
+        // 会停在首屏的 V4.1 Flash 1017，看着就像链到了别的版本。
         name: "Deepseek V4 Flash 0731",
         releasedAt: "2026-07-31",
         logo: "deepseek",
-        url: "https://api-docs.deepseek.com/zh-cn/updates",
+        url: "https://api-docs.deepseek.com/zh-cn/updates#deepseek-v4-flash-更新",
       },
       {
         name: "Deepseek V4.1 Flash",
