@@ -26,6 +26,7 @@
 | Bangumi 请求、图片、曲目筛选、SQLite 数据构建或角色资料 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
 | CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiApi |
 | 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
+| 开源致谢页、模型署名、依赖清单或许可证展示 | [Credits](Agents/Credits.md)；页面规范见 Design §7.5 |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
 | 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
 | 登录、账号资料、头像、账号 HTTP API、云同步设置、站内反馈或管理员身份 | [Account](Agents/Account.md) |
@@ -41,4 +42,5 @@
 - 本地编辑、隔离夹具测试及其失败修复可直接进行。已有授权持续有效；常规实现选择不需要逐步确认。
 - 推送、部署、真实第三方写入及破坏性操作按用户已授权范围执行；缺少必要授权时，先完成可独立进行的本地准备与验证，再说明具体待执行动作。文档中的命令示例本身不构成执行授权。
 - 保护用户已有改动；提交前检查暂存区，只提交本任务内容。交付说明改动、验证结果与尚未解决的限制。
+- 实际改动了仓库文件（代码、数据、文档、样式或配置）的模型，在本次改动中把署名加入 `Client/src/data/CreditsContent.ts`；仅参与讨论或咨询不署名。规则见 [Credits §3](Agents/Credits.md#3-模型署名)。
 - 审查确认的工程规则在对应修改点立即沉淀到专项文档，维护方法见 [Spec §5](Agents/Spec.md#规范维护)。根入口和 `CLAUDE.md` 不复制领域细则。
