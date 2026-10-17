@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { iconTappable, popover, readoutSwap } from "@/lib/Motion";
+import { digitRoll, iconTappable, popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface VolumeControlProps {
@@ -128,37 +128,26 @@ function DigitItem({ index, char, position }: { index: number; char: string; pos
   );
 }
 
-function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boolean }) {
+function DigitColumn({ digit, value }: { digit: number; value: number }) {
   const reduced = useReducedMotion();
-  const isFirstMount = useRef(true);
-  // 首次挂载且处于增加态且初始数字大于 0 时，轮盘从 0 拉起，顺畅翻滚到目标数字。
-  // 用惰性 state 固定首帧值：惰性初始化只求值一次，语义与「render 里读 ref」相同，
-  // 但不在渲染期碰 ref（react-hooks/refs 会判为副作用）。
-  const [initialPos] = useState(() => (isAscending && digit > 0 ? 0 : digit));
   const target = useRef(digit);
-  const prevDigit = useRef(initialPos);
-  const position = useSpring(initialPos, { stiffness: 380, damping: 26, mass: 0.8 });
+  const previous = useRef({ digit, value });
+  const position = useSpring(digit, digitRoll.follow);
 
   useEffect(() => {
-    if (isFirstMount.current) {
-      isFirstMount.current = false;
-      if (initialPos !== digit) {
-        target.current = digit;
-        if (reduced) position.jump(digit);
-        else position.set(digit);
-      }
-      return;
-    }
+    const last = previous.current;
+    previous.current = { digit, value };
+    if (last.digit === digit) return;
 
-    const last = prevDigit.current;
-    prevDigit.current = digit;
-    if (last === digit) return;
-    const forward = (digit - last + DIGIT_COUNT) % DIGIT_COUNT;
-    const backward = (last - digit + DIGIT_COUNT) % DIGIT_COUNT;
+    // 当数值增加时向前滚动（新数字从下方升起推进）；数值减少时向后滚动（从上方落下回退）
+    const isAscending = value >= last.value;
+    const forward = (digit - last.digit + DIGIT_COUNT) % DIGIT_COUNT;
+    const backward = (last.digit - digit + DIGIT_COUNT) % DIGIT_COUNT;
     target.current += isAscending ? forward : -backward;
+
     if (reduced) position.jump(target.current);
     else position.set(target.current);
-  }, [digit, isAscending, reduced, position, initialPos]);
+  }, [digit, value, reduced, position]);
 
   return (
     <span className="relative inline-block h-[1em] w-[0.62em] overflow-hidden align-baseline">
@@ -180,16 +169,6 @@ function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boole
  */
 function RollingVolumeNumber({ value, className }: { value: number; className?: string }) {
   const num = Math.min(100, Math.max(0, Math.round(value)));
-  // 方向要按「上一次渲染的值」判断。用 state 而不是 ref：render 期读写 ref 会被
-  // react-hooks/refs 判为副作用（React Compiler 也不认），而这里条件 setState 是官方
-  // 支持的派生状态写法——立即重渲染当前组件，首帧就按正确方向画，不产生额外提交。
-  const [previous, setPrevious] = useState(num);
-  const [isAscending, setIsAscending] = useState(true);
-  if (previous !== num) {
-    setIsAscending(num >= previous);
-    setPrevious(num);
-  }
-
   const digits = String(num).split("").map(Number);
   const totalDigits = digits.length;
 
@@ -199,7 +178,7 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
       <span aria-hidden="true" className="inline-flex items-center">
         {digits.map((d, i) => {
           const place = totalDigits - 1 - i;
-          return <DigitColumn key={place} digit={d} isAscending={isAscending} />;
+          return <DigitColumn key={place} digit={d} value={num} />;
         })}
       </span>
     </span>
@@ -223,9 +202,11 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
       return;
     }
 
-    // 差值已在显示精度以内：不需要再写一次 state（同步 setState 会触发级联渲染），
-    // 四舍五入后的百分比本来就一致。
-    if (Math.abs(volume - displayVolume) < 0.002) return;
+    // 差值已在显示精度以内：若目标是静音则强收束到 0
+    if (Math.abs(volume - displayVolume) < 0.002) {
+      if (volume === 0 && displayVolume !== 0) setDisplayVolume(0);
+      return;
+    }
 
     if (animControls.current) {
       animControls.current.stop();
@@ -233,7 +214,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
     }
 
     const controls = animate(displayVolume, volume, {
-      duration: 0.32,
+      duration: 0.3,
       ease: [0.2, 0, 0, 1], // emphasized 曲线：起步顺畅，收尾极其细腻自然
       onUpdate: (latest) => {
         setDisplayVolume(latest);
@@ -253,7 +234,10 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [volume]);
 
-  const percentage = Math.round(displayVolume * 100);
+  const isMuted = volume === 0;
+  // 静音时若补间尾段极微小（< 0.008，对应百分比四舍五入前临界），直接归零，杜绝读数残留在 1
+  const effectiveVolume = isMuted && displayVolume < 0.008 ? 0 : displayVolume;
+  const percentage = Math.round(effectiveVolume * 100);
   const muted = volume === 0;
   const spring = "duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)";
 
@@ -273,7 +257,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
           muted ? "text-muted-foreground" : "text-foreground",
         )}
       >
-        <VolumeGlyph volume={volume === 0 ? 0 : displayVolume} className="h-4 w-4" />
+        <VolumeGlyph volume={muted ? 0 : effectiveVolume} className="h-4 w-4" />
       </motion.button>
       <Slider
         className="h-full w-28"
@@ -287,7 +271,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
           "group-hover/volume:scale-100 group-hover/volume:opacity-100 group-focus-within/volume:scale-100 group-focus-within/volume:opacity-100",
           "group-data-expanded/volume:scale-100 group-data-expanded/volume:opacity-100",
         )}
-        value={[displayVolume]}
+        value={[effectiveVolume]}
         min={0}
         max={1}
         step={0.01}

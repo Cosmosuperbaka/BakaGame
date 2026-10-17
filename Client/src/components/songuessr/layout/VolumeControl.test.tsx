@@ -83,6 +83,17 @@ it("读数按钮展示真实数值，无多余占位与字符", () => {
   expect(readout).toHaveTextContent(/^7$/);
 });
 
+it("所有整十音量（0–100）读数与无障本文本均精准匹配，绝不出现整十少 10 偏差", () => {
+  stubMatchMedia(true);
+  const tens = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  for (const t of tens) {
+    const { unmount } = render(<VolumeControl volume={t / 100} onVolumeChange={vi.fn()} />);
+    const readout = screen.getByRole("button", { name: `音量 ${t}%，点击输入` });
+    expect(readout).toHaveTextContent(new RegExp(`^${t}$`));
+    unmount();
+  }
+});
+
 it("点击静音开关时平滑过渡音量显示值，手动交互时立即响应", async () => {
   const user = userEvent.setup();
   stubMatchMedia(true);
@@ -94,9 +105,12 @@ it("点击静音开关时平滑过渡音量显示值，手动交互时立即响�
   expect(onVolumeChange).toHaveBeenLastCalledWith(0);
   rerender(<VolumeControl volume={0} onVolumeChange={onVolumeChange} />);
 
-  // 动画平滑落定到 0
+  // 动画平滑落定到 0，读数绝不悬留在 1
   await waitFor(() => {
     expect(screen.getByRole("slider", { name: "播放音量" })).toHaveAttribute("aria-valuenow", "0");
+    const readout = screen.getByRole("button", { name: "音量 0%，点击输入" });
+    expect(readout).toHaveTextContent(/^0$/);
   });
 });
+
 
