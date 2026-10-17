@@ -140,7 +140,7 @@
 
 - 命令操作使用 `Button` 的既有变体：主要操作使用 `default`，次要操作使用 `outline` 或 `secondary`，低强调操作使用 `ghost`，危险操作使用 `destructive`。
 - 只有纯图标命令使用 `size="icon"`，并提供可访问名称或 Tooltip；带业务含义且不够直观的操作使用图标加文字。
-- 悬停说明统一用 `components/ui/Tooltip` 的 `Hint`（`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`）：它复用首页外链按钮那套浮层表面与开合动效，原生 `title` 的浮层样式由系统决定、不进设计系统，一律不再使用。文案为空时 `Hint` 直接渲染原元素，调用处不必为可空文案分叉。只在悬停能说出正文看不到的内容时才挂：被 `truncate` 截断的文本（玩家名、条目名、包名）给全文，纯图标按钮给用途，相对时间给确切时刻，汇总数给分项拆解；正文已完整可见的（徽章上的标签名与许可证名、常驻的百分比读数）不挂悬停复述一遍。截断的文本继续用 `truncate`，不为了省掉悬停改成换行或滚动。`Hint` 不渲染包裹元素，可以直接包在 `<td>`、`<th>` 这类单元格上。
+- 悬停说明统一用 `components/ui/Tooltip` 的 `Hint`（`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`）：它复用首页外链按钮那套浮层表面与开合动效，原生 `title` 的浮层样式由系统决定、不进设计系统，一律不再使用。文案为空时 `Hint` 直接渲染原元素，调用处不必为可空文案分叉。只在悬停能说出正文看不到的内容时才挂：被 `truncate` 截断的文本（玩家名、条目名、包名）给全文，纯图标按钮给用途，相对时间给确切时刻，汇总数给分项拆解；正文已完整可见的（徽章上的标签名与许可证名、常驻的百分比读数）不挂悬停复述一遍。截断的文本继续用 `truncate`，不为了省掉悬停改成换行或滚动。`Hint` 不渲染包裹元素，可以直接包在 `<td>`、`<th>` 这类单元格上；但它不透传 props，**不能夹进 Radix 的 `asChild` 槽位链**（如 `Popover.Trigger asChild` 下的按钮）——Slot 会把 ref 与事件克隆到 `Hint` 上而不是真正的 DOM 节点，功能直接失效。这种组合改写成显式的 `TooltipTrigger asChild` 套在 Radix 组件外层，Radix 之间会正常透传。
 - 关闭弹窗、覆盖面板与内嵌面板统一用 `CloseButton`：ghost 图标钮、`text-muted-foreground`，默认可访问名「关闭」，能说得更具体时用 `aria-label` 改写（如「关闭面板」）。需要 Radix 的关闭语义时包在 `Close asChild` 里；业务组件不再另拼 `X` 图标按钮。
 - 加载指示统一用 `Spinner`，尺寸与颜色由调用处的 `size-*`、`text-*` 给出。它对读屏隐藏，进行中的含义由外层 `role="status"`、按钮的 `aria-busy` 或并排文字表达；按钮的提交态优先用 `Button` 的 `loading`。不手写 `animate-spin` 或边框圆环，动效约束见 [Animation](Animation.md)。
 - 外链图标按钮用 `Button asChild variant="ghost" size="icon"` 包住 `<a>`。Font Awesome 品牌图标的内置样式不在层叠层里，按 `em` 定尺寸并压过 `w-4`、`size-4` 一类工具类，尺寸只能经字号（`text-base` 等）给出。
