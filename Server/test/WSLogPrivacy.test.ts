@@ -35,7 +35,7 @@ async function connect(url: string) {
   finally { clearTimeout(deadline); }
   return {
     socket,
-    async exchange(frame: string | Uint8Array, matches: (packet: Packet) => boolean): Promise<Packet> {
+    async exchange(frame: string | Uint8Array<ArrayBuffer>, matches: (packet: Packet) => boolean): Promise<Packet> {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         return await new Promise<Packet>((resolve, reject) => {
