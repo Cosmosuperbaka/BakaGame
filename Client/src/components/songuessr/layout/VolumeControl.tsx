@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { iconTappable, popover, readoutSwap } from "@/lib/Motion";
+import { digitRoll, iconTappable, popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface VolumeControlProps {
@@ -103,14 +103,116 @@ interface VolumeCapsuleProps extends VolumeControlProps {
 }
 
 /**
+ * 0–9 单个数字槽位的无缝循环滚轮。
+ * 不设多余空格槽，10 个真实数字均匀环绕；当值增加（如从 0 向上拖动）时，滚轮自下方向上滚动推进。
+ */
+const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const DIGIT_COUNT = DIGITS.length;
+const GLYPH = "before:content-[attr(data-glyph)]";
+
+function wrapDigitOffset(offset: number): number {
+  const half = DIGIT_COUNT / 2;
+  return ((((offset + half) % DIGIT_COUNT) + DIGIT_COUNT) % DIGIT_COUNT) - half;
+}
+
+function DigitItem({ index, char, position }: { index: number; char: string; position: MotionValue<number> }) {
+  const offset = useTransform(position, (current) => wrapDigitOffset(index - current));
+  const y = useTransform(offset, (o) => `${o * 100}%`);
+  const opacity = useTransform(offset, (o) => Math.max(0, 1 - Math.abs(o) * 0.75));
+  return (
+    <motion.span
+      data-glyph={char}
+      className={cn(GLYPH, "absolute inset-0 flex items-center justify-center font-semibold tabular-nums leading-none")}
+      style={{ y, opacity }}
+    />
+  );
+}
+
+function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boolean }) {
+  const reduced = useReducedMotion();
+  const target = useRef(digit);
+  const prevDigit = useRef(digit);
+  const position = useSpring(digit, digitRoll.follow);
+
+  useEffect(() => {
+    const last = prevDigit.current;
+    prevDigit.current = digit;
+    if (last === digit) return;
+    const forward = (digit - last + DIGIT_COUNT) % DIGIT_COUNT;
+    const backward = (last - digit + DIGIT_COUNT) % DIGIT_COUNT;
+    // 增加时向上滚（新字从下方升起，从 0 向上推进）；减少时向下滚
+    target.current += isAscending ? forward : -backward;
+    if (reduced) position.jump(target.current);
+    else position.set(target.current);
+  }, [digit, isAscending, reduced, position]);
+
+  return (
+    <span className="relative inline-block h-[1em] w-[0.62em] overflow-hidden align-baseline">
+      {/* 隐藏的 0 撑开单字符自然宽度与高度，数字不写在 DOM 文本节点避免读屏/单测重复 */}
+      <span data-glyph="0" className={cn(GLYPH, "invisible")} />
+      <span className="absolute inset-0">
+        {DIGITS.map((d, index) => (
+          <DigitItem key={index} index={index} char={d} position={position} />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * 具有方向感知与连续物理弹簧跟手的音量数字。
+ * 无前导空格，按真实位数（0–9 为 1 位，10–99 为 2 位，100 为 3 位）居中呈现。
+ * 拖动与恢复时数值增加自下而上顶进，数值减少自上而下回退。
+ */
+function RollingVolumeNumber({ value, className }: { value: number; className?: string }) {
+  const num = Math.min(100, Math.max(0, Math.round(value)));
+  const prevValue = useRef(num);
+  const isAscending = useRef(true);
+
+  if (num !== prevValue.current) {
+    isAscending.current = num >= prevValue.current;
+    prevValue.current = num;
+  }
+
+  const digits = String(num).split("").map(Number);
+  const totalDigits = digits.length;
+
+  return (
+    <span className={cn("relative inline-flex items-center justify-center tabular-nums leading-none", className)}>
+      <span className="sr-only">{num}</span>
+      <span aria-hidden="true" className="inline-flex items-center">
+        {digits.map((d, i) => {
+          const place = totalDigits - 1 - i;
+          return <DigitColumn key={place} digit={d} isAscending={isAscending.current} />;
+        })}
+      </span>
+    </span>
+  );
+}
+
+/**
  * 胶囊本体：静音按钮、轨道与百分比读数，常驻音量条与弹出层共用。
  * 轨道细时只有 4px，滑块收起；悬停或键盘聚焦到滑块时轨道补间到 6px、滑块弹出，与 Switch 同一档 `spring.snap` 的 CSS 弹性。
- * 根节点撑满胶囊高度，整条都能按住拖动，不必对准细轨道。
+ * 静音开关或直接输入提交时，滑块与填充轨道带平滑移动动效；手动拖动时保持零延迟极速跟手。
  */
 function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false, className }: VolumeCapsuleProps) {
   const percentage = Math.round(volume * 100);
   const muted = volume === 0;
   const spring = "duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)";
+  const [smoothMoving, setSmoothMoving] = useState(false);
+  const smoothTimer = useRef<number | null>(null);
+
+  const triggerSmoothMove = () => {
+    setSmoothMoving(true);
+    if (smoothTimer.current) window.clearTimeout(smoothTimer.current);
+    smoothTimer.current = window.setTimeout(() => setSmoothMoving(false), 350);
+  };
+
+  const handleToggleMute = () => {
+    triggerSmoothMove();
+    onToggleMute();
+  };
+
   return (
     <div
       data-expanded={expanded || undefined}
@@ -119,7 +221,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
       <motion.button
         type="button"
         {...iconTappable}
-        onClick={onToggleMute}
+        onClick={handleToggleMute}
         aria-label={muted ? "取消静音" : "静音"}
         aria-pressed={muted}
         className={cn(
@@ -135,27 +237,42 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
           "h-1 transition-[height]", spring,
           "group-hover/volume:h-1.5 group-focus-within/volume:h-1.5 group-data-expanded/volume:h-1.5",
         )}
+        rangeClassName={cn(
+          smoothMoving && "transition-[left,right,width] duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)",
+        )}
         thumbClassName={cn(
           // 收起时缩到一半并透明，而不是缩成 0：包围盒仍在，自动化与读屏按可见元素找得到滑块。
           "scale-50 opacity-0 transition-[scale,opacity,background-color]", spring,
           "group-hover/volume:scale-100 group-hover/volume:opacity-100 group-focus-within/volume:scale-100 group-focus-within/volume:opacity-100",
           "group-data-expanded/volume:scale-100 group-data-expanded/volume:opacity-100",
+          smoothMoving && "transition-[left,transform,scale,opacity,background-color] duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)",
         )}
         value={[volume]}
         min={0}
         max={1}
         step={0.01}
-        onValueChange={([value]) => onVolumeChange(value)}
+        onPointerDown={() => setSmoothMoving(false)}
+        onValueChange={([value]) => {
+          setSmoothMoving(false);
+          onVolumeChange(value);
+        }}
         aria-label="播放音量"
       />
-      <VolumeReadout percentage={percentage} muted={muted} onCommit={(value) => onVolumeChange(value / 100)} />
+      <VolumeReadout
+        percentage={percentage}
+        muted={muted}
+        onCommit={(value) => {
+          triggerSmoothMove();
+          onVolumeChange(value / 100);
+        }}
+      />
     </div>
   );
 }
 
 /**
  * 右端的音量数值与输入框：与左侧静音开关保持对称的圆形大小（h-7 w-7 rounded-full）。
- * 常态下居中显示自然宽度的数值（不带多余前导占位与 %）；
+ * 常态下居中显示自然宽度的连续弹簧滚动数值（不带多余前导占位与 %）；
  * 点击原地切换为同尺寸同圆角的圆形输入框，居中直接键入 0–100 的数值：回车或失焦提交，Esc 放弃。
  */
 function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; muted: boolean; onCommit: (value: number) => void }) {
@@ -208,7 +325,7 @@ function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; mu
         tone,
       )}
     >
-      {percentage}
+      <RollingVolumeNumber value={percentage} />
     </motion.button>
   );
 }
