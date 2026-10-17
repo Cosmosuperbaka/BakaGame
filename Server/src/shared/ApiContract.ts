@@ -348,7 +348,7 @@ export const apiContract = {
   account: {
     /**
      * 发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；
-     * `qqName` 是新号注册后将使用的账号昵称，老号为 null。
+     * `qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。
      */
     requestLoginCode: oc
       .input(z.object({ qqNumber }))

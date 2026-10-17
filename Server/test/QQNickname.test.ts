@@ -115,17 +115,17 @@ describe("昵称查询与同步", () => {
     // 掉线时照样发起一次查询（拿不到结果），不做长期的「失效」标记：
     // NapCat 侧的掉线多为临时状态，持久停用只会让恢复多等一轮。
     expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
-    // 已注册账号不发查询，照常发码
-    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: null });
+    // 已注册账号不发查询，照常发码，并回传库里最近一次同步的昵称
+    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: "管理员" });
   });
 
-  test("新账号发码返回将使用的 QQ 昵称，老账号不查", async () => {
+  test("新账号发码返回将使用的 QQ 昵称，老账号回传库中昵称且不查查询号", async () => {
     let clock = Date.now();
     const { rpc, napcat } = await setup({ now: () => clock });
     clock += 61_000; // 越过管理员账号的重发间隔
     expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({ registered: false, qqName: "阿狸" });
     clock += 61_000;
-    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: null });
+    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: "管理员" });
     expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
   });
 

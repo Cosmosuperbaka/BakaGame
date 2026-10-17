@@ -98,13 +98,14 @@ export class AccountService {
       throw new AppError("RATE_LIMITED", "验证码获取过于频繁，请一小时后再试");
     }
     const existing = (await (await this.adapter()).findUserByEmail(email))?.user as
-      | { banned?: boolean | null; banExpires?: Date | null } | undefined;
+      | { banned?: boolean | null; banExpires?: Date | null; name?: string | null; qqName?: string | null } | undefined;
     // 封禁中的账号登录必然被拒，不为它消耗发信额度；到期的封禁由 Better Auth 在登录时自动解除。
     if (existing?.banned && (!existing.banExpires || new Date(existing.banExpires).getTime() > now)) {
       throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
     }
-    // 账号昵称强制使用 QQ 昵称：新号发码前必须取到昵称，取不到即拒绝（停用注册）；老号登录不查。
-    const qqName = existing ? null : await this.requireNickname(qqNumber);
+    // 账号昵称强制使用 QQ 昵称：新号发码前必须取到昵称，取不到即拒绝（停用注册）；
+    // 老号回传库里最近一次同步的昵称供登录弹窗展示身份，不为此打扰查询号。
+    const qqName = existing ? (existing.qqName ?? existing.name ?? null) : await this.requireNickname(qqNumber);
     const code = await this.options.auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
     try {
       await this.options.mailer.sendLoginCode({ to: email, code });
