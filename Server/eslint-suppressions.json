@@ -1,0 +1,376 @@
+{
+  "scripts/CheckCoverage.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "scripts/Delivery.test.ts": {
+    "@typescript-eslint/await-thenable": {
+      "count": 7
+    },
+    "@typescript-eslint/no-floating-promises": {
+      "count": 3
+    }
+  },
+  "scripts/DeploymentProbe.ts": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 1
+    }
+  },
+  "scripts/SongRandomnessProbe.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "scripts/fixtures/DeniedEgress.ts": {
+    "@typescript-eslint/await-thenable": {
+      "count": 1
+    }
+  },
+  "src/application/CEENativeService.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/application/CEEOriginalService.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/application/CEEViews.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/application/SonGuessrService.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    },
+    "@typescript-eslint/unbound-method": {
+      "count": 8
+    },
+    "no-useless-escape": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 9
+    }
+  },
+  "src/application/WhoIsFakerService.ts": {
+    "no-useless-assignment": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 11
+    }
+  },
+  "src/domain/CEERound.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/domain/Rules.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/AggregatedMusicProvider.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 12
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/BangumiDataWorker.ts": {
+    "@typescript-eslint/await-thenable": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/BangumiProvider.ts": {
+    "no-useless-escape": {
+      "count": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "src/infrastructure/BangumiSearchIndex.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 3
+    }
+  },
+  "src/infrastructure/CEECharacterRepository.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "src/infrastructure/CEEOriginalProtocol.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/EventLogger.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/MeiliHttpClient.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-promise-reject-errors": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/MusicDeduplicator.ts": {
+    "no-useless-escape": {
+      "count": 13
+    },
+    "prefer-const": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/NeteaseMusicProvider.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    },
+    "no-irregular-whitespace": {
+      "count": 1
+    },
+    "no-useless-escape": {
+      "count": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 6
+    }
+  },
+  "src/infrastructure/QQMusicProvider.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 38
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/Sentry.ts": {
+    "no-control-regex": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 2
+    }
+  },
+  "src/infrastructure/SentryApi.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/SubjectUpdater.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/infrastructure/TagDiffSync.ts": {
+    "@typescript-eslint/no-misused-promises": {
+      "count": 1
+    }
+  },
+  "src/scripts/VerifyDualSearch.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/shared/Account.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "src/transport/App.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "@typescript-eslint/unbound-method": {
+      "count": 2
+    }
+  },
+  "src/transport/Packets.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/transport/SonGuessrProtocol.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/transport/WhoIsFakerProtocol.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 6
+    }
+  },
+  "src/transport/routes/SentryTunnel.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "src/transport/routes/System.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "test/AggregatedMusicProvider.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 32
+    },
+    "@typescript-eslint/unbound-method": {
+      "count": 19
+    }
+  },
+  "test/App.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "test/BangumiProvider.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    }
+  },
+  "test/BangumiWorkerProvider.test.ts": {
+    "@typescript-eslint/no-floating-promises": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "test/CEECharacterRepository.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    }
+  },
+  "test/CEEEnrichment.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 2
+    }
+  },
+  "test/CEEOriginalPreparation.test.ts": {
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "test/EventLogger.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 2
+    }
+  },
+  "test/LocalBangumiProvider.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 2
+    },
+    "no-empty": {
+      "count": 5
+    }
+  },
+  "test/MusicUrnAndDeduplicator.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "test/NeteaseMusicProvider.test.ts": {
+    "no-useless-assignment": {
+      "count": 2
+    }
+  },
+  "test/OtlpExporter.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 5
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "test/SentryTunnel.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    }
+  },
+  "test/SiteStats.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 1
+    }
+  },
+  "test/SonGuessrService.test.ts": {
+    "@typescript-eslint/no-floating-promises": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "test/SongRandomnessProbe.test.ts": {
+    "no-loss-of-precision": {
+      "count": 1
+    }
+  },
+  "test/SubjectDiscovery.test.ts": {
+    "@typescript-eslint/no-base-to-string": {
+      "count": 2
+    }
+  },
+  "test/TestRoom.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "test/WSLogPrivacy.test.ts": {
+    "no-unsafe-finally": {
+      "count": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "count": 1
+    }
+  },
+  "test/WhoIsFakerService.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 5
+    }
+  }
+}

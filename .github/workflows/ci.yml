@@ -97,6 +97,9 @@ jobs:
       - name: Type check server
         run: pnpm --filter server check
 
+      - name: Lint server
+        run: pnpm --filter server lint
+
       - name: Run server tests with coverage
         run: pnpm --filter server test:coverage
 

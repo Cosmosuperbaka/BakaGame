@@ -204,6 +204,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
 
     // 差值已在显示精度以内：若目标是静音则强收束到 0
     if (Math.abs(volume - displayVolume) < 0.002) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 静音时把动画显示值收束到 0，属于外部 prop 同步，不是渲染期派生状态
       if (volume === 0 && displayVolume !== 0) setDisplayVolume(0);
       return;
     }

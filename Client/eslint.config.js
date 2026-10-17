@@ -1,14 +1,33 @@
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import tseslint from 'typescript-eslint'
-import { defineConfig, globalIgnores } from 'eslint/config'
+import js from "@eslint/js";
+import globals from "globals";
+import reactHooks from "eslint-plugin-react-hooks";
+import reactRefresh from "eslint-plugin-react-refresh";
+import sonarjs from "eslint-plugin-sonarjs";
+import tseslint from "typescript-eslint";
+import { defineConfig, globalIgnores } from "eslint/config";
+
+/**
+ * 类型感知规则：只对 tsconfig.app.json 工程内的 src 开启。
+ * e2e、.storybook、vite/vitest 配置不在该工程里，套 project 会直接报
+ * "file not found in any project"，因此它们只走语法级检查。
+ *
+ * 只挑缺陷类，不启用 recommendedTypeChecked 全量：no-unsafe-* 在本项目
+ * 会大量命中第三方 any 泄漏（实测 347 条），信噪比不足以进门禁。
+ */
+const TYPE_AWARE_RULES = {
+  "@typescript-eslint/no-floating-promises": "error",
+  "@typescript-eslint/no-misused-promises": "error",
+  "@typescript-eslint/await-thenable": "error",
+  "@typescript-eslint/no-base-to-string": "error",
+  "@typescript-eslint/only-throw-error": "error",
+  "@typescript-eslint/prefer-promise-reject-errors": "error",
+  "@typescript-eslint/unbound-method": "error",
+};
 
 export default defineConfig([
-  globalIgnores(['dist', 'coverage', 'playwright-report', 'test-results', 'storybook-static', 'storybook-shots']),
+  globalIgnores(["dist", "coverage", "playwright-report", "test-results", "storybook-static", "storybook-shots"]),
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ["**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
@@ -19,5 +38,25 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    plugins: {
+      sonarjs,
+    },
+    rules: {
+      // 认知复杂度阈值 20。存量由 eslint-suppressions.json 记录，新增违规直接失败；
+      // 重构使复杂度下降后跑 `npm run lint:prune` 递减基线，避免基线腐烂。
+      "sonarjs/cognitive-complexity": ["error", 20],
+    },
   },
-])
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: {
+      parserOptions: {
+        // 根 tsconfig.json 是 files: [] + references，projectService 会撞上它
+        // 并报 file not found；这里必须显式指向 app 工程。
+        project: ["./tsconfig.app.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: TYPE_AWARE_RULES,
+  },
+]);
