@@ -439,7 +439,7 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
     expect(statusCalls).toBe(2);
   });
 
-  it("login_refresh 抛异常时沿用原状态结果，不冒泡失败", async () => {
+  it("login_refresh 刷新后仍未登录或抛异常时，严格抛出 MUSIC_SESSION_INVALID", async () => {
     const provider = new QQMusicProvider();
     qqmusic.login_status = mock(async () => ({
       status: 200,
@@ -449,12 +449,10 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
       throw new Error("refresh down");
     }) as any;
 
-    const session = await provider.getLoginStatus("some_cookie");
-    expect(session.cookie).toBe("some_cookie");
-    expect(session.account.nickname).toBe("匿名");
+    await expect(provider.getLoginStatus("some_cookie")).rejects.toThrow("QQ 音乐登录状态已失效");
   });
 
-  it("未登录的会话不写缓存，每次都重新探测", async () => {
+  it("未登录的会话不写缓存，每次都重新探测并抛出异常", async () => {
     const provider = new QQMusicProvider();
     let calls = 0;
     qqmusic.login_status = mock(async () => {
@@ -463,8 +461,8 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
     }) as any;
     qqmusic.login_refresh = mock(async () => ({ status: 200, body: {} })) as any;
 
-    await provider.getLoginStatus("nocache");
-    await provider.getLoginStatus("nocache");
+    await expect(provider.getLoginStatus("nocache")).rejects.toThrow("QQ 音乐登录状态已失效");
+    await expect(provider.getLoginStatus("nocache")).rejects.toThrow("QQ 音乐登录状态已失效");
     expect(calls).toBe(2);
   });
 });

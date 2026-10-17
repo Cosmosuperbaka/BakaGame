@@ -5393,6 +5393,58 @@ describe("SonGuessr service 音乐认证意图", () => {
     expect(snapshot.phase).toBe("playing");
     expect(snapshot.currentRound?.audioUrl).toBe(testSong.audioUrl);
   });
+
+  test("QQ音乐凭据失效时 useCookie 抛出 MUSIC_SESSION_INVALID 且开局校验清除失效会话", async () => {
+    let qqValid = true;
+    const testSong = makeSong("netease:1", "选曲测试", 2022);
+    const mockProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (_cookie, platform) => {
+        if (platform === "qq" && !qqValid) {
+          throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录状态已失效，请重新扫码登录");
+        }
+        return {
+          cookie: "valid-cookie",
+          account: { platform: platform || "netease", userId: "123", nickname: "用户", vipStatus: "vip" },
+        };
+      },
+      getSong: async () => testSong,
+    };
+
+    const service = new SonGuessrService({ musicProvider: mockProvider });
+    const host = connection(service, "qq-invalid-host");
+    await createRoom(service, host, { roomId: "8888", name: "QQ测试房", solo: true });
+
+    // 1. 成功装载初始会话
+    await execute(service, host, {
+      id: "auth-qq",
+      type: "song.auth.useCookie",
+      roomId: "8888",
+      payload: { cookie: "initial-qq-cookie", platform: "qq" },
+    });
+    let snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.qqMusicAccountReady).toBe(true);
+
+    // 2. QQ 凭据在腾讯端过期后，再次 useCookie 直接抛出 MUSIC_SESSION_INVALID
+    qqValid = false;
+    await expect(
+      execute(service, host, {
+        id: "auth-qq-expired",
+        type: "song.auth.useCookie",
+        roomId: "8888",
+        payload: { cookie: "expired-qq-cookie", platform: "qq" },
+      })
+    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+
+    // 3. 开局刷新校验捕获失效，自动清除房间内已失效的会话，并拦截开局
+    await expect(
+      execute(service, host, { id: "start", type: "song.game.start", roomId: "8888", payload: {} })
+    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+
+    snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.qqMusicAccountReady).toBe(false);
+    expect(snapshot.musicAccounts?.qq).toBeUndefined();
+  });
 });
 
 describe("SonGuessr service 设置原子更新", () => {

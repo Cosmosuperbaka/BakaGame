@@ -797,6 +797,10 @@ export class QQMusicProvider implements MusicProvider {
       }
     }
 
+    if (!statusRes.body?.isLogin) {
+      throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录状态已失效，请重新扫码登录");
+    }
+
     const acc = statusRes.body?.account;
     const session: MusicLoginSession = {
       cookie: currentCookie,
@@ -813,11 +817,9 @@ export class QQMusicProvider implements MusicProvider {
       },
     };
 
-    if (statusRes.body?.isLogin) {
-      this.loginStatusCache.set(cacheKey, session);
-      if (currentCookie.trim() !== trimmed) {
-        this.loginStatusCache.set(`login-status:${currentCookie.trim()}`, session);
-      }
+    this.loginStatusCache.set(cacheKey, session);
+    if (currentCookie.trim() !== trimmed) {
+      this.loginStatusCache.set(`login-status:${currentCookie.trim()}`, session);
     }
 
     return session;
