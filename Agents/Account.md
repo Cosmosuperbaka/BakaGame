@@ -49,14 +49,15 @@
 - 刷新时机：前端每次访问调用一次 `account.me`，服务端距上次回源不足 10 分钟则跳过；字节摘要变化才改 `image`（URL 换版本）。回源失败保留旧头像，只记告警。
 - 头像字节只缓存在进程内存（总量 32 MB、6 小时），不落库。
 
-### QQ 昵称（查询号）
+### QQ 昵称（NapCat）
 
-- QQ 昵称接口要 QQ 登录态，匿名不可用。管理员在后台扫码登录**一个**查询用的 QQ 号，服务端用它的 Cookie 查所有注册用户的昵称（`infrastructure/auth/QQWebLogin.ts`、`application/QQNicknameService.ts`）。走纯 HTTP 的 QQ 空间网页登录（ptlogin 扫码 → 跟随 `check_sig` 拿 `p_skey`），不部署 QQ 客户端。
-- 查询号登录态（Cookie）以 `SettingCipher` 加密存入 `site_config` 的 `qq.lookupSession`（附加数据为站点作用域），日志与接口响应都不含 Cookie。昵称接口报未登录即标记失效、停止请求，等管理员重新扫码。
-- **账号昵称强制使用 QQ 昵称**：新号发码前必须取到昵称（限时 3 秒），取不到即拒绝发码——查询号不可用（未登录、失效、超配额、接口失败）或该号查不到昵称时停用新号注册；老号登录不查询、不受影响。建号钩子经 `resolveNickname` 再解析一次（优先命中发码时的查询缓存，进程重启等缓存丢失时补一次实时查询），仍取不到则拒绝建号。`requestLoginCode` 返回的 `qqName` 即新号注册后将使用的账号昵称，注册页只读展示。
+- 昵称来源是管理员自建的 **NapCatQQ 实例**（NTQQ 协议 + OneBot 11 HTTP）：站点调 `get_stranger_info` 取 `nickname`，与手机 QQ 资料卡一致。不再走 QQ 空间网页登录——那条链路（ptlogin 扫码 + `cgi_get_portrait.fcg`）会被 QQ 侧按 UA 吊销登录态（实测两次会话分别约 4h / 89min），已整体删除（`infrastructure/auth/QQNapCatClient.ts`、`application/QQNicknameService.ts`）。
+- 站点不再持有 QQ 登录态：`qq.lookupSession`、扫码接口与 `qq.login` / `qq.logout` 审计动作全部移除，登录与掉线由 NapCat 一侧负责；`site_config` 表随之失去读写方（见 [Database](Database.md)）。
+- 连接方式：`QQ_NAPCAT_API_URL`（OneBot HTTP 基址）与 `QQ_NAPCAT_ACCESS_TOKEN`（Bearer 令牌）成对配置，缺一即启动失败。生产走内网直连、不经过边缘与公网：NapCat 侧 nginx 只放行 `/onebot-internal/` 一个 location，来源限定 BakaGame 宿主内网 IP；BakaGame 容器用 `extra_hosts` 把域名指到 NapCat 内网地址。
+- **账号昵称强制使用 QQ 昵称**：新号发码前必须取到昵称（限时 3 秒），取不到即拒绝发码——NapCat 未配置、掉线、令牌错误或该号查不到昵称时停用新号注册；老号登录不查询、不受影响。建号钩子经 `resolveNickname` 再解析一次（优先命中发码时的查询缓存，进程重启等缓存丢失时补一次实时查询），仍取不到则拒绝建号。`requestLoginCode` 返回的 `qqName` 即新号注册后将使用的账号昵称，注册页只读展示。
 - 昵称跟随：每次 `account.me` 距上次检查满 24 小时才后台刷新，刷新到新昵称即同步账号昵称与 `user.qq_name`，查不到时保留旧值。`user.qq_name` 存最近一次查到的 QQ 昵称，只出现在后台用户列表，资料卡与房间快照都不带。
-- 风控保护：全站每分钟最多 30 次查询、每次最多 20 个号；后台「刷新全部」单次最多 200 个、批间隔 1 秒，同一时刻只跑一轮，某批没查成即停，刷新到新昵称同步账号昵称。查询号未登录、失效、超配额或接口失败时停用新号注册（老号登录不受影响），注册流程绝不静默退回手填。
-- 后台接口 `admin.qq.*`：`status`、`startLogin`（二维码 data URL + `loginId`）、`pollLogin`（`waiting` / `scanned` / `expired` / `failed` / `success`，前端每 2 秒轮询）、`logout`、`refreshNames`。登录、退出与批量刷新按 §8 先写审计（`qq.login` / `qq.logout` / `qq.refreshNames`）。
+- 请求节流与清洗：单批并发 4、相邻两次 OneBot 调用间隔 60ms（约 16 QPS）；昵称经 shared 的 `normalizeAccountName` 清洗（QQ 昵称常带方向隔离符 `U+2066`/`U+2067` 等不可见字符）。后台「刷新全部」单次最多 200 个、同一时刻只跑一轮，一次没查成即整批不动、不把账号标成已查。掉线不做持久标记：NapCat 侧多为临时状态，恢复后下一次请求即可用。
+- 后台接口 `admin.qq.*`：`status`（探测 NapCat 登录号，服务端缓存 15 秒）、`refreshNames`（按 §8 先写审计 `qq.refreshNames`）。
 
 ## 5. 游戏内身份
 
@@ -110,6 +111,7 @@
 | `MAIL_DEV_CONSOLE` | 仅非生产：`true` 时验证码写入服务日志，便于本地联调；生产启用即拒绝启动 |
 | `ADMIN_QQ` | 管理员 QQ 号名单 |
 | `SENTRY_API_TOKEN` | 选填：后台概览代查 Sentry 的只读令牌（`org:read`、`project:read`、`event:read`）；须同时配置 `SENTRY_DSN`，只支持 sentry.io 的 DSN |
+| `QQ_NAPCAT_API_URL` / `QQ_NAPCAT_ACCESS_TOKEN` | QQ 昵称来源（NapCat 的 OneBot 11 HTTP 基址 + Bearer 令牌）；**成对配置**，两者都不配时昵称查询整体停用（新号注册随之停用） |
 
 会话 Cookie 前缀 `bakagame`，有效期 30 天、每日续期；生产强制 `Secure`。来源判定与 WebSocket 共用 `isAllowedOrigin`。
 
@@ -121,6 +123,6 @@
 - 设置与反馈：整体覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读口径。
 - 管理：权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（可注入一次写入失败）、反馈回复、对局记录查询与实时房间的审计委托。
 - 访问统计：路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零，以及 Sentry 客户端对容错、参数、缓存与令牌不外泄的处理。
-- 昵称查询：以假 QQ 网页接口覆盖协议辅助函数、扫码登录与审计先行、登录态加密、停用注册、访问刷新与昵称同步、失效标记与批量刷新；真实扫码与昵称接口只能人工验收。
+- 昵称查询：以假 NapCat（OneBot 11）覆盖 Bearer 鉴权、单号查询与查不到跳过、全部失败即判不可用、不可见字符清洗、掉线降级与停用注册、访问刷新与昵称同步、批量刷新审计；真实实例只能人工验收。
 - 前端：接口错误文案、云同步范围与合并、访问上报、登录弹窗的 QQ 昵称冻结与就地报错、资料卡缓存与重试、后台页的权限分层与关房确认。
 - 真实 TiDB 与 SMTP 的一次性人工验收结束后删除测试账号。

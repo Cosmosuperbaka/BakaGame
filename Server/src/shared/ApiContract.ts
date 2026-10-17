@@ -232,22 +232,16 @@ export const sentryOverviewSchema = z.object({
   fetchedAt: z.string().nullable(),
 });
 
-/** 后台扫码登录的 QQ 查询号：用它的 QQ 空间登录态查注册用户的 QQ 昵称。 */
+/** QQ 昵称来源（NapCat / OneBot 11）的可用状态；查询号由 NapCat 自己维护，站点不再持有登录态。 */
 export const qqLookupStatusSchema = z.object({
-  state: z.enum(["signedOut", "active", "expired"]),
+  state: z.enum(["active", "unavailable"]),
+  /** NapCat 当前登录的 QQ 号与昵称；不可用时为空。 */
   uin: z.string().nullable(),
   nickname: z.string().nullable(),
-  loggedInAt: z.string().nullable(),
-  expiredAt: z.string().nullable(),
+  checkedAt: z.string().nullable(),
+  /** 不可用原因（固定文案，不含内网地址与令牌）。 */
+  error: z.string().nullable(),
 });
-
-export const qqLoginPollSchema = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("waiting") }),
-  z.object({ state: z.literal("scanned") }),
-  z.object({ state: z.literal("expired") }),
-  z.object({ state: z.literal("failed"), message: z.string() }),
-  z.object({ state: z.literal("success"), status: qqLookupStatusSchema }),
-]);
 
 export const auditEntrySchema = z.object({
   id: z.number().int(),
@@ -320,12 +314,8 @@ const adminContract = {
       .output(paged(auditEntrySchema)),
   },
   qq: {
+    /** 探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。 */
     status: oc.output(qqLookupStatusSchema),
-    /** 申请扫码二维码（PNG data URL）；`loginId` 用于之后轮询。 */
-    startLogin: oc.output(z.object({ loginId: z.string(), image: z.string() })),
-    /** 前端每 2 秒轮询一次，直到成功、失效或失败。成功即替换原查询号。 */
-    pollLogin: oc.input(z.object({ loginId: z.string().uuid() })).output(qqLoginPollSchema),
-    logout: oc.output(z.object({ ok: z.literal(true) })),
     /** 刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。 */
     refreshNames: oc.output(z.object({ checked: z.number().int(), updated: z.number().int(), remaining: z.number().int() })),
   },
@@ -414,5 +404,4 @@ export type AdminRoom = z.infer<typeof adminRoomSchema>;
 export type AdminOverview = z.infer<typeof adminOverviewSchema>;
 export type SentryOverview = z.infer<typeof sentryOverviewSchema>;
 export type QQLookupStatus = z.infer<typeof qqLookupStatusSchema>;
-export type QQLoginPollResult = z.infer<typeof qqLoginPollSchema>;
 

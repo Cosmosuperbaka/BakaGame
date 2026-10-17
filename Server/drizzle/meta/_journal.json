@@ -15,6 +15,13 @@
       "when": 1791842766086,
       "tag": "0001_qq_nickname",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1792262635737,
+      "tag": "0002_drop_site_config",
+      "breakpoints": true
     }
   ]
 }

@@ -130,9 +130,6 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
       },
       qq: {
         status: adminOnly.admin.qq.status.handler(() => admin.qqStatus()),
-        startLogin: adminOnly.admin.qq.startLogin.handler(() => admin.qqStartLogin()),
-        pollLogin: adminOnly.admin.qq.pollLogin.handler(({ context, input }) => admin.qqPollLogin(context.userId, input.loginId)),
-        logout: adminOnly.admin.qq.logout.handler(({ context }) => admin.qqLogout(context.userId)),
         refreshNames: adminOnly.admin.qq.refreshNames.handler(({ context }) => admin.qqRefreshNames(context.userId)),
       },
       stats: {

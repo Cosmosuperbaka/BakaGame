@@ -15,8 +15,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuth } from "../infrastructure/auth/Auth";
 import { createMailer } from "../infrastructure/auth/Mailer";
 import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
-import { QQWebLoginClient } from "../infrastructure/auth/QQWebLogin";
-import { DatabaseSiteConfigRepository } from "../infrastructure/db/SiteConfigRepository";
+import { QQNapCatClient } from "../infrastructure/auth/QQNapCatClient";
 import { QQNicknameService } from "./QQNicknameService";
 import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
@@ -129,14 +128,12 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     mailer,
     resolveNickname: (qqNumber) => resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
   });
-  const nicknames = new QQNicknameService({
-    auth,
-    client: new QQWebLoginClient(),
-    config: new DatabaseSiteConfigRepository(database),
-    cipher: new SettingCipher(env.account.secret),
-    logger,
-  });
-  resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
+  // 昵称来源是管理员自建的 NapCat（OneBot 11）：没配实例就不装配昵称服务，
+  // 新号发码与建号会因取不到昵称而拒绝（老号不受影响），后台 `admin.qq.*` 回 503。
+  const nicknames = env.napcat
+    ? new QQNicknameService({ auth, client: new QQNapCatClient(env.napcat), logger })
+    : null;
+  resolveNickname = (qqNumber) => (nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null));
   const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), nicknames, logger });
   const adminQqNumbers = env.account.adminQqNumbers;
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。

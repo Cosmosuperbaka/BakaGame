@@ -98,13 +98,6 @@ export const userSetting = mysqlTable("user_setting", {
   updatedAt: updatedAt(),
 }, (table) => [primaryKey({ columns: [table.userId, table.key] })]);
 
-/** 站点级配置：一行一个键，值为完整 JSON 文档；敏感值由应用层加密后写入。 */
-export const siteConfig = mysqlTable("site_config", {
-  key: varchar("config_key", { length: 48 }).primaryKey(),
-  value: json("value").notNull(),
-  updatedAt: updatedAt(),
-});
-
 // ==================== 游戏数据 ====================
 
 /** 谁是卧底出题人提交过的词对（规范化 + 字典序，唯一）。 */

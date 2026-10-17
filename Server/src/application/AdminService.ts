@@ -25,7 +25,6 @@ import type {
   FeedbackStatus,
   GameRecordDetail,
   GameRecordItem,
-  QQLoginPollResult,
   QQLookupStatus,
   SentryOverview,
 } from "../shared/ApiContract";
@@ -316,23 +315,6 @@ export class AdminService {
 
   qqStatus(): Promise<QQLookupStatus> {
     return this.requireQq().status();
-  }
-
-  qqStartLogin(): Promise<{ loginId: string; image: string }> {
-    return this.requireQq().startLogin();
-  }
-
-  /** 登录态落库前写审计：查询号影响全站昵称来源，换号必须可追溯。 */
-  qqPollLogin(actorId: string, loginId: string): Promise<QQLoginPollResult> {
-    return this.requireQq().pollLogin(loginId, (uin) => this.audit(actorId, "qq.login", "site", "qq.lookup", { uin }));
-  }
-
-  async qqLogout(actorId: string): Promise<{ ok: true }> {
-    const qq = this.requireQq();
-    const status = await qq.status();
-    await this.audit(actorId, "qq.logout", "site", "qq.lookup", { uin: status.uin });
-    await qq.logout();
-    return { ok: true };
   }
 
   async qqRefreshNames(actorId: string): Promise<{ checked: number; updated: number; remaining: number }> {

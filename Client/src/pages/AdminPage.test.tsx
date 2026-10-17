@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ const admin = vi.hoisted(() => ({
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
-  qq: { status: vi.fn(), startLogin: vi.fn(), pollLogin: vi.fn(), logout: vi.fn(), refreshNames: vi.fn() },
+  qq: { status: vi.fn(), refreshNames: vi.fn() },
 }));
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
@@ -45,8 +45,8 @@ const room: AdminRoom = {
   players: [{ id: "p-1", name: "Bob", online: true, membership: "active", host: true, bot: false, userId: null }],
 };
 
-const signedOut: QQLookupStatus = { state: "signedOut", uin: null, nickname: null, loggedInAt: null, expiredAt: null };
-const active: QQLookupStatus = { state: "active", uin: "12345", nickname: "查询号", loggedInAt: "2026-10-13T00:00:00.000Z", expiredAt: null };
+const unavailable: QQLookupStatus = { state: "unavailable", uin: null, nickname: null, checkedAt: "2026-10-13T00:00:00.000Z", error: "NapCat 当前没有登录任何 QQ 号" };
+const active: QQLookupStatus = { state: "active", uin: "12345", nickname: "查询号", checkedAt: "2026-10-13T00:00:00.000Z", error: null };
 
 const renderAdmin = (path = "/admin") => {
   render(
@@ -63,7 +63,7 @@ beforeEach(() => {
   admin.rooms.list.mockResolvedValue([room]);
   admin.users.list.mockResolvedValue({ items: [user], total: 1 });
   admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
-  admin.qq.status.mockResolvedValue(signedOut);
+  admin.qq.status.mockResolvedValue(unavailable);
 });
 
 afterEach(() => {
@@ -125,26 +125,25 @@ describe("管理后台", () => {
     expect(admin.rooms.list).toHaveBeenCalledTimes(2);
   });
 
-  it("QQ 查询号：扫码后轮询到确认登录，刷新状态", async () => {
+  it("QQ 昵称来源：显示 NapCat 在线状态，可刷新全部昵称", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    admin.qq.startLogin.mockResolvedValue({ loginId: "login-1", image: "data:image/png;base64,AA==" });
-    admin.qq.pollLogin.mockResolvedValueOnce({ state: "scanned" }).mockResolvedValueOnce({ state: "success", status: active });
-    admin.qq.status.mockResolvedValueOnce(signedOut).mockResolvedValue(active);
-    renderAdmin("/admin?tab=qq");
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByText("还没有登录查询号")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
-
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "扫码登录" })); });
-    expect(screen.getByAltText("QQ 登录二维码")).toHaveAttribute("src", "data:image/png;base64,AA==");
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
-    expect(screen.getByText("已扫码，请在手机 QQ 上确认登录")).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
-    expect(admin.qq.pollLogin).toHaveBeenCalledTimes(2);
-    expect(admin.qq.pollLogin).toHaveBeenLastCalledWith({ loginId: "login-1" });
-    expect(screen.queryByAltText("QQ 登录二维码")).not.toBeInTheDocument();
-    expect(screen.getByText("已登录查询号 查询号（12345）")).toBeInTheDocument();
+    admin.qq.status.mockResolvedValue(active);
+    admin.qq.refreshNames.mockResolvedValue({ checked: 3, updated: 1, remaining: 0 });
+    const events = renderAdmin("/admin?tab=qq");
+    expect(await screen.findByText("查询号")).toBeInTheDocument();
+    expect(screen.getByText("12345")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeEnabled();
+
+    await events.click(screen.getByRole("button", { name: "刷新全部昵称" }));
+    expect(admin.qq.refreshNames).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/已检查 3 个账号，更新 1 个昵称/)).toBeInTheDocument();
+  });
+
+  it("QQ 昵称来源：不可用时给出原因并禁用刷新", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.qq.status.mockResolvedValue(unavailable);
+    renderAdmin("/admin?tab=qq");
+    expect(await screen.findByText("NapCat 当前没有登录任何 QQ 号")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
   });
 });

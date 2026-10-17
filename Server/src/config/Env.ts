@@ -23,6 +23,8 @@ export interface AppEnv {
   databaseUrl?: string;
   /** 账号系统配置：随数据库一同启用，缺数据库时为空。 */
   account?: AccountEnv;
+  /** NapCat（OneBot 11）昵称来源；未配置时 QQ 昵称查询整体停用。 */
+  napcat?: NapCatEnv;
   otelEndpoint?: string;
   otelHeaders?: Record<string, string>;
   otelServiceName?: string;
@@ -93,6 +95,18 @@ export interface AccountEnv {
   mail: { kind: "smtp"; smtp: SmtpEnv } | { kind: "console" } | { kind: "none" };
 }
 
+/**
+ * QQ 昵称来源：管理员自建的 NapCat 实例（OneBot 11 HTTP）。
+ *
+ * 网址与令牌必须成对出现：缺一个就是配置错误，不能默默降级成「查不到昵称」——
+ * 那会让新号注册以「QQ 昵称不可用」为由被拒，排查时看不出是配置漏填。
+ */
+export interface NapCatEnv {
+  /** OneBot HTTP 基址，不含结尾斜杠。 */
+  apiUrl: string;
+  accessToken: string;
+}
+
 // ==================== 环境变量解析 ====================
 
 const readSmtpEnv = (): SmtpEnv | undefined => {
@@ -129,8 +143,17 @@ const readAccountEnv = (databaseUrl: string | undefined): AccountEnv | undefined
   };
 };
 
-const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
-  if (!raw) return {};
+const readNapCatEnv = (): NapCatEnv | undefined => {
+  const apiUrl = Bun.env.QQ_NAPCAT_API_URL?.trim();
+  const accessToken = Bun.env.QQ_NAPCAT_ACCESS_TOKEN?.trim();
+  if (!apiUrl && !accessToken) return undefined;
+  if (!apiUrl || !accessToken) {
+    throw new AppError("CONFIG_ERROR", "QQ_NAPCAT_API_URL 与 QQ_NAPCAT_ACCESS_TOKEN 必须同时配置");
+  }
+  return { apiUrl: apiUrl.replace(/\/+$/, ""), accessToken };
+};
+
+const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {  if (!raw) return {};
   const attrs: Record<string, string> = {};
   for (const part of raw.split(",")) {
     const eqIdx = part.indexOf("=");
@@ -259,6 +282,7 @@ export const readEnv = (): AppEnv => {
     serverPort,
     databaseUrl,
     account: readAccountEnv(databaseUrl),
+    napcat: readNapCatEnv(),
     otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),
     otelServiceName,
