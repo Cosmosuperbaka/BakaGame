@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "BakaGame Backend HTTP API",
-    "description": "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/ccb/ws。",
+    "description": "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。",
     "version": "unversioned"
   },
   "servers": [

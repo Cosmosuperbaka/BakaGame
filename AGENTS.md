@@ -11,7 +11,7 @@
 - 依赖安装、锁文件与提升布局以 [Conventions §4](Agents/Conventions.md) 为准：入口只有根级 `pnpm install`，锁文件只有根级 `pnpm-lock.yaml`。
 - 依赖被提升到根 `node_modules/`，**Server 下不存在 `Server/node_modules`**：读依赖包内附带文件必须用模块解析，不得写死该路径。
 - 共享模型和协议只有一份物理源码：`Server/src/shared/`。客户端通过 `@bakagame/shared` 引用，不添加 `file:../packages/` 依赖。
-- 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要以中文写作、专有名词可保留英文，最多 20 字，scope 仅限 `Faker`、`Song`、`CCB`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
+- 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要以中文写作、专有名词可保留英文，最多 20 字，scope 仅限 `Faker`、`Song`、`CEE`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
 
 ## 按任务查阅
 
@@ -26,7 +26,7 @@
 | Bangumi 请求、图片、缓存或图床 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
 | Bangumi 数据集构建、标签、声优或角色资料 | [BangumiDataset](Agents/BangumiDataset.md) 的对应章节 |
 | 番剧筛选、曲目匹配或出题预算 | [BangumiSongMatch](Agents/BangumiSongMatch.md) 的对应章节 |
-| CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiDataset |
+| CEE 玩法、房间、隐私、协议或原版互通 | [CEE](Agents/CEE.md)；数据口径另查 BangumiDataset |
 | 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
 | 开源致谢页、模型署名、依赖清单或许可证展示 | [Credits](Agents/Credits.md)；页面规范见 Design §7.5 |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |

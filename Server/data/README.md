@@ -1,6 +1,6 @@
 # Bangumi 数据集与图床
 
-`bangumi.sqlite`（单库，猜歌与 CCB 共用）与 `images/`（avif 图床分片 + 校验 `manifest.json`）
+`bangumi.sqlite`（单库，猜歌与 CEE 共用）与 `images/`（avif 图床分片 + 校验 `manifest.json`）
 均**不进 Git**——曾走 Git LFS，把账户的 GitHub LFS 带宽额度吃穿。
 
 ## 投递与更新（2026-10 起）

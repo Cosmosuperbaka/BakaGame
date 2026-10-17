@@ -88,7 +88,7 @@
 - 每个写操作**先写审计再执行**（`audit_log`）：审计写入失败则操作不做。审计不记 IP，理由同 §3。
 - 前端后台页 `/admin`（`pages/AdminPage.tsx` 与 `components/admin/`）覆盖以上全部接口，布局见 [Design §7.4](Design.md#74-管理后台)。
 - 管理员回复反馈后，用户侧出现未读；状态为 `open` 的反馈被回复时自动转为 `processing`。
-- 实时房间经 `admin.rooms.*` 列出、关闭与移人。三款游戏各自实现 `domain/AdminRoom.ts` 的 `AdminRoomControl`，后台不直接改房间状态：关房复用各游戏的关房通知（谁是卧底、猜歌原因码 `admin_closed`，CCB 直接给文案），移人复用房主踢人的结算口径，且允许移走房主（按各游戏规则重选）。CCB 只管增强房，原版房在上游服务器。房间视图不含会话令牌与对局秘密；测试房、猜歌单人房带 `hidden` 照常列出。
+- 实时房间经 `admin.rooms.*` 列出、关闭与移人。三款游戏各自实现 `domain/AdminRoom.ts` 的 `AdminRoomControl`，后台不直接改房间状态：关房复用各游戏的关房通知（谁是卧底、猜歌原因码 `admin_closed`，CEE 直接给文案），移人复用房主踢人的结算口径，且允许移走房主（按各游戏规则重选）。CEE 只管增强房，原版房在上游服务器。房间视图不含会话令牌与对局秘密；测试房、猜歌单人房带 `hidden` 照常列出。
 - 概览 `admin.stats.overview`：账号数、反馈积压、三款游戏实时房间与在线人数，以及按北京时间自然日（1–90 天，不缺日）的访客、浏览、新注册与对局数。对局数受对局记录 7 天保留期限制（`gameRecordDays`），见 [GameRecord](GameRecord.md)。
 - `admin.stats.sentry` 由服务端以 `SENTRY_API_TOKEN` 代查 Sentry（`infrastructure/SentryApi.ts`）：组织与区域从 `SENTRY_DSN` 读出，项目取隧道白名单（前后端两个项目）；近 24 小时错误数、未解决问题前 5、调用最多的事务 p75/p95。三个查询各自容错，结果缓存 60 秒；令牌只在服务端，返回与日志都不含令牌。
 

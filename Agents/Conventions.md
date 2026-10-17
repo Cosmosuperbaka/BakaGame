@@ -13,10 +13,12 @@
   - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。命名以本节为准；删除旧别名的约束见 [Spec §4](Spec.md)。
   - **常量命名 (Constants)**：`SonGuessr` 为专有名词，常量一律使用 **`SONGUESSR_XXX`** 前缀（例如 `SONGUESSR_PHASES`, `SONGUESSR_MUSIC_SESSION_CHANGED`），严禁拆分为 `SON_GUESSR_`。
   - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `songuessr`（如 `/songuessr`, `/api/songuessr/ws`, `songuessr_session_`, `songuessr_netease_session_v1`）。
-- **猜动漫角色增强版**: 全栈统一命名为 **`CCB`**（三个字母全大写，副标题「二刺猿笑传之猜猜呗」只作为页面对外展示文案，不进标识符）。
-  - **TypeScript 类型/接口/类/变量**: 一律使用 **`CCB`** 缩写（`CCBService`、`CCBRoomSnapshot`、`CCBPrivateState`、`CCBPlayerRecord`、`parseCCBMessage`、`UseCCBStore`）。**严禁**写成 `CcbService`、`CcbRoom` 之类的混合大小写拼法；`ccbService` 这类以小写开头的局部变量与实例名按常规驼峰处理。
-  - **常量命名 (Constants)**：一律使用 **`CCB_XXX`** 前缀（如 `CCB_PHASES`, `CCB_STATE_EVENTS`, `CCB_PLAYER_MESSAGE_LIMIT`）。
-  - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `ccb`（如 `/ccb`、`/api/ccb/ws`、`ccb_session_`），ID 前缀同例（`ccb_player_`、`ccb_chat_`）。
+- **二刺猿笑传之猜猜呗增强版**: 全栈统一命名为 **`CEE`**（三个字母全大写，副标题「二刺猿笑传之猜猜呗」只作为页面对外展示文案，不进标识符）。
+  - **TypeScript 类型/接口/类/变量**: 一律使用 **`CEE`** 缩写（`CEEService`、`CEERoomSnapshot`、`CEEPrivateState`、`CEEPlayerRecord`、`parseCEEMessage`、`UseCEEStore`）。**严禁**写成 `CeeService`、`CeeRoom` 之类的混合大小写拼法；`ceeService` 这类以小写开头的局部变量与实例名按常规驼峰处理。
+  - **常量命名 (Constants)**：一律使用 **`CEE_XXX`** 前缀（如 `CEE_PHASES`, `CEE_STATE_EVENTS`, `CEE_PLAYER_MESSAGE_LIMIT`）。
+  - **URL 路由 / API 路径 / 存储命名空间**: 统一使用 `cee`（如 `/cee`、`/api/cee/ws`、`cee_session_`），ID 前缀同例（`cee_player_`、`cee_chat_`）。
+  - **不改的例外**: 环境变量 `CCB_ORIGINAL_SERVER_URL` / `CCB_ORIGINAL_AES_SECRET` 是部署侧的既有契约，外部仓库 `CCB-TagsCI`
+    与外部站点 `ccb.baka.website` 也不属于本项目的命名；这三类保持原样，不要跟着改名。
 
 ### 1.2 代码文件命名
 
@@ -45,7 +47,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 | `Server/src/infrastructure/` | 外部 Provider、Worker、数据仓储与日志 |
 | `Server/src/transport/` | HTTP/WS 路由、边界解析及状态同步 |
 | `Client/src/components/ui/`、`common/` | 基础控件与跨游戏组件 |
-| `Client/src/components/{whoisfaker,songuessr,ccb}/` | 各游戏视图，不横向导入其他游戏目录 |
+| `Client/src/components/{whoisfaker,songuessr,cee}/` | 各游戏视图，不横向导入其他游戏目录 |
 | `Client/src/pages/`、`contexts/`、`stores/` | 页面入口、连接生命周期、状态管理 |
 | `Client/src/hooks/`、`lib/`、`config/` | 复用 Hook、通信与工具、静态配置 |
 | `Client/src/types/Index.ts` | 共享类型的客户端导出入口 |
@@ -191,7 +193,7 @@ ADMIN_QQ=
 
 `BANGUMI_API_URL` 是服务端访问 Bangumi API 的镜像入口。两者均只在服务端使用，客户端通过 WebSocket 获取已经重写的地址，不直接请求 Bangumi API。**番剧图片的对外前缀写死 `/api/bangumi`（自建图床），不提供环境变量开关** —— 前缀可配就必然有人配出边缘不放行的路径，线上整站图片会变成 SPA HTML。图片在服务端按固定前缀重写，不再把 Bangumi 源站（国内多数网络连不上）透给浏览器；`BANGUMI_IMAGE_SOURCE` 只决定图床缺图时去哪补（留空 = 只服务已缓存的图），细节见 [BangumiApi](BangumiApi.md#配置)，生产要求见 [Deployment](Deployment.md)。
 
-`MEILISEARCH_KEY` 供 CCB 与 SonGuessr 共用的内部搜索，生产环境必填；Meilisearch 的 master key 必须设为相同值，
+`MEILISEARCH_KEY` 供 CEE 与 SonGuessr 共用的内部搜索，生产环境必填；Meilisearch 的 master key 必须设为相同值，
 并与本服务共享 `127.0.0.1:7700` 网络空间（独立容器不能直接使用各自的 `localhost`）。搜索连接地址
 和 5 秒请求超时由代码固定，不向客户端暴露。启动会校验 Meilisearch 健康状态并维护搜索索引；
 未设置搜索密钥仅供本地开发和隔离测试使用本地搜索。`CCB_ORIGINAL_AES_SECRET` 仅供原版兼容房使用。
@@ -221,4 +223,4 @@ VITE_SERVER_URL=http://localhost:4850
 
 ### 入站参数与规范化状态
 
-Song 自动筛选的局部输入与完整房间状态分别使用共享 `SongAutoFiltersInputSchema` / `SongAutoFiltersSchema`，类型由 Schema 的 `Static` 导出；服务端边界后补齐省略字段，客户端不得把局部输入当成完整快照。CCB 线路可空信封字段在解析边界归一为字段缺席，业务信封只使用可选字符串。双方 TypeScript 及协议边界回归必须同时通过。
+Song 自动筛选的局部输入与完整房间状态分别使用共享 `SongAutoFiltersInputSchema` / `SongAutoFiltersSchema`，类型由 Schema 的 `Static` 导出；服务端边界后补齐省略字段，客户端不得把局部输入当成完整快照。CEE 线路可空信封字段在解析边界归一为字段缺席，业务信封只使用可选字符串。双方 TypeScript 及协议边界回归必须同时通过。

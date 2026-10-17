@@ -16,13 +16,13 @@
 | 字段 | 允许值 |
 |---|---|
 | `type` | `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` |
-| `scope` | `Faker`（谁是卧底）、`Song`（猜歌）、`CCB`（猜角色）、`Core`（公共能力、工具链、文档） |
+| `scope` | `Faker`（谁是卧底）、`Song`（猜歌）、`CEE`（二刺猿笑传之猜猜呗增强版）、`Core`（公共能力、工具链、文档） |
 | 摘要 | 一个原子动作，例如 `docs(Core): 精简文档导航`、`fix(Faker): 修复提前结算` |
 
 scope 区分大小写，不使用 `server`、`client`、`shared` 等自建作用域。提交前校验标题：
 
 ```regex
-^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((Faker|Song|CCB|Core)\): (?=.*[\u4e00-\u9fa5])[\u4e00-\u9fa5\dA-Za-z，。、、“”《》（）]{1,20}$
+^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((Faker|Song|CEE|Core)\): (?=.*[\u4e00-\u9fa5])[\u4e00-\u9fa5\dA-Za-z，。、、“”《》（）]{1,20}$
 ```
 
 该正则要求摘要至少含一个中文字符（不接受通篇英文），允许数字、专有名词英文字母及列出的中文标点，长度上限 20 字（中英文逐字符计入）。正文仍须人工确认中文与准确性。

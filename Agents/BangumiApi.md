@@ -7,13 +7,13 @@
 | API 镜像、图片与回填缓存 | 「配置」「Bangumi API 回填缓存」 |
 | 自建图床与运行时更新 | 「自建图床与运行时更新」 |
 | 请求边界、排队与隐私 | 「请求边界」「隐私与协议」「排队与截止预算」 |
-| CCB 角色查询、目录或资料补全 | [BangumiDataset](BangumiDataset.md) 的对应小节；游戏权限见 [CCB](CCB.md) |
+| CEE 角色查询、目录或资料补全 | [BangumiDataset](BangumiDataset.md) 的对应小节；游戏权限见 [CEE](CEE.md) |
 
 听歌猜番使用 Bangumi 条目作为答案，服务端负责所有 Bangumi 网络请求。客户端只通过
 `/api/songuessr/ws` 对应的 WebSocket 命令搜索条目和提交 subject ID，不直接访问 Bangumi
 API；图片由服务端按下节配置重写。
 
-CCB（猜动漫角色）复用同一份本地数据集与镜像配置，角色数据见 [BangumiDataset](BangumiDataset.md)。
+CEE（二刺猿笑传之猜猜呗增强版）复用同一份本地数据集与镜像配置，角色数据见 [BangumiDataset](BangumiDataset.md)。
 
 ## 配置
 
@@ -99,10 +99,10 @@ Server/storage/bangumi-enrichment.sqlite      （可写，不进 Git；`.gitigno
 
 角色立绘走 `GET /v0/characters/{id}`，图片字段结构与条目一致
 （`images.medium / large / common / grid` 依次回退），由 `resolveCharacterImage(characterId)` 暴露，
-**猜番（CCB）与猜歌共用同一条回源与缓存路径**。非法 id（非正整数）直接返回 `undefined`，不回源。
-CCB 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共用一行），由 `CCBEnrichment.resolveSubjectImage` 回源
+**猜番（CEE）与猜歌共用同一条回源与缓存路径**。非法 id（非正整数）直接返回 `undefined`，不回源。
+CEE 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共用一行），由 `CEEEnrichment.resolveSubjectImage` 回源
 `GET /v0/subjects/{id}`，规则与角色立绘相同：请求按 `实体:编号` 合并，无图或 404 只进 5 分钟内存负缓存，其他失败原样报错。
-作品列表查询（搜作品、按编号取作品）只读已回填的封面、不回源；缺图的条目由客户端滚进视口时经 `ccb.subject.image` 按需补，
+作品列表查询（搜作品、按编号取作品）只读已回填的封面、不回源；缺图的条目由客户端滚进视口时经 `cee.subject.image` 按需补，
 本地不存在或 NSFW 的条目直接返回 `undefined`。
 
 ## 自建图床与运行时更新
@@ -159,4 +159,4 @@ Bangumi 请求使用有界并发队列，排队、请求和响应体解析共享
 
 角色搜索排序先为候选生成一次评分摘要，再由纯比较器排序；比较器不得重复触发补充资料查询。
 
-CCB 图片提示跨键共享有界下载与解码队列，同键合并。排队、读取及解码共用截止预算，取消需释放读取器和解码资源；缓存同时限制条目数与字节数，不能仅依赖输入图片大小限制。
+CEE 图片提示跨键共享有界下载与解码队列，同键合并。排队、读取及解码共用截止预算，取消需释放读取器和解码资源；缓存同时限制条目数与字节数，不能仅依赖输入图片大小限制。

@@ -108,7 +108,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 
 ### 4.2 角色池与人数要求
 - **开局条件**：至少 4 名参战玩家 + 1 名出题人（出题人可由房主指定或由房主本人/旁观者担任）。
-- **房主没有准备态**：`ensureAllReady` 只看房主以外的参与者，客户端不得替房主自动发准备指令；公共快照里房主恒为已准备（`isReady` 视图口径，存储字段不改），与猜歌、CCB 同口径。
+- **房主没有准备态**：`ensureAllReady` 只看房主以外的参与者，客户端不得替房主自动发准备指令；公共快照里房主恒为已准备（`isReady` 视图口径，存储字段不改），与猜歌、CEE 同口径。
 - **卧底人数公式**：`maxUndercoverCount = max(1, Math.ceil(participantCount / 4))`。
 - **可选高级角色**：
   - **白板 (`blank`)**：无词语，仅有词性提示；房间达到 8 人及以上可用。

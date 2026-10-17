@@ -12,8 +12,8 @@
 
 本文描述配置与验收要求，不授权执行部署、重启或线上写探针；按用户已授权范围完成本地验证和发布准备。示例公网地址使用 `example.com` 占位，实际地址从部署配置取得。
 
-WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`、
-`/api/songuessr/ws` 和 `/api/ccb/ws` 提供。应用服务负责 WebSocket
+WhoIsFaker、Songuessr 与 CEE 的实时业务分别通过 `/api/whoisfaker/ws`、
+`/api/songuessr/ws` 和 `/api/cee/ws` 提供。应用服务负责 WebSocket
 协议解析、业务权限和房间状态，不在进程内按来源 IP 实现游戏握手限流或连接配额。
 公开遥测与 Sentry 隧道另有应用内资源预算，不能代替入口保护；其来源信任边界见下文。
 
@@ -88,7 +88,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 新增开放大厅须同步 `PageMeta`（含每页 FAQ 问答与结构化数据）、主页游戏介绍与链接、资源冒烟和
   SEO E2E（站点地图由构建期从 `PageMeta` 生成，无需手改；分享图素材放 `public/assets` 同名文件）；
   运行时 `description` 与 `og:description` 必须读取同一份解析后的文案。房间页保持 `noindex`，并在
-  `robots.txt` 排除对应房间路径，CCB 的增强房与原版房共用 `/ccb/room/` 规则。
+  `robots.txt` 排除对应房间路径，CEE 的增强房与原版房共用 `/cee/room/` 规则。
 - 落点（双形态，不赌主机的静态解析规则）：`dist/index.html`、
   `dist/<route>/index.html`（目录索引型主机）、`dist/<route>.html`（clean URL 型主机）。
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
@@ -129,7 +129,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   **不得让构建失败**；3 秒超时是硬上限，构建耗时预算按 ≤3s 计。
   需要更高配额时在构建环境注入 `GITHUB_TOKEN`，未配置也能跑（未认证额度按出口 IP 每小时 60 次，
   远高于构建频率）。
-- 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/ccb` 四个路由，正文应含对应文案且 canonical 指向自身。
+- 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/cee` 四个路由，正文应含对应文案且 canonical 指向自身。
   若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
   先检查静态产物与平台路由解析；不要因此引入同源 API/WS 中间件。静态路径规则与实时反代分别验证。
 
@@ -188,7 +188,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 ## 应用职责
 
 应用仍必须校验每个命令的结构、身份、权限、阶段和业务数据。代理层的资源保护不能替代
-`Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`、`CCBService`）的业务校验；应用校验也不能替代代理层的
+`Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`、`CEEService`）的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
 听歌猜番还需要在服务端配置 `BANGUMI_API_URL`（可选再配 `BANGUMI_IMAGE_SOURCE` 让图床缺图自愈）。
@@ -249,7 +249,7 @@ sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}
 
 ### 发布链路与失败边界
 
-CCB 与 SonGuessr 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
+CEE 与 SonGuessr 搜索的生产前提：预先运行 Meilisearch，并确保 `BakaGame` 容器与它共享网络空间、
 可从容器内访问 `127.0.0.1:7700`；单独的默认桥接容器的 `localhost` 不指向另一个容器。
 Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版房的
 `CCB_ORIGINAL_AES_SECRET` 独立配置。现有部署流水线只重启 `BakaGame`，不安装或启动搜索服务；

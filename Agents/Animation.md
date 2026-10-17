@@ -44,9 +44,9 @@
 - 跨区域移动的同一个对象，必须是**同一个 DOM 元素在连续位移**，不允许用两个元素做交接。唯一例外是跨页：两页之间没有共用的节点，改由 View Transitions 把同名元素读作同一个对象，浏览器连续移动并交叉淡化（见下条）。
 - 页面导航一律经 `hooks/UsePageTransition` 的 `usePageNavigate`（默认 `viewTransition: true`），路由必须是数据路由（`AppRouter.tsx` 的 `createBrowserRouter`，页面走路由级 `lazy`，分块到齐后才开始过渡）。旧页连同按下的触发元素定格成快照向前退出、新页自后方推入；回到更浅一层的页面（房间→大厅→主页，浏览器后退同理）时两层对调，方向由 `RootLayout` 写到 `<html data-page-direction>`。不再先等按压播完再导航，快照本身就保留了点击的结果。`/credits` 是唯一例外：它走专属形态（整页自底缘升起、关闭落回页脚，见下条），方向仍由同一个 `data-page-direction` 决定。
   - 跨页共享元素用 `useSharedElementName(name, partner)` 取 `view-transition-name`，只在本次过渡的另一端是 `partner` 时命名：同一页上有多个候选（主页三张游戏卡、大厅每张房间卡）时，一律命名会重名，不相干的过渡里它们也会脱离整页单独淡出。现有两对：主页卡片标题 ↔ 大厅顶栏游戏名（`game-title`），大厅房间卡房名 ↔ 房间顶栏房名（`room-title`，单人模式不命名）。被命名的元素宽度要贴合内容（`w-fit`），否则整行留白会随快照一起缩放。
-  - 只在一页出现的具名元素（手机上顶栏房名隐藏、CCB 大厅仍是骨架屏）由 `:only-child` 规则随整页退出或进入，不按共享元素的时长拖尾。
+  - 只在一页出现的具名元素（手机上顶栏房名隐藏、CEE 大厅仍是骨架屏）由 `:only-child` 规则随整页退出或进入，不按共享元素的时长拖尾。
   - 经过渡到达的页面不再自己整页显影：`usePageTransitionEnds()` 非空时 `initial={false}`（`LobbyPage`），直接打开链接时照常显影。
-  - 会改动当前页内容的副作用放在换页之后。离开房间先导航、房间页卸载后再退房（谁是卧底、猜歌在卸载 cleanup 里调 `leaveRoom`，CCB 由大厅挂载时退房并重新订阅）：先退再走，快照拍到的是清空后的加入中占位，清空还会触发「脱离房间」的 effect 再导航一次、打断进行中的过渡。退房回包可能晚于下一次进房，store 只清掉发起这次退房的会话。
+  - 会改动当前页内容的副作用放在换页之后。离开房间先导航、房间页卸载后再退房（谁是卧底、猜歌在卸载 cleanup 里调 `leaveRoom`，CEE 由大厅挂载时退房并重新订阅）：先退再走，快照拍到的是清空后的加入中占位，清空还会触发「脱离房间」的 effect 再导航一次、打断进行中的过渡。退房回包可能晚于下一次进房，store 只清掉发起这次退房的会话。
   - 过渡期间页面不响应点击，时长即冻结时长：整页约 0.42s（`spring.swift`），带共享元素约 0.6s（`spring.settle`）。
 - 折叠区域展开时，其触发标题的指示箭头必须同步翻转，两者是同一个状态的两种表现。
 - 选中指示器（`SegmentedControl` 的胶囊底块、`Tabs` 的下划线、队伍面板 `TeamPicker` 的方块）是容器里唯一的一个 `ui/SlidingIndicator`，位置由 `hooks/UseIndicatorRect` 用 `offsetLeft` / `offsetWidth` 这类布局值量出，按 `indicatorSlide` 滑到新选中项；首次出现直接落位。不用 `layoutId` 交接：`layoutId` 按包围盒插值，所在弹窗正在缩放开合、或关闭后重新打开时，底块会从旧位置或屏幕别处飞进来。
@@ -56,7 +56,7 @@
 - 同一格里交替的两态（空状态 ↔ 表格、搜索栏或输入栏 ↔ 回执、占位 ↔ 图片、选项网格 ↔ 回执卡）放在同一个 `AnimatePresence mode="popLayout"`（或 `grid` 叠放）里交叉，不先清空再出现。回执用 `receiptCard`（退场走它的 `exit` 原路收回，不回弹），卡内对勾用 `receiptMarkFollow`；原点取被点的选项（`useOriginTracker`），没有点击来源（刷新后已提交）时从自身中心展开。回执下的从属段落晚一拍：外层 `delayChildren: followDelay`，内层 `listItem`。
 - 两态共用同一个外框时（限时栏、读数块），内容用 `readoutSwap` 配 `popLayout` 交替，外框高度经 `useMeasuredHeight` 量出、按 `spring.settle` 补间，不先塌再撑开。
 - 用 `popLayout` 交替的两态格必须自身定位（`relative`）：popLayout 量的是「相对 `offsetParent` 的 `offsetTop` / `offsetLeft`」，播放时却按包含块解释，两者必须是同一个盒子。按钮的 `whileTap` 缩放（按下时按钮自己成为包含块，松手归位后又让出）、带 `will-change: transform` 的容器（阶段舞台）都会临时充当包含块，测量与播放之间它一变，退场的一态就带着「行内小偏移」飞到那个盒子的左上角。两态都留在文档流里的 `grid` 叠放没有这一约束。
-- 只会在末尾追加的标记串（CCB 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
+- 只会在末尾追加的标记串（CEE 猜测标记）用 `AnimatePresence initial={false}` 配 `receiptMark`：新标记落位，挂载时已有的不重播。新提交的猜测行用 `listItem` 加 `layout="position"`，旧行让位不缩放。
 - 玩家栏换组（玩家 ↔ 旁观）是一次整列重排：玩家栏包在 `PlayerListLayout`（按实例命名的 `LayoutGroup`，桌面侧栏与抽屉互不串台）里，行传 `layoutId={player.id}`，从旧分组滑到新分组；两处 `SpectatorToggle` 共用一个 `layoutId`，入口随之滑到另一组，图标与文案以 `readoutSwap` 在途中换掉。分组标题与入口带 `layout="position"`，行列表用 `AnimatePresence mode="popLayout"`（行组件逐层转交 `ref`），退场行立即抽出文档流，其余行不等它淡完才让位。换组的行、让位的行、标题与入口统一取 `playerRelayout`（`spring.settle`），同时起步、同时落定。行的 `key` 取 `hooks/UsePlayerRowKeys`（玩家编号加换组次数），不直接用玩家编号：退场还没播完就换回原组时，同 key 的子项会被 `AnimatePresence` 原地复活，framer-motion 会把它停在 `initial` 的透明缩小态且不补播入场，行就此看不见；每换一次组换一个 key，换回来的总是新挂载的一行，跨组滑动仍由 `layoutId` 负责。
 
 ### 2.5 禁止写死数值
@@ -246,11 +246,11 @@
 | `speechReveal` | 发言内容沿基线浮现并由失焦变清晰 |
 | `scoreReveal` / `scoreRevealDelay` / `scoreRow` | 结算表逐行揭示：与 `listItem` 同一个入场，行距 `step` 比普通列表宽，名次才读得出先后；总跨度封顶在 `span`，人多时步长收窄。`ScoreTable` 逐行经 `custom` 传入 `scoreRevealDelay(index, count, ranked)`，不靠外层 stagger：按名次排列（`ranked`）自末行往上、第一名最后落定，按座次自上而下。`land` 是一行起播到大致落定的时长，行内数字从这时开始滚（`scoreRollDelay`） |
 | `digitRoll` / `gainFloat` | 分数逐位滚动与「+N」浮标，只经 `ui/AnimatedNumber` 使用：每位一条竖排数字带，增加向上、减少向下滚到新值，跨过 9/0 接着滚而不倒转，个位先动、每高一位晚 `stagger`；「+N」只在增加时自分数旁弹起、停一拍后淡出（上升即「增加」，§2.2 允许的单元素位移）。真实数值始终留在文档流里，滚动时变透明撑住宽度与基线，上面叠 aria-hidden 的数字带，滚完即移除；装饰层的字形一律画在 `::before`（`data-glyph` 取值）里、不写文本节点，按文字查找、复制与读屏都只看到真实数值。玩家栏分数变化即滚、「+N」在上方；结算表的行给 `rollFrom` 起点，落定后滚（累计分从赛前分滚起、「+N」在左侧，增量列从 0 滚起、只滚不浮）。挂载时的值不算变化，换布局或开抽屉重新挂载不重播 |
-| `contributorWash` / `contributorWashDelay` | 贡献者行的浅底：本局真正做出贡献的玩家（CCB 猜中者、猜歌本轮答对者）行落定后浮起常驻的 `primary/10` 浅底，读作「这几分是他挣的」而不是过后消失的提示。层挂在行首格里（`tr` 上的定位各浏览器不一致），宽度取滚动容器的 `100cqw` 横跨整行，`-z-10` 压在文字底下、区块 `isolate` 兜住层叠；延迟为行落定之后再一拍（`scoreRevealDelay` + `scoreReveal.land`），与行内数字同时起。只铺底色不加描边：这是流内区块，与行悬停的 `accent/40` 不同层。贡献者由各游戏给行标 `contributor`（CCB 取 `guesses` 的 `correct`，作品命中只拿 partial 分不算；猜歌取 `correctPlayerIds`） |
+| `contributorWash` / `contributorWashDelay` | 贡献者行的浅底：本局真正做出贡献的玩家（CEE 猜中者、猜歌本轮答对者）行落定后浮起常驻的 `primary/10` 浅底，读作「这几分是他挣的」而不是过后消失的提示。层挂在行首格里（`tr` 上的定位各浏览器不一致），宽度取滚动容器的 `100cqw` 横跨整行，`-z-10` 压在文字底下、区块 `isolate` 兜住层叠；延迟为行落定之后再一拍（`scoreRevealDelay` + `scoreReveal.land`），与行内数字同时起。只铺底色不加描边：这是流内区块，与行悬停的 `accent/40` 不同层。贡献者由各游戏给行标 `contributor`（CEE 取 `guesses` 的 `correct`，作品命中只拿 partial 分不算；猜歌取 `correctPlayerIds`） |
 | `revealCard` | 结算答案卡的落定：卡以 `impulse`（`scale` 0.97→1）回弹落位，与 `receiptCard` 同一条语汇。只用于结算这类一次性揭晓，不循环；卡上不另加印章或装饰 |
 | `skeletonFade` | 骨架屏退场：数据到达时骨架原地淡出，真实内容在同一格里（外层 `grid`，两者都写 `[grid-area:1/1]`，真实内容后渲染、叠在上面）以各自的入场推上来，两者交叉而不是先清空再出现。骨架与真实内容共用布局（大厅是 `RoomCardLayout`），只淡出不缩放；骨架只在首屏出现，入场不播放，只定义退场 |
 | `pageScale` | 跨页过渡的前后两层尺度（后方 `behind`、前方 `ahead`），`index.css` 的 `page-leave` / `page-arrive` 关键帧经 `--motion-page-*-scale` 取用，幅度约为 `phaseSwap` 的一半 |
-| `roomEntrance` / `roomEntranceMs` | 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 顺序每栏晚 `step` 就位，读作「房间被搭起来」。玩家栏、聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入，两层不叠缩放）。`RoomShell` 只在挂载后第一帧起的 `roomEntranceMs` 内给根元素加 `data-room-entering`（跨页过渡会暂停渲染直到新页就绪，CSS 动画也从那一帧才起播；从挂载就计时，窗口会在聊天栏的弹性收尾前撤掉），关键帧在 `index.css`，各栏延迟变量由 `parts` 生成；四栏在各自的真实元素上写 `data-room-part`（`RoomHeader`、`PlayerColumn`、`ChatColumn`、游戏区 `main`，自己拼玩家栏的页面写在栏本体上），不加包装层，免得打断 `section > aside` 这类直接父子关系。窗口过后才挂载的栏（断线重连后补上、CCB 加入成功后才有的栏）直接出现，不重播 |
+| `roomEntrance` / `roomEntranceMs` | 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 顺序每栏晚 `step` 就位，读作「房间被搭起来」。玩家栏、聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入，两层不叠缩放）。`RoomShell` 只在挂载后第一帧起的 `roomEntranceMs` 内给根元素加 `data-room-entering`（跨页过渡会暂停渲染直到新页就绪，CSS 动画也从那一帧才起播；从挂载就计时，窗口会在聊天栏的弹性收尾前撤掉），关键帧在 `index.css`，各栏延迟变量由 `parts` 生成；四栏在各自的真实元素上写 `data-room-part`（`RoomHeader`、`PlayerColumn`、`ChatColumn`、游戏区 `main`，自己拼玩家栏的页面写在栏本体上），不加包装层，免得打断 `section > aside` 这类直接父子关系。窗口过后才挂载的栏（断线重连后补上、CEE 加入成功后才有的栏）直接出现，不重播 |
 | `wordRevealTiming` / `springSettleMs(token)` | 计时器用的毫秒值：首日揭词的入场与停靠、等某档弹性静止后再改结构。组件里的 `setTimeout` 不写裸毫秒；结算表之外的分数滚动（猜歌单人的累计分）延迟取 `springSettleMs(revealCard.transition)`，等答案卡落定再滚 |
 
 ## 6. 状态反馈的边界

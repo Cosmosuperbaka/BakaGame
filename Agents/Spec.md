@@ -54,9 +54,9 @@
 
 ### 4.1 零过渡期向下兼容与双轨逻辑 (Zero Transition Backward-Compatibility & Dual-Tracks)
 - **直接物理删除旧实现**：当需求明确替换路由、协议、配置、字段、存储键或交互规范时，旧实现必须直接从代码库中物理删除，**严禁**增加重定向、别名映射、双写、回退读取或兼容分支。
-- **业务领域严禁预留伪开关字段**：严禁在业务领域模型、协议契约或后端配置项中预留无实体的“可用性伪开关与双轨回退分支”。在代码库中正式接入的业务功能即代表正式可用；主页等门户展示层若展示正在孵化中的子游戏或子模式 entry（如 CCB 增强版的“排位赛”“锦标赛”），应仅作为前端纯展示层呈现“即将上线”徽章与不可点击禁用状态，严禁反向向服务端协议与领域模型渗透临时兼容逻辑。
+- **业务领域严禁预留伪开关字段**：严禁在业务领域模型、协议契约或后端配置项中预留无实体的“可用性伪开关与双轨回退分支”。在代码库中正式接入的业务功能即代表正式可用；主页等门户展示层若展示正在孵化中的子游戏或子模式 entry（如 CEE 增强版的“排位赛”“锦标赛”），应仅作为前端纯展示层呈现“即将上线”徽章与不可点击禁用状态，严禁反向向服务端协议与领域模型渗透临时兼容逻辑。
 - **调用方全量同步重构**：替换旧规范时必须同步修改所有调用方、测试用例、文档与示例，确保仓库只剩当前唯一规范，坚决不能以“避免破坏已有外部使用”或“过渡期平滑迁移”为由保留旧入口或兼容层。
-- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才允许增加兼容逻辑，并限定生命周期与移除触发条件。已确认的 CCB 原版互通是现有产品边界，按 [CCB](CCB.md) 执行，无需每轮重新申请。上游能力回退与缓存降级按各 Provider 文档处理，不扩大为旧协议兼容。
+- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才允许增加兼容逻辑，并限定生命周期与移除触发条件。已确认的 CEE 原版互通是现有产品边界，按 [CEE](CEE.md) 执行，无需每轮重新申请。上游能力回退与缓存降级按各 Provider 文档处理，不扩大为旧协议兼容。
 
 ### 4.2 物理消灭过渡期 Shim 桥接文件与镜像单测 (Zero Shim Bridges & Redundant Suites)
 - **严禁残留中转桥接文件**：在文件重命名、模块拆分或目录迁移后，**绝对严禁**在原路径保留仅包含 `export * from "..."` 或简单重新导出的 Shim / 桥接文件。
@@ -160,7 +160,7 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **协议原始基线不可篡改**：客户端消费 RFC 6902 JSON Patch 时，状态同步引擎（如 `StateSync.ts`）维护的快照基准必须严格等于服务端原生下发的公开数据模型。**绝对严禁**在协议快照对象上就地（in-place）追加前端私有展示字段（如向 `snapshot.chat` 中 push 本地系统提示），否则会导致 JSON Patch 的数组索引与属性路径错位，引发补丁应用崩溃或幽灵数据。
 - **换房与退房基准原子重置**：当客户端离开房间或切换房间时，必须彻底重置所有模块级版本追踪号（`lastRevision = 0`）、历史补丁缓存与基线快照引用，杜绝上一个房间的残留版本号阻断新房间的快照同步。
 
-- 客户端聊天展示层按消息标识去重、按时间排序，仅保留最新 200 条；首次进入与重连全量也遵守上限。原始 StateSync 基线不得裁剪或混入本地提示，避免后续 patch 数组索引失真。CCB 直接消费服务端有界聊天，不新增跨快照的无限合并。
+- 客户端聊天展示层按消息标识去重、按时间排序，仅保留最新 200 条；首次进入与重连全量也遵守上限。原始 StateSync 基线不得裁剪或混入本地提示，避免后续 patch 数组索引失真。CEE 直接消费服务端有界聊天，不新增跨快照的无限合并。
 
 ### 9.4 前端多层防重与网络层 Envelope 幂等 (Multi-tier Idempotency & Envelope Deduplication)
 - **UI 视图层防重锁**：所有提交类按钮（开始游戏、提交发言、投票、猜歌、保存配置）在网络请求发出至收到 ACK 或失败前，必须在组件层挂载 `in-flight` 禁用锁与加载反馈，杜绝连续快速点击发送重复封包。
@@ -196,7 +196,7 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **优雅停机 6 步标准时序**：
   1. **标记停机状态**：将 `isShuttingDown` 置为 `true`，触发 `/readyz` 熔断返回 503。
   2. **清除后台轮询**：停止闲置房间清理、心跳超时扫描等定时器，阻止启动新的巡检。
-  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker、SonGuessr 与 CCB）全量广播 `server.shutdown` 事件，通知客户端准备重连。
+  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker、SonGuessr 与 CEE）全量广播 `server.shutdown` 事件，通知客户端准备重连。
   4. **流量摘除平滑缓冲窗口**：执行 3 秒（`await Bun.sleep(3000)`）等待，留出反向代理摘流切换与客户端接收停机事件的稳定网络窗口。
   5. **排空写队列**：等待已发起的数据库写入（词对、对局记录等，`drainPendingWrites`）全部落定，杜绝进程退出丢失已结算数据。
   6. **关闭端口与排空遥测**：依次 await 停止 HTTP/WebSocket 监听端口（`app.stop(true)`）、释放服务资源（`dispose`）、OTLP `shutdown`、Sentry `flush` 与 `close`；全部成功才以 0 退出。
@@ -228,12 +228,12 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 
 ## 11. 平台与多游戏平等架构契约 (Multi-Game Equal Status Architecture Contract)
 
-在 BakaGame 平台中，所有小游戏（包括谁是卧底 `WhoIsFaker`、猜歌达人 `SonGuessr`、`CCB` 等）具有严格平等的架构地位。严禁将任何单一游戏作为“平台核心/宿主”而将其他游戏贬为“二等公民或附加插件”。
+在 BakaGame 平台中，所有小游戏（包括谁是卧底 `WhoIsFaker`、猜歌达人 `SonGuessr`、`CEE` 等）具有严格平等的架构地位。严禁将任何单一游戏作为“平台核心/宿主”而将其他游戏贬为“二等公民或附加插件”。
 
 ### 11.1 共享模型与协议单向无环分层 (Acyclic Shared Contracts)
 - **分层边界与单一真相源**：
   1. **平台通用核心层 (`Server/src/shared/Protocol.ts`, `Model.ts`)**：仅承载跨所有游戏通用的数据结构与基础设施契约（如 `ClientEnvelope` 通用信封、`AckPacket`、`ErrorPacket`、`EventPacket`、`StateSyncPayload`、`ROOM_ID_TEST_MODE`、`isValidRoomId`、`RoomVisibility`、`PlayerMembership`、`ChatMessage`、`ConnectionRecord`）。
-  2. **游戏专属领域层 (`Server/src/shared/{GameName}.ts`)**：每个小游戏拥有独立、对等的模型契约文件（如 `WhoIsFaker.ts`、`SonGuessr.ts`、`CCB.ts`）。各个游戏领域层只能单向依赖平台核心层，严禁游戏领域契约之间产生跨游戏横向依赖。
+  2. **游戏专属领域层 (`Server/src/shared/{GameName}.ts`)**：每个小游戏拥有独立、对等的模型契约文件（如 `WhoIsFaker.ts`、`SonGuessr.ts`、`CEE.ts`）。各个游戏领域层只能单向依赖平台核心层，严禁游戏领域契约之间产生跨游戏横向依赖。
   3. **统一入口层 (`Server/src/shared/Index.ts`)**：作为 `@bakagame/shared` 的总门面，对等汇集并导出 `Model`、`Protocol` 以及各个子游戏的领域模块。
 - **消除信封与数据包格式的重复定义**：所有游戏的客户端指令信封联合体（如 `WhoIsFakerClientMessage`、`SonGuessrClientMessage`）必须统一基于平台通用的泛型信封 `ClientEnvelope<TType, TPayload>` 进行特化，严禁在各自业务契约中重新手写同构的信封接口。
 

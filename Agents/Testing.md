@@ -43,7 +43,7 @@
 - 服务测试不连接真实数据库：仓储为可选注入，未注入即不落库（见 [Database](Database.md#5-测试)）；结算流程和资源路径均有回归覆盖。
 - 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
 - 服务端与客户端覆盖率命令必须留在 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 须保留两端 lcov/HTML 报告。
-- `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
+- `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CEE 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
 - 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不得读取 Tailwind 类名；关键落地页和聊天流程须把页面异常、控制台错误及非预期 4xx 转为测试失败。
 - 客户端 CI 在生产构建后执行 `npm run build-storybook`，防止故事与截图工具随组件改动失效。
 - 文档门禁 `node scripts/CheckDocs.mjs` 校验根文档与 `Agents/` 的相对链接、锚点，以及 `Agents/` 每篇文档是否已在 `AGENTS.md` 导航表中登记；CI 的 Docs Check 作业无条件执行，纯文档改动同样受约束。
@@ -55,8 +55,8 @@
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
 | 后端单元测试 | `Server/test/` 下的规则、连接、Bangumi Provider 系列 | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
-| 后端服务回归 | `Server/test/` 下的 WhoIsFaker、SonGuessr、CCB 服务套件 | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
-| 协议与传输集成 | `Server/test/` 下的协议、App、命令分发与 Provider 套件 | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
+| 后端服务回归 | `Server/test/` 下的 WhoIsFaker、SonGuessr、CEE 服务套件 | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CEE 原生房间生命周期、模式与边界、原版互通服务与回合 |
+| 协议与传输集成 | `Server/test/` 下的协议、App、命令分发与 Provider 套件 | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CEE 协议与 WebSocket 传输及原版协议 |
 | 账号与鉴权 | `Server/test/` 的账号、用户数据、管理与统计套件（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；设置云同步与站内反馈；管理接口与审计；前端对应单测见 [Account](Account.md#10-验收要点) |
 | 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-验收要点)） |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
@@ -78,10 +78,10 @@ bun run verify
 bun test test/NetworkCapacity.test.ts
 # Bangumi：本地数据、降级、远端请求边界、Worker 图片/缓存
 bun test test/LocalBangumiProvider.test.ts test/FallbackBangumiProvider.test.ts test/BangumiProvider.test.ts test/BangumiWorkerProvider.test.ts
-# CCB：按原生服务、协议传输、原版互通链路分别选择
-bun test test/CCBNativeLifecycle.test.ts test/CCBNativeModes.test.ts test/CCBNativeBoundaries.test.ts test/CCBRules.test.ts
-bun test test/CCBProtocol.test.ts test/CCBTransport.test.ts
-bun test test/CCBOriginalService.test.ts test/CCBOriginalRounds.test.ts test/CCBOriginalProtocol.test.ts
+# CEE：按原生服务、协议传输、原版互通链路分别选择
+bun test test/CEENativeLifecycle.test.ts test/CEENativeModes.test.ts test/CEENativeBoundaries.test.ts test/CEERules.test.ts
+bun test test/CEEProtocol.test.ts test/CEETransport.test.ts
+bun test test/CEEOriginalService.test.ts test/CEEOriginalRounds.test.ts test/CEEOriginalProtocol.test.ts
 
 # 需要本地 Server/.env 中存在 NETEASE_COOKIE；不会在常规 bun test 中执行
 bun run test:music:real
@@ -124,9 +124,9 @@ npx playwright test e2e/App.spec.ts
 ### 客户端 E2E 隔离边界
 
 - 常规浏览器回归先用 `node scripts/e2e-build.mjs` 构建，再执行 `playwright test`。入口跨平台调用已安装的 TypeScript/Vite，不经 shell 拼接；Vite `envDir: false` 禁止加载 `.env`，显式设置 `VITE_SENTRY_DSN` 为空、`VITE_SERVER_URL=http://127.0.0.1:4850`。`NODE_ENV` 与 mode 仍为 production，不绕过仅生产生效的行为。
-- App/CCB/SEO/歌词 统一导入 `e2e/fixtures/Isolation.ts`；默认 context 自动装守卫，额外参与者使用 `isolatedContext` fixture，不裸调 `browser.newContext`。创建页面前安装 HTTP/WS route，仅允许 localhost、IPv4 loopback 与 `::1`，外部连接 abort/close 且在 teardown 明确失败；默认和额外 context 均禁用 Service Worker。允许的 HTTP 请求由 `route.fetch({ maxRedirects: 0 })` 取回再 fulfill；带 Location 的 HTTP 重定向明确失败，不让浏览器在只拦首跳的路由机制下隐式外跳。
+- App/CEE/SEO/歌词 统一导入 `e2e/fixtures/Isolation.ts`；默认 context 自动装守卫，额外参与者使用 `isolatedContext` fixture，不裸调 `browser.newContext`。创建页面前安装 HTTP/WS route，仅允许 localhost、IPv4 loopback 与 `::1`，外部连接 abort/close 且在 teardown 明确失败；默认和额外 context 均禁用 Service Worker。允许的 HTTP 请求由 `route.fetch({ maxRedirects: 0 })` 取回再 fulfill；带 Location 的 HTTP 重定向明确失败，不让浏览器在只拦首跳的路由机制下隐式外跳。
 - Edge/Chromium 的 Local Network Access 权限只授予当前套件回环 `baseURL` 的 origin（应用 5173、歌词 5177），用于本地 WS 路由桥；所有默认及手动 context 均使用同一范围，不禁用浏览器安全，也不授权外部来源。
-- 页级合成夹具不得通过 `route.continue()` 绕过 context 守卫，未命中用 `fallback()`。CCB 可选图片只能本地合成 fulfill，WS 图片夹具只匹配 loopback，不能接通真实上游。原有页面异常、控制台及非预期 HTTP 错误质量断言保留。网易云登录二维码在浏览器边界仅替换创建/轮询 ACK，使用不可扫描的合成图片；房间命令透传真实隔离服务，保留可见、图片加载和恰好一次创建断言，不以开放真实出口让登录测试通过。
+- 页级合成夹具不得通过 `route.continue()` 绕过 context 守卫，未命中用 `fallback()`。CEE 可选图片只能本地合成 fulfill，WS 图片夹具只匹配 loopback，不能接通真实上游。原有页面异常、控制台及非预期 HTTP 错误质量断言保留。网易云登录二维码在浏览器边界仅替换创建/轮询 ACK，使用不可扫描的合成图片；房间命令透传真实隔离服务，保留可见、图片加载和恰好一次创建断言，不以开放真实出口让登录测试通过。
 - 隔离 context 通过 `closeIsolatedContext` 收尾：保持页级拒绝出口，再用框架 `unrouteAll({ behavior: "wait" })` 排空在途 HTTP handler，最后关闭目标。不使用 `ignoreErrors` 吞掉异常，不在 fulfill 后再次 abort。资源屏蔽/合成路由只匹配 loopback，未命中 fallback 至共享守卫（明确合成的可选外部角色图片除外）。
 - 歌词套件的 Vite 就绪探针请求真实生产 CSS `src/index.css`，不是只检查能先返回的夹具 HTML。冷编译完成后才启动首例，保留每例 30 秒超时及页面/控制台错误断言；不要靠扩大测试超时或跳过加载检查掩盖资源尚未就绪。
 - `APIRequestContext` 不受浏览器 route 拦截。SEO 原始 HTML 请求通过 `getLoopback` 校验目标并禁用自动重定向；新增 API 请求沿用这一显式边界，不允许直接请求外部 URL。
@@ -151,10 +151,10 @@ npx playwright test e2e/App.spec.ts
 
 ## 领域专项验收
 
-- CCB 网络容量使用真实原生服务与生产 `StateSyncEncoder`，以 150 名玩家、每秒 12 次猜测、持续
+- CEE 网络容量使用真实原生服务与生产 `StateSyncEncoder`，以 150 名玩家、每秒 12 次猜测、持续
   60 秒以及公共/私有两通道的全量校准计量，连同请求、ACK、WebSocket 帧及 15% 余量不超过
   6 Mbps。必须断言实际产生补丁，不能只检查事件登记或跳过未变化的校准流量。
-- CCB 图片提示用生成的栅格图片经过真实 sharp 解码、缩放、模糊及 WebP 编码，校验像素尺寸和
+- CEE 图片提示用生成的栅格图片经过真实 sharp 解码、缩放、模糊及 WebP 编码，校验像素尺寸和
   模糊后方差下降；下载失败、无效地址、损坏图片统一返回业务错误，流式超限及时取消，失败不得
   留在成功缓存或阻塞后续同键请求。图片测试不访问真实上游。
 - 歌词几何与动效测试使用 `e2e/SongLyrics.config.ts` 和隔离配置 `Client/e2e/SongLyrics.vite.ts` 单独启动 Vite（5177；独立依赖缓存，不运行应用资源预处理、不写 `.generated-public/` 或 `dist/`），真实挂载 AMLL 与生产 CSS，只替代媒体解码与房间传输。测试入口仅在 `e2e/fixtures/`，不进入生产构建。必须检查首末行边界、字号和宽度变化、首次可见帧、完成与重播的中间帧；不得以手工估算高度的 jsdom 断言代替浏览器验证。
@@ -163,7 +163,7 @@ npx playwright test e2e/App.spec.ts
 
 用于样式审查与改前改后对照，不做像素断言，也不替代 E2E 与单测。
 
-- 故事与组件同目录（`Foo.stories.tsx`），标题按 `基础控件`、`公共组件`、`页面`、`谁是卧底`、`猜歌`、`CCB` 分组，故事名写中文状态。假数据放 `src/stories/fixtures/`，按共享类型构造且与真实业务口径一致；文案同样遵守 [Design §1](Design.md)。
+- 故事与组件同目录（`Foo.stories.tsx`），标题按 `基础控件`、`公共组件`、`页面`、`谁是卧底`、`猜歌`、`CEE` 分组，故事名写中文状态。假数据放 `src/stories/fixtures/`，按共享类型构造且与真实业务口径一致；文案同样遵守 [Design §1](Design.md)。
 - 连 Store 的组件在 `beforeEach` 用 `src/stories/StorePresets.ts` 预置状态；预览层在每个故事前把全部 Store 复位。故事不得渲染 `layouts/`、`contexts/` 或调用 `init*Ws`，不访问外网：图片用本地资源或数据 URL，截止时间在运行时用 `fromNow` 计算。
 - 截图规则由 tags 决定：`page` 整页 × 手机 390 / 平板 900 / 桌面 1440；`overlay` 含 Portal 的整页 × 手机 / 桌面；`mobile` 只拍手机宽度；`no-shot` 不拍；其余按故事根元素取景。每种都出亮、暗两套；暗色只用于样式检查，站内不开放。
 - `storybook:shots` 自启独立端口的 Storybook（`--url` 可复用已运行的实例），关闭 framer-motion 过渡并模拟减弱动效，等字体、图片与动画落定后截图。故事渲染失败、页面异常或控制台错误令命令以非零退出。`--filter` 只重拍匹配的故事，索引保留其余故事的上次结果；`--out` 另存一份用于对照。

@@ -184,7 +184,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 
 ### 组队
 
-与 CCB 增强房同一口径（见 [CCB](CCB.md)「玩法与状态」）；单人房没有队伍。
+与 CEE 增强房同一口径（见 [CEE](CEE.md)「玩法与状态」）；单人房没有队伍。
 
 - 队伍号 1–8，`null` 为个人游玩；只在等待阶段由本人用 `song.player.setTeam` 更改，换队不清除准备。旁观者没有队伍，转为旁观（含下轮生效的排队）时清空。
 - 回合按「作答单元」记账：同队队员指向同一份记录，共用已用次数、猜中/投降结果与限时；个人、人机与出题人各自成单元。人机不入队，免得替队友耗掉次数。
@@ -214,15 +214,15 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 客户端对**只读查询**统一走「命中即复用 + 同键合并」窗口
 （`Client/src/lib/QueryReuse.ts`，TTL 5 分钟、上限 50 条）：
 Songuessr 的 `song.music.search` / `song.bangumi.search` / `song.music.artist.search` /
-`song.music.playlist.resolve`，以及 CCB 的 `ccb.character.search` / `ccb.subject.search` /
-`ccb.subject.characters`。
+`song.music.playlist.resolve`，以及 CEE 的 `cee.character.search` / `cee.subject.search` /
+`cee.subject.characters`。
 
 - **只有只读命令可以复用**：写命令（建房、改设置、开局、提交答案、房间同步）一律直发，绝不进窗口。
 - 关键词类输入按「去空白 + 折叠大小写」归一化；歌单链接 / ID 这类精确输入只去空白（URL 路径可能大小写敏感）。
 - **收益边界**：减少的是 WS 往返与等待，**不改变对网易云的请求量** ——
   上游请求量只由唯一输入数决定；客户端的 350ms 输入防抖同样只挡「打字过程中」的抖动。
 - 失败结果不写入窗口，下一次调用照常回源。
-- 窗口是模块级状态，测试必须用 `clearSonGuessrQueryCache()` / `clearCCBQueryCache()` 隔离用例。
+- 窗口是模块级状态，测试必须用 `clearSonGuessrQueryCache()` / `clearCEEQueryCache()` 隔离用例。
 
 ### 歌词与播放器
 
