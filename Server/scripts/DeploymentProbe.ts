@@ -33,7 +33,8 @@ export async function probeDeployment(baseUrl = "http://127.0.0.1:4850", budgetM
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
           socket.close();
-          error ? reject(error) : resolve();
+          if (error) reject(error);
+          else resolve();
         };
         const onAbort = () => finish(new Error("部署探针已取消"));
         signal?.addEventListener("abort", onAbort, { once: true });
