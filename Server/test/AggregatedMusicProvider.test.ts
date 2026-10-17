@@ -4,7 +4,9 @@ import type { MusicProvider, MusicLoginSession, MusicQrLoginCheck } from "../src
 import type { AggregatedSongSearchResult } from "../src/infrastructure/MusicDeduplicator";
 import type { SongDetails, SongPlaylistInfo, SongSearchResult } from "../src/shared/SonGuessr";
 
-function createMockProvider(platform: "netease" | "qq", overrides: Partial<MusicProvider> = {}): MusicProvider {
+// 返回类型不注解成 MusicProvider：那会让 `expect(mock.getSong)` 被判成游离方法引用，
+// satisfies 同样守住接口契约，又保留推断出的属性类型。
+function createMockProvider(platform: "netease" | "qq", overrides: Partial<MusicProvider> = {}) {
   return {
     search: mock(async (_keyword: string, _limit?: number): Promise<SongSearchResult[]> => []),
     getSong: mock(async (id: string): Promise<SongDetails> => ({
@@ -34,7 +36,7 @@ function createMockProvider(platform: "netease" | "qq", overrides: Partial<Music
     searchAlbums: mock(async () => []),
     getAlbumSongs: mock(async () => []),
     ...overrides,
-  };
+  } satisfies MusicProvider;
 }
 
 describe("AggregatedMusicProvider", () => {

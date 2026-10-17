@@ -37,7 +37,8 @@ beforeEach(() => {
   send.mockImplementation(async (type: string, payload: Record<string, unknown> = {}, metadata: { roomId?: string } = {}) => {
     if (type === "song.room.leave") return undefined;
     if (!["song.room.join", "song.room.create", "song.room.reconnect"].includes(type)) throw new Error(`测试禁止命令 ${type}`);
-    return receipt(String(metadata.roomId ?? payload.roomId ?? "1234"));
+    const roomId = [metadata.roomId, payload.roomId].find((value): value is string => typeof value === "string");
+    return receipt(roomId ?? "1234");
   });
   saveUsername("玩家");
 });

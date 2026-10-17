@@ -145,7 +145,7 @@ export class SentryApiClient {
       ["transaction", "project", "count()", "p75(span.duration)", "p95(span.duration)"],
     );
     return rows.map((row) => ({
-      name: String(row.transaction ?? ""),
+      name: typeof row.transaction === "string" ? row.transaction : "",
       project: typeof row.project === "string" ? row.project : null,
       count: numberOrNull(row["count()"]) ?? 0,
       p75: numberOrNull(row["p75(span.duration)"]),

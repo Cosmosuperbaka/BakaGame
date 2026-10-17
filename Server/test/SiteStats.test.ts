@@ -4,6 +4,7 @@ import { beijingDay, normalizeVisitPath, SiteStatsService } from "../src/applica
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { deriveSentryApiConfig, SentryApiClient } from "../src/infrastructure/SentryApi";
 import { ACCOUNT_TEST_SECRET, createAccountTestApp, MemorySiteStatsRepository } from "./AccountFixtures";
+import { requestUrlText } from "./RequestFixtures";
 
 const VISITOR = "visitor-0123456789abcdef";
 
@@ -110,7 +111,7 @@ describe("Sentry 概览", () => {
     let clock = 0;
     const calls: URL[] = [];
     const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
+      const url = new URL(requestUrlText(input));
       calls.push(url);
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer tok");
       if (url.pathname.endsWith("/issues/")) {

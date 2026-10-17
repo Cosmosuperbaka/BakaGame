@@ -4,6 +4,7 @@ import {
   sentryTunnelRoutes,
   SentryTunnelRateLimiter,
 } from "../src/transport/routes/SentryTunnel";
+import { requestUrlText } from "./RequestFixtures";
 
 describe("SentryTunnel (同源信封代理与安全校验)", () => {
   const allowedProjectIds = ["100001", "100002"];
@@ -161,7 +162,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     let capturedBody = "";
 
     const mockFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      capturedUrl = String(input);
+      capturedUrl = requestUrlText(input);
       capturedMethod = init?.method ?? "GET";
       capturedHeaders = (init?.headers as Record<string, string>) ?? {};
       capturedBody = await new Response(init?.body).text();

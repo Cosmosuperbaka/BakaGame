@@ -151,9 +151,6 @@
     }
   },
   "src/hooks/UseSongRoomLifecycle.test.tsx": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    },
     "@typescript-eslint/only-throw-error": {
       "count": 3
     },
@@ -169,28 +166,8 @@
       "count": 2
     }
   },
-  "src/lib/Api.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
-  "src/lib/BangumiMarkup.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
-  "src/lib/CommitHistoryPlugin.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
   "src/lib/DescriptionColumns.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/WebsocketClient.test.ts": {
-    "@typescript-eslint/unbound-method": {
       "count": 1
     }
   },

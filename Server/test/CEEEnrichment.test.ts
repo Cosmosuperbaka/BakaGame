@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CEEEnrichment } from '../src/infrastructure/CEEEnrichment';
 import type { CEEDataOptions } from '../src/infrastructure/CEEData';
+import { requestUrlText } from './RequestFixtures';
 
 const active: CEEEnrichment[] = [];
 const tempFiles: string[] = [];
@@ -112,7 +113,7 @@ describe('CEE 资料补全异常边界', () => {
   test('作品封面走条目接口、请求合并并持久化原始地址，与同编号角色互不串用', async () => {
     const paths: string[] = [];
     const enrichment = create({ imageBase: 'https://mirror.invalid', fetcher: async (input) => {
-      const url = String(input); paths.push(new URL(url).pathname);
+      const url = requestUrlText(input); paths.push(new URL(url).pathname);
       return url.includes('/subjects/') ? Response.json({ images: { large: 'https://lain.bgm.tv/pic/cover/1.jpg' } }) : imageResponse();
     } });
     const covers = await Promise.all([enrichment.resolveSubjectImage(1), enrichment.resolveSubjectImage(1)]);
@@ -129,7 +130,7 @@ describe('CEE 资料补全异常边界', () => {
   test('一次回源同时存下方格图与大图，列表按尺寸各取所需', async () => {
     const paths: string[] = [];
     const enrichment = create({ fetcher: async (input) => {
-      paths.push(new URL(String(input)).pathname);
+      paths.push(new URL(requestUrlText(input)).pathname);
       return Response.json({ name: '补充角色', images: {
         large: 'https://lain.bgm.tv/pic/crt/l/1.jpg',
         medium: 'https://lain.bgm.tv/pic/crt/m/1.jpg',

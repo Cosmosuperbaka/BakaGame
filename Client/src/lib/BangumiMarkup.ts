@@ -15,7 +15,8 @@ export function parseBangumiMarkup(source: string): MarkupNode[] {
   const text = (value: string) => {
     if (!value) return;
     const list = top();
-    if (typeof list.at(-1) === "string") list[list.length - 1] += value;
+    const last = list.at(-1);
+    if (typeof last === "string") list[list.length - 1] = last + value;
     else list.push(value);
   };
   // 未闭合的标记退回文字：开标记原样作文字，子内容并回上一层。

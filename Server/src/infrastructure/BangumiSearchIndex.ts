@@ -200,9 +200,9 @@ export class BangumiSearchIndex {
   toSubjectDocument(row: Record<string, unknown>): SubjectSearchDocument {
     return {
       id: Number(row.id), name: String(row.name),
-      aliases: uniqueStrings(String(row.name_cn ?? ""), parseJsonStrings(row.aliases)),
+      aliases: uniqueStrings(cellText(row.name_cn), parseJsonStrings(row.aliases)),
       tag: parseJsonStrings(row.tags), meta_tag: parseJsonStrings(row.meta_tags),
-      date: parseDate(String(row.date ?? "")), score: Number(row.score ?? 0),
+      date: parseDate(cellText(row.date)), score: Number(row.score ?? 0),
       rating_count: Number(row.rating_count ?? 0), heat: Number(row.heat ?? 0),
       rank: Number(row.rank ?? 0), type: Number(row.type ?? 0),
     };
@@ -271,9 +271,16 @@ export function uniqueStrings(...values: Array<string | string[]>): string[] {
   return [...new Set(values.flatMap((value) => Array.isArray(value) ? value : [value]).map((value) => value.trim()).filter(Boolean))];
 }
 
+/** 取文本列：字符串原样收，数字与布尔取其字面文本，其余（null、undefined、对象、数组）按空串，避免把 [object Object] 写进索引。 */
+export function cellText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  return "";
+}
+
 export function parseJsonStrings(value: unknown): string[] {
   try {
-    const parsed = JSON.parse(String(value ?? "[]"));
+    const parsed = JSON.parse(cellText(value) || "[]");
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ORPCError } from "@orpc/client";
 
 import { apiErrorMessage, AuthRequestError, createApiClient, isAccountDisabled, signInWithCode } from "./Api";
+import { requestBodyText } from "../test/RequestText";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -42,7 +43,7 @@ describe("账号 API 客户端", () => {
 
   it("验证码登录：请求只带邮箱与验证码，Better Auth 的英文错误码映射成中文", async () => {
     const fetchMock = vi.fn(async (_url: URL, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toEqual({ email: "10001@qq.com", otp: "123456" });
+      expect(JSON.parse(requestBodyText(init))).toEqual({ email: "10001@qq.com", otp: "123456" });
       return json(400, { code: "INVALID_OTP", message: "Invalid OTP" });
     });
     vi.stubGlobal("fetch", fetchMock);

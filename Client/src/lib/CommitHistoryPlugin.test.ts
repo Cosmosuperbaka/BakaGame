@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { commitHistoryPlugin } from "../../vite.config";
+import { requestUrlText } from "../test/RequestText";
 
 const RESOLVED_ID = "\0virtual:commit-history";
 const HEAD_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -86,7 +87,7 @@ describe("commitHistoryPlugin", () => {
     const history = await loadHistory(commitHistoryPlugin({ useRemote: true, execGit: fakeGit }));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requested = String(fetchMock.mock.calls[0]?.[0]);
+    const requested = requestUrlText(fetchMock.mock.calls[0]?.[0]);
     expect(requested).toContain("https://api.github.com/repos/Cosmosuperbaka/BakaGame/commits");
     expect(requested).toContain(`sha=${HEAD_SHA}`);
     expect(requested).toContain("per_page=30");

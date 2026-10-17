@@ -41,9 +41,6 @@
     "@typescript-eslint/no-explicit-any": {
       "count": 7
     },
-    "@typescript-eslint/unbound-method": {
-      "count": 8
-    },
     "sonarjs/cognitive-complexity": {
       "count": 9
     }
@@ -84,11 +81,6 @@
       "count": 2
     }
   },
-  "src/infrastructure/BangumiSearchIndex.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 3
-    }
-  },
   "src/infrastructure/CEECharacterRepository.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 2
@@ -100,9 +92,6 @@
     }
   },
   "src/infrastructure/MeiliHttpClient.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    },
     "@typescript-eslint/prefer-promise-reject-errors": {
       "count": 1
     }
@@ -133,11 +122,6 @@
       "count": 2
     }
   },
-  "src/infrastructure/SentryApi.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
   "src/infrastructure/TagDiffSync.ts": {
     "@typescript-eslint/no-misused-promises": {
       "count": 1
@@ -151,11 +135,6 @@
       "count": 1
     }
   },
-  "src/transport/App.ts": {
-    "@typescript-eslint/unbound-method": {
-      "count": 2
-    }
-  },
   "src/transport/routes/SentryTunnel.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 1
@@ -166,29 +145,9 @@
       "count": 1
     }
   },
-  "test/AggregatedMusicProvider.test.ts": {
-    "@typescript-eslint/unbound-method": {
-      "count": 19
-    }
-  },
-  "test/BangumiProvider.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
   "test/BangumiWorkerProvider.test.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 1
-    }
-  },
-  "test/CEECharacterRepository.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
-  "test/CEEEnrichment.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 2
     }
   },
   "test/CEEOriginalPreparation.test.ts": {
@@ -196,38 +155,8 @@
       "count": 1
     }
   },
-  "test/EventLogger.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 2
-    }
-  },
-  "test/LocalBangumiProvider.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 2
-    }
-  },
-  "test/OtlpExporter.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 5
-    }
-  },
-  "test/SentryTunnel.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
-  "test/SiteStats.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    }
-  },
   "test/SonGuessrService.test.ts": {
     "@typescript-eslint/no-floating-promises": {
-      "count": 2
-    }
-  },
-  "test/SubjectDiscovery.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
       "count": 2
     }
   },

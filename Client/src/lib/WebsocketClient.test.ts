@@ -75,6 +75,7 @@ const openRequest = async (sendThrows?: Error) => {
 
 describe("WebSocketClient", () => {
   it("在非安全上下文（crypto.randomUUID 不存在）时平滑降级生成合法 UUID", () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- 只保存原引用并在 finally 写回同一个 crypto，从不解绑调用
     const originalRandomUuid = globalThis.crypto?.randomUUID;
     try {
       // @ts-expect-error 模拟非安全上下文缺少 randomUUID

@@ -7,6 +7,7 @@ import { createCEECharacterFixture } from "./CEECharacterFixtures";
 import type { CEEDataOptions } from "../src/infrastructure/CEEData";
 import { BangumiSearchIndex } from "../src/infrastructure/BangumiSearchIndex";
 import { selectCEEExtraTags } from "../src/infrastructure/CEECharacterDerivation";
+import { requestUrlText } from "./RequestFixtures";
 
 const cleanup: Array<() => Promise<void>> = [];
 const now = Date.UTC(2026, 0, 1);
@@ -120,7 +121,7 @@ describe("CEE 本地角色资料", () => {
   test("目录只在显式导入时联网，完整分页落库后抽题且报告缺失作品", async () => {
     const requested: number[] = [];
     const { repository, dbPath, enrichmentPath } = create({ apiBase: "https://bgm.invalid", fetcher: async (input) => {
-      const offset = Number(new URL(String(input)).searchParams.get("offset")); requested.push(offset);
+      const offset = Number(new URL(requestUrlText(input)).searchParams.get("offset")); requested.push(offset);
       return Response.json({ total: 3, data: offset === 0 ? [{ id: 11 }, { id: 999 }] : [{ id: 15 }] });
     } });
     const configuration = { ...settings(), useIndex: true, indexId: 8 };

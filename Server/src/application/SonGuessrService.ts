@@ -1744,19 +1744,21 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.requireMusicQuota(connection, player);
     const playlistId = this.parsePlaylistId(value);
-    const resolve = this.options.musicProvider.getPlaylistSongs;
+    const provider = this.options.musicProvider;
+    const resolve = provider.getPlaylistSongs?.bind(provider);
     if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
-    const result = await resolve.call(this.options.musicProvider, playlistId, this.getSongCookie(room, playlistId));
+    const result = await resolve(playlistId, this.getSongCookie(room, playlistId));
     return { playlist: result.info };
   }
 
   private async searchArtists(connection: ConnectionRecord, keyword: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.requireMusicQuota(connection, player);
-    const search = this.options.musicProvider.searchArtists;
+    const provider = this.options.musicProvider;
+    const search = provider.searchArtists?.bind(provider);
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
     return {
-      results: await search.call(this.options.musicProvider, keyword, 20, this.getAggregatedSearchCookie(room)),
+      results: await search(keyword, 20, this.getAggregatedSearchCookie(room)),
     };
   }
 
@@ -2019,9 +2021,10 @@ export class SonGuessrService implements AdminRoomControl {
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    const createQrLogin = this.options.musicProvider.createQrLogin;
+    const provider = this.options.musicProvider;
+    const createQrLogin = provider.createQrLogin?.bind(provider);
     if (!createQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
-    return createQrLogin.call(this.options.musicProvider, platform, type);
+    return createQrLogin(platform, type);
   }
 
   private async checkMusicQrLogin(
@@ -2034,10 +2037,11 @@ export class SonGuessrService implements AdminRoomControl {
     this.ensureHost(room, player.id);
     const key = keyValue.trim();
     if (!key || key.length > 512) throw new AppError("INVALID_LOGIN", "二维码登录密钥无效");
-    const checkQrLogin = this.options.musicProvider.checkQrLogin;
+    const provider = this.options.musicProvider;
+    const checkQrLogin = provider.checkQrLogin?.bind(provider);
     if (!checkQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
     const verify = this.beginMusicAuthentication(room, player, connection, platform);
-    const result = await checkQrLogin.call(this.options.musicProvider, key, platform, type);
+    const result = await checkQrLogin(key, platform, type);
     verify();
     if (result.status !== "authorized" || !result.session) {
       return { status: result.status, message: result.message };
@@ -2061,10 +2065,11 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     const cookie = this.requireMusicCookie(cookieValue);
-    const getLoginStatus = this.options.musicProvider.getLoginStatus;
+    const provider = this.options.musicProvider;
+    const getLoginStatus = provider.getLoginStatus?.bind(provider);
     if (!getLoginStatus) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
     const verify = this.beginMusicAuthentication(room, player, connection, platform);
-    const result = await getLoginStatus.call(this.options.musicProvider, cookie, platform);
+    const result = await getLoginStatus(cookie, platform);
     verify();
     const session = this.installMusicSession(room, player.id, result);
     this.touch(room);
@@ -2258,7 +2263,8 @@ export class SonGuessrService implements AdminRoomControl {
       if (!room.musicSession && !room.qqMusicSession) {
         throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录音乐账号");
       }
-      const getLoginStatus = this.options.musicProvider.getLoginStatus;
+      const provider = this.options.musicProvider;
+      const getLoginStatus = provider.getLoginStatus?.bind(provider);
       if (!getLoginStatus) {
         throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录状态校验不可用");
       }
@@ -2289,7 +2295,7 @@ export class SonGuessrService implements AdminRoomControl {
       };
       if (musicSession) {
         try {
-          const session = await getLoginStatus.call(this.options.musicProvider, musicSession.cookie, "netease");
+          const session = await getLoginStatus(musicSession.cookie, "netease");
           verifySession("netease");
           musicSession.account = session.account;
         } catch (error) {
@@ -2309,7 +2315,7 @@ export class SonGuessrService implements AdminRoomControl {
       }
       if (qqMusicSession) {
         try {
-          const session = await getLoginStatus.call(this.options.musicProvider, qqMusicSession.cookie, "qq");
+          const session = await getLoginStatus(qqMusicSession.cookie, "qq");
           verifySession("qq");
           qqMusicSession.account = session.account;
         } catch (error) {
@@ -3200,7 +3206,8 @@ export class SonGuessrService implements AdminRoomControl {
     );
     if (knownMatches.length > 0) return knownMatches;
 
-    const getPopularity = this.options.musicProvider.getSongPopularity;
+    const provider = this.options.musicProvider;
+    const getPopularity = provider.getSongPopularity?.bind(provider);
     if (!getPopularity) {
       return [];
     }
@@ -3218,7 +3225,7 @@ export class SonGuessrService implements AdminRoomControl {
       const batch = sampled.slice(index, index + 4);
       const values = await Promise.all(batch.map(async (song) => ({
         ...song,
-        popularity: await getPopularity.call(this.options.musicProvider, song.id, cookie) ?? song.popularity,
+        popularity: await getPopularity(song.id, cookie) ?? song.popularity,
       })));
       enriched.push(...values);
     }
@@ -3284,9 +3291,10 @@ export class SonGuessrService implements AdminRoomControl {
     if (!this.musicLimiter.allow(connection.id, this.now())) {
       throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
     }
-    const refresh = this.options.musicProvider.refreshSongAudio;
+    const provider = this.options.musicProvider;
+    const refresh = provider.refreshSongAudio?.bind(provider);
     if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
-    const audioUrl = await refresh.call(this.options.musicProvider, round.song.id, this.getSongCookie(room, round.song.id));
+    const audioUrl = await refresh(round.song.id, this.getSongCookie(room, round.song.id));
     if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
     round.song.audioUrl = audioUrl;
     this.touch(room);

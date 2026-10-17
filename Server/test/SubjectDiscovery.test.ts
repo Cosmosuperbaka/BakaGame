@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { discoverNewSubjects } from "../src/infrastructure/SubjectDiscovery";
+import { requestBodyText, requestUrlText } from "./RequestFixtures";
 
 const BASE = "https://bgm.invalid";
 
@@ -20,7 +21,7 @@ const makeDb = () => {
 const makeFetcher = (payloads: Record<string, unknown>) => {
   const calls: string[] = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
+    const url = requestUrlText(input);
     calls.push(init?.method === "POST" ? `POST ${url}` : url);
     if (url.endsWith("/v0/search/subjects")) {
       return Response.json({ data: [{ id: 900001 }, { id: 900002 }, { id: 8 }], total: 3 });
@@ -95,7 +96,7 @@ test("搜索窗口按 since 组装 air_date 过滤（不是 sort: date —— �
   const db = makeDb();
   const seen: string[] = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-    seen.push(String(init?.body ?? ""));
+    seen.push(requestBodyText(init));
     return Response.json({ data: [], total: 0 });
   }) as unknown as typeof fetch;
   await discoverNewSubjects({ db, base: BASE, fetcher, since: "2026-09-15" });

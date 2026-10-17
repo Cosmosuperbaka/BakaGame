@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LocalBangumiProvider } from "../src/infrastructure/LocalBangumiProvider";
+import { requestUrlText } from "./RequestFixtures";
 import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -142,7 +143,7 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
     const requested: string[] = [];
     const fetcher = async (input: RequestInfo | URL) => {
-      requested.push(String(input));
+      requested.push(requestUrlText(input));
       return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } }), { status: 200 });
     };
     const provider = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });
@@ -250,7 +251,7 @@ describe("LocalBangumiProvider · 图片接口与候选选取", () => {
     const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
     const requested: string[] = [];
     const fetcher = async (input: RequestInfo | URL) => {
-      requested.push(String(input));
+      requested.push(requestUrlText(input));
       return new Response(JSON.stringify({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/8_x.jpg" } }), { status: 200 });
     };
     const provider = new LocalBangumiProvider({ dbPath: songPath, enrichmentPath, imageBase: "https://mirror.example", apiBase: "https://api.example", fetcher });

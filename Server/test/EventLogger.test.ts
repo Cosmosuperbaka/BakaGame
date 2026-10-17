@@ -4,6 +4,7 @@ import * as Release from "../src/infrastructure/Release";
 import { EventLogger, describeError, redactData } from "../src/infrastructure/EventLogger";
 import { _resetServerSentryForTest, initServerSentry } from "../src/infrastructure/Sentry";
 import { OtlpExporter } from "../src/infrastructure/OtlpExporter";
+import { requestBodyText } from "./RequestFixtures";
 
 let exporter: OtlpExporter | undefined;
 let release: ReturnType<typeof spyOn>;
@@ -28,7 +29,7 @@ test("console / OTLP / Sentry 出口共用脱敏且保留错误 cause 诊断", a
   try {
     initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as any);
     exporter = new OtlpExporter({ endpoint: "https://collector.example.com", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
-      bodies.push(String(options?.body)); return new Response("{}");
+      bodies.push(requestBodyText(options)); return new Response("{}");
     } });
     const error = new Error("operation failed", { cause: new Error("database failure") });
     error.cause = { ...(describeError(error.cause)), password: "dummy-cause-password" };
@@ -62,7 +63,7 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
       bangumiApiUrl: "http://127.0.0.1:9", bangumiImageUrl: "", sentryDsn: "https://fixture@o000000.ingest.sentry.io/100001",
     });
     exporter = new OtlpExporter({ endpoint: "http://127.0.0.1:9", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
-      bodies.push(String(options?.body)); return new Response("{}");
+      bodies.push(requestBodyText(options)); return new Response("{}");
     } });
     const logger = new EventLogger(undefined, () => 1700000000000, exporter);
     const traceIds = ["4bf92f3577b34da6a3ce929d0e0e4736", "f83c9b4a5b0248aa98d1563fa91a0212"];

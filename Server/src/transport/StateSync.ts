@@ -190,10 +190,10 @@ export class StateSyncEncoder {
 export function createStateSyncSender(send: (payload: unknown) => void) {
   const encoder = new StateSyncEncoder();
   return {
-    send(payload: unknown) {
+    send: (payload: unknown): void => {
       for (const encoded of encoder.encode(payload)) send(encoded);
     },
-    calibrate(payload: unknown) {
+    calibrate: (payload: unknown): void => {
       for (const encoded of encoder.encode(payload, { calibration: true })) send(encoded);
     },
     reset: () => encoder.reset(),

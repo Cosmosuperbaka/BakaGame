@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { OtlpExporter, OtlpShutdownError, toUnixNanoString, type OtlpFetcher, type OtlpExporterConfig } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createTestApp as createApp } from './AppFixtures';
+import { requestBodyText, requestUrlText } from "./RequestFixtures";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
 
@@ -39,7 +40,7 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
   const fetcher: OtlpFetcher = async (_input, options) => {
     const headers = new Headers(options?.headers);
     capturedHeaders = { authorization: headers.get("authorization") ?? "", "content-type": headers.get("content-type") ?? "" };
-    capturedBody = JSON.parse(String(options?.body));
+    capturedBody = JSON.parse(requestBodyText(options));
     return new Response("{}");
   };
   const endpoint = "https://collector.example.com/otlp/v1/logs";
@@ -213,7 +214,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
 test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元组 Resource", async () => {
   let capturedTraceBody: unknown = null;
   const fetcher: OtlpFetcher = async (input, options) => {
-    if (String(input).includes("/v1/traces")) capturedTraceBody = JSON.parse(String(options?.body));
+    if (requestUrlText(input).includes("/v1/traces")) capturedTraceBody = JSON.parse(requestBodyText(options));
     return new Response("{}");
   };
 
@@ -372,7 +373,7 @@ test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandle
   const exporter = createExporter({
     endpoint: "https://collector.example.com/otlp",
     fetcher: async (input: string | URL | Request, options?: RequestInit) => {
-      if (String(input).includes("/v1/traces")) capturedTrace = JSON.parse(String(options?.body));
+      if (requestUrlText(input).includes("/v1/traces")) capturedTrace = JSON.parse(requestBodyText(options));
       return new Response("{}");
     },
   });

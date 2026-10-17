@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BangumiProvider, extractBangumiMusicTracks, rewriteBangumiImageUrl } from "../src/infrastructure/BangumiProvider";
+import { requestBodyText } from "./RequestFixtures";
 
 const results = () => Response.json({ data: [] });
 const tick = () => Bun.sleep(1);
@@ -266,7 +267,7 @@ describe("BangumiProvider 远端接口", () => {
     const rows = await provider.searchSubjects(" 测试 ", 5, { startYear: 2010, endYear: 2020 });
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.invalid/v0/search/subjects?limit=5");
-    expect(JSON.parse(String(calls[0].init!.body))).toEqual({
+    expect(JSON.parse(requestBodyText(calls[0].init))).toEqual({
       keyword: "测试",
       sort: "heat",
       filter: { type: [2], air_date: [">=2010-01-01", "<2021-01-01"] },

@@ -24,7 +24,7 @@ import { MeilisearchApiError, type MeilisearchErrorResponse } from "meilisearch"
  */
 export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promise<unknown> {
   const [input, init] = args;
-  const url = new URL(String(input));
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   const payload = typeof init?.body === "string" ? init.body : undefined;
   const headers = toPlainHeaders(init?.headers);
   if (payload !== undefined) headers["content-length"] = String(Buffer.byteLength(payload));
