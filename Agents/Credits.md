@@ -2,6 +2,16 @@
 
 维护 `/credits`（开源致谢 / 更新日志 / 提交历史）、贡献模型署名或依赖许可证数据时查阅本文。页面布局与交互规范见 [Design §7.5](Design.md#75-版本信息与开源致谢页)，页面转场见 [Animation §2.4](Animation.md)，更新日志文案与版本结算见 [Commitment](Commitment.md)。
 
+| 工作范围 | 查阅章节 |
+|---|---|
+| 页面入口、标签与转场 | §1 |
+| 数据来源与虚拟模块 | §2 |
+| 贡献模型署名 | §3 |
+| 展示约定与许可证抽屉 | §4 |
+| 文件职责 | §5 |
+| 验证 | §6 |
+| 维护 | §7 |
+
 ## 1. 页面与入口
 
 - `/credits` 是完整页面，由主页页脚版本号进入（默认落在 `?tab=changelog`），标签顺序为「开源致谢 / 更新日志 / 提交历史」，当前标签写进 `?tab=`。
@@ -59,26 +69,7 @@
 
 ## 6. 验证
 
-改动数据管线（`vite.config.ts` 插件、虚拟模块、`lib/Credits.ts`）：
-
-```bash
-cd Client
-npx vitest run src/lib/Credits.test.ts src/lib/CreditsPlugin.test.ts
-npm run lint
-npx tsc -b
-npm run test:asset-smoke   # 构建插件变化时跑，覆盖生产构建与资源冒烟
-```
-
-改动页面、抽屉或卡片（`components/credits/`、`ui/Sheet.tsx`、`pages/CreditsPage.tsx`）：
-
-```bash
-cd Client
-npx vitest run src/components/credits src/lib/Credits.test.ts
-npm run lint
-npx tsc -b
-npm run build-storybook
-npm run storybook:shots -- --filter 致谢
-```
+验证范围与命令统一见 [Testing](Testing.md#验证范围)：数据管线改动对应「局部客户端逻辑」与「资源、构建插件」，页面改动对应「页面样式或动效」与「Storybook 故事」。
 
 浏览器检查至少覆盖 390 / 900 / 1440 三档宽度、亮/暗主题、搜索无结果、License 筛选、抽屉的加载中/有原文/未附带原文三种状态，以及开启「减弱动效」后的开合；页面转场按 [Animation §8](Animation.md) 的验收清单核对。
 

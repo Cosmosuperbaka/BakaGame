@@ -2,6 +2,18 @@
 
 涉及登录、账号资料、头像、账号 HTTP API（oRPC）、云同步设置、站内反馈或管理员身份时查阅。存储层见 [Database](Database.md)。
 
+| 工作范围 | 查阅章节 |
+|---|---|
+| 登录方式、身份锚点、停用边界 | §1、§2 |
+| 发码限流与验证码 | §3 |
+| 头像、QQ 号隐私、昵称查询 | §4 |
+| 游戏内身份与重连刷新 | §5 |
+| 云同步设置 | §6 |
+| 站内反馈 | §7 |
+| 管理后台、审计与访问统计 | §8 |
+| 环境变量与会话 Cookie | §9 |
+| 验收要点 | §10 |
+
 ## 1. 身份与边界
 
 - 账号以 **QQ 号**为身份锚点：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由 Better Auth 建号钩子从邮箱派生，客户端无法自报。
@@ -101,11 +113,14 @@
 
 会话 Cookie 前缀 `bakagame`，有效期 30 天、每日续期；生产强制 `Secure`。来源判定与 WebSocket 共用 `isAllowedOrigin`。
 
-## 10. 测试
+## 10. 验收要点
 
-- `test/Account.test.ts` 以 Better Auth 内存适配器 + 捕获邮件 + 假 qlogo 覆盖：发码与登录、注册昵称强制取自 QQ 昵称、白名单、限流、投递失败、管理员引导、隐私与头像缓存。不连真实数据库与 qlogo。
-- `test/UserData.test.ts` 用同一夹具加内存仓储（`MemoryUserSettingRepository` / `MemoryFeedbackRepository`，仅测试使用）覆盖设置覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读。
-- `test/Admin.test.ts` 覆盖管理接口的权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（`MemoryAuditLogRepository` 可注入一次失败）、反馈回复与未读、对局记录查询（桩仓储）、实时房间的审计与委托。`test/SiteStats.test.ts` 覆盖路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零与 Sentry 客户端（假 fetch：容错、参数、缓存、不泄露令牌）。各游戏的 `AdminRoomControl` 实现在各自测试（`WhoIsFakerManualLifecycle`、`SonGuessrService`、`CCBNativeLifecycle`）中覆盖。
-- `test/QQNickname.test.ts` 以假 QQ 网页接口（`createQQWebFetcher`：二维码、轮询码、`check_sig` 跳转、GBK 昵称、登录失效）覆盖协议辅助函数、扫码登录与审计先行、登录态加密、停用注册、访问刷新与昵称同步、失效标记与批量刷新。真实扫码与昵称接口只能人工验收。
-- 前端：`lib/Api.test.ts`（oRPC 线格式、停用与网关 503 的区分、错误文案）、`lib/CloudSync.test.ts`（同步范围、合并、防抖、音乐账号、失败不写）、`lib/VisitReport.test.ts`、`components/account/LoginDialog.test.tsx`（qlogo 确认、新号 QQ 昵称冻结展示、发码被拒、就地报错）、`components/common/PlayerRow.test.tsx`（资料卡、QQ 公开、缓存与重试）与 `pages/AdminPage.test.tsx`（权限分层、概览、用户详情封禁、关房确认与失败、查询号扫码轮询）。
-- 对真实 TiDB 与 SMTP 的验证属于一次性人工验收，结束后删除测试账号。
+命令与验证范围见 [Testing](Testing.md#验证范围)；本节只列必须覆盖的行为。
+
+- 账号：验证码发码与登录、注册昵称强制取自 QQ 昵称、端点白名单、发码限流、投递失败、管理员引导、QQ 号隐私与头像缓存。使用内存适配器与假上游，不连真实数据库与 qlogo。
+- 设置与反馈：整体覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读口径。
+- 管理：权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（可注入一次写入失败）、反馈回复、对局记录查询与实时房间的审计委托。
+- 访问统计：路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零，以及 Sentry 客户端对容错、参数、缓存与令牌不外泄的处理。
+- 昵称查询：以假 QQ 网页接口覆盖协议辅助函数、扫码登录与审计先行、登录态加密、停用注册、访问刷新与昵称同步、失效标记与批量刷新；真实扫码与昵称接口只能人工验收。
+- 前端：接口错误文案、云同步范围与合并、访问上报、登录弹窗的 QQ 昵称冻结与就地报错、资料卡缓存与重试、后台页的权限分层与关房确认。
+- 真实 TiDB 与 SMTP 的一次性人工验收结束后删除测试账号。

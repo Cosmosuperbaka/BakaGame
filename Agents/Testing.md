@@ -2,6 +2,17 @@
 
 选择验证范围、编写测试或修改 CI 时查阅本文。先用下表确定需要的检查，再阅读对应层级；排障章节只在出现相关症状时使用。命令分别在 `Server/`（Bun）和 `Client/`（Node/npm）内执行。
 
+| 工作范围 | 查阅位置 |
+|---|---|
+| 确定本次改动要跑什么 | 「验证范围」 |
+| CI 必须维持的门禁 | 「门禁与真相源」 |
+| 测试分层与文件位置 | 「测试分层」 |
+| 命令、依赖与浏览器 | 「常用命令」「依赖与浏览器」 |
+| 编写与维护测试 | 「测试编写与维护」 |
+| 领域专项验收与组件截图 | 「领域专项验收」「组件截图」 |
+| 发布前完整回归 | 「CI 推荐顺序」 |
+| 本地假红与异步断言排障 | 「E2E 假红排查」「Worker 异步错误断言」 |
+
 ## 验证范围
 
 | 改动类型 | 完成所需的验证 |
@@ -12,6 +23,7 @@
 | 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测；受影响组件的故事同步更新，用 `storybook:shots --filter` 做改前改后截图对照 |
 | Storybook 故事、假数据或截图工具 | `npx tsc -p tsconfig.app.json --noEmit`、lint、`npm run build-storybook`，相关故事 `storybook:shots` 零失败、零控制台错误 |
 | 共享协议、跨游戏基础设施、全局状态同步 | 两端类型/构建与相关协议、Store、服务回归；涉及握手或路由时验证真实命令 ACK |
+| HTTP 路由或接口契约 | 两端类型检查与相关协议回归；在 Server 执行 `bun run docs:openapi` 并提交 `Agents/http-openapi.json` |
 | 快照、私有状态、封包或广播频率 | `Server/test/NetworkCapacity.test.ts`，保留全部容量与最终同步断言 |
 | 歌词几何、字体或动画 | `npm run test:lyrics`；jsdom 高度模拟不替代真实浏览器 |
 | 资源、构建插件或静态外壳 | `npm run test:asset-smoke` 与相关 SEO / 资源 E2E |
@@ -25,6 +37,8 @@
 ## 门禁与真相源
 
 必须维持的门禁：
+
+- 测试命令与验证矩阵只在本文维护；专项文档只写「验收要点」，不复制命令、测试文件名或逐用例清单。
 
 - 服务测试不连接真实数据库：仓储为可选注入，未注入即不落库（见 [Database](Database.md#5-测试)）；结算流程和资源路径均有回归覆盖。
 - 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
@@ -43,8 +57,8 @@
 | 后端单元测试 | `Server/test/` 下的规则、连接、Bangumi Provider 系列 | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
 | 后端服务回归 | `Server/test/` 下的 WhoIsFaker、SonGuessr、CCB 服务套件 | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
 | 协议与传输集成 | `Server/test/` 下的协议、App、命令分发与 Provider 套件 | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
-| 账号与鉴权 | `Server/test/` 的账号、用户数据、管理与统计套件（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；设置云同步与站内反馈；管理接口与审计；前端对应单测见 [Account](Account.md#10-测试) |
-| 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-测试)） |
+| 账号与鉴权 | `Server/test/` 的账号、用户数据、管理与统计套件（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；设置云同步与站内反馈；管理接口与审计；前端对应单测见 [Account](Account.md#10-验收要点) |
+| 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-验收要点)） |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -102,8 +116,7 @@ npx playwright test e2e/App.spec.ts
 
 ## 依赖与浏览器
 
-- 依赖安装只有一个入口：仓库根的 `pnpm install`（CI 用 `pnpm install --frozen-lockfile`），锁文件权威是根级 `pnpm-lock.yaml`。不得引入 `Client/package-lock.json` 或 `Server/bun.lock`。
-- 安装会把依赖提升到根 `node_modules/`；**Server 下没有 `Server/node_modules`**。依赖包内附带的数据文件必须用模块解析定位，不得写死 `Server/node_modules` 路径（见 [Conventions §4](Conventions.md#依赖路径不得写死-servernode_modules)）。
+- 依赖安装、锁文件与提升布局统一以 [Conventions §4](Conventions.md) 为准：入口只有仓库根的 `pnpm install`（CI 用 `--frozen-lockfile`），Server 下没有 `node_modules`，依赖包内附带的数据文件必须用模块解析定位。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
 - 常规 Playwright 自动启动服务端与生产 `vite preview`：后端探活 `http://127.0.0.1:4850/health`，前端探活 `http://127.0.0.1:5173`，页面基址 `http://127.0.0.1:5173`。单独运行 Playwright 前先构建；`test:e2e` 已包含 build。歌词套件另用 Vite 5177。

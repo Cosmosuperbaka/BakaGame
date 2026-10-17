@@ -8,7 +8,7 @@
 
 - 本项目是**根级 pnpm workspace**：根 `package.json` + `pnpm-workspace.yaml`，成员包为 `client`（`Client/`）与 `server`（`Server/`）。
 - **pnpm 只负责依赖安装与任务编排，不替换运行时**：`Server/` 仍由 Bun 跑（`bun run` / `bun test` / Bun 原生 API），`Client/` 仍由 Node + Vite 跑。根级脚本只是 `pnpm --filter <包> <脚本>` 的转发壳。
-- 依赖安装唯一入口是根目录 `pnpm install`，锁文件权威是根级 `pnpm-lock.yaml`；`package-lock.json` 与 `bun.lock` 已废弃且被忽略。
+- 依赖安装、锁文件与提升布局以 [Conventions §4](Agents/Conventions.md) 为准：入口只有根级 `pnpm install`，锁文件只有根级 `pnpm-lock.yaml`。
 - 依赖被提升到根 `node_modules/`，**Server 下不存在 `Server/node_modules`**：读依赖包内附带文件必须用模块解析，不得写死该路径。
 - 共享模型和协议只有一份物理源码：`Server/src/shared/`。客户端通过 `@bakagame/shared` 引用，不添加 `file:../packages/` 依赖。
 - 每完成一个可独立交付的修改点，验证后立即提交，不积攒到任务末尾。提交格式为 `type(scope): 中文摘要`；摘要以中文写作、专有名词可保留英文，最多 20 字，scope 仅限 `Faker`、`Song`、`CCB`、`Core`。完整规则见 [Commitment](Agents/Commitment.md)。
