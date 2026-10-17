@@ -1,8 +1,7 @@
 {
   // Knip：静态分析未使用的文件、依赖、导出与类型。
-  // 运行：仓库根 `pnpm knip`。本机 Windows 上 Client 的 vite.config.ts 会重建
-  // .generated-public，删除动作被 WorkBuddy safe-delete 拦截，需前缀
-  // CODEBUDDY_SAFE_DELETE_ENABLED=0；CI 无此限制。
+  // 运行：仓库根 `pnpm knip`。Client 的 vite.config.ts 只读不写盘（WebP 重建已挪进
+  // 插件的 config 钩子），因此本工具加载配置不会再触发图片转码与目录删除。
   //
   // 入口说明：
   // - Client 由 index.html 进入；测试、故事、E2E、脚本与 CSS 显式列为入口，

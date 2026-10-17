@@ -1,10 +1,10 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { webpAssetPlugin } from "../../vite.config";
+import { publicWebpPlugin } from "../../vite.config";
 import { preparePublicWebp } from "../../scripts/prepare-public-webp.mjs";
 
-describe("webpAssetPlugin", () => {
+describe("publicWebpPlugin", () => {
   const dummyAssetMap: Record<string, string> = {
     "/assets/Faker.png": "/assets/Faker.webp",
     "/assets/CEE.jpg": "/assets/CEE.webp",
@@ -12,10 +12,22 @@ describe("webpAssetPlugin", () => {
     "/assets/favicon.png": "/assets/favicon.webp",
   };
 
-  const plugin = webpAssetPlugin(dummyAssetMap);
+  // 映射行为用固定清单驱动：真实转码由下方 preparePublicWebp 用例覆盖。
+  const plugin = publicWebpPlugin(async () => ({
+    publicDir: path.resolve("."),
+    assetMap: dummyAssetMap,
+  }));
+
+  beforeAll(async () => {
+    await plugin.config();
+  });
 
   it("has correct plugin name", () => {
-    expect(plugin.name).toBe("webp-asset-mapping");
+    expect(plugin.name).toBe("public-webp");
+  });
+
+  it("publishes the generated directory as publicDir", async () => {
+    await expect(plugin.config()).resolves.toEqual({ publicDir: path.resolve(".") });
   });
 
   describe("configureServer middleware", () => {

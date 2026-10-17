@@ -16,7 +16,7 @@ async function walk(directory) {
   return result;
 }
 
-// 只服务已有 dist：不加载会重建 .generated-public 的项目配置，也不读取 .env 或代理到后端。
+// 只服务已有 dist：不加载项目配置（避免 dev 代理与构建期插件），也不读取 .env 或代理到后端。
 const preview = await createPreview({
   root: clientDir,
   configFile: false,

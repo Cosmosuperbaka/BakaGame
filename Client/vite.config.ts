@@ -699,14 +699,33 @@ export function creditsManifestPlugin(options: { clientDir?: string } = {}) {
   }
 }
 
-// ==================== Vite 插件：静态图片 WebP 自动映射 ====================
-// 允许源码中直接使用真实源文件路径（如 /assets/Faker.png），
+// ==================== Vite 插件：公共资源 WebP 流水线 ====================
+// 目录重建与路径映射共用同一份状态，因此收在一个插件里：生成放在 config 钩子，
+// 只有真正创建 dev server / 构建时执行。若放在配置函数顶层，任何 import 本文件的
+// 工具（knip）都会在加载配置时重转码整站图片并递归删除 .generated-public。
+//
+// 映射允许源码中直接使用真实源文件路径（如 /assets/Faker.png），
 // 开发模式下通过中间件自动透明 rewrite 到 .webp，
 // 构建打包时通过 transform 自动改写 HTML 与代码中的路径至最终 .webp 产物。
 
-export function webpAssetPlugin(assetMap: Record<string, string>) {
+export function publicWebpPlugin(prepare = preparePublicWebp) {
+  let assetMap: Record<string, string> = {}
+
+  const rewritePaths = (text: string) => {
+    let transformed = text
+    for (const [sourcePath, targetPath] of Object.entries(assetMap)) {
+      transformed = transformed.replaceAll(sourcePath, targetPath)
+    }
+    return transformed
+  }
+
   return {
-    name: 'webp-asset-mapping',
+    name: 'public-webp',
+    async config() {
+      const prepared = await prepare()
+      assetMap = prepared.assetMap
+      return { publicDir: prepared.publicDir }
+    },
     configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, _res: unknown, next: () => void) => void) => void } }) {
       server.middlewares.use((req, _res, next) => {
         if (req.url) {
@@ -720,11 +739,7 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
       })
     },
     transformIndexHtml(html: string) {
-      let transformed = html
-      for (const [sourcePath, targetPath] of Object.entries(assetMap)) {
-        transformed = transformed.replaceAll(sourcePath, targetPath)
-      }
-      return transformed.replace(/<link\b([^>]*\brel=["']icon["'][^>]*\bhref=["'][^"']*\.webp["'][^>]*)>/gi, (match) => {
+      return rewritePaths(html).replace(/<link\b([^>]*\brel=["']icon["'][^>]*\bhref=["'][^"']*\.webp["'][^>]*)>/gi, (match) => {
         return match.replace(/type=["']image\/[a-z0-9+]+["']/i, 'type="image/webp"')
       }).replace(/<link\b([^>]*\bhref=["'][^"']*\.webp["'][^>]*\brel=["']icon["'][^>]*)>/gi, (match) => {
         return match.replace(/type=["']image\/[a-z0-9+]+["']/i, 'type="image/webp"')
@@ -733,21 +748,10 @@ export function webpAssetPlugin(assetMap: Record<string, string>) {
     transform(code: string, id: string) {
       if (id.includes('node_modules') || id.startsWith('\0')) return null
 
-      let hasMatch = false
-      for (const sourcePath of Object.keys(assetMap)) {
-        if (code.includes(sourcePath)) {
-          hasMatch = true
-          break
-        }
-      }
-      if (!hasMatch) return null
+      if (!Object.keys(assetMap).some((sourcePath) => code.includes(sourcePath))) return null
 
-      let transformed = code
-      for (const [sourcePath, targetPath] of Object.entries(assetMap)) {
-        transformed = transformed.replaceAll(sourcePath, targetPath)
-      }
       return {
-        code: transformed,
+        code: rewritePaths(code),
         map: null,
       }
     },
@@ -1022,12 +1026,12 @@ function seoArtifactsPlugin() {
   }
 }
 
-export default defineConfig(async ({ command }) => {
-  const { publicDir, assetMap } = await preparePublicWebp()
+export default defineConfig(({ command }) => {
   const emojiDir = path.resolve(import.meta.dirname, './public/emojis')
 
   return {
-    publicDir,
+    // publicDir 交给 public-webp 插件在 config 钩子里给出：只读取配置的工具
+    // （knip）不再触发图片重转码，只有 dev server 与构建才会。
     // 图床与 /api 一样挂在后端进程上，两处都要转发：少一条 dev 环境的封面就全 404。
     server: {
       proxy: {
@@ -1057,7 +1061,7 @@ export default defineConfig(async ({ command }) => {
       commitHistoryPlugin({ useRemote: command === 'build' }),
       stickerManifestPlugin(emojiDir),
       creditsManifestPlugin(),
-      webpAssetPlugin(assetMap),
+      publicWebpPlugin(),
       staticShellPlugin(),
       seoArtifactsPlugin(),
     ],
