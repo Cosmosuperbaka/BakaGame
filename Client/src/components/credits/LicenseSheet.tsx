@@ -130,8 +130,9 @@ export function LicenseSheet({
             {files.map((file) => (
               <section key={file.name} className="space-y-1.5">
                 <h4 className="font-mono text-xs text-muted-foreground">{file.name}</h4>
-                {/* 保留文件原始换行；长行折行显示，窄屏也能完整读到，不横向截断法律文本。 */}
-                <pre className="max-h-[min(28rem,55vh)] overflow-auto overscroll-contain rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+                {/* 保留文件原始换行；长行折行显示，窄屏也能完整读到，不横向截断法律文本。
+                    原文交给抽屉内容区统一滚动，不在每份文件里再套一层滚动区，触屏不会卡在内层。 */}
+                <pre className="rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">
                   {file.text}
                 </pre>
               </section>
