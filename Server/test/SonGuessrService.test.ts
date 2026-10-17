@@ -3086,11 +3086,9 @@ describe("SonGuessrService", () => {
   });
 
   test("并发猜歌时前置占锁与配额保护，禁止突破猜测上限", async () => {
-    let metadataCalls = 0;
     const slowProvider: MusicProvider = {
       ...provider,
       getSongMetadata: async (id) => {
-        metadataCalls += 1;
         await new Promise((resolve) => setTimeout(resolve, 30));
         return songs[id as keyof typeof songs] ?? songs.wrong;
       },
@@ -3270,7 +3268,7 @@ describe("SonGuessr 非歌音轨否决", () => {
   };
 
   /** Bangumi 把整张特典 CD 挂成关联曲目，CD 里第一条就是台词轨。 */
-  const bonusCdProvider = (results: SongDetails[]) => ({
+  const bonusCdProvider = (_results: SongDetails[]) => ({
     getSubject: async () => ({
       ...anime,
       musicTracks: [{ title: "サイコパス2 第5巻 特典CD", kind: "theme" }],

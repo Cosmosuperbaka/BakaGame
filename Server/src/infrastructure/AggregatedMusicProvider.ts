@@ -1,7 +1,7 @@
 import { AppError } from "../domain/Errors";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
-import { aggregateAndDeduplicateSongs, type AggregatedSongSearchResult } from "./MusicDeduplicator";
+import { aggregateAndDeduplicateSongs } from "./MusicDeduplicator";
 import type {
   MusicLoginSession,
   MusicProvider,

@@ -5,13 +5,7 @@ import { AppError } from "../domain/Errors";
 import {
   WHOISFAKER_PHASES,
   WHOISFAKER_ROLES,
-  type ClientEnvelope,
   type WhoIsFakerClientMessage,
-  type DisconnectResolution,
-  type WhoIsFakerPhase,
-  type WhoIsFakerRole,
-  type RoleConfig,
-  type RoomVisibility,
 } from "../shared/Index";
 
 export type { WhoIsFakerClientMessage };

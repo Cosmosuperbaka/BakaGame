@@ -383,16 +383,6 @@ const salvageMessageIdentity = (input: unknown): { id: string; type?: string; tr
   return { id: id.slice(0, 128), ...(type ? { type } : {}), ...(traceId ? { traceId } : {}) };
 };
 
-/** Bun/Elysia 可能给字符串、二进制或已解析对象，这里统一归一化。 */
-const decodeIncoming = (incoming: unknown, decoder: TextDecoder): unknown =>
-  typeof incoming === "string"
-    ? incoming
-    : incoming instanceof ArrayBuffer
-      ? decoder.decode(new Uint8Array(incoming))
-      : ArrayBuffer.isView(incoming)
-        ? decoder.decode(new Uint8Array(incoming.buffer, incoming.byteOffset, incoming.byteLength))
-        : incoming;
-
 /**
  * 三个游戏共用的消息处理：解析 → 幂等执行 → ACK/错误封包。
  *

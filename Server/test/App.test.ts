@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { connect } from "node:net";
-import { join } from "node:path";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";

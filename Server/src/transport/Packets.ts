@@ -2,7 +2,6 @@
   AckPacket,
   ErrorPacket,
   EventPacket,
-  ServerMessage,
 } from "../shared/Index";
 
 export type { AckPacket, ErrorPacket, EventPacket };

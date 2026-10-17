@@ -1,9 +1,9 @@
 import type { GameRecorder } from '../domain/GameRecord';
-import type { CEEClientMessage, CEECharacterView, ConnectionRecord } from '../shared/Index';
+import type { CEEClientMessage, ConnectionRecord } from '../shared/Index';
 import { AppError } from '../domain/Errors';
 import type { CEEPlayerRecord, CEERoom } from '../domain/CEEModel';
 import { ceeUnitId } from '../domain/CEEModel';
-import { applyCEEGuess, beginCEERound, ceeParticipants, getCEEUnit, requireCEEAction, surrenderCEE, tickCEERound } from '../domain/CEERound';
+import { applyCEEGuess, beginCEERound, ceeParticipants, requireCEEAction, surrenderCEE, tickCEERound } from '../domain/CEERound';
 import { validateCEESettings } from '../domain/CEERules';
 import type { CEEDataProvider } from '../infrastructure/CEEData';
 import { CEEImageHints } from '../infrastructure/CEEImageHints';

@@ -1,5 +1,5 @@
 import type { CEEGuess, CEEPrivateState, CEERoomSnapshot, CEERoomSummary } from '../shared/CEE';
-import { ceeUnitId, type CEEPlayerRecord, type CEERoom } from '../domain/CEEModel';
+import { type CEEPlayerRecord, type CEERoom } from '../domain/CEEModel';
 import { ceeParticipants, getCEEUnit } from '../domain/CEERound';
 import { ROOM_ID_TEST_MODE } from '../shared/Index';
 

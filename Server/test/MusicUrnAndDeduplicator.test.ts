@@ -3,7 +3,6 @@ import {
   parseSongUrn,
   buildSongUrn,
   isSongUrn,
-  type MusicPlatform,
 } from "../src/infrastructure/MusicUrn";
 import { toSimplified } from "../src/infrastructure/ChineseConverter";
 import {

@@ -6,7 +6,7 @@ import type { SongDetails, SongPlaylistInfo, SongSearchResult } from "../src/sha
 
 function createMockProvider(platform: "netease" | "qq", overrides: Partial<MusicProvider> = {}): MusicProvider {
   return {
-    search: mock(async (keyword: string, limit?: number): Promise<SongSearchResult[]> => []),
+    search: mock(async (_keyword: string, _limit?: number): Promise<SongSearchResult[]> => []),
     getSong: mock(async (id: string): Promise<SongDetails> => ({
       id: `${platform}:${id}`,
       title: "Test Song",
@@ -148,42 +148,42 @@ describe("AggregatedMusicProvider", () => {
 
   test("双平台聚合 Cookie 正确解构并透传给对应提供商", async () => {
     const neteaseMock = createMockProvider("netease", {
-      getPlaylistSongs: mock(async (id: string, cookie?: string) => ({
+      getPlaylistSongs: mock(async (id: string, _cookie?: string) => ({
         info: { id, name: "NCM Playlist", songCount: 1 },
         songs: [{ id: "netease:1", title: "NCM Track", artist: "Artist" }],
       })),
-      getSongPopularity: mock(async (id: string, cookie?: string) => 999),
-      getSongChorus: mock(async (id: string, cookie?: string) => ({ startTime: 1000, endTime: 5000 })),
-      searchArtists: mock(async (keyword: string, limit?: number, cookie?: string) => [
+      getSongPopularity: mock(async (_id: string, _cookie?: string) => 999),
+      getSongChorus: mock(async (_id: string, _cookie?: string) => ({ startTime: 1000, endTime: 5000 })),
+      searchArtists: mock(async (_keyword: string, _limit?: number, _cookie?: string) => [
         { id: "netease:10", name: "Artist A" },
       ]),
-      getArtistSongs: mock(async (id: string, cookie?: string) => [
+      getArtistSongs: mock(async (_id: string, _cookie?: string) => [
         { id: "netease:1", title: "Artist Track", artist: "Artist A" },
       ]),
-      searchAlbums: mock(async (keyword: string, limit?: number, cookie?: string) => [
+      searchAlbums: mock(async (_keyword: string, _limit?: number, _cookie?: string) => [
         { id: "netease:20", name: "Album A" },
       ]),
-      getAlbumSongs: mock(async (id: string, cookie?: string) => [
+      getAlbumSongs: mock(async (_id: string, _cookie?: string) => [
         { id: "netease:1", title: "Album Track", artist: "Artist A" },
       ]),
     });
     const qqMock = createMockProvider("qq", {
-      getPlaylistSongs: mock(async (id: string, cookie?: string) => ({
+      getPlaylistSongs: mock(async (id: string, _cookie?: string) => ({
         info: { id, name: "QQ Playlist", songCount: 1 },
         songs: [{ id: "qq:2", title: "QQ Track", artist: "Artist" }],
       })),
-      getSongPopularity: mock(async (id: string, cookie?: string) => 888),
-      getSongChorus: mock(async (id: string, cookie?: string) => ({ startTime: 2000, endTime: 6000 })),
-      searchArtists: mock(async (keyword: string, limit?: number, cookie?: string) => [
+      getSongPopularity: mock(async (_id: string, _cookie?: string) => 888),
+      getSongChorus: mock(async (_id: string, _cookie?: string) => ({ startTime: 2000, endTime: 6000 })),
+      searchArtists: mock(async (_keyword: string, _limit?: number, _cookie?: string) => [
         { id: "qq:20", name: "Artist B" },
       ]),
-      getArtistSongs: mock(async (id: string, cookie?: string) => [
+      getArtistSongs: mock(async (_id: string, _cookie?: string) => [
         { id: "qq:2", title: "Artist Track QQ", artist: "Artist B" },
       ]),
-      searchAlbums: mock(async (keyword: string, limit?: number, cookie?: string) => [
+      searchAlbums: mock(async (_keyword: string, _limit?: number, _cookie?: string) => [
         { id: "qq:30", name: "Album B" },
       ]),
-      getAlbumSongs: mock(async (id: string, cookie?: string) => [
+      getAlbumSongs: mock(async (_id: string, _cookie?: string) => [
         { id: "qq:2", title: "Album Track QQ", artist: "Artist B" },
       ]),
     });

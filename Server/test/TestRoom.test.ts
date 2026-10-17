@@ -71,7 +71,7 @@ test("房主转给机器人后移除该机器人，房主自动转移给仍在�
 
 test("房主转给机器人后，踢其他机器人不会将房主移交回玩家", async () => {
   const { service } = createTestContext();
-  const { host, playerId } = await createTestRoom(service, 2);
+  const { host } = await createTestRoom(service, 2);
   const before = snapshotOf(host);
   const botA = before.players.find((player) => player.name === "机器人A")!.id;
   const botB = before.players.find((player) => player.name === "机器人B")!.id;

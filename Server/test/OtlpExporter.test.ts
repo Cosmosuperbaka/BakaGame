@@ -115,7 +115,7 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
     eventLogger: logger,
   });
 
-  const { app, dispose } = createApp({
+  const { app } = createApp({
     env,
     whoIsFakerService,
     logger,
@@ -175,7 +175,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
     bangumiApiUrl: "https://api.bgm.tv",
     bangumiImageUrl: "",
   };
-  const { app, dispose } = createApp({
+  const { app } = createApp({
     env,
     whoIsFakerService: new WhoIsFakerService({
       eventLogger: new EventLogger(),
@@ -285,7 +285,7 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
     eventLogger: logger,
   });
 
-  const { app, dispose } = createApp({
+  const { app } = createApp({
     env,
     whoIsFakerService,
     logger,

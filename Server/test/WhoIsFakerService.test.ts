@@ -2784,7 +2784,7 @@ test("真人离开测试房间后测试房间自动关闭", async () => {
 
 test("0分数的旁观者掉线立即移除", async () => {
   const { service } = createTestContext();
-  const { host } = await createRoom(service, "3333");
+  await createRoom(service, "3333");
   const spectatorConn = createConnection(service, "spec-conn");
   const joinResult = (await execute(service, spectatorConn, {
     id: "join-spec",
@@ -2807,7 +2807,7 @@ test("0分数的旁观者掉线立即移除", async () => {
 
 test("退出房间的玩家即使有积分也会被正确清理", async () => {
   const { service } = createTestContext();
-  const { host } = await createRoom(service, "4444");
+  await createRoom(service, "4444");
   const playerConn = createConnection(service, "player-conn");
   const joinResult = (await execute(service, playerConn, {
     id: "join-player",
@@ -2830,7 +2830,7 @@ test("退出房间的玩家即使有积分也会被正确清理", async () => {
 
 test("掉线玩家3分钟后由 housekeeping 自动清理", async () => {
   const { service, advanceTime } = createTestContext();
-  const { host } = await createRoom(service, "5555");
+  await createRoom(service, "5555");
   const playerConn = createConnection(service, "offline-player-conn");
   const joinResult = (await execute(service, playerConn, {
     id: "join-player",
@@ -3285,20 +3285,20 @@ test("阶段精简播报、观战频道流转时机与发言顺序序号验证",
   const { host } = await createRoom(service, "3333");
 
   const p1Connection = createConnection(service, "p1");
-  const p1 = (await execute(service, p1Connection, {
+  await execute(service, p1Connection, {
     id: "join-p1",
     type: "room.join",
     roomId: "3333",
     payload: { userName: "玩家1" },
-  })) as { playerId: string };
+  });
 
   const p2Connection = createConnection(service, "p2");
-  const p2 = (await execute(service, p2Connection, {
+  await execute(service, p2Connection, {
     id: "join-p2",
     type: "room.join",
     roomId: "3333",
     payload: { userName: "玩家2" },
-  })) as { playerId: string };
+  });
 
   const p3Connection = createConnection(service, "p3");
   const p3 = (await execute(service, p3Connection, {

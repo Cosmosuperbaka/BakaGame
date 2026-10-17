@@ -80,8 +80,6 @@ const normalizeOutput = (output: LogOutputLike = defaultOutput): LogOutput => {
   };
 };
 
-const padNumber = (value: number, length = 2) => value.toString().padStart(length, "0");
-
 // 高精度耗时格式化（支持微秒 µs、毫秒 ms、秒 s，统一右对齐 13 位）
 export const formatDuration = (durationMs = 0): string => {
   if (durationMs <= 0) {

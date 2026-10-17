@@ -108,8 +108,6 @@ interface DueRow {
 const heatOf = (subject: ApiSubject): number =>
   Object.values(subject.collection ?? {}).reduce<number>((sum, value) => sum + Number(value ?? 0), 0);
 
-const toDateNumber = (value: string): number => Number(String(value ?? "").replace(/-/g, "")) || 0;
-
 export class SubjectUpdater {
   private readonly db: Database;
   private readonly base: string;

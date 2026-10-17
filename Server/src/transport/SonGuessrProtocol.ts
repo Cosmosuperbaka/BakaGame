@@ -5,10 +5,7 @@ import { AppError } from "../domain/Errors";
 import {
   MAX_SONGUESSR_COOKIE_LENGTH,
   SONGUESSR_MAX_TEAM,
-  type RoomVisibility,
-  type SongArtistFilter,
   type SonGuessrClientMessage,
-  type SonGuessrSettings,
 } from "../shared/Index";
 
 export const SongVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);

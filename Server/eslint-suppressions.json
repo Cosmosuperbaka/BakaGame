@@ -9,16 +9,8 @@
       "count": 3
     }
   },
-  "scripts/DeploymentProbe.ts": {
-    "@typescript-eslint/no-unused-expressions": {
-      "count": 1
-    }
-  },
   "scripts/SongRandomnessProbe.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     },
     "sonarjs/cognitive-complexity": {
@@ -31,9 +23,6 @@
     }
   },
   "src/application/CEENativeService.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -44,9 +33,6 @@
     }
   },
   "src/application/CEEViews.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -81,9 +67,6 @@
     "@typescript-eslint/no-explicit-any": {
       "count": 12
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -113,11 +96,6 @@
   },
   "src/infrastructure/CEEOriginalProtocol.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/EventLogger.ts": {
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -160,11 +138,6 @@
       "count": 1
     }
   },
-  "src/infrastructure/SubjectUpdater.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/infrastructure/TagDiffSync.ts": {
     "@typescript-eslint/no-misused-promises": {
       "count": 1
@@ -174,34 +147,13 @@
     "@typescript-eslint/no-explicit-any": {
       "count": 2
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 4
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
   "src/transport/App.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "@typescript-eslint/unbound-method": {
       "count": 2
-    }
-  },
-  "src/transport/Packets.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/transport/SonGuessrProtocol.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 3
-    }
-  },
-  "src/transport/WhoIsFakerProtocol.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 6
     }
   },
   "src/transport/routes/SentryTunnel.ts": {
@@ -215,16 +167,8 @@
     }
   },
   "test/AggregatedMusicProvider.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 32
-    },
     "@typescript-eslint/unbound-method": {
       "count": 19
-    }
-  },
-  "test/App.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "test/BangumiProvider.test.ts": {
@@ -262,17 +206,9 @@
       "count": 2
     }
   },
-  "test/MusicUrnAndDeduplicator.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "test/OtlpExporter.test.ts": {
     "@typescript-eslint/no-base-to-string": {
       "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 3
     }
   },
   "test/SentryTunnel.test.ts": {
@@ -288,9 +224,6 @@
   "test/SonGuessrService.test.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
     }
   },
   "test/SubjectDiscovery.test.ts": {
@@ -298,19 +231,9 @@
       "count": 2
     }
   },
-  "test/TestRoom.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "test/WSLogPrivacy.test.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 1
-    }
-  },
-  "test/WhoIsFakerService.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 5
     }
   }
 }

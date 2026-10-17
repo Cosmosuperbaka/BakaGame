@@ -144,7 +144,6 @@ async function main() {
       live: {requestedRounds: requestedLiveRounds, requestedAttempts: liveAttempts, attempts: 0, titleArtistMetrics: {}, audioProbe: null as unknown, ids: [] as string[], resources: [] as unknown[], failures: [] as unknown[], metrics: {}},
       replay: [] as unknown[],
     };
-    let activeAttempt = 0;
     const liveProvider: MusicProvider = {
       search: (keyword, limit) => real.search(keyword, limit, cookie),
       getSongMetadata: songId => real.getSongMetadata(songId, cookie),
@@ -176,7 +175,6 @@ async function main() {
       try {
         for (let attempt = 1; attempt <= liveAttempts; attempt++) {
           if (summary.live.ids.length >= requestedLiveRounds) break;
-          activeAttempt = attempt;
           summary.live.attempts = attempt;
           try { summary.live.ids.push(await driver.next()); }
           catch (error) {

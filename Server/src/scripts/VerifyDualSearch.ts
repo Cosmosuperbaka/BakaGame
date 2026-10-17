@@ -2,10 +2,6 @@ import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { QQMusicProvider } from "../infrastructure/QQMusicProvider";
 import { AggregatedMusicProvider } from "../infrastructure/AggregatedMusicProvider";
 import {
-  isSameSongWork,
-  extractCanonicalTitle,
-  extractArtistTokens,
-  durationMatches,
   normalizeComparableText,
   type AggregatedSongSearchResult,
 } from "../infrastructure/MusicDeduplicator";
