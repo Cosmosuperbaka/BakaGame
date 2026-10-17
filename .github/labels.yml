@@ -32,7 +32,7 @@
   description: WhoIsFaker（谁是卧底）
 - name: scope/Song
   color: 5319e7
-  description: SongGuessr（听歌猜歌）
+  description: SonGuessr（听歌猜歌）
 - name: scope/CEE
   color: 91ca55
   description: CEE（二刺猿笑传之猜猜呗增强版）

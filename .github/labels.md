@@ -23,7 +23,7 @@
 | 标签 | 对应 commit scope | 对象 |
 |---|---|---|
 | `scope/Faker` | `Faker` | WhoIsFaker（谁是卧底） |
-| `scope/Song` | `Song` | SongGuessr（听歌猜歌） |
+| `scope/Song` | `Song` | SonGuessr（听歌猜歌） |
 | `scope/CEE` | `CEE` | CEE（二刺猿笑传之猜猜呗增强版） |
 | `scope/Core` | `Core` | 公共能力、基础设施、主页 |
 
