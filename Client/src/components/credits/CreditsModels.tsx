@@ -1,5 +1,9 @@
+import { motion } from "framer-motion";
+import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { sortModelsByRelease, type ContributingCompany } from "@/lib/Credits";
+import { cn } from "@/lib/Utils";
+import { sortModelsByRelease, type ContributingCompany, type ContributingModel } from "@/lib/Credits";
+import { tappable } from "@/lib/Motion";
 import { CreditBrandMark } from "./CreditsIcons";
 
 /**
@@ -8,7 +12,9 @@ import { CreditBrandMark } from "./CreditsIcons";
  * 公司是一行：左侧厂商 Logo、名称与模型数（弱化），右侧模型徽章流式排列；
  * 窄屏时厂商信息在上、徽章换行在下。整块只有一个描边容器加分隔线，
  * 不再给每家公司套一张等高卡片，避免卡片嵌套与大面积留白。
- * 只展示模型名——`releasedAt` 只用于排序，分工与日期都不上页面（Agents/Credits.md §3）。
+ *
+ * 模型徽章不是纯标签：有发布地址时是可点外链（官方新闻/公告优先，其次官方文档），
+ * 新标签打开；确实没有公开页面的模型才退化为静态标签。`releasedAt` 只用于排序，不上页面。
  */
 export function CreditsModels({ models }: { models: readonly ContributingCompany[] }) {
   return (
@@ -34,10 +40,7 @@ export function CreditsModels({ models }: { models: readonly ContributingCompany
               <ul className="flex min-w-0 flex-wrap gap-1.5">
                 {sortedModels.map((model) => (
                   <li key={model.name}>
-                    <Badge variant="muted" size="sm">
-                      <CreditBrandMark brand={model.logo} className="size-3 shrink-0 text-muted-foreground" />
-                      {model.name}
-                    </Badge>
+                    <ModelBadge model={model} />
                   </li>
                 ))}
               </ul>
@@ -46,5 +49,40 @@ export function CreditsModels({ models }: { models: readonly ContributingCompany
         })}
       </div>
     </section>
+  );
+}
+
+/** 与 `Badge variant="muted" size="sm"` 同一套纸面样式；可点击时再叠悬停与按压反馈。 */
+const MODEL_BADGE_CLASS =
+  "inline-flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-px text-xs font-normal text-foreground";
+
+function ModelBadge({ model }: { model: ContributingModel }) {
+  const glyph = <CreditBrandMark brand={model.logo} className="size-3 shrink-0" />;
+  if (!model.url) {
+    return (
+      <Badge variant="muted" size="sm">
+        {glyph}
+        {model.name}
+      </Badge>
+    );
+  }
+
+  return (
+    <motion.a
+      href={model.url}
+      target="_blank"
+      rel="noreferrer"
+      {...tappable}
+      title={`${model.name} 发布页面`}
+      className={cn(
+        MODEL_BADGE_CLASS,
+        "cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2",
+      )}
+    >
+      {glyph}
+      {model.name}
+      {/* 外链指示：告诉读者这枚徽章会离开本站；图标与文字同色，不单独调淡。 */}
+      <ArrowUpRight className="size-3 shrink-0" aria-hidden="true" />
+    </motion.a>
   );
 }

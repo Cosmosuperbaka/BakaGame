@@ -19,7 +19,12 @@ const MODELS: readonly ContributingCompany[] = [
     logo: "openai",
     models: [
       { name: "Beta 后发", releasedAt: "2026-06-01", logo: "gpt" },
-      { name: "Beta 先发", releasedAt: "2026-01-01", logo: "gpt" },
+      {
+        name: "Beta 先发",
+        releasedAt: "2026-01-01",
+        logo: "gpt",
+        url: "https://openai.com/index/introducing-gpt-5-4/",
+      },
     ],
   },
   {
@@ -98,6 +103,18 @@ describe("CreditsView", () => {
     expect(within(groups[1]).getByText("1 个模型")).toBeInTheDocument();
     // releasedAt 只参与排序，不展示。
     expect(screen.queryByText("2026-01-01")).not.toBeInTheDocument();
+  });
+
+  it("有发布页面的模型徽章是新标签外链，没有的退化为静态标签", () => {
+    renderView();
+
+    const link = screen.getByRole("link", { name: "Beta 先发" });
+    expect(link).toHaveAttribute("href", "https://openai.com/index/introducing-gpt-5-4/");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+    // 无 url 的模型不生成链接，避免出现点不动的外链。
+    expect(screen.queryByRole("link", { name: "Beta 后发" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Alpha 唯一" })).not.toBeInTheDocument();
   });
 
   it("核心技术栈按前端 / 后端 / 脚手架 / 运维与开发辅助四组排列，版本取自依赖清单", () => {

@@ -10,6 +10,7 @@
  *   - 公司顺序取本文件的声明顺序；第一次出现的公司追加到末尾，不插队重排。
  *
  * `releasedAt` 只用于排序，页面上不展示；日期用 ISO `YYYY-MM-DD`。
+ * 每个模型尽量带 `url` 发布页：优先厂商官方新闻/公告，其次官方文档的版本说明；确实没有公开页面时省略。
  * 公司徽章用厂商标识，模型徽章用模型家族标识；两枚相同的（如 GPT 与 OpenAI）可以重复用同一个键。
  */
 import type { ContributingCompany, CoreTechEntry, TechStackCategory } from "@/lib/Credits";
@@ -28,62 +29,206 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
     company: "深度求索",
     logo: "deepseek",
     models: [
-      // 预览版先于正式快照发布，按发布时间排在快照之前。
-      { name: "Deepseek V4 Flash Preview", releasedAt: "2026-03-24", logo: "deepseek" },
-      { name: "Deepseek V4 Flash 0731", releasedAt: "2026-07-31", logo: "deepseek" },
-      { name: "Deepseek V4.1 Flash", releasedAt: "2026-09-12", logo: "deepseek" },
-      { name: "Deepseek V4.1 Flash 1017", releasedAt: "2026-10-17", logo: "deepseek" },
+      // 预览版先于正式快照发布，按发布时间排在快照之前；Pro / Flash 同属 V4 预览版公告。
+      {
+        name: "Deepseek V4 Flash Preview",
+        releasedAt: "2026-04-24",
+        logo: "deepseek",
+        url: "https://www.deepseek.com/news/v4-preview/",
+      },
+      {
+        name: "Deepseek V4 Pro Preview",
+        releasedAt: "2026-04-24",
+        logo: "deepseek",
+        url: "https://www.deepseek.com/news/v4-preview/",
+      },
+      {
+        // 0731 只有 API 更新记录，没有单独新闻页：退到官方文档的版本说明。
+        name: "Deepseek V4 Flash 0731",
+        releasedAt: "2026-07-31",
+        logo: "deepseek",
+        url: "https://api-docs.deepseek.com/zh-cn/updates",
+      },
+      {
+        name: "Deepseek V4.1 Flash",
+        releasedAt: "2026-09-10",
+        logo: "deepseek",
+        url: "https://www.deepseek.com/news/deepseek-v4-1-flash/",
+      },
+      {
+        name: "Deepseek V4.1 Flash 1017",
+        releasedAt: "2026-10-17",
+        logo: "deepseek",
+        url: "https://api-docs.deepseek.com/zh-cn/news/news261017",
+      },
     ],
   },
   {
     company: "智谱清言",
     logo: "zhipu",
     models: [
-      { name: "GLM 5.3", releasedAt: "2026-08-12", logo: "glm" },
-      { name: "GLM 5.3 Flash", releasedAt: "2026-08-26", logo: "glm" },
+      {
+        name: "GLM 5.3",
+        releasedAt: "2026-08-19",
+        logo: "glm",
+        url: "https://www.zhipuai.cn/zh/research/162",
+      },
+      {
+        name: "GLM 5.3 Flash",
+        releasedAt: "2026-08-26",
+        logo: "glm",
+        url: "https://www.zhipuai.cn/zh/news/163",
+      },
     ],
   },
   {
     company: "OpenAI",
     logo: "openai",
     models: [
-      { name: "GPT 5.4", releasedAt: "2026-03-05", logo: "gpt" },
-      { name: "GPT 5.5", releasedAt: "2026-05-14", logo: "gpt" },
-      { name: "GPT 5.6 Sol", releasedAt: "2026-07-08", logo: "gpt" },
-      { name: "GPT 6 Astra", releasedAt: "2026-08-19", logo: "gpt" },
-      { name: "GPT 6 Sol", releasedAt: "2026-09-02", logo: "gpt" },
-      { name: "GPT 6.1 Sol", releasedAt: "2026-10-08", logo: "gpt" },
+      {
+        name: "GPT 5.4",
+        releasedAt: "2026-03-05",
+        logo: "gpt",
+        url: "https://openai.com/index/introducing-gpt-5-4/",
+      },
+      {
+        name: "GPT 5.5",
+        releasedAt: "2026-04-23",
+        logo: "gpt",
+        url: "https://openai.com/index/introducing-gpt-5-5/",
+      },
+      {
+        name: "GPT 5.6 Sol",
+        releasedAt: "2026-07-09",
+        logo: "gpt",
+        url: "https://openai.com/index/gpt-5-6/",
+      },
+      {
+        name: "GPT 6 Astra",
+        releasedAt: "2026-09-04",
+        logo: "gpt",
+        url: "https://openai.com/index/gpt-6-astra/",
+      },
+      {
+        name: "GPT 6 Sol",
+        releasedAt: "2026-09-22",
+        logo: "gpt",
+        url: "https://openai.com/index/introducing-gpt-6-sol-and-luna/",
+      },
+      {
+        name: "GPT 6.1 Sol",
+        releasedAt: "2026-09-29",
+        logo: "gpt",
+        url: "https://openai.com/index/introducing-gpt-6-1-sol/",
+      },
     ],
   },
   {
     company: "Google DeepMind",
     logo: "google",
     models: [
-      { name: "Gemini 3 Pro Preview", releasedAt: "2025-11-18", logo: "gemini" },
-      { name: "Gemini 3.1 Pro Preview", releasedAt: "2026-02-19", logo: "gemini" },
-      { name: "Gemini 3.5 Flash", releasedAt: "2026-05-20", logo: "gemini" },
-      { name: "Gemini 3.6 Flash", releasedAt: "2026-06-17", logo: "gemini" },
-      { name: "Gemini 3.7 Flash", releasedAt: "2026-08-05", logo: "gemini" },
-      { name: "Gemini 3.8 Flash", releasedAt: "2026-09-23", logo: "gemini" },
+      {
+        name: "Gemini 3 Pro Preview",
+        releasedAt: "2025-11-18",
+        logo: "gemini",
+        url: "https://blog.google/products-and-platforms/products/gemini/gemini-3/",
+      },
+      {
+        name: "Gemini 3.1 Pro Preview",
+        releasedAt: "2026-02-19",
+        logo: "gemini",
+        url: "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/",
+      },
+      {
+        name: "Gemini 3.5 Flash",
+        releasedAt: "2026-05-19",
+        logo: "gemini",
+        url: "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-5/",
+      },
+      {
+        name: "Gemini 3.6 Flash",
+        releasedAt: "2026-07-21",
+        logo: "gemini",
+        url: "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/",
+      },
+      {
+        name: "Gemini 3.7 Flash",
+        releasedAt: "2026-08-13",
+        logo: "gemini",
+        url: "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/",
+      },
+      {
+        name: "Gemini 3.8 Flash",
+        releasedAt: "2026-09-02",
+        logo: "gemini",
+        url: "https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/",
+      },
     ],
   },
   {
     company: "腾讯混元",
     logo: "tencent",
-    models: [{ name: "Hy 4 Preview", releasedAt: "2026-06-11", logo: "hunyuan" }],
+    models: [
+      {
+        name: "Hy 4 Preview",
+        releasedAt: "2026-08-28",
+        logo: "hunyuan",
+        url: "https://www.tencent.com/zh-cn/tencent-releases-and-open-sources-tencent-hy4-preview/",
+      },
+    ],
   },
   {
     company: "Anthropic",
     logo: "anthropic",
     models: [
-      { name: "Claude Sonnet 4.6", releasedAt: "2026-01-22", logo: "claude" },
-      { name: "Claude Opus 4.6", releasedAt: "2026-02-17", logo: "claude" },
-      { name: "Claude Opus 4.7", releasedAt: "2026-04-09", logo: "claude" },
-      { name: "Claude Opus 4.8", releasedAt: "2026-06-03", logo: "claude" },
-      { name: "Claude Sonnet 5", releasedAt: "2026-07-21", logo: "claude" },
-      { name: "Claude Opus 5", releasedAt: "2026-08-26", logo: "claude" },
-      { name: "Claude Sonnet 5.5", releasedAt: "2026-09-17", logo: "claude" },
-      { name: "Claude Opus 5.5", releasedAt: "2026-10-01", logo: "claude" },
+      {
+        name: "Claude Opus 4.6",
+        releasedAt: "2026-02-05",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-opus-4-6",
+      },
+      {
+        name: "Claude Sonnet 4.6",
+        releasedAt: "2026-02-17",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-sonnet-4-6",
+      },
+      {
+        name: "Claude Opus 4.7",
+        releasedAt: "2026-04-16",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-opus-4-7",
+      },
+      {
+        name: "Claude Opus 4.8",
+        releasedAt: "2026-05-28",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-opus-4-8",
+      },
+      {
+        name: "Claude Sonnet 5",
+        releasedAt: "2026-06-30",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-sonnet-5",
+      },
+      {
+        name: "Claude Opus 5",
+        releasedAt: "2026-07-24",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-opus-5",
+      },
+      {
+        name: "Claude Opus 5.5",
+        releasedAt: "2026-08-31",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-opus-5-5",
+      },
+      {
+        name: "Claude Sonnet 5.5",
+        releasedAt: "2026-09-27",
+        logo: "claude",
+        url: "https://www.anthropic.com/news/claude-sonnet-5-5",
+      },
     ],
   },
 ];
