@@ -33,6 +33,7 @@
     "@fortawesome/free-brands-svg-icons": "7.3.1",
     "@fortawesome/react-fontawesome": "3.5.0",
     "@icons-pack/react-simple-icons": "^13.15.1",
+    "@lobehub/icons-static-svg": "^1.95.1",
     "@orpc/client": "1.15.6",
     "@orpc/contract": "1.15.6",
     "@radix-ui/react-dialog": "^1.1.23",

@@ -17,7 +17,9 @@ import { DependencyGlyph } from "./CreditsIcons";
 const ALL_LICENSES = "all";
 
 /**
- * 依赖清单：工具条（即时搜索 + License 筛选 + 结果计数）加紧凑行列表。
+ * 依赖清单：一级只列 Client 的直接依赖（主包），搜索、License 筛选与计数都作用在这批主包上；
+ * 传递依赖在点击某一行后进入的二级抽屉里展开，避免把上百个包平铺成一张表。
+ *
  * 筛选完全由 `filterCreditDependencies` / `creditLicenseOptions` 派生，组件内不复制匹配规则；
  * 整行是按钮，按压取 `optionTappable`（行宽接近列表宽度，只读出「按下了」）。
  */
@@ -26,12 +28,17 @@ export function CreditsDependencies({
   onSelect,
 }: {
   dependencies: readonly CreditDependency[];
-  onSelect: (dependency: CreditDependency) => void;
+  /** 打开某个主包的依赖详情抽屉，传包名（下钻栈由页面维护）。 */
+  onSelect: (name: string) => void;
 }) {
+  const mainPackages = useMemo(() => dependencies.filter((dependency) => dependency.direct), [dependencies]);
   const [query, setQuery] = useState("");
   const [license, setLicense] = useState<string | null>(null);
-  const visible = useMemo(() => filterCreditDependencies(dependencies, query, license), [dependencies, query, license]);
-  const options = useMemo(() => creditLicenseOptions(dependencies), [dependencies]);
+  const visible = useMemo(
+    () => filterCreditDependencies(mainPackages, query, license),
+    [mainPackages, query, license],
+  );
+  const options = useMemo(() => creditLicenseOptions(mainPackages), [mainPackages]);
 
   const clearFilters = () => {
     setQuery("");
@@ -43,9 +50,6 @@ export function CreditsDependencies({
       <h2 id="credits-dependencies-heading" className="text-base font-semibold">
         依赖清单
       </h2>
-      <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        构建时扫描当前安装的依赖闭包，按包名排序；点击任意一行查看该包自带的许可证原文。
-      </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {/* 与 SearchCombobox 同一套 field-frame 外框：图标在框内、清除按钮只在有内容时出现。 */}
@@ -99,15 +103,15 @@ export function CreditsDependencies({
           </Select>
         </div>
 
-        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">{visible.length} 个依赖</span>
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+          {visible.length} 个主包
+        </span>
       </div>
 
       {visible.length === 0 ? (
         <div className="mt-2 grid justify-items-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-6 py-10 text-center">
-          <p className="text-sm font-medium">没有匹配的依赖</p>
-          <p className="max-w-md text-xs text-muted-foreground">
-            当前关键词或 License 筛选项下没有结果，换个条件或清除筛选查看全部依赖。
-          </p>
+          <p className="text-sm font-medium">没有匹配的主包</p>
+          <p className="max-w-md text-xs text-muted-foreground">换个关键词或 License 条件，或清除筛选查看全部主包。</p>
           <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
             清除筛选
           </Button>
@@ -130,24 +134,29 @@ function DependencyRow({
   onSelect,
 }: {
   dependency: CreditDependency;
-  onSelect: (dependency: CreditDependency) => void;
+  onSelect: (name: string) => void;
 }) {
+  const childCount = dependency.dependencies.length;
   return (
     <motion.button
       type="button"
-      onClick={() => onSelect(dependency)}
+      onClick={() => onSelect(dependency.name)}
       {...optionTappable}
-      aria-label={`查看 ${dependency.name} v${dependency.version}（${creditLicenseLabel(dependency.license)}）的许可证`}
-      className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40"
+      aria-label={`查看 ${dependency.name} v${dependency.version}（${creditLicenseLabel(dependency.license)}）的依赖详情`}
+      className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2"
     >
       <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate text-sm" title={dependency.name}>
         {dependency.name}
       </span>
+      {/* 有子依赖时给一个弱化尾标，预告抽屉里还能往下看；没有子依赖就不占位。 */}
+      {childCount > 0 ? (
+        <span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground sm:inline">{childCount} 个依赖</span>
+      ) : null}
       {/* 版本、开发依赖、License 各占一列固定宽度：行与行之间逐列对齐，长 SPDX 在列内截断。 */}
       <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">v{dependency.version}</span>
       <span className="hidden w-16 shrink-0 items-center sm:flex">
-        {/* 窄屏只留包名与版本：徽章信息在许可证抽屉里仍完整可见，行高保持稳定。 */}
+        {/* 窄屏只留包名与版本：徽章信息在抽屉里仍完整可见，行高保持稳定。 */}
         {dependency.scope === "development" ? (
           <Badge variant="subtle" size="xs">
             开发依赖

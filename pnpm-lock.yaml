@@ -40,6 +40,9 @@ importers:
       '@icons-pack/react-simple-icons':
         specifier: ^13.15.1
         version: 13.15.1(react@19.3.0)
+      '@lobehub/icons-static-svg':
+        specifier: ^1.95.1
+        version: 1.95.1
       '@orpc/client':
         specifier: 1.15.6
         version: 1.15.6(@opentelemetry/api@1.9.1)
@@ -1375,6 +1378,9 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@lobehub/icons-static-svg@1.95.1':
+    resolution: {integrity: sha512-Hw7EPPgVnC4NZLXBfTNJG6hyQgqECfUPC11VVXodPSr1aebKcFxDZlSpxhWwYNdCc6bhxps/x5TtXoPmfKH2ag==}
 
   '@napi-rs/wasm-runtime@1.2.5':
     resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
@@ -6358,6 +6364,8 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@lobehub/icons-static-svg@1.95.1': {}
 
   '@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)':
     dependencies:

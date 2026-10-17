@@ -50,6 +50,20 @@ try {
     await assertAsset(asset);
   }
 
+  // 自备品牌 SVG：页面用 CSS mask 引用这些固定路径，构建时既不能被 webp 管线改写，
+  // 也不能因为漏拷 public/ 而在线上变成空白图标。AI 厂商/模型字形来自
+  // @lobehub/icons-static-svg 的 ?url 导入，SVG 体积小会被 Vite 内联进页面分块，
+  // 因此这里只守护仍需从 public/ 提供的三个资产。
+  const brandAssets = [
+    "/assets/brands/elysia.svg",
+    "/assets/brands/playwright.svg",
+    "/assets/brands/zustand.svg",
+  ];
+  for (const asset of brandAssets) {
+    if (!relativeFiles.includes(asset)) throw new Error(`构建产物缺少 ${asset}`);
+    await assertAsset(asset, "image/svg+xml");
+  }
+
   const stickerFiles = relativeFiles.filter((file) => /^\/stickers\/[0-9a-f]{24}\.webp$/.test(file));
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
@@ -125,7 +139,7 @@ try {
   }
 
   console.log(
-    `资源冒烟通过：${required.length} 个固定资源、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、` +
+    `资源冒烟通过：${required.length} 个固定资源、${brandAssets.length} 个品牌 SVG、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、` +
       `${shellChecks.length} 个静态外壳（含 FAQ 问答）、${sitemapLocs.length} 条站点地图、${ogImages.length} 张分享图`,
   );
 } finally {

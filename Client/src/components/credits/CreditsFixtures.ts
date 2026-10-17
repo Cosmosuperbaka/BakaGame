@@ -2,162 +2,19 @@
  * 展示层夹具：Storybook 与组件测试直接构造 `CreditsView` 的入参，不 import `virtual:credits`。
  * 真实数据由 `pages/CreditsPage.tsx` 在构建期注入，这份文件只服务于展示层调试与测试。
  *
- * 依赖清单按包名排序，模拟构建期产物的顺序；其中保留了一个未声明许可证的包，
- * 用来覆盖「未知」筛选项与「未附带许可证原文」两种状态。
+ * 依赖图单独放在 `CreditsFixtureDependencies.ts`（含下钻、无子依赖与无许可证原文的覆盖用例），
+ * 这里保留模型、技术栈、更新日志、提交历史与许可证原文，两部分的更新时间互不影响。
  */
 import { CONTRIBUTING_MODELS, CORE_TECH_STACK } from "@/data/CreditsContent";
-import {
-  UNKNOWN_LICENSE,
-  type ContributingCompany,
-  type CoreTechEntry,
-  type CreditDependency,
-  type CreditLicenseDocument,
-} from "@/lib/Credits";
+import type { ContributingCompany, CoreTechEntry, CreditLicenseDocument } from "@/lib/Credits";
 import type { ChangelogEntry } from "@/lib/Changelog";
 import type { CommitEntry } from "@/lib/CommitHistory";
+import { CREDITS_FIXTURE_DEPENDENCIES } from "./CreditsFixtureDependencies";
 
-const dependency = (
-  overrides: Partial<CreditDependency> & Pick<CreditDependency, "name" | "version">,
-): CreditDependency => ({
-  license: "MIT",
-  description: "",
-  url: "",
-  direct: true,
-  scope: "runtime",
-  ...overrides,
-});
+// 展示层统一从本文件取夹具，依赖图拆到独立文件后仍保留这一入口，测试与故事不必感知拆分。
+export { CREDITS_FIXTURE_DEPENDENCIES };
 
-export const CREDITS_FIXTURE_DEPENDENCIES: readonly CreditDependency[] = [
-  dependency({
-    name: "@applemusic-like-lyrics/core",
-    version: "0.5.2",
-    description: "逐字歌词的渲染内核与播放调度。",
-    url: "https://github.com/Steve-xmh/applemusic-like-lyrics",
-    direct: false,
-  }),
-  dependency({
-    name: "@radix-ui/react-dialog",
-    version: "1.1.23",
-    description: "无障碍对话框原语。",
-    url: "https://www.radix-ui.com/primitives/docs/components/dialog",
-  }),
-  dependency({
-    name: "@sentry/react",
-    version: "10.75.1",
-    description: "前端异常上报与性能采样。",
-    url: "https://docs.sentry.io/platforms/javascript/guides/react/",
-  }),
-  dependency({
-    name: "@testing-library/react",
-    version: "16.3.3",
-    description: "以用户视角驱动组件测试。",
-    url: "https://testing-library.com/docs/react-testing-library/intro/",
-    scope: "development",
-  }),
-  dependency({
-    name: "@types/react",
-    version: "19.3.0",
-    description: "React 的类型声明。",
-    url: "https://www.npmjs.com/package/@types/react",
-    scope: "development",
-  }),
-  dependency({
-    name: "eslint",
-    version: "10.11.0",
-    description: "静态检查。",
-    url: "https://eslint.org",
-    scope: "development",
-  }),
-  dependency({
-    name: "framer-motion",
-    version: "13.4.0",
-    description: "交互动效编排。",
-    url: "https://motion.dev",
-  }),
-  dependency({
-    name: "left-pad",
-    version: "1.3.0",
-    description: "夹具专用的未声明许可证示例。",
-    license: UNKNOWN_LICENSE,
-    scope: "development",
-  }),
-  dependency({
-    name: "lucide-react",
-    version: "1.47.0",
-    license: "ISC",
-    description: "通用界面图标。",
-    url: "https://lucide.dev",
-  }),
-  dependency({
-    // 夹具里保留一条复合 SPDX 表达式，供窄屏排版与长 License 徽章的截图核对。
-    name: "node-webpmux",
-    version: "3.2.1",
-    license: "MIT AND (LGPL-3.0-or-later OR GPL-2.0-or-later)",
-    description: "构建期封装 WebP 动图。",
-    url: "https://github.com/scottlabs/node-webpmux",
-    scope: "development",
-  }),
-  dependency({
-    name: "react",
-    version: "19.3.0",
-    description: "界面与组件树。",
-    url: "https://react.dev",
-  }),
-  dependency({
-    name: "react-dom",
-    version: "19.3.0",
-    description: "浏览器端渲染入口。",
-    url: "https://react.dev",
-  }),
-  dependency({
-    name: "sharp",
-    version: "0.35.4",
-    license: "Apache-2.0",
-    description: "构建期图片转码与缩略图生成。",
-    url: "https://sharp.pixelplumbing.com",
-    scope: "development",
-  }),
-  dependency({
-    name: "tailwindcss",
-    version: "4.3.3",
-    description: "语义令牌与样式基线。",
-    url: "https://tailwindcss.com",
-  }),
-  dependency({
-    name: "typescript",
-    version: "5.9.3",
-    license: "Apache-2.0",
-    description: "全仓类型契约。",
-    url: "https://www.typescriptlang.org",
-  }),
-  dependency({
-    name: "vite",
-    version: "8.3.0",
-    description: "开发服务器与生产构建。",
-    url: "https://vite.dev",
-  }),
-  dependency({
-    name: "vitest",
-    version: "5.0.1",
-    description: "单元测试运行器。",
-    url: "https://vitest.dev",
-    scope: "development",
-  }),
-  dependency({
-    name: "zod",
-    version: "4.6.7",
-    description: "运行时数据结构校验。",
-    url: "https://zod.dev",
-  }),
-  dependency({
-    name: "zustand",
-    version: "5.0.15",
-    description: "客户端状态容器。",
-    url: "https://zustand.docs.pmnd.rs",
-  }),
-];
-
-/** 贡献模型与核心技术栈直接复用真实数据源，故事里看到的就是线上内容。 */
+/** 贡献模型与核心技术栈直接复用真实数据源，故事里看到的就是线上内容（含 logo 与分组）。 */
 export const CREDITS_FIXTURE_MODELS: readonly ContributingCompany[] = CONTRIBUTING_MODELS;
 export const CREDITS_FIXTURE_TECH_STACK: readonly CoreTechEntry[] = CORE_TECH_STACK;
 

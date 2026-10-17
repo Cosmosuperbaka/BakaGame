@@ -318,6 +318,35 @@ describe("creditsManifestPlugin", () => {
       expect(manifest.dependencies.map((item) => item.name)).not.toContain("peer-fake");
     });
 
+    it("每个包带一张子依赖图：只收本次真实安装、能被抽屉点开的包", async () => {
+      const manifest = await loadCreditsManifest(plugin);
+      // 依赖声明里有 missing-platform-binary，但它没安装：不进图，否则二级抽屉会点到空条目。
+      expect(dependencyOf(manifest, "alpha-runtime").dependencies).toEqual([
+        "gamma-transitive",
+        "long-description",
+        "server-located",
+        "upper-only",
+      ]);
+      // optionalDependencies 与实际 dependencies 合并、排序；peer 不进图。
+      expect(dependencyOf(manifest, "gamma-transitive").dependencies).toEqual([
+        "delta-optional",
+        "optional-installed",
+        "shared-runtime-dev",
+        "unknown-license",
+      ]);
+      expect(dependencyOf(manifest, "beta-dev").dependencies).toEqual([
+        "epsilon-dev-transitive",
+        "shared-runtime-dev",
+      ]);
+      // 叶子包给空数组，页面据此显示「无子依赖」。
+      expect(dependencyOf(manifest, "ordered-pick").dependencies).toEqual([]);
+      // 图里的每个名字都必须在清单里存在，页面才不用处理悬空引用。
+      const names = new Set(manifest.dependencies.map((item) => item.name));
+      for (const dependency of manifest.dependencies) {
+        for (const child of dependency.dependencies) expect(names.has(child)).toBe(true);
+      }
+    });
+
     it("只收集 Client 的直接依赖闭包，未引用的安装包不出现", async () => {
       const manifest = await loadCreditsManifest(plugin);
       expect(manifest.dependencies.map((item) => item.name)).not.toContain("unrelated-package");

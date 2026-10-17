@@ -593,8 +593,27 @@ export function creditsManifestPlugin(options: { clientDir?: string } = {}) {
       left.localeCompare(right, 'en'),
     )
 
+    // 先收齐「确实安装」的包，再生成依赖图：清单里的子依赖必须指向本次构建里真实存在、
+    // 且页面能点开详情的包，未安装的平台/可选包不能留在图里。
+    const installedByName = new Map<string, InstalledPackage>()
     for (const name of allNames) {
       const installed = readInstalledPackage(name, clientDir)
+      if (installed) installedByName.set(name, installed)
+    }
+
+    const childNamesOf = (installed: InstalledPackage): string[] => {
+      const { manifest } = installed
+      const children = new Set([
+        ...Object.keys(manifest.dependencies ?? {}),
+        ...Object.keys(manifest.optionalDependencies ?? {}),
+      ])
+      return [...children]
+        .filter((child) => installedByName.has(child))
+        .sort((left, right) => left.localeCompare(right, 'en'))
+    }
+
+    for (const name of allNames) {
+      const installed = installedByName.get(name)
       if (!installed) continue // 缺包已在遍历时处理，这里不再重复告警
 
       const { manifest } = installed
@@ -608,6 +627,8 @@ export function creditsManifestPlugin(options: { clientDir?: string } = {}) {
         direct: directScopes.has(name),
         // 两条依赖链都可达时 runtime 优先：生产运行时确实会加载的代码不该标成开发依赖。
         scope: scopeOf(name),
+        // 页面一级只列直接依赖，二级抽屉靠这张图逐级展开子依赖。
+        dependencies: childNamesOf(installed),
       })
 
       const bucket = licenseBucket(name)

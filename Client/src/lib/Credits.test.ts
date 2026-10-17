@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CREDIT_DESCRIPTION_LIMIT,
   UNKNOWN_LICENSE,
+  collectTransitiveDependencyNames,
+  creditDependencyIndex,
   creditLicenseLabel,
   creditLicenseOptions,
   filterCreditDependencies,
@@ -19,6 +21,7 @@ const dependency = (overrides: Partial<CreditDependency>): CreditDependency => (
   url: "https://react.dev",
   direct: true,
   scope: "runtime",
+  dependencies: [],
   ...overrides,
 });
 
@@ -118,10 +121,10 @@ describe("filterCreditDependencies", () => {
 
 describe("sortModelsByRelease", () => {
   const models: ContributingModel[] = [
-    { name: "Claude Opus 5", releasedAt: "2026-08-26" },
-    { name: "Claude Sonnet 4.6", releasedAt: "2026-01-22" },
-    { name: "Claude Opus 4.7", releasedAt: "2026-04-09" },
-    { name: "Claude Opus 4.6", releasedAt: "2026-01-22" },
+    { name: "Claude Opus 5", releasedAt: "2026-08-26", logo: "claude" },
+    { name: "Claude Sonnet 4.6", releasedAt: "2026-01-22", logo: "claude" },
+    { name: "Claude Opus 4.7", releasedAt: "2026-04-09", logo: "claude" },
+    { name: "Claude Opus 4.6", releasedAt: "2026-01-22", logo: "claude" },
   ];
 
   it("同一公司内按发布时间从早到晚排列，同日按名称稳定排序", () => {
@@ -137,6 +140,42 @@ describe("sortModelsByRelease", () => {
     const before = models.map((model) => model.name);
     sortModelsByRelease(models);
     expect(models.map((model) => model.name)).toEqual(before);
+  });
+});
+
+describe("依赖图", () => {
+  const graph: CreditDependency[] = [
+    dependency({ name: "storybook", license: "MIT", dependencies: ["@storybook/react", "esbuild"] }),
+    dependency({ name: "@storybook/react", license: "MIT", dependencies: ["react"] }),
+    dependency({ name: "react", dependencies: [] }),
+    dependency({ name: "esbuild", license: "MIT", dependencies: [] }),
+    dependency({ name: "vite", license: "MIT", dependencies: ["esbuild"] }),
+  ];
+  const index = creditDependencyIndex(graph);
+
+  it("按包名建立索引，取回原始条目", () => {
+    expect(index.get("storybook")?.license).toBe("MIT");
+    expect(index.get("missing")).toBeUndefined();
+    expect(index.size).toBe(graph.length);
+  });
+
+  it("间接依赖是传递闭包，不含自身、去重并按包名排序", () => {
+    expect(collectTransitiveDependencyNames(index, "storybook")).toEqual([
+      "@storybook/react",
+      "esbuild",
+      "react",
+    ]);
+    expect(collectTransitiveDependencyNames(index, "vite")).toEqual(["esbuild"]);
+    expect(collectTransitiveDependencyNames(index, "react")).toEqual([]);
+    expect(collectTransitiveDependencyNames(index, "missing")).toEqual([]);
+  });
+
+  it("依赖图出现环时也能收敛（坏数据不让页面卡死）", () => {
+    const cyclic = creditDependencyIndex([
+      dependency({ name: "a", dependencies: ["b"] }),
+      dependency({ name: "b", dependencies: ["a"] }),
+    ]);
+    expect(collectTransitiveDependencyNames(cyclic, "a")).toEqual(["b"]);
   });
 });
 

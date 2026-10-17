@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -11,17 +11,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import type { ChangelogEntry } from "@/lib/Changelog";
 import type { CommitEntry } from "@/lib/CommitHistory";
-import type {
-  ContributingCompany,
-  CoreTechEntry,
-  CreditDependency,
-  CreditLicenseDocument,
+import {
+  creditDependencyIndex,
+  type ContributingCompany,
+  type CoreTechEntry,
+  type CreditDependency,
+  type CreditLicenseDocument,
 } from "@/lib/Credits";
 import { iconTappable } from "@/lib/Motion";
 import { ChangelogPanel } from "./ChangelogPanel";
 import { CommitPanel } from "./CommitPanel";
 import { CreditsPanel } from "./CreditsPanel";
-import { LicenseSheet } from "./LicenseSheet";
+import { DependencySheet } from "./DependencySheet";
 
 export type CreditsTab = "credits" | "changelog" | "commits";
 
@@ -49,8 +50,9 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
  * 版本信息页的展示层：固定视口高度的外壳（顶栏 + 标签栏 + 内容区），
  * 只有内容区内部滚动，三段内容再长也不带动整页。
  *
- * 依赖行的许可证抽屉挂在页面级：选中项一直保留到关闭动画结束
- * （`Sheet` 的 `onExitComplete`）再清空，关闭途中抽屉内容不会先消失。
+ * 依赖抽屉是二级结构：`path` 保存从主包开始的下钻栈，打开主包是 `[name]`，
+ * 点开子依赖 push 一层，返回时 pop；抽屉关闭动画播完（`Sheet` 的 `onExitComplete`）
+ * 才清空栈，收起途中内容不会先消失。全量依赖的按名索引由 `creditDependencyIndex` 建一次。
  */
 export function CreditsView({
   tab,
@@ -65,12 +67,26 @@ export function CreditsView({
   commits,
   loadLicense,
 }: CreditsViewProps) {
-  const [selected, setSelected] = useState<CreditDependency | null>(null);
-  const [licenseOpen, setLicenseOpen] = useState(false);
+  const byName = useMemo(() => creditDependencyIndex(dependencies), [dependencies]);
+  const [path, setPath] = useState<string[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  const openLicense = (dependency: CreditDependency) => {
-    setSelected(dependency);
-    setLicenseOpen(true);
+  const currentName = path.length > 0 ? path[path.length - 1] : null;
+  const currentDependency = currentName ? (byName.get(currentName) ?? null) : null;
+
+  /** 一级行点击：从该主包开始一条新的下钻路径。 */
+  const openDependency = (name: string) => {
+    setPath([name]);
+    setSheetOpen(true);
+  };
+
+  /** 子依赖点击：只接受清单里存在的包，避免坏数据把抽屉推到空内容。 */
+  const navigateTo = (name: string) => {
+    if (byName.has(name)) setPath((previous) => [...previous, name]);
+  };
+
+  const goBack = () => {
+    setPath((previous) => (previous.length > 1 ? previous.slice(0, -1) : previous));
   };
 
   return (
@@ -149,7 +165,7 @@ export function CreditsView({
               dependencies={dependencies}
               models={models}
               techStack={techStack}
-              onSelectDependency={openLicense}
+              onSelectDependency={openDependency}
             />
           </div>
         </TabsContent>
@@ -172,16 +188,25 @@ export function CreditsView({
       </Tabs>
 
       <Sheet
-        open={licenseOpen}
-        onOpenChange={setLicenseOpen}
-        title={selected ? <span className="font-mono">{selected.name}</span> : "许可证"}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        title={currentDependency ? <span className="font-mono">{currentDependency.name}</span> : "依赖详情"}
         onExitComplete={() => {
-          // 关闭动画结束后才丢掉选中项；若是被重新打开则不丢。
-          if (!licenseOpen) setSelected(null);
+          // 关闭动画结束后才丢掉下钻栈；若是被重新打开则不丢。
+          if (!sheetOpen) setPath([]);
         }}
       >
-        {selected ? (
-          <LicenseSheet key={selected.name} dependency={selected} loadLicense={loadLicense} />
+        {currentDependency ? (
+          // 以包名作 key：下钻或返回时状态从头开始，许可证折叠态与加载态不会串到另一个包。
+          <DependencySheet
+            key={currentDependency.name}
+            dependency={currentDependency}
+            byName={byName}
+            path={path}
+            onNavigate={navigateTo}
+            onBack={goBack}
+            loadLicense={loadLicense}
+          />
         ) : null}
       </Sheet>
     </div>

@@ -26,6 +26,11 @@ export interface CreditDependency {
   /** 是否为 Client/package.json 的直接依赖。 */
   direct: boolean;
   scope: CreditScope;
+  /**
+   * 该包直接依赖、且确实安装在本次构建里的包名，按包名排序。
+   * 依赖清单一级只展示直接依赖；二级抽屉沿这张图展开子依赖并逐级下钻。
+   */
+  dependencies: string[];
 }
 
 /** 虚拟模块 `virtual:credits` 的完整形状。 */
@@ -124,15 +129,102 @@ export function filterCreditDependencies(
   });
 }
 
+/**
+ * 依赖清单的包名索引。构建期保证依赖图里的子依赖都指向清单内的包，
+ * 页面用它按名字取具体条目、展开二级抽屉。
+ */
+export function creditDependencyIndex(
+  dependencies: readonly CreditDependency[],
+): Map<string, CreditDependency> {
+  return new Map(dependencies.map((dependency) => [dependency.name, dependency]));
+}
+
+/**
+ * 某个包的全部间接依赖（传递闭包，不含自身），按包名排序。
+ * 抽屉里用它说明「共含 N 个间接依赖」；依赖图理论上无环，仍用集合兜底防止坏数据死循环。
+ */
+export function collectTransitiveDependencyNames(
+  index: ReadonlyMap<string, CreditDependency>,
+  rootName: string,
+): string[] {
+  const reached = new Set<string>();
+  const queue = [...(index.get(rootName)?.dependencies ?? [])];
+  while (queue.length > 0) {
+    const name = queue.shift();
+    if (name === undefined || name === rootName || reached.has(name)) continue;
+    reached.add(name);
+    const dependency = index.get(name);
+    if (dependency) queue.push(...dependency.dependencies);
+  }
+  return [...reached].sort((left, right) => left.localeCompare(right, "en"));
+}
+
+/**
+ * 品牌标识键。三处共用一个键空间：依赖行与技术栈卡片、贡献模型的厂商与模型家族。
+ * 渲染来源（simple-icons / FontAwesome / 自备官方 SVG / lucide 回退）只在
+ * `components/credits/CreditsIcons.tsx` 维护；React 之外的包名映射也在那里。
+ *
+ * 厂商与模型家族分开登记：例如厂商 `google` 与模型家族 `gemini`、厂商 `anthropic` 与家族 `claude`
+ * 是两枚不同的官方字形，页面上分别用在公司标题与模型徽章上。
+ */
+export type CreditBrandId =
+  // AI 厂商
+  | "deepseek"
+  | "zhipu"
+  | "openai"
+  | "google"
+  | "tencent"
+  | "anthropic"
+  // AI 模型家族
+  | "glm"
+  | "gpt"
+  | "gemini"
+  | "claude"
+  | "hunyuan"
+  // 技术栈
+  | "react"
+  | "typescript"
+  | "tailwindcss"
+  | "radixui"
+  | "framer"
+  | "zustand"
+  | "bun"
+  | "elysia"
+  | "drizzle"
+  | "mysql"
+  | "vite"
+  | "pnpm"
+  | "storybook"
+  | "vitest"
+  | "playwright"
+  | "sentry"
+  | "eslint"
+  | "githubactions"
+  // 依赖清单里会出现的品牌
+  | "applemusic"
+  | "betterauth"
+  | "fontawesome"
+  | "simpleicons"
+  | "reactrouter"
+  | "testinglibrary"
+  | "lucide"
+  | "zod"
+  | "socketdotio"
+  | "meilisearch";
+
 /** 为本项目做出过实际改动的模型。`releasedAt` ISO 日期只用于排序，不在页面上展示。 */
 export interface ContributingModel {
   name: string;
   releasedAt: string;
+  /** 模型家族标识（同一厂商的不同型号共用家族字形） */
+  logo: CreditBrandId;
 }
 
 /** 模型按公司分组。公司顺序取数据文件的声明顺序，新增公司追加到末尾。 */
 export interface ContributingCompany {
   company: string;
+  /** 厂商标识，展示在公司标题旁 */
+  logo: CreditBrandId;
   models: ContributingModel[];
 }
 
@@ -146,27 +238,18 @@ export function sortModelsByRelease(models: readonly ContributingModel[]): Contr
   );
 }
 
-/** 核心技术栈的一格。`icon` 是品牌图标的语义键，映射关系与回退在 `components/credits/CreditsIcons.tsx`。 */
-export type TechStackIcon =
-  | "react"
-  | "typescript"
-  | "vite"
-  | "tailwindcss"
-  | "framer"
-  | "radixui"
-  | "zustand"
-  | "bun"
-  | "elysia"
-  | "drizzle"
-  | "pnpm"
-  | "sentry";
+/** 核心技术栈的分组。顺序即页面从上到下的展示顺序，标签由 `data/CreditsContent.ts` 给出。 */
+export type TechStackCategory = "frontend" | "backend" | "scaffold" | "operations";
 
+/** 核心技术栈的一格。`icon` 是品牌图标键，映射关系与回退在 `components/credits/CreditsIcons.tsx`。 */
 export interface CoreTechEntry {
   /** 技术栈名称 */
   name: string;
   /** 项目里的职责，一句话说明它承担什么 */
   role: string;
-  icon: TechStackIcon;
+  icon: CreditBrandId;
+  /** 所属分组 */
+  category: TechStackCategory;
   /** 官方站点 */
   url: string;
   /** 对应 npm 包名；用于从依赖清单里取实际安装版本，非 npm 运行时省略 */
