@@ -21,6 +21,7 @@
 - 界面图标统一使用 `lucide-react`；不手绘 SVG，不用文字字符或 emoji 代替已有的标准图标：方向与命中用图标加 sr-only 文案，不写 ↑↓✓×；奖杯用 `Trophy`，不用 🏆。
 - 第三方平台的品牌图标（QQ、GitHub、哔哩哔哩等）`lucide-react` 不提供，改用 `@fortawesome/free-brands-svg-icons` 的官方字形，经 `@fortawesome/react-fontawesome` 的 `FontAwesomeIcon` 渲染。必须按 `@fortawesome/free-brands-svg-icons/faXxx` 逐图标引入，聚合入口无法摇树会把整包打进产物。品牌图标仅用于指向站外平台的链接，业务功能图标不得改用该包。
 - npm 包与开源项目的品牌图标用 `@icons-pack/react-simple-icons`（如 React、TypeScript、Vite、Tailwind CSS），同样按 `@icons-pack/react-simple-icons/icons/SiXxx` 逐图标引入，聚合入口会整包进产物；该包没有对应品牌图标时回退 `lucide-react` 的通用图标，不手绘、不用错误的近似品牌。simple-icons 只用于标注依赖/技术栈本身，指向站外平台的链接图标仍走 FontAwesome 规则。
+- simple-icons 确实没有的官方品牌字形优先从已引入的图标包取：AI 厂商与模型家族用 `@lobehub/icons-static-svg`（`icons/*.svg?url`，Vite 生成哈希资源）；图标包也没有的（如 Elysia、Playwright、Zustand）才放到 `Client/public/assets/brands/` 并以 CSS mask 渲染成单色（颜色跟随 `currentColor`），来源与许可登记在 [Credits](Credits.md#3-模型署名与品牌标识)。不直接贴彩色位图、不拿名字相近的错误品牌顶替；品牌标识键统一为 `CreditBrandId`，映射与回退只在 `components/credits/CreditsIcons.tsx` 维护。
 - 条件类名使用项目现有的 `cn` 工具，组件变体沿用 `class-variance-authority`。
 - 动效使用 `framer-motion`，参数唯一来源为 `Client/src/lib/Motion.ts`；令牌、来源锚定、Radix 动画及减弱动效规则统一见 [Animation](Animation.md)。
 - 全站图片全局禁止原生拖拽与幽灵虚影：在 `Client/src/index.css` 声明 `img { -webkit-user-drag: none; user-drag: none; }` 并在应用启动入口通过 `setupGlobalImageProtection()` 拦截原生 `dragstart` 事件，确保全平台/全浏览器（包括 WebKit、Chromium、Gecko 及移动端）下所有 `<img>` 标签天然免于误触与幽灵框，杜绝在业务组件中人肉散落 `draggable={false}` 补丁。
@@ -251,13 +252,13 @@
 
 - `/credits` 是完整页面，由页脚版本号进入，把更新日志、提交历史与开源致谢收在同一个 `Tabs` 里；不得用弹窗承载版本信息。标签顺序固定为「开源致谢 / 更新日志 / 提交历史」，当前标签写进 `?tab=`（默认开源致谢，页脚进入时落在 `?tab=changelog`）。页面开合的专属转场见 [Animation §2.4](Animation.md)；内容与数据结构见 [Credits](Credits.md)。
 - 页面外壳与 `/admin` 同一形态：顶栏（返回主页、分隔线、标题、版本号与提交哈希、仓库外链）加内容区，正文 `max-w-6xl px-6 md:px-10`；整体固定为视口高度，只有当前标签的内容区内部滚动，顶栏与标签栏不随内容滚走。窄屏顶栏信息按需省略提交哈希，标题与返回入口保留。
-- 开源致谢标签自上而下固定三段：贡献模型、核心技术栈、依赖清单。上半部分靠留白与卡片网格集中展示，依赖清单用紧凑列表承接「全部依赖」，形成主次分层，不把三段做成同等重量的卡片。
-- 贡献模型位于核心技术栈上方：只列模型名称，按公司分组，公司顺序取 [CreditsContent](../Client/src/data/CreditsContent.ts) 的声明顺序，组内按发布时间排序；不写分工、日期或宣传文案。每家公司用首字方徽记与名称作组标题，模型名用 `Badge` 列表承载。只有实际改动过仓库文件的模型才署名，维护规则见 [Credits §3](Credits.md#3-模型署名)。
-- 核心技术栈是 8–12 张外链卡片：品牌图标（[§2](#2-技术基线) 的 simple-icons 规则）、名称、项目内的职责与从依赖清单取到的实际版本；整卡可点、指向官方站点，悬停表现与流内可点卡片一致。非 npm 运行时（Bun）不展示版本。
-- 依赖清单构建期生成，展示 Client 依赖闭包（运行时 + 开发依赖 + 传递依赖），按包名排序。行内容为品牌图标（无匹配回退通用图标）、包名、版本、License、开发依赖标记与进入详情的指示；行是整行可点按钮，按压取 `optionTappable`。
-- 工具条在清单上方：搜索框即时过滤包名 / 版本 / License（复用 `field-frame` 输入框），License 筛选用 `Select`（首项「全部 License」，数量由数据派生），右侧给当前结果计数；窄屏控件换行，不挤压搜索框。没有命中时用虚线空状态说明当前筛选条件，并提供「清除筛选」。
-- 许可证原文不常驻页面：点击依赖行从右缘打开 `ui/Sheet` 的抽屉，展示包名、版本、License、简介与外链，再按需加载该包自带的 LICENSE / COPYING / NOTICE 原文；抽屉内容区独立滚动，原文用等宽字体保留换行。加载中、未附带原文与加载失败（可重试）都是独立状态，详情元数据先出现，原文后到不推动布局。
-- 抽屉打开时背景内容不响应误操作；关闭后焦点回到触发该抽屉的依赖行。抽屉动效使用 `sheetSlide`，不得另写一套滑入参数。
+- 开源致谢标签自上而下固定三段：参与开发的大模型、核心技术栈、依赖清单。三段 H2 标题下不加说明段，层级靠标题间距与分组小标题建立；上半部分靠留白与分组网格集中展示，依赖清单用紧凑列表承接 `package.json` 直接引入的主包，形成主次分层。
+- 参与开发的大模型位于核心技术栈上方：只列公司或 AI 团队名与模型名，按公司分组，公司顺序取 [CreditsContent](../Client/src/data/CreditsContent.ts) 的声明顺序，组内按发布时间排序；不写分工、日期或宣传文案。布局是「厂商行」：左侧厂商 Logo、公司名与模型数，右侧模型徽章流式排列，徽章内含模型家族 Logo。公司一栏写公司或 AI 团队名（深度求索、智谱清言、OpenAI、Google DeepMind、腾讯混元、Anthropic），模型徽章才写具体型号；公司用厂商标识、模型用产品标识，两者按数据里的 `logo` 分别渲染、不复用同一枚。只有实际改动过仓库文件的模型才署名，维护规则见 [Credits §3](Credits.md#3-模型署名与品牌标识)。
+- 核心技术栈按前端 / 后端 / 脚手架 / 运维与开发辅助四组展示，顺序与组名由 `TECH_STACK_CATEGORIES` 给出；每组一个小标题与卡片网格。卡片保留品牌图标、名称、项目内的职责与从依赖清单取到的实际版本；整卡可点、指向官方站点。品牌图标优先 simple-icons，缺失的官方字形取自备资产（见 §2）；非 npm 运行时（Bun）不展示版本。
+- 依赖清单构建期生成，一级只列 Client `package.json` 的直接依赖（运行时 + 开发），按包名排序。行内容为品牌图标（无匹配回退通用图标）、包名、版本、License、开发依赖标记、子依赖数量与进入详情的指示；行是整行可点按钮，按压取 `optionTappable`。间接依赖与子包不在一级平铺，收进二级抽屉逐级下钻。
+- 工具条在清单上方：搜索框即时过滤主包的包名 / 版本 / License（复用 `field-frame` 输入框），License 筛选用 `Select`（首项「全部 License」，数量由主包数据派生），右侧给当前结果计数（「N 个主包」）；窄屏控件换行，不挤压搜索框。没有命中时用虚线空状态说明当前筛选条件，并提供「清除筛选」。
+- 二级抽屉（`ui/Sheet`）承担单个包的详情与下钻：一级点主包打开，抽屉内可继续点子依赖下钻，并给「返回上一层」。顶部是包身份（品牌图标、包名、版本、License、直接/开发标记与简介），紧接着是醒目的「项目主页 / npm 页面」按钮（`Button variant="outline"`，带图标，不用小号文字链），再是依赖构成（直接子依赖数、间接依赖数）与子依赖列表。许可证原文默认折叠，展开时才按需加载该包自带的 LICENSE / COPYING / NOTICE 原文；加载中、未附带原文与加载失败（可重试）都是独立状态，原文不占首屏、随抽屉内容区滚动，等宽字体并允许多行折行。
+- 抽屉打开时背景内容不响应误操作；关闭后焦点回到触发该抽屉的依赖行。抽屉动效使用 `sheetSlide`；子依赖下钻与许可证折叠沿用现有列表与 `Collapsible` 动效，不另写一套滑入参数。
 
 ## 8. 交互状态
 
