@@ -15,7 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 路径探测：改了哪部分才跑对应 job，纯文档改动全部跳过。
+  # 文档门禁：纯文档改动也要跑，无需安装依赖。
+  docs:
+    name: Docs Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 链接、锚点与 AGENTS.md 导航覆盖；规则见 Agents/Testing.md「验证范围」。
+      - name: Check documentation links
+        run: node scripts/CheckDocs.mjs
+
+  # 路径探测：改了哪部分才跑对应 job，纯文档改动只跑上面的 docs。
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest

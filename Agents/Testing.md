@@ -6,7 +6,7 @@
 
 | 改动类型 | 完成所需的验证 |
 |---|---|
-| 纯文档或注释 | 检查 diff、链接、引用路径、命令与规则一致性；不运行无关业务套件 |
+| 纯文档或注释 | 检查 diff、链接、引用路径、命令与规则一致性；运行 `node scripts/CheckDocs.mjs`；不运行无关业务套件 |
 | 局部服务端行为 | 相关 `bun test` 文件 + `bun run check`；新增行为或缺陷补有判别力的回归 |
 | 局部客户端逻辑 | 相关 Vitest 文件 + `npm run lint` + `npm run build` |
 | 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测；受影响组件的故事同步更新，用 `storybook:shots --filter` 做改前改后截图对照 |
@@ -32,6 +32,7 @@
 - `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
 - 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不得读取 Tailwind 类名；关键落地页和聊天流程须把页面异常、控制台错误及非预期 4xx 转为测试失败。
 - 客户端 CI 在生产构建后执行 `npm run build-storybook`，防止故事与截图工具随组件改动失效。
+- 文档门禁 `node scripts/CheckDocs.mjs` 校验根文档与 `Agents/` 的相对链接、锚点，以及 `Agents/` 每篇文档是否已在 `AGENTS.md` 导航表中登记；CI 的 Docs Check 作业无条件执行，纯文档改动同样受约束。
 
 以下能力尚未纳入门禁，不得按已覆盖对待：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
 
