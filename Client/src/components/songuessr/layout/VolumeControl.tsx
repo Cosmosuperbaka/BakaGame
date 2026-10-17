@@ -166,12 +166,14 @@ function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boole
  */
 function RollingVolumeNumber({ value, className }: { value: number; className?: string }) {
   const num = Math.min(100, Math.max(0, Math.round(value)));
-  const prevValue = useRef(num);
-  const isAscending = useRef(true);
-
-  if (num !== prevValue.current) {
-    isAscending.current = num >= prevValue.current;
-    prevValue.current = num;
+  // 方向要按「上一次渲染的值」判断。用 state 而不是 ref：render 期读写 ref 会被
+  // react-hooks/refs 判为副作用（React Compiler 也不认），而这里条件 setState 是官方
+  // 支持的派生状态写法——立即重渲染当前组件，首帧就按正确方向画，不产生额外提交。
+  const [previous, setPrevious] = useState(num);
+  const [isAscending, setIsAscending] = useState(true);
+  if (previous !== num) {
+    setIsAscending(num >= previous);
+    setPrevious(num);
   }
 
   const digits = String(num).split("").map(Number);
@@ -183,7 +185,7 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
       <span aria-hidden="true" className="inline-flex items-center">
         {digits.map((d, i) => {
           const place = totalDigits - 1 - i;
-          return <DigitColumn key={place} digit={d} isAscending={isAscending.current} />;
+          return <DigitColumn key={place} digit={d} isAscending={isAscending} />;
         })}
       </span>
     </span>
