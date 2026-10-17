@@ -13,4 +13,3 @@ export function PageLoadingFallback() {
   );
 }
 
-export default PageLoadingFallback;

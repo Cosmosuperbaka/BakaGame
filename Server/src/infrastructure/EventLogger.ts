@@ -113,7 +113,7 @@ const getEventLevel = (entry: LogEntry): LogLevel => {
   }
 };
 
-export { redactData, redactLogText, describeError, sanitizeLogText } from "./Sentry";
+export { redactData, describeError, sanitizeLogText } from "./Sentry";
 
 // 系统日志列格式化
 export const formatSystemLog = ({

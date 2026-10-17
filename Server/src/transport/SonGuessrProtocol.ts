@@ -15,7 +15,6 @@ export const SongVisibilitySchema = t.Union([t.Literal("public"), t.Literal("pri
 export const QuestionTypeSchema = t.Union([t.Literal("song"), t.Literal("anime")]);
 export const QuestionModeSchema = t.Union([t.Literal("manual"), t.Literal("automatic")]);
 import { MinPopularitySchema, SongAutoFiltersInputSchema } from "../shared/SonGuessrFilters";
-export { MinPopularitySchema, SongArtistFilterSchema, SongPlaylistFilterSchema, SongAutoFiltersInputSchema, SongAutoFiltersSchema } from "../shared/SonGuessrFilters";
 
 export const AnimeAutoFiltersSchema = t.Object(
   {

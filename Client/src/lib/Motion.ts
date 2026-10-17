@@ -414,19 +414,6 @@ export const sheetSlide: Variants = {
   }),
 };
 
-/** 自左缘擦入的覆盖面板。宽度方向的裁切让面板读作“拉开”。 */
-export const wipeFromLeft: Variants = {
-  initial: { clipPath: "inset(0 100% 0 0)" },
-  animate: {
-    clipPath: "inset(0 0% 0 0)",
-    transition: { duration: duration.base, ease: ease.out },
-  },
-  exit: {
-    clipPath: "inset(0 100% 0 0)",
-    transition: { duration: duration.quick, ease: ease.inOut },
-  },
-};
-
 /** 弹出层。自触发点方向展开，保持点击位置与浮层的视觉因果。 */
 export const popover: Variants = {
   initial: { opacity: 0, scale: popoverScale.enter },
@@ -436,9 +423,6 @@ export const popover: Variants = {
 
 /** 从属元素跟随主体的延迟：回执卡内的对勾、折叠区的显影都晚主体这一拍。 */
 export const followDelay = 0.06;
-
-/** 共享元素跨区域位移（词语从游戏区移入顶栏） */
-export const sharedTransfer: Transition = spring.drift;
 
 /**
  * 折叠区域。高度与不透明度分离：展开时先撑开高度再显影，

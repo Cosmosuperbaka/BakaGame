@@ -2,7 +2,6 @@ import { Value } from '@sinclair/typebox/value';
 import { CEEMessageSchemas, normalizeCEEEnvelope, type CEEClientMessage, type CEEClientWireMessage, type CEECommand } from '../shared/CEE';
 import { AppError } from '../domain/Errors';
 export { CEEClientMessageSchema } from '../shared/CEE';
-export type { CEEClientWireMessage } from '../shared/CEE';
 
 /** 独立解析入口供协议单测及原生 WS 失败分支诊断；成功 WS 帧由 Elysia 校验。 */
 export function parseCEEMessage(input: unknown): CEEClientMessage {

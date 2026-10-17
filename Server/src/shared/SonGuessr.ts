@@ -530,8 +530,6 @@ export interface SonGuessrPrivateState {
 
 import type { ClientEnvelope } from "./Protocol";
 
-export type SonGuessrClientEnvelope<TType extends string, TPayload> = ClientEnvelope<TType, TPayload>;
-
 export type SonGuessrClientMessage =
   | ClientEnvelope<"song.lobby.subscribeRooms", Record<string, never>>
   | ClientEnvelope<

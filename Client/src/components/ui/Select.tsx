@@ -6,7 +6,6 @@ import { headerTappable } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
 const Select = SelectPrimitive.Root
-const SelectGroup = SelectPrimitive.Group
 const SelectValue = SelectPrimitive.Value
 
 const SelectTrigger = React.forwardRef<
@@ -105,7 +104,6 @@ SelectItem.displayName = SelectPrimitive.Item.displayName
 
 export {
   Select,
-  SelectGroup,
   SelectValue,
   SelectTrigger,
   SelectContent,

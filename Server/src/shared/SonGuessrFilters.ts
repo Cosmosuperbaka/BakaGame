@@ -22,6 +22,5 @@ export const SongAutoFiltersSchema = t.Object({
 /** 入站设置可省略可规范化字段，不能把它声明成完整房间状态。 */
 export const SongAutoFiltersInputSchema = t.Partial(SongAutoFiltersSchema, strict);
 export type SongArtistFilter = Static<typeof SongArtistFilterSchema>;
-export type SongPlaylistFilter = Static<typeof SongPlaylistFilterSchema>;
 export type SongAutoFilters = Static<typeof SongAutoFiltersSchema>;
 export type SongAutoFiltersInput = Static<typeof SongAutoFiltersInputSchema>;

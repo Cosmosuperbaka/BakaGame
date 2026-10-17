@@ -5,7 +5,7 @@ import { ToastViewport } from "@/components/Toast";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 
-export function SonGuessrLayout() {
+function SonGuessrLayout() {
   const notice = useSonGuessrStore((state) => state.notice);
   const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
   return (

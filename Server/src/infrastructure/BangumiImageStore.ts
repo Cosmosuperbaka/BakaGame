@@ -11,13 +11,6 @@ import { join } from "node:path";
  * 入库，单写者）；主线程的只读路由连接与 worker 的写连接天然可以并存（SQLite
  * 多连接 + `busy_timeout` 兜底）。两端各自持有独立的 BangumiImageStore 实例。
  */
-export interface BangumiImageStoreOptions {
-  directory: string;
-  /** 只读模式：路由使用；写操作会直接拒绝。 */
-  readOnly?: boolean;
-  now?: () => number;
-}
-
 export interface StoredImage {
   bytes: Uint8Array;
   contentType: string;

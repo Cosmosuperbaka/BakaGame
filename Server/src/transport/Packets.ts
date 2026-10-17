@@ -5,7 +5,7 @@
   ServerMessage,
 } from "../shared/Index";
 
-export type { AckPacket, ErrorPacket, EventPacket, ServerMessage };
+export type { AckPacket, ErrorPacket, EventPacket };
 
 export const createAck = <TMessage extends { id: string; type: string; traceId?: string }>(
   message: TMessage,

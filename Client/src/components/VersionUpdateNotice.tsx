@@ -129,4 +129,3 @@ export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps
   );
 }
 
-export default VersionUpdateNotice;

@@ -14,10 +14,9 @@ import {
   type RoomVisibility,
 } from "../shared/Index";
 
-export type { ClientEnvelope, WhoIsFakerClientMessage };
+export type { WhoIsFakerClientMessage };
 
 export const VisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
-export const BooleanSchema = t.Boolean();
 export const PositiveIntSchema = t.Integer({ minimum: 1 });
 export const RoleConfigSchema = t.Object(
   {

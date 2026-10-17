@@ -5,7 +5,6 @@ import { CloseButton } from "@/components/ui/CloseButton"
 import { backdrop, emergeFromOrigin, useOriginStyle, type OriginPoint } from "@/lib/Motion"
 import { cn } from "@/lib/Utils"
 
-const DialogTrigger = DialogPrimitive.Trigger
 const DialogPortal = DialogPrimitive.Portal
 const DialogClose = DialogPrimitive.Close
 
@@ -127,7 +126,6 @@ export {
   Dialog,
   DialogPortal,
   DialogOverlay,
-  DialogTrigger,
   DialogClose,
   DialogContent,
   DialogHeader,

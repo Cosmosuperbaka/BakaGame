@@ -60,14 +60,6 @@ export const getStoredSongMusicSession = (
   );
 };
 
-export const getAllStoredSongMusicSessions = (): {
-  netease: StoredSongMusicSession | null;
-  qq: StoredSongMusicSession | null;
-} => ({
-  netease: getStoredSongMusicSession("netease"),
-  qq: getStoredSongMusicSession("qq"),
-});
-
 export const saveSongMusicSession = (
   session: Pick<StoredSongMusicSession, "cookie" | "account">,
   persistent: boolean,

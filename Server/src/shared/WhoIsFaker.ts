@@ -517,7 +517,6 @@ export interface WhoIsFakerPrivateState {
 
 // ==================== 谁是卧底客户端信封与消息 ====================
 
-export type WhoIsFakerClientEnvelope<TType extends string, TPayload> = ClientEnvelope<TType, TPayload>;
 
 export type WhoIsFakerClientMessage =
   | ClientEnvelope<"lobby.subscribeRooms", Record<string, never>>

@@ -35,13 +35,6 @@ export const ROLE_COLORS: Record<WhoIsFakerRole, string> = {
   blank: "text-muted-foreground",
 };
 
-// 阵营中文名
-export const SIDE_LABELS: Record<string, string> = {
-  good: "好人阵营",
-  undercover: "卧底阵营",
-  blank: "白板",
-};
-
 // 胜利者中文名
 export const WINNER_LABELS: Record<RoundWinner, string> = {
   good: "好人阵营胜利",

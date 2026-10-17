@@ -5,7 +5,7 @@ import { ToastViewport } from "@/components/Toast";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 
-export function WhoIsFakerLayout() {
+function WhoIsFakerLayout() {
   const toasts = useWhoIsFakerStore((state) => state.toasts);
   return (
     <WhoIsFakerProvider>

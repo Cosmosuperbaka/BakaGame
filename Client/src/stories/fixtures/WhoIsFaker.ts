@@ -15,7 +15,6 @@ import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "@/types";
 import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import type { PlayerListHistory } from "@/components/whoisfaker/layout/PlayerList";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { presetWhoIsFaker } from "@/stories/StorePresets";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS } from "./Common";
 
@@ -606,19 +605,6 @@ export function presetWifRoom(snapshot: WhoIsFakerRoomSnapshot, privateState: Wh
     connected: true, roomId: snapshot.roomId, sessionToken: privateState.sessionToken, snapshot, privateState,
   });
 }
-
-type WifStore = typeof useWhoIsFakerStore extends { getState: () => infer T } ? T : never;
-type WifStoreActions = Pick<WifStore, "sendCommand" | "joinRoom" | "createRoom" | "reconnectRoom">;
-
-/** 替换 Store 上的网络动作；预览层在下一个故事前会整体重置 Store，替换不会外溢。 */
-export function stubWifActions(actions: Partial<WifStoreActions>) {
-  useWhoIsFakerStore.setState(actions);
-}
-
-/** 按命令类型应答的 `sendCommand` 替身。 */
-export function stubWifCommand(handler: (type: string, payload?: Record<string, unknown>) => Promise<unknown>) {
-  stubWifActions({ sendCommand: handler as unknown as WifStore["sendCommand"] });
-}
 // ==================== 大厅 ====================
 
 function lobbyRoom(roomId: string, name: string, overrides: Partial<WhoIsFakerRoomSummary> = {}): WhoIsFakerRoomSummary {
@@ -671,8 +657,3 @@ export function wifHistory(stage: WifStage): PlayerListHistory {
   };
 }
 
-/** 组件故事里 `isPending` 的默认值：没有进行中的命令。 */
-export const noPending: (type: string) => boolean = () => false;
-
-/** 永不结算的请求，用于固定“提交中”这类进行态。 */
-export const pending = <T,>() => new Promise<T>(() => {});

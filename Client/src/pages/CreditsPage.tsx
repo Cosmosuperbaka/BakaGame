@@ -29,7 +29,7 @@ const changelog: ChangelogData = changelogData;
  * `virtual:commit-history`，依赖清单来自 `virtual:credits`；只有许可证原文在打开抽屉时才按桶加载。
  * 标签状态写进 `?tab=`，从页脚版本号进入时默认落在更新日志，直接打开页面时落在开源致谢。
  */
-export function CreditsPage() {
+function CreditsPage() {
   const navigate = usePageNavigate();
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");

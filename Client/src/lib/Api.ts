@@ -29,9 +29,6 @@ export const avatarSrc = (image: string): string => (image.startsWith("/") ? res
 export const isAccountDisabled = (error: unknown): boolean =>
   error instanceof ORPCError && error.code === "ACCOUNT_DISABLED";
 
-export const isUnauthorized = (error: unknown): boolean =>
-  error instanceof ORPCError && error.status === 401;
-
 const CJK = /[一-鿿]/;
 
 /**

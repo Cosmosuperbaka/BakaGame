@@ -36,7 +36,6 @@ export interface EventPacket {
   payload: unknown;
 }
 
-export type StatePathSegment = string | number;
 
 /** RFC 6902 (JSON Patch) 标准操作定义 */
 export type StatePatchOperation =
