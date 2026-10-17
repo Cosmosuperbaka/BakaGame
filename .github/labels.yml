@@ -33,9 +33,9 @@
 - name: scope/Song
   color: 5319e7
   description: SongGuessr（听歌猜歌）
-- name: scope/CCB
+- name: scope/CEE
   color: 91ca55
-  description: 二刺猿笑传之猜猜呗（AnimeCharacterGuessr）
+  description: CEE（二刺猿笑传之猜猜呗增强版）
 - name: scope/Core
   color: bfd4f2
   description: 公共能力、基础设施、主页

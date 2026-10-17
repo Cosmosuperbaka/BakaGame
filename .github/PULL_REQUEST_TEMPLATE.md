@@ -24,7 +24,7 @@
 
 - [ ] Faker（WhoIsFaker）
 - [ ] Song（SonGuessr）
-- [ ] CCB（猜动漫角色增强版）
+- [ ] CEE（二刺猿笑传之猜猜呗增强版）
 - [ ] Core（公共能力、基础设施、主页）
 
 ## 验证

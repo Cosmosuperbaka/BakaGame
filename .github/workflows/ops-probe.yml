@@ -107,7 +107,7 @@ jobs:
               echo "--- 索引列表（前 600 字节）---"
               curl -sS -m 4 "${AUTH[@]}" http://127.0.0.1:7700/indexes | head -c 600
               echo ""
-              for idx in bangumi_subjects bangumi_search_metadata ccb_subjects; do
+              for idx in bangumi_subjects bangumi_search_metadata; do
                 echo "--- $idx stats ---"
                 curl -sS -m 4 "${AUTH[@]}" "http://127.0.0.1:7700/indexes/$idx/stats" | head -c 300
                 echo ""
