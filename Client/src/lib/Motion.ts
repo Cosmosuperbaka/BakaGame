@@ -118,6 +118,13 @@ export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
 export const pageScale = { behind: 0.985, ahead: 1.015 } as const;
 
 /**
+ * 版本信息页（`/credits`）的专属开合行程：整页自视口底缘升起，关闭时沿原路落回页脚。
+ * 它读作「从页脚的版本号拉出一整页」，与其它页面的前后推入不同：
+ * 旧页留在原地当底衬，新页盖上来（关闭时反向揭示）。前后关系与方向写在 `index.css`。
+ */
+export const creditsPage = { travel: 100 } as const;
+
+/**
  * 进房编排：顶栏、玩家栏、游戏区、聊天栏按 `parts` 的顺序依次晚一步就位，读作「房间被搭起来」。
  * 玩家栏与聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入）。
  * 顺序在这里定义一次：CSS 的各栏延迟与 `roomEntranceMs` 都由它生成。
@@ -140,6 +147,7 @@ export function motionCssVariables(): Record<string, string> {
   variables["popover-exit-scale"] = String(popoverScale.exit);
   variables["page-behind-scale"] = String(pageScale.behind);
   variables["page-ahead-scale"] = String(pageScale.ahead);
+  variables["page-credits-travel"] = `${creditsPage.travel}%`;
   variables["room-entrance-scale"] = String(roomEntrance.scale);
   roomEntrance.parts.forEach((part, index) => {
     variables[`room-entrance-delay-${part}`] = seconds(index * roomEntrance.step);
@@ -387,6 +395,23 @@ export const backdrop: Variants = {
   initial: { opacity: 0 },
   animate: { opacity: 1, transition: { duration: duration.quick } },
   exit: { opacity: 0, transition: { duration: duration.quick } },
+};
+
+/** 侧边抽屉的滑入方向。 */
+export type SheetSide = "left" | "right";
+
+/**
+ * 侧边抽屉的面板：自所在边缘整块滑入。`custom` 传 `SheetSide`（右侧抽屉从右缘滑入、左侧从左缘滑入），
+ * 关闭沿原路滑出，与来源锚定同一条物理——从哪里拉出来就送回哪里去。
+ * 面板只动位移，不做淡入；遮罩层单独走 `backdrop`（先出现、后消失）。
+ */
+export const sheetSlide: Variants = {
+  initial: (side: SheetSide) => ({ x: side === "right" ? "100%" : "-100%" }),
+  animate: { x: 0, transition: spring.swift },
+  exit: (side: SheetSide) => ({
+    x: side === "right" ? "100%" : "-100%",
+    transition: { duration: duration.quick, ease: ease.inOut },
+  }),
 };
 
 /** 自左缘擦入的覆盖面板。宽度方向的裁切让面板读作“拉开”。 */
@@ -665,13 +690,13 @@ export const emergeFromOrigin: Variants = {
   },
 };
 
-// ==================== 抛掷与收回 ====================
-// 弹窗开合、标签推移、聊天发送各自成套、互不引用对方的参数，只共用同一套物理：位移与形变都由二阶弹簧阻尼驱动，不做淡入淡出。
+// ==================== 抛掷物理 ====================
+// 标签推移与聊天发送各自成套、互不引用对方的参数，只共用同一套物理：位移与形变都由二阶弹簧阻尼驱动，不做淡入淡出。
 // 沿位移方向（主轴）与垂直方向（副轴）用两档不同的弹簧，主轴快、副轴软而慢半拍：
 // 飞行途中沿运动方向拉长，落位时副轴冲过头、横向铺开再回弹，读作有质量的东西被抛到位。
 
-/** 位移向量：元素自落点指向来源（按钮、上一个位置）的偏移，单位像素。 */
-export interface FlingVector {
+/** 二维位移向量：元素自落点指向来源（按钮、上一个位置）的偏移，单位像素。 */
+export interface AxesVector {
   dx: number;
   dy: number;
 }
@@ -680,7 +705,7 @@ export interface FlingVector {
  * 把「主轴、副轴」上的两个值落到 scaleX / scaleY：取位移较大的那一轴为主轴，没有位移时按纵向处理。
  * 主轴是运动方向，副轴与它垂直。
  */
-export function byAxes<T>({ dx, dy }: FlingVector, along: T, across: T): { scaleX: T; scaleY: T } {
+export function byAxes<T>({ dx, dy }: AxesVector, along: T, across: T): { scaleX: T; scaleY: T } {
   return Math.abs(dx) > Math.abs(dy) ? { scaleX: along, scaleY: across } : { scaleX: across, scaleY: along };
 }
 
@@ -691,72 +716,6 @@ export function byAxes<T>({ dx, dy }: FlingVector, along: T, across: T): { scale
 export function springWithVelocity(token: SpringToken, launch: number, from: number, to: number): Transition {
   return { ...token, velocity: launch * (to - from) };
 }
-
-/** 弹窗抛掷的形态参数。 */
-export const flingShape = {
-  /** 离开按钮那一刻的尺度：约等于按钮本身；主轴带着初速度先长、副轴后铺开，途中自然拉长 */
-  from: { along: 0.06, across: 0.14 },
-  /** 收进按钮时的尺度：副轴收到 0，窗口缩成一条看不见的线，卸载时没有残影 */
-  into: { along: 0.04, across: 0 },
-  /** 抛出时沿行程的初速度 */
-  launch: 2,
-  /** 收回前主轴的蓄力：初速度为负，窗口先鼓一下再被吸走 */
-  windup: -4.5,
-} as const;
-
-/** 视口中心指向某点的向量：居中弹窗的中心就是视口中心，不必等挂载后再量。 */
-export function flingVector(point: OriginPoint | null): FlingVector {
-  if (!point) return { dx: 0, dy: 0 };
-  return { dx: point.x - window.innerWidth / 2, dy: point.y - window.innerHeight / 2 };
-}
-
-const NO_FLING: FlingVector = { dx: 0, dy: 0 };
-
-/**
- * 弹窗从按钮里被抛出、关闭时吸回按钮。`custom` 传 `flingVector(origin)`。
- * 进场：位移按 `spring.thrust` 带着动量冲过中心再拉回，主轴尺度同档，副轴走更软的 `spring.wobble`，
- * 途中沿飞行方向拉长、落位时横向铺开再回弹。退场：主轴先蓄力鼓起，位移与尺度按 `spring.recall` 收回按钮。
- * 全程不动透明度，缩放原点留在中心，由位移把窗口带到按钮上。减弱动效时 MotionConfig 让变换直接落位。
- */
-export const flingWindow: Variants = {
-  initial: (vector: FlingVector = NO_FLING) => ({
-    x: vector.dx,
-    y: vector.dy,
-    ...byAxes(vector, flingShape.from.along, flingShape.from.across),
-  }),
-  animate: (vector: FlingVector = NO_FLING) => {
-    const { from, launch } = flingShape;
-    return {
-      x: 0,
-      y: 0,
-      scaleX: 1,
-      scaleY: 1,
-      transition: {
-        x: springWithVelocity(spring.thrust, launch, vector.dx, 0),
-        y: springWithVelocity(spring.thrust, launch, vector.dy, 0),
-        ...byAxes<Transition>(vector, springWithVelocity(spring.thrust, launch, from.along, 1), spring.wobble),
-      },
-    };
-  },
-  exit: (vector: FlingVector = NO_FLING) => {
-    const { into, windup } = flingShape;
-    return {
-      x: vector.dx,
-      y: vector.dy,
-      ...byAxes(vector, into.along, into.across),
-      pointerEvents: "none",
-      transition: {
-        x: spring.recall,
-        y: spring.recall,
-        // 副轴走几乎不过冲的 snap：收到 0 时不会冲成负值、翻出一道镜像的细缝
-        ...byAxes<Transition>(vector, springWithVelocity(spring.recall, windup, 1, into.along), spring.snap),
-      },
-    };
-  },
-};
-
-/** 窗口收回、撞进按钮的时刻（毫秒）：位移走完九成。按钮在这一刻被撞得抖一下。 */
-export const flingDockMs = springReachMs(spring.recall, 0.9);
 
 /** 标签内容推移：一整幅面板加一道缝的行程（百分比）、途中纵向的压扁程度、点击带来的初速度。 */
 export const tabPush = { travel: 104, squash: 0.96, launch: 1.5 } as const;
@@ -842,8 +801,6 @@ const holdStep = (progress: number) => (progress > 0 ? 1 : 0);
 export const jitterShape = {
   /** 发送按钮的图标被射出的胶囊反冲 */
   sendRecoil: { y: 2, rotate: -12 },
-  /** 版本号按钮被收回的窗口撞了一下 */
-  versionDock: { y: 2.5 },
 } as const;
 
 /** 把振幅展开成可以直接交给 `animate` 的阶梯关键帧与过渡。 */

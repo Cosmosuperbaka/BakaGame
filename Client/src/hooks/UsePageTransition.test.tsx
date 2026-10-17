@@ -12,6 +12,7 @@ import {
 /** 浏览器拍快照那一刻的状态：旧页在调用 startViewTransition 时、新页在更新回调完成时。 */
 interface Capture {
   direction: string | undefined;
+  transition: string | undefined;
   names: Record<string, string | null>;
 }
 
@@ -20,7 +21,11 @@ const nameOf = (node: HTMLElement) => node.style.viewTransitionName || null;
 function snapshot(): Capture {
   const names: Record<string, string | null> = {};
   for (const node of document.querySelectorAll<HTMLElement>("[data-shared]")) names[node.dataset.shared!] = nameOf(node);
-  return { direction: document.documentElement.dataset.pageDirection, names };
+  return {
+    direction: document.documentElement.dataset.pageDirection,
+    transition: document.documentElement.dataset.pageTransition,
+    names,
+  };
 }
 
 function stubViewTransition() {
@@ -64,6 +69,7 @@ function renderRouter(initial: string) {
             <Shared id="card-a" partner="/a" />
             <Shared id="card-b" partner="/b" />
             <Go to="/a" label="进入 A" />
+            <Go to="/credits" label="打开版本信息" />
           </Frame>
         ),
       },
@@ -77,6 +83,15 @@ function renderRouter(initial: string) {
           </Frame>
         ),
       },
+      {
+        path: "/credits",
+        element: (
+          <Frame>
+            <p>credits</p>
+            <Go to="/" label="离开版本信息" />
+          </Frame>
+        ),
+      },
     ],
     { initialEntries: [initial] },
   );
@@ -86,6 +101,7 @@ function renderRouter(initial: string) {
 afterEach(() => {
   delete (document as { startViewTransition?: unknown }).startViewTransition;
   delete document.documentElement.dataset.pageDirection;
+  delete document.documentElement.dataset.pageTransition;
 });
 
 describe("usePageNavigate", () => {
@@ -99,9 +115,42 @@ describe("usePageNavigate", () => {
 
     expect(start).toHaveBeenCalledTimes(1);
     // 旧页：去往 /a 的卡片命名，另一张卡片不命名，免得重名或在不相干的过渡里单独淡出。
-    expect(captures.old).toEqual({ direction: "forward", names: { "card-a": "title", "card-b": null } });
+    expect(captures.old).toEqual({
+      direction: "forward",
+      transition: undefined,
+      names: { "card-a": "title", "card-b": null },
+    });
     // 新页：大厅标题与之同名，两者读作同一个元素。
-    expect(captures.new).toEqual({ direction: "forward", names: { "lobby-title": "title" } });
+    expect(captures.new).toEqual({
+      direction: "forward",
+      transition: undefined,
+      names: { "lobby-title": "title" },
+    });
+  });
+
+  it("版本信息页双方都带 credits 形态，方向告诉 CSS 该升起还是落回", async () => {
+    const { captures } = stubViewTransition();
+    renderRouter("/");
+
+    await userEvent.click(screen.getByRole("button", { name: "打开版本信息" }));
+    expect(await screen.findByText("credits")).toBeInTheDocument();
+    await waitFor(() => expect(captures.new).toBeDefined());
+
+    expect(captures.old).toMatchObject({ direction: "forward", transition: "credits" });
+    expect(captures.new).toMatchObject({ direction: "forward", transition: "credits" });
+  });
+
+  it("离开版本信息页：方向为 back，过渡结束后撤掉形态标记", async () => {
+    const { captures } = stubViewTransition();
+    renderRouter("/credits");
+
+    await userEvent.click(screen.getByRole("button", { name: "离开版本信息" }));
+    expect(await screen.findByText("landing")).toBeInTheDocument();
+    await waitFor(() => expect(captures.new).toBeDefined());
+
+    expect(captures.old).toMatchObject({ direction: "back", transition: "credits" });
+    expect(captures.new).toMatchObject({ direction: "back", transition: "credits" });
+    await waitFor(() => expect(document.documentElement.dataset.pageTransition).toBeUndefined());
   });
 
   it("回到更浅一层：方向为 back，过渡结束后撤掉方向与命名", async () => {
@@ -112,8 +161,16 @@ describe("usePageNavigate", () => {
     expect(await screen.findByText("landing")).toBeInTheDocument();
     await waitFor(() => expect(captures.new).toBeDefined());
 
-    expect(captures.old).toEqual({ direction: "back", names: { "lobby-title": "title" } });
-    expect(captures.new).toEqual({ direction: "back", names: { "card-a": "title", "card-b": null } });
+    expect(captures.old).toEqual({
+      direction: "back",
+      transition: undefined,
+      names: { "lobby-title": "title" },
+    });
+    expect(captures.new).toEqual({
+      direction: "back",
+      transition: undefined,
+      names: { "card-a": "title", "card-b": null },
+    });
     await waitFor(() => expect(document.documentElement.dataset.pageDirection).toBeUndefined());
     expect(snapshot().names).toEqual({ "card-a": null, "card-b": null });
   });
@@ -124,6 +181,7 @@ describe("usePageNavigate", () => {
     await userEvent.click(screen.getByRole("button", { name: "进入 A" }));
     expect(await screen.findByText("lobby-a")).toBeInTheDocument();
     expect(document.documentElement.dataset.pageDirection).toBeUndefined();
+    expect(document.documentElement.dataset.pageTransition).toBeUndefined();
   });
 });
 

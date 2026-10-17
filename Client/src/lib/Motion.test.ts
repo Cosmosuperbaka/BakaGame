@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  byAxes,
+  creditsPage,
   duration,
   ease,
-  byAxes,
-  flingDockMs,
-  flingShape,
-  flingWindow,
   followDelay,
   installMotionTokens,
   jitterFrames,
+  sheetSlide,
   stepJitter,
   stepJitterAnimation,
   springReachMs,
@@ -41,33 +40,31 @@ function linearPoints(easing: string): number[] {
 }
 
 describe("Motion tokens", () => {
-  it("抛掷取位移较大的一轴为主轴，形变只落在 scale 上，全程不动透明度", () => {
+  it("抛掷取位移较大的一轴为主轴，形变只落在 scale 上", () => {
     expect(byAxes({ dx: 400, dy: 10 }, "along", "across")).toEqual({ scaleX: "along", scaleY: "across" });
     expect(byAxes({ dx: 10, dy: 300 }, "along", "across")).toEqual({ scaleX: "across", scaleY: "along" });
-    const resolve = (key: "initial" | "animate" | "exit", vector: { dx: number; dy: number }) =>
-      (flingWindow[key] as (vector: { dx: number; dy: number }) => Record<string, unknown>)(vector);
-    const vector = { dx: 120, dy: 300 };
-    // 按钮在下方：从按钮的位置、约按钮大小出发，纵向是主轴
-    expect(resolve("initial", vector)).toEqual({ x: 120, y: 300, scaleX: flingShape.from.across, scaleY: flingShape.from.along });
-    for (const key of ["initial", "animate", "exit"] as const) expect(resolve(key, vector)).not.toHaveProperty("opacity");
-  });
-
-  it("抛掷进场带着朝落点的初速度，副轴比主轴软；收回时主轴先蓄力", () => {
-    const enter = (flingWindow.animate as (vector: { dx: number; dy: number }) => { transition: Record<string, { velocity?: number; stiffness: number }> })({ dx: 0, dy: 300 });
-    expect(enter.transition.y.velocity).toBeLessThan(0);
-    expect(enter.transition.scaleY.velocity).toBeGreaterThan(0);
-    expect(enter.transition.scaleX.stiffness).toBeLessThan(enter.transition.scaleY.stiffness);
-    const exit = (flingWindow.exit as (vector: { dx: number; dy: number }) => { transition: Record<string, { velocity?: number }> })({ dx: 0, dy: 300 });
-    // 目标比 1 小，初速度却是正的：窗口先鼓一下再被吸走
-    expect(exit.transition.scaleY.velocity).toBeGreaterThan(0);
-    expect(flingDockMs).toBeGreaterThan(0);
-    expect(flingDockMs).toBeLessThan(springReachMs(spring.recall, 1));
   });
 
   it("负的初速度先朝反方向走，正的初速度更早到达", () => {
     expect(Math.min(...springTrace(spring.recall, -8))).toBeLessThan(0);
     expect(Math.min(...springTrace(spring.recall))).toBe(0);
     expect(springReachMs(spring.thrust, 0.9, 2)).toBeLessThan(springReachMs(spring.thrust, 0.9));
+  });
+
+  it("侧边抽屉自所在边缘滑入、沿原路滑出，面板不动透明度", () => {
+    const initial = sheetSlide.initial as (side: "left" | "right") => Record<string, unknown>;
+    const exit = sheetSlide.exit as (side: "left" | "right") => Record<string, unknown>;
+    expect(initial("right")).toEqual({ x: "100%" });
+    expect(initial("left")).toEqual({ x: "-100%" });
+    expect(exit("right")).toMatchObject({ x: "100%" });
+    expect(exit("left")).toMatchObject({ x: "-100%" });
+    expect(initial("right")).not.toHaveProperty("opacity");
+    expect(exit("right")).not.toHaveProperty("opacity");
+  });
+
+  it("版本信息页的开合行程写进 CSS 变量，与整页位移同一真相源", () => {
+    expect(creditsPage.travel).toBe(100);
+    expect(motionCssVariables()["page-credits-travel"]).toBe("100%");
   });
 
   it("副轴的 wobble 比主轴的 thrust 过冲更大、落定更晚", () => {

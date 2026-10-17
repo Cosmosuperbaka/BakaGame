@@ -47,10 +47,25 @@ export function useSharedElementName(name: string, partner?: string | false): st
 
 const pathDepth = (pathname: string) => pathname.split("/").filter(Boolean).length;
 
+/** 只属于某一对页面的过渡形态；其它导航省略，走 `index.css` 的默认前后推入。 */
+export type PageTransitionKind = "credits";
+
 /**
- * 把过渡方向写到 `<html data-page-direction>`：去往更深一层的页面（主页→大厅→房间）为 forward，
- * 回到更浅的页面为 back，CSS 据此对调新旧两层的前后关系。浏览器的前进后退同样经过这里。
- * 布局副作用在 React Router 发起 `startViewTransition` 之前执行，方向总能赶上本次快照。
+ * 本次过渡的专属形态。版本信息页（`/credits`）与任何页面之间都走「自底缘升起 / 落回页脚」，
+ * 读作从页脚版本号拉出一整页，而不是页面被前后推入。方向（前进/返回）仍由 `data-page-direction` 决定。
+ */
+export function pageTransitionKind(
+  from: string | undefined,
+  to: string | undefined,
+): PageTransitionKind | undefined {
+  return from === "/credits" || to === "/credits" ? "credits" : undefined;
+}
+
+/**
+ * 把过渡方向写到 `<html data-page-direction>`、把专属形态写到 `<html data-page-transition>`：
+ * 去往更深一层的页面（主页→大厅→房间）为 forward，回到更浅的页面为 back，CSS 据此对调新旧两层的前后关系。
+ * 浏览器的前进后退同样经过这里。布局副作用在 React Router 发起 `startViewTransition` 之前执行，
+ * 方向与形态总能赶上本次快照。
  */
 export function usePageTransitionDirection(): void {
   const ends = usePageTransitionEnds();
@@ -60,8 +75,12 @@ export function usePageTransitionDirection(): void {
     const root = document.documentElement;
     if (from === undefined || to === undefined) {
       delete root.dataset.pageDirection;
+      delete root.dataset.pageTransition;
       return;
     }
     root.dataset.pageDirection = pathDepth(to) < pathDepth(from) ? "back" : "forward";
+    const kind = pageTransitionKind(from, to);
+    if (kind) root.dataset.pageTransition = kind;
+    else delete root.dataset.pageTransition;
   }, [from, to]);
 }

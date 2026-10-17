@@ -54,7 +54,7 @@ try {
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
 
-  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/ccb", "/unknown-route"];
+  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/ccb", "/credits", "/unknown-route"];
   for (const route of spaRoutes) {
     const response = await fetch(`${baseUrl}${route}`);
     if (!response.ok) throw new Error(`${route} 返回 HTTP ${response.status}`);
@@ -71,6 +71,7 @@ try {
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
     { route: "/songuessr", text: "音乐与动漫番剧竞猜", canonical: "https://game.baka.website/songuessr" },
     { route: "/ccb", text: "在线猜动漫角色", canonical: "https://game.baka.website/ccb" },
+    { route: "/credits", text: "开源致谢", canonical: "https://game.baka.website/credits" },
   ];
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
@@ -101,6 +102,7 @@ try {
     "https://game.baka.website/whoisfaker",
     "https://game.baka.website/songuessr",
     "https://game.baka.website/ccb",
+    "https://game.baka.website/credits",
   ];
   const sitemapXml = await (await fetch(`${baseUrl}/sitemap.xml`)).text();
   for (const loc of sitemapLocs) {

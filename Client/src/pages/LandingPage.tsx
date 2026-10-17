@@ -1,14 +1,10 @@
-import { useEffect, useRef, useState, useMemo } from "react";
-import { animate, motion, useReducedMotion } from "framer-motion";
+import { useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import {
-  flingDockMs,
-  jitterShape,
   listItem,
   listContainer,
   iconTappable,
   pressable,
-  stepJitterAnimation,
-  useOriginTracker,
 } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
 import { ArrowUpRight } from "lucide-react";
@@ -22,29 +18,14 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
-import {
-  parseChangelogEntry,
-  resolveLatestVersion,
-  sortEntriesByVersion,
-  type ChangelogContent,
-  type ChangelogEntry,
-  type InlineNode,
-} from "@/lib/Changelog";
+import { resolveLatestVersion, sortEntriesByVersion } from "@/lib/Changelog";
+import type { ChangelogEntry } from "@/lib/Changelog";
 // 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
 // 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
 import changelogData from "@/data/changelog.json";
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import commitHistory from "virtual:commit-history";
-import { formatAbsoluteTime, formatRelativeTime } from "@/lib/Time";
 import { cn } from "@/lib/Utils";
 
 interface ChangelogData {
@@ -54,8 +35,6 @@ interface ChangelogData {
 // JSON 直接 import 时结构由内容推断，这里锚定成契约类型，
 // 手写日志漏字段或写错类型在构建期就会报错。
 const changelog: ChangelogData = changelogData;
-
-type CommitEntry = (typeof commitHistory.commits)[number];
 
 interface GameSubMode {
   id: string;
@@ -353,155 +332,12 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
   );
 }
 
-function InlineContent({ nodes }: { nodes: InlineNode[] }) {
-  return (
-    <>
-      {nodes.map((node, index) => {
-        switch (node.kind) {
-          case "strong":
-            return (
-              <strong key={index} className="font-semibold text-foreground">
-                {node.text}
-              </strong>
-            );
-          case "code":
-            return (
-              <code key={index} className="rounded-md bg-muted px-1 py-0.5 font-mono text-xs">
-                {node.text}
-              </code>
-            );
-          case "link":
-            return (
-              <a
-                key={index}
-                href={node.href}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary underline underline-offset-2"
-              >
-                {node.text}
-              </a>
-            );
-          default:
-            return <span key={index}>{node.text}</span>;
-        }
-      })}
-    </>
-  );
-}
 
-function ChangelogBody({ content }: { content: ChangelogContent }) {
-  const sections = parseChangelogEntry(content);
-
-  if (sections.length === 0) {
-    return <div className="py-2 text-sm text-muted-foreground">暂无详细说明</div>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {sections.map((section) => (
-        <div key={section.type} className="space-y-1.5" data-testid={`changelog-category-${section.type}`}>
-          <div className="flex items-center gap-1.5">
-            <Badge variant="secondary" size="xs" className="font-mono lowercase">
-              {section.type}
-            </Badge>
-            <span className="text-xs font-semibold text-foreground">{section.label}</span>
-          </div>
-          <div className="space-y-1 text-sm text-muted-foreground pl-0.5">
-            {section.blocks.map((block, index) =>
-              block.kind === "list" ? (
-                <ul key={index} className="ml-4 list-outside list-disc space-y-1">
-                  {block.items.map((item, itemIndex) => (
-                    <li key={itemIndex} className="pl-0.5">
-                      <InlineContent nodes={item} />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p key={index}>
-                  <InlineContent nodes={block.content} />
-                </p>
-              ),
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CommitTimeline({ commits }: { commits: CommitEntry[] }) {
-  if (commits.length === 0) {
-    return <div className="py-6 text-center text-sm text-muted-foreground">暂无提交记录</div>;
-  }
-
-  return (
-    <ol className="relative ml-1 border-l">
-      {commits.map((commit) => (
-        <li key={commit.hash} className="relative pb-4 pl-5 last:pb-0">
-          <span
-            aria-hidden="true"
-            className="absolute top-1.5 -left-[4.5px] h-2 w-2 rounded-full bg-border"
-          />
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="min-w-0 text-sm break-words">{commit.message}</span>
-            {/* 相对时间说不出是哪一天，悬停给出确切时刻，用于判断自己是不是旧版本 */}
-            <time
-              className="shrink-0 text-xs text-muted-foreground"
-              dateTime={commit.date}
-              title={formatAbsoluteTime(commit.date)}
-              suppressHydrationWarning
-            >
-              {formatRelativeTime(commit.date)}
-            </time>
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            {/* 哈希即入口：点进去是这次提交在仓库里的完整改动 */}
-            <a
-              href={`${REPOSITORY_URL}/commit/${commit.hash}`}
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono transition-colors hover:text-foreground"
-            >
-              {commit.hash}
-            </a>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{commit.author}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-/** 版本信息弹窗的面板：两个标签同一固定高度，内部滚动。 */
-const INFO_PANEL = "scrollbar-hidden h-[min(58vh,34rem)] overflow-y-auto overscroll-contain";
+/** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
+const VERSION_PAGE_PATH = "/credits?tab=changelog";
 
 export default function LandingPage() {
-  const [infoOpen, setInfoOpen] = useState(false);
-  const { origin, capture } = useOriginTracker();
-  const versionRef = useRef<HTMLSpanElement>(null);
-  const reducedMotion = useReducedMotion();
-  const [docking, setDocking] = useState(0);
-  // 弹窗被吸回版本号的那一刻，号码被撞得逐格抖一下（定格阶梯抖动），读作窗口真的收进了按钮里。
-  useEffect(() => {
-    if (!docking || reducedMotion) return;
-    let stop: (() => void) | undefined;
-    const timer = window.setTimeout(() => {
-      const node = versionRef.current;
-      if (!node) return;
-      const { keyframes, transition } = stepJitterAnimation(jitterShape.versionDock);
-      stop = animate(node, keyframes, transition).stop;
-    }, flingDockMs);
-    return () => {
-      window.clearTimeout(timer);
-      stop?.();
-    };
-  }, [docking, reducedMotion]);
-  const changeInfoOpen = (open: boolean) => {
-    setInfoOpen(open);
-    if (!open) setDocking((count) => count + 1);
-  };
+  const navigate = usePageNavigate();
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
   // 也不依赖 entries 的书写顺序。
@@ -510,8 +346,6 @@ export default function LandingPage() {
   // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
   const commit = commitHistory.currentCommit;
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
-  // 弹窗标题只写「版本信息」，版本号与提交哈希放在描述里，读屏打开弹窗时一并读出。
-  const versionDescription = `V${version ?? "∞"}${commit ? ` · ${commit}` : ""}`;
 
   return (
     <div className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
@@ -581,59 +415,16 @@ export default function LandingPage() {
           <motion.button
             type="button"
             {...pressable}
-            onClick={(event) => {
-              capture(event);
-              setInfoOpen(true);
-            }}
+            onClick={() => navigate(VERSION_PAGE_PATH)}
             className="min-h-8 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <span ref={versionRef} className="inline-block">{versionLabel}</span>
+            {versionLabel}
           </motion.button>
           <FeedbackButton />
         </div>
       </footer>
 
       <AccountDialogs />
-
-      <Dialog open={infoOpen} onOpenChange={changeInfoOpen} origin={origin} fling>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>版本信息</DialogTitle>
-            <DialogDescription className="font-mono">{versionDescription}</DialogDescription>
-          </DialogHeader>
-          {/* 窗口带着动量从版本号里抛出来、关上时吸回去；切标签时两幅内容整幅推过去 */}
-          <Tabs defaultValue="changelog">
-            <TabsList className="mb-4 w-full">
-              <TabsTrigger value="changelog" className="flex-1">更新日志</TabsTrigger>
-              <TabsTrigger value="commits" className="flex-1">提交历史</TabsTrigger>
-            </TabsList>
-            {/* 两份数据都在构建期定型（提交历史取自 GitHub 接口，取不到时降级为本地 git 历史），
-                打开弹窗即可用，不存在加载中状态。
-                两个面板同高：切换标签时弹窗不跟着伸缩，内容在原地整幅推过去。 */}
-            <TabsContent value="changelog" className={INFO_PANEL}>
-              {entries.length > 0 ? (
-                <ol className="space-y-6">
-                  {entries.map((entry) => (
-                    <li key={entry.version} className="grid gap-2 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-4">
-                      {/* 宽屏版本号在左栏随滚动吸顶，读完一段长日志仍知道是哪个版本 */}
-                      <div className="flex items-baseline gap-2 sm:sticky sm:top-0 sm:flex-col sm:gap-0.5 sm:self-start">
-                        <strong className="text-base">V{entry.version}</strong>
-                        <span className="text-xs text-muted-foreground">{entry.date}</span>
-                      </div>
-                      <ChangelogBody content={entry.content} />
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <div className="py-6 text-center text-sm text-muted-foreground">暂无更新日志</div>
-              )}
-            </TabsContent>
-            <TabsContent value="commits" className={cn(INFO_PANEL, "pr-1")}>
-              <CommitTimeline commits={commitHistory.commits} />
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

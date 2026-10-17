@@ -1,6 +1,6 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import LandingPage from "./LandingPage";
@@ -70,27 +70,26 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
-  it("renders categorized changelog in modal and omits absent categories", async () => {
+  it("版本号打开完整版本信息页并落在更新日志标签", async () => {
     const user = userEvent.setup();
-    renderLandingPage();
+    function CreditsProbe() {
+      const location = useLocation();
+      return <p>{`credits${location.pathname}${location.search}`}</p>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<TooltipProvider><LandingPage /></TooltipProvider>} />
+          <Route path="/credits" element={<CreditsProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
 
-    const versionButton = screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ });
-    await user.click(versionButton);
+    await user.click(screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ }));
 
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-
-    // 检查存在对应更新的分类 Badge 与条目
-    const featBadges = screen.getAllByText("feat");
-    expect(featBadges.length).toBeGreaterThan(0);
-    expect(screen.getByText("更新日志支持按变更类型分类展示")).toBeInTheDocument();
-    expect(screen.getByText("Whoisfaker新增观战频道")).toBeInTheDocument();
-
-    const fixBadges = screen.getAllByText("fix");
-    expect(fixBadges.length).toBeGreaterThan(0);
-
-    // 未填写的类型（如 docs、revert）在更新日志中不渲染
-    expect(screen.queryByText("docs")).not.toBeInTheDocument();
-    expect(screen.queryByText("revert")).not.toBeInTheDocument();
+    expect(await screen.findByText("credits/credits?tab=changelog")).toBeInTheDocument();
+    // 弹窗入口已经删除：版本详情只在完整页面上出现。
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("formats relative time correctly using Intl.RelativeTimeFormat", () => {

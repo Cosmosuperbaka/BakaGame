@@ -400,6 +400,48 @@ html {
   }
 }
 
+/* 版本信息页（/credits）的专属过渡：整页自视口底缘升起，关闭时沿原路落回页脚。
+   它读作「从页脚的版本号拉出一整页」，不是页面被前后推入：旧页保持静止当底衬，新页盖上来；
+   关闭时版本信息页向下落回、落地页从底下被重新揭示。形态由 hooks/UsePageTransition 写到
+   <html data-page-transition="credits">，方向仍沿用 data-page-direction（前进升起、返回落回）。 */
+@keyframes credits-page-rise {
+  from {
+    transform: translateY(var(--motion-page-credits-travel));
+  }
+}
+
+@keyframes credits-page-sink {
+  to {
+    transform: translateY(var(--motion-page-credits-travel));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-page-transition="credits"]::view-transition-old(root) {
+    mix-blend-mode: normal;
+    z-index: 1;
+    animation: none;
+  }
+  :root[data-page-transition="credits"]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    z-index: 2;
+    animation: credits-page-rise var(--motion-spring-settle-duration) var(--motion-spring-settle) both;
+  }
+  /* 关闭：版本信息页落回页脚，落地页在底下保持静止。 */
+  :root[data-page-transition="credits"][data-page-direction="back"]::view-transition-old(root) {
+    z-index: 2;
+    animation: credits-page-sink var(--motion-spring-recall-duration) var(--motion-spring-recall) both;
+  }
+  :root[data-page-transition="credits"][data-page-direction="back"]::view-transition-new(root) {
+    z-index: 1;
+    animation: none;
+  }
+  /* 整段过渡的时长取两层里较长的一档，位移走完前不收尾。 */
+  :root[data-page-transition="credits"]::view-transition-group(root) {
+    animation-duration: var(--motion-spring-settle-duration);
+  }
+}
+
 /* 进房编排（RoomShell 挂载后的 roomEntranceMs 内带 data-room-entering）：
    顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 Motion.ts 生成。
    玩家栏、聊天栏自外侧边缘等比展开；顶栏与游戏区只显影，游戏区内容另由 phaseSwap 自后推入，两层不叠缩放。
