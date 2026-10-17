@@ -11,8 +11,6 @@ import type { QQLookupStatus } from "../shared/ApiContract";
 export const QQ_NAME_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** 后台「全部刷新」单次最多处理的账号数，其余由下一次点击继续。 */
 const REFRESH_ALL_LIMIT = 200;
-/** 后台状态面板的探测节流：NapCat 掉线时页面每次刷新都打一次没有意义。 */
-const STATUS_TTL_MS = 15_000;
 
 interface UserRow {
   id: string;
@@ -48,30 +46,30 @@ export class QQNicknameService {
   /** 刚查到的昵称：注册预填后紧接着的首次访问刷新不再重复请求。 */
   private readonly recent: LRUCache<string, string>;
   private refreshing = false;
-  private statusCache: { at: number; value: QQLookupStatus } | null = null;
 
   constructor(private readonly options: QQNicknameServiceOptions) {
     this.now = options.now ?? Date.now;
     this.recent = new LRUCache({ max: 512, ttl: 10 * 60 * 1000, perf: { now: () => this.now() } });
   }
 
-  /** NapCat 的登录状态。探测结果缓存 15 秒，避免后台轮询把状态页变成刷接口。 */
+  /**
+   * NapCat 的登录状态。
+   *
+   * 每次实时探测、不缓存：它只是 NapCat 本地的 `get_login_info`，不触碰 QQ 侧接口，
+   * 而缓存会让后台「重新检测」点下去毫无反应——那正是运维需要它准的时候。
+   */
   async status(): Promise<QQLookupStatus> {
-    if (this.statusCache && this.now() - this.statusCache.at < STATUS_TTL_MS) return this.statusCache.value;
     const checkedAt = new Date(this.now()).toISOString();
-    let value: QQLookupStatus;
     try {
       const info = await this.options.client.loginInfo();
-      value = info
+      return info
         ? { state: "active", uin: info.uin, nickname: info.nickname, checkedAt, error: null }
         : { state: "unavailable", uin: null, nickname: null, checkedAt, error: "NapCat 当前没有登录任何 QQ 号" };
     } catch (error) {
       const kind = error instanceof AppError ? (error.details as { kind?: string } | undefined)?.kind : undefined;
       this.options.logger.warn("QQ 昵称服务不可用", { kind, error: String(error) });
-      value = { state: "unavailable", uin: null, nickname: null, checkedAt, error: statusMessage(kind) };
+      return { state: "unavailable", uin: null, nickname: null, checkedAt, error: statusMessage(kind) };
     }
-    this.statusCache = { at: this.now(), value };
-    return value;
   }
 
   /**
