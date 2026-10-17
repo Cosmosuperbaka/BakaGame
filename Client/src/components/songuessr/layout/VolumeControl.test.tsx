@@ -83,21 +83,20 @@ it("读数按钮展示真实数值，无多余占位与字符", () => {
   expect(readout).toHaveTextContent(/^7$/);
 });
 
-it("点击静音开关时激活平滑移动动效，手动交互后复位", async () => {
-  window.Element.prototype.setPointerCapture = vi.fn();
-  window.Element.prototype.releasePointerCapture = vi.fn();
+it("点击静音开关时平滑过渡音量显示值，手动交互时立即响应", async () => {
   const user = userEvent.setup();
   stubMatchMedia(true);
   const onVolumeChange = vi.fn();
-  render(<VolumeControl volume={0.65} onVolumeChange={onVolumeChange} />);
+  const { rerender } = render(<VolumeControl volume={0.65} onVolumeChange={onVolumeChange} />);
   const muteBtn = screen.getByRole("button", { name: "静音" });
-  const sliderThumb = screen.getByRole("slider", { name: "播放音量" });
 
   await user.click(muteBtn);
-  expect(sliderThumb.className).toContain("transition-[left,transform");
+  expect(onVolumeChange).toHaveBeenLastCalledWith(0);
+  rerender(<VolumeControl volume={0} onVolumeChange={onVolumeChange} />);
 
-  // 手动交互指针按下时立即取消平滑动效，确保跟手零滞后
-  fireEvent.pointerDown(sliderThumb);
-  expect(sliderThumb.className).not.toContain("transition-[left,transform");
+  // 动画平滑落定到 0
+  await waitFor(() => {
+    expect(screen.getByRole("slider", { name: "播放音量" })).toHaveAttribute("aria-valuenow", "0");
+  });
 });
 

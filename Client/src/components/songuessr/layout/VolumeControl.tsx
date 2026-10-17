@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
+import { animate, AnimatePresence, motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -130,21 +130,33 @@ function DigitItem({ index, char, position }: { index: number; char: string; pos
 
 function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boolean }) {
   const reduced = useReducedMotion();
+  const isFirstMount = useRef(true);
+  // 当首次挂载且处于增加态且初始数字大于0时，让轮盘位置从 0 开始拉起，顺畅从 0 向上翻滚到目标数字
+  const initialPos = isFirstMount.current && isAscending && digit > 0 ? 0 : digit;
   const target = useRef(digit);
-  const prevDigit = useRef(digit);
-  const position = useSpring(digit, digitRoll.follow);
+  const prevDigit = useRef(initialPos);
+  const position = useSpring(initialPos, { stiffness: 380, damping: 26, mass: 0.8 });
 
   useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      if (initialPos !== digit) {
+        target.current = digit;
+        if (reduced) position.jump(digit);
+        else position.set(digit);
+      }
+      return;
+    }
+
     const last = prevDigit.current;
     prevDigit.current = digit;
     if (last === digit) return;
     const forward = (digit - last + DIGIT_COUNT) % DIGIT_COUNT;
     const backward = (last - digit + DIGIT_COUNT) % DIGIT_COUNT;
-    // 增加时向上滚（新字从下方升起，从 0 向上推进）；减少时向下滚
     target.current += isAscending ? forward : -backward;
     if (reduced) position.jump(target.current);
     else position.set(target.current);
-  }, [digit, isAscending, reduced, position]);
+  }, [digit, isAscending, reduced, position, initialPos]);
 
   return (
     <span className="relative inline-block h-[1em] w-[0.62em] overflow-hidden align-baseline">
@@ -195,25 +207,52 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
 /**
  * 胶囊本体：静音按钮、轨道与百分比读数，常驻音量条与弹出层共用。
  * 轨道细时只有 4px，滑块收起；悬停或键盘聚焦到滑块时轨道补间到 6px、滑块弹出，与 Switch 同一档 `spring.snap` 的 CSS 弹性。
- * 静音开关或直接输入提交时，滑块与填充轨道带平滑移动动效；手动拖动时保持零延迟极速跟手。
+ * 静音开关与离散变化时，以统一的连续动画数值驱动 Slider 与数字，滑块圆点与填充轨道严密同步平滑滑行；手动拖动时保持零延迟极速跟手。
  */
 function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false, className }: VolumeCapsuleProps) {
-  const percentage = Math.round(volume * 100);
+  const [displayVolume, setDisplayVolume] = useState(volume);
+  const isDragging = useRef(false);
+  const animControls = useRef<{ stop: () => void } | null>(null);
+
+  // 外部 volume 变更（静音切换、输入框提交、外部重置）时，在非手动拖动下驱动平滑过渡动画
+  useEffect(() => {
+    if (isDragging.current) {
+      setDisplayVolume(volume);
+      return;
+    }
+
+    if (Math.abs(volume - displayVolume) < 0.002) {
+      setDisplayVolume(volume);
+      return;
+    }
+
+    if (animControls.current) {
+      animControls.current.stop();
+      animControls.current = null;
+    }
+
+    const controls = animate(displayVolume, volume, {
+      duration: 0.32,
+      ease: [0.2, 0, 0, 1], // emphasized 曲线：起步顺畅，收尾极其细腻自然
+      onUpdate: (latest) => {
+        setDisplayVolume(latest);
+      },
+      onComplete: () => {
+        setDisplayVolume(volume);
+        animControls.current = null;
+      },
+    });
+
+    animControls.current = controls;
+
+    return () => {
+      controls.stop();
+    };
+  }, [volume]);
+
+  const percentage = Math.round(displayVolume * 100);
   const muted = volume === 0;
   const spring = "duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)";
-  const [smoothMoving, setSmoothMoving] = useState(false);
-  const smoothTimer = useRef<number | null>(null);
-
-  const triggerSmoothMove = () => {
-    setSmoothMoving(true);
-    if (smoothTimer.current) window.clearTimeout(smoothTimer.current);
-    smoothTimer.current = window.setTimeout(() => setSmoothMoving(false), 350);
-  };
-
-  const handleToggleMute = () => {
-    triggerSmoothMove();
-    onToggleMute();
-  };
 
   return (
     <div
@@ -223,7 +262,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
       <motion.button
         type="button"
         {...iconTappable}
-        onClick={handleToggleMute}
+        onClick={onToggleMute}
         aria-label={muted ? "取消静音" : "静音"}
         aria-pressed={muted}
         className={cn(
@@ -231,7 +270,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
           muted ? "text-muted-foreground" : "text-foreground",
         )}
       >
-        <VolumeGlyph volume={volume} className="h-4 w-4" />
+        <VolumeGlyph volume={volume === 0 ? 0 : displayVolume} className="h-4 w-4" />
       </motion.button>
       <Slider
         className="h-full w-28"
@@ -239,34 +278,40 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
           "h-1 transition-[height]", spring,
           "group-hover/volume:h-1.5 group-focus-within/volume:h-1.5 group-data-expanded/volume:h-1.5",
         )}
-        rangeClassName={cn(
-          smoothMoving && "transition-[left,right,width] duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)",
-        )}
         thumbClassName={cn(
           // 收起时缩到一半并透明，而不是缩成 0：包围盒仍在，自动化与读屏按可见元素找得到滑块。
           "scale-50 opacity-0 transition-[scale,opacity,background-color]", spring,
           "group-hover/volume:scale-100 group-hover/volume:opacity-100 group-focus-within/volume:scale-100 group-focus-within/volume:opacity-100",
           "group-data-expanded/volume:scale-100 group-data-expanded/volume:opacity-100",
-          smoothMoving && "transition-[left,transform,scale,opacity,background-color] duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)",
         )}
-        value={[volume]}
+        value={[displayVolume]}
         min={0}
         max={1}
         step={0.01}
-        onPointerDown={() => setSmoothMoving(false)}
-        onValueChange={([value]) => {
-          setSmoothMoving(false);
-          onVolumeChange(value);
+        onPointerDown={() => {
+          isDragging.current = true;
+          if (animControls.current) {
+            animControls.current.stop();
+            animControls.current = null;
+          }
+        }}
+        onPointerUp={() => {
+          isDragging.current = false;
+        }}
+        onValueChange={([val]) => {
+          if (animControls.current) {
+            animControls.current.stop();
+            animControls.current = null;
+          }
+          setDisplayVolume(val);
+          onVolumeChange(val);
         }}
         aria-label="播放音量"
       />
       <VolumeReadout
         percentage={percentage}
         muted={muted}
-        onCommit={(value) => {
-          triggerSmoothMove();
-          onVolumeChange(value / 100);
-        }}
+        onCommit={(value) => onVolumeChange(value / 100)}
       />
     </div>
   );
