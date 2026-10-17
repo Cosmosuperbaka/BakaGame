@@ -2,6 +2,7 @@ import { createElement, type CSSProperties, type ReactNode } from "react";
 import { Package } from "lucide-react";
 // AI 厂商与模型家族的官方单色字形：MIT 的纯 SVG 资产包，`?url` 交给 Vite 生成静态资源地址。
 // 统一走这一个包，避免多来源混用时线条粗细与视觉重量不一致。
+import alibabaIconUrl from "@lobehub/icons-static-svg/icons/alibaba.svg?url";
 import anthropicIconUrl from "@lobehub/icons-static-svg/icons/anthropic.svg?url";
 import claudeIconUrl from "@lobehub/icons-static-svg/icons/claude.svg?url";
 import deepseekIconUrl from "@lobehub/icons-static-svg/icons/deepseek.svg?url";
@@ -9,6 +10,7 @@ import geminiIconUrl from "@lobehub/icons-static-svg/icons/gemini.svg?url";
 import googleIconUrl from "@lobehub/icons-static-svg/icons/google.svg?url";
 import hunyuanIconUrl from "@lobehub/icons-static-svg/icons/hunyuan.svg?url";
 import openaiIconUrl from "@lobehub/icons-static-svg/icons/openai.svg?url";
+import qwenIconUrl from "@lobehub/icons-static-svg/icons/qwen.svg?url";
 import tencentIconUrl from "@lobehub/icons-static-svg/icons/tencent.svg?url";
 import zaiIconUrl from "@lobehub/icons-static-svg/icons/zai.svg?url";
 import zhipuIconUrl from "@lobehub/icons-static-svg/icons/zhipu.svg?url";
@@ -86,12 +88,14 @@ const BRAND_SOURCES = {
   google: { kind: "mask", src: googleIconUrl },
   tencent: { kind: "mask", src: tencentIconUrl },
   anthropic: { kind: "mask", src: anthropicIconUrl },
+  alibaba: { kind: "mask", src: alibabaIconUrl },
   // AI 模型家族
   glm: { kind: "mask", src: zaiIconUrl },
   gpt: { kind: "mask", src: openaiIconUrl },
   gemini: { kind: "mask", src: geminiIconUrl },
   claude: { kind: "mask", src: claudeIconUrl },
   hunyuan: { kind: "mask", src: hunyuanIconUrl },
+  qwen: { kind: "mask", src: qwenIconUrl },
   // 技术栈
   react: { kind: "simple", Icon: SiReact },
   typescript: { kind: "simple", Icon: SiTypescript },

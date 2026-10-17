@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 // `?url` 与组件里是同一个导入，用来断言 mask 引用的正是 Vite 为图标包生成的资源地址。
+import alibabaIconUrl from "@lobehub/icons-static-svg/icons/alibaba.svg?url";
 import anthropicIconUrl from "@lobehub/icons-static-svg/icons/anthropic.svg?url";
 import claudeIconUrl from "@lobehub/icons-static-svg/icons/claude.svg?url";
 import deepseekIconUrl from "@lobehub/icons-static-svg/icons/deepseek.svg?url";
@@ -10,6 +11,7 @@ import geminiIconUrl from "@lobehub/icons-static-svg/icons/gemini.svg?url";
 import googleIconUrl from "@lobehub/icons-static-svg/icons/google.svg?url";
 import hunyuanIconUrl from "@lobehub/icons-static-svg/icons/hunyuan.svg?url";
 import openaiIconUrl from "@lobehub/icons-static-svg/icons/openai.svg?url";
+import qwenIconUrl from "@lobehub/icons-static-svg/icons/qwen.svg?url";
 import tencentIconUrl from "@lobehub/icons-static-svg/icons/tencent.svg?url";
 import zaiIconUrl from "@lobehub/icons-static-svg/icons/zai.svg?url";
 import zhipuIconUrl from "@lobehub/icons-static-svg/icons/zhipu.svg?url";
@@ -27,11 +29,13 @@ const ALL_BRANDS = Object.keys({
   google: true,
   tencent: true,
   anthropic: true,
+  alibaba: true,
   glm: true,
   gpt: true,
   gemini: true,
   claude: true,
   hunyuan: true,
+  qwen: true,
   react: true,
   typescript: true,
   tailwindcss: true,
@@ -73,11 +77,13 @@ const LOBEHUB_BRAND_ICONS: Readonly<Partial<Record<CreditBrandId, string>>> = {
   google: googleIconUrl,
   tencent: tencentIconUrl,
   anthropic: anthropicIconUrl,
+  alibaba: alibabaIconUrl,
   glm: zaiIconUrl,
   gpt: openaiIconUrl,
   gemini: geminiIconUrl,
   claude: claudeIconUrl,
   hunyuan: hunyuanIconUrl,
+  qwen: qwenIconUrl,
 };
 
 /**

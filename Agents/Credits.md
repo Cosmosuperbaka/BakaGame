@@ -43,13 +43,13 @@
 - **按公司与发布时间排**：公司顺序取数组声明顺序，同一公司的模型按 `releasedAt`（ISO 日期，只用于排序、不展示）从早到晚；展示前统一经 `lib/Credits.ts` 的 `sortModelsByRelease` 收口，数据文件里追加时不需要手动插到正确位置。
 - **只写模型名**：不写分工、日期或宣传语；页面上除模型名、Logo 与发布页链接外不渲染额外字段。
 - **发布页链接**：每条模型尽量带 `url`，点击徽章在新标签打开。选链优先级是「厂商官方新闻/公告页 → 官方文档的版本说明」；例如 `Deepseek V4.1 Flash` 指向官网新闻页、`1017` 指向文档站新闻页，只有 API 更新记录的 `0731` 才退到文档站更新日志，并且要深链到 `2026-07-31` 那一节（`#deepseek-v4-flash-更新`）——日志首页首屏是别的版本，浅链等于链错。确实没有公开页面时省略 `url`，徽章退化为静态标签而不是死链。
-- **新增公司追加到末尾**：第一次出现在名单里的公司加在数组末尾；分组标题写公司或 AI 团队名（深度求索、智谱清言、OpenAI、Google DeepMind、腾讯混元、Anthropic），不写模型家族名。
+- **新增公司追加到末尾**：第一次出现在名单里的公司加在数组末尾；分组标题写公司或 AI 团队名（深度求索、智谱清言、OpenAI、Google DeepMind、腾讯混元、Anthropic、阿里千问），不写模型家族名。
 - 每条数据都必须带 `logo`（`CreditBrandId`）：公司用厂商标识，模型用模型家族标识（Deepseek、GLM、GPT、Gemini、Hunyuan、Claude 等）。厂商与家族是两枚不同的官方字形时分别登记，不全部复用公司 Logo；两者相同时可以重复用同一个键（如 OpenAI 与 GPT）。
 
 品牌标识统一走 `components/credits/CreditsIcons.tsx` 的 `CreditBrandMark`：
 
 - 优先 `@icons-pack/react-simple-icons`，按 `icons/SiXxx` 逐图标子路径引入，不走聚合入口。
-- AI 厂商与模型家族的字形来自 `@lobehub/icons-static-svg`（MIT，纯 SVG 资产包，无运行时依赖）：按 `@lobehub/icons-static-svg/icons/<name>.svg?url` 导入，交给 Vite 生成哈希资源 URL；页面以 CSS mask 渲染成单色（颜色跟随 `currentColor`），不直接贴彩色位图。覆盖 Deepseek、OpenAI、Google、Gemini、Anthropic、Claude、Zhipu、Z.ai（GLM）、Tencent、Hunyuan（Hy）。
+- AI 厂商与模型家族的字形来自 `@lobehub/icons-static-svg`（MIT，纯 SVG 资产包，无运行时依赖）：按 `@lobehub/icons-static-svg/icons/<name>.svg?url` 导入，交给 Vite 生成哈希资源 URL；页面以 CSS mask 渲染成单色（颜色跟随 `currentColor`），不直接贴彩色位图。覆盖 Deepseek、OpenAI、Google、Gemini、Anthropic、Claude、Zhipu、Z.ai（GLM）、Tencent、Hunyuan（Hy）、Alibaba、Qwen。
 - simple-icons 与 LobeHub 都没有、但页面明确需要的官方字形才放进 `Client/public/assets/brands/`，同样以 mask 渲染：
 
 | 文件 | 用途 | 来源 | 许可 |

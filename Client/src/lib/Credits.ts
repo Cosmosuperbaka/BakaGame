@@ -175,12 +175,14 @@ export type CreditBrandId =
   | "google"
   | "tencent"
   | "anthropic"
+  | "alibaba"
   // AI 模型家族
   | "glm"
   | "gpt"
   | "gemini"
   | "claude"
   | "hunyuan"
+  | "qwen"
   // 技术栈
   | "react"
   | "typescript"

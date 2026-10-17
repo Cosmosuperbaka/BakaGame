@@ -6,11 +6,11 @@ import { CreditBrandMark, DependencyGlyph } from "./CreditsIcons";
 const BRAND_GROUPS: readonly { title: string; brands: readonly CreditBrandId[] }[] = [
   {
     title: "AI 厂商",
-    brands: ["deepseek", "zhipu", "openai", "google", "tencent", "anthropic"],
+    brands: ["deepseek", "zhipu", "openai", "google", "tencent", "anthropic", "alibaba"],
   },
   {
     title: "AI 模型家族",
-    brands: ["glm", "gpt", "gemini", "claude", "hunyuan"],
+    brands: ["glm", "gpt", "gemini", "claude", "hunyuan", "qwen"],
   },
   {
     title: "技术栈",

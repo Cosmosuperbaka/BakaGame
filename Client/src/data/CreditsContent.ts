@@ -23,7 +23,7 @@ export const TECH_STACK_CATEGORIES: readonly { id: TechStackCategory; label: str
   { id: "operations", label: "运维与开发辅助" },
 ];
 
-/** 分组标题写公司或 AI 团队名（深度求索 / 智谱清言 / OpenAI / Google DeepMind / 腾讯混元 / Anthropic），模型徽章才写具体型号。 */
+/** 分组标题写公司或 AI 团队名（深度求索 / 智谱清言 / OpenAI / Google DeepMind / 腾讯混元 / Anthropic / 阿里千问），模型徽章才写具体型号。 */
 export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   {
     company: "深度求索",
@@ -230,6 +230,18 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         releasedAt: "2026-09-27",
         logo: "claude",
         url: "https://www.anthropic.com/news/claude-sonnet-5-5",
+      },
+    ],
+  },
+  {
+    company: "阿里千问",
+    logo: "alibaba",
+    models: [
+      {
+        name: "Qwen 3.8 Flash",
+        releasedAt: "2026-08-26",
+        logo: "qwen",
+        url: "https://qwen.ai/blog?id=qwen3.8-flash-next",
       },
     ],
   },
