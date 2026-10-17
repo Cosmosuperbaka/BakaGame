@@ -37,7 +37,11 @@ if (otlpExporter) {
 
 const logger = new EventLogger(undefined, undefined, otlpExporter);
 // 数据库只承载账号、云同步、后台与对局记录：迁移失败只让这些功能报错，游客游玩照常。
-const database = env.databaseUrl ? createDatabase(env.databaseUrl) : undefined;
+const database = env.databaseUrl
+  ? createDatabase(env.databaseUrl, {
+      onRetry: ({ attempt, error }) => logger.warn("数据库迁移重试", { attempt, ...describeError(error) }),
+    })
+  : undefined;
 database?.ready.then(
   () => logger.info("数据库迁移完成"),
   (error: unknown) => logger.error("数据库迁移失败，账号与记录功能不可用", describeError(error)),

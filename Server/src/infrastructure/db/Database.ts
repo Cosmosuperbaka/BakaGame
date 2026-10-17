@@ -26,12 +26,26 @@ export interface Database {
 export const MIGRATIONS_DIR = resolve(import.meta.dir, "../../../drizzle");
 
 /**
+ * 启动迁移的有限重试：托管库跨境建连偶发抖动，一次性失败会把 `ready` 永久钉死在
+ * rejected，此后账号、云同步与对局记录全部持续报错，只有重启进程才能恢复。
+ * 迁移本身由 `__drizzle_migrations` 表保证幂等，重试安全；退避总时长远小于部署探针预算。
+ */
+export const MIGRATION_RETRY_ATTEMPTS = 3;
+export const MIGRATION_RETRY_BASE_DELAY_MS = 1_000;
+
+export interface CreateDatabaseOptions {
+  attempts?: number;
+  /** 每次重试前触发，用于落日志；不传则静默重试。 */
+  onRetry?: (context: { attempt: number; error: unknown }) => void;
+}
+
+/**
  * 创建连接池并立即开始应用迁移（结果见 `ready`）。
  *
  * TiDB Serverless 强制 TLS；本项目只连托管库，连接一律校验证书，不提供明文开关。
  * 连接池上限按免费额度保守取值，空闲连接主动回收，避免被服务端掐断后复用死连接。
  */
-export const createDatabase = (url: string): Database => {
+export const createDatabase = (url: string, options: CreateDatabaseOptions = {}): Database => {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -53,7 +67,20 @@ export const createDatabase = (url: string): Database => {
     connectTimeout: 10_000,
   });
   const db = drizzle({ client: pool, schema, mode: "default" });
-  const ready = migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  const attempts = Math.max(1, Math.floor(options.attempts ?? MIGRATION_RETRY_ATTEMPTS));
+  const runMigration = async (): Promise<void> => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        return;
+      } catch (error) {
+        if (attempt >= attempts) throw error;
+        options.onRetry?.({ attempt, error });
+        await new Promise((resolveRetry) => setTimeout(resolveRetry, MIGRATION_RETRY_BASE_DELAY_MS * attempt));
+      }
+    }
+  };
+  const ready = runMigration();
   // 失败由调用方经 ready 观察并记录；这里只防止未订阅时成为未处理拒绝。
   ready.catch(() => {});
 
