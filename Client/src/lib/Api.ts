@@ -22,7 +22,7 @@ export const createApiClient = (): ApiClient =>
 
 export const api: ApiClient = createApiClient();
 
-/** 站内头像地址（`/api/account/avatar/...`）按后端基址补全；外链（注册确认页的 qlogo）原样使用。 */
+/** 站内头像地址（`/api/account/avatar/...`）按后端基址补全；外链（登录弹窗按 QQ 号取的 qlogo）原样使用。 */
 export const avatarSrc = (image: string): string => (image.startsWith("/") ? resolveServerUrl(image) : image);
 
 /** 服务端未配置数据库时账号接口统一回 `ACCOUNT_DISABLED`：前端隐藏全部账号入口，游客照常游玩。 */

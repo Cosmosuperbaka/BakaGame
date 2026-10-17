@@ -34,36 +34,38 @@ const renderDialog = () => {
 };
 
 describe("登录弹窗", () => {
-  it("QQ 号合法后才展示 qlogo 头像确认，只收数字", async () => {
+  it("QQ 号合法后在输入框上方展示 qlogo 头像，只收数字", async () => {
     const { user } = renderDialog();
     const input = screen.getByLabelText("QQ 号");
-    const send = screen.getByRole("button", { name: "是我，发送验证码" });
+    const send = screen.getByRole("button", { name: "发送验证码" });
 
     await user.type(input, "12a3");
     expect(input).toHaveValue("123");
     expect(send).toBeDisabled();
-    expect(screen.queryByText("这是你的 QQ 吗？")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
 
     await user.type(input, "45");
     const avatar = screen.getByRole("img", { name: "QQ 12345 的头像" });
     expect(avatar).toHaveAttribute("src", "https://q1.qlogo.cn/g?b=qq&nk=12345&s=640");
     expect(avatar).toHaveAttribute("referrerpolicy", "no-referrer");
-    expect(screen.getByText("12345@qq.com")).toBeInTheDocument();
+    // 头像格在字段之上：DOM 顺序即视觉顺序
+    expect(avatar.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(send).toBeEnabled();
   });
 
-  it("新账号：发码后冻结展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {
+  it("新账号：发码后在头像下展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {
     requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60, qqName: "阿狸" });
     signIn.mockResolvedValue();
     const { user, onOpenChange } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
-    await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
     expect(requestLoginCode).toHaveBeenCalledWith({ qqNumber: "12345" });
     expect(await screen.findByRole("heading", { name: "注册账号" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "60 秒后重发" })).toBeDisabled();
-    // 昵称强制取自 QQ、不可修改：只有只读展示，没有昵称输入框
-    expect(screen.getByText("账号昵称将使用你的 QQ 昵称")).toBeInTheDocument();
+    // 收信地址与有效期挂在验证码字段的说明上，不再另起一段描述
+    expect(screen.getByText("已发送至 12345@qq.com，5 分钟内有效")).toBeInTheDocument();
+    // 昵称强制取自 QQ、不可修改：只有头像下的只读展示，没有昵称输入框
     expect(screen.getByText("阿狸")).toBeInTheDocument();
     expect(screen.queryByLabelText("账号昵称")).not.toBeInTheDocument();
 
@@ -80,22 +82,23 @@ describe("登录弹窗", () => {
     const { user } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
-    await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试");
-    expect(screen.getByRole("button", { name: "是我，发送验证码" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
     expect(signIn).not.toHaveBeenCalled();
   });
 
-  it("老账号不展示昵称信息；验证码错误就地提示并保留弹窗", async () => {
+  it("老账号不展示昵称；验证码错误就地提示并保留弹窗", async () => {
     requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60, qqName: null });
     signIn.mockRejectedValue(new AuthRequestError("INVALID_OTP", "验证码不正确", 400));
     const { user, onOpenChange } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
-    await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
     await user.type(await screen.findByLabelText("验证码"), "000000");
-    expect(screen.queryByText("账号昵称将使用你的 QQ 昵称")).not.toBeInTheDocument();
+    // 老号不查昵称：头像格里只剩头像，没有昵称行
+    expect(screen.getByRole("img", { name: "QQ 12345 的头像" }).parentElement?.textContent).toBe("");
     await user.click(screen.getByRole("button", { name: "登录" }));
 
     expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "000000" });
@@ -109,10 +112,10 @@ describe("登录弹窗", () => {
     const { user } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
-    await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("发送太频繁，请稍后再试");
 
-    await user.click(screen.getByRole("button", { name: "是我，发送验证码" }));
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
     await user.click(await screen.findByRole("button", { name: "换个 QQ 号" }));
     expect(screen.getByLabelText("QQ 号")).toHaveValue("12345");
   });
