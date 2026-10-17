@@ -42,6 +42,15 @@ WhoIsFaker、Songuessr 与 CEE 的实时业务分别通过 `/api/whoisfaker/ws`�
 任一侧改名必须同批发布，否则会静默退回 peer 桶、全体客户端重新挤回同一个桶。
 ESA 节点地址并非安全边界：源站端口若可被直连，转发头仍可伪造，因此 peer 桶与全局桶必须保留。
 
+### 服务端出站：NapCat 内网入口
+
+QQ 昵称查询是**服务端出站**调用，不经过边缘与公网：NapCat 与 BakaGame 同 VPC，
+NapCat 侧 nginx 只开一个 `location /onebot-internal/`（`proxy_pass` 到宿主 `127.0.0.1:6700`，
+`allow` 只列 BakaGame 宿主内网 IP、其余 `deny all`），BakaGame 容器经 compose 的
+`extra_hosts` 把 `napcat.baka.website` 指向 NapCat 内网地址——TLS/SNI 与证书照常匹配，
+流量不出内网。OneBot 端口不映射到公网，也不新增边缘路由：1Panel 默认防火墙只放行
+80/443/SSH，新端口会被 `1PANEL_BASIC_AFTER` 直接 DROP。
+
 ## 请求链路与同源化边界
 
 **浏览器必须跨域直连后端公开域名**，后端以 Origin 白名单和 CORS 响应。后端公开域名仍可经过站点加速层；不能把“跨域”理解为绕过 CDN 直连源站 IP。

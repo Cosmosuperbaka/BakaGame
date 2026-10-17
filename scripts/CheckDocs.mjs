@@ -29,6 +29,20 @@ function slug(title) {
     .replace(/^-|-$/g, "");
 }
 
+/**
+ * 子模块路径：内容由各自仓库维护，`actions/checkout` 默认不拉取。
+ * 指向子模块内部的链接只校验到子模块根为止，否则 CI 上必然报「文件不存在」，
+ * 而本地（子模块已 init）又是绿的——那种门禁没人会信。
+ */
+const SUBMODULES = (() => {
+  const file = path.join(ROOT, ".gitmodules");
+  if (!fs.existsSync(file)) return [];
+  return [...fs.readFileSync(file, "utf8").matchAll(/^\s*path\s*=\s*(.+)$/gm)]
+    .map((match) => match[1].trim().replace(/^\.\//, ""));
+})();
+
+const insideSubmodule = (rel) => SUBMODULES.some((sub) => rel === sub || rel.startsWith(`${sub}/`));
+
 function collectAnchors(text) {
   const anchors = new Set();
   for (const line of text.split(/\r?\n/)) {
@@ -78,6 +92,7 @@ for (const rel of files) {
 
     if (!target.endsWith(".md")) continue;
     const resolved = path.posix.normalize(path.posix.join(dir, target));
+    if (insideSubmodule(resolved)) continue;
     if (!fs.existsSync(path.join(ROOT, resolved))) {
       problems.push(`${rel}: 目标文件不存在 ${target}`);
       continue;

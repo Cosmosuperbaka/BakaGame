@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 const require = createRequire(new URL('../../Client/package.json', import.meta.url));
 const picomatch = require('picomatch');
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const block = workflow.split('            client:\n')[1].split('            e2e:\n')[0];
+// 取 `client:` 这一段的规则：终点是下一个同级（12 空格缩进）的 key，
+// 不能写死成 `e2e:` —— 那之后又插了 `knip:` 段，写死会把后者的规则一并算进来
+// （`Client/**` 与 `Server/**` 会把 e2e、Server 路径误判成命中 client）。
+const block = workflow.split('            client:\n')[1].split(/\n {12}[a-z][a-z0-9_-]*:\n/)[0];
 const rules = [...block.matchAll(/- '([^']+)'/g)].map(match => picomatch(match[1], { dot: true }));
 
 for (const [path, expected] of [
