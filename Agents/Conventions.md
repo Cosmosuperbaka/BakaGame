@@ -127,6 +127,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 
 补充约束：
 
+- **根级 `knip` 只做静态分析，不参与构建与运行时。** 配置在根 `knip.jsonc`：workspace 入口（测试、故事、E2E、`bun --preload` 夹具）、导出/类型的分级规则都在那里维护。`knip --fix` 会按报告直接删除代码与导出，**禁止在本地或 CI 启用**。Knip 会按仓库配置加载 `Client/vite.config.ts`（构建期插件与 SEO/资源步骤随之执行），本机因此需要 `CODEBUDDY_SAFE_DELETE_ENABLED=0`，CI 无此限制。
 - **`Server/package.json` 里的 `bun` 是可执行运行时 pin，改它会改变测量仪器。**
   `bun run <script>` 会把 `node_modules/.bin` 前置到 PATH，因此脚本内层调用的 `bun`
   解析到的是 **pin 的那个版本**（不是全局 bun）。改 pin 会改变 `test:coverage` 的插桩口径

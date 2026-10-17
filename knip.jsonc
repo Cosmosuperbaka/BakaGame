@@ -1,0 +1,77 @@
+{
+  // Knip：静态分析未使用的文件、依赖、导出与类型。
+  // 运行：仓库根 `pnpm knip`。本机 Windows 上 Client 的 vite.config.ts 会重建
+  // .generated-public，删除动作被 WorkBuddy safe-delete 拦截，需前缀
+  // CODEBUDDY_SAFE_DELETE_ENABLED=0；CI 无此限制。
+  //
+  // 入口说明：
+  // - Client 由 index.html 进入；测试、故事、E2E、脚本与 CSS 显式列为入口，
+  //   否则 Vitest/Storybook/Playwright 的夹具导出和 CSS 里的 @import 依赖会被漏掉。
+  // - Server 由 Bun 运行，package.json 脚本是入口来源；bun test 的用例与夹具
+  //   （*Fixtures.ts、Helpers.ts）Knip 不会自动识别，必须显式列出。
+  // - scripts/fixtures/* 由 bun --preload / 子进程按路径加载，不是 import，属于预期入口。
+  // - dist/coverage/public 等构建产物与二进制目录由 .gitignore 覆盖，Knip 自动忽略，
+  //   不要再写进 ignore（会触发 configuration hints）。
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [],
+      "project": ["scripts/**/*.mjs"]
+    },
+    "Client": {
+      "entry": [
+        "index.html",
+        "src/main.tsx",
+        "src/index.css",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.stories.tsx",
+        "e2e/**/*.spec.ts",
+        "e2e/**/*.config.ts",
+        "e2e/fixtures/**/*.ts",
+        "scripts/**/*.mjs"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,css}",
+        "e2e/**/*.ts",
+        "scripts/**/*.{mjs,ts}",
+        "*.ts",
+        ".storybook/**/*.{ts,tsx}"
+      ]
+    },
+    "Server": {
+      "entry": [
+        "src/scripts/*.ts",
+        "scripts/*.ts",
+        "scripts/*.mjs",
+        "scripts/fixtures/*.ts",
+        "test/**/*.test.ts",
+        "test/**/*Fixtures.ts",
+        "test/**/Helpers.ts",
+        "integration/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.{ts,mjs}",
+        "test/**/*.ts",
+        "integration/**/*.ts"
+      ]
+    }
+  },
+  // 「导出但只在本文件内使用」不算问题：这类 export 关键字主要是历史习惯，
+  // 清理收益极低而改动面很大；真正零引用的导出仍会被报出来。
+  "ignoreExportsUsedInFile": true,
+  // 文件与依赖问题硬卡，导出/类型只提示：导出量级大且需要人工判断语义。
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "optionalPeerDependencies": "error",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "error",
+    "duplicates": "off",
+    "exports": "warn",
+    "types": "warn"
+  }
+}

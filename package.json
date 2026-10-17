@@ -25,6 +25,10 @@
     "lint": "pnpm --filter client lint",
     "coverage": "pnpm --filter server test:coverage && pnpm --filter client test:coverage",
     "e2e": "pnpm --filter client test:e2e",
-    "verify": "pnpm --filter server verify && pnpm --filter client verify"
+    "verify": "pnpm --filter server verify && pnpm --filter client verify",
+    "knip": "knip"
+  },
+  "devDependencies": {
+    "knip": "6.41.0"
   }
 }

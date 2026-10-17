@@ -40,6 +40,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      knip: ${{ steps.filter.outputs.knip }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,6 +59,15 @@ jobs:
               - 'Client/!(e2e)/**'
               - 'Server/src/shared/**'
               - 'Server/scripts/ClientCiFilter.mjs'
+              - '.github/workflows/ci.yml'
+            # 静态分析：两端源码、根清单与锁文件、Knip 配置。
+            knip:
+              - 'Client/**'
+              - 'Server/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'knip.jsonc'
               - '.github/workflows/ci.yml'
             e2e:
               - 'Client/**'
@@ -160,6 +170,33 @@ jobs:
           name: client-coverage
           path: Client/coverage/
           retention-days: 14
+
+  # 静态分析：未使用文件/依赖/导出。文件与依赖类问题阻断，导出/类型只提示（分级见 knip.jsonc）。
+  knip:
+    name: Knip
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.knip == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Knip 会按仓库配置加载 Client 的 vite.config.ts（含构建期 SEO/资源插件），
+      # 因此这里与 client 作业一样需要完整依赖，且不设置 NODE_ENV=production。
+      - name: Detect unused files, dependencies and exports
+        run: pnpm knip --no-progress
 
   e2e:
     name: End-to-End Tests

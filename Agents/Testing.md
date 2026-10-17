@@ -47,6 +47,7 @@
 - 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不得读取 Tailwind 类名；关键落地页和聊天流程须把页面异常、控制台错误及非预期 4xx 转为测试失败。
 - 客户端 CI 在生产构建后执行 `npm run build-storybook`，防止故事与截图工具随组件改动失效。
 - 文档门禁 `node scripts/CheckDocs.mjs` 校验根文档与 `Agents/` 的相对链接、锚点，以及 `Agents/` 每篇文档是否已在 `AGENTS.md` 导航表中登记；CI 的 Docs Check 作业无条件执行，纯文档改动同样受约束。
+- 静态分析门禁 `pnpm knip`（根级，配置 `knip.jsonc`）检查未使用的文件、依赖、导出与类型：文件、依赖、未声明依赖、未解析导入为 `error`，导出与类型为 `warn`（只提示不阻断）。入口（测试、故事、E2E、`bun --preload` 夹具）在配置里显式声明，不要用忽略清单掩盖真实问题。Knip 会加载 `Client/vite.config.ts`，本机因此需要 `CODEBUDDY_SAFE_DELETE_ENABLED=0`，CI 无此限制。
 
 以下能力尚未纳入门禁，不得按已覆盖对待：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
 
@@ -175,6 +176,9 @@ npx playwright test e2e/App.spec.ts
 ```bash
 # 仓库根：安装由 pnpm 统一完成（锁文件 = pnpm-lock.yaml）
 pnpm install --frozen-lockfile
+
+# 仓库根：静态分析（未使用文件、依赖、导出；导出/类型只提示，见 knip.jsonc）
+pnpm knip
 
 # Server：pnpm 只转发，运行时仍是 Bun
 pnpm --filter server verify          # = server check + test:coverage
