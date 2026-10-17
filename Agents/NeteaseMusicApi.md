@@ -15,7 +15,7 @@
 
 - API Enhanced 源码：[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)
 - 在线接口文档：[NeteaseCloudMusicApiEnhanced 文档](https://docs-neteasecloudmusicapi.focalors.ltd/)
-- 本项目依赖：`@neteasecloudmusicapienhanced/api`，版本见 `Server/package.json` 与 `Server/bun.lock`。
+- 本项目依赖：`@neteasecloudmusicapienhanced/api`，版本见 `Server/package.json` 与根级 `pnpm-lock.yaml`。
 - API 文档可能存在缓存。核对接口行为时，应同时查看当前锁定依赖版本和 GitHub 最新文档；如果文档版本与代码版本不一致，先清理文档缓存或以锁定依赖的实际导出为准。
 
 ## 安全与使用边界
@@ -42,15 +42,15 @@
   凭据恢复或失效后下一次请求照常回源。玩家反复进出房间不得每次都触发一对 `login_status` + `vip_info` 上游往返。
   会员展示档位由 `vip_info` 的 `redplus` / `associator` / `musicPackage` 按此优先级取第一个未过期的一档（`vipTier`），到期时间跟这一档走，黑胶等级取 `redVipLevel`（夹到 1–7，音乐包不带等级）；`vipStatus` 仍按任一会员有效判定，二者互不替代。
 - **启动必须预热音乐上游**：装配阶段调用 `NeteaseMusicProvider.warmUp()`（不阻塞启动，失败只记告警并由后续请求重试）。
-  冷进程第一次触碰音乐链路要顺序支付接口包动态导入（实测约 1.1 秒）、匿名令牌注册以及首个上游请求的
-  DNS/TCP 建连（解析器冷启动实测可达 12 秒）；不预热就等于让第一位带着本机凭据进房的玩家替全进程垫付，
-  还可能直接超过客户端 10 秒的默认请求超时。
+  冷进程第一次触碰音乐链路要顺序支付接口包动态导入、匿名令牌注册以及首个上游请求的
+  DNS/TCP 建连成本；不预热就等于让第一位带着本机凭据进房的玩家替全进程垫付，
+  还容易直接超过客户端 10 秒的默认请求超时。
 - 接口返回 `301` 通常表示未登录或登录状态未被正确带上；如果刚刚登录仍返回 `301`，先等待约两分钟或使用符合文档的唯一 URL 再检查一次，不要立即循环登录。
 - **限流响应码有四种表现形式，判定必须全部覆盖**：`405`（歌曲类通用「操作频繁」）、
-  `406`（实测登录二维码接口 `login_qr_key` 第 20 次触发，文案与 405 完全一致）、`429`、
+  `406`（登录二维码接口同样会触发，文案与 405 一致）、`429`、
   `503`（「IP 高频错误」）。`isRateLimitError` 必须同时检查 `body.code` 与 HTTP status。
   **只认 405 会漏判整条扫码登录链路** —— 表现为房主扫码时一直撞墙、既不退避也不提示。
-- **退避起点必须与限流窗口同量级**：网易云实测恢复窗口是分钟级（生产日志中 179s / 231s / 237s / 1452s），
+- **退避起点必须与限流窗口同量级**：网易云限流恢复窗口是分钟级，
   因此 `rateLimitCooldownMs` 起点 60s、`maxRateLimitCooldownMs` 上限 10 分钟。
   5 秒起步会让冷却一结束就二次触发，20 秒内把 strikes 推到 3–5 级、冷却拉满 60 秒 ——
   **本意是止损，实际把一次限流放大成近一分钟的全服不可用**。
@@ -64,13 +64,12 @@
 ### 出口 IP：登录态绑定、按玩家分配与限流刷新
 
 网易云按**请求方声称的出口 IP**（即 API Enhanced 的 `realIP`，落到 `X-Real-IP`）同时判定两件事：
-登录凭证归属与限流配额。实测结论（2026-10-05，证据见 `tasks/netease-rate-limit-investigation/`）：
+登录凭证归属与限流配额。三条机制约束：
 
-1. **限流按 `X-Real-IP` 计**：触发后同参数继续打仍全 406，仅更换伪装 IP 即立刻 6/6 恢复；
-   换真实 TCP 出口（代理）反而 6/6 全 406 —— 机房出口信誉差，会被直接拒绝。
-2. **登录态失效的根因是 scope 漂移，不是「换了 IP」本身**：历史实现按 cookie 内容哈希取 scope，
-   登录前后（PC 设备字典 → `MUSIC_U=...`）算出两个不同 IP，登录态一建立就漂移；
-   叠加早期伪 IP 由手工拼接、并不落在真实 CN 网段。这两条都已修复。
+1. **限流按 `X-Real-IP` 计**：触发后同参数继续打仍然被拒，只有更换伪装 IP 才恢复配额；
+   换真实机房出口（代理）反而会被直接拒绝 —— 机房出口信誉差。
+2. **登录态失效的根因是 scope 漂移，不是「换了 IP」本身**：按 cookie 内容哈希取 scope 时，
+   登录前后（PC 设备字典 → `MUSIC_U=...`）会算出两个不同 IP，登录态一建立就漂移。
 3. 因此**限流兜底时刷新 IP 是安全的**：凭证只要与「该 scope 当前使用的 IP」保持一致即可，
    刷新后同一凭证的后续请求会一起走新 IP，不会出现登录前后分叉。
 
@@ -89,18 +88,17 @@ IP 归属优先级由 `resolveIpScope` 决定：
 
 改动登录链路时，下列约束**不得回退**：
 
-1. **scope 必须跟随登录会话，而非 cookie 内容**。旧实现按 cookie 字符串哈希取 scope：登录前用的是
-   PC 设备字典，登录后变成 `MUSIC_U=...`，两串哈希不同 → 拿到两个不同 IP，**登录态一建立就漂移**。
-   现由 `qrLoginScope` 在 `createQrLogin` 时一次性生成并贯穿整条链路。
-2. **`login_status` 必须携带 `realIP`**。旧实现在 `getLoginStatus` 里显式传 `randomCNIP=false`，
-   完全不发 `realIP`，等于用一个「无 IP」的请求去校验一个「有 IP」的登录态。现改用配置值。
+1. **scope 必须跟随登录会话，而非 cookie 内容**。按 cookie 字符串哈希取 scope，会在登录前用
+   PC 设备字典、登录后变成 `MUSIC_U=...` 时得到两个不同 IP，**登录态一建立就漂移**。
+   由 `qrLoginScope` 在 `createQrLogin` 时一次性生成并贯穿整条链路。
+2. **`login_status` 必须携带 `realIP`**。传 `randomCNIP=false` 等于用一个「无 IP」的请求去校验一个
+   「有 IP」的登录态，必须使用配置值。
 3. **会话结束后必须固化绑定**。`bindSessionIp` 把本会话 IP 写入登录后凭证的 scope，
    使该凭证后续所有请求（搜索、歌曲、歌单、状态校验）继续复用同一个登录 IP。
 
 配套约束：
 
-- `callOptional` 必须与 `call` 一样透传 `randomCNIP` / `includeAnonymousCookie`；历史上它不透传，
-  导致设备上报（`uploadDeviceInfo`）脱离登录 IP。
+- `callOptional` 必须与 `call` 一样透传 `randomCNIP` / `includeAnonymousCookie`；不透传会让设备上报（`uploadDeviceInfo`）脱离登录 IP。
 - 设备上报的兜底 EAPI 路径（`createOption` 直调）同样要带 `realIP` 与 `randomCNIP`。
 - cookie 对象做 scope 时必须用**键序无关**的稳定序列化（`stableStringify`）；Enhanced API 会给
   cookie 对象补上随机的 `_ntes_nuid` / `NMTID`，用 `JSON.stringify` 会因键序/取值变化算出不同 scope。
@@ -120,7 +118,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 
 | 参数 | 作用 | 使用约束 |
 | --- | --- | --- |
-| `realIP` | 指定服务端识别的客户端 IP：既解决境外/云出口的 `460` 兼容性，也是**网易云判定登录凭证归属与限流配额的依据**（实测）。请求层据此写入 `X-Real-IP` 与 `X-Forwarded-For` | 取值必须来自包内 CN 网段库（见下节），不得手工拼接。按 scope 稳定复用，限流兜底时由 `rotateScopeIp` 刷新；不得用于放大请求量或伪造用户来源 |
+| `realIP` | 指定服务端识别的客户端 IP：既解决境外/云出口的 `460` 兼容性，也是**网易云判定登录凭证归属与限流配额的依据**。请求层据此写入 `X-Real-IP` 与 `X-Forwarded-For` | 取值必须来自包内 CN 网段库（见下节），不得手工拼接。按 scope 稳定复用，限流兜底时由 `rotateScopeIp` 刷新；不得用于放大请求量或伪造用户来源 |
 | `randomCNIP=true` | API Enhanced 新版本提供的随机中国 IP 兼容选项。**它本身不生成 IP**，必须与 `realIP` 同时提供才真正生效 | 项目默认开启，与 `realIP` 成对下发，不得单独使用 |
 | `noCookie=true` | 明确告诉接口本次请求不携带 Cookie | 只有不需要登录态的公开请求使用；登录、账号状态和房主授权请求不得添加 |
 | `ua=...` | 指定请求 User-Agent | 只在接口或兼容性确实要求时设置，保持值可审计，不得伪装成任意第三方客户端 |
@@ -135,16 +133,16 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 
 ### CN 出口 IP 生成：唯一真相源是包内网段库
 
-`randomCNIP` 只是开关，真正的伪装出口 IP 由我们自己生成并通过 `realIP` 下发。**禁止再手工拼接 IP 段**
-（历史实现按 `116.25–94.x.x` 随机拼接，并不保证落在真实 CN 网段，会被上游判定为异常来源）：
+`randomCNIP` 只是开关，真正的伪装出口 IP 由我们自己生成并通过 `realIP` 下发。**禁止手工拼接 IP 段**：
+拼接结果不保证落在真实 CN 网段，会被上游判定为异常来源。
 
 - 真相源为依赖包自带的 `node_modules/@neteasecloudmusicapienhanced/api/data/china_ip_ranges.txt`
-  （4147 条真实 CIDR），由 `parseChinaIpRanges` 解析、`randomChineseIp` 按区间权重抽段后段内随机。
+  （真实 CIDR 列表），由 `parseChinaIpRanges` 解析、`randomChineseIp` 按区间权重抽段后段内随机。
 - **刻意不 import 包内 `util/index.js`**：该模块顶层 `require('./logger')`，每次生成都会向 stdout 打印
   带 ANSI 色的 `[INFO] Generated Random Chinese IP: ...`，污染本项目结构化日志；读取数据文件是零副作用的等价实现。
   这与「禁止为屏蔽第三方开发日志而改写全局 `console.log`」是同一条约束的两面。
 - 数据文件缺失或损坏时必须回退到内置兜底网段，**不得抛错导致完全无法出网**。
-- 校验方式：`readChinaIpRanges()` + `randomChineseIp()` 已导出，测试需断言生成结果 100% 落在网段内（当前回归取 2000 次采样）。
+- 校验方式：`readChinaIpRanges()` + `randomChineseIp()` 已导出，测试需断言多次采样结果 100% 落在网段内。
 
 ### 图片缩放
 
@@ -166,11 +164,11 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 - 登录：仅支持二维码登录，并使用 `login_status` 校验登录状态。创建二维码与扫码轮询采用官方 PC 客户端契约（`os: "pc"`, `channel: "netease"`, `appver: "3.1.29.205117"`, `User-Agent: NeteaseMusicDesktop/...`），并携带自定义 `deviceName`（默认 `BakaGame`）。**整条链路（`login_qr_key` → `login_qr_create` → `login_qr_check` → `deviceinfo_center_upload` → `login_status`）必须共用同一个出口 IP**，详见上文「凭证与出口 IP 必须绑定」。
 - 设备名称上报：网易云官方 PC 客户端登录后，设备管理列表展示的是当前系统用户名而非 `"pc"`。其底层机制是在登录成功后通过 EAPI 向 `/api/deviceinfo/center/upload` 发送 `{ deviceName }` 上报设备信息。`NeteaseMusicProvider` 在 `checkQrLogin` 授权成功后自动调用 `uploadDeviceInfo` 执行相同上报，确保网易云设备管理中心稳定展示自定义名称 `BakaGame`。上报**只调用接口包的原生 `deviceinfo_center_upload` 模块**（自 API `4.41.0` 起提供，与官方 PC 端行为一致）。**不得**为兼容旧版本而直接 `import` 包内 `util/request`、`util/option` 自拼 EAPI 请求——那属于「直接导入传递依赖」，上游一改内部目录即整条失效，还会绕开 provider 的限流队列与出口 IP 归属；缺模块时按上报失败静默降级即可。
 
-播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。当前 API Enhanced 版本的 `song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
+播放地址优先使用稳定的 `song_url`，`song_url_v1` 作为后备。`song_url_v1` 可能抛出 `xeapi public key is missing`，不能只判断函数是否存在后直接调用。播放 URL 在服务端统一转换为 HTTPS，避免 HTTPS 页面被混合内容策略拦截。
 - **全局音乐解灰 (General Unblock)**：默认开启（支持通过环境变量 `ENABLE_GENERAL_UNBLOCK=true|false` 或 provider 选项 `enableGeneralUnblock` 控制）。针对网易云官方未提供播放地址（`!url`）、返回试听片段（`freeTrialInfo != null`）或返回 404 等受限状态的歌曲，自动触发多级跨平台音源解灰（优先调用 API 模块的 `song_url_match`，回退至 `song_url_v1` 携带 `unblock: "true"`；只使用 API 包公开接口，不直接导入其传递依赖），取得的音频地址经 HTTPS 规范化后写入缓存，确保无 VIP 凭据或版权受限歌曲也能正常获取完整音频。
 - **解灰音源必须显式指定 `source`，并校验结果不是「伪解灰」**。公开匹配接口不传 `source` 时按 `unblockmusic-utils/modules` 目录的字母序尝试，`bugpk` 恰好排在最前；它对没有自有音源的歌曲会返回网易云官方外链 `/song/media/outer/url?id=X.mp3`，字符串非空所以被判为「解灰成功」，还会短路掉后面真正可用的音源。该外链对受限歌曲只会 302 到下载页 HTML（`content-type: text/html`），播放器必然报错。因此 `unblockSongAudio` 固定按 `UNBLOCK_SOURCE_ORDER`（`unm` 最前、`bugpk` 最后）逐个音源调用，并拒收一切指回 `music.163.com/song/media/outer/url` 的结果，继续尝试下一个音源；全部失败才抛 `SONG_UNAVAILABLE`。改动音源顺序或新增音源时必须保留该校验。典型症状：服务端日志打出「网易云歌曲解灰成功」而客户端随即上报 `song.game.audioFailed`。
-- **解灰必须带超时上界，并且要吃掉超时之后才到达的拒绝**。第三方音源存在「请求被丢弃、返回的 Promise 永不 settle」的情况（实测约每 5~10 次一遇）。没有上界时 `getSong` 会永远挂起，自动出题随即永久停在 `automaticRoundLoading`：房间再也开不了下一轮，而客户端对长任务发的是 `timeout: 0`，连超时提示都不会有。`unblockSongAudio` 因此对每个音源套一层 `settleWithin`（默认单源 4s、单次解灰总预算 12s，可用 `unblockSourceTimeoutMs` / `unblockTotalBudgetMs` 覆盖），总预算用 `now()` 判定，用尽即停手。**用 `Promise.race` 加超时必须同时给原 Promise 挂 `catch`**：它在超时之后才拒绝时若没有处理器就是 unhandledRejection，而 **Bun 会直接终止整个进程**（实测 exit=1）。
-- **验证「这首歌能不能播」必须看总量或时长，不能只看 HTTP 200/206**。实测无 Cookie 拉取 `requiresVip` 会员曲：未解灰时同样返回 `206 + audio/mpeg`，但总量恒约 481 KB，正是 **30 秒 @128 kbps 的试听片段**（按整曲时长折算等效码率只有 13~19 kbps）；解灰成功后才拿到 320 kbps 整曲，总字节与 `durationMs` 严格自洽。因此「`audioUrl` 非空」「Range 请求 206」「`content-type` 是 audio」三条都**不能**作为可播放判据，唯一判据是**总字节 ÷ 时长**落在正常码率区间。推论：`isRestricted` 必须继续依赖 `freeTrialInfo != null`，不得因为「反正有 url」就跳过解灰；VIP 曲目对非会员账号的解灰能力是真实有效的，不是伪成功。
+- **解灰必须带超时上界，并且要吃掉超时之后才到达的拒绝**。第三方音源存在「请求被丢弃、返回的 Promise 永不 settle」的情况。没有上界时 `getSong` 会永远挂起，自动出题随即永久停在 `automaticRoundLoading`：房间再也开不了下一轮，而客户端对长任务发的是 `timeout: 0`，连超时提示都不会有。`unblockSongAudio` 因此对每个音源套一层 `settleWithin`（默认单源 4s、单次解灰总预算 12s，可用 `unblockSourceTimeoutMs` / `unblockTotalBudgetMs` 覆盖），总预算用 `now()` 判定，用尽即停手。**用 `Promise.race` 加超时必须同时给原 Promise 挂 `catch`**：它在超时之后才拒绝时若没有处理器就是 unhandledRejection，而 **Bun 会直接终止整个进程**。
+- **验证「这首歌能不能播」必须看总量或时长，不能只看 HTTP 200/206**。无 Cookie 拉取 `requiresVip` 会员曲时，未解灰同样返回 `206 + audio/mpeg`，但总字节只对应一段 30 秒 @128 kbps 的试听片段；解灰成功后才拿到 320 kbps 整曲，总字节与 `durationMs` 严格自洽。因此「`audioUrl` 非空」「Range 请求 206」「`content-type` 是 audio」三条都**不能**作为可播放判据，唯一判据是**总字节 ÷ 时长**落在正常码率区间。推论：`isRestricted` 必须继续依赖 `freeTrialInfo != null`，不得因为「反正有 url」就跳过解灰；VIP 曲目对非会员账号的解灰能力是真实有效的，不是伪成功。
   `loadAudioUrl` 因此有一条硬性实现约束：**拿到 `freeTrialInfo` 时不得把官方 url 当作可用地址**——它把 `audioUrl` 置空，解灰成功才写入整曲地址，解灰失败就让 `getSong` 抛 `SONG_UNAVAILABLE`。绝不回退返回试听片段，否则片段会被当成可出题的音频静默进局。账号的会员状态**不参与**出题可用性判定，选曲链路也不得按 `requiresVip` 预剔除候选（细则见 [BangumiApi](BangumiApi.md) 的出题链路规则）。
 - 副歌接口使用 `song_chorus`（调用 `/api/song/chorus`），返回毫秒级的 `startTime` 与 `endTime`。若上游无副歌数据或返回空数组，系统平滑降级为无副歌信息，由客户端回退到整曲起始位置。
 
@@ -256,7 +254,7 @@ Songuessr 的 `song.music.search` / `song.bangumi.search` / `song.music.artist.s
 ## 歌曲筛选
 
 - 歌单读取使用 `playlist_track_all`（缺少时回退 `playlist_detail`），客户端可提交网易云歌单数字 ID 或链接，服务端只保存规范化后的数字 ID。
-- **歌单必须翻页取完，不得只取单页**：`playlist_track_all` 单页上限 1000 首，按 `offset` 以 `PLAYLIST_PAGE_SIZE` 步进翻页，按曲目 ID 去重，`PLAYLIST_MAX_PAGES` 兜底。`playlist_detail` 不支持 `offset`（每页返回同一份 `tracks`），终止条件用「本页是否带来新曲目」，否则会重复整页；翻页失败只结束翻页、保留已取到的曲目，不得丢弃整个歌单。实测固定 `limit: 1000, offset: 0` 时 1200 首歌单尾部 200 首永远进不了题库。
+- **歌单必须翻页取完，不得只取单页**：`playlist_track_all` 单页上限 1000 首，按 `offset` 以 `PLAYLIST_PAGE_SIZE` 步进翻页，按曲目 ID 去重，`PLAYLIST_MAX_PAGES` 兜底。`playlist_detail` 不支持 `offset`（每页返回同一份 `tracks`），终止条件用「本页是否带来新曲目」，否则会重复整页；翻页失败只结束翻页、保留已取到的曲目，不得丢弃整个歌单。固定取第一页会让长歌单的尾部曲目永远进不了题库。
 - 歌手搜索使用 `cloudsearch` 的 `type=100`，歌手歌曲使用 `artist_songs`（缺少时回退 `artist_top_song`）。多个歌手在歌手筛选组内取并集，再与歌单、热度条件取交集。
 - 红心数使用 `song_red_count` 的 `data.count`，不要使用歌曲详情中的 `pop`（它是另一种热度指标）。`countDesc` 可能只显示 `100w+` 等近似文本，但 `count` 仍是服务端筛选使用的数值。
 - 热度筛选档位固定为 `0`、`1000`、`10000`、`100000`。自动出题选中候选后仍需调用 `song_detail` 获取歌词、音频和百科信息。

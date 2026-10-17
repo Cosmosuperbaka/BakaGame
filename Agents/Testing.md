@@ -22,28 +22,28 @@
 
 普通测试使用隔离夹具与 Mock 上游；真实网易云测试单独调用，会使用本地凭据。按已有授权和 [NeteaseMusicApi](NeteaseMusicApi.md#测试要求) 执行，不把它当普通单测。环境缺失时记录未验证范围，不用改低阈值或伪造通过来交付。
 
-## 当前门禁与事实来源
+## 门禁与真相源
 
-当前已落地的门禁：
+必须维持的门禁：
 
 - 服务测试不连接真实数据库：仓储为可选注入，未注入即不落库（见 [Database](Database.md#5-测试)）；结算流程和资源路径均有回归覆盖。
 - 客户端生产构建后执行资源冒烟，检查入口 HTML、固定 WebP、哈希贴纸、SPA 路由和 MIME。
-- 服务端与客户端覆盖率命令已进入 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 会保留两端 lcov/HTML 报告。
+- 服务端与客户端覆盖率命令必须留在 CI。阈值只在 [CheckCoverage.ts](../Server/scripts/CheckCoverage.ts) 与 [vitest.config.ts](../Client/vitest.config.ts) 维护，本文不复制易过期的数值。CI 须保留两端 lcov/HTML 报告。
 - `Server/scripts/ProductionSmoke.ts` 启动真实服务进程，检查 `/health`、`/livez`、`/readyz` 以及 WhoIsFaker、SonGuessr、CCB 三个 WebSocket 入口的大厅订阅 ACK；使用隔离端口和无网络上游，不访问真实第三方。
-- 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不再读取 Tailwind 类名；关键落地页和聊天流程会将页面异常、控制台错误及非预期 4xx 转为测试失败。
+- 聊天气泡使用 `data-testid="chat-message-bubble"`，E2E 不得读取 Tailwind 类名；关键落地页和聊天流程须把页面异常、控制台错误及非预期 4xx 转为测试失败。
 - 客户端 CI 在生产构建后执行 `npm run build-storybook`，防止故事与截图工具随组件改动失效。
 
-以下事项属于后续容量或维护工作，目前没有伪装成已完成的门禁：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
+以下能力尚未纳入门禁，不得按已覆盖对待：拆分过大的 E2E 文件、长连接稳定性与断线矩阵、夜间真实第三方集成、持续容量趋势报告，以及按模块设置更细粒度的覆盖率阈值。新增测试应先补齐对应行为和夹具，再考虑把它们纳入 CI。
 
 ## 测试分层
 
 | 层级 | 位置 | 运行器 | 主要职责 |
 |---|---|---|---|
-| 后端单元测试 | `Server/test/Rules.test.ts`、`ConnectionRegistry.test.ts`、`Server/test/LocalBangumiProvider.test.ts`、`Server/test/FallbackBangumiProvider.test.ts`、`Server/test/BangumiProvider.test.ts`、`Server/test/BangumiWorkerProvider.test.ts` | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
-| 后端服务回归 | `Server/test/WhoIsFakerService.test.ts`、`TestRoom.test.ts`、`SonGuessrService.test.ts`、`Server/test/CCBNativeLifecycle.test.ts`、`Server/test/CCBNativeModes.test.ts`、`Server/test/CCBNativeBoundaries.test.ts`、`Server/test/CCBOriginalService.test.ts`、`Server/test/CCBOriginalRounds.test.ts` | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
-| 协议与传输集成 | `Server/test/WhoIsFakerProtocol.test.ts`、`App.test.ts`、`CommandHandlers.test.ts`、`SonGuessrProtocol.test.ts`、`NeteaseMusicProvider.test.ts`、`Server/test/CCBProtocol.test.ts`、`Server/test/CCBTransport.test.ts`、`Server/test/CCBOriginalProtocol.test.ts` | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
-| 账号与鉴权 | `Server/test/Account.test.ts`（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；`UserData.test.ts` 覆盖设置云同步与站内反馈，`Admin.test.ts` 覆盖管理接口与审计；前端的接口客户端、云同步、登录弹窗与资料卡另有 vitest 单测（见 [Account](Account.md#10-测试)） |
-| 对局记录 | `Server/test/GameRecord.test.ts`、`SonGuessrService.test.ts` | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-测试)） |
+| 后端单元测试 | `Server/test/` 下的规则、连接、Bangumi Provider 系列 | `bun:test` | 纯规则、连接筛选、错误码、广播隔离、Bangumi 本地数据与远端回退、远端请求截止/排队与 Worker 缓存/图片重写 |
+| 后端服务回归 | `Server/test/` 下的 WhoIsFaker、SonGuessr、CCB 服务套件 | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CCB 原生房间生命周期、模式与边界、原版互通服务与回合 |
+| 协议与传输集成 | `Server/test/` 下的协议、App、命令分发与 Provider 套件 | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CCB 协议与 WebSocket 传输及原版协议 |
+| 账号与鉴权 | `Server/test/` 的账号、用户数据、管理与统计套件（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；设置云同步与站内反馈；管理接口与审计；前端对应单测见 [Account](Account.md#10-测试) |
+| 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-测试)） |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |
@@ -63,7 +63,7 @@ bun run verify
 bun test test/NetworkCapacity.test.ts
 # Bangumi：本地数据、降级、远端请求边界、Worker 图片/缓存
 bun test test/LocalBangumiProvider.test.ts test/FallbackBangumiProvider.test.ts test/BangumiProvider.test.ts test/BangumiWorkerProvider.test.ts
-# CCB：按原生服务、协议传输、原版互通链路选择，不再使用已拆除的总套件名
+# CCB：按原生服务、协议传输、原版互通链路分别选择
 bun test test/CCBNativeLifecycle.test.ts test/CCBNativeModes.test.ts test/CCBNativeBoundaries.test.ts test/CCBRules.test.ts
 bun test test/CCBProtocol.test.ts test/CCBTransport.test.ts
 bun test test/CCBOriginalService.test.ts test/CCBOriginalRounds.test.ts test/CCBOriginalProtocol.test.ts
@@ -101,7 +101,7 @@ npx playwright test e2e/App.spec.ts
 
 ## 依赖与浏览器
 
-- 依赖安装只有一个入口：仓库根的 `pnpm install`（CI 用 `pnpm install --frozen-lockfile`），锁文件权威是根级 `pnpm-lock.yaml`。`Client/package-lock.json` 与 `Server/bun.lock` 已删除，不要再引入。
+- 依赖安装只有一个入口：仓库根的 `pnpm install`（CI 用 `pnpm install --frozen-lockfile`），锁文件权威是根级 `pnpm-lock.yaml`。不得引入 `Client/package-lock.json` 或 `Server/bun.lock`。
 - 安装会把依赖提升到根 `node_modules/`；**Server 下没有 `Server/node_modules`**。依赖包内附带的数据文件必须用模块解析定位，不得写死 `Server/node_modules` 路径（见 [Conventions §4](Conventions.md#依赖路径不得写死-servernode_modules)）。
 - Windows 本地 Playwright 默认复用系统 Microsoft Edge 的 Chromium 内核。
 - 其他平台或 CI 先运行 `npx playwright install --with-deps chromium`。
@@ -169,7 +169,7 @@ pnpm --filter server verify          # = server check + test:coverage
 pnpm --filter client verify          # = lint + test:coverage + build + test:e2e
 ```
 
-服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 当前依次执行 ESLint、Vitest 覆盖率、build、`test:e2e`（内部再次 build，再运行 Playwright 与歌词回归）。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。
+服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 依次执行 ESLint、Vitest 覆盖率、build、`test:e2e`（内部再次 build，再运行 Playwright 与歌词回归）。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。
 
 网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。
@@ -177,7 +177,7 @@ pnpm --filter client verify          # = lint + test:coverage + build + test:e2e
 ## E2E 假红排查（本地）
 
 `npm run test:e2e` 报 `Error: Timed out waiting 60000ms from config.webServer.` 时，
-先检查进程输出和实际探活响应；若手动访问正常，再核对代理环境。以下是历史复现条件，不代表所有超时均由代理造成：
+先检查进程输出和实际探活响应；若手动访问正常，再核对代理环境。下表用于判定代理误路由，不代表所有超时均由代理造成：
 
 | 现象 | 真因 |
 |---|---|
@@ -191,8 +191,6 @@ pnpm --filter client verify          # = lint + test:coverage + build + test:e2e
 
 ## Worker 异步错误断言
 
-- 该变通最初在 Windows 的 Bun 1.3.x 上确立：对已初始化 Worker 的异步错误回包直接使用
-  `expect(promise).rejects` 会阻塞消息分发。
+- 对已初始化 Worker 的异步错误回包，**不得直接使用** `expect(promise).rejects`：它会阻塞消息分发。
   相关集成测试必须先通过原生 Promise 捕获结果，再同步断言明确业务错误码；禁止延长超时掩盖挂起。
-- bun pin 升到 1.4.2 后（2026-09-22），**该变通保留且全量测试仍绿**；未单独验证移除后是否仍会挂起，
-  因此不得以「版本已升」为由删除该写法。
+- 该写法不随 Bun 版本升级失效，**不得以「版本已升」为由删除**；要移除它必须先单独验证不再挂起。

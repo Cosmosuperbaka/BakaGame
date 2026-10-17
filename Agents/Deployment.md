@@ -4,7 +4,7 @@
 
 | 工作范围 | 查阅章节 |
 |---|---|
-| TLS、WS 接入、基址或探活 | 「反向代理职责」「当前请求链路与同源化边界」 |
+| TLS、WS 接入、基址或探活 | 「反向代理职责」「请求链路与同源化边界」 |
 | SEO 与构建期 HTML | 「前端静态外壳」 |
 | 资源缓存及响应头 | 「边缘缓存策略」 |
 | 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、R2 数据分发、Secrets 小节 |
@@ -26,7 +26,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 限制 HTTP 请求体、WebSocket 消息或帧大小以及连接带宽。
 - 配置空闲连接和握手超时，同时允许正常对局使用长连接。
 - 正确转发 WebSocket 的 `Upgrade` 与 `Connection` 头。
-- 不得在代理层注入或强制启用 `permessage-deflate`；应用当前为兼容 iOS WebKit 全局关闭该扩展。
+- 不得在代理层注入或强制启用 `permessage-deflate`；应用为兼容 iOS WebKit 全局关闭该扩展。
 - 只把受信任的前端来源转发给服务；应用的 `CLIENT_URL` 必须与该来源一致。
 
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
@@ -35,15 +35,15 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 公开遥测 `/api/monitoring/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的应用内单来源预算，
 只使用 Bun `server.requestIP(request)` 的传输 peer；不信任客户端自报的
 `X-Forwarded-For` / `X-Real-IP`。经反向代理时全体客户端共享代理 peer 桶，
-无 socket 的请求共享 unknown 桶；当前没有 authenticated-forwarding，不能称为每玩家 IP 限流。
+无 socket 的请求共享 unknown 桶；没有 authenticated-forwarding 时不得称为每玩家 IP 限流。
 独立总预算仍启用。若生产需要细分代理后来源，须先明确并验证受信代理身份与转发头覆盖规则；
-不能仅解析任意转发头。当前聚合桶容量须结合真实代理流量验收。
+不能仅解析任意转发头。聚合桶容量须结合真实代理流量验收。
 
-## 当前请求链路与同源化边界
+## 请求链路与同源化边界
 
-**当前配置要求是浏览器跨域直连后端公开域名**，后端以 Origin 白名单和 CORS 响应。后端公开域名仍可经过站点加速层；不能把“跨域”理解为绕过 CDN 直连源站 IP。
+**浏览器必须跨域直连后端公开域名**，后端以 Origin 白名单和 CORS 响应。后端公开域名仍可经过站点加速层；不能把“跨域”理解为绕过 CDN 直连源站 IP。
 
-`Client/middleware.js` 的同源 `/api/*` 反代已经撤销：历史验证中握手可返回 `101`，但后续 WebSocket 数据帧没有被转发。前端域名的 `/api/*` 会落入 SPA HTML 兜底，不能用作后端健康探针。
+同源 `/api/*` 反代不可用：握手可以返回 `101`，但后续 WebSocket 数据帧不会转发。前端域名的 `/api/*` 会落入 SPA HTML 兜底，不能用作后端健康探针。
 
 ### 客户端基址
 
@@ -52,18 +52,18 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 | 场景 | `VITE_SERVER_URL` | 结果 |
 |---|---|---|
 | 本地开发 | `http://localhost:4850` | 直连本地后端 |
-| 当前生产配置 | 后端公开 HTTPS 基址 | 跨域直连，必须显式配置 |
-| 生产留空，或显式 `/`、`same-origin` | 同源相对路径 | 解析器支持，但当前代理链路不具备使用条件 |
+| 生产 | 后端公开 HTTPS 基址 | 跨域直连，必须显式配置 |
+| 生产留空，或显式 `/`、`same-origin` | 同源相对路径 | 解析器支持，但代理链路无法转发 WS，生产不得使用 |
 
 只有目标平台明确支持 WS 转发，且在目标环境验证“握手 → 命令 → 对应 ACK”后，才可重新引入同源代理并切换基址。先验证链路，再切换配置；仅 `101` 或 HTTP 成功不满足条件。
 
-### 历史边缘验证的适用范围
+### 边缘验证的适用范围
 
-以下是 2026-09 的实验记录，用于避免重复踩坑，不代表当前线上已启用：
+以下约束用于避免重复踩坑：
 
-- Makers `rewrite()` 曾验证支持跨域绝对地址，但本地 `makers dev` 缺少边缘注入的 fetch，无法验证这一能力；本地 502 不能直接代表线上结果。
+- Makers `rewrite()` 支持跨域绝对地址，但本地 `makers dev` 缺少边缘注入的 fetch，无法验证这一能力；本地 502 不能直接代表线上结果。
 - middleware `/api/:path*` matcher 先于 SPA fallback，相似前缀 `/apiish` 不匹配。站点加速的 zone 级边缘函数不能拦截 Makers 托管域名。
-- 当时只验证了 HTTP GET/POST、CDN 响应头及 SPA fallback；WS 握手成功后的数据转发失败才是撤销原因。`200 + HTML` 表示反代未生效，是另一种故障。
+- 只验证 HTTP GET/POST、CDN 响应头及 SPA fallback 不足以证明反代可用；WS 握手成功后的数据转发才是判据。`200 + HTML` 表示反代未生效，是另一种故障。
 - Makers 项目使用 GitHub 集成，由远端 main 更新触发构建，CLI 不能直传部署。常规发布使用本机签名提交与 push；REST contents 提交会丢失 SSH 签名，不作为常规替代。
 
 ### 探针与完成条件
@@ -71,7 +71,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - 对后端公开基址请求 `/health`、`/livez`、`/readyz`，核对状态码与 JSON 内容，不能只接受 HTTP 200（首页 HTML 也可能是 200）。
 - HTTP 代理验证使用已知只读 GET 端点，并检查响应体和 `x-trace-id`。不得用标签提交等 POST 写接口探测连通性。
 - WS 验证连接后发送只读大厅订阅等命令并检查关联 ACK；可能创建房间或改变对局的命令使用隔离本地实例。
-- 生产目标的检查仅在已有授权范围内运行。只修改文档不触发线上探针；历史“已验证”不能替代本次发布证据。
+- 生产目标的检查仅在已有授权范围内运行。只修改文档不触发线上探针；既有验证结论不能替代本次发布证据。
 
 ## 前端静态外壳 (Static Shell)
 
@@ -81,8 +81,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 爬虫无需执行 JS 即可读到内容。
 
 - **零浏览器依赖**：插件是纯 Node 字符串注入。**不要改回无头浏览器预渲染**——平台构建容器
-  不提供 Chromium（实测 `Executable doesn't exist ... chromium_headless_shell`），
-  让构建去下载 150MB 浏览器既慢又脆；本站可收录页面的正文本来就是数据，由数据生成 HTML 更可靠。
+  不提供 Chromium，让构建去下载浏览器既慢又脆；本站可收录页面的正文本来就是数据，由数据生成 HTML 更可靠。
 - **文案单一真相源**：`PageMeta.ts` 同时被页面组件的 `Seo`（运行时写 head）与插件（构建期写 HTML）
   消费，改了描述两处一起变。页面侧调用因此简化为 `<Seo path="/" />`；未登记的路径（房间页、
   单人页）必须显式传 `description`，否则组件当场抛错。
@@ -95,9 +94,9 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   别名与正式路径内容一致，重复内容由 canonical 收敛，别名不进 sitemap。
 - **站点地图与分享图随构建生成**：`dist/sitemap.xml` 与 `dist/og/*.jpg` 由 `seo-artifacts` 插件在
   构建末尾产出。站点地图的 URL 集合与 `lastmod` 取自 `PageMeta`——`lastmod` 只在页面文案或结构
-  显著变更时更新、不随构建刷新（手写在 `public/sitemap.xml` 的旧版已删除）；分享图从
+  显著变更时更新、不随构建刷新；分享图从
   `public/assets` 的同名源图转 jpg（全站图片管线只产 webp，而 QQ 等分享抓取器不认 webp，
-  卡片实测显示不出图），`PageMeta.image` 一律写 `${SITE_ORIGIN}/og/<名>.jpg`，外链图原样放行。
+  卡片显示不出图），`PageMeta.image` 一律写 `${SITE_ORIGIN}/og/<名>.jpg`，外链图原样放行。
 - **FAQ 与组织实体结构化数据**：每页的常见问答（`PageMeta.faq`）由构建期写进静态外壳正文并派生
   FAQPage JSON-LD，运行时 `Seo` 按固定 id 重建同一份数据；问答随外壳在首帧前一起清空，用户不可见。
   缺问答、空条目或重复问题会让构建直接失败——这块内容坏了没有观感反馈，只能靠断言拦在部署前。
@@ -105,7 +104,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 - **正文外壳必须在首次绘制之前消失**：外壳插在 `#root` 内，紧随其后是一段 parser-blocking
   内联脚本 `document.getElementById("root").replaceChildren()`，随解析同步清空。入口是 defer 的
   module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后——只靠它替换 `#root`，
-  用户进站会先看到一段未排版的裸文本（线上实际发生过）。**不要改成 `#root{display:none}` 之类的
+  用户进站会先看到一段未排版的裸文本。**不要改成 `#root{display:none}` 之类的
   CSS 兜底**：那等于把正文标成隐藏文本，与 hidden text 同类；此处不隐藏任何东西，只是让
   JS 客户端先移除、再交给应用渲染。**也不要用 `<noscript>`**：目标恰恰是不执行 JS 的爬虫，
   noscript 内容在多数引擎眼中信号更弱。不执行 JS 的爬虫读的是原始 HTML，外壳照旧可见——
@@ -122,8 +121,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   外壳存在（无浏览器，跑在 CI 的 client job）；「有没有产生重复标签」由 E2E 用真实浏览器断言
   （strict 定位器遇到重复标签会直接报错）。
 - 生产构建命令：平台的 Makers 项目是 GitHub 集成型，构建在平台侧发生，`npm run build` 即可
-  （静态外壳已在 build 内完成）。仓库保留了 `build:seo` 作为指向 build 的兼容别名，等控制台
-  改回 `npm run build` 后可以删掉。
+  （静态外壳已在 build 内完成）。`build:seo` 只是指向 `build` 的兼容别名，新配置一律用 `npm run build`。
 - **构建期有一次只读的 GitHub 接口请求**（`commit-history` 插件取公开仓库的提交历史）：
   构建容器是浅克隆（depth=1），`git log` 只有 HEAD 一条，页脚弹窗的提交列表因此改由接口提供，
   并用本次构建的提交作 `sha` 起点，保证列表第一条与 `meta[name=bakagame-build]` 是同一个提交。
@@ -133,7 +131,7 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
   远高于构建频率）。
 - 上线验收：用 `curl`（不带 JS）访问 `/`、`/whoisfaker`、`/songuessr`、`/ccb` 四个路由，正文应含对应文案且 canonical 指向自身。
   若平台把游戏大厅回退成了首页外壳，说明静态文件未被解析，
-  先检查静态产物与平台路由解析；不要因此恢复上节已撤销的 API/WS 中间件。静态路径规则与实时反代分别验证。
+  先检查静态产物与平台路由解析；不要因此引入同源 API/WS 中间件。静态路径规则与实时反代分别验证。
 
 ## 边缘缓存策略 (edgeone.json)
 
@@ -145,9 +143,8 @@ WhoIsFaker、Songuessr 与 CCB 的实时业务分别通过 `/api/whoisfaker/ws`�
 
 **缓存时长的唯一判据是「这个文件名会不会随内容变化」，不是「它是什么类型的文件」。**
 Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文件名就变，缓存一年也安全；
-而 `public/` 下的图片经 `prepare-public-webp.mjs` 转码后**保留原名**，只有 5 个：
-`CCB.webp` `Faker.webp` `favicon.webp` `logo.webp` `SongGuessr.webp`。给后者发
-`immutable` 等于把换图能力锁死——文件名不变，浏览器与边缘都不会再回源。
+而 `public/` 下的图片经 `prepare-public-webp.mjs` 转码后**保留原名**（站点图、favicon 等）。
+给后者发 `immutable` 等于把换图能力锁死——文件名不变，浏览器与边缘都不会再回源。
 
 | 路径 | Cache-Control | 边缘 TTL | 理由 |
 |---|---|---|---|
@@ -163,7 +160,7 @@ Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文�
 
 平台的 `headers` 与 `caches` **按书写顺序取首个命中，不按精确度排序**。
 `/*` 必须排在**最后**：它一旦前置就会吞掉后面所有具体规则，而 JSON 依然合法、平台也照常
-接受，故障是静默的（改动时实测踩过——`/api/*` 的 `no-store` 被 `/*` 完全屏蔽）。
+接受，故障是静默的（`/api/*` 的 `no-store` 会被 `/*` 完全屏蔽）。
 测试里用「探测路径必须拿到自己那档策略」锁死了这一点。
 
 ### headers 与 caches 必须同档
@@ -174,7 +171,7 @@ Vite 产物带 8 位内容哈希（`.js` / `.css` / 字体），内容一变文�
 
 ### 缓存与路由分别验证
 
-`edgeone.json` 的 `/api/*` 规则只声明不缓存，不创建代理路由。当前请求链路、健康探针和同源切换条件见前文；缓存头正确不能证明业务请求到达后端。
+`edgeone.json` 的 `/api/*` 规则只声明不缓存，不创建代理路由。请求链路、健康探针和同源切换条件见前文；缓存头正确不能证明业务请求到达后端。
 
 发布时按实际部署基址检查三档资源：
 
@@ -186,7 +183,7 @@ curl -s https://backend.example.com/health               # 后端 JSON，不是 
 curl -s https://backend.example.com/readyz               # ready 为 true
 ```
 
-其中 `<hash>` 从本次构建获取。前端 `/api/*` 的 no-store 可单独检查，但不得再要求当前前端兜底响应携带后端 `x-trace-id`。
+其中 `<hash>` 从本次构建获取。前端 `/api/*` 的 no-store 可单独检查，但不得要求 SPA 兜底响应携带后端 `x-trace-id`。
 
 ## 应用职责
 
@@ -236,7 +233,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `MEILISEARCH_KEY` | 搜索降级为本地 FTS/LIKE 与官方回退（无 Meilisearch 增强） | 与 Meilisearch master key 一致；网络前提见下节；首次启用涉及索引构建，须单独验证，不与其它变更同批 |
 | `MEILISEARCH_URL` | 独立 Meili 容器下回环地址不可达：搜索与出题链路初始化失败（**不降级**，不可用） | Meili 与 app 同网络命名空间时可不设（默认 `http://127.0.0.1:7700`）；独立容器设为容器可达地址（如 `http://<meili 容器名>:7700`），与 `MEILISEARCH_KEY` 同批核对 |
 | `CCB_ORIGINAL_SERVER_URL` + `CCB_ORIGINAL_AES_SECRET` | 原版兼容房不提供入口（可控降级） | 两者都非空才启用 |
-| `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；首次上线后在容器内执行一次 `bun run db:import-word-bank` 迁移旧词库，见 [Database](Database.md) |
+| `DATABASE_URL` | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | TiDB 连接串，必须带库名；新环境首启后在容器内执行一次 `bun run db:import-word-bank` 导入词库，见 [Database](Database.md) |
 | `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时服务拒绝启动 | 至少 32 字符随机串，`openssl rand -hex 32` 生成；更换会使全部登录会话失效 |
 | `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#9-配置) |
 | `SENTRY_API_TOKEN` | 后台概览的 Sentry 卡片显示「未配置」（可控降级） | 专用只读令牌（`org:read`、`project:read`、`event:read`），不复用个人全权令牌 |
@@ -249,8 +246,6 @@ sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}
 ```
 
 完整生产配置输出 11，未启用原版房时为 10（`SMTP_PORT`、`MAIL_FROM`、`ADMIN_QQ` 为选填，不计入）。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
-
-**首次从「来源 IP 校验」旧版迁移**：Bearer 版脚本对旧版服务必然收到 403，首次部署会在第 4 步安全中止——不重启容器、线上保持旧版，且工作区已完成代码与数据的对齐校验（含 release 元数据生成），属预期行为而非故障。运维在确认中止后手动重启（或重建）容器令新版上线——**重建前逐项核对上表**（`MAINTENANCE_TOKEN` 名称与取值、独立 Meili 容器下的 `MEILISEARCH_URL` 可达性）——再以同一获验 CI run 重新触发部署，即可完成端到端验证；此后链路对新版原生可用。该迁移已于 2026-10-09 实际完成（step4 维护通知授权成功、部署 23 秒全程通过），本节保留为迁移期行为说明。
 
 ### 发布链路与失败边界
 
@@ -269,12 +264,12 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 
 ### 发布元数据与遥测验收
 
-- reset 获验 SHA 并核对 `COMMIT == DEPLOY_REV`、数据库校验完成后，维护通知/重启前生成 `Server/build/release.json`。只允许 schemaVersion、完整 40 位小写 revision 与 changelog 的最新稳定 semver 三个字段，不含环境变量、凭据或私有端点；现有 `.gitignore` 已忽略整个 `Server/build`。
+- reset 获验 SHA 并核对 `COMMIT == DEPLOY_REV`、数据库校验完成后，维护通知/重启前生成 `Server/build/release.json`。只允许 schemaVersion、完整 40 位小写 revision 与 changelog 的最新稳定 semver 三个字段，不含环境变量、凭据或私有端点；`.gitignore` 忽略整个 `Server/build`。
 - 元数据逻辑由 `Server/src/infrastructure/Release.ts` 唯一维护：宿主用 `docker exec -i` 把该获验修订的源文件经 stdin 送入**已存在**的容器 Bun，以 `--no-env-file -` 运行；SHA 和该修订的公开 changelog JSON 作为两个参数传入。仅导入标准库，不加载应用/SDK，不要求宿主安装 Node/Bun，不猜测容器中的源码挂载路径。
 - 宿主先用 `mktemp` 在目标 build 目录创建临时文件，容器 stdout 写入该文件；退出成功后将其设为可读的 0644 并同目录 `mv` 原子替换。无效/缺失 SHA、损坏 JSON、无稳定版本、脚本异常或 3 秒截止均中止发布、不进入维护通知及容器重启，旧元数据不被截断，临时文件由失败分支/退出陷阱清理。Linux 宿主须通过现有环境自检提供 `cat/chmod/timeout`。
 - 运行时以模块位置定位 Server/仓库根，真实根 Git HEAD 与 changelog 优先，拒绝当前工作目录、父仓库及继承 GIT_DIR/GIT_WORK_TREE 导致的错误修订；无根 Git 时校验 metadata。生成后的 build 目录必须随 Server 的现有挂载/部署进入容器；无有效证据返回 `undefined` 并在 Sentry 启用时提示，不以硬编码旧版本或任意环境字符串冒充 release。canonical 格式为 `Vx.y.z（hash）`，完整 SHA 只在元数据保留，展示 hash 统一 7 位。
 - 环境解析优先级及 development 缺省见 [Conventions](Conventions.md#运行环境标记与资产验证隔离)，生产必须显式注入 production；Sentry 与 OTLP 使用同一标记。`Server/test/Release.test.ts` 执行真实 stdin 元数据脚本及从 workflow 提取的原子落盘阶段，Docker/sudo 在临时目录模拟，不重启真实容器；配套 Env/Sentry 测试均无真实遥测写入。
-- 本地修复不等于线上缺 release 流量已经消失。本轮父审只读样本显示缺 release 日志来自旧 SDK 10.73.0 producer，当前仓库 SDK 为 10.75.1；须另行获授权部署后，按 SDK、实例、environment 与 canonical release 复核新 producer，并区分历史日志。本文与本地测试不声称已替换生产实例或删除旧事件。
+- 本地测试通过不等于线上 release 流量已经正确。部署后须按 SDK、实例、environment 与 canonical release 复核 producer，并区分历史日志；本文与本地测试不声称已替换生产实例或删除旧事件。
 
 ### 时间预算铁律
 
@@ -285,7 +280,7 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 |---|---|
 | runner 准备 + SSH 建连 | ≤ 15s |
 | `git fetch` + `reset` + 数据库校验 | ≤ 10s |
-| 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；当前为从脚本开始起 115s 的绝对截止，包含此前耗时 |
+| 数据下载（仅数据变更时才发生） | 受 `DL_DEADLINE` 约束；为从脚本开始起 115s 的绝对截止，包含此前耗时 |
 | release 元数据生成与原子落盘 | ≤ 3s（容器元数据脚本由 `timeout 3s` 约束） |
 | 客户端排空 | ≤ 3s |
 | 运维 Bearer 通知 | ≤ 3s |
@@ -297,10 +292,9 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 
 ### 数据分发（可选；只用于基线补发）
 
-`Server/data/bangumi.sqlite`（2026-10-10 实测约 288 MiB）**不进 Git**——曾走 Git LFS，把账户的
-GitHub LFS 带宽额度吃穿。**现行投递方式**：一份「基线」数据集由运维一次性上传（图床目录
+`Server/data/bangumi.sqlite` **不进 Git**：Git LFS 会吃穿账户的带宽额度。**投递方式**：一份「基线」数据集由运维一次性上传（图床目录
 `Server/data/images/` 直接上服务器；数据集另发一份到 R2 供 CI 取用），此后由后端自行更新
-（标签刷新、新条目发现、每日备份）；CI 不再构建或发布数据集（原每周 `bangumi-data.yml` 已删除）。
+（标签刷新、新条目发现、每日备份）；CI 不构建也不发布数据集。
 
 部署脚本只保留一条**基线补发**通路：服务器上**没有**可用数据库时（首启/灾备重建），若 manifest
 提供了 `dataset` 条目则按版本化 URL 下载并校验落位；**服务器已有的库绝不搬走、绝不替换**——它与
@@ -329,7 +323,7 @@ GitHub LFS 带宽额度吃穿。**现行投递方式**：一份「基线」数�
   `trap on_exit` 把暂存区的旧库放回工作区，防止下一次容器重启读到缺失或损坏的数据库。
   worktree 里若出现 LFS 指针文本（历史失败运行遗留）直接丢弃——**只有魔数 `SQLite format 3`
   的文件才允许进暂存区，绝不能用 `mv -f` 让无效文件覆盖唯一的真实数据库**。
-- **LFS 双保险仍保留（过渡期）**：脚本 `export GIT_LFS_SKIP_SMUDGE=1` 并
+- **保留 LFS 双保险**：脚本 `export GIT_LFS_SKIP_SMUDGE=1` 并
   `git config --local filter.lfs.required false`，防服务器旧克隆的残留配置在 reset 时去拉实体。
 - **任何失败必须带行号喊出来**：脚本 `set -E` +
   `trap 'echo "❌ 第 ${LINENO} 行失败：$BASH_COMMAND"' ERR`，每阶段打印检查点
@@ -338,8 +332,7 @@ GitHub LFS 带宽额度吃穿。**现行投递方式**：一份「基线」数�
 - **开工先做环境自检**：`git/curl/awk/sort/tr/wc/head/basename/sha256sum/date/grep/cp/mv/rm/mktemp/cat/chmod/timeout`
   逐个 `command -v`，缺哪个就报名字退出。生产机环境不受本仓库控制，不要假设它齐全。
 
-迁移前的「LFS 镜像 / raw 代理 / 多节点测速」链路已整体废弃：实体不再从 GitHub 取，
-不要为防止 LFS 出境下载而恢复那套复杂度。
+实体不从 GitHub 取；不得为防止 LFS 出境下载而恢复「LFS 镜像 / raw 代理 / 多节点测速」那套复杂度。
 
 ### GitHub Secrets 密钥配置规范
 
@@ -353,11 +346,11 @@ GitHub LFS 带宽额度吃穿。**现行投递方式**：一份「基线」数�
 | `DEPLOY_KEY` | 用于 SSH 鉴权的私钥纯文本 | 必填（完整包含 BEGIN/END 标记） |
 | `DEPLOY_PASSPHRASE` | 用于解密 SSH 私钥的密码（若私钥受密码保护） | 可选（私钥无密码保护时无需配置） |
 | `BANGUMI_DATA_CDN_BASE` | R2 加速域基址（公开），CI 与部署据此解析基线 manifest | 必填（只读消费，不含凭证） |
-| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 当前无使用方（本地发布脚本自备凭证） |
-| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 当前无使用方 |
-| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 当前无使用方 |
-| `R2_BUCKET` | R2 桶名 | 当前无使用方 |
+| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 无仓库内使用方（本地发布脚本自备凭证） |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 无仓库内使用方 |
+| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 无仓库内使用方 |
+| `R2_BUCKET` | R2 桶名 | 无仓库内使用方 |
 
-R2 凭证四件套当前没有仓库内使用方（每周发布流程已删除；本地发布脚本
+R2 凭证四件套没有仓库内使用方（本地发布脚本
 `tools/publish_bangumi_data.py` 用自己环境的变量，不进仓库）；CI 与生产部署只按公开 URL
 下载版本化对象，生产机不持有任何 R2 凭证。

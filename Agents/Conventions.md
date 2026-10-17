@@ -8,7 +8,7 @@
 
 ### 1.1 核心业务实体与专有名词常量命名
 
-- **谁是卧底**: 全栈统一命名为 `WhoIsFaker`。会话凭据存储前缀用全称口径 **`whoisfaker_session_`**，不使用旧缩写 `wif_`（历史 `wif_*` 键由 `Client/src/lib/Storage.ts` 的 `migrateLegacyKeys` 一次性搬迁）。
+- **谁是卧底**: 全栈统一命名为 `WhoIsFaker`。会话凭据存储前缀用全称口径 **`whoisfaker_session_`**，不使用旧缩写 `wif_`；旧键搬迁由 `Client/src/lib/Storage.ts` 的 `migrateLegacyKeys` 承担。
 - **猜歌游戏**: 全栈统一命名为 **`SonGuessr`（漏G版）**。
   - **TypeScript 类型/接口/类/变量**: 统一使用 `SonGuessr`（如 `SonGuessrService`, `SonGuessrRoomSnapshot`, `SonGuessrPrivateState`, `UseSonGuessrStore`, `SonGuessrProvider`）。命名以本节为准；删除旧别名的约束见 [Spec §4](Spec.md)。
   - **常量命名 (Constants)**：`SonGuessr` 为专有名词，常量一律使用 **`SONGUESSR_XXX`** 前缀（例如 `SONGUESSR_PHASES`, `SONGUESSR_MUSIC_SESSION_CHANGED`），严禁拆分为 `SON_GUESSR_`。
@@ -79,7 +79,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 ### 依赖安装与锁文件权威关系
 
 - **唯一权威锁文件 = 根级 `pnpm-lock.yaml`**，由 `pnpm install --frozen-lockfile` 消费（CI 与本机一致）。
-- **不再保留 `package-lock.json` 与 `bun.lock`**：两者都会在 CI 里制造「装的是哪份锁」的歧义，且 workspace 下 npm/bun 已不再负责安装。历史上 `Client/package-lock.json` 与 `Server/bun.lock` 已删除，`.gitignore` 一并忽略两者。
+- **不得保留 `package-lock.json` 与 `bun.lock`**：两者都会在 CI 里制造「装的是哪份锁」的歧义，且 workspace 下 npm/bun 已不再负责安装。`.gitignore` 一并忽略两者。
 - 根级 `.npmrc` 的两条设置是运行前提，改动前先读文件内注释：`node-linker=hoisted`（避免软链破坏 Server 的容器 bind-mount 与单文件打包）与 `enable-pre-post-scripts=true`（放行 `bun`/`esbuild` 的 postinstall，否则 Server 的 `bun <script>` 会命中上游预置的「postinstall 未运行」占位脚本）。
 - 依赖版本约束（如 `typescript` 5.9.x、AMLL 0.5.2、`jsdom` 30 的 Node 下限、`@neteasecloudmusicapienhanced/api` ≥ 4.41.0）仍然是升级门禁，见下方「依赖版本约束」。
 
@@ -113,7 +113,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 
 ### 依赖版本约束（升级前必读）
 
-以下为当前依赖约束；版本来源是各包清单与锁文件。只有针对原因完成验证后才更新约束，不把历史上的上游状态当作永久事实：
+以下为依赖约束；版本来源是各包清单与锁文件。只有针对原因完成验证后才更新约束，不把上游某一时的状态当作永久事实：
 
 | 包 | 锁定值 | 约束原因 |
 |---|---|---|
@@ -123,20 +123,20 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
 | `@neteasecloudmusicapienhanced/api` | ≥ 4.41.0 | 设备名上报依赖该包的原生 `deviceinfo_center_upload` 模块，`4.40.x` 及更早没有它。低于此版本只能退回「直接导入包内 `util/request`/`util/option` 自拼 EAPI」，违反 [NeteaseMusicApi](NeteaseMusicApi.md) 的「只用公开接口」规则，因此下限不可回退。 |
 
-补充事实：
+补充约束：
 
 - **`Server/package.json` 里的 `bun` 是可执行运行时 pin，改它会改变测量仪器。**
   `bun run <script>` 会把 `node_modules/.bin` 前置到 PATH，因此脚本内层调用的 `bun`
-  解析到的是 **pin 的那个版本**（不是全局 bun）。实战后果：pin 从 1.3.14 升到 1.4.2 后，
-  `test:coverage` 的测量口径随之改变，函数分母从 3589 掉到 1649，直接打挂 `CheckCoverage.ts`
-  的棘轮阈值。**因此改 bun pin 必须与 `CheckCoverage.ts` 阈值重校同批进行**。阈值直接读取该脚本；实测百分比不是门禁值，不能把四舍五入后的显示值直接设为阈值。
-- **切换到新 bun 版本后的首次启动会付一次冷缓存成本**：实测 `src/Index.ts` 冷启动到
-  `/health` 就绪 12.1s，热缓存仅 0.94s（1.3.x 冷启动 2.45s）。`ProductionSmoke.ts` 的探活
-  超时是 15s 且 spawn 的 `stdout/stderr` 全为 `ignore`（崩溃时看不到任何日志），
-  所以换 bun 后第一次跑冒烟可能假红——**先重跑一次再判断**。
-- `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿 10 分钟以上且零输出（连日志 mtime 都停住）；同一状态加 `--verbose` 后实测 1 秒内跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。本仓库日常安装走根级 `pnpm install`，此条只在独立调试 `bun install` 时适用。
+  解析到的是 **pin 的那个版本**（不是全局 bun）。改 pin 会改变 `test:coverage` 的插桩口径
+  （函数分母随之变化），直接打挂 `CheckCoverage.ts` 的棘轮阈值。
+  **因此改 bun pin 必须与 `CheckCoverage.ts` 阈值重校同批进行**。阈值直接读取该脚本；四舍五入后的显示值不是门禁值，不能直接设为阈值。
+- **切换 bun 版本后的首次启动会付一次冷缓存成本**，冷启动到 `/health` 就绪可能明显超过
+  热缓存耗时而触发 `ProductionSmoke.ts` 的探活超时（该脚本把 spawn 的 `stdout/stderr` 置为
+  `ignore`，崩溃时看不到日志），所以换 bun 后第一次跑冒烟可能假红——**先重跑一次再判断**。
+- `bun install` 在**非 verbose** 模式下解析阶段可能病态停顿且零输出（连日志 mtime 都停住）；
+  同一状态加 `--verbose` 即可跑完。遇到卡死先换 `--verbose` 复现再判断，别误判成网络问题去折腾代理。本仓库日常安装走根级 `pnpm install`，此条只在独立调试 `bun install` 时适用。
 - 升级前在受影响包运行基线，升级后用同一组检查比较；共享工具链或跨端契约升级覆盖两端。具体范围见 [Testing](Testing.md#验证范围)。
-- 预检优于装完再测：把新旧 tarball 解到 `.workbuddy/tmp/` 直接比 `.d.mts` 导出面与 `dependencies` 字段，可在不触碰 `node_modules` 的前提下否掉一次升级（AMLL 0.6.0 即如此否掉）。注意过滤 `.d.ts` 会漏掉 `.d.mts`/`.d.cts`。
+- 预检优于装完再测：把新旧 tarball 解到临时目录直接比 `.d.mts` 导出面与 `dependencies` 字段，可在不触碰 `node_modules` 的前提下否掉一次升级。注意过滤 `.d.ts` 会漏掉 `.d.mts`/`.d.cts`。
 
 ---
 
@@ -157,7 +157,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | 覆盖率 | `pnpm coverage` | 各包 `test:coverage` |
 | Lint | `pnpm lint` | `pnpm --filter client lint` |
 
-**也可以直接进入单包目录按原方式执行**（迁移期兼容，行为不变）：
+**也可以直接进入单包目录执行**（与根级转发等价）：
 
 | 包 | 开发 | 生产运行或预览 | 类型与构建 |
 |---|---|---|---|
@@ -206,12 +206,11 @@ VITE_SERVER_URL=http://localhost:4850
 `VITE_SERVER_URL` 是接口基址的唯一入口，取值语义见 `Client/src/lib/ServerEndpoint.ts`：
 
 - `http://localhost:4850` —— 本地开发（Vite 5173 与 Bun 4850 分属不同源）。
-- 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径。**该模式当前不可用**：
-  同源反代 `Client/middleware.js` 因无法转发 WebSocket 请求已撤销，前端域名的 `/api/*`
-  会被 SPA 兜底成 HTML。生产必须显式指向后端公开域名（跨域直连），详见
-  [Deployment](Deployment.md)「当前请求链路与同源化边界」。
+- 留空（生产构建）或显式 `/`、`same-origin` —— 走同源相对路径。**生产不得使用该模式**：
+  同源反代无法转发 WebSocket，前端域名的 `/api/*` 会被 SPA 兜底成 HTML。生产必须显式指向后端公开域名（跨域直连），详见
+  [Deployment](Deployment.md#请求链路与同源化边界)。
 
-共享源码的运行依赖由消费端显式声明；当前两端均声明 TypeBox。客户端 TypeScript paths 与 Vite/Vitest dedupe 将共享文件的 TypeBox 导入解析到 Client 安装，Storybook 复用 Vite 配置，不依赖 Server/node_modules，也不复制 schema。
+共享源码的运行依赖由消费端显式声明；两端都必须声明 TypeBox。客户端 TypeScript paths 与 Vite/Vitest dedupe 将共享文件的 TypeBox 导入解析到 Client 安装，Storybook 复用 Vite 配置，不依赖 Server/node_modules，也不复制 schema。
 
 ### 运行环境标记与资产验证隔离
 

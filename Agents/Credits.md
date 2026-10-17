@@ -5,7 +5,7 @@
 ## 1. 页面与入口
 
 - `/credits` 是完整页面，由主页页脚版本号进入（默认落在 `?tab=changelog`），标签顺序为「开源致谢 / 更新日志 / 提交历史」，当前标签写进 `?tab=`。
-- 页面不再使用弹窗承载版本信息。开合走跨页 View Transition 的专属形态（整页自底缘升起、关闭落回页脚），实现见 `Client/src/index.css` 的 `credits-page-rise` / `credits-page-sink` 与 `hooks/UsePageTransition` 的 `data-page-transition="credits"`。
+- 版本信息由完整页面承载，不得塞回弹窗。开合走跨页 View Transition 的专属形态（整页自底缘升起、关闭落回页脚），实现见 `Client/src/index.css` 的 `credits-page-rise` / `credits-page-sink` 与 `hooks/UsePageTransition` 的 `data-page-transition="credits"`。
 - 页面外壳固定为视口高度，只有当前标签的内容区内部滚动；三段内容顺序固定为贡献模型 → 核心技术栈 → 依赖清单。
 
 ## 2. 数据来源
@@ -84,6 +84,6 @@ npm run storybook:shots -- --filter 致谢
 
 ## 7. 维护
 
-- 本轮改动确认的模型署名、依赖数据或展示约束，在对应修改点同步回本文与 `Client/src/data/CreditsContent.ts` 的注释，不只留在聊天或提交信息里。
+- 改动确认的模型署名、依赖数据或展示约束，在对应修改点同步回本文与 `Client/src/data/CreditsContent.ts` 的注释，不只留在聊天或提交信息里。
 - 新增技术栈条目只需改 `CORE_TECH_STACK`（名称、职责、外链、可选 `packageName`）；新增品牌图标时同步 `components/credits/CreditsIcons.tsx` 的映射，并优先使用 simple-icons 已有图标。
 - 依赖清单的规模随安装树变化，不在页面或文档里写死依赖数量或包名列表。
