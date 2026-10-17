@@ -203,9 +203,9 @@ test("长玩家名不会挤出两款游戏玩家栏中的分数", async ({ page 
       return element.contains(document.elementFromPoint(x, y));
     });
     expect(visible).toBe(true);
-    // 猜歌等待页的队伍成员叠放（TeamPicker）对同一批玩家也带 title —— 那是 aria-hidden
-    // 的装饰层；排除它，只断言玩家栏里承载姓名的那个可见元素。
-    await expect(page.getByTitle(name).and(page.locator(":not([aria-hidden])"))).toBeVisible();
+    // 姓名改用自定义浮层后不再有 title：直接按可见文本断言。
+    // TeamPicker 的成员叠层是 aria-hidden 的头像，不含全名文本，不会撞车。
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${game}-default-avatar.png`) });
   }
 });
@@ -355,7 +355,7 @@ test("独自一人在旁观动画途中切回，自己的玩家行仍然可见",
   await page.getByRole("button", { name: "创建房间" }).click();
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
-  const row = page.locator(`span[title="${name}"]`);
+  const row = page.getByText(name, { exact: true });
   await expect(row).toBeVisible();
   // 等进房的入场动画落定，下面的切换才是「第一次」换组。
   await page.waitForTimeout(1_000);
