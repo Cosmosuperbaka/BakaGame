@@ -343,30 +343,32 @@ export class QQMusicProvider implements MusicProvider {
     if (cached) return cached;
 
     const audioUrl = await this.queue.add(async () => {
-      // 1. 尝试常规音质播放直链 (320k 或 128k)
-      const res = await qqmusic.song_url({
-        id: mid,
-        type: cookie ? "320" : "128",
-        cookie,
-      });
+      // 多级音质优雅降级链：有 Cookie 时优先尝试 320k，不可用或无 Cookie 时降级至标准 128k，再降级至 m4a (AAC)
+      // 严禁采纳幽灵前缀 RS02（该前缀在 CDN 上恒为 404）
+      const qualities = cookie ? ["320", "128", "m4a"] : ["128", "m4a"];
 
-      let directUrl = res.body?.data?.[0]?.url || "";
+      for (const quality of qualities) {
+        try {
+          const res = await qqmusic.song_url({
+            id: mid,
+            type: quality,
+            cookie,
+          });
 
-      // 2. 若直链为空 (如无登录凭证的 VIP 歌曲)，尝试试听片段直链 (try)
-      if (!directUrl) {
-        const tryRes = await qqmusic.song_url({
-          id: mid,
-          type: "try",
-          cookie,
-        });
-        directUrl = tryRes.body?.data?.[0]?.url || "";
+          const url = res.body?.data?.[0]?.url || "";
+          if (url && !url.includes("RS02")) {
+            return url;
+          }
+        } catch (error) {
+          this.options.logger?.warn?.("QQ音乐获取音频直链单档位尝试失败", {
+            mid,
+            quality,
+            ...describeError(error),
+          });
+        }
       }
 
-      if (!directUrl) {
-        throw new AppError("SONG_UNAVAILABLE", `该歌曲暂无可用播放音频: ${mid}`);
-      }
-
-      return directUrl;
+      throw new AppError("SONG_UNAVAILABLE", `该歌曲暂无可用播放音频: ${mid}`);
     });
 
     if (!audioUrl) {

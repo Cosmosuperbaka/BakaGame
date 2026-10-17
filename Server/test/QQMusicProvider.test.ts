@@ -258,7 +258,7 @@ describe("QQMusicProvider · 歌词三级降级", () => {
 });
 
 describe("QQMusicProvider · getSong 与音频直链", () => {
-  it("直链为空时降级到试听片段（try）", async () => {
+  it("320k 为空时降级到 128k 与 m4a，并且过滤 RS02 幽灵链接", async () => {
     const provider = new QQMusicProvider(offlineAmll);
     qqmusic.song_detail = mock(async () => ({
       status: 200,
@@ -269,12 +269,15 @@ describe("QQMusicProvider · getSong 与音频直链", () => {
     const urlCalls: string[] = [];
     qqmusic.song_url = mock(async ({ type }: any) => {
       urlCalls.push(type);
-      return { status: 200, body: { data: type === "try" ? [{ url: "https://cdn.example/try.mp3" }] : [{}] } };
+      if (type === "320") return { status: 200, body: { data: [{ url: "" }] } };
+      if (type === "128") return { status: 200, body: { data: [{ url: "https://ws.stream.qqmusic.qq.com/RS02_fake.mp3" }] } }; // 模拟 RS02 幽灵链接被过滤
+      if (type === "m4a") return { status: 200, body: { data: [{ url: "https://cdn.example/valid.m4a" }] } };
+      return { status: 200, body: { data: [{}] } };
     }) as any;
 
-    const song = await provider.getSong("qq:try1");
-    expect(song.audioUrl).toBe("https://cdn.example/try.mp3");
-    expect(urlCalls).toContain("try");
+    const song = await provider.getSong("qq:multi_tier", "uin=123");
+    expect(song.audioUrl).toBe("https://cdn.example/valid.m4a");
+    expect(urlCalls).toEqual(["320", "128", "m4a"]);
   });
 
   it("直链与试听都为空时抛 SONG_UNAVAILABLE", async () => {
