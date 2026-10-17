@@ -50,7 +50,7 @@ export interface AppEnv {
    * 跟着它回源会变成自己回自己的死循环。需要缺图自愈时才配，仓库里不落任何远端地址。
    */
   bangumiImageSource?: string;
-  /** 本地数据集路径：猜歌与 CCB 共用同一个库。 */
+  /** 本地数据集路径：猜歌与 CEE 共用同一个库。 */
   bangumiDbPath?: string;
   /** 自建图床分片目录（`/api/bangumi` 路由与更新器共用）；缺省跟随数据集目录。 */
   bangumiImagesDir?: string;
@@ -70,8 +70,8 @@ export interface AppEnv {
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
-  ccbOriginalServerUrl?: string;
-  ccbOriginalAesSecret?: string;
+  ceeOriginalServerUrl?: string;
+  ceeOriginalAesSecret?: string;
   meilisearchKey?: string;
 }
 
@@ -285,8 +285,8 @@ export const readEnv = (): AppEnv => {
     // id_tags.js / id_tags.json），写死默认地址只会让每次启动都报「连不上」。
     bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
-    ccbOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
-    ccbOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
+    ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
+    ceeOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     meilisearchKey: Bun.env.MEILISEARCH_KEY?.trim() || undefined,
     enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
       ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"

@@ -13,7 +13,7 @@ const AVATAR_LIMIT = 4;
 type TeamMember = { id: string; name: string; team: number | null };
 
 /**
- * 等待页的队伍面板（CCB 与猜歌共用）：个人与 1–8 队排成三列九格，每格写明人数并叠放成员首字，点一格即加入。
+ * 等待页的队伍面板（CEE 与猜歌共用）：个人与 1–8 队排成三列九格，每格写明人数并叠放成员首字，点一格即加入。
  * 基于原生 radio，方向键切换与读屏语义由浏览器提供；选中底块与分段控件同一个 `SlidingIndicator`，在格子之间滑过去。
  * 只给参与者：`players` 由调用方筛成玩家组成员，旁观者没有队伍；`switching` 时整组禁用，不让连点发出交错的请求。
  */

@@ -28,8 +28,8 @@ const profile = (role: AccountProfile["role"]): AccountProfile => ({
 const overview: AdminOverview = {
   users: { total: 12, admins: 1, banned: 2, newToday: 3 },
   feedback: { open: 4, processing: 1, resolved: 0, closed: 0 },
-  live: { faker: { rooms: 1, onlinePlayers: 5 }, song: { rooms: 2, onlinePlayers: 3 }, ccb: { rooms: 0, onlinePlayers: 0 } },
-  daily: [{ day: "2026-10-13", visitors: 40, signedInVisitors: 6, views: 90, newUsers: 3, rounds: { faker: 2, song: 5, ccb: 1 }, roundPlayers: 30 }],
+  live: { faker: { rooms: 1, onlinePlayers: 5 }, song: { rooms: 2, onlinePlayers: 3 }, cee: { rooms: 0, onlinePlayers: 0 } },
+  daily: [{ day: "2026-10-13", visitors: 40, signedInVisitors: 6, views: 90, newUsers: 3, rounds: { faker: 2, song: 5, cee: 1 }, roundPlayers: 30 }],
   pages: [{ path: "/songuessr", views: 50 }],
   gameRecordDays: 7,
 };

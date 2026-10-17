@@ -468,7 +468,7 @@ function YearInput({ label, value, optional, minimum, maximum, onCommit, disable
 
 /**
  * 年份范围：起止两格收在一条凹槽里，与步进器同一形态，中间用「至」相连。
- * `optional` 时任一格可留空表示不限（猜歌的番剧年份）；否则两格必填（CCB 的抽题年份）。起止顺序由调用处校验。
+ * `optional` 时任一格可留空表示不限（猜歌的番剧年份）；否则两格必填（CEE 的抽题年份）。起止顺序由调用处校验。
  */
 export function SettingYearRange({
   label, start, end, onChange, optional = false, minimum = 1900, maximum = 2200, description, disabled = false,

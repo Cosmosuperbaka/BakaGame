@@ -4,7 +4,7 @@ import type { ConnectionRecord } from "../src/shared/Index";
 import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
-import { ccbTestHarness, character } from "./CCBNativeFixtures";
+import { ceeTestHarness, character } from "./CEENativeFixtures";
 
 const TARGET_PLAYERS = 150;
 const MUTATIONS_PER_SECOND = 12;
@@ -100,12 +100,12 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => 
   expect(bitsPerSecond).toBeLessThanOrEqual(TARGET_BITS_PER_SECOND);
 }, 30_000);
 
-test("6Mbps 可以承载 150 人 CCB 的高频状态与私有猜测同步", async () => {
+test("6Mbps 可以承载 150 人 CEE 的高频状态与私有猜测同步", async () => {
   // 原版2382份外部标签记录最多21项，容量预算覆盖该实际最大值。
   const withExtraTags = (id: number) => ({ ...character(id), extraTags: Array.from({ length: 3 }, (_, section) => ({
     section: `标签分区${section}`, tags: Array.from({ length: 7 }, (_, tag) => `游戏角色属性${section}-${tag}`),
   })) });
-  const h = ccbTestHarness({ chooseRandomCharacter: async () => withExtraTags(1), getCharacter: async id => withExtraTags(id) });
+  const h = ceeTestHarness({ chooseRandomCharacter: async () => withExtraTags(1), getCharacter: async id => withExtraTags(id) });
   let networkNow = 0, measuredBytes = 0, patchCount = 0, fullCount = 0;
   const meter = (client: ReturnType<typeof h.connect>) => {
     const encoder = new StateSyncEncoder({ now: () => networkNow });
@@ -123,18 +123,18 @@ test("6Mbps 可以承载 150 人 CCB 的高频状态与私有猜测同步", asyn
   };
   try {
     const host = h.connect('容量房主'); meter(host);
-    await h.send(host, 'ccb.room.create', { source: 'native', roomId: '1234', name: '容量测试', userName: '玩家0', visibility: 'public', allowSpectators: true });
+    await h.send(host, 'cee.room.create', { source: 'native', roomId: '1234', name: '容量测试', userName: '玩家0', visibility: 'public', allowSpectators: true });
     const players = [host];
     for (let index = 1; index < TARGET_PLAYERS; index++) {
       const player = h.connect(`玩家${index}`); meter(player); players.push(player);
-      await h.send(player, 'ccb.room.join', { userName: `玩家${index}` });
+      await h.send(player, 'cee.room.join', { userName: `玩家${index}` });
     }
     await h.configure(host, { nonstopMode: true, maxAttempts: 100 });
-    await h.ready(...players.slice(1)); await h.send(host, 'ccb.game.start', {});
+    await h.ready(...players.slice(1)); await h.send(host, 'cee.game.start', {});
     measuredBytes = 0; patchCount = 0; fullCount = 0;
     for (let mutation = 0; mutation < MUTATIONS_PER_SECOND * TEST_DURATION_SECONDS; mutation++) {
       const player = players[mutation % players.length];
-      const message = { id: `ccb-capacity-${mutation}`, type: 'ccb.game.guess' as const, roomId: '1234', sessionToken: player.token, payload: { characterId: mutation % 2 ? 3 : 4 } };
+      const message = { id: `cee-capacity-${mutation}`, type: 'cee.game.guess' as const, roomId: '1234', sessionToken: player.token, payload: { characterId: mutation % 2 ? 3 : 4 } };
       const result = await h.service.execute(player.record.id, message);
       measuredBytes += websocketFrameBytes(utf8Bytes(message)) + websocketFrameBytes(utf8Bytes(createAck(message, result)));
       networkNow += 1000 / MUTATIONS_PER_SECOND;
@@ -142,7 +142,7 @@ test("6Mbps 可以承载 150 人 CCB 的高频状态与私有猜测同步", asyn
     // 两条生产状态通道在60秒处均须全量校准，无变更的私有通道也不得缺失。
     networkNow = 60_001; h.service.runHousekeeping();
     const bitsPerSecond = measuredBytes * TRANSPORT_OVERHEAD_RATIO * 8 / TEST_DURATION_SECONDS;
-    console.info(`150 人 CCB 猜测容量估算: ${(bitsPerSecond / 1_000_000).toFixed(2)} Mbps`);
+    console.info(`150 人 CEE 猜测容量估算: ${(bitsPerSecond / 1_000_000).toFixed(2)} Mbps`);
     expect(patchCount).toBeGreaterThan(0);
     expect(fullCount).toBeGreaterThanOrEqual(TARGET_PLAYERS);
     expect(bitsPerSecond).toBeLessThanOrEqual(TARGET_BITS_PER_SECOND);

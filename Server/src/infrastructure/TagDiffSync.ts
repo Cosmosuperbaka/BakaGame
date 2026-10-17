@@ -1,7 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
-import type { CCBCharacterRepository } from "./CCBCharacterRepository";
+import type { CEECharacterRepository } from "./CEECharacterRepository";
 
 /** CCB-TagsCI 的增量产物（见其 `user_tag_processor._write_diff`）。 */
 export interface TagDiffPayload {
@@ -42,7 +42,7 @@ const FIRST_DELAY_MS = 60_000;
 
 export function scheduleTagDiffSync(options: {
   /** 取仓库的回调：初始化可能失败或尚未完成，用时再取。 */
-  repository: () => Pick<CCBCharacterRepository, "applyTagChanges">;
+  repository: () => Pick<CEECharacterRepository, "applyTagChanges">;
   diffUrl: string;
   statePath: string;
   fetcher?: typeof fetch;
@@ -106,7 +106,7 @@ export function planTagDiff(payload: TagDiffPayload, appliedSha256: string | und
  * 不存在角色的悬空行 —— 它在按标签取角色时会变成一个空候选。
  */
 export async function syncTagDiff(options: {
-  repository: Pick<CCBCharacterRepository, "applyTagChanges">;
+  repository: Pick<CEECharacterRepository, "applyTagChanges">;
   /** diff 的拉取地址（CCB-TagsCI 的 outputs/id_tags.diff.json）。 */
   diffUrl: string;
   /** 已应用版本的记录文件。 */

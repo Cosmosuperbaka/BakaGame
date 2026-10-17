@@ -92,7 +92,7 @@ export const PAGE_META: PageMeta[] = [
     faq: [
       {
         q: "BakaGame 是什么？",
-        a: "一个二刺猿派对小游戏合集站，包含在线谁是卧底（WhoisFaker）、听歌识曲/听歌识番（Songuessr）和二刺猿笑传之猜猜呗增强版（CCB）三个玩法，丢个链接就能联机开黑。",
+        a: "一个二刺猿派对小游戏合集站，包含在线谁是卧底（WhoisFaker）、听歌识曲/听歌识番（Songuessr）和二刺猿笑传之猜猜呗增强版（CEE）三个玩法，丢个链接就能联机开黑。",
       },
       {
         q: "玩 BakaGame 需要注册或下载吗？",
@@ -110,20 +110,20 @@ export const PAGE_META: PageMeta[] = [
     shell: {
       h1: "BakaGame——二刺猿派对小游戏合集站",
       paragraphs: [
-        "BakaGame 专注于轻快硬核的多人联机派对游戏。集合了玩法优化过的谁是卧底、联动网易云、QQ音乐与 Bangumi 的歌曲及番剧竞猜（Songuessr）、以及基于数十万角色库线索收敛的 CCB 猜动漫角色。丢个链接即可加入房间，支持实时聊天与断线秒级重连。",
+        "BakaGame 专注于轻快硬核的多人联机派对游戏。集合了玩法优化过的谁是卧底、联动网易云、QQ音乐与 Bangumi 的歌曲及番剧竞猜（Songuessr）、以及基于数十万角色库线索收敛的 CEE 猜动漫角色。丢个链接即可加入房间，支持实时聊天与断线秒级重连。",
         "不管是宿舍开黑、群友摸鱼还是聚会破冰，想玩随时能来一局：在 WhoisFaker 里拼演技，在 Songuessr 里抢答歌曲和番剧，在二刺猿笑传之猜猜呗增强版里一步步锁定目标角色。所有模式支持自由开房，免下载免注册，有浏览器就能玩。",
       ],
       links: [
         { href: "/whoisfaker", label: "WhoisFaker入口" },
         { href: "/songuessr", label: "Songuessr入口" },
-        { href: "/ccb", label: "二刺猿笑传之猜猜呗增强版入口" },
+        { href: "/cee", label: "二刺猿笑传之猜猜呗增强版入口" },
       ],
     },
     structuredData: {
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: "BakaGame",
-      alternateName: ["二刺猿笑传之猜猜呗", "Who is Faker", "Songuessr", "CCB", "CEE", "二刺猿笑传之猜猜呗增强版"],
+      alternateName: ["二刺猿笑传之猜猜呗", "Who is Faker", "Songuessr", "CEE", "二刺猿笑传之猜猜呗增强版"],
       url: `${SITE_ORIGIN}/`,
       inLanguage: "zh-CN",
       description:
@@ -184,7 +184,7 @@ export const PAGE_META: PageMeta[] = [
       links: [
         { href: "/", label: "返回主页" },
         { href: "/songuessr", label: "Songuessr入口" },
-        { href: "/ccb", label: "二刺猿笑传之猜猜呗增强版入口" },
+        { href: "/cee", label: "二刺猿笑传之猜猜呗增强版入口" },
       ],
     },
     structuredData: {
@@ -253,7 +253,7 @@ export const PAGE_META: PageMeta[] = [
       links: [
         { href: "/", label: "返回主页" },
         { href: "/whoisfaker", label: "WhoisFaker入口" },
-        { href: "/ccb", label: "二刺猿笑传之猜猜呗增强版入口" },
+        { href: "/cee", label: "二刺猿笑传之猜猜呗增强版入口" },
       ],
     },
     structuredData: {
@@ -276,13 +276,13 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/ccb",
+    path: "/cee",
     lastmod: "2026-10-13",
     description:
-      "多人一起猜动漫角色！CCB（二刺猿笑传之猜猜呗增强版）基于数十万条 Bangumi 角色资料，从性别、年代、评分、声优到标签逐层排除，支持组队对抗、角色 BP 与原版服务器互通。",
-    image: `${SITE_ORIGIN}/og/CCB.jpg`,
+      "多人一起猜动漫角色！CEE（二刺猿笑传之猜猜呗增强版）基于数十万条 Bangumi 角色资料，从性别、年代、评分、声优到标签逐层排除，支持组队对抗、角色 BP 与原版服务器互通。",
+    image: `${SITE_ORIGIN}/og/CEE.jpg`,
     keywords: [
-      "CCB",
+      "CEE",
       "二刺猿笑传之猜猜呗",
       "二刺猿笑传之猜猜呗增强版",
       "猜动漫角色",
@@ -306,15 +306,15 @@ export const PAGE_META: PageMeta[] = [
         a: "支持个人混战与组队对抗、轮流出题、模糊立绘渐进提示，还有「角色全局 BP」「标签全局 BP」两套战术规则。",
       },
       {
-        q: "能和玩原版 CCB 的朋友联机吗？",
-        a: "可以。增强版房间兼容原版 CCB 联机协议，支持跨端同台。",
+        q: "能和玩原版 CEE 的朋友联机吗？",
+        a: "可以。增强版房间兼容原版 CEE 联机协议，支持跨端同台。",
       },
     ],
     shell: {
-      h1: "CCB——在线猜动漫角色（二刺猿笑传之猜猜呗增强版）",
+      h1: "CEE——在线猜动漫角色（二刺猿笑传之猜猜呗增强版）",
       paragraphs: [
         "在线猜动漫角色，基于数十万条 Bangumi 角色资料库：所有人一同竞猜同一个目标角色，每次提交都会实时反馈性别、登场年代、作品评分、出演作品重合度与角色标签，一步步逼近真相。",
-        "支持个人混战与组队对抗、轮流出题、模糊立绘渐进提示，以及「角色全局 BP」「标签全局 BP」两套战术规则；增强版房间全面兼容原版 CCB 联机协议，可以和老玩家跨端同台。",
+        "支持个人混战与组队对抗、轮流出题、模糊立绘渐进提示，以及「角色全局 BP」「标签全局 BP」两套战术规则；增强版房间全面兼容原版 CEE 联机协议，可以和老玩家跨端同台。",
       ],
       links: [
         { href: "/", label: "返回主页" },
@@ -325,11 +325,11 @@ export const PAGE_META: PageMeta[] = [
     structuredData: {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      name: "CCB 猜动漫角色",
+      name: "CEE 猜动漫角色",
       alternateName: ["二刺猿笑传之猜猜呗", "二刺猿笑传之猜猜呗增强版"],
       applicationCategory: "GameApplication",
       operatingSystem: "Web Browser",
-      url: `${SITE_ORIGIN}/ccb`,
+      url: `${SITE_ORIGIN}/cee`,
       inLanguage: "zh-CN",
       description: "基于数十万条 Bangumi 角色资料的多人猜动漫角色游戏，支持逐属性线索排查、组队对战与角色/标签全局 BP。",
       featureList: [
@@ -337,7 +337,7 @@ export const PAGE_META: PageMeta[] = [
         "性别、登场年代、评分、声优与标签的多维线索反馈",
         "角色全局 BP 与标签全局 BP 战术模式",
         "模糊立绘渐进解锁提示",
-        "增强版与原版 CCB 房间协议互通",
+        "增强版与原版 CEE 房间协议互通",
       ],
       offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
     },
@@ -387,7 +387,7 @@ export const PAGE_META: PageMeta[] = [
         { href: "/", label: "返回主页" },
         { href: "/whoisfaker", label: "WhoisFaker入口" },
         { href: "/songuessr", label: "Songuessr入口" },
-        { href: "/ccb", label: "二刺猿笑传之猜猜呗增强版入口" },
+        { href: "/cee", label: "二刺猿笑传之猜猜呗增强版入口" },
       ],
     },
     structuredData: {

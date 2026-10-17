@@ -17,7 +17,7 @@ async function withoutExcludedPlugins(plugins: PluginOption[] = []): Promise<Plu
 
 const HOUR = 3_600_000;
 const STORY_COMMITS: Array<[string, string, number]> = [
-  ["a1c3e5f", "feat(CCB): 大厅对齐其它游戏", 2],
+  ["a1c3e5f", "feat(CEE): 大厅对齐其它游戏", 2],
   ["b2d4f60", "refactor(Core): 抽取公共大厅组件", 5],
   ["c3e5071", "fix(Song): 修复倒计时提前归零", 26],
   ["d4f6182", "style(Core): 统一三游戏设计语言", 49],

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { Static } from "@sinclair/typebox";
 import { SongAutoFiltersInputSchema, SongAutoFiltersSchema, type SongAutoFiltersInput, type SongAutoFilters } from "../src/shared/SonGuessrFilters";
 import type { SonGuessrClientMessage } from "../src/shared/SonGuessr";
-import { parseCCBMessage } from "../src/transport/CCBProtocol";
+import { parseCEEMessage } from "../src/transport/CEEProtocol";
 import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
 import { parseSonGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
@@ -21,7 +21,7 @@ test("共享筛选输入与状态类型由同一schema导出", () => {
   expect(parseSonGuessrMessage(settings)).toEqual(settings);
 });
 test("三个协议拒绝继承的原型键且保持明确业务错误", () => {
-  for (const parse of [parseWhoIsFakerMessage, parseSonGuessrMessage, parseCCBMessage]) {
+  for (const parse of [parseWhoIsFakerMessage, parseSonGuessrMessage, parseCEEMessage]) {
     for (const type of ["constructor", "toString", "__proto__"]) {
       try { parse({ id: "prototype", type, payload: {} }); throw new Error("未拒绝原型键"); }
       catch (error) { expect((error as { code?: string }).code).toBe("UNKNOWN_MESSAGE_TYPE"); }
@@ -29,9 +29,9 @@ test("三个协议拒绝继承的原型键且保持明确业务错误", () => {
   }
 });
 
-// CCB K→payload 关联不能在 Object.fromEntries 后丢失。
-import type { CCBClientWireMessage } from "../src/shared/CCB";
-const ccbWire: CCBClientWireMessage = { id: "wire", type: "ccb.player.ready", roomId: null, payload: { ready: true } };
+// CEE K→payload 关联不能在 Object.fromEntries 后丢失。
+import type { CEEClientWireMessage } from "../src/shared/CEE";
+const ceeWire: CEEClientWireMessage = { id: "wire", type: "cee.player.ready", roomId: null, payload: { ready: true } };
 // @ts-expect-error ready 命令必须使用 ready 布尔载荷，不能变成任意命令的载荷并集。
-const wrongCCBWire: CCBClientWireMessage = { id: "wire", type: "ccb.player.ready", payload: { text: "错误关联" } };
-void ccbWire; void wrongCCBWire;
+const wrongCEEWire: CEEClientWireMessage = { id: "wire", type: "cee.player.ready", payload: { text: "错误关联" } };
+void ceeWire; void wrongCEEWire;

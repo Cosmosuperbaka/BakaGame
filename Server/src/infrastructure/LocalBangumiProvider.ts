@@ -105,7 +105,7 @@ export interface BangumiEnrichment {
 }
 
 export interface LocalBangumiProviderOptions {
-  /** 唯一的数据集路径：猜歌与 CCB 共用同一个库（见 tools/build_bangumi_db.py）。 */
+  /** 唯一的数据集路径：猜歌与 CEE 共用同一个库（见 tools/build_bangumi_db.py）。 */
   dbPath: string;
   /**
    * Bangumi API 回填缓存（可写 SQLite）。缺省时不落盘，只走内存缓存。

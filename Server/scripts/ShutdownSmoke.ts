@@ -94,7 +94,7 @@ try {
   assert.equal(ready.status, 200);
   assert.equal((await ready.json() as { ready: boolean }).ready, true);
   const subscriptions = [];
-  for (const [endpoint, type] of [["/api/whoisfaker/ws", "lobby.subscribeRooms"], ["/api/songuessr/ws", "song.lobby.subscribeRooms"], ["/api/ccb/ws", "ccb.lobby.subscribeRooms"]]) {
+  for (const [endpoint, type] of [["/api/whoisfaker/ws", "lobby.subscribeRooms"], ["/api/songuessr/ws", "song.lobby.subscribeRooms"], ["/api/cee/ws", "cee.lobby.subscribeRooms"]]) {
     subscriptions.push(await subscribe(endpoint, type));
   }
   const notify = await request("/api/system/notify-shutdown", { method: "POST", headers: { authorization: `Bearer ${token}` } });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDefaultCCBSettings } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared";
 import {
   markPendingRestore,
   peekPendingRestore,
@@ -22,14 +22,14 @@ describe("room settings memory", () => {
 
   describe("create defaults", () => {
     it("round-trips the options and never stores a password", () => {
-      saveRoomCreateDefaults("ccb", { visibility: "private", allowSpectators: false, source: "original" });
+      saveRoomCreateDefaults("cee", { visibility: "private", allowSpectators: false, source: "original" });
 
-      expect(readRoomCreateDefaults("ccb")).toEqual({
+      expect(readRoomCreateDefaults("cee")).toEqual({
         visibility: "private",
         allowSpectators: false,
         source: "original",
       });
-      const raw = window.localStorage.getItem("bakagame:room-create:ccb");
+      const raw = window.localStorage.getItem("bakagame:room-create:cee");
       expect(raw).not.toBeNull();
       expect(raw).not.toContain("password");
     });
@@ -69,9 +69,9 @@ describe("room settings memory", () => {
       saveRoomSettingsMemory("faker", faker);
       expect(readRoomSettingsMemory("faker")).toEqual(faker);
 
-      const ccb = { settings: createDefaultCCBSettings(2020) };
-      saveRoomSettingsMemory("ccb", ccb);
-      expect(readRoomSettingsMemory("ccb")).toEqual(ccb);
+      const cee = { settings: createDefaultCEESettings(2020) };
+      saveRoomSettingsMemory("cee", cee);
+      expect(readRoomSettingsMemory("cee")).toEqual(cee);
     });
 
     it("merges question and game patches without dropping the other side", () => {
@@ -135,8 +135,8 @@ describe("room settings memory", () => {
     });
 
     it("has nothing to consume without a mark", () => {
-      saveRoomSettingsMemory("ccb", { settings: createDefaultCCBSettings(2021) });
-      expect(takePendingRestoreMemory("ccb", "ROOM3")).toBeNull();
+      saveRoomSettingsMemory("cee", { settings: createDefaultCEESettings(2021) });
+      expect(takePendingRestoreMemory("cee", "ROOM3")).toBeNull();
     });
   });
 

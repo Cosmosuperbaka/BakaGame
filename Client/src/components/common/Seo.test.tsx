@@ -88,8 +88,8 @@ describe("Seo", () => {
   });
 
   it("未显式传描述时分享标签与页面描述共用登记文案", async () => {
-    renderSeo({ path: "/ccb" });
-    const description = findPageMeta("/ccb")!.description;
+    renderSeo({ path: "/cee" });
+    const description = findPageMeta("/cee")!.description;
     await waitFor(() => {
       expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(description);
       expect(document.head.querySelector('meta[property="og:description"]')?.getAttribute("content")).toBe(description);
@@ -182,7 +182,7 @@ describe("Seo", () => {
   });
 
   it("未登记路径既不注入结构化数据也不注入 FAQPage", async () => {
-    renderSeo({ description: "房间", path: "/ccb/room/1234", indexable: false });
+    renderSeo({ description: "房间", path: "/cee/room/1234", indexable: false });
     await waitFor(() => {
       expect(document.head.querySelector('script[type="application/ld+json"]')).toBeNull();
     });

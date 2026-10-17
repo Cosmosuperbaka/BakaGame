@@ -9,15 +9,15 @@ import { AppError } from "../src/domain/Errors";
 
 describe("readEnv 环境变量与启动断言", () => {
   it("搜索与原版房使用独立密钥，旧 URL 和超时配置不再生效", () => {
-    const keys = ["AES_SECRET", "CCB_ORIGINAL_AES_SECRET", "MEILISEARCH_KEY", "CCB_MEILISEARCH_URL", "CCB_MEILISEARCH_TIMEOUT_MS"] as const;
+    const keys = ["AES_SECRET", "CCB_ORIGINAL_AES_SECRET", "MEILISEARCH_KEY", "CEE_MEILISEARCH_URL", "CEE_MEILISEARCH_TIMEOUT_MS"] as const;
     const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
     try {
       Bun.env.AES_SECRET = "unused";
       Bun.env.CCB_ORIGINAL_AES_SECRET = "original-secret";
       Bun.env.MEILISEARCH_KEY = "search-secret";
-      Bun.env.CCB_MEILISEARCH_URL = "http://example.invalid";
-      Bun.env.CCB_MEILISEARCH_TIMEOUT_MS = "invalid";
-      expect(readEnv()).toMatchObject({ ccbOriginalAesSecret: "original-secret", meilisearchKey: "search-secret" });
+      Bun.env.CEE_MEILISEARCH_URL = "http://example.invalid";
+      Bun.env.CEE_MEILISEARCH_TIMEOUT_MS = "invalid";
+      expect(readEnv()).toMatchObject({ ceeOriginalAesSecret: "original-secret", meilisearchKey: "search-secret" });
       Bun.env.MEILISEARCH_KEY = "  other-search-secret  ";
       expect(readEnv().meilisearchKey).toBe("other-search-secret");
     } finally {

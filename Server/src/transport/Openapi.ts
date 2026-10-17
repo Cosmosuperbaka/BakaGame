@@ -16,7 +16,7 @@ export const createSwaggerPlugin = ({ serverUrl }: OpenApiOptions) =>
         title: "BakaGame Backend HTTP API",
         version: "unversioned",
         description:
-          "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/ccb/ws。",
+          "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。",
       },
       servers: [
         {

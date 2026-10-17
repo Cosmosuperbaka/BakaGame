@@ -11,7 +11,7 @@ import type {
   GameRecordRepository,
   StoredGameRecord,
 } from "../src/infrastructure/db/GameRecordRepository";
-import { ccbTestHarness } from "./CCBNativeFixtures";
+import { ceeTestHarness } from "./CEENativeFixtures";
 import { createConnection, createTestContext, execute } from "./Helpers";
 
 /** 仅测试使用的内存仓储。 */
@@ -124,22 +124,22 @@ describe("各游戏结算写入对局记录", () => {
 
   test("猜猜呗增强房：结算后多次发布只记一条，记录登录玩家账号", async () => {
     const { records, recorder } = capture();
-    const h = ccbTestHarness({}, undefined, { gameRecorder: recorder });
+    const h = ceeTestHarness({}, undefined, { gameRecorder: recorder });
     const host = await h.create();
     const guest = h.connect("玩家");
     guest.record.account = { userId: "user-guest", image: null };
-    await h.send(guest, "ccb.room.join", { userName: "玩家" });
+    await h.send(guest, "cee.room.join", { userName: "玩家" });
     await h.ready(guest);
-    await h.send(host, "ccb.game.start", {});
+    await h.send(host, "cee.game.start", {});
     await h.guess(guest, 2);
     await h.guess(host, 1);
     expect(h.snapshot(host).phase).toBe("settled");
-    await h.send(host, "ccb.chat.send", { text: "结算后聊天" });
+    await h.send(host, "cee.chat.send", { text: "结算后聊天" });
     h.advance(1_000);
 
     expect(records).toHaveLength(1);
     const [record] = records;
-    expect(record).toMatchObject({ game: "ccb", roomId: "1234", roundNumber: 1, summary: { answer: { id: 1 } } });
+    expect(record).toMatchObject({ game: "cee", roomId: "1234", roundNumber: 1, summary: { answer: { id: 1 } } });
     expect(record!.players.find((player) => player.name === "玩家")?.userId).toBe("user-guest");
     expect(record!.timeline.map((event) => event.type)).toEqual(["guess", "guess"]);
     expect(record!.timeline.at(-1)).toMatchObject({ name: "房主", correct: true });

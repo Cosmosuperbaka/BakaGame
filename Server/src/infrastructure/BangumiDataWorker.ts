@@ -1,5 +1,5 @@
 import { AppError } from "../domain/Errors";
-import { CCBCharacterRepository } from "./CCBCharacterRepository";
+import { CEECharacterRepository } from "./CEECharacterRepository";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { scheduleDatasetBackup } from "./DatasetBackup";
 import { scheduleTagDiffSync, syncTagDiff } from "./TagDiffSync";
@@ -9,39 +9,39 @@ import { openDataset } from "./OpenDataset";
 import { SubjectUpdater, type SubjectUpdaterInit } from "./SubjectUpdater";
 import type { AnimeAutoFilters } from "../shared/Index";
 import type { BangumiProviderInit } from "./LocalBangumiProvider";
-import type { CCBDataInit } from "./CCBData";
-import type { CCBImageSize, CCBSettings } from "../shared/CCB";
+import type { CEEDataInit } from "./CEEData";
+import type { CEEImageSize, CEESettings } from "../shared/CEE";
 
 /**
- * 猜歌与 CCB 共用的唯一数据 Worker。
+ * 猜歌与 CEE 共用的唯一数据 Worker。
  *
- * 两个玩法此前各起一个 Worker（`BangumiWorker` / `CCBCharacterWorker`），各自打开
+ * 两个玩法此前各起一个 Worker（`BangumiWorker` / `CEECharacterWorker`），各自打开
  * SQLite 与 Meilisearch。数据集改为**可写**之后，两个进程同时写同一个库文件会出现
  * 写写冲突；合到这里之后写操作天然串行，不需要跨 Worker 的锁或队列。
  *
- * 方法按 `song.` / `ccb.` 前缀分派：两边的 `searchSubjects` 语义不同（猜歌带
- * 年份/评分过滤、CCB 带作品类型），合名会撞车，所以保留命名空间。
+ * 方法按 `song.` / `cee.` 前缀分派：两边的 `searchSubjects` 语义不同（猜歌带
+ * 年份/评分过滤、CEE 带作品类型），合名会撞车，所以保留命名空间。
  */
 export type BangumiDataRequest =
-  | { id: number; method: "init"; song: BangumiProviderInit; ccb: CCBDataInit; tagDiff?: TagDiffOptions; imagesDir?: string; updater?: SubjectUpdaterInit }
+  | { id: number; method: "init"; song: BangumiProviderInit; cee: CEEDataInit; tagDiff?: TagDiffOptions; imagesDir?: string; updater?: SubjectUpdaterInit }
   // ---- 猜歌 ----
   | { id: number; method: "song.searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
   | { id: number; method: "song.getSubject"; subjectId: string }
   | { id: number; method: "song.resolveCharacterImage"; characterId: number }
   | { id: number; method: "song.resolveSubjectImage"; subjectId: string }
-  // ---- CCB ----
-  | { id: number; method: "ccb.searchCharacters"; keyword: string; limit: number }
-  | { id: number; method: "ccb.searchSubjects"; keyword: string; limit: number; types?: number[] }
-  | { id: number; method: "ccb.getSubjectCharacters"; subjectId: number; limit: number }
-  | { id: number; method: "ccb.getSubjects"; subjectIds: number[] }
-  | { id: number; method: "ccb.getRawCharacter"; characterId: number }
-  | { id: number; method: "ccb.getCharacter"; characterId: number; settings: CCBSettings }
-  | { id: number; method: "ccb.chooseRandomCharacter"; settings: CCBSettings; rolls: number[] }
-  | { id: number; method: "ccb.importDirectory"; indexId: number }
-  | { id: number; method: "ccb.resolveCharacterImage"; characterId: number; size?: CCBImageSize }
-  | { id: number; method: "ccb.resolveSubjectImage"; subjectId: number; size?: CCBImageSize }
+  // ---- CEE ----
+  | { id: number; method: "cee.searchCharacters"; keyword: string; limit: number }
+  | { id: number; method: "cee.searchSubjects"; keyword: string; limit: number; types?: number[] }
+  | { id: number; method: "cee.getSubjectCharacters"; subjectId: number; limit: number }
+  | { id: number; method: "cee.getSubjects"; subjectIds: number[] }
+  | { id: number; method: "cee.getRawCharacter"; characterId: number }
+  | { id: number; method: "cee.getCharacter"; characterId: number; settings: CEESettings }
+  | { id: number; method: "cee.chooseRandomCharacter"; settings: CEESettings; rolls: number[] }
+  | { id: number; method: "cee.importDirectory"; indexId: number }
+  | { id: number; method: "cee.resolveCharacterImage"; characterId: number; size?: CEEImageSize }
+  | { id: number; method: "cee.resolveSubjectImage"; subjectId: number; size?: CEEImageSize }
   /** 拉取并应用上游的角色标签增量（CCB-TagsCI 产出）。 */
-  | { id: number; method: "ccb.syncTagDiff" }
+  | { id: number; method: "cee.syncTagDiff" }
   /** 图床落库（单写者）：主线程路由抓到的新图经这里写入分片。 */
   | { id: number; method: "images.put"; path: string; bytes: Uint8Array }
   // ---- 运行时更新器（阶段 6）----
@@ -63,9 +63,9 @@ export interface TagDiffOptions {
 
 /** 一个 Worker 进程里同时持有两条数据链路；各自的初始化失败互不影响。 */
 let song: LocalBangumiProvider | undefined;
-let ccb: CCBCharacterRepository | undefined;
+let cee: CEECharacterRepository | undefined;
 let songError: AppError | undefined;
-let ccbError: AppError | undefined;
+let ceeError: AppError | undefined;
 /** 备份定时器的停止函数；两条链路读的是同一个库，只起一份备份。 */
 let stopBackup: (() => void) | undefined;
 /** 标签增量定时的停止函数。 */
@@ -75,7 +75,7 @@ let images: BangumiImageStore | undefined;
 let updater: SubjectUpdater | undefined;
 
 /**
- * 两条链路共用一次 init，但**分别容错**：猜歌的库缺失不该让 CCB 一起不可用
+ * 两条链路共用一次 init，但**分别容错**：猜歌的库缺失不该让 CEE 一起不可用
  * （反之亦然）。失败只记在该侧，查询时再抛出来。
  */
 const requireSong = () => {
@@ -83,10 +83,10 @@ const requireSong = () => {
   if (!song) throw new AppError("BANGUMI_DATA_UNAVAILABLE", "本地 Bangumi 数据尚未就绪");
   return song;
 };
-const requireCcb = () => {
-  if (ccbError) throw ccbError;
-  if (!ccb) throw new AppError("CCB_DATA_UNAVAILABLE", "本地角色数据尚未就绪");
-  return ccb;
+const requireCee = () => {
+  if (ceeError) throw ceeError;
+  if (!cee) throw new AppError("CEE_DATA_UNAVAILABLE", "本地角色数据尚未就绪");
+  return cee;
 };
 
 const asAppError = (error: unknown, code: string) => error instanceof AppError
@@ -108,11 +108,11 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         songError = asAppError(error, "BANGUMI_DATA_UNAVAILABLE");
       }
       try {
-        ccb = new CCBCharacterRepository(request.ccb);
-        await ccb.initialize();
+        cee = new CEECharacterRepository(request.cee);
+        await cee.initialize();
       } catch (error) {
-        ccb = undefined;
-        ccbError = asAppError(error, "CCB_DATA_UNAVAILABLE");
+        cee = undefined;
+        ceeError = asAppError(error, "CEE_DATA_UNAVAILABLE");
       }
       // 库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。
       tagDiff = request.tagDiff;
@@ -149,7 +149,7 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         onDailyTask: async () => {
           const base = (request.song.apiBase ?? "").trim();
           if (!base) return;   // 未配置上游地址时静默跳过（本地开发常见）。
-          const result = await requireCcb().discoverNewSubjects(base);
+          const result = await requireCee().discoverNewSubjects(base);
           console.log(`新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，`
             + `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`);
         },
@@ -157,7 +157,7 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
       // 角色标签增量（CCB-TagsCI 产出）：定时拉取，不依赖任何外部触发。
       stopTagDiff = tagDiff
         ? scheduleTagDiffSync({
-            repository: () => requireCcb(), diffUrl: tagDiff!.diffUrl, statePath: tagDiff!.statePath,
+            repository: () => requireCee(), diffUrl: tagDiff!.diffUrl, statePath: tagDiff!.statePath,
             logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
           })
         : undefined;
@@ -169,13 +169,13 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
       stopTagDiff = undefined;
       stopBackup?.();
       stopBackup = undefined;
-      await Promise.allSettled([ccb?.close(), song?.close()]);
+      await Promise.allSettled([cee?.close(), song?.close()]);
       images?.close();
       images = undefined;
       song = undefined;
-      ccb = undefined;
+      cee = undefined;
       songError = undefined;
-      ccbError = undefined;
+      ceeError = undefined;
       value = true;
     } else if (request.method === "images.put") {
       if (!images) throw new AppError("BANGUMI_DATA_UNAVAILABLE", "图床未就绪");
@@ -197,28 +197,28 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
         case "song.resolveSubjectImage": value = await provider.resolveSubjectImage(request.subjectId); break;
       }
     } else {
-      const repository = requireCcb();
+      const repository = requireCee();
       switch (request.method) {
-        case "ccb.searchCharacters": value = await repository.searchCharacters(request.keyword, request.limit); break;
-        case "ccb.searchSubjects": value = await repository.searchSubjects(request.keyword, request.limit, request.types); break;
-        case "ccb.getSubjectCharacters": value = await repository.getSubjectCharacters(request.subjectId, request.limit); break;
-        case "ccb.getSubjects": value = await repository.getSubjects(request.subjectIds); break;
-        case "ccb.getRawCharacter": value = await repository.getRawCharacter(request.characterId); break;
-        case "ccb.getCharacter": value = await repository.getCharacter(request.characterId, request.settings); break;
-        case "ccb.chooseRandomCharacter": {
+        case "cee.searchCharacters": value = await repository.searchCharacters(request.keyword, request.limit); break;
+        case "cee.searchSubjects": value = await repository.searchSubjects(request.keyword, request.limit, request.types); break;
+        case "cee.getSubjectCharacters": value = await repository.getSubjectCharacters(request.subjectId, request.limit); break;
+        case "cee.getSubjects": value = await repository.getSubjects(request.subjectIds); break;
+        case "cee.getRawCharacter": value = await repository.getRawCharacter(request.characterId); break;
+        case "cee.getCharacter": value = await repository.getCharacter(request.characterId, request.settings); break;
+        case "cee.chooseRandomCharacter": {
           let cursor = 0;
           value = await repository.chooseRandomCharacter(request.settings, () => {
             const roll = request.rolls[cursor++];
-            if (roll === undefined) throw new AppError("CCB_DATA_INVALID", "随机采样参数不完整");
+            if (roll === undefined) throw new AppError("CEE_DATA_INVALID", "随机采样参数不完整");
             return roll;
           });
           break;
         }
-        case "ccb.importDirectory": value = await repository.importDirectory(request.indexId); break;
-        case "ccb.resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId, request.size); break;
-        case "ccb.resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId, request.size); break;
-        case "ccb.syncTagDiff": {
-          if (!tagDiff) throw new AppError("CCB_DATA_UNAVAILABLE", "标签增量未配置");
+        case "cee.importDirectory": value = await repository.importDirectory(request.indexId); break;
+        case "cee.resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId, request.size); break;
+        case "cee.resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId, request.size); break;
+        case "cee.syncTagDiff": {
+          if (!tagDiff) throw new AppError("CEE_DATA_UNAVAILABLE", "标签增量未配置");
           value = await syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
           break;
         }
@@ -226,13 +226,13 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
     }
     self.postMessage({ id: request.id, ok: true, value } satisfies BangumiDataReply);
   } catch (error) {
-    // 只对**非业务错误**打日志：`CCB_CHARACTER_NOT_FOUND` 这类是正常返回路径，
+    // 只对**非业务错误**打日志：`CEE_CHARACTER_NOT_FOUND` 这类是正常返回路径，
     // 打出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
     if (!(error instanceof AppError)) console.error("Bangumi data worker query failed", error);
     // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
-    // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CCB 的 code。
+    // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CEE 的 code。
     const isSongRequest = request.method.startsWith("song.");
-    const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CCB_DATA_UNAVAILABLE";
+    const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CEE_DATA_UNAVAILABLE";
     self.postMessage({ id: request.id, ok: false,
       code,
       message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",

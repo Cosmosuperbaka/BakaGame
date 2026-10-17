@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { CCBMarks } from "@/components/ccb/CCBMarks";
+import { CEEMarks } from "@/components/cee/CEEMarks";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
 import { hostActions, PlayerRow } from "./PlayerRow";
@@ -16,10 +16,10 @@ const SECOND_LINE_CASES: Array<{ name: string; badges: ReactNode; meta?: ReactNo
   { name: "谁是卧底 · 局内", badges: <PlayerStatusPill label="平民" tone="default" /> },
   { name: "猜歌 · 猜歌中", badges: <PlayerStatusPill label="猜歌" tone="warning" /> },
   {
-    name: "CCB · 猜测中",
+    name: "CEE · 猜测中",
     badges: <PlayerStatusPill label="猜测中" tone="warning" />,
     meta: <span className="truncate font-sans text-2xs text-muted-foreground">2 队 · 3/10 次 · 已提交</span>,
-    detail: <CCBMarks marks="❌💡❌" name={host.name} />,
+    detail: <CEEMarks marks="❌💡❌" name={host.name} />,
   },
 ];
 

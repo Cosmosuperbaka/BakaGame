@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** 造一个最小的数据集文件：provider 只要求文件可打开（猜歌与 CCB 共用同一个库）。 */
+/** 造一个最小的数据集文件：provider 只要求文件可打开（猜歌与 CEE 共用同一个库）。 */
 const createDatasetFiles = () => {
   const dbPath = join(tmpdir(), `bangumi-test-${crypto.randomUUID()}.sqlite`);
   new Database(dbPath).close();

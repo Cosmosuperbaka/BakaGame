@@ -8,7 +8,7 @@ const GITHUB_PAYLOAD = [
   {
     sha: HEAD_SHA,
     commit: {
-      message: "feat(CCB): 队伍面板与分队玩家栏\n\n正文不该进时间线",
+      message: "feat(CEE): 队伍面板与分队玩家栏\n\n正文不该进时间线",
       author: { name: "Cosmosuperbaka", email: "someone@example.com", date: "2026-10-06T01:20:30Z" },
     },
     author: { login: "Cosmosuperbaka" },
@@ -94,7 +94,7 @@ describe("commitHistoryPlugin", () => {
     expect(history.commits).toEqual([
       {
         hash: "0123456",
-        message: "feat(CCB): 队伍面板与分队玩家栏",
+        message: "feat(CEE): 队伍面板与分队玩家栏",
         date: "2026-10-06T01:20:30.000Z",
         author: "Cosmosuperbaka",
       },

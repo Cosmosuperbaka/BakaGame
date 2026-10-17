@@ -357,7 +357,7 @@ export const createAccountTestApp = (options: {
   const audit = new MemoryAuditLogRepository();
   const siteStats = new MemorySiteStatsRepository();
   const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
-  const rooms = { faker: whoIsFakerService, song: emptyRooms, ccb: emptyRooms, ...options.rooms };
+  const rooms = { faker: whoIsFakerService, song: emptyRooms, cee: emptyRooms, ...options.rooms };
   const admin = new AdminService({
     auth,
     feedback,

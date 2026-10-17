@@ -43,7 +43,7 @@ async function assertAsset(urlPath, expectedType = "image/webp") {
 try {
   const files = await walk(distDir);
   const relativeFiles = files.map((file) => `/${path.relative(distDir, file).split(path.sep).join("/")}`);
-  const required = ["/assets/favicon.webp", "/assets/Faker.webp", "/assets/SongGuessr.webp", "/assets/CCB.webp", "/assets/logo.webp"];
+  const required = ["/assets/favicon.webp", "/assets/Faker.webp", "/assets/SongGuessr.webp", "/assets/CEE.webp", "/assets/logo.webp"];
 
   for (const asset of required) {
     if (!relativeFiles.includes(asset)) throw new Error(`构建产物缺少 ${asset}`);
@@ -68,7 +68,7 @@ try {
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
 
-  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/ccb", "/credits", "/unknown-route"];
+  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/cee", "/credits", "/unknown-route"];
   for (const route of spaRoutes) {
     const response = await fetch(`${baseUrl}${route}`);
     if (!response.ok) throw new Error(`${route} 返回 HTTP ${response.status}`);
@@ -84,7 +84,7 @@ try {
     { route: "/", text: "二刺猿派对小游戏合集站", canonical: "https://game.baka.website/" },
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
     { route: "/songuessr", text: "音乐与动漫番剧竞猜", canonical: "https://game.baka.website/songuessr" },
-    { route: "/ccb", text: "在线猜动漫角色", canonical: "https://game.baka.website/ccb" },
+    { route: "/cee", text: "在线猜动漫角色", canonical: "https://game.baka.website/cee" },
     { route: "/credits", text: "开源致谢", canonical: "https://game.baka.website/credits" },
   ];
   for (const { route, text, canonical } of shellChecks) {
@@ -115,7 +115,7 @@ try {
     "https://game.baka.website/",
     "https://game.baka.website/whoisfaker",
     "https://game.baka.website/songuessr",
-    "https://game.baka.website/ccb",
+    "https://game.baka.website/cee",
     "https://game.baka.website/credits",
   ];
   const sitemapXml = await (await fetch(`${baseUrl}/sitemap.xml`)).text();
@@ -123,7 +123,7 @@ try {
     if (!sitemapXml.includes(`<loc>${loc}</loc>`)) throw new Error(`sitemap.xml 缺少 ${loc}`);
   }
 
-  const ogImages = ["/og/logo.jpg", "/og/Faker.jpg", "/og/SongGuessr.jpg", "/og/CCB.jpg"];
+  const ogImages = ["/og/logo.jpg", "/og/Faker.jpg", "/og/SongGuessr.jpg", "/og/CEE.jpg"];
   for (const og of ogImages) await assertAsset(og, "image/jpeg");
 
   const htmlFiles = files.filter((file) => file.endsWith(".html"));

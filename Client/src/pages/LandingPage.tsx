@@ -89,9 +89,9 @@ const GAMES: GameEntry[] = [
   },
   {
     id: "animecharguessr",
-    path: "/ccb",
-    lobbyPath: "/ccb",
-    icon: "/assets/CCB.jpg",
+    path: "/cee",
+    lobbyPath: "/cee",
+    icon: "/assets/CEE.jpg",
     title: "二刺猿笑传之猜猜呗",
     subtitle: "Enhanced Edition",
     available: true,
@@ -99,7 +99,7 @@ const GAMES: GameEntry[] = [
       {
         id: "multiplayer",
         title: "多人模式",
-        path: "/ccb",
+        path: "/cee",
         available: true,
       },
       {
@@ -230,7 +230,7 @@ function GameRow({ game }: { game: GameEntry }) {
     );
   }
 
-  // 包含子模式入口的游戏（如 Songuessr 与 CCB）
+  // 包含子模式入口的游戏（如 Songuessr 与 CEE）
   const isWholeGameDisabled = !game.available;
   const subModeCount = game.subModes.length;
 

@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { collapsible, headerTappable, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
-// 标题字号跟随所在区域的正文：`sm` 用于 CCB 反馈表这类 text-xs 的密集区域，箭头随字号等比收小。
+// 标题字号跟随所在区域的正文：`sm` 用于 CEE 反馈表这类 text-xs 的密集区域，箭头随字号等比收小。
 const SIZES = {
   default: { trigger: "text-sm", icon: "h-4 w-4" },
   sm: { trigger: "text-xs", icon: "h-3.5 w-3.5" },

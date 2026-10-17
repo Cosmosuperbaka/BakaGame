@@ -5,12 +5,12 @@ import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
 /**
  * 猜歌侧的数据门面：请求都经共享的 `BangumiDataWorkerClient` 发往**同一个** Worker 进程
- * （CCB 共用它），把 SQLite/Meilisearch 的写操作收口到单一线程，天然串行。
+ * （CEE 共用它），把 SQLite/Meilisearch 的写操作收口到单一线程，天然串行。
  */
 export class BangumiWorkerProvider implements BangumiDataProvider {
   constructor(
     private readonly client: BangumiDataWorkerClient,
-    /** 与 CCB 共用的初始化 Promise：两边等的是同一次 init。 */
+    /** 与 CEE 共用的初始化 Promise：两边等的是同一次 init。 */
     private readonly ready: Promise<unknown>,
   ) {}
 

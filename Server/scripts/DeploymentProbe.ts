@@ -22,7 +22,7 @@ export async function probeDeployment(baseUrl = "http://127.0.0.1:4850", budgetM
       const results = await Promise.allSettled([
         ["/api/whoisfaker/ws", "lobby.subscribeRooms"],
         ["/api/songuessr/ws", "song.lobby.subscribeRooms"],
-        ["/api/ccb/ws", "ccb.lobby.subscribeRooms"],
+        ["/api/cee/ws", "cee.lobby.subscribeRooms"],
       ].map(([path, requestType]) => new Promise<void>((resolve, reject) => {
         const socket = new WebSocket(`${baseUrl.replace(/^http/, "ws")}${path}`);
         const id = crypto.randomUUID();

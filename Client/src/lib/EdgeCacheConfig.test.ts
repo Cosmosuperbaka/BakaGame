@@ -31,7 +31,7 @@ const headerRules: HeaderRule[] = (config.headers ?? []).map((rule) => ({
 const MAX_HEADER_RULES = 30;
 
 /** 无内容哈希、必须短缓存的固定名资源（与 dist/assets 下的实际文件对应）。 */
-const UNHASHED_ASSETS = ["CCB.webp", "Faker.webp", "favicon.webp", "logo.webp", "SongGuessr.webp"];
+const UNHASHED_ASSETS = ["CEE.webp", "Faker.webp", "favicon.webp", "logo.webp", "SongGuessr.webp"];
 
 function cacheControlFor(rule: HeaderRule): string | undefined {
   return rule.headers.find((header) => header.key.toLowerCase() === "cache-control")?.value;
@@ -95,7 +95,7 @@ describe("edgeone.json 边缘缓存配置", () => {
 
   it("SPA 外壳 HTML 一律走协商缓存，绝不长时间缓存", () => {
     // 首页与各路由外壳都是不带 hash 的 HTML，长缓存会让发版后老用户拿到旧页面。
-    for (const route of ["/", "/whoisfaker", "/songuessr", "/ccb", "/songuessr.html"]) {
+    for (const route of ["/", "/whoisfaker", "/songuessr", "/cee", "/songuessr.html"]) {
       const value = resolveCacheControl(route);
       expect(value, `${route} 命中不到任何规则`).toBeTruthy();
       expect(value, `${route} 不应被长时间缓存`).toMatch(/max-age=0|no-cache|no-store/);
@@ -104,7 +104,7 @@ describe("edgeone.json 边缘缓存配置", () => {
   });
 
   it("房间页同样不得被边缘长时间缓存", () => {
-    for (const route of ["/whoisfaker/room/123", "/songuessr/room/456", "/ccb/room/789"]) {
+    for (const route of ["/whoisfaker/room/123", "/songuessr/room/456", "/cee/room/789"]) {
       const value = resolveCacheControl(route);
       expect(value, `${route} 不应被长时间缓存`).toMatch(/max-age=0|no-cache|no-store/);
     }

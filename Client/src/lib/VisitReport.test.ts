@@ -26,8 +26,8 @@ describe("访问上报", () => {
     const visit = vi.fn(async () => {
       throw new Error("ACCOUNT_DISABLED");
     });
-    expect(() => reportVisit("/ccb", { site: { visit } } as unknown as ApiClient)).not.toThrow();
+    expect(() => reportVisit("/cee", { site: { visit } } as unknown as ApiClient)).not.toThrow();
     await Promise.resolve();
-    expect(visit).toHaveBeenCalledWith({ visitorId: visitorId(), path: "/ccb" });
+    expect(visit).toHaveBeenCalledWith({ visitorId: visitorId(), path: "/cee" });
   });
 });

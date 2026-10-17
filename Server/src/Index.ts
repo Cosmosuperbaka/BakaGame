@@ -54,7 +54,7 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, dispose, sonGuessrService, ccbService, reportBangumiLoad } = createServer({
+const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad } = createServer({
   env,
   database,
   gameRecords,
@@ -76,8 +76,8 @@ const intervalId = setInterval(() => {
   void sonGuessrService.runHousekeeping().catch((error: unknown) => {
     logger.error("SonGuessr 房间清理任务执行失败", describeError(error));
   });
-  void ccbService.runHousekeeping().catch((error: unknown) => {
-    logger.error('CCB 房间清理任务执行失败', describeError(error));
+  void ceeService.runHousekeeping().catch((error: unknown) => {
+    logger.error('CEE 房间清理任务执行失败', describeError(error));
   });
 }, 10_000);
 
@@ -93,8 +93,8 @@ sentryRuntimeMetricsIntervalId.unref();
 function reportRuntimeMetrics(): void {
   const faker = whoIsFakerService.getHealthSnapshot();
   const songuessr = sonGuessrService.getHealthSnapshot();
-  const ccb = ccbService.getHealthSnapshot();
-  const onlinePlayerCount = faker.onlinePlayerCount + songuessr.onlinePlayerCount + ccb.onlinePlayerCount;
+  const cee = ceeService.getHealthSnapshot();
+  const onlinePlayerCount = faker.onlinePlayerCount + songuessr.onlinePlayerCount + cee.onlinePlayerCount;
   gaugeServerMetric(
     "bakagame.players.online",
     onlinePlayerCount,
@@ -103,11 +103,11 @@ function reportRuntimeMetrics(): void {
   reportBangumiLoad(onlinePlayerCount);
   gaugeServerMetric(
     "bakagame.rooms.active",
-    faker.roomCount + songuessr.roomCount + ccb.roomCount,
+    faker.roomCount + songuessr.roomCount + cee.roomCount,
   );
   gaugeServerMetric(
     "bakagame.connections.active",
-    faker.connectionCount + songuessr.connectionCount + ccb.connectionCount,
+    faker.connectionCount + songuessr.connectionCount + cee.connectionCount,
   );
 }
 
@@ -153,7 +153,7 @@ const shutdown = (signal?: string): Promise<void> => {
     // 每款游戏独立通知，不能因一款广播失败跳过剩余资源。
     await attempt("notify.faker", () => whoIsFakerService.notifyShutdown());
     await attempt("notify.song", () => sonGuessrService.notifyShutdown());
-    await attempt("notify.ccb", () => ccbService.notifyShutdown());
+    await attempt("notify.cee", () => ceeService.notifyShutdown());
     await attempt("buffer", () => Bun.sleep(3000));
     await attempt("drain", () => whoIsFakerService.drainPendingWrites());
     await attempt("stop", () => app.stop(true));

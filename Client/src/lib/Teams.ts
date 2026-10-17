@@ -1,4 +1,4 @@
-/** 协议允许的队伍号 1–8（CCB 与猜歌一致）；null 是个人游玩，排在首格。 */
+/** 协议允许的队伍号 1–8（CEE 与猜歌一致）；null 是个人游玩，排在首格。 */
 export const TEAM_OPTIONS: Array<number | null> = [null, 1, 2, 3, 4, 5, 6, 7, 8];
 
 export const teamKey = (team: number | null) => (team === null ? "solo" : String(team));

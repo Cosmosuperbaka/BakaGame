@@ -38,7 +38,7 @@ export const Default: Story = {
   ),
 };
 
-/** CCB 反馈表这类 text-xs 的密集区域用 `size="sm"`，标题与箭头随之收小，不比周围的标签更醒目。 */
+/** CEE 反馈表这类 text-xs 的密集区域用 `size="sm"`，标题与箭头随之收小，不比周围的标签更醒目。 */
 export const Small: Story = {
   name: "密集区域 · 小号",
   args: {

@@ -436,7 +436,7 @@ export interface SonGuessrRoundSummary {
   scores: SonGuessrScore[];
 }
 
-/** 协议允许的队伍号，与 CCB 一致；`null` 是个人游玩。 */
+/** 协议允许的队伍号，与 CEE 一致；`null` 是个人游玩。 */
 export const SONGUESSR_MAX_TEAM = 8;
 
 export interface SonGuessrPlayerView {

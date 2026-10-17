@@ -48,12 +48,12 @@ export function createAppRouter() {
           ],
         },
         {
-          path: "/ccb",
-          lazy: page(() => import("@/layouts/CCBLayout"), "ccb-layout"),
+          path: "/cee",
+          lazy: page(() => import("@/layouts/CEELayout"), "cee-layout"),
           children: [
-            { index: true, lazy: page(() => import("@/pages/CCBPage"), "ccb") },
-            { path: "room/:roomId", lazy: page(() => import("@/pages/CCBRoomPage"), "ccb-room") },
-            { path: "*", element: <Navigate to="/ccb" replace /> },
+            { index: true, lazy: page(() => import("@/pages/CEEPage"), "cee") },
+            { path: "room/:roomId", lazy: page(() => import("@/pages/CEERoomPage"), "cee-room") },
+            { path: "*", element: <Navigate to="/cee" replace /> },
           ],
         },
         { path: "/admin", lazy: page(() => import("@/pages/AdminPage"), "admin") },

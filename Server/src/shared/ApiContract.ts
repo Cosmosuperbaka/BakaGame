@@ -106,7 +106,7 @@ const page = {
 };
 const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), total: z.number().int() });
 const userId = z.string().min(1).max(64);
-export const recordedGameSchema = z.enum(["faker", "song", "ccb"]);
+export const recordedGameSchema = z.enum(["faker", "song", "cee"]);
 const reason = z.string().trim().max(200);
 
 /** 后台只引用账号时的最小信息；账号已注销时为空。 */
@@ -181,7 +181,7 @@ export const adminRoomSchema = z.object({
   })),
 });
 
-const perGame = <T extends z.ZodType>(item: T) => z.object({ faker: item, song: item, ccb: item });
+const perGame = <T extends z.ZodType>(item: T) => z.object({ faker: item, song: item, cee: item });
 
 export const adminOverviewSchema = z.object({
   users: z.object({ total: z.number(), admins: z.number(), banned: z.number(), newToday: z.number() }),
@@ -295,7 +295,7 @@ const adminContract = {
       .output(adminFeedbackSchema),
   },
   rooms: {
-    /** 实时房间（不分页，进程内全量）；CCB 只含增强房。 */
+    /** 实时房间（不分页，进程内全量）；CEE 只含增强房。 */
     list: oc.input(z.object({ game: recordedGameSchema.optional() })).output(z.array(adminRoomSchema)),
     close: oc.input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32) })).output(z.object({ ok: z.literal(true) })),
     kick: oc

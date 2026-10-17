@@ -37,7 +37,7 @@ export interface AdminRoomControl {
   adminKickPlayer(roomId: string, playerId: string): Promise<void>;
 }
 
-/** 后台关房的原因码（谁是卧底、猜歌的 `room.closed` 原因字段）与直接展示的文案（CCB）。 */
+/** 后台关房的原因码（谁是卧底、猜歌的 `room.closed` 原因字段）与直接展示的文案（CEE）。 */
 export const ADMIN_CLOSE_REASON = "admin_closed";
 export const ADMIN_CLOSE_MESSAGE = "房间已被管理员关闭";
 export const ADMIN_KICK_MESSAGE = "你已被管理员移出房间";

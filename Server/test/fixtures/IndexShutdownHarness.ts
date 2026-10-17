@@ -5,7 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 
 export const indexSourcePath = path.resolve(import.meta.dir, "../../src/Index.ts");
-export const finalStages = ["notify.faker", "notify.song", "notify.ccb", "buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"] as const;
+export const finalStages = ["notify.faker", "notify.song", "notify.cee", "buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"] as const;
 export type Stage = typeof finalStages[number];
 
 export function deferred<T = void>() {
@@ -41,7 +41,7 @@ export async function createIndexShutdownHarness(options: {
     return options.failures?.[stage] !== "false";
   };
   const snapshot = () => ({ onlinePlayerCount: 0, roomCount: 0, connectionCount: 0 });
-  const service = (game: "faker" | "song" | "ccb") => ({
+  const service = (game: "faker" | "song" | "cee") => ({
     notifyShutdown: () => execute(`notify.${game}`),
     getHealthSnapshot: snapshot,
     drainPendingWrites: () => execute("drain"),
@@ -72,7 +72,7 @@ export async function createIndexShutdownHarness(options: {
       configuration = input;
       return {
         app: { listen: () => ({ server: { hostname: "127.0.0.1", port: 1 } }), stop: (force: boolean) => execute("stop", force) },
-        dispose: () => execute("dispose"), sonGuessrService: service("song"), ccbService: service("ccb"),
+        dispose: () => execute("dispose"), sonGuessrService: service("song"), ceeService: service("cee"),
         // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。
         reportBangumiLoad: () => {},
       };

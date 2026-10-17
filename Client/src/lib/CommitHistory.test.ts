@@ -48,13 +48,13 @@ describe("commitsApiUrl", () => {
 describe("normalizeCommitEntries", () => {
   it("shortens the hash and normalizes the date to iso utc", () => {
     const entries = normalizeCommitEntries([
-      { hash: "0123456789abcdef", message: "feat(CCB): 队伍面板", date: "2026-10-06T09:20:30+08:00", author: "Cosmosuperbaka" },
+      { hash: "0123456789abcdef", message: "feat(CEE): 队伍面板", date: "2026-10-06T09:20:30+08:00", author: "Cosmosuperbaka" },
     ]);
 
     expect(entries).toEqual([
       {
         hash: "0123456",
-        message: "feat(CCB): 队伍面板",
+        message: "feat(CEE): 队伍面板",
         date: "2026-10-06T01:20:30.000Z",
         author: "Cosmosuperbaka",
       },
@@ -114,7 +114,7 @@ describe("mapGitHubCommits", () => {
     {
       sha: "0123456789abcdef0123456789abcdef01234567",
       commit: {
-        message: "feat(CCB): 队伍面板与分队玩家栏\n\n正文不该进时间线",
+        message: "feat(CEE): 队伍面板与分队玩家栏\n\n正文不该进时间线",
         author: { name: "Cosmosuperbaka", email: "someone@example.com", date: "2026-10-06T01:20:30Z" },
       },
       author: { login: "Cosmosuperbaka" },
@@ -134,7 +134,7 @@ describe("mapGitHubCommits", () => {
     expect(mapGitHubCommits(payload)).toEqual([
       {
         hash: "0123456",
-        message: "feat(CCB): 队伍面板与分队玩家栏",
+        message: "feat(CEE): 队伍面板与分队玩家栏",
         date: "2026-10-06T01:20:30.000Z",
         author: "Cosmosuperbaka",
       },

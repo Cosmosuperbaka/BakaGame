@@ -13,26 +13,26 @@ export type BangumiDataCall = BangumiDataRequest extends infer Request
   : never;
 
 /**
- * 初始化窗口取 CCB 那侧更长的口径（1 小时）：索���重建（首次部署或数据变更后向
+ * 初始化窗口取 CEE 那侧更长的口径（1 小时）：索���重建（首次部署或数据变更后向
  * Meilisearch 全量写入数十万文档）耗时为分钟级，必须独立于查询超时 —— 若与查询共用
  * 短窗口，ready 被拒后**所有后续查询永久失败**（猜番链路线上踩过同款坑）。
  */
 const INIT_TIMEOUT_MS = 3_600_000;
-/** 查询超时：索引构建期间查询会排队等待，与 CCB/猜番同取 20s。 */
+/** 查询超时：索引构建期间查询会排队等待，与 CEE/猜番同取 20s。 */
 const QUERY_TIMEOUT_MS = 20_000;
 /** 目录导入涉及远程分页拉取，单独放宽。 */
 const DIRECTORY_TIMEOUT_MS = 60_000;
 
 const timeoutFor = (method: BangumiDataCall["method"]) => {
   if (method === "init") return INIT_TIMEOUT_MS;
-  if (method === "ccb.importDirectory" || method === "close") return DIRECTORY_TIMEOUT_MS;
+  if (method === "cee.importDirectory" || method === "close") return DIRECTORY_TIMEOUT_MS;
   return QUERY_TIMEOUT_MS;
 };
 
 /**
- * 猜歌与 CCB 共享的**同一个** Worker 进程。
+ * 猜歌与 CEE 共享的**同一个** Worker 进程。
  *
- * 两个 facade（`BangumiWorkerProvider` / `CCBCharacterWorkerProvider`）都通过它发请求，
+ * 两个 facade（`BangumiWorkerProvider` / `CEECharacterWorkerProvider`）都通过它发请求，
  * 于是 SQLite 与 Meilisearch 的写操作收口在单一线程里天然串行。
  */
 export class BangumiDataWorkerClient {

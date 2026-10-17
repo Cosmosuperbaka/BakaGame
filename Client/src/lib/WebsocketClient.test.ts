@@ -177,10 +177,10 @@ describe("WebSocketClient", () => {
     try {
       const MockWebSocket = createMockSocketClass();
       vi.stubGlobal("WebSocket", MockWebSocket);
-      const client = new WebSocketClient("/api/ccb/ws");
+      const client = new WebSocketClient("/api/cee/ws");
       client.connect();
       const socket = MockWebSocket.instances[0];
-      const pending = client.send("ccb.game.next", {}, { timeout: 0 });
+      const pending = client.send("cee.game.next", {}, { timeout: 0 });
       const rejection = expect(pending).rejects.toMatchObject({ code: "DISCONNECTED" });
       client.disconnect();
       await rejection;
@@ -200,10 +200,10 @@ describe("WebSocketClient", () => {
     const MockWebSocket = createMockSocketClass();
     vi.stubGlobal("WebSocket", MockWebSocket);
     try {
-      const client = new WebSocketClient("/api/ccb/ws");
+      const client = new WebSocketClient("/api/cee/ws");
       client.connect();
       MockWebSocket.instances[0].readyState = MockWebSocket.CONNECTING;
-      const pending = client.send("ccb.room.reconnect");
+      const pending = client.send("cee.room.reconnect");
       const rejection = expect(pending).rejects.toMatchObject({ code: "DISCONNECTED" });
       client.disconnect();
       await rejection;
@@ -245,7 +245,7 @@ describe("传输边界与命令诊断", () => {
     const Socket = createMockSocketClass();
     vi.stubGlobal("WebSocket", Socket);
     try {
-      const client = new WebSocketClient("/api/ccb/ws");
+      const client = new WebSocketClient("/api/cee/ws");
       client.connect();
       const error = new Error("consumer failed");
       const first = vi.fn(() => { throw error; });
@@ -261,7 +261,7 @@ describe("传输边界与命令诊断", () => {
       Socket.instances[0].onmessage!({ data: JSON.stringify(message) });
       expect(second).toHaveBeenCalledWith(message);
       expect(mocks.captureClientException).toHaveBeenCalledWith(error, {
-        path: "/api/ccb/ws", messageType: "event",
+        path: "/api/cee/ws", messageType: "event",
       });
       client.disconnect();
     } finally { vi.unstubAllGlobals(); }
@@ -272,10 +272,10 @@ describe("传输边界与命令诊断", () => {
     const Socket = createMockSocketClass();
     vi.stubGlobal("WebSocket", Socket);
     try {
-      const client = new WebSocketClient("/api/ccb/ws");
+      const client = new WebSocketClient("/api/cee/ws");
       client.connect();
       const socket = Socket.instances[0];
-      const pending = client.send("ccb.room.join", { password: "private" });
+      const pending = client.send("cee.room.join", { password: "private" });
       const rejection = expect(pending).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
       const envelope = JSON.parse(socket.sent[0]);
       socket.onmessage!({ data: JSON.stringify({ type: "error", id: envelope.id, error: {
@@ -288,7 +288,7 @@ describe("传输边界与命令诊断", () => {
       }));
       expect(mocks.captureClientException).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
-      const accepted = client.send("ccb.room.get");
+      const accepted = client.send("cee.room.get");
       const next = JSON.parse(socket.sent[1]);
       expect(next.traceId).not.toBe(envelope.traceId);
       socket.onmessage!({ data: JSON.stringify({ type: "ack", id: next.id, payload: { ok: true } }) });

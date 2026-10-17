@@ -8,7 +8,7 @@ import type { OriginPoint } from "@/lib/Motion";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 
 /**
- * 房间类型开关（CCB 的「兼容原版」）：开启后房间建在另一种服务器上，下面的私密、旁观与名称上限随之切换含义。
+ * 房间类型开关（CEE 的「兼容原版」）：开启后房间建在另一种服务器上，下面的私密、旁观与名称上限随之切换含义。
  * 说明常驻，写明开启后的差别；不可用时开关禁用，说明换成原因。
  */
 export interface RoomModeSwitch {

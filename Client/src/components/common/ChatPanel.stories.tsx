@@ -142,7 +142,7 @@ export const LongText: Story = {
 
 export const ChannelNotice: Story = {
   name: "频道说明",
-  // CCB 原版房：聊天只在增强版玩家之间互通，说明固定为消息流第一行，与系统提示同样式。
+  // CEE 原版房：聊天只在增强版玩家之间互通，说明固定为消息流第一行，与系统提示同样式。
   args: {
     notice: "聊天仅增强版玩家可见",
     messages: [say(kitagawa, "原版那边好像断了一下", 20), say(me, "等它重连上再开下一局", 28)],

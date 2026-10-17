@@ -31,7 +31,7 @@ export const CREDITS_FIXTURE_CHANGELOG: readonly ChangelogEntry[] = [
     version: "1.1.0",
     date: "2026-09-30",
     content: {
-      feat: ["CCB 支持角色全局 BP"],
+      feat: ["CEE 支持角色全局 BP"],
       perf: ["歌词播放器按需加载，首屏分块更小"],
     },
   },

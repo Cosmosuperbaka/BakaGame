@@ -384,7 +384,7 @@ export class AdminService {
           signedInVisitors: visitsByDay.get(day)?.signedInVisitors ?? 0,
           views: visitsByDay.get(day)?.views ?? 0,
           newUsers: signupsByDay.get(day) ?? 0,
-          rounds: { faker: roundsOf("faker"), song: roundsOf("song"), ccb: roundsOf("ccb") },
+          rounds: { faker: roundsOf("faker"), song: roundsOf("song"), cee: roundsOf("cee") },
           roundPlayers: dayGames.reduce((sum, row) => sum + row.players, 0),
         };
       }),

@@ -1,4 +1,4 @@
-import { useCCBStore, type CCBStore } from "@/stores/UseCCBStore";
+import { useCEEStore, type CEEStore } from "@/stores/UseCEEStore";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useWhoIsFakerStore, type WhoIsFakerGameState } from "@/stores/UseWhoIsFakerStore";
 
@@ -15,13 +15,13 @@ export function presetSonGuessr(patch: Partial<DataOf<SonGuessrStore>> = {}) {
   useSonGuessrStore.setState({ ...useSonGuessrStore.getInitialState(), ...patch }, true);
 }
 
-export function presetCCB(patch: Partial<DataOf<CCBStore>> = {}) {
-  useCCBStore.setState({ ...useCCBStore.getInitialState(), ...patch }, true);
+export function presetCEE(patch: Partial<DataOf<CEEStore>> = {}) {
+  useCEEStore.setState({ ...useCEEStore.getInitialState(), ...patch }, true);
 }
 
 /** 预览层在每个故事前调用，保证未显式预置的故事也从干净状态开始。 */
 export function resetAllStores() {
   presetWhoIsFaker();
   presetSonGuessr();
-  presetCCB();
+  presetCEE();
 }

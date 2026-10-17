@@ -27,7 +27,7 @@ function advance(state: RowKeyState, entries: ReadonlyArray<{ id: string; group:
 /**
  * 玩家行的 key：玩家编号加上「换组次数」。
  *
- * 行在玩家 / 旁观（CCB 还有队伍）之间换组时，旧分组里的那一行要播退场。若退场还没播完人又换回来，
+ * 行在玩家 / 旁观（CEE 还有队伍）之间换组时，旧分组里的那一行要播退场。若退场还没播完人又换回来，
  * 同 key 的子项会被 `AnimatePresence` 原地「复活」，而 framer-motion 复活退场元素时会回落到 `initial`
  * 的取值（透明、缩小）且不再补播入场，这一行就一直看不见。每换一次组 key 就变一次，
  * 换回来的总是一行新挂载的元素，旧的那行照常退场卸载；跨分组的滑动仍由 `layoutId`（玩家编号）负责。

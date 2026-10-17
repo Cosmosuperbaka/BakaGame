@@ -46,7 +46,7 @@ export const RoleColumn: Story = {
   ),
 };
 
-/** CCB 的明细次行：出题人的扣分照原样显示负号，没有名次时显示破折号。 */
+/** CEE 的明细次行：出题人的扣分照原样显示负号，没有名次时显示破折号。 */
 export const DetailRow: Story = {
   name: "明细次行 · 负分",
   render: () => (

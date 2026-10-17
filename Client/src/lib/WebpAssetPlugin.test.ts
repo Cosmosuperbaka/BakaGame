@@ -7,7 +7,7 @@ import { preparePublicWebp } from "../../scripts/prepare-public-webp.mjs";
 describe("webpAssetPlugin", () => {
   const dummyAssetMap: Record<string, string> = {
     "/assets/Faker.png": "/assets/Faker.webp",
-    "/assets/CCB.jpg": "/assets/CCB.webp",
+    "/assets/CEE.jpg": "/assets/CEE.webp",
     "/assets/SongGuessr.gif": "/assets/SongGuessr.webp",
     "/assets/favicon.png": "/assets/favicon.webp",
   };
@@ -53,10 +53,10 @@ describe("webpAssetPlugin", () => {
       };
 
       plugin.configureServer(mockServer);
-      const req = { url: "/assets/CCB.jpg?v=1.0&t=12345" };
+      const req = { url: "/assets/CEE.jpg?v=1.0&t=12345" };
       middlewareHandler!(req, {}, () => {});
 
-      expect(req.url).toBe("/assets/CCB.webp?v=1.0&t=12345");
+      expect(req.url).toBe("/assets/CEE.webp?v=1.0&t=12345");
     });
 
     it("does not modify unmapped URLs", () => {
@@ -106,14 +106,14 @@ describe("webpAssetPlugin", () => {
       const code = `
         export const game = {
           icon: "/assets/Faker.png",
-          bg: "/assets/CCB.jpg",
+          bg: "/assets/CEE.jpg",
           logo: "/assets/SongGuessr.gif",
         };
       `;
       const result = plugin.transform(code, "C:/project/src/pages/LandingPage.tsx");
       expect(result).not.toBeNull();
       expect(result?.code).toContain('icon: "/assets/Faker.webp"');
-      expect(result?.code).toContain('bg: "/assets/CCB.webp"');
+      expect(result?.code).toContain('bg: "/assets/CEE.webp"');
       expect(result?.code).toContain('logo: "/assets/SongGuessr.webp"');
     });
   });
@@ -128,7 +128,7 @@ describe("preparePublicWebp", () => {
     const { publicDir, assetMap } = await preparePublicWebp();
     expect(publicDir).toContain(".generated-public");
     expect(assetMap["/assets/Faker.png"]).toBe("/assets/Faker.webp");
-    expect(assetMap["/assets/CCB.jpg"]).toBe("/assets/CCB.webp");
+    expect(assetMap["/assets/CEE.jpg"]).toBe("/assets/CEE.webp");
     expect(assetMap["/assets/SongGuessr.gif"]).toBe("/assets/SongGuessr.webp");
     expect(assetMap["/assets/favicon.png"]).toBe("/assets/favicon.webp");
     expect(assetMap["/assets/logo.gif"]).toBe("/assets/logo.webp");

@@ -351,7 +351,7 @@ export const scoreRow: Variants = {
 };
 
 /**
- * 贡献者行的浅底：这一局真正做出贡献的玩家（CCB 猜中者、猜歌首位答对者），
+ * 贡献者行的浅底：这一局真正做出贡献的玩家（CEE 猜中者、猜歌首位答对者），
  * 行落定后底色浮起并留作常驻档，读作「这几分是他挣的」而不是随后消失的提示。
  * 取 `primary` 的浅底档（Design §3.1 的 `/10`）：与行悬停的 `accent/40` 不同层，
  * 且是流内区块，只铺底色不加描边，避免整表读成一堆按钮。
@@ -594,7 +594,7 @@ export function springSettleMs(token: SpringToken): number {
 
 /**
  * 进房编排的窗口（毫秒）：最后一栏晚 `parts.length - 1` 步起播，按 `spring.swift` 落定为止。
- * 窗口内挂载的栏参与编排，窗口外才出现的栏（断线重连后补上、CCB 加入成功后才有的栏）直接出现，不重播。
+ * 窗口内挂载的栏参与编排，窗口外才出现的栏（断线重连后补上、CEE 加入成功后才有的栏）直接出现，不重播。
  */
 export const roomEntranceMs = Math.round((roomEntrance.parts.length - 1) * roomEntrance.step * 1000) + springSettleMs(spring.swift);
 

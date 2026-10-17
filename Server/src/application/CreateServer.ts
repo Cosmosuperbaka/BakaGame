@@ -1,5 +1,5 @@
 import { createApp, type AppDependencies } from "../transport/App";
-import { CCBService } from "./CCBService";
+import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
@@ -37,7 +37,7 @@ import type { AdminRoomControl } from "../domain/AdminRoom";
 import type { RecordedGame } from "../domain/GameRecord";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
-export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ccbService" | "disposeResources"> & { database?: Database; gameRecords?: GameRecordService }) {
+export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ceeService" | "disposeResources"> & { database?: Database; gameRecords?: GameRecordService }) {
   const { env, logger, database, gameRecords, ...appOptions } = options;
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
@@ -48,10 +48,10 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   if (env.otelDeploymentEnvironment === "production" && env.account?.mail.kind !== "smtp") {
     throw new AppError("CONFIG_ERROR", "生产环境账号系统需要 SMTP_HOST / SMTP_USER / SMTP_PASS（且不得启用 MAIL_DEV_CONSOLE）");
   }
-  // 猜歌与 CCB 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
+  // 猜歌与 CEE 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
   const data = createBangumiData({
     song: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
-    ccb: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
+    cee: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
     imagesDir: env.bangumiImagesDir,
     tagDiff: env.bangumiTagDiffUrl
       ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
@@ -91,13 +91,13 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi, gameRecorder: gameRecords });
-  const ccb = new CCBService({ data: data.ccb, eventLogger: logger, serverUrl: env.ccbOriginalServerUrl, aesSecret: env.ccbOriginalAesSecret, gameRecorder: gameRecords });
-  const account = createAccount(env, database, logger, { faker: appOptions.whoIsFakerService, song, ccb });
-  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ccbService: ccb, account, disposeResources: async () => {
+  const cee = new CEEService({ data: data.cee, eventLogger: logger, serverUrl: env.ceeOriginalServerUrl, aesSecret: env.ceeOriginalAesSecret, gameRecorder: gameRecords });
+  const account = createAccount(env, database, logger, { faker: appOptions.whoIsFakerService, song, cee });
+  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ceeService: cee, account, disposeResources: async () => {
     // 先等在途对局记录写完再关数据库连接。
     await gameRecords?.close();
     await account?.visits.close();
-    const results = await Promise.allSettled([ccb.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
+    const results = await Promise.allSettled([cee.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
     if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
   } });

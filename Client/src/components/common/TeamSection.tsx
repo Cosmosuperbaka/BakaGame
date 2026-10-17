@@ -5,9 +5,9 @@ import { listItem, playerRelayout } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /**
- * 玩家栏里的一个队伍块（CCB 与猜歌共用）：队伍用淡色块包住标题行与队员行，个人游玩的人只有一行小标题、不加底。
+ * 玩家栏里的一个队伍块（CEE 与猜歌共用）：队伍用淡色块包住标题行与队员行，个人游玩的人只有一行小标题、不加底。
  * 标题行给队号、`detail`（人数与共享进度）与全队合计分；分数仍按人存储，这里只相加。
- * `extra` 挂在标题下方（CCB 的共享猜测进度串），队员行由 `children` 给出。
+ * `extra` 挂在标题下方（CEE 的共享猜测进度串），队员行由 `children` 给出。
  */
 export function TeamSection({ ref, team, scores, detail, extra, children }: {
   ref?: Ref<HTMLElement>;

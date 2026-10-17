@@ -5,13 +5,13 @@ import type { RecordedGameKind } from "@/types";
 export const GAME_LABELS: Record<RecordedGameKind, string> = {
   faker: "谁是卧底",
   song: "猜歌",
-  ccb: "CCB",
+  cee: "CEE",
 };
 
 export const GAME_OPTIONS: Array<{ value: RecordedGameKind; label: string }> = [
   { value: "faker", label: GAME_LABELS.faker },
   { value: "song", label: GAME_LABELS.song },
-  { value: "ccb", label: GAME_LABELS.ccb },
+  { value: "cee", label: GAME_LABELS.cee },
 ];
 
 /** 审计动作名与服务端 `AdminService` 的写操作一一对应；未知动作原样显示。 */

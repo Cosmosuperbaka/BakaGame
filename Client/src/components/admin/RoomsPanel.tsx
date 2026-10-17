@@ -81,7 +81,7 @@ export function RoomsPanel() {
       <AdminToolbar title="实时房间" count={rooms.data ? list.length : null} onReload={rooms.reload} loading={rooms.loading && Boolean(rooms.data)}>
         <div className="w-36"><SettingSelect label="游戏" value={game} options={GAME_FILTER} onChange={(value) => setGame(value as RecordedGameKind | "")} /></div>
       </AdminToolbar>
-      <p className="mb-3 text-xs text-muted-foreground">CCB 只列出增强房；原版房在上游服务器，不在此管理。关房与移人都会写入审计。</p>
+      <p className="mb-3 text-xs text-muted-foreground">CEE 只列出增强房；原版房在上游服务器，不在此管理。关房与移人都会写入审计。</p>
       <QueryState loading={rooms.loading} error={rooms.error} empty={Boolean(rooms.data) && !list.length} hasData={Boolean(rooms.data)} onRetry={rooms.reload} emptyText="当前没有房间" />
       <ul className="grid gap-3">
         {list.map((room) => (

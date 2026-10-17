@@ -1,7 +1,7 @@
 import { notifyPreferencesChanged } from "@/lib/Storage";
 import type {
   AnimeAutoFilters,
-  CCBSettings,
+  CEESettings,
   RoleConfig,
   SongAutoFilters,
   SongQuestionMode,
@@ -13,7 +13,7 @@ import type {
  * 房间内的玩法设置另外存一份，由等待页在新建房间时重放。
  * 按产品决定不落盘名称与密码（用户明确）；所有读写都容错——存储被禁用或数据损坏时按「没有记忆」处理。
  */
-export type RoomGame = "faker" | "song" | "ccb";
+export type RoomGame = "faker" | "song" | "cee";
 
 /** 创建弹窗里可沿用的选项；`source` 是猜猜呗的服务器来源（兼容原版）。 */
 export interface RoomCreateDefaults {
@@ -53,16 +53,16 @@ export interface SongRoomSettingsMemory {
   game?: SongRoomGameMemory;
 }
 
-/** 猜猜呗的房间内设置：整个 `CCBSettings` 原样记录、原样重放。 */
-export interface CCBRoomSettingsMemory {
-  settings: CCBSettings;
+/** 猜猜呗的房间内设置：整个 `CEESettings` 原样记录、原样重放。 */
+export interface CEERoomSettingsMemory {
+  settings: CEESettings;
 }
 
 /** 各游戏的设置记忆形状，读写函数按 `game` 分派类型。 */
 export interface RoomSettingsMemoryByGame {
   faker: FakerRoomSettingsMemory;
   song: SongRoomSettingsMemory;
-  ccb: CCBRoomSettingsMemory;
+  cee: CEERoomSettingsMemory;
 }
 
 const CREATE_PREFIX = "bakagame:room-create:";

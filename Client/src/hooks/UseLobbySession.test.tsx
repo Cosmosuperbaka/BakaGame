@@ -7,7 +7,7 @@ const room: { roomId: string; name: string; hasPassword?: boolean } = { roomId: 
 const event = { currentTarget: document.createElement("button") } as unknown as React.MouseEvent<HTMLElement>;
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((a,b) => { resolve=a; reject=b; }); return { promise, resolve, reject }; }
 function setup(overrides = {}) {
-  const options = { gamePath: "/ccb", rooms: [room], ready: true, createRoom: vi.fn().mockResolvedValue(undefined), joinRoom: vi.fn().mockResolvedValue(undefined), reconnectRoom: vi.fn().mockResolvedValue(false), showError: vi.fn(), ...overrides };
+  const options = { gamePath: "/cee", rooms: [room], ready: true, createRoom: vi.fn().mockResolvedValue(undefined), joinRoom: vi.fn().mockResolvedValue(undefined), reconnectRoom: vi.fn().mockResolvedValue(false), showError: vi.fn(), ...overrides };
   const hook = renderHook((props) => useLobbySession(props), { initialProps: options });
   return { ...hook, options };
 }
@@ -28,7 +28,7 @@ describe("大厅入房事务", () => {
     expect(h.options.reconnectRoom).toHaveBeenCalledTimes(1);
     await act(async()=>{ack.resolve(false);await first;});
     expect(h.options.joinRoom).toHaveBeenCalledExactlyOnceWith("1234","玩家",undefined,expect.any(AbortSignal));
-    expect(navigate).toHaveBeenCalledExactlyOnceWith("/ccb/room/1234"); expect(h.result.current.pending).toBe(false);
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee/room/1234"); expect(h.result.current.pending).toBe(false);
   });
   it("卸载后恢复响应不再发加入、显示错误或导航", async () => {
     const ack=deferred<boolean>();const h=setup({reconnectRoom:vi.fn(()=>ack.promise)}); let task!:Promise<void>;
@@ -48,7 +48,7 @@ describe("大厅入房事务", () => {
   });
   it("恢复成功直接导航而不再加入", async()=>{
     const h=setup({reconnectRoom:vi.fn().mockResolvedValue(true)});
-    await act(async()=>{await h.result.current.handleJoinRoom(room,event);});expect(navigate).toHaveBeenCalledExactlyOnceWith("/ccb/room/1234");expect(h.options.joinRoom).not.toHaveBeenCalled();
+    await act(async()=>{await h.result.current.handleJoinRoom(room,event);});expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee/room/1234");expect(h.options.joinRoom).not.toHaveBeenCalled();
   });
 });
 it("换游戏后旧恢复响应不导航，新页面不接受过期意图",async()=>{

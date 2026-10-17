@@ -74,7 +74,7 @@ export function RoomHeader({
   title: string;
   /** 单人模式等没有房号的场景传 undefined */
   roomId?: string;
-  /** 接在房号后的房间类别（如 CCB 原版房），只标与默认不同的房间 */
+  /** 接在房号后的房间类别（如 CEE 原版房），只标与默认不同的房间 */
   roomTag?: string;
   center?: ReactNode;
   /** 右侧常驻操作（如音量），放在连接状态之后、移动端入口之前 */

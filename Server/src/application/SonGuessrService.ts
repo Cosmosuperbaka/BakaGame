@@ -123,7 +123,7 @@ interface SonGuessrPlayerRecord {
 }
 
 /**
- * 一个作答单元：个人一份，同队队员共用同一个对象（与 CCB 的队伍同口径）。
+ * 一个作答单元：个人一份，同队队员共用同一个对象（与 CEE 的队伍同口径）。
  * 次数、猜中、放弃、限时与在途锁都按单元记，一人猜中或放弃即全队结束；音频是否就绪仍按人记在回合上。
  */
 interface SonGuessrRoundPlayerState {
@@ -1647,7 +1647,7 @@ export class SonGuessrService implements AdminRoomControl {
     return { spectator, queued: false };
   }
 
-  /** 选队伍：只在等待阶段、只给参与玩家，与 CCB 的 `ccb.player.team` 同口径。准备状态保留。 */
+  /** 选队伍：只在等待阶段、只给参与玩家，与 CEE 的 `cee.player.team` 同口径。准备状态保留。 */
   private setTeam(connection: ConnectionRecord, team: number | null) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间没有队伍");
@@ -3636,7 +3636,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 记一次超时。队伍与 CCB 同口径：按当时在线的队员人数扣次数（不超过剩余次数），每人记一条；
+   * 记一次超时。队伍与 CEE 同口径：按当时在线的队员人数扣次数（不超过剩余次数），每人记一条；
    * 无人在线时（含个人掉线）仍扣一次，记在第一位队员名下，回合不会因为掉线卡住。
    */
   private recordTimeout(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {

@@ -50,16 +50,16 @@ describe("LandingPage", () => {
   it("开放猜角色多人模式并保留排位与锦标赛未上线状态", () => {
     renderLandingPage();
 
-    const ccbEntry = screen.getByTestId("game-entry-animecharguessr");
+    const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
     const songEntry = screen.getByTestId("game-entry-songuessr");
-    expect(ccbEntry).toBeInTheDocument();
-    expect(ccbEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
-    expect(within(ccbEntry).getAllByText("即将上线")).toHaveLength(2);
+    expect(ceeEntry).toBeInTheDocument();
+    expect(ceeEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
+    expect(within(ceeEntry).getAllByText("即将上线")).toHaveLength(2);
 
-    expect(within(ccbEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
-    expect(within(ccbEntry).getByText("多人模式")).toBeInTheDocument();
-    expect(within(ccbEntry).getByText("排位赛")).toBeInTheDocument();
-    expect(within(ccbEntry).getByText("锦标赛")).toBeInTheDocument();
+    expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    expect(within(ceeEntry).getByText("多人模式")).toBeInTheDocument();
+    expect(within(ceeEntry).getByText("排位赛")).toBeInTheDocument();
+    expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
 
     // Songuessr 两个子模式都已开放，不应再出现即将上线角标
     expect(within(songEntry).queryByText("即将上线")).not.toBeInTheDocument();

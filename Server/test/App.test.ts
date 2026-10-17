@@ -694,7 +694,7 @@ test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）
 
 
 
-for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songuessr", "song.lobby.subscribeRooms"], ["ccb", "ccb.lobby.subscribeRooms"]] as const) {
+for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songuessr", "song.lobby.subscribeRooms"], ["cee", "cee.lobby.subscribeRooms"]] as const) {
   test(`${game} 原生 WS schema 保持二进制/空白 JSON、关联错误与严格字段契约`, async () => {
     const { port, stop } = startTestServer();
     const socket = await openSocket(port, game);
@@ -702,7 +702,7 @@ for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songues
     const getPacket = (id: string) => collect((packet) => (packet as { id?: string }).id === id) as Promise<{ type: string; traceId?: string; error?: { code: string } }>;
     try {
       for (const [id, frame] of [["native-text", "text"], ["native-binary", "binary"]] as const) {
-        const message = JSON.stringify({ id, type: command, traceId: "native-trace", payload: {}, ...(game === "ccb" ? { roomId: null, sessionToken: null } : {}) });
+        const message = JSON.stringify({ id, type: command, traceId: "native-trace", payload: {}, ...(game === "cee" ? { roomId: null, sessionToken: null } : {}) });
         socket.send(frame === "text" ? ` \n${message}\n ` : new TextEncoder().encode(message));
         expect(await getPacket(id)).toMatchObject({ type: "ack", traceId: "native-trace" });
       }

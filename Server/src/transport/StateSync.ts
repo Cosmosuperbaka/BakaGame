@@ -1,5 +1,5 @@
 import { compare } from "fast-json-patch";
-import { CCB_STATE_EVENTS } from "../shared/CCB";
+import { CEE_STATE_EVENTS } from "../shared/CEE";
 import type {
   EventPacket,
   StatePatchOperation,
@@ -15,7 +15,7 @@ const STATE_EVENTS = new Set([
   "game.privateState",
   "song.room.snapshot",
   "song.game.privateState",
-  ...CCB_STATE_EVENTS,
+  ...CEE_STATE_EVENTS,
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

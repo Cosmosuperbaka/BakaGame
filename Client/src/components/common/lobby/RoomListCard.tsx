@@ -19,7 +19,7 @@ export interface LobbyRoomView {
   playerCount: number;
   /** 上游不提供旁观人数时为 null，此时不显示该数字，不伪造为 0。 */
   spectatorCount: number | null;
-  /** 房名后的来源标记，例如 CCB 的原版房。 */
+  /** 房名后的来源标记，例如 CEE 的原版房。 */
   tag?: string;
 }
 

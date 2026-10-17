@@ -11,7 +11,7 @@ type IsNever<T> = [T] extends [never] ? true : false;
 type Routes = ReturnType<typeof createApp>["app"]["~Routes"];
 type FakerBody = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["body"];
 type SongBody = Routes["api"]["songuessr"]["ws"]["subscribe"]["body"];
-type CCBBody = Routes["api"]["ccb"]["ws"]["subscribe"]["body"];
+type CEEBody = Routes["api"]["cee"]["ws"]["subscribe"]["body"];
 type FakerResponse = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["response"][200];
 export type PacketKind = Assert<FakerResponse["type"] extends "ack" | "error" | "event" ? true : false>;
 export type AckId = Assert<Extract<FakerResponse, { type: "ack" }>["id"] extends string ? true : false>;
@@ -22,20 +22,20 @@ type Ready = Routes["readyz"]["get"]["response"];
 export type ReadySuccess = Assert<Ready[200]["ready"] extends true ? true : false>;
 export type ReadyFailure = Assert<Ready[503]["ready"] extends false ? true : false>;
 export type ReadyFailureReason = Assert<Ready[503]["status"] extends "shutting_down" ? true : false>;
-export type NotAny = Assert<IsAny<FakerBody | SongBody | CCBBody> extends false ? true : false>;
-export type NotNever = Assert<IsNever<FakerBody> | IsNever<SongBody> | IsNever<CCBBody> extends false ? true : false>;
+export type NotAny = Assert<IsAny<FakerBody | SongBody | CEEBody> extends false ? true : false>;
+export type NotNever = Assert<IsNever<FakerBody> | IsNever<SongBody> | IsNever<CEEBody> extends false ? true : false>;
 const faker: FakerBody = { id: "compile", type: "game.submitDescription", payload: { text: "描述" } };
 const song: SongBody = { id: "compile", type: "song.auth.qr.check", payload: { key: "key" } };
-const ccb: CCBBody = { id: "compile", type: "ccb.game.guess", payload: { characterId: 1 } };
+const cee: CEEBody = { id: "compile", type: "cee.game.guess", payload: { characterId: 1 } };
 // @ts-expect-error 卧底描述必须为文本。
 const wrongFaker: FakerBody = { id: "compile", type: "game.submitDescription", payload: { text: 1 } };
 // @ts-expect-error 扫码 key 必须为字符串。
 const wrongSong: SongBody = { id: "compile", type: "song.auth.qr.check", payload: { key: false } };
-// @ts-expect-error CCB 角色标识是数字。
-const wrongCCB: CCBBody = { id: "compile", type: "ccb.game.guess", payload: { characterId: "not-a-number" } };
+// @ts-expect-error CEE 角色标识是数字。
+const wrongCEE: CEEBody = { id: "compile", type: "cee.game.guess", payload: { characterId: "not-a-number" } };
 // @ts-expect-error 未声明命令不得进入输入联合。
 const unknown: FakerBody = { id: "compile", type: "unknown.command", payload: {} };
-void [faker, song, ccb, wrongFaker, wrongSong, wrongCCB, unknown];
+void [faker, song, cee, wrongFaker, wrongSong, wrongCEE, unknown];
 
 test("动态 union 使用同 Schema 的 Static，保留原生 Union 运行校验", () => {
   const schemas = [t.String(), t.Number()];

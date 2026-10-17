@@ -72,7 +72,7 @@ export const MissingPassword: Story = {
   },
 };
 
-/** CCB 建房：「兼容原版」开启后私密开关改称「不在大厅显示」，允许旁观锁定为开。 */
+/** CEE 建房：「兼容原版」开启后私密开关改称「不在大厅显示」，允许旁观锁定为开。 */
 function CompatibleDemo(props: CreateRoomDialogProps) {
   const [original, setOriginal] = useState(true);
   return (

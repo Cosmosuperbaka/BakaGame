@@ -37,7 +37,7 @@ export interface PlayerRowProps {
   badges?: ReactNode;
   /** 次行徽章之后的补充文字，如「2 队 · 3/10 次」 */
   meta?: ReactNode;
-  /** 第三行整行内容，如 CCB 的猜测进度 */
+  /** 第三行整行内容，如 CEE 的猜测进度 */
   detail?: ReactNode;
   /** 操作浮层顶部内容（谁是卧底的身份猜测行） */
   actionsHeader?: ReactNode;

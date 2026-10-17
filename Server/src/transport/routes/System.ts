@@ -3,7 +3,7 @@ import { safeEqualToken } from "../../domain/Rules";
 
 import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
-import type { CCBService } from "../../application/CCBService";
+import type { CEEService } from "../../application/CEEService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 
@@ -51,7 +51,7 @@ export const isPrivateLanHost = (rawHost: string): boolean => {
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
-  ccbService?: CCBService;
+  ceeService?: CEEService;
   logger?: EventLogger;
   maintenanceToken?: string;
   isShuttingDown?: () => boolean;
@@ -63,7 +63,7 @@ export interface SystemRoutesDependencies {
 export const systemRoutes = ({
   whoIsFakerService,
   sonGuessrService,
-  ccbService,
+  ceeService,
   logger,
   isShuttingDown,
   onTriggerShutdown,
@@ -233,14 +233,14 @@ export const systemRoutes = ({
           onlinePlayerCount: 0,
         };
 
-        const ccbHealth = ccbService?.getHealthSnapshot() ?? { roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 };
+        const ceeHealth = ceeService?.getHealthSnapshot() ?? { roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 };
         return {
           status: "ok" as const,
-          roomCount: fakerHealth.roomCount + sonHealth.roomCount + ccbHealth.roomCount,
+          roomCount: fakerHealth.roomCount + sonHealth.roomCount + ceeHealth.roomCount,
           connectionCount:
-            fakerHealth.connectionCount + sonHealth.connectionCount + ccbHealth.connectionCount,
+            fakerHealth.connectionCount + sonHealth.connectionCount + ceeHealth.connectionCount,
           onlinePlayerCount:
-            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ccbHealth.onlinePlayerCount,
+            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ceeHealth.onlinePlayerCount,
         };
       },
       {
@@ -269,7 +269,7 @@ export const systemRoutes = ({
 
         fakerService?.notifyShutdown();
         songService?.notifyShutdown();
-        ccbService?.notifyShutdown();
+        ceeService?.notifyShutdown();
 
         if (onTriggerShutdown) {
           await onTriggerShutdown();

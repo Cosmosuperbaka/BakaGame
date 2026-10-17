@@ -35,13 +35,13 @@ describe("云同步", () => {
   it("只收同步范围内的键", () => {
     window.localStorage.setItem("bakagame:username", "阿狸");
     window.localStorage.setItem("songuessr_volume", "0.4");
-    window.localStorage.setItem("bakagame:room-settings:ccb", "{}");
-    window.localStorage.setItem("bakagame:room-restore:ccb", "ROOM");
+    window.localStorage.setItem("bakagame:room-settings:cee", "{}");
+    window.localStorage.setItem("bakagame:room-restore:cee", "ROOM");
     window.localStorage.setItem("bakagame:visitor", "abcdefghijklmnop");
     expect(readLocalPreferences()).toEqual({
       "bakagame:username": "阿狸",
       songuessr_volume: "0.4",
-      "bakagame:room-settings:ccb": "{}",
+      "bakagame:room-settings:cee": "{}",
     });
   });
 

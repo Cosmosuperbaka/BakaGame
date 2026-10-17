@@ -98,7 +98,7 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
     const protocols = [
       { path: "/api/whoisfaker/ws", subscribe: "lobby.subscribeRooms", join: "room.join", service: "WhoIsFaker" },
       { path: "/api/songuessr/ws", subscribe: "song.lobby.subscribeRooms", join: "song.room.join", service: "SonGuessr" },
-      { path: "/api/ccb/ws", subscribe: "ccb.lobby.subscribeRooms", join: "ccb.room.join", service: "CCB" },
+      { path: "/api/cee/ws", subscribe: "cee.lobby.subscribeRooms", join: "cee.room.join", service: "CEE" },
     ];
     for (const protocol of protocols) {
       const client = await connect(`${baseUrl.replace("http:", "ws:")}${protocol.path}`);

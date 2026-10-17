@@ -13,7 +13,7 @@ describe("站点访问统计", () => {
     expect(normalizeVisitPath("/WhoIsFaker?ref=x")).toBe("/whoisfaker");
     expect(normalizeVisitPath("/songuessr/room/4821")).toBe("/songuessr/room");
     expect(normalizeVisitPath("/songuessr/solo")).toBe("/songuessr/solo");
-    expect(normalizeVisitPath("/ccb/room/1234#chat")).toBe("/ccb/room");
+    expect(normalizeVisitPath("/cee/room/1234#chat")).toBe("/cee/room");
     expect(normalizeVisitPath("/admin/users/abc")).toBe("/admin");
     expect(normalizeVisitPath("/wp-login.php")).toBe("other");
   });
@@ -24,7 +24,7 @@ describe("站点访问统计", () => {
     const visits = new SiteStatsService({ repository, secret: ACCOUNT_TEST_SECRET, logger: new EventLogger(() => {}), now: () => clock });
 
     visits.record({ visitorId: VISITOR, path: "/", userId: null });
-    visits.record({ visitorId: VISITOR, path: "/ccb/room/1234", userId: "user-1" });
+    visits.record({ visitorId: VISITOR, path: "/cee/room/1234", userId: "user-1" });
     await visits.flush();
     visits.record({ visitorId: VISITOR, path: "/", userId: null });
     await visits.flush();
@@ -36,7 +36,7 @@ describe("站点访问统计", () => {
     expect(rows.map((row) => [row.day, row.views, row.userId])).toEqual([["2026-10-20", 3, "user-1"], ["2026-10-21", 1, null]]);
     expect(rows[0]!.visitorHash).not.toBe(rows[1]!.visitorHash);
     expect(rows.some((row) => row.visitorHash.includes(VISITOR))).toBe(false);
-    expect(await repository.pages("2026-10-20", 10)).toEqual([{ path: "/", views: 3 }, { path: "/ccb/room", views: 1 }]);
+    expect(await repository.pages("2026-10-20", 10)).toEqual([{ path: "/", views: 3 }, { path: "/cee/room", views: 1 }]);
   });
 
   test("写库失败丢弃本窗口，之后照常统计；过期访客行被清理", async () => {
@@ -75,7 +75,7 @@ describe("后台概览", () => {
     const admin = await ctx.signIn("90001", "管理员");
     const alice = await ctx.signIn("10001", "Alice");
     await ctx.rpc("feedback/create", { kind: "bug", title: "t", content: "c" }, alice.cookie);
-    await ctx.rpc("site/visit", { visitorId: VISITOR, path: "/ccb" });
+    await ctx.rpc("site/visit", { visitorId: VISITOR, path: "/cee" });
     await ctx.visits.flush();
 
     expect((await ctx.rpc("admin/stats/overview", { days: 3 }, alice.cookie)).status).toBe(403);
@@ -86,7 +86,7 @@ describe("后台概览", () => {
       users: { total: 2, admins: 1, banned: 0 },
       feedback: { open: 1, processing: 0, resolved: 0, closed: 0 },
       live: { faker: { rooms: 0, onlinePlayers: 0 } },
-      pages: [{ path: "/ccb", views: 1 }],
+      pages: [{ path: "/cee", views: 1 }],
       gameRecordDays: 7,
     });
     const daily = overview.body.daily as Array<{ day: string; visitors: number }>;

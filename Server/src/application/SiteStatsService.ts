@@ -20,7 +20,7 @@ export const beijingDay = (time: number): string => new Date(time + BEIJING_OFFS
  * 页面只按板块统计：房间号、单人房等路径参数一律折叠，防止统计表按房号无限膨胀，
  * 也不把房号这类可定位到具体对局的信息落库。
  */
-const SECTIONS = new Set(["whoisfaker", "songuessr", "ccb", "admin"]);
+const SECTIONS = new Set(["whoisfaker", "songuessr", "cee", "admin"]);
 export const normalizeVisitPath = (raw: string): string => {
   const segments = raw.split(/[?#]/)[0]!.toLowerCase().split("/").filter(Boolean);
   if (!segments.length) return "/";

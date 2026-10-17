@@ -57,7 +57,7 @@ export interface SearchResult {
 const SUBJECT_INDEX = "subjects";
 const CHARACTER_INDEX = "characters";
 const METADATA_INDEX = "bangumi_search_metadata";
-// v3：猜歌与 CCB 的作品索引合并为一个、并按官方口径重设 settings
+// v3：猜歌与 CEE 的作品索引合并为一个、并按官方口径重设 settings
 // （filterable 去 nsfw、rankingRules 去 nsfw:asc），据此强制重建存量索引。
 const INDEX_SCHEMA_VERSION = 3;
 const BATCH_SIZE = 1_000;
@@ -103,7 +103,7 @@ type IndexWithDocuments<T extends Record<string, unknown>> = Index<T> & {
 /**
  * 全部搜索索引的唯一适配器。
  *
- * 此前猜歌用 `bangumi_subjects`、CCB 用 `ccb_subjects`，同一批作品被索引两遍：
+ * 此前猜歌用 `bangumi_subjects`、CEE 用 `cee_subjects`，同一批作品被索引两遍：
  * 体积翻倍、更新要改两处、两边还可能不一致。现在合并成一个 `subjects` 索引，
  * 两个玩法共用；角色索引沿用 `characters`。
  */
@@ -154,7 +154,7 @@ export class BangumiSearchIndex {
   }
 
   /**
-   * 作品搜索。两个玩法共用：猜歌传 `types: [2]` + 年份区间，CCB 传它允许的作品类型。
+   * 作品搜索。两个玩法共用：猜歌传 `types: [2]` + 年份区间，CEE 传它允许的作品类型。
    * **不再过滤 nsfw** —— 数据里已经不存在 nsfw 条目（构建期剔除，且匿名 API 也拿不到）。
    */
   async searchSubjects(query: SubjectSearchQuery): Promise<SearchResult> {

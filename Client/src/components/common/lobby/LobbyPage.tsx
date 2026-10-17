@@ -14,7 +14,7 @@ import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
 
 export interface LobbyPageProps {
-  /** 页面 SEO 路径，例如 `/ccb`。 */
+  /** 页面 SEO 路径，例如 `/cee`。 */
   path: string;
   /** 游戏标识，显示在顶栏分隔线之后。 */
   title: ReactNode;
@@ -22,7 +22,7 @@ export interface LobbyPageProps {
   logo?: { src: string; alt: string };
   /** 标题与图标拼成的完整游戏名，供读屏与按名查找；只写文字标题时省略。 */
   titleLabel?: string;
-  /** 标题后的弱化副标题（如 CCB 的「Enhanced Edition」），不参与跨页共享元素。 */
+  /** 标题后的弱化副标题（如 CEE 的「Enhanced Edition」），不参与跨页共享元素。 */
   subtitle?: string;
   rooms: LobbyRoomView[];
   /** 首次握手尚未完成：显示骨架屏而不是「暂无房间」。 */

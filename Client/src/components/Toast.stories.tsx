@@ -55,7 +55,7 @@ export const SonGuessr: Story = {
   args: { toasts: [{ id: "song-notice", text: "网易云登录状态已失效，请重新扫码登录", type: "error" }] },
 };
 
-export const CCB: Story = {
-  name: "CCB 提示",
-  args: { toasts: [{ id: "ccb-notice", text: "设置已保存", type: "success" }] },
+export const CEE: Story = {
+  name: "CEE 提示",
+  args: { toasts: [{ id: "cee-notice", text: "设置已保存", type: "success" }] },
 };

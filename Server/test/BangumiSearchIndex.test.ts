@@ -56,7 +56,7 @@ describe("统一搜索索引契约", () => {
     ]);
   });
 
-  test("CCB 的作品搜索：类型按 OR 分组，无 nsfw 过滤", async () => {
+  test("CEE 的作品搜索：类型按 OR 分组，无 nsfw 过滤", async () => {
     const { client, requests } = createClient();
     const search = new BangumiSearchIndex({ client });
 

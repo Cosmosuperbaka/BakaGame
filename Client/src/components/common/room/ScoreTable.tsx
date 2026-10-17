@@ -19,12 +19,12 @@ export interface ScoreTableColumn {
 export interface ScoreTableRow {
   key: string;
   name: ReactNode;
-  /** 名字下方的弱化次行，如 CCB 的得分明细；按项传入，以「·」相连 */
+  /** 名字下方的弱化次行，如 CEE 的得分明细；按项传入，以「·」相连 */
   detail?: ReactNode[];
   cells: Record<string, ReactNode>;
-  /** 列 key → 滚动起点：这一列的数字在行落定后从起点逐位滚到终值（总分从赛前分滚起，CCB 的本局得分从 0 滚起） */
+  /** 列 key → 滚动起点：这一列的数字在行落定后从起点逐位滚到终值（总分从赛前分滚起，CEE 的本局得分从 0 滚起） */
   rollFrom?: Record<string, number>;
-  /** 本局做出贡献（CCB 猜中、猜歌答对）：行落定后浮起常驻的浅底，让战报读得出这几分是谁挣的 */
+  /** 本局做出贡献（CEE 猜中、猜歌答对）：行落定后浮起常驻的浅底，让战报读得出这几分是谁挣的 */
   contributor?: boolean;
 }
 

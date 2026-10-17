@@ -3,9 +3,9 @@
  *
  * 记录只服务后台复盘与统计（回放系统暂缓），因此写入失败只记日志，绝不影响对局本身。
  */
-export type RecordedGame = "faker" | "song" | "ccb";
+export type RecordedGame = "faker" | "song" | "cee";
 
-export const RECORDED_GAMES: readonly RecordedGame[] = ["faker", "song", "ccb"];
+export const RECORDED_GAMES: readonly RecordedGame[] = ["faker", "song", "cee"];
 
 export interface GameRecordPlayer {
   playerId: string;

@@ -3,7 +3,7 @@ import { Elysia, ValidationError } from "elysia";
 
 import { WhoIsFakerService } from "../application/WhoIsFakerService";
 import { SonGuessrService } from "../application/SonGuessrService";
-import { CCBService } from "../application/CCBService";
+import { CEEService } from "../application/CEEService";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord, PlayerAccount } from "../domain/Model";
@@ -14,8 +14,8 @@ import { createSwaggerPlugin } from "./Openapi";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
-import { parseCCBMessage, CCBClientMessageSchema } from "./CCBProtocol";
-import { normalizeCCBEnvelope } from "../shared/CCB";
+import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
+import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
@@ -30,7 +30,7 @@ export interface AppDependencies {
   whoIsFakerService: WhoIsFakerService;
   logger: EventLogger;
   sonGuessrService: SonGuessrService;
-  ccbService: CCBService;
+  ceeService: CEEService;
   disposeResources?: () => Promise<void>;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
@@ -450,7 +450,7 @@ export const createApp = ({
   whoIsFakerService,
   logger,
   sonGuessrService,
-  ccbService,
+  ceeService,
   isShuttingDown,
   onTriggerShutdown,
   disposeResources,
@@ -462,7 +462,7 @@ export const createApp = ({
     throw new Error("WhoIsFakerService dependency is required");
   }
   const songService = sonGuessrService;
-  const characterService = ccbService;
+  const characterService = ceeService;
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
   const requests = new WeakMap<Request, { traceId: string; startedAt: number }>();
@@ -548,7 +548,7 @@ export const createApp = ({
       systemRoutes({
         whoIsFakerService: fakerService,
         sonGuessrService: songService,
-        ccbService: characterService,
+        ceeService: characterService,
         logger,
         isShuttingDown,
         onTriggerShutdown,
@@ -583,16 +583,16 @@ export const createApp = ({
       close: (ws) =>
         closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId)),
     })
-    .ws("/api/ccb/ws", {
-      body: CCBClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
-      error: gameSocketError(logger, "CCB", parseCCBMessage),
+    .ws("/api/cee/ws", {
+      body: CEEClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      error: gameSocketError(logger, "CEE", parseCEEMessage),
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
       },
       open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
-      message: (ws, incoming) => handleGameMessage(ws, normalizeCCBEnvelope(incoming), logger, {
-        serviceName: 'CCB',
+      message: (ws, incoming) => handleGameMessage(ws, normalizeCEEEnvelope(incoming), logger, {
+        serviceName: 'CEE',
         execute: (connectionId, message) => characterService.execute(connectionId, message),
       }),
       close: (ws) => closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId)),
@@ -619,6 +619,6 @@ export const createApp = ({
     dispose,
     whoIsFakerService: fakerService,
     sonGuessrService: songService,
-    ccbService: characterService,
+    ceeService: characterService,
   };
 };
