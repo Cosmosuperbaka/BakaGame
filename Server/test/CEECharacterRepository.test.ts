@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { rm } from "node:fs/promises";
 import { CEECharacterRepository } from "../src/infrastructure/CEECharacterRepository";
 import { createDefaultCEESettings } from "../src/shared/CEE";
 import { createCEECharacterFixture } from "./CEECharacterFixtures";
 import type { CEEDataOptions } from "../src/infrastructure/CEEData";
+import { BangumiSearchIndex } from "../src/infrastructure/BangumiSearchIndex";
 import { selectCEEExtraTags } from "../src/infrastructure/CEECharacterDerivation";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -194,5 +195,23 @@ test("角色搜索每个候选只读一次补充资料，冷热排序保留改�
       expect(reads).toBe(size * 2);
       expect(results[1].id).toBe(100 + size - 1);
     }
+  }
+});
+
+test("角色图请求只触发一次索引同步：图片命中的重复请求不再等待检索任务", async () => {
+  const initialize = spyOn(BangumiSearchIndex.prototype, "initialize").mockResolvedValue(undefined as never);
+  const update = spyOn(BangumiSearchIndex.prototype, "updateCharacter").mockResolvedValue(undefined as never);
+  try {
+    const { repository } = create({ meilisearch: { client: { index: () => ({}) } as never } });
+    await repository.initialize();
+    await repository.resolveCharacterImage(1);
+    await repository.resolveCharacterImage(1);
+    await repository.resolveCharacterImage(2);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect((update.mock.calls[0]?.[0] as { id: number }).id).toBe(1);
+    expect((update.mock.calls[1]?.[0] as { id: number }).id).toBe(2);
+  } finally {
+    initialize.mockRestore();
+    update.mockRestore();
   }
 });

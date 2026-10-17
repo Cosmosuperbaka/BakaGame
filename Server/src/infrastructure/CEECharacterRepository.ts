@@ -15,6 +15,9 @@ const like = (keyword: string) => `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
 const validTypes = (types: number[]) => [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
 
+/** 已同步过索引的角色编号上限：超出后按插入顺序淘汰最旧的，避免长期运行后无限增长。 */
+const SYNCED_CHARACTER_CAP = 8192;
+
 /** 生产环境由 CEECharacterWorker 独占：SQLite 同步查询不会占用游戏主循环。 */
 export class CEECharacterRepository implements CEEDataProvider {
   private readonly db: Database;
@@ -23,6 +26,14 @@ export class CEECharacterRepository implements CEEDataProvider {
   private readonly directoryImports = new Map<number, Promise<CEEDirectoryResult>>();
   private readonly search?: BangumiSearchIndex;
   private readonly ready: Promise<void>;
+  /**
+   * 本进程已同步过索引的角色编号。
+   *
+   * 补全带来的中文名与别名写进索引后长期生效，而 `cee.character.image` 在列表滚动时
+   * 会逐卡片触发：每次都同步等于让「取一张图」附带一次 Meilisearch 任务等待
+   * （`updateCharacter` 会等任务落定，数百毫秒到数秒），因此每个角色每进程只同步一次。
+   */
+  private readonly syncedCharacters = new Set<number>();
   private closed = false;
 
   constructor(options: CEEDataOptions) {
@@ -271,7 +282,7 @@ export class CEECharacterRepository implements CEEDataProvider {
     await this.ready;
     if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id)) return undefined;
     const imageUrl = await this.enrichment.resolveCharacterImage(id, size);
-    if (this.search) await this.syncCharacterIndex(id);
+    await this.syncCharacterIndexOnce(id);
     return imageUrl;
   }
 
@@ -304,6 +315,17 @@ export class CEECharacterRepository implements CEEDataProvider {
   private toSummary(row: CharacterRow): CEECharacterSummary {
     const supplement = this.enrichment.readCharacter(row.id);
     return { id: row.id, name: supplement.name ?? row.name, nameCn: supplement.nameCn ?? (row.name_cn || row.name), imageUrl: this.enrichment.readImage(row.id, "character", "grid") };
+  }
+
+  /** 每个角色只同步一次索引；未启用索引时直接空转。 */
+  private async syncCharacterIndexOnce(id: number): Promise<void> {
+    if (!this.search || this.syncedCharacters.has(id)) return;
+    await this.syncCharacterIndex(id);
+    if (this.syncedCharacters.size >= SYNCED_CHARACTER_CAP) {
+      const oldest = this.syncedCharacters.values().next().value;
+      if (oldest !== undefined) this.syncedCharacters.delete(oldest);
+    }
+    this.syncedCharacters.add(id);
   }
 
   private async syncCharacterIndex(id: number): Promise<void> {
