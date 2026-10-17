@@ -83,7 +83,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 - **唯一权威锁文件 = 根级 `pnpm-lock.yaml`**，由 `pnpm install --frozen-lockfile` 消费（CI 与本机一致）。
 - **不得保留 `package-lock.json` 与 `bun.lock`**：两者都会在 CI 里制造「装的是哪份锁」的歧义，且 workspace 下 npm/bun 已不再负责安装。`.gitignore` 一并忽略两者。
 - 根级 `.npmrc` 的两条设置是运行前提，改动前先读文件内注释：`node-linker=hoisted`（避免软链破坏 Server 的容器 bind-mount 与单文件打包）与 `enable-pre-post-scripts=true`（放行 `bun`/`esbuild` 的 postinstall，否则 Server 的 `bun <script>` 会命中上游预置的「postinstall 未运行」占位脚本）。
-- 依赖版本约束（如 `typescript` 5.9.x、AMLL 0.5.2、`jsdom` 30 的 Node 下限、`@neteasecloudmusicapienhanced/api` ≥ 4.41.0）仍然是升级门禁，见下方「依赖版本约束」。
+- 依赖版本约束（如 `typescript` 的两条线——API 面 6.0.x、编译器 7.0.x、AMLL 0.5.2、`jsdom` 30 的 Node 下限、`@neteasecloudmusicapienhanced/api` ≥ 4.41.0）仍然是升级门禁，见下方「依赖版本约束」。
 
 ### 依赖路径不得写死 `Server/node_modules`
 
@@ -119,7 +119,8 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 
 | 包 | 锁定值 | 约束原因 |
 |---|---|---|
-| `typescript` | 两端均 5.9.x | 已核对版本的 `typescript-eslint`（含 `canary`）peer 上限为 `typescript: >=4.8.4 <6.1.0`，升到 7 会直接打挂 `npm run lint`。必须等 typescript-eslint 放开上限后再升。 |
+| `typescript`（API 线） | 两端均 `npm:@typescript/typescript6@6.0.2`（落位 6.0.3） | 只给**消费 TS 程序化 API** 的工具用：`typescript-eslint`、`ts-api-utils`、`eslint-plugin-sonarjs` 与 `tsc6`。`typescript-eslint`（含 `canary`）peer 上限为 `typescript: >=4.8.4 <6.1.0`，所以这条线停在 6.0.x；生效前提是根 `pnpm-workspace.yaml` 的 override，见下方补充约束。 |
+| `typescript7`（编译器线） | 两端均 `npm:typescript@7.0.2`，bin 只有 `tsc` | 原生 Go 编译器，跑 `check` / `build` / `tsc -b`；**没有稳定程序化 API**（7.1 才提供），因此不得被 lint 工具链当作 `typescript` 解析目标。别名键 `typescript7` 不受 override 影响，两条线互不代跑。 |
 | `@applemusic-like-lyrics/core` / `react` | 0.5.2 | `0.6.0` 上游把 `vitest ^4.1.10` 误写进 `dependencies`（0.5.2 是干净的，写在 `devDependencies`），且 registry 上没有修复版本。升级会让测试框架进入生产依赖树，而 `0.6.0` 的导出面与 `0.5.2` 逐符号比对完全一致、零功能收益。 |
 | `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；`pnpm install` 在 engines 不满足时硬失败，因此 CI 的 Node 不得降到 22.22.2 以下（根 `package.json` 的 `engines.node` 同口径声明）。 |
 | `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
@@ -127,6 +128,9 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `eslint-plugin-sonarjs` | 两端均 `4.2.2` | 提供 `sonarjs/cognitive-complexity`（阈值 20）。`4.2.2` 的 peer 为 `eslint: ^8 \|\| ^9 \|\| ^10`，是当前能覆盖 ESLint 10.11 的版本；它同时被 Ultracite 8 使用，规则实现与阈值口径一致。升级须先确认 peer 覆盖到项目 ESLint 版本，并重跑两端 `pnpm lint`（基线见 [Testing](Testing.md#lint-基线与复杂度门禁)）。 |
 
 补充约束：
+
+- **两条 TypeScript 线只靠根 `pnpm-workspace.yaml` 的 `overrides: typescript: npm:@typescript/typescript6` 兜住。** `eslint-plugin-sonarjs@4.2.2` 把 `typescript` 声明成硬依赖（`>=5 <6.1.0`），`ts-api-utils` 再按它的 peer 变体提升；没有 override 时 pnpm 会给这两处各自嵌套装一份真 `typescript@5.9.3`，类型感知规则于是拿 5.9 的 `TypeFlags` 常量去读 6.0 创建的 `Program`，`no-misused-promises` 直接崩在 `tsutils.unionConstituents`（Client `pnpm lint` 报 `is not a function or its return value is not iterable`）。装完先看根 `node_modules/typescript` 是否唯一（`require("typescript").version` 与 `tsc6 --version` 都应是 6.0.x），再跑两端 lint。override 的值必须写成**不带版本的别名**：加上 `@6.0.2` 后 pnpm 会拿依赖方要求的 `5.9.3` 去套这个别名，报 `No matching version found`。
+- **编辑器语言服务不得指向 `typescript7`。** 7.0.x 没有程序化 API，把 `typescript.tsdk` 指过去会让 TS 语言服务失效；编辑器红线与门禁结论不一致时以 `pnpm check`（`tsc` 7）和 `pnpm lint`（API 6）为准。
 
 - **根级 `knip` 只做静态分析，不参与构建与运行时。** 配置在根 `knip.jsonc`：workspace 入口（测试、故事、E2E、`bun --preload` 夹具）、导出/类型的分级规则都在那里维护。`knip --fix` 会按报告直接删除代码与导出，**禁止在本地或 CI 启用**。Knip 会加载 `Client/vite.config.ts` 读取别名等配置，但**加载配置本身不写盘**：`.generated-public` 的重建在 `public-webp` 插件的 `config` 钩子里，只有创建 dev server 或构建时才执行，因此不再需要删除豁免开关。
 - **`Server/package.json` 里的 `bun` 是可执行运行时 pin，改它会改变测量仪器。**

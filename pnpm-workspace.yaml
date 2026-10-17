@@ -18,3 +18,12 @@ packages:
 onlyBuiltDependencies:
   - bun
   - esbuild
+
+# TypeScript 双版本：编译器是 typescript7（npm:typescript@7，tsc），API 面是 typescript
+# （npm:@typescript/typescript6@6，tsc6）。eslint-plugin-sonarjs 把 typescript 写成硬依赖
+# （>=5 <6.1.0），ts-api-utils 又按它的 peer 变体提升；不覆写的话 pnpm 会给它们各自嵌套装
+# 一份真 typescript@5.9.3，类型感知规则就会用 5.9 的 TypeFlags 去读 6.0 创建的 Program，
+# no-misused-promises 直接崩（unionConstituents 拿到不可迭代的结果）。
+# 覆写只针对依赖名 typescript，不动 typescript7 这个别名键。
+overrides:
+  typescript: npm:@typescript/typescript6

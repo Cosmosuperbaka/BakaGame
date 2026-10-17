@@ -45,6 +45,7 @@
 - **Server** 的类型感知用 `projectService`，覆盖 `src` / `scripts` / `test`；`integration` 与
   `drizzle.config.ts` 不在 tsconfig 工程内，只走语法级检查。`test/**` 额外关闭
   `await-thenable` 与 `no-explicit-any`：夹具多为同步函数、桩多为 `any`，按生产标准要求只会产生噪声。
+- **`pnpm lint` 消费 TS 6 的程序化 API，`pnpm check` / `build` 用 TS 7 的 `tsc`**：两条线版本不同，失败也分属两端——类型感知规则崩掉（`tsutils.unionConstituents is not a function`）只在 lint 出现，lib 收紧的类型错误（`Uint8Array<ArrayBuffer>` 不再赋给 `ArrayBufferView<ArrayBuffer>`）只在 check 出现。动 `typescript` 依赖或根 override 后两端都要重跑，不看一端绿就收工；版本口径见 [Conventions](Conventions.md#依赖版本约束升级前必读)。
 - **存量用基线文件记录，不用内联注释**：`Client/eslint-suppressions.json` 与
   `Server/eslint-suppressions.json` 是 ESLint bulk suppressions 的按「文件 + 规则 + 计数」账本。
   新增违规直接失败；重构导致计数下降后会报 unused suppressions，此时跑 `pnpm lint:prune` 递减基线并一并提交。
