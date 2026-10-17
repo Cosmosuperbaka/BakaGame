@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
+import { Hint } from "@/components/ui/Tooltip";
 import { SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { FEEDBACK_KIND_LABELS, FEEDBACK_STATUS_BADGE, FEEDBACK_STATUS_LABELS } from "@/lib/FeedbackLabels";
@@ -23,7 +24,11 @@ const PANEL = "scrollbar-hidden h-[min(56vh,30rem)] overflow-y-auto overscroll-c
 type ListState = { status: "loading" } | { status: "ready"; items: FeedbackSummary[] } | { status: "error"; message: string };
 
 function Time({ value }: { value: string }) {
-  return <time dateTime={value} title={formatAbsoluteTime(value)}>{formatRelativeTime(value)}</time>;
+  return (
+    <Hint label={formatAbsoluteTime(value)}>
+      <time dateTime={value}>{formatRelativeTime(value)}</time>
+    </Hint>
+  );
 }
 
 function FeedbackForm({ onCreated }: { onCreated: () => void }) {

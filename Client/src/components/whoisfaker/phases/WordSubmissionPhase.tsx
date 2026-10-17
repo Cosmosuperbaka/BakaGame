@@ -3,6 +3,7 @@ import { useState, useCallback, useId } from "react";
 import { Send, PenLine, Dices } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
+import { Hint } from "@/components/ui/Tooltip";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
@@ -206,7 +207,9 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
               ) : null}
               {participants.map((p) => (
                 <div key={p.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0">
-                  <span title={p.name} className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">{p.name}</span>
+                  <Hint label={p.name}>
+                    <span className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">{p.name}</span>
+                  </Hint>
                   <SegmentedControl
                     size="sm"
                     aria-label={`为 ${p.name} 分配身份`}

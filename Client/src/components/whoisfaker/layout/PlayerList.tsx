@@ -1,6 +1,7 @@
 import { useCallback, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Hint } from "@/components/ui/Tooltip";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
@@ -407,12 +408,13 @@ function CompactNameCell({ player, me }: { player: PublicPlayerView; me: boolean
       <div className={cn(PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT, "pl-2 pr-1", me && "bg-primary/10", !player.online && !player.isBot && "opacity-60")}>
         {me ? <span className={PLAYER_ME_MARK} /> : null}
         <PlayerAvatar name={player.name} me={me} />
-        <span
-          title={player.name}
-          className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
-        >
-          {player.name}
-        </span>
+        <Hint label={player.name}>
+          <span
+            className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
+          >
+            {player.name}
+          </span>
+        </Hint>
         {eliminated ? <span className="sr-only">已出局</span> : null}
       </div>
     </div>

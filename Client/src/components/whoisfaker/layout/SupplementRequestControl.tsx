@@ -5,6 +5,7 @@ import { Check, MessageSquarePlus, Plus, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
+import { Hint } from "@/components/ui/Tooltip";
 import { receiptMark, tappable } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
@@ -112,31 +113,31 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
             {candidates.map((player) => {
               const selected = selectedPlayerIds.includes(player.id);
               return (
-                <motion.button
-                  key={player.id}
-                  type="button"
-                  {...tappable}
-                  aria-pressed={selected}
-                  disabled={busy}
-                  title={player.name}
-                  onClick={() => togglePlayer(player.id)}
-                  className={cn(
-                    "flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                    selected
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-dashed border-border bg-background text-muted-foreground hover:bg-accent/40",
-                  )}
-                >
-                  {/* 图标位定宽，选中与否只换图标，胶囊不随之伸缩 */}
-                  <span aria-hidden="true" className="grid h-3 w-3 shrink-0 place-items-center">
-                    <AnimatePresence mode="popLayout" initial={false}>
-                      <motion.span key={selected ? "on" : "off"} className="[grid-area:1/1]" {...receiptMark}>
-                        {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                      </motion.span>
-                    </AnimatePresence>
-                  </span>
-                  <span className="truncate">{player.name}</span>
-                </motion.button>
+                <Hint key={player.id} label={player.name}>
+                  <motion.button
+                    type="button"
+                    {...tappable}
+                    aria-pressed={selected}
+                    disabled={busy}
+                    onClick={() => togglePlayer(player.id)}
+                    className={cn(
+                      "flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                      selected
+                        ? "border-primary/40 bg-primary/10 text-foreground"
+                        : "border-dashed border-border bg-background text-muted-foreground hover:bg-accent/40",
+                    )}
+                  >
+                    {/* 图标位定宽，选中与否只换图标，胶囊不随之伸缩 */}
+                    <span aria-hidden="true" className="grid h-3 w-3 shrink-0 place-items-center">
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        <motion.span key={selected ? "on" : "off"} className="[grid-area:1/1]" {...receiptMark}>
+                          {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                        </motion.span>
+                      </AnimatePresence>
+                    </span>
+                    <span className="truncate">{player.name}</span>
+                  </motion.button>
+                </Hint>
               );
             })}
           </div>

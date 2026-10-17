@@ -4,6 +4,7 @@ import type { AdminOverview, FeedbackStatus, RecordedGameKind, SentryOverview } 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Hint } from "@/components/ui/Tooltip";
 import { AdminTable, AdminToolbar, QueryState } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
@@ -67,9 +68,12 @@ function DailyTable({ data }: { data: AdminOverview }) {
               <td className="text-right">{formatNumber(day.signedInVisitors)}</td>
               <td className="text-right">{formatNumber(day.views)}</td>
               <td className="text-right">{formatNumber(day.newUsers)}</td>
-              <td className="text-right" title={recorded ? GAMES.map((game) => `${GAME_LABELS[game]} ${day.rounds[game]}`).join(" · ") : undefined}>
-                {recorded ? formatNumber(sumRounds(day.rounds)) : "—"}
-              </td>
+              {/* 单元格只写总对局数，悬停给出各游戏的分项，省掉三列占宽 */}
+              <Hint label={recorded ? GAMES.map((game) => `${GAME_LABELS[game]} ${day.rounds[game]}`).join(" · ") : undefined}>
+                <td className="text-right">
+                  {recorded ? formatNumber(sumRounds(day.rounds)) : "—"}
+                </td>
+              </Hint>
               <td className="text-right">{recorded ? formatNumber(day.roundPlayers) : "—"}</td>
             </tr>
           );

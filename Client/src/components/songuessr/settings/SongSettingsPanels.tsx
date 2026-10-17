@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
+import { Hint } from "@/components/ui/Tooltip";
 import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
 import {
   SettingReveal, SettingScaleSlider, SettingSegmented, SettingStepper, SettingSwitchRow, SettingTextField, SettingToggleChips,
@@ -151,7 +152,9 @@ function FilterChip({ icon: Icon, label, removeLabel, onRemove }: {
       className="inline-flex h-7 max-w-full items-stretch overflow-hidden rounded-md border border-border bg-card text-xs shadow-2xs">
       <span className="flex min-w-0 items-center gap-1.5 pr-2 pl-2">
         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 truncate" title={label}>{label}</span>
+        <Hint label={label}>
+          <span className="min-w-0 truncate">{label}</span>
+        </Hint>
       </span>
       {onRemove ? (
         <button type="button" aria-label={removeLabel} onClick={onRemove}

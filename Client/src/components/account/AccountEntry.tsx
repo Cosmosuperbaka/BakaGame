@@ -4,6 +4,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { create } from "zustand";
 import { LogIn, LogOut, MessageSquareText, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
 import { FeedbackDialog } from "@/components/account/FeedbackDialog";
@@ -91,7 +92,9 @@ export function AccountButton() {
                 className="z-popover w-56 origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
               >
                 <div className="border-b px-4 py-3">
-                  <div className="truncate font-semibold" title={profile.name}>{profile.name}</div>
+                  <Hint label={profile.name}>
+                    <div className="truncate font-semibold">{profile.name}</div>
+                  </Hint>
                   <div className="mt-0.5 text-xs text-muted-foreground">QQ <span className="font-mono">{profile.qqNumber}</span></div>
                 </div>
                 <div className="flex flex-col">

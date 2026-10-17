@@ -3,6 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Search } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
+import { Hint } from "@/components/ui/Tooltip";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
 import { listContainer, listItem, optionTappable, popover, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -383,8 +384,15 @@ export function SearchOptionContent({
     <>
       {media}
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium" title={title}>{title}</span>
-        {subtitle ? <span className="block truncate text-xs text-muted-foreground" title={subtitle}>{subtitle}</span> : null}
+        {/* 标题与副标题都会按列表宽度截断，悬停给出完整文本 */}
+        <Hint label={title}>
+          <span className="block truncate font-medium">{title}</span>
+        </Hint>
+        {subtitle ? (
+          <Hint label={subtitle}>
+            <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+          </Hint>
+        ) : null}
       </span>
       {trailing ? <span className="shrink-0 text-xs text-muted-foreground">{trailing}</span> : null}
     </>

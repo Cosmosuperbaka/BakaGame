@@ -4,6 +4,7 @@ import { Trophy, BookOpen, History, RotateCcw, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
+import { Hint } from "@/components/ui/Tooltip";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/Motion";
@@ -242,9 +243,11 @@ export function GameOverPhase() {
                   key={i}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm"
                 >
-                  <span title={player?.name} className="w-1/3 min-w-0 shrink-0 truncate font-medium">
-                    {player?.name}
-                  </span>
+                  <Hint label={player?.name}>
+                    <span className="w-1/3 min-w-0 shrink-0 truncate font-medium">
+                      {player?.name}
+                    </span>
+                  </Hint>
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {g.guessedWords[0]} / {g.guessedWords[1]}
                   </span>

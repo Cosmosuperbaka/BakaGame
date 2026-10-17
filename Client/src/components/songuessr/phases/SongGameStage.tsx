@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Spinner } from "@/components/ui/Spinner";
+import { Hint } from "@/components/ui/Tooltip";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
@@ -70,7 +71,7 @@ const POPULARITY_HINT: Record<SongGuessDirection, string> = {
 
 /**
  * 一枚反馈徽章：取值与指向答案的图标同处一枚，命中（相同）用 `matched`，其余 `muted`。
- * 图标对读屏隐藏，含义由紧随其后的视觉隐藏文字读出，鼠标悬停时 `title` 给出同一句。
+ * 图标对读屏隐藏，含义由紧随其后的视觉隐藏文字读出，鼠标悬停时浮层给出同一句。
  */
 function FeedbackBadge({ matched, icon: Icon, hint, children }: {
   matched: boolean;
@@ -79,11 +80,13 @@ function FeedbackBadge({ matched, icon: Icon, hint, children }: {
   children: ReactNode;
 }) {
   return (
-    <Badge variant={matched ? "matched" : "muted"} size="sm" className="tabular-nums" title={hint}>
-      {children}
-      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="sr-only">，{hint}</span>
-    </Badge>
+    <Hint label={hint}>
+      <Badge variant={matched ? "matched" : "muted"} size="sm" className="tabular-nums">
+        {children}
+        <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="sr-only">，{hint}</span>
+      </Badge>
+    </Hint>
   );
 }
 

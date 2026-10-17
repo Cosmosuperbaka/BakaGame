@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Users } from "lucide-react";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
+import { Hint } from "@/components/ui/Tooltip";
 import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
 import { listItem, tappable } from "@/lib/Motion";
 import { TEAM_OPTIONS, teamKey, teamLabel } from "@/lib/Teams";
@@ -98,31 +99,34 @@ function TeamMembers({ players, selfId }: { players: TeamMember[]; selfId: strin
   const shown = players.slice(0, AVATAR_LIMIT);
   const rest = players.length - shown.length;
   return (
-    <span className="relative flex h-6 items-center" title={players.map((player) => player.name).join("、") || undefined} aria-hidden="true">
-      <AnimatePresence initial={false}>
-        {shown.map((player, index) => (
-          <motion.span
-            key={player.id}
-            variants={listItem}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            layout="position"
-            className={cn(
-              "rounded-md ring-2 ring-muted group-data-checked:ring-background dark:group-data-checked:ring-secondary",
-              index > 0 && "-ml-1.5",
-            )}
-          >
-            <PlayerAvatar
-              name={player.name}
-              me={player.id === selfId}
-              // 头像默认的 muted 底与轨道同色，换成与所在格子相反的那一档才看得出方块。
-              className={cn("h-6 w-6 text-xs", player.id !== selfId && "bg-background group-data-checked:bg-muted")}
-            />
-          </motion.span>
-        ))}
-      </AnimatePresence>
-      {rest > 0 ? <span className="ml-1 font-sans text-2xs tabular-nums">+{rest}</span> : null}
-    </span>
+    // 头像最多叠四个，余下只报数；全量名单交给悬停（对读屏隐藏，读屏读的是格子标题上的人数）
+    <Hint label={players.map((player) => player.name).join("、") || undefined}>
+      <span className="relative flex h-6 items-center" aria-hidden="true">
+        <AnimatePresence initial={false}>
+          {shown.map((player, index) => (
+            <motion.span
+              key={player.id}
+              variants={listItem}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              layout="position"
+              className={cn(
+                "rounded-md ring-2 ring-muted group-data-checked:ring-background dark:group-data-checked:ring-secondary",
+                index > 0 && "-ml-1.5",
+              )}
+            >
+              <PlayerAvatar
+                name={player.name}
+                me={player.id === selfId}
+                // 头像默认的 muted 底与轨道同色，换成与所在格子相反的那一档才看得出方块。
+                className={cn("h-6 w-6 text-xs", player.id !== selfId && "bg-background group-data-checked:bg-muted")}
+              />
+            </motion.span>
+          ))}
+        </AnimatePresence>
+        {rest > 0 ? <span className="ml-1 font-sans text-2xs tabular-nums">+{rest}</span> : null}
+      </span>
+    </Hint>
   );
 }

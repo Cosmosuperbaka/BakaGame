@@ -6,6 +6,7 @@ import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
 import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
 import { LazyImage } from "@/components/common/LazyImage";
 import { Badge } from "@/components/ui/Badge";
+import { Hint } from "@/components/ui/Tooltip";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
 import { NeteaseCloudMusicIcon, QQMusicIcon } from "./SongAccountSettings";
@@ -32,14 +33,19 @@ const songDetail = (song: SongSearchResult) => [song.artist, song.album].filter(
 function SongRow({ song, guessed, badge }: { song: SongSearchResult; guessed?: boolean; badge?: string }) {
   const isQqSong = song.id.startsWith("qq:");
   const isNeteaseSong = song.id.startsWith("netease:");
+  // 平台只以品牌图标出现，名称走统一悬停；`aria-label` 保留给读屏
   const platformLogo = isQqSong ? (
-    <span title="QQ音乐" aria-label="QQ音乐" className="inline-flex items-center">
-      <QQMusicIcon className="size-4 shrink-0" />
-    </span>
+    <Hint label="QQ音乐">
+      <span aria-label="QQ音乐" className="inline-flex items-center">
+        <QQMusicIcon className="size-4 shrink-0" />
+      </span>
+    </Hint>
   ) : isNeteaseSong ? (
-    <span title="网易云" aria-label="网易云" className="inline-flex items-center">
-      <NeteaseCloudMusicIcon className="size-4 shrink-0" />
-    </span>
+    <Hint label="网易云">
+      <span aria-label="网易云" className="inline-flex items-center">
+        <NeteaseCloudMusicIcon className="size-4 shrink-0" />
+      </span>
+    </Hint>
   ) : null;
 
   return (

@@ -4,6 +4,7 @@ import { BookOpen, Download, Filter, Lightbulb, Search, Swords, Tags, Upload, Us
 import { parseCEESettings, type CEEAnswerMode, type CEESettings } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
+import { Hint } from "@/components/ui/Tooltip";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import {
   SettingReveal, SettingSegmented, SettingSelect, SettingStepper, SettingSwitchRow, SettingTextField, SettingValue,
@@ -207,7 +208,9 @@ export function CEEGameSettings({ settings, waiting, readOnly = false }: { setti
                     {draft.addedSubjects.map((id) => (
                       <motion.span key={id} variants={listItem} initial="initial" animate="animate" exit="exit" layout="position"
                         className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
-                        <span className="min-w-0 truncate" title={subjects.nameOf(id)}>{subjects.nameOf(id)}</span>
+                        <Hint label={subjects.nameOf(id)}>
+                          <span className="min-w-0 truncate">{subjects.nameOf(id)}</span>
+                        </Hint>
                         <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
                           aria-label={`移除作品 ${subjects.nameOf(id)}`}
                           onClick={() => change("addedSubjects", draft.addedSubjects.filter((value) => value !== id))}>

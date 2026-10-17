@@ -6,6 +6,7 @@ import type { CEEComparison, CEEFeedback, CEEFeedbackValue, CEEGuess } from "@ba
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible, DisclosureChevron } from "@/components/ui/Collapsible";
+import { Hint } from "@/components/ui/Tooltip";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
 import { listContainer, listItem, skeletonFade, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -47,15 +48,17 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CEEF
   const { label, icon: Icon, tone } = COMPARISON[data.comparison];
   const missing = data.value === "" || data.value === "?" || data.value === -1;
   const text = missing ? "未知" : field === "gender" ? (GENDER_TEXT[String(data.value)] ?? "未知") : data.value;
+  // 字段名只在读屏里出现，视觉上只剩数值与箭头；悬停补上「字段名：判定」，与读屏口径一致。
   return (
-    <span
-      className={cn("inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-md border px-1.5 tabular-nums", TONE_CLASS[tone])}
-      title={`${FIELD_LABEL[field]}：${label}`}
-    >
-      <span className="sr-only">{FIELD_LABEL[field]}</span>
-      <span>{text}</span>
-      <Icon className="size-3.5 shrink-0" role="img" aria-label={label} />
-    </span>
+    <Hint label={`${FIELD_LABEL[field]}：${label}`}>
+      <span
+        className={cn("inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-md border px-1.5 tabular-nums", TONE_CLASS[tone])}
+      >
+        <span className="sr-only">{FIELD_LABEL[field]}</span>
+        <span>{text}</span>
+        <Icon className="size-3.5 shrink-0" role="img" aria-label={label} />
+      </span>
+    </Hint>
   );
 }
 
@@ -157,12 +160,12 @@ function GuessRow({ guess, showRound }: { guess: CEEGuess; showRound: boolean })
           {feedback.sharedAppearances.length ? <SharedAppearances subjects={feedback.sharedAppearances} /> : null}
           {feedback.tags.length ? (
             <div className="flex flex-wrap gap-1">
+              {/* 徽章正文（标签名或「已隐藏」）与配色已说清状态，不再挂 hover 复述一遍 */}
               {feedback.tags.map((tag, index) => (
                 <Badge
                   key={`${tag.kind}:${index}`}
                   size="sm"
                   variant={tag.matched && !tag.hidden ? "matched" : "muted"}
-                  title={tag.hidden ? "标签已被其他玩家发现" : `${{ subject: "作品", character: "角色", voice: "声优" }[tag.kind]}标签`}
                 >
                   {tag.hidden ? "已隐藏" : tag.text}
                 </Badge>

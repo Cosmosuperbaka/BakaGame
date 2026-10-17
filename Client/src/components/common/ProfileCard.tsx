@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PlayerAccount, PublicProfile } from "@/types";
 import { loadPublicProfile } from "@/lib/ProfileCache";
 import { Spinner } from "@/components/ui/Spinner";
+import { Hint } from "@/components/ui/Tooltip";
 import { apiErrorMessage, avatarSrc } from "@/lib/Api";
 
 type CardState = { status: "loading" } | { status: "ready"; profile: PublicProfile } | { status: "error"; message: string };
@@ -55,9 +56,13 @@ export function ProfileCard({ account, playerName }: { account: PlayerAccount; p
           </span>
         ) : (
           <>
-            <div className="truncate font-semibold" title={state.profile.name}>{state.profile.name}</div>
+            <Hint label={state.profile.name}>
+              <div className="truncate font-semibold">{state.profile.name}</div>
+            </Hint>
             {state.profile.name !== playerName ? (
-              <div className="mt-0.5 truncate text-xs text-muted-foreground" title={playerName}>游戏昵称 {playerName}</div>
+              <Hint label={playerName}>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">游戏昵称 {playerName}</div>
+              </Hint>
             ) : null}
             <div className="mt-1 text-xs text-muted-foreground">
               {state.profile.qqNumber ? <>QQ <span className="font-mono">{state.profile.qqNumber}</span></> : "QQ 号未公开"}

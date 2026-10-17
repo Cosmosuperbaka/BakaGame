@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, WifiOff, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Hint } from "@/components/ui/Tooltip";
 import { useSharedElementName } from "@/hooks/UsePageTransition";
 import { popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -33,19 +34,21 @@ export function HeaderChip({ icon: Icon, label, muted = false, title, truncate =
   truncate?: boolean;
   className?: string;
 }) {
+  // 徽章在中栏放不下时会截断（`truncate`），悬停补全文；不截断则默认不挂浮层。
   return (
-    <span
-      title={title ?? (truncate ? label : undefined)}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
-        truncate ? "min-w-0" : "shrink-0",
-        muted ? "text-muted-foreground" : "text-foreground",
-        className,
-      )}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      {truncate ? <span className="min-w-0 truncate">{label}</span> : label}
-    </span>
+    <Hint label={title ?? (truncate ? label : undefined)}>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
+          truncate ? "min-w-0" : "shrink-0",
+          muted ? "text-muted-foreground" : "text-foreground",
+          className,
+        )}
+      >
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        {truncate ? <span className="min-w-0 truncate">{label}</span> : label}
+      </span>
+    </Hint>
   );
 }
 

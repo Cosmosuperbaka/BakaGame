@@ -7,6 +7,7 @@ import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { ProfileCard } from "@/components/common/ProfileCard";
 import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
+import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import type { PlayerAccount } from "@/types";
@@ -85,12 +86,13 @@ export function PlayerRow({
       <PlayerAvatar name={name} me={me} image={account?.image} />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex min-w-0 items-center gap-1">
-          <span
-            title={name}
-            className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
-          >
-            {name}
-          </span>
+          <Hint label={name}>
+            <span
+              className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
+            >
+              {name}
+            </span>
+          </Hint>
           {host ? <Crown className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="房主" /> : null}
         </span>
         <span className="flex min-h-4 min-w-0 items-center gap-1">

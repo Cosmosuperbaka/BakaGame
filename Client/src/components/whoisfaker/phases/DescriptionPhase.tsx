@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Hint } from "@/components/ui/Tooltip";
 import { PendingSpeech, SubmittedSpeech } from "../layout/PendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useSupplementRequest } from "../layout/SupplementRequestControl";
@@ -323,17 +324,18 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
             variants={listItem}
             className={cn("origin-left border-b border-border align-top", isMe && "bg-primary/5")}
           >
-            <th
-              scope="row"
-              title={player.name}
-              className={cn(
-                "truncate px-3 py-2.5 text-left text-sm",
-                // 本人那一行已有主色浅底，名字用正文色加粗，主色不作正文
-                isMe ? "font-semibold text-foreground" : "font-medium",
-              )}
-            >
-              {player.name}
-            </th>
+            <Hint label={player.name}>
+              <th
+                scope="row"
+                className={cn(
+                  "truncate px-3 py-2.5 text-left text-sm",
+                  // 本人那一行已有主色浅底，名字用正文色加粗，主色不作正文
+                  isMe ? "font-semibold text-foreground" : "font-medium",
+                )}
+              >
+                {player.name}
+              </th>
+            </Hint>
             <td className="px-3 py-2.5 text-sm leading-relaxed">
               {/* 内容与占位互斥切换，用 mode="wait" 保证省略号先退再进 */}
               <AnimatePresence mode="wait" initial={false}>

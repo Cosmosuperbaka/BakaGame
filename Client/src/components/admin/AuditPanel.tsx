@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { SettingSelect } from "@/components/common/room/SettingFields";
 import { AdminTable, AdminToolbar, Pager, QueryState, UserCell } from "@/components/admin/AdminParts";
+import { Hint } from "@/components/ui/Tooltip";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { AUDIT_ACTION_LABELS, auditActionLabel, formatShortDateTime } from "@/lib/AdminFormat";
@@ -34,7 +35,9 @@ export function AuditPanel() {
                 <td className="whitespace-nowrap tabular-nums text-muted-foreground">{formatShortDateTime(entry.createdAt)}</td>
                 <td><UserCell user={entry.actor} fallback="系统" /></td>
                 <td className="whitespace-nowrap">{auditActionLabel(entry.action)}</td>
-                <td className="max-w-48 truncate font-mono text-xs" title={`${entry.targetType}:${entry.targetId}`}>{entry.targetType}:{entry.targetId}</td>
+                <Hint label={`${entry.targetType}:${entry.targetId}`}>
+                  <td className="max-w-48 truncate font-mono text-xs">{entry.targetType}:{entry.targetId}</td>
+                </Hint>
                 <td className="max-w-80 break-words text-xs text-muted-foreground">{describeDetail(entry.detail)}</td>
               </tr>
             ))}

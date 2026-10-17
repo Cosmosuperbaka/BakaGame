@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clock, Crown, Flag, Lightbulb, Skull, Star, Trophy, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Hint } from "@/components/ui/Tooltip";
 import { receiptMark } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -54,24 +55,25 @@ export function CEEMarks({ marks, name }: { marks: string; name: string }) {
   const title = `${name} 猜测进度：${description}`;
 
   return (
-    <span
-      className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5"
-      role="img"
-      title={title}
-      aria-label={title}
-    >
-      <AnimatePresence initial={false}>
-        {items.map(({ token, index, style }) => (
-          // 标记串只会在末尾追加，按序号作键：已有的标记不随新标记重播
-          <motion.span key={`${token}-${index}`} {...receiptMark} className="inline-flex shrink-0">
-            {style ? (
-              <style.icon aria-hidden="true" className={cn("h-3.5 w-3.5", style.tone)} />
-            ) : (
-              <span className="text-xs leading-none text-muted-foreground">{token}</span>
-            )}
-          </motion.span>
-        ))}
-      </AnimatePresence>
-    </span>
+    <Hint label={title}>
+      <span
+        className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5"
+        role="img"
+        aria-label={title}
+      >
+        <AnimatePresence initial={false}>
+          {items.map(({ token, index, style }) => (
+            // 标记串只会在末尾追加，按序号作键：已有的标记不随新标记重播
+            <motion.span key={`${token}-${index}`} {...receiptMark} className="inline-flex shrink-0">
+              {style ? (
+                <style.icon aria-hidden="true" className={cn("h-3.5 w-3.5", style.tone)} />
+              ) : (
+                <span className="text-xs leading-none text-muted-foreground">{token}</span>
+              )}
+            </motion.span>
+          ))}
+        </AnimatePresence>
+      </span>
+    </Hint>
   );
 }

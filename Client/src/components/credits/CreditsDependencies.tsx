@@ -4,6 +4,7 @@ import { ChevronRight, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { Hint } from "@/components/ui/Tooltip";
 import {
   creditLicenseLabel,
   creditLicenseOptions,
@@ -146,9 +147,11 @@ function DependencyRow({
       className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2"
     >
       <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-sm" title={dependency.name}>
-        {dependency.name}
-      </span>
+      <Hint label={dependency.name}>
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {dependency.name}
+        </span>
+      </Hint>
       {/* 有子依赖时给一个弱化尾标，预告抽屉里还能往下看；没有子依赖就不占位。 */}
       {childCount > 0 ? (
         <span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground sm:inline">{childCount} 个依赖</span>
@@ -164,10 +167,10 @@ function DependencyRow({
         ) : null}
       </span>
       <span className="hidden w-28 shrink-0 items-center sm:flex">
+        {/* 徽章正文就是许可证名，不再挂 hover 复述；被列宽截断的部分由行内的完整 aria-label 与抽屉详情补 */}
         <Badge
           variant="outline"
           size="xs"
-          title={creditLicenseLabel(dependency.license)}
           className="min-w-0 max-w-full"
         >
           <span className="truncate">{creditLicenseLabel(dependency.license)}</span>

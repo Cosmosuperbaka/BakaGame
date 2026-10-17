@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { GameRecordDetail, RecordedGameKind } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import { Hint } from "@/components/ui/Tooltip";
 import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
 import { AdminTable, AdminToolbar, Pager, QueryState, RowButton } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
@@ -97,9 +98,11 @@ export function GamesPanel() {
               <tr key={item.id}>
                 <td><RowButton onClick={() => setOpen(item)}><span className="font-mono">{item.roomId}</span> 第 {item.roundNumber} 局</RowButton></td>
                 <td><Badge variant="outline" size="xs">{GAME_LABELS[item.game]}</Badge></td>
-                <td className="max-w-64 truncate text-muted-foreground" title={item.players.map((player) => player.name).join("、")}>
-                  {item.players.length} 人 · {item.players.map((player) => player.name).join("、")}
-                </td>
+                <Hint label={item.players.map((player) => player.name).join("、")}>
+                  <td className="max-w-64 truncate text-muted-foreground">
+                    {item.players.length} 人 · {item.players.map((player) => player.name).join("、")}
+                  </td>
+                </Hint>
                 <td className="whitespace-nowrap tabular-nums text-muted-foreground">{formatShortDateTime(item.endedAt)}</td>
                 <td className="whitespace-nowrap tabular-nums text-muted-foreground">{formatDuration(item.startedAt, item.endedAt)}</td>
               </tr>

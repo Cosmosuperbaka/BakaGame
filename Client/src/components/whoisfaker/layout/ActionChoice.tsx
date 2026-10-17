@@ -2,6 +2,7 @@ import { useCallback, useRef, type ReactNode, type Ref } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, Sword, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Hint } from "@/components/ui/Tooltip";
 import {
   listItem,
   receiptCard,
@@ -29,21 +30,22 @@ export function TargetOption({
 }) {
   const Icon = tone === "night" ? Sword : Vote;
   return (
-    <motion.button
-      type="button"
-      variants={listItem}
-      {...selectable}
-      title={name}
-      disabled={disabled}
-      onClick={onSelect}
-      className={cn(
-        "flex min-w-0 cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors",
-        tone === "night" ? "hover:bg-destructive/5" : "hover:bg-accent/40",
-      )}
-    >
-      <span className="truncate text-sm font-medium">{name}</span>
-      <Icon className={cn("ml-2 h-4 w-4 shrink-0", tone === "night" ? "text-destructive" : "text-muted-foreground")} />
-    </motion.button>
+    <Hint label={name}>
+      <motion.button
+        type="button"
+        variants={listItem}
+        {...selectable}
+        disabled={disabled}
+        onClick={onSelect}
+        className={cn(
+          "flex min-w-0 cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors",
+          tone === "night" ? "hover:bg-destructive/5" : "hover:bg-accent/40",
+        )}
+      >
+        <span className="truncate text-sm font-medium">{name}</span>
+        <Icon className={cn("ml-2 h-4 w-4 shrink-0", tone === "night" ? "text-destructive" : "text-muted-foreground")} />
+      </motion.button>
+    </Hint>
   );
 }
 

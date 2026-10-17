@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowUpRight, ChevronRight, Globe, Package } from "lucide-re
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible } from "@/components/ui/Collapsible";
+import { Hint } from "@/components/ui/Tooltip";
 import {
   collectTransitiveDependencyNames,
   creditLicenseLabel,
@@ -186,9 +187,11 @@ function ChildDependencyRow({
       className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2"
     >
       <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-mono text-sm" title={dependency.name}>
-        {dependency.name}
-      </span>
+      <Hint label={dependency.name}>
+        <span className="min-w-0 flex-1 truncate font-mono text-sm">
+          {dependency.name}
+        </span>
+      </Hint>
       <span className="shrink-0 font-mono text-xs text-muted-foreground">v{dependency.version}</span>
       <span className="hidden shrink-0 sm:flex">
         <Badge variant="outline" size="xs" className="max-w-24 min-w-0">

@@ -46,14 +46,14 @@ export function VolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
   const [open, setOpen] = useState(false);
   useCloseFrom(open, setOpen, "sm");
   const toggleMute = useMuteToggle(volume, onVolumeChange);
-  const title = volume === 0 ? "已静音" : `播放音量 ${Math.round(volume * 100)}%`;
 
   return (
     <>
-      <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} className="hidden sm:flex" title={title} />
+      {/* 胶囊里已常驻百分比读数，静音按钮与滑块各带 aria-label，不再挂复述同样的 hover 文案 */}
+      <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} className="hidden sm:flex" />
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger asChild>
-          <Button type="button" variant="ghost" size="icon" className="sm:hidden" aria-label="调节音量" title={title}>
+          <Button type="button" variant="ghost" size="icon" className="sm:hidden" aria-label="调节音量">
             <VolumeGlyph volume={volume} className="h-5 w-5" />
           </Button>
         </Popover.Trigger>
@@ -101,7 +101,6 @@ interface VolumeCapsuleProps extends VolumeControlProps {
   /** 始终取粗轨道、显出滑块（触屏弹出层） */
   expanded?: boolean;
   className?: string;
-  title?: string;
 }
 
 /**
@@ -109,13 +108,12 @@ interface VolumeCapsuleProps extends VolumeControlProps {
  * 轨道细时只有 4px，滑块收起；悬停或键盘聚焦到滑块时轨道补间到 6px、滑块弹出，与 Switch 同一档 `spring.snap` 的 CSS 弹性。
  * 根节点撑满胶囊高度，整条都能按住拖动，不必对准细轨道。
  */
-function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false, className, title }: VolumeCapsuleProps) {
+function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false, className }: VolumeCapsuleProps) {
   const percentage = Math.round(volume * 100);
   const muted = volume === 0;
   const spring = "duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap)";
   return (
     <div
-      title={title}
       data-expanded={expanded || undefined}
       className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel pr-2 pl-1 shadow-sm", className)}
     >

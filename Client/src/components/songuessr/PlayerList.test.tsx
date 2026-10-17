@@ -140,7 +140,7 @@ describe("SonGuessr PlayerList", () => {
         />,
       );
 
-      expect(screen.getByTitle(name)).toHaveTextContent(name);
+      expect(screen.getByText(name)).toBeInTheDocument();
       expect(screen.getByLabelText("12345 分")).toBeInTheDocument();
       await user.tab();
       expect(screen.getByRole("button", { name: `${name} 操作` })).toHaveFocus();

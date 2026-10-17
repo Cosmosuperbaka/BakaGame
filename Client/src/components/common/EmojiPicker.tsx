@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, popover, tappable } from "@/lib/Motion";
 import { loadStickerPacks, type StickerPack } from "@/lib/Stickers";
 import { cn } from "@/lib/Utils";
@@ -86,29 +87,29 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
           <ScrollArea className="h-52">
             <div className="grid grid-cols-5 gap-1 p-2">
               {pack.items.map((item) => (
-                <motion.button
-                  key={item.key}
-                  type="button"
-                  {...tappable}
-                  onClick={() => { onSelect(item.path); onClose(); }}
-                  className="flex flex-col items-center gap-0.5 rounded-md p-1 transition-colors hover:bg-accent hover:text-accent-foreground"
-                  title={item.label}
-                >
-                  <div className="relative aspect-square w-full">
-                    <img
-                      src={item.path}
-                      alt={item.label}
-                      className="h-full w-full rounded-md object-contain"
-                    />
-                    {/* 整包都是动图时角标已挂在标签上，这里只标混装包里的动图 */}
-                    {item.animated && !pack.animated && (
-                      <AnimatedBadge className="right-0 top-0" />
-                    )}
-                  </div>
-                  <span className="w-full truncate text-center text-2xs leading-tight text-muted-foreground">
-                    {item.label}
-                  </span>
-                </motion.button>
+                <Hint key={item.key} label={item.label}>
+                  <motion.button
+                    type="button"
+                    {...tappable}
+                    onClick={() => { onSelect(item.path); onClose(); }}
+                    className="flex flex-col items-center gap-0.5 rounded-md p-1 transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <div className="relative aspect-square w-full">
+                      <img
+                        src={item.path}
+                        alt={item.label}
+                        className="h-full w-full rounded-md object-contain"
+                      />
+                      {/* 整包都是动图时角标已挂在标签上，这里只标混装包里的动图 */}
+                      {item.animated && !pack.animated && (
+                        <AnimatedBadge className="right-0 top-0" />
+                      )}
+                    </div>
+                    <span className="w-full truncate text-center text-2xs leading-tight text-muted-foreground">
+                      {item.label}
+                    </span>
+                  </motion.button>
+                </Hint>
               ))}
             </div>
           </ScrollArea>
@@ -120,30 +121,30 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
             className="scrollbar-hidden flex shrink-0 overflow-x-auto border-t"
           >
             {packs.map((p, i) => (
-              <motion.button
-                key={p.dir}
-                type="button"
-                role="tab"
-                {...headerTappable}
-                onClick={() => onTabChange(i)}
-                title={p.name}
-                aria-label={p.name}
-                aria-selected={i === activeTab}
-                className={cn(
-                  // 标签栏横向滚动会裁掉外扩的环，聚焦环向内收。
-                  "relative flex h-12 w-14 flex-shrink-0 items-center justify-center transition-colors focus-visible:-outline-offset-2",
-                  i === activeTab
-                    ? "bg-accent text-accent-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
-                    : "hover:bg-accent hover:text-accent-foreground"
-                )}
-              >
-                <img
-                  src={p.preview}
-                  alt={p.name}
-                  className="h-8 w-8 object-contain"
-                />
-                {p.animated && <AnimatedBadge className="right-0 top-0" />}
-              </motion.button>
+              <Hint key={p.dir} label={p.name}>
+                <motion.button
+                  type="button"
+                  role="tab"
+                  {...headerTappable}
+                  onClick={() => onTabChange(i)}
+                  aria-label={p.name}
+                  aria-selected={i === activeTab}
+                  className={cn(
+                    // 标签栏横向滚动会裁掉外扩的环，聚焦环向内收。
+                    "relative flex h-12 w-14 flex-shrink-0 items-center justify-center transition-colors focus-visible:-outline-offset-2",
+                    i === activeTab
+                      ? "bg-accent text-accent-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+                      : "hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  <img
+                    src={p.preview}
+                    alt={p.name}
+                    className="h-8 w-8 object-contain"
+                  />
+                  {p.animated && <AnimatedBadge className="right-0 top-0" />}
+                </motion.button>
+              </Hint>
             ))}
           </div>
           </>

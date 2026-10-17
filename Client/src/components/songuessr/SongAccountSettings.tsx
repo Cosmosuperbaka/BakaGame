@@ -4,6 +4,7 @@ import { LogOut, QrCode, RefreshCw, ShieldCheck, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Spinner } from "@/components/ui/Spinner";
+import { Hint } from "@/components/ui/Tooltip";
 import { SettingSwitchRow } from "@/components/common/room/SettingFields";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import {
@@ -410,9 +411,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
         <span className="flex min-w-0 items-center gap-1.5">
           <Icon className={iconClass} />
           <AccountAvatar account={account} className="size-4 shrink-0" />
-          <span className="truncate text-xs font-medium" title={account.nickname}>
-            {account.nickname}
-          </span>
+          <Hint label={account.nickname}>
+            <span className="truncate text-xs font-medium">
+              {account.nickname}
+            </span>
+          </Hint>
           <VipStatus vip={vip} badge={badge} />
         </span>
       );
@@ -498,9 +501,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
               <div className="flex items-center gap-3">
                 <AccountAvatar account={currentAccount} className="size-11" />
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="min-w-0 max-w-full truncate text-sm font-medium" title={currentAccount.nickname}>
-                    {currentAccount.nickname}
-                  </span>
+                  <Hint label={currentAccount.nickname}>
+                    <span className="min-w-0 max-w-full truncate text-sm font-medium">
+                      {currentAccount.nickname}
+                    </span>
+                  </Hint>
                   <VipStatus vip={vip} badge={badge} />
                 </div>
               </div>

@@ -215,7 +215,7 @@ waiting → assigningQuestioner → wordSubmission → description → voting
 
 ### 9.3 顶栏视觉与词语自适应
 - 顶部导航仅展示角色徽章（如“主持人”/“旁观”）与词语展示，杜绝“主持人视角”“旁观视角”等冗余标签。
-- 词语容器采用自适应弹性排布，移除强制 `truncate`，并挂载完整 `title` 属性确保长词完整可读。
+- 词语容器采用自适应弹性排布；放不下时由 `HeaderChip` 截断，并经其 `title` 走 `Hint` 浮层给出完整词语，确保长词完整可读。
 
 ---
 
