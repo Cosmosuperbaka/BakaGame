@@ -13,6 +13,8 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 export const sanitizeLogText = (text: string, maxLength = 500): string => {
+  // 目标就是剥离 C0 控制字符与 DEL：日志里残留 \r\n\t\x00 会撕裂行结构、伪造换行。
+  // eslint-disable-next-line no-control-regex
   return redactLogText(text).replace(/[\r\n\x00-\x1f\x7f]/g, " ").slice(0, maxLength);
 };
 

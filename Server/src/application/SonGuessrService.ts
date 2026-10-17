@@ -292,7 +292,7 @@ export const MIN_TRUNCATED_TITLE_RATIO = 0.6;
  * 一个合法段，于是与它同名的无关曲《Chaos》(Parry Music) 靠这段匹配过了门禁出题
  * （该番只有广播剧，本来就不该出题）。
  */
-const TITLE_SEGMENT_SEPARATOR_PATTERN = /[\/／・]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
+const TITLE_SEGMENT_SEPARATOR_PATTERN = /[/／・]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
 
 const splitTitleSegments = (value: string): string[] =>
   value.split(TITLE_SEGMENT_SEPARATOR_PATTERN).map(normalizeSongTitle).filter(Boolean);

@@ -36,6 +36,7 @@ export const accountAvatarUrlOf = (userId: string, version: string): string =>
 
 /** 账号昵称规整：折叠空白、去控制字符、按码点截断。空串表示不合法。 */
 export const normalizeAccountName = (raw: string): string =>
+  // eslint-disable-next-line no-control-regex -- 昵称必须剥掉 C0 控制字符与 DEL，与 Rules.ts 的 stripControlChars 同一口径
   Array.from(raw.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, "").replace(/\s+/g, " ").trim())
     .slice(0, ACCOUNT_NAME_MAX_LENGTH)
     .join("");

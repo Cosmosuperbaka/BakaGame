@@ -91,7 +91,7 @@ const extractPerformers = (infobox: unknown): string[] => {
     for (const raw of rawList) {
       for (const item of raw.split(/[\r\n/／；;,，]+/)) {
         const cleaned = item
-          .replace(/[（(【\[][^）)】\]]*[）)】\]]/g, "")
+          .replace(/[（(【[][^）)】\]]*[）)】\]]/g, "")
           .trim();
         if (cleaned && cleaned.length >= 2 && cleaned.length <= 50 && !/^(?:OP|ED|IN|TM)\d*$/i.test(cleaned)) {
           artists.push(cleaned);
@@ -150,7 +150,7 @@ const extractRelatedMusicTracks = (
     }
 
     const splitCandidates = rawName
-      .split(/\s*[\/／]\s*/)
+      .split(/\s*[/／]\s*/)
       .map((s) => s.trim())
       .filter((s) => s.length >= 2 && !/^(?:instrumental|off\s*vocal|tv\s*size|ver(?:sion)?)$/i.test(s));
 
@@ -193,7 +193,7 @@ const normalizeKind = (key: string): BangumiMusicTrackKind => {
 };
 
 const LINE_PREFIX_REGEX =
-  /^\s*[（(【\[]?(?:(OP\d*|ED\d*|IN\d*|TM\d*|片头曲\d*|片尾曲\d*|插入曲\d*|插曲\d*|主题歌\d*|主题曲\d*|OST|Remix|重混|角色[歌曲]\d*|同人音乐|印象曲|Vocaloid|Drama|VOCAL|Radio|Arrange|单曲|精选集|朗读剧|艺人专辑|Soundtrack|Character(?:\s*Song)?|Image(?:\s*Song)?))[^：:：-]*[:：-]?\s*/i;
+  /^\s*[（(【[]?(?:(OP\d*|ED\d*|IN\d*|TM\d*|片头曲\d*|片尾曲\d*|插入曲\d*|插曲\d*|主题歌\d*|主题曲\d*|OST|Remix|重混|角色[歌曲]\d*|同人音乐|印象曲|Vocaloid|Drama|VOCAL|Radio|Arrange|单曲|精选集|朗读剧|艺人专辑|Soundtrack|Character(?:\s*Song)?|Image(?:\s*Song)?))[^：:：-]*[:：-]?\s*/i;
 
 const parseTrackText = (value: string, fallbackKind: BangumiMusicTrackKind): BangumiMusicTrack[] => {
   const result: BangumiMusicTrack[] = [];

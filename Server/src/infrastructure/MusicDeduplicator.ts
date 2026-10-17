@@ -17,7 +17,7 @@ export function normalizeComparableText(value: string): string {
   return toSimplified(value || "")
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[\s\-_—–/:：·.'"“”‘’()（）\[\]【】{}《》〈〉~～!！?？`#@*^&|\\+=]+/g, "");
+    .replace(/[\s\-_—–/:：·.'"“”‘’()（）[\]【】{}《》〈〉~～!！?？`#@*^&|\\+=]+/g, "");
 }
 
 /**
@@ -28,7 +28,7 @@ export function extractCanonicalTitle(title: string): string {
 
   // 1. 剥离括号内的各类版本描述
   cleaned = cleaned.replace(
-    /[\(\[（【][^\(\)\[\]（）【】]*(?:live|remaster|remix|feat|ft\.|ver\.|version|伴奏|instrumental|inst|重制|原声|原唱|心动曲|插曲|片头曲|片尾曲|主题曲|ed|op|theme|ost|edition|acoustic|deluxe|edit|cut|cover|翻唱|纯音乐)[^\(\)\[\]（）【】]*[\)\]）】]/gi,
+    /[([（【][^()[\]（）【】]*(?:live|remaster|remix|feat|ft\.|ver\.|version|伴奏|instrumental|inst|重制|原声|原唱|心动曲|插曲|片头曲|片尾曲|主题曲|ed|op|theme|ost|edition|acoustic|deluxe|edit|cut|cover|翻唱|纯音乐)[^()[\]（）【】]*[)\]）】]/gi,
     ""
   );
 
@@ -48,7 +48,7 @@ export function extractCanonicalTitle(title: string): string {
 export function extractArtistTokens(artistStr: string): string[] {
   if (!artistStr) return [];
   return artistStr
-    .split(/[\/&、+×\s]+|(?:\s+feat\.?\s+)|\bft\.?\b/gi)
+    .split(/[/&、+×\s]+|(?:\s+feat\.?\s+)|\bft\.?\b/gi)
     .map((token) => normalizeComparableText(token))
     .filter((token) => token.length > 0);
 }
@@ -158,7 +158,7 @@ export function calculateRelevanceScore(
   score += rankBonus;
 
   // 检查标题括号内的译名 / 副标题 (如 "ブルーバード (青鸟)" 或 "恋愛サーキュレーション (恋爱循环)")
-  const parenMatch = (song.title || "").match(/^(.*?)\s*[\(（](.*?)[\)）]\s*$/);
+  const parenMatch = (song.title || "").match(/^(.*?)\s*[(（](.*?)[)）]\s*$/);
   let subTitleExactMatch = false;
   if (parenMatch) {
     const subCanon = extractCanonicalTitle(parenMatch[2]!);
@@ -261,7 +261,7 @@ export function aggregateAndDeduplicateSongs(
   };
 
   for (const song of songs) {
-    let matchedCluster = clusters.find((cluster) => isSameSongWork(cluster.primary, song));
+    const matchedCluster = clusters.find((cluster) => isSameSongWork(cluster.primary, song));
 
     if (matchedCluster) {
       matchedCluster.alternatives.push(song);

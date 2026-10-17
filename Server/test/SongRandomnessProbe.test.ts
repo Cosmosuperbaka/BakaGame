@@ -15,7 +15,7 @@ test("最近十首排除基线不使用有放回抽样的错误期望", () => {
   expect(expectedUnique(15, 10)).toBe(10);
   expect(expectedUnique(15, 11)).toBe(11);
   expect(expectedUnique(15, 12)).toBeCloseTo(11.8);
-  expect(expectedUnique(15, 30)).toBeCloseTo(14.942353924769658);
+  expect(expectedUnique(15, 30)).toBeCloseTo(14.942353924769659);
   expect(expectedUnique(10, 30)).toBeNull();
 });
 

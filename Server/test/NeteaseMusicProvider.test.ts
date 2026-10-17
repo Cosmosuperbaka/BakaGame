@@ -2162,8 +2162,8 @@ describe("NeteaseMusicProvider", () => {
     const mockDetail = { songs: [{ id: 101, name: "测试曲目", ar: [{ name: "测试歌手" }] }] };
     const mockUrl = { data: [{ id: 101, url: "http://example.com/101.mp3" }] };
 
-    let amllIdFetched = false;
-    let amllSearchFetched = false;
+    let amllIdFetched: boolean;
+    let amllSearchFetched: boolean;
 
     const ttmlContent = (label: string) => `
       <tt xmlns="http://www.w3.org/ns/ttml">

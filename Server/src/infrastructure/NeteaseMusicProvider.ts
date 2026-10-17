@@ -547,14 +547,14 @@ const normalizeComparableText = (value: string) =>
   value
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[\s\-_—–/:：·.'"“”‘’()（）\[\]【】]/g, "");
+    .replace(/[\s\-_—–/:：·.'"“”‘’()（）[\]【】]/g, "");
 
 /**
  * 署名行会暴露创作人员，属于必须剔除的无效歌词。
  *
  * 旧的实现是一张穷举词表并要求行首紧跟分隔符，实战中大量漏网：
  * `翻策 / 美工 / 题字 / 后期 / 翻唱` 这类同人圈标签不在表内，
- * `【翻唱】X`、全角空格缩进的 `　作词：X`、多标签的 `策划/统筹：X` 又因为
+ * `【翻唱】X`、全角空格缩进的 `作词：X`、多标签的 `策划/统筹：X` 又因为
  * 前缀与分隔符形态不合规而整条失效。因此改为分层判定：
  *
  * 1. 先剥离行首装饰（书名号、括号、项目符号）与合并多标签，得到规范化的标签头部；
@@ -620,10 +620,10 @@ const isInstrumentRecordingHead = (value: string): boolean => {
 };
 
 /** 行首装饰：书名号、括号、项目符号与空白。署名行常带这些前缀，必须先剥离。 */
-const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/]+|^[【\[（(「『《<]+/;
+const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/]+|^[【[（(「『《<]+/;
 
 /** 包裹式标签：`【翻唱】某某`、`（后期）某某`、`[Mixing] John`。 */
-const WRAPPED_CREDIT_LABEL_PATTERN = /^[【\[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
+const WRAPPED_CREDIT_LABEL_PATTERN = /^[【[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
 
 /** 判断取值片段是否含歌词高频虚词；命中则说明它更像正常歌词而非人名。 */
 const hasLyricStopWord = (value: string): boolean =>
@@ -1160,13 +1160,13 @@ export const isInstrumentalLyricLine = (text: string) => {
 
 /** 纯符号行（`~~~~`、`...`、`— — —`、`· · ·`）没有任何可猜信息。 */
 export const isSymbolOnlyLyricLine = (text: string) =>
-  /^[\s\u3000~～·•*＊=＝+＋#＃\-—–─_＿.,，。!！?？…、;；:：'"“”‘’()（）\[\]【】<>《》/／\\|｜]+$/u.test(text);
+  /^[\s\u3000~～·•*＊=＝+＋#＃\-—–─_＿.,，。!！?？…、;；:：'"“”‘’()（）[\]【】<>《》/／\\|｜]+$/u.test(text);
 
 /** 只由数字与单位/括号构成的行（如 `00:12`、`120 bpm`）不承载歌词内容。 */
 export const isNumericOnlyLyricLine = (text: string) => {
   const stripped = text
     .normalize("NFKC")
-    .replace(/[\s\u3000()（）\[\]【】,.，、:：]/gu, "")
+    .replace(/[\s\u3000()（）[\]【】,.，、:：]/gu, "")
     .replace(/(?:s|sec|min|kbps|hz|bpm|khz|fps)/giu, "");
   return stripped.length > 0 && /^\d+$/u.test(stripped);
 };
@@ -1224,7 +1224,7 @@ const STAGE_DIRECTION_PATTERN = new RegExp(`^(?:${STAGE_DIRECTION_SOURCE})$`, "i
  * `（啦啦啦）`、`(你是我的眼)`、`(Oh yeah baby)`、`（爱してる）` 都因不满足以上条件而保留。
  */
 export const isBracketedStageDirectionLine = (text: string): boolean => {
-  const wrapped = /^[（(\[【「『《<]\s*([\s\S]*?)\s*[）)\]】」』》>]$/u.exec(text.trim());
+  const wrapped = /^[（([【「『《<]\s*([\s\S]*?)\s*[）)\]】」』》>]$/u.exec(text.trim());
   if (!wrapped) return false;
   const inner = wrapped[1].trim();
   if (!inner) return false;
@@ -1418,7 +1418,7 @@ export const isPlatformCreditLine = (text: string): boolean => {
   // 必须要求平台名命中，否则 `【副歌】` 这类段落标注会被整行误杀。
   if (
     PLATFORM_CREDIT_PATTERN.test(normalized) &&
-    /^[【\[（(][^【\[（()）】\]]{1,40}[】\])）]$/u.test(normalized)
+    /^[【[（(][^【[（()）】\]]{1,40}[】\])）]$/u.test(normalized)
   ) {
     return true;
   }
@@ -1453,7 +1453,7 @@ const EMPTY_VALUE_LABEL_PATTERN = /^[^\s:：'"，。！？、；]{1,20}(?:[\s、
  * 「角色标记 + 真实歌词」的合唱段落会被整行误杀（实测《千里邀月》踩到）。
  */
 const WRAPPED_DUET_ROLE_PATTERN =
-  /^[【\[（(「『《<]\s*(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[】\]）)」』》>]\s*$/u;
+  /^[【[（(「『《<]\s*(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)\s*[】\]）)」』》>]\s*$/u;
 
 export const isDuetRoleLine = (text: string): boolean => {
   const trimmed = text.trim();
@@ -1655,7 +1655,7 @@ export const sanitizeLyrics = (
   const title = normalizeComparableText(song.title);
   const album = song.album ? normalizeComparableText(song.album) : "";
   const artistTokens = song.artist
-    .split(/[\/,、&与和]/)
+    .split(/[/,、&与和]/)
     .map(normalizeComparableText)
     .filter((token) => token.length >= 2);
   const wholeArtist = normalizeComparableText(song.artist);

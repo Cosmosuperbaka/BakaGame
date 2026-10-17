@@ -1008,7 +1008,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     // 撤销设计为幂等操作：客户端重试或快速连点时仍会收到最新私有状态。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
-    let cancelled = false;
+    let cancelled: boolean;
 
     if (round.phase === "voting") {
       cancelled = round.votes.some((v) => v.voterId === player.id);

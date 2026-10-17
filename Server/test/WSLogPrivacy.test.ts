@@ -63,6 +63,10 @@ async function collectAll(stream: ReadableStream<Uint8Array>): Promise<string> {
 
 test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落全日志，错误仍关联id/trace", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bakagame-ws-privacy-"));
+  const target = path.resolve(directory);
+  // 唯一可删目标是本用例 mkdtemp 返回的直接子目录；不碰工作区或实际存储。
+  // 越界必须在拉起隔离服务之前失败，否则 finally 抛错会盖掉用例自身的断言。
+  if (path.dirname(target) !== path.resolve(tmpdir()) || !path.basename(target).startsWith("bakagame-ws-privacy-")) throw new Error("隔离临时目录路径越界");
   const sockets: WebSocket[] = [];
   const port = await availablePort();
   const owner = crypto.randomUUID();
@@ -177,9 +181,6 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
     if (child.exitCode === null) child.kill("SIGKILL");
     await child.exited;
     await output;
-    // 唯一可删目标是本用例 mkdtemp 返回的直接子目录；不碰工作区或实际存储。
-    const target = path.resolve(directory);
-    if (path.dirname(target) !== path.resolve(tmpdir()) || !path.basename(target).startsWith("bakagame-ws-privacy-")) throw new Error("隔离临时目录路径越界");
     await rm(target, { recursive: true, force: true });
   }
 }, 30_000);

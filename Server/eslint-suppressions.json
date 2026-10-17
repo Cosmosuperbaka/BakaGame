@@ -58,17 +58,11 @@
     "@typescript-eslint/unbound-method": {
       "count": 8
     },
-    "no-useless-escape": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 9
     }
   },
   "src/application/WhoIsFakerService.ts": {
-    "no-useless-assignment": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 11
     }
@@ -90,9 +84,6 @@
     "@typescript-eslint/no-unused-vars": {
       "count": 1
     },
-    "no-empty": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -106,9 +97,6 @@
     }
   },
   "src/infrastructure/BangumiProvider.ts": {
-    "no-useless-escape": {
-      "count": 3
-    },
     "sonarjs/cognitive-complexity": {
       "count": 2
     }
@@ -142,12 +130,6 @@
     }
   },
   "src/infrastructure/MusicDeduplicator.ts": {
-    "no-useless-escape": {
-      "count": 13
-    },
-    "prefer-const": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -155,12 +137,6 @@
   "src/infrastructure/NeteaseMusicProvider.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
-    },
-    "no-irregular-whitespace": {
-      "count": 1
-    },
-    "no-useless-escape": {
-      "count": 10
     },
     "sonarjs/cognitive-complexity": {
       "count": 6
@@ -175,9 +151,6 @@
     }
   },
   "src/infrastructure/Sentry.ts": {
-    "no-control-regex": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 2
     }
@@ -205,11 +178,6 @@
       "count": 4
     },
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/shared/Account.ts": {
-    "no-control-regex": {
       "count": 1
     }
   },
@@ -267,9 +235,6 @@
   "test/BangumiWorkerProvider.test.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 1
-    },
-    "no-empty": {
-      "count": 1
     }
   },
   "test/CEECharacterRepository.test.ts": {
@@ -295,19 +260,11 @@
   "test/LocalBangumiProvider.test.ts": {
     "@typescript-eslint/no-base-to-string": {
       "count": 2
-    },
-    "no-empty": {
-      "count": 5
     }
   },
   "test/MusicUrnAndDeduplicator.test.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
-    }
-  },
-  "test/NeteaseMusicProvider.test.ts": {
-    "no-useless-assignment": {
-      "count": 2
     }
   },
   "test/OtlpExporter.test.ts": {
@@ -316,9 +273,6 @@
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 3
-    },
-    "prefer-const": {
-      "count": 1
     }
   },
   "test/SentryTunnel.test.ts": {
@@ -337,14 +291,6 @@
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 2
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "test/SongRandomnessProbe.test.ts": {
-    "no-loss-of-precision": {
-      "count": 1
     }
   },
   "test/SubjectDiscovery.test.ts": {
@@ -358,9 +304,6 @@
     }
   },
   "test/WSLogPrivacy.test.ts": {
-    "no-unsafe-finally": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }

@@ -83,7 +83,7 @@ describe("BangumiWorkerProvider", () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0].imageUrl).toBeUndefined();
     await client.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
     // 真实 Worker：一次 init 要同时建两条数据链路，另有 TS Worker 转译开销。
   }, 30_000);
 

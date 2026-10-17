@@ -35,7 +35,7 @@ const resolvePlatformCookie = (cookie?: any, platform?: "netease" | "qq"): strin
         const obj = JSON.parse(cookie);
         const val = platform === "qq" ? obj.qq : obj.netease;
         return typeof val === "string" ? val : undefined;
-      } catch {}
+      } catch { /* 不是 JSON 形态的组合凭据，按下面的单平台凭据特征继续判定 */ }
     }
     // 单平台特定凭据特征检查：避免将特定平台的凭据传递给互斥平台
     if (platform === "qq" && (cookie.includes("MUSIC_U") || cookie.includes("NMTID"))) {

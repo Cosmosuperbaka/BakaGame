@@ -4619,7 +4619,7 @@ describe("上线前 P0 修复回归", () => {
       },
     };
 
-    let now = 2_000_000;
+    const now = 2_000_000;
     const service = new SonGuessrService({ musicProvider: brokenProvider, now: () => now, random: { nextInt: () => 0 } });
     const host = connection(service, "limit-host-2");
     const guest = connection(service, "limit-guest-2");

@@ -12,7 +12,7 @@ const createDatasetFiles = () => {
 };
 
 const removeFiles = async (...paths: string[]) => {
-  for (const path of paths) try { await Bun.file(path).delete(); } catch {}
+  for (const path of paths) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
 };
 
 describe("LocalBangumiProvider", () => {
@@ -36,7 +36,7 @@ describe("LocalBangumiProvider", () => {
     const detail = await provider.getSubject(rows[0].id);
     expect(detail.musicTracks).toBeArray();
     provider.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
   });
 
   test("loads a valid image URL from the Bangumi API", async () => {
@@ -53,7 +53,7 @@ describe("LocalBangumiProvider", () => {
     // 对外 URL = 镜像前缀 + 缓存档位路径（作品 /r/200/），与自建图床逐字对齐。
     expect(detail.imageUrl).toBe("https://img.example/r/200/pic/cover/l/aa/bb/8_test.jpg");
     provider.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
   });
 
   test("剔除版权署名与负 music_id 占位行，只保留真实曲目", async () => {
@@ -88,7 +88,7 @@ describe("LocalBangumiProvider", () => {
     expect(titles.some((title) => title.includes("©"))).toBe(false);
 
     provider.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
   });
 
   test("关联类型码映射不得错位：片头曲 / 片尾曲 / 插入歌 / 角色歌 / 原声带 / 特典CD", async () => {
@@ -132,7 +132,7 @@ describe("LocalBangumiProvider", () => {
     // 未映射的关系码仍走文本兜底分类
     expect(kinds["鬼滅の刃 Remix Collection"]).toBe("remix");
     provider.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch {}
+    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
   });
 });
 

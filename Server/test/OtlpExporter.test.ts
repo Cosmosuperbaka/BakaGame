@@ -671,7 +671,7 @@ test("OtlpExporter 在网络异常与请求超时下安全重新入队，杜绝�
 });
 
 test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录并累加 droppedCount", async () => {
-  let virtualTime = 1700000000000;
+  const virtualTime = 1700000000000;
   const mockFetcher: OtlpFetcher = async () => {
     return new Response("Service Unavailable", { status: 503 });
   };
