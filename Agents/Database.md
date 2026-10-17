@@ -26,6 +26,7 @@
 - 修改 schema 后在 `Server/` 执行 `bun run db:generate` 生成迁移（不连库），迁移文件 `Server/drizzle/` 进 Git；服务启动时自动应用。不手写或手改已发布的迁移 SQL。
 - 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，TiDB 的 `only_full_group_by` 视为不同表达式而报错。内存仓储测不出，此类查询须经真实 TiDB 冒烟。
 - 站点配置表 `site_config` 已随 QQ 昵称来源改为 NapCat 删除（`0002_drop_site_config.sql`）：它此前只承载 QQ 查询号登录态 `qq.lookupSession`，站点不再持有 QQ 登录态后没有其他读写方（见 [Account](Account.md#qq-昵称napcat)）。当前没有全站单例键值表。
+- 对局记录按「一局 = 一个房间的生命周期」重建（`0003_game_record_room_sessions.sql`）：`game_record` 改存房间聚合行（`round_count`），回合明细拆到 `game_record_round`。旧结构按回合一行的口径无法表达房间生命周期，迁移先清空旧记录再改列，不保留历史。
 - 词对表 `word_pair` 以 `(word_a, word_b)` 唯一，入库前经 `normalizeWordPair` 规范化并按字典序排列；重复提交累加 `use_count`、刷新 `last_used_at`。
 
 ## 4. 词库导入

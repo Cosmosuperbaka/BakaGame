@@ -63,12 +63,12 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
               <li key={game.id} className="flex flex-wrap gap-x-2 text-muted-foreground">
                 <Badge variant="outline" size="xs">{GAME_LABELS[game.game]}</Badge>
                 <span className="font-mono">{game.roomId}</span>
-                <span>第 {game.roundNumber} 局</span>
+                <span>{game.roundCount} 回合</span>
                 <span>{formatShortDateTime(game.endedAt)}</span>
               </li>
             ))}
           </ul>
-        ) : <p className="text-sm text-muted-foreground">近 7 天没有对局</p>}
+        ) : <p className="text-sm text-muted-foreground">还没有对局记录</p>}
       </section>
 
       {mode === "ban" ? (

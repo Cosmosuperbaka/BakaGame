@@ -390,8 +390,7 @@ const emptyRooms: AdminRoomControl = {
 };
 
 const emptyGameRecords: GameRecordRepository = {
-  insert: async () => {},
-  purge: async () => 0,
+  save: async () => {},
   list: async () => ({ items: [], total: 0 }),
   get: async () => null,
   dailyCounts: async () => [],

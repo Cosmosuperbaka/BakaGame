@@ -37,7 +37,7 @@ export class CEERooms {
     this.recordedSummaries.add(summary);
     const nameOf = (playerId: string) => room.players.get(playerId)?.name ?? playerId;
     this.gameRecorder.record({
-      game: 'cee', roomId: room.id, roundNumber: room.roundNumber, startedAt: round.startedAt, endedAt: this.now(),
+      game: 'cee', roomId: room.id, roomCreatedAt: room.createdAt, roundNumber: room.roundNumber, startedAt: round.startedAt, endedAt: this.now(),
       players: summary.scores.map(score => ({ playerId: score.playerId, userId: room.players.get(score.playerId)?.account?.userId ?? null,
         name: score.playerName, score: score.score })),
       summary: {
@@ -271,6 +271,8 @@ export class CEERooms {
     if (next) { room.hostPlayerId = next.id; next.ready = true; delete room.hostDeadlineAt; }
   }
   private closeRoom(room: CEERoom, reason: string): void {
+    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
+    this.gameRecorder.finishRoom({ game: 'cee', roomId: room.id, roomCreatedAt: room.createdAt, endedAt: this.now() });
     for (const connection of this.connections.getRoomConnections(room.id)) {
       connection.send({ type: 'event', event: 'cee.room.closed', payload: { reason } }); this.connections.detach(connection); connection.resetStateSync?.();
     }

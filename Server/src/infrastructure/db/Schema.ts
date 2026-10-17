@@ -110,21 +110,38 @@ export const wordPair = mysqlTable("word_pair", {
   lastUsedAt: datetime("last_used_at", { mode: "date", fsp: 3 }).notNull().$defaultFn(() => new Date()),
 }, (table) => [uniqueIndex("word_pair_unique").on(table.wordA, table.wordB)]);
 
-/** 一轮对局一条：摘要 + 关键事件时间线（为回放预留），滚动保留 7 天。 */
+/** 一个房间一局：房间从创建到销毁，永久保留；回合明细见 `game_record_round`。 */
 export const gameRecord = mysqlTable("game_record", {
   id: varchar("id", { length: 36 }).primaryKey(),
   game: varchar("game", { length: 16 }).notNull(),
   roomId: varchar("room_id", { length: 32 }).notNull(),
-  roundNumber: int("round_number").notNull(),
+  /** 一局内的回合数。 */
+  roundCount: int("round_count").notNull(),
+  /** 房间创建时刻。 */
   startedAt: datetime("started_at", { mode: "date", fsp: 3 }).notNull(),
+  /** 房间销毁时刻；进程重启等未走销毁流程时停在最后一个回合的结束时刻。 */
   endedAt: datetime("ended_at", { mode: "date", fsp: 3 }).notNull(),
   playerCount: int("player_count").notNull(),
-  summary: json("summary").notNull(),
-  timeline: json("timeline").notNull(),
 }, (table) => [
   index("game_record_ended_idx").on(table.endedAt),
   index("game_record_game_ended_idx").on(table.game, table.endedAt),
   index("game_record_room_idx").on(table.roomId),
+]);
+
+/** 一局中的一回合：摘要 + 关键事件时间线（为回放预留），按回合序号顺序落库。 */
+export const gameRecordRound = mysqlTable("game_record_round", {
+  recordId: varchar("record_id", { length: 36 }).notNull().references(() => gameRecord.id, { onDelete: "cascade" }),
+  number: int("round_number").notNull(),
+  startedAt: datetime("started_at", { mode: "date", fsp: 3 }).notNull(),
+  endedAt: datetime("ended_at", { mode: "date", fsp: 3 }).notNull(),
+  /** 本回合参与人数，与 `players` 长度一致。 */
+  playerCount: int("player_count").notNull(),
+  /** 回合得分增量（`GameRecordPlayer[]`）。 */
+  players: json("players").notNull(),
+  summary: json("summary").notNull(),
+  timeline: json("timeline").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.recordId, table.number] }),
 ]);
 
 export const gameRecordPlayer = mysqlTable("game_record_player", {

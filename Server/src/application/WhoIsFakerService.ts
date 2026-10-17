@@ -2800,6 +2800,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
       game: "faker",
       roomId: room.id,
+      roomCreatedAt: room.createdAt,
       roundNumber: room.roundCount ?? 1,
       startedAt,
       endedAt: this.now(),
@@ -3142,6 +3143,13 @@ export class WhoIsFakerService implements AdminRoomControl {
 
   private async closeRoom(room: WhoIsFakerRoomRecord, reason: string) {
     this.clearPhaseTimer(room);
+    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
+    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).finishRoom({
+      game: "faker",
+      roomId: room.id,
+      roomCreatedAt: room.createdAt,
+      endedAt: this.now(),
+    });
     // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
     for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
       (connection.sendPacket ?? connection.send)(

@@ -3,7 +3,7 @@ import type { Where } from "better-auth";
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { beijingDay } from "./SiteStatsService";
-import { GAME_RECORD_RETENTION_MS } from "./GameRecordService";
+import { capTimeline } from "./GameRecordService";
 import { RECORDED_GAMES } from "../domain/GameRecord";
 import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
 import type { QQNicknameService } from "./QQNicknameService";
@@ -86,11 +86,14 @@ const toGameItem = (record: GameRecordListItem): GameRecordItem => ({
   id: record.id,
   game: record.game,
   roomId: record.roomId,
-  roundNumber: record.roundNumber,
+  roundCount: record.roundCount,
   startedAt: record.startedAt.toISOString(),
   endedAt: record.endedAt.toISOString(),
   players: record.players,
 });
+
+/** 详情页合并时间线的出口上限：一局可能打很多回合，不能让单个响应无限膨胀。 */
+const GAME_DETAIL_TIMELINE_MAX_BYTES = 1024 * 1024;
 
 /**
  * 管理后台业务：用户、反馈、对局记录与审计。
@@ -359,19 +362,18 @@ export class AdminService {
       live,
       daily: dayList.map((day) => {
         const dayGames = games.filter((row) => row.day === day);
-        const roundsOf = (game: RecordedGame) => dayGames.find((row) => row.game === game)?.rounds ?? 0;
+        const gamesOf = (game: RecordedGame) => dayGames.find((row) => row.game === game)?.games ?? 0;
         return {
           day,
           visitors: visitsByDay.get(day)?.visitors ?? 0,
           signedInVisitors: visitsByDay.get(day)?.signedInVisitors ?? 0,
           views: visitsByDay.get(day)?.views ?? 0,
           newUsers: signupsByDay.get(day) ?? 0,
-          rounds: { faker: roundsOf("faker"), song: roundsOf("song"), cee: roundsOf("cee") },
+          games: { faker: gamesOf("faker"), song: gamesOf("song"), cee: gamesOf("cee") },
           roundPlayers: dayGames.reduce((sum, row) => sum + row.players, 0),
         };
       }),
       pages,
-      gameRecordDays: GAME_RECORD_RETENTION_MS / 86_400_000,
     };
   }
 
@@ -388,8 +390,25 @@ export class AdminService {
 
   async getGame(id: string): Promise<GameRecordDetail> {
     const record = await this.options.gameRecords.get(id);
-    if (!record) throw new AppError("NOT_FOUND", "对局记录不存在或已过期");
-    return { ...toGameItem(record), summary: record.summary, timeline: record.timeline };
+    if (!record) throw new AppError("NOT_FOUND", "对局记录不存在");
+    const { rounds, ...item } = record;
+    return {
+      ...toGameItem(item),
+      rounds: rounds.map((round) => ({
+        number: round.number,
+        startedAt: round.startedAt.toISOString(),
+        endedAt: round.endedAt.toISOString(),
+        players: round.players,
+        summary: round.summary,
+      })),
+      // 回放视角：全房一条时间线，按时间合并各回合事件并带上回合号。
+      timeline: capTimeline(
+        rounds
+          .flatMap((round) => round.timeline.map((event) => ({ ...event, round: round.number })))
+          .sort((left, right) => left.at - right.at),
+        GAME_DETAIL_TIMELINE_MAX_BYTES,
+      ),
+    };
   }
 
   async listAudit(input: { actorId?: string; action?: string; targetType?: string; targetId?: string; limit: number; offset: number }) {

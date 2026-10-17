@@ -87,10 +87,10 @@ describe("后台概览", () => {
       feedback: { open: 1, processing: 0, resolved: 0, closed: 0 },
       live: { faker: { rooms: 0, onlinePlayers: 0 } },
       pages: [{ path: "/cee", views: 1 }],
-      gameRecordDays: 7,
     });
-    const daily = overview.body.daily as Array<{ day: string; visitors: number }>;
+    const daily = overview.body.daily as Array<{ day: string; visitors: number; games: Record<string, number> }>;
     expect(daily.map((row) => [row.day, row.visitors])).toEqual([["2026-10-18", 0], ["2026-10-19", 0], [beijingDay(clock), 1]]);
+    expect(daily.at(-1)!.games).toEqual({ faker: 0, song: 0, cee: 0 });
     expect((await ctx.rpc("admin/stats/overview", { days: 91 }, admin.cookie)).status).toBe(400);
 
     expect((await ctx.rpc("admin/stats/sentry", undefined, admin.cookie)).body).toMatchObject({ configured: false });

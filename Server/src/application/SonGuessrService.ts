@@ -3777,6 +3777,7 @@ export class SonGuessrService implements AdminRoomControl {
     (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
       game: "song",
       roomId: room.id,
+      roomCreatedAt: room.createdAt,
       roundNumber: round.number,
       startedAt: round.startedAt,
       endedAt: this.now(),
@@ -4092,6 +4093,13 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
+    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
+    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).finishRoom({
+      game: "song",
+      roomId: room.id,
+      roomCreatedAt: room.createdAt,
+      endedAt: this.now(),
+    });
     this.connections.broadcastToRoom(room.id, createEvent("song.room.closed", { roomId: room.id, reason }));
     for (const connection of this.connections.getRoomConnections(room.id)) {
       this.connections.detach(connection);

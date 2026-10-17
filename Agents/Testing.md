@@ -80,7 +80,7 @@
 | 后端服务回归 | `Server/test/` 下的 WhoIsFaker、SonGuessr、CEE 服务套件 | `bun:test` | 状态机、会话重连、房主宽限、角色限制、测试房间、SonGuessr 歌曲与番剧流程、CEE 原生房间生命周期、模式与边界、原版互通服务与回合 |
 | 协议与传输集成 | `Server/test/` 下的协议、App、命令分发与 Provider 套件 | `bun:test` | 消息解析、OpenAPI、HTTP、CORS、真实 WebSocket、命令分发、SonGuessr 协议、网易云接口 Mock 与解析、CEE 协议与 WebSocket 传输及原版协议 |
 | 账号与鉴权 | `Server/test/` 的账号、用户数据、管理与统计套件（夹具 `AccountFixtures.ts`） | `bun:test` | Better Auth 内存适配器下的验证码登录、端点白名单、发码限流、投递失败、管理员引导、资料隐私与头像缓存；设置云同步与站内反馈；管理接口与审计；前端对应单测见 [Account](Account.md#10-验收要点) |
-| 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的失败隔离、截断与 7 天清理，三款游戏结算各写一条（见 [GameRecord](GameRecord.md#4-验收要点)） |
+| 对局记录 | `Server/test/` 的记录与 SonGuessr 服务套件 | `bun:test` | 记录服务的房间聚合、失败隔离、截断与重复/迟到回合忽略，三款游戏结算各写一个回合（见 [GameRecord](GameRecord.md#4-验收要点)） |
 | 网络承载回归 | `Server/test/NetworkCapacity.test.ts`、`StateSync.test.ts` | `bun:test` | 150 人 / 6 Mbps 容量预算、差量与全量同步 |
 | 前端单元测试 | `Client/src/lib/*.test.ts`、`Client/src/hooks/*.test.tsx` | Vitest + jsdom | 会话存储、日志解析、发言列、WebSocket 客户端、自定义 Hook |
 | 前端集成回归 | `Client/src/stores/*.test.ts`、`Client/src/App.test.tsx` | Vitest + Testing Library | Zustand 与 WS 联动、标签页替换、路由回退 |

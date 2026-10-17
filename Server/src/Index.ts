@@ -49,7 +49,6 @@ database?.ready.then(
 const gameRecords = database
   ? new GameRecordService({ repository: new DatabaseGameRecordRepository(database), logger })
   : undefined;
-gameRecords?.start();
 const whoIsFakerService = new WhoIsFakerService({
   eventLogger: logger,
   wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,

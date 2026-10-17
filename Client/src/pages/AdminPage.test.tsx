@@ -29,9 +29,8 @@ const overview: AdminOverview = {
   users: { total: 12, admins: 1, banned: 2, newToday: 3 },
   feedback: { open: 4, processing: 1, resolved: 0, closed: 0 },
   live: { faker: { rooms: 1, onlinePlayers: 5 }, song: { rooms: 2, onlinePlayers: 3 }, cee: { rooms: 0, onlinePlayers: 0 } },
-  daily: [{ day: "2026-10-13", visitors: 40, signedInVisitors: 6, views: 90, newUsers: 3, rounds: { faker: 2, song: 5, cee: 1 }, roundPlayers: 30 }],
+  daily: [{ day: "2026-10-13", visitors: 40, signedInVisitors: 6, views: 90, newUsers: 3, games: { faker: 2, song: 5, cee: 1 }, roundPlayers: 30 }],
   pages: [{ path: "/songuessr", views: 50 }],
-  gameRecordDays: 7,
 };
 
 const user: AdminUser = {
@@ -103,7 +102,7 @@ describe("管理后台", () => {
 
     await events.click(within(table).getByRole("button", { name: /Alice/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(await within(dialog).findByText("近 7 天没有对局")).toBeInTheDocument();
+    expect(await within(dialog).findByText("还没有对局记录")).toBeInTheDocument();
     await events.click(within(dialog).getByRole("button", { name: "封禁" }));
     const submit = within(dialog).getByRole("button", { name: "封禁并踢下线" });
     expect(submit).toBeDisabled();
@@ -123,6 +122,35 @@ describe("管理后台", () => {
     await events.click(within(dialog).getByRole("button", { name: "关闭房间" }));
     expect(admin.rooms.close).toHaveBeenLastCalledWith({ game: "faker", roomId: "1234" });
     expect(admin.rooms.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("对局记录一房一行，详情按回合展开并合并时间线", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const startedAt = "2026-10-13T00:00:00.000Z";
+    const listed = {
+      id: "rec-1", game: "song", roomId: "ABCD", roundCount: 2,
+      startedAt, endedAt: "2026-10-13T00:20:00.000Z",
+      players: [{ playerId: "p-1", userId: null, name: "Bob", score: 3 }],
+    };
+    admin.games.list.mockResolvedValue({ items: [listed], total: 1 });
+    admin.games.get.mockResolvedValue({
+      ...listed,
+      rounds: [
+        { number: 1, startedAt, endedAt: "2026-10-13T00:05:00.000Z", players: [{ playerId: "p-1", userId: null, name: "Bob", score: 1 }], summary: { song: { title: "曲目一" } } },
+        { number: 2, startedAt: "2026-10-13T00:06:00.000Z", endedAt: "2026-10-13T00:10:00.000Z", players: [{ playerId: "p-1", userId: null, name: "Bob", score: 2 }], summary: { song: { title: "曲目二" } } },
+      ],
+      timeline: [{ at: Date.parse(startedAt) + 60_000, type: "guess", round: 1, name: "Bob", result: "wrong" }],
+    });
+
+    const events = renderAdmin("/admin?tab=games");
+    const table = await screen.findByRole("table", { name: "对局列表" });
+    await events.click(within(table).getByRole("button", { name: /2 回合/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("回合（2）")).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/第 1 回合/).length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("本局总分")).toBeInTheDocument();
+    expect(admin.games.get).toHaveBeenCalledWith({ id: "rec-1" });
   });
 
   it("QQ 昵称来源：显示 NapCat 在线状态，可刷新全部昵称", async () => {

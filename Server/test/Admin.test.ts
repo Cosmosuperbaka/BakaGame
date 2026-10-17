@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { GameRecordRepository, StoredGameRecord } from "../src/infrastructure/db/GameRecordRepository";
+import type { GameRecordRepository, StoredGameRecordDetail } from "../src/infrastructure/db/GameRecordRepository";
 import { createAccountTestApp } from "./AccountFixtures";
 import { createConnection, execute, getLastEventPayload } from "./Helpers";
 
@@ -185,22 +185,27 @@ describe("实时房间管理", () => {
 });
 
 describe("对局记录查询", () => {
-  test("列表与详情透传仓储，过期记录返回 404", async () => {
-    const record: StoredGameRecord = {
+  test("列表与详情透传仓储，缺失记录返回 404", async () => {
+    const record: StoredGameRecordDetail = {
       id: "rec-1",
       game: "song",
       roomId: "ABCD",
-      roundNumber: 3,
+      roundCount: 3,
       startedAt: new Date("2026-10-01T00:00:00Z"),
       endedAt: new Date("2026-10-01T00:01:00Z"),
       players: [{ playerId: "p1", userId: null, name: "游客", score: 2 }],
-      summary: { correct: true },
-      timeline: [{ at: 1, type: "guess" }],
+      rounds: [{
+        number: 1,
+        startedAt: new Date("2026-10-01T00:00:10Z"),
+        endedAt: new Date("2026-10-01T00:00:40Z"),
+        players: [{ playerId: "p1", userId: null, name: "游客", score: 2 }],
+        summary: { correct: true },
+        timeline: [{ at: 1, type: "guess" }],
+      }],
     };
     const filters: unknown[] = [];
     const gameRecords: GameRecordRepository = {
-      insert: async () => {},
-      purge: async () => 0,
+      save: async () => {},
       list: async (filter) => {
         filters.push(filter);
         return { items: [record], total: 1 };
@@ -213,7 +218,11 @@ describe("对局记录查询", () => {
     const listed = await rpc("admin/games/list", { game: "song", roomId: "ABCD" }, adminCookie);
     expect(listed.body).toMatchObject({ total: 1, items: [{ id: "rec-1", startedAt: "2026-10-01T00:00:00.000Z" }] });
     expect(filters[0]).toMatchObject({ game: "song", roomId: "ABCD", limit: 20, offset: 0 });
-    expect((await rpc("admin/games/get", { id: "rec-1" }, adminCookie)).body).toMatchObject({ summary: { correct: true } });
+    expect((await rpc("admin/games/get", { id: "rec-1" }, adminCookie)).body).toMatchObject({
+      roundCount: 3,
+      rounds: [{ number: 1, summary: { correct: true } }],
+      timeline: [{ at: 1, type: "guess", round: 1 }],
+    });
     expect((await rpc("admin/games/get", { id: "gone" }, adminCookie)).status).toBe(404);
     expect((await rpc("admin/games/list", { game: "chess" }, adminCookie)).status).toBe(400);
   });

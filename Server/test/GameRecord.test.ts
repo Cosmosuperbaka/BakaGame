@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { GAME_RECORD_RETENTION_MS, GameRecordService } from "../src/application/GameRecordService";
-import type { GameRecorder, GameRoundRecord } from "../src/domain/GameRecord";
+import { GameRecordService } from "../src/application/GameRecordService";
+import type { GameRecorder, GameRoomEnd, GameRoundRecord } from "../src/domain/GameRecord";
 import { ROOM_ID_TEST_MODE } from "../src/domain/Model";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type {
@@ -10,36 +10,45 @@ import type {
   GameRecordListItem,
   GameRecordRepository,
   StoredGameRecord,
+  StoredGameRecordDetail,
+  StoredGameRecordRound,
 } from "../src/infrastructure/db/GameRecordRepository";
 import { ceeTestHarness } from "./CEENativeFixtures";
 import { createConnection, createTestContext, execute } from "./Helpers";
 
-/** 仅测试使用的内存仓储。 */
+/** 仅测试使用的内存仓储：按房间聚合行 + 回合行还原真实读写。 */
 class MemoryGameRecordRepository implements GameRecordRepository {
-  readonly rows: StoredGameRecord[] = [];
+  readonly rows = new Map<string, StoredGameRecordDetail>();
   failNext = false;
 
-  async insert(record: StoredGameRecord): Promise<void> {
+  async save(record: StoredGameRecord, round?: StoredGameRecordRound): Promise<void> {
     if (this.failNext) {
       this.failNext = false;
       throw new Error("db down");
     }
-    this.rows.push(structuredClone(record));
-  }
-
-  async purge(before: Date, batch: number): Promise<number> {
-    const expired = this.rows.filter((row) => row.endedAt < before).slice(0, batch);
-    for (const row of expired) this.rows.splice(this.rows.indexOf(row), 1);
-    return expired.length;
+    const existing = this.rows.get(record.id);
+    const detail: StoredGameRecordDetail = {
+      ...structuredClone(record),
+      rounds: existing ? existing.rounds : [],
+    };
+    this.rows.set(record.id, detail);
+    if (!round) return;
+    const copy = structuredClone(round);
+    const index = detail.rounds.findIndex((item) => item.number === round.number);
+    if (index >= 0) detail.rounds[index] = copy;
+    else detail.rounds.push(copy);
+    detail.rounds.sort((left, right) => left.number - right.number);
   }
 
   async list(filter: GameRecordFilter): Promise<{ items: GameRecordListItem[]; total: number }> {
-    const matched = this.rows.filter((row) => !filter.game || row.game === filter.game);
+    const matched = [...this.rows.values()]
+      .filter((row) => !filter.game || row.game === filter.game)
+      .sort((left, right) => right.endedAt.getTime() - left.endedAt.getTime());
     return { items: matched.slice(filter.offset, filter.offset + filter.limit), total: matched.length };
   }
 
-  async get(id: string): Promise<StoredGameRecord | null> {
-    return this.rows.find((row) => row.id === id) ?? null;
+  async get(id: string): Promise<StoredGameRecordDetail | null> {
+    return this.rows.get(id) ?? null;
   }
 
   async dailyCounts(): Promise<GameDailyCount[]> {
@@ -49,18 +58,51 @@ class MemoryGameRecordRepository implements GameRecordRepository {
 
 const capture = () => {
   const records: GameRoundRecord[] = [];
-  const recorder: GameRecorder = { record: (round) => records.push(structuredClone(round)) };
-  return { records, recorder };
+  const finishes: GameRoomEnd[] = [];
+  const recorder: GameRecorder = {
+    record: (round) => records.push(structuredClone(round)),
+    finishRoom: (room) => finishes.push(structuredClone(room)),
+  };
+  return { records, finishes, recorder };
 };
 
+const ROOM_CREATED_AT = 500;
 const round = (overrides: Partial<GameRoundRecord> = {}): GameRoundRecord => ({
-  game: "faker", roomId: "1234", roundNumber: 1, startedAt: 1_000, endedAt: 2_000,
+  game: "faker", roomId: "1234", roomCreatedAt: ROOM_CREATED_AT, roundNumber: 1, startedAt: 1_000, endedAt: 2_000,
   players: [{ playerId: "p1", userId: null, name: "玩家", score: 1 }], summary: { winner: "good" }, timeline: [],
   ...overrides,
 });
 
+const only = (repository: MemoryGameRecordRepository) => [...repository.rows.values()][0]!;
+
 describe("GameRecordService", () => {
-  test("异步落库，写入失败只记日志不抛出", async () => {
+  test("同一房间的回合聚合成一局，玩家分数累计", async () => {
+    const repository = new MemoryGameRecordRepository();
+    const service = new GameRecordService({ repository, logger: new EventLogger(() => {}) });
+    service.record(round({ players: [{ playerId: "p1", userId: null, name: "甲".repeat(80), score: 3 }] }));
+    service.record(round({
+      roundNumber: 2, endedAt: 3_000,
+      players: [
+        { playerId: "p1", userId: "u-1", name: "甲".repeat(80), score: 2 },
+        { playerId: "p2", userId: null, name: "乙", score: 1 },
+      ],
+    }));
+    service.finishRoom({ game: "faker", roomId: "1234", roomCreatedAt: ROOM_CREATED_AT, endedAt: 5_000 });
+    await service.close();
+
+    expect(repository.rows.size).toBe(1);
+    const stored = only(repository);
+    expect(stored.roundCount).toBe(2);
+    expect(stored.startedAt.getTime()).toBe(ROOM_CREATED_AT);
+    expect(stored.endedAt.getTime()).toBe(5_000);
+    expect(stored.rounds.map((item) => item.number)).toEqual([1, 2]);
+    expect(stored.rounds[1]!.players.map((player) => player.score)).toEqual([2, 1]);
+    const players = new Map(stored.players.map((player) => [player.playerId, player]));
+    expect(players.get("p1")).toMatchObject({ name: "甲".repeat(64), score: 5, userId: "u-1" });
+    expect(players.get("p2")).toMatchObject({ score: 1 });
+  });
+
+  test("写入失败只记日志不抛出，后续回合照常落库", async () => {
     const repository = new MemoryGameRecordRepository();
     const logs: string[] = [];
     const service = new GameRecordService({ repository, logger: new EventLogger((message) => logs.push(message)) });
@@ -68,41 +110,56 @@ describe("GameRecordService", () => {
     expect(() => service.record(round())).not.toThrow();
     service.record(round({ roundNumber: 2, players: [{ playerId: "p1", userId: "u1", name: "名".repeat(80), score: 0 }] }));
     await service.close();
-    expect(repository.rows.map((row) => row.roundNumber)).toEqual([2]);
-    expect([...repository.rows[0]!.players[0]!.name]).toHaveLength(64);
+
+    expect(repository.rows.size).toBe(1);
+    expect(only(repository).rounds.map((item) => item.number)).toEqual([2]);
+    expect([...only(repository).players[0]!.name]).toHaveLength(64);
     expect(logs.some((message) => message.includes("对局记录写入失败"))).toBe(true);
   });
 
-  test("超长时间线保留前段并追加截断标记", async () => {
+  test("单回合时间线超长时保留前段并追加截断标记", async () => {
     const repository = new MemoryGameRecordRepository();
     const service = new GameRecordService({ repository, logger: new EventLogger(() => {}) });
-    const timeline = Array.from({ length: 2000 }, (_, index) => ({ at: index, type: "description", text: "字".repeat(30) }));
+    const timeline = Array.from({ length: 2_000 }, (_, index) => ({ at: index, type: "description", text: "字".repeat(30) }));
     service.record(round({ timeline }));
     await service.close();
-    const stored = repository.rows[0]!.timeline;
+
+    const stored = only(repository).rounds[0]!.timeline;
     expect(new TextEncoder().encode(JSON.stringify(stored)).byteLength).toBeLessThanOrEqual(64 * 1024);
-    expect(stored.at(-1)).toMatchObject({ type: "truncated", omitted: 2000 - (stored.length - 1) });
+    expect(stored.at(-1)).toMatchObject({ type: "truncated", omitted: 2_000 - (stored.length - 1) });
     expect(stored[0]).toEqual(timeline[0]!);
   });
 
-  test("清理只删除超过 7 天的记录并分批删完", async () => {
-    const now = Date.parse("2026-10-20T00:00:00Z");
+  test("房间销毁后迟到的回合不会再开一局，重复回合只记一次", async () => {
     const repository = new MemoryGameRecordRepository();
-    const service = new GameRecordService({ repository, logger: new EventLogger(() => {}), now: () => now });
-    for (let index = 0; index < 1203; index += 1) {
-      repository.rows.push({ id: `old-${index}`, game: "song", roomId: "1", roundNumber: index, startedAt: new Date(0),
-        endedAt: new Date(now - GAME_RECORD_RETENTION_MS - 1), players: [], summary: {}, timeline: [] });
-    }
-    repository.rows.push({ id: "fresh", game: "song", roomId: "1", roundNumber: 0, startedAt: new Date(0),
-      endedAt: new Date(now - GAME_RECORD_RETENTION_MS + 60_000), players: [], summary: {}, timeline: [] });
-    expect(await service.purge()).toBe(1203);
-    expect(repository.rows.map((row) => row.id)).toEqual(["fresh"]);
+    const logs: string[] = [];
+    const service = new GameRecordService({ repository, logger: new EventLogger((message) => logs.push(message)) });
+    service.record(round());
+    service.record(round());
+    service.finishRoom({ game: "faker", roomId: "1234", roomCreatedAt: ROOM_CREATED_AT, endedAt: 3_000 });
+    await service.close();
+    service.record(round({ roundNumber: 2, endedAt: 4_000 }));
+    await service.close();
+
+    expect(repository.rows.size).toBe(1);
+    expect(only(repository).rounds).toHaveLength(1);
+    expect(only(repository).endedAt.getTime()).toBe(3_000);
+    expect(logs.some((message) => message.includes("重复的回合记录"))).toBe(true);
+    expect(logs.some((message) => message.includes("房间已结束"))).toBe(true);
+  });
+
+  test("一回合都没打的房间不落空记录", async () => {
+    const repository = new MemoryGameRecordRepository();
+    const service = new GameRecordService({ repository, logger: new EventLogger(() => {}) });
+    service.finishRoom({ game: "song", roomId: "9999", roomCreatedAt: 100, endedAt: 200 });
+    await service.close();
+    expect(repository.rows.size).toBe(0);
   });
 });
 
 describe("各游戏结算写入对局记录", () => {
-  test("谁是卧底：结算一次记一条，带胜负、词对与本轮得分", async () => {
-    const { records, recorder } = capture();
+  test("谁是卧底：结算一次记一个回合，带胜负、词对与本回合得分；关房时收尾同一局", async () => {
+    const { records, finishes, recorder } = capture();
     const { service, advanceTime } = createTestContext({ gameRecorder: recorder });
     const host = createConnection(service, "record-host");
     await execute(service, host, { id: "create", type: "room.create", payload: {
@@ -114,15 +171,23 @@ describe("各游戏结算写入对局记录", () => {
 
     expect(records).toHaveLength(1);
     const [record] = records;
-    expect(record).toMatchObject({ game: "faker", roomId: ROOM_ID_TEST_MODE, roundNumber: 1, summary: { winner: "good", reason: "手动结束本局" } });
+    expect(record).toMatchObject({
+      game: "faker", roomId: ROOM_ID_TEST_MODE, roundNumber: 1,
+      roomCreatedAt: Date.UTC(2026, 3, 10), summary: { winner: "good", reason: "手动结束本局" },
+    });
     expect(record!.players.length).toBeGreaterThanOrEqual(4);
     expect(record!.players.every((player) => player.userId === null)).toBe(true);
     expect(record!.endedAt).toBeGreaterThanOrEqual(record!.startedAt);
     const roles = record!.summary.roles as Array<{ name: string; role: string }>;
     expect(roles.length).toBe(record!.players.length);
+
+    await service.adminCloseRoom(ROOM_ID_TEST_MODE);
+    expect(finishes).toHaveLength(1);
+    expect(finishes[0]).toMatchObject({ game: "faker", roomId: ROOM_ID_TEST_MODE, roomCreatedAt: Date.UTC(2026, 3, 10) });
+    expect(finishes[0]!.endedAt).toBeGreaterThanOrEqual(record!.endedAt);
   });
 
-  test("猜猜呗增强房：结算后多次发布只记一条，记录登录玩家账号", async () => {
+  test("猜猜呗增强房：结算后多次发布只记一个回合，记录登录玩家账号", async () => {
     const { records, recorder } = capture();
     const h = ceeTestHarness({}, undefined, { gameRecorder: recorder });
     const host = await h.create();
@@ -140,6 +205,7 @@ describe("各游戏结算写入对局记录", () => {
     expect(records).toHaveLength(1);
     const [record] = records;
     expect(record).toMatchObject({ game: "cee", roomId: "1234", roundNumber: 1, summary: { answer: { id: 1 } } });
+    expect(record!.roomCreatedAt).toBeLessThanOrEqual(record!.startedAt);
     expect(record!.players.find((player) => player.name === "玩家")?.userId).toBe("user-guest");
     expect(record!.timeline.map((event) => event.type)).toEqual(["guess", "guess"]);
     expect(record!.timeline.at(-1)).toMatchObject({ name: "房主", correct: true });

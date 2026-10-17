@@ -1716,7 +1716,7 @@ describe("SonGuessrService", () => {
     const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
-      gameRecorder: { record: (round) => records.push(structuredClone(round)) },
+      gameRecorder: { record: (round) => records.push(structuredClone(round)), finishRoom: () => {} },
     });
     const host = connection(service, "record-host");
     const guest = connection(service, "record-guest");

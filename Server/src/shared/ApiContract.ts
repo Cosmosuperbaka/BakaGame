@@ -134,17 +134,28 @@ export const gameRecordItemSchema = z.object({
   id: z.string(),
   game: recordedGameSchema,
   roomId: z.string(),
-  roundNumber: z.number().int(),
+  /** 一局（一个房间从创建到销毁）内的回合数。 */
+  roundCount: z.number().int(),
   startedAt: z.string(),
   endedAt: z.string(),
+  /** 本局累计总分。 */
   players: z.array(gameRecordPlayerSchema),
+});
+const gameRecordRoundSchema = z.object({
+  number: z.number().int(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  /** 本回合得分增量。 */
+  players: z.array(gameRecordPlayerSchema),
+  summary: z.record(z.string(), z.unknown()),
 });
 export const adminUserDetailSchema = adminUserSchema.extend({
   recentGames: z.array(gameRecordItemSchema),
   feedbackCount: z.number().int(),
 });
 export const gameRecordDetailSchema = gameRecordItemSchema.extend({
-  summary: z.record(z.string(), z.unknown()),
+  rounds: z.array(gameRecordRoundSchema),
+  /** 全房合并时间线，事件带 `round` 回合号。 */
   timeline: z.array(z.looseObject({ at: z.number(), type: z.string() })),
 });
 
@@ -187,18 +198,19 @@ export const adminOverviewSchema = z.object({
   users: z.object({ total: z.number(), admins: z.number(), banned: z.number(), newToday: z.number() }),
   feedback: z.record(feedbackStatusSchema, z.number()),
   live: perGame(z.object({ rooms: z.number(), onlinePlayers: z.number() })),
-  /** 按北京时间自然日，升序且不缺日；对局数受记录保留期限制（`gameRecordDays`）。 */
+  /** 按北京时间自然日，升序且不缺日；对局记录永久保留。 */
   daily: z.array(z.object({
     day: z.string(),
     visitors: z.number(),
     signedInVisitors: z.number(),
     views: z.number(),
     newUsers: z.number(),
-    rounds: perGame(z.number()),
+    /** 一局数：一个房间从创建到销毁算一局。 */
+    games: perGame(z.number()),
+    /** 参与人次：每局按去重玩家数累加。 */
     roundPlayers: z.number(),
   })),
   pages: z.array(z.object({ path: z.string(), views: z.number() })),
-  gameRecordDays: z.number(),
 });
 
 export const sentryOverviewSchema = z.object({

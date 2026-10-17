@@ -18,7 +18,7 @@ const DAY_OPTIONS = [
 ];
 const FEEDBACK_ORDER: FeedbackStatus[] = ["open", "processing", "resolved", "closed"];
 const GAMES = GAME_OPTIONS.map((option) => option.value);
-const sumRounds = (rounds: Record<RecordedGameKind, number>) => GAMES.reduce((total, game) => total + rounds[game], 0);
+const sumGames = (games: Record<RecordedGameKind, number>) => GAMES.reduce((total, game) => total + games[game], 0);
 
 function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
   return (
@@ -58,26 +58,20 @@ function DailyTable({ data }: { data: AdminOverview }) {
         </tr>
       </thead>
       <tbody className="tabular-nums">
-        {rows.map((day, index) => {
-          // 超出对局记录保留期的日子没有对局数据，写「—」而不是 0。
-          const recorded = index < data.gameRecordDays;
-          return (
-            <tr key={day.day}>
-              <th scope="row" className="font-mono font-normal! text-foreground!">{formatDayKey(day.day)}</th>
-              <td className="text-right">{formatNumber(day.visitors)}</td>
-              <td className="text-right">{formatNumber(day.signedInVisitors)}</td>
-              <td className="text-right">{formatNumber(day.views)}</td>
-              <td className="text-right">{formatNumber(day.newUsers)}</td>
-              {/* 单元格只写总对局数，悬停给出各游戏的分项，省掉三列占宽 */}
-              <Hint label={recorded ? GAMES.map((game) => `${GAME_LABELS[game]} ${day.rounds[game]}`).join(" · ") : undefined}>
-                <td className="text-right">
-                  {recorded ? formatNumber(sumRounds(day.rounds)) : "—"}
-                </td>
-              </Hint>
-              <td className="text-right">{recorded ? formatNumber(day.roundPlayers) : "—"}</td>
-            </tr>
-          );
-        })}
+        {rows.map((day) => (
+          <tr key={day.day}>
+            <th scope="row" className="font-mono font-normal! text-foreground!">{formatDayKey(day.day)}</th>
+            <td className="text-right">{formatNumber(day.visitors)}</td>
+            <td className="text-right">{formatNumber(day.signedInVisitors)}</td>
+            <td className="text-right">{formatNumber(day.views)}</td>
+            <td className="text-right">{formatNumber(day.newUsers)}</td>
+            {/* 单元格只写总对局数，悬停给出各游戏的分项，省掉三列占宽 */}
+            <Hint label={GAMES.map((game) => `${GAME_LABELS[game]} ${day.games[game]}`).join(" · ")}>
+              <td className="text-right">{formatNumber(sumGames(day.games))}</td>
+            </Hint>
+            <td className="text-right">{formatNumber(day.roundPlayers)}</td>
+          </tr>
+        ))}
       </tbody>
     </AdminTable>
   );
@@ -180,7 +174,7 @@ export function OverviewPanel() {
         <section aria-labelledby="admin-daily" className="grid gap-3">
           <h3 id="admin-daily" className="font-semibold">每日数据</h3>
           <DailyTable data={data} />
-          <p className="text-xs text-muted-foreground">按北京时间自然日统计；对局记录只保留 {data.gameRecordDays} 天，更早的对局数不可查。</p>
+          <p className="text-xs text-muted-foreground">按北京时间自然日统计；一局 = 一个房间从创建到销毁，对局记录永久保留。</p>
         </section>
       ) : null}
       {data ? (
