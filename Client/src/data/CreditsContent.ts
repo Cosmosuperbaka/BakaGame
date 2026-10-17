@@ -247,6 +247,7 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         name: "Qwen 3.8 Max 0902",
         releasedAt: "2026-09-02",
         logo: "qwen",
+        url: "https://qwen.ai/blog?id=qwen3.8",
       },
     ],
   },
