@@ -109,15 +109,22 @@ export function DependencySheet({
       {/* 跳转用整行描边按钮，不再是一小行文字链：这是抽屉里最常做的外部动作。 */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {dependency.url ? (
-          <Button asChild variant="outline" className="justify-start">
+          <Button asChild variant="outline" className="group justify-start">
             <motion.a href={dependency.url} target="_blank" rel="noreferrer" {...pressable}>
               <Globe aria-hidden="true" />
               <span>项目主页</span>
-              <ArrowUpRight aria-hidden="true" className="ml-auto text-muted-foreground" />
+              <ArrowUpRight
+                aria-hidden="true"
+                className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+              />
             </motion.a>
           </Button>
         ) : null}
-        <Button asChild variant="outline" className={dependency.url ? "justify-start" : "justify-start sm:col-span-2"}>
+        <Button
+          asChild
+          variant="outline"
+          className={dependency.url ? "group justify-start" : "group justify-start sm:col-span-2"}
+        >
           <motion.a
             href={`https://www.npmjs.com/package/${dependency.name}`}
             target="_blank"
@@ -126,7 +133,10 @@ export function DependencySheet({
           >
             <Package aria-hidden="true" />
             <span>npm 页面</span>
-            <ArrowUpRight aria-hidden="true" className="ml-auto text-muted-foreground" />
+            <ArrowUpRight
+              aria-hidden="true"
+              className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+            />
           </motion.a>
         </Button>
       </div>

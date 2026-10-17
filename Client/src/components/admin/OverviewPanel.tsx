@@ -123,9 +123,12 @@ function SentryCard({ data, loading, onReload }: { data: SentryOverview | null; 
                   <Badge variant={issue.level === "error" || issue.level === "fatal" ? "restricted" : "subtle"} size="xs" className="mt-0.5 shrink-0">{issue.level}</Badge>
                   <span className="min-w-0 flex-1">
                     {issue.permalink ? (
-                      <a href={issue.permalink} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 underline-offset-4 hover:underline">
+                      <a href={issue.permalink} target="_blank" rel="noreferrer" className="group inline-flex max-w-full items-center gap-1 underline-offset-4 hover:underline">
                         <span className="truncate">{issue.title}</span>
-                        <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        <ExternalLink
+                          className="h-3 w-3 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+                          aria-hidden="true"
+                        />
                       </a>
                     ) : <span className="block truncate">{issue.title}</span>}
                     <span className="block truncate text-xs text-muted-foreground">{issue.shortId} · {issue.count} 次 · {issue.userCount} 人 · 最近 {formatShortDateTime(issue.lastSeen)}</span>

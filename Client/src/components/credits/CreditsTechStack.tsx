@@ -73,10 +73,10 @@ export function CreditsTechStack({
                         </span>
                         <span className="mt-0.5 block text-xs break-words text-muted-foreground">{entry.role}</span>
                       </span>
-                      {/* 与 LandingPage 的外链指示一致：图标只做装饰，可访问名由卡片文字给出。 */}
+                      {/* 外链指示：静止时压淡，悬停沿外链方向挪动并归位到不透明（Design §3 的箭头例外）。 */}
                       <ArrowUpRight
                         aria-hidden="true"
-                        className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                        className="size-3.5 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
                       />
                     </motion.a>
                   </li>

@@ -325,8 +325,8 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
       <span>{link.name}</span>
       <ArrowUpRight
         aria-hidden="true"
-        // 与文字同色（Design §3：并排图标不单独调淡），悬停时朝外链方向挪一点。
-        className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+        // 外链指示：静止时比文字更浅，悬停沿外链方向挪动并归位到不透明。
+        className="h-3 w-3 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
       />
     </motion.a>
   );
@@ -394,7 +394,8 @@ export default function LandingPage() {
           initial="initial"
           animate="animate"
         >
-          <span className="mr-0.5 text-muted-foreground select-none">友情链接</span>
+          {/* 分组标签按装饰性提示处理：沿用旧版更浅的一档，不与友情链接正文抢层级。 */}
+          <span className="mr-0.5 text-muted-foreground/60 select-none">友情链接</span>
           {FRIEND_LINKS.map((link) => (
             <FriendLinkItem key={link.href} link={link} />
           ))}

@@ -54,7 +54,7 @@ export function CreditsModels({ models }: { models: readonly ContributingCompany
 
 /** 与 `Badge variant="muted" size="sm"` 同一套纸面样式；可点击时再叠悬停与按压反馈。 */
 const MODEL_BADGE_CLASS =
-  "inline-flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-px text-xs font-normal text-foreground";
+  "group inline-flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-px text-xs font-normal text-foreground";
 
 function ModelBadge({ model }: { model: ContributingModel }) {
   const glyph = <CreditBrandMark brand={model.logo} className="size-3 shrink-0" />;
@@ -73,7 +73,6 @@ function ModelBadge({ model }: { model: ContributingModel }) {
       target="_blank"
       rel="noreferrer"
       {...tappable}
-      title={`${model.name} 发布页面`}
       className={cn(
         MODEL_BADGE_CLASS,
         "cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2",
@@ -81,8 +80,11 @@ function ModelBadge({ model }: { model: ContributingModel }) {
     >
       {glyph}
       {model.name}
-      {/* 外链指示：告诉读者这枚徽章会离开本站；图标与文字同色，不单独调淡。 */}
-      <ArrowUpRight className="size-3 shrink-0" aria-hidden="true" />
+      {/* 外链指示：静止时压淡，悬停沿外链方向挪动并归位到不透明（Design §3 的箭头例外）。 */}
+      <ArrowUpRight
+        className="size-3 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+        aria-hidden="true"
+      />
     </motion.a>
   );
 }

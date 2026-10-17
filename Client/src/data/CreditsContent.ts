@@ -173,7 +173,7 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         name: "Hy 4 Preview",
         releasedAt: "2026-08-28",
         logo: "hunyuan",
-        url: "https://www.tencent.com/zh-cn/tencent-releases-and-open-sources-tencent-hy4-preview/",
+        url: "https://hunyuan.tencent.com/research/hy4-preview",
       },
     ],
   },
