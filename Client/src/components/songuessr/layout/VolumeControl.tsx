@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { digitRoll, iconTappable, popover, readoutSwap } from "@/lib/Motion";
+import { iconTappable, popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface VolumeControlProps {
@@ -131,8 +131,10 @@ function DigitItem({ index, char, position }: { index: number; char: string; pos
 function DigitColumn({ digit, isAscending }: { digit: number; isAscending: boolean }) {
   const reduced = useReducedMotion();
   const isFirstMount = useRef(true);
-  // 当首次挂载且处于增加态且初始数字大于0时，让轮盘位置从 0 开始拉起，顺畅从 0 向上翻滚到目标数字
-  const initialPos = isFirstMount.current && isAscending && digit > 0 ? 0 : digit;
+  // 首次挂载且处于增加态且初始数字大于 0 时，轮盘从 0 拉起，顺畅翻滚到目标数字。
+  // 用惰性 state 固定首帧值：惰性初始化只求值一次，语义与「render 里读 ref」相同，
+  // 但不在渲染期碰 ref（react-hooks/refs 会判为副作用）。
+  const [initialPos] = useState(() => (isAscending && digit > 0 ? 0 : digit));
   const target = useRef(digit);
   const prevDigit = useRef(initialPos);
   const position = useSpring(initialPos, { stiffness: 380, damping: 26, mass: 0.8 });
@@ -221,10 +223,9 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
       return;
     }
 
-    if (Math.abs(volume - displayVolume) < 0.002) {
-      setDisplayVolume(volume);
-      return;
-    }
+    // 差值已在显示精度以内：不需要再写一次 state（同步 setState 会触发级联渲染），
+    // 四舍五入后的百分比本来就一致。
+    if (Math.abs(volume - displayVolume) < 0.002) return;
 
     if (animControls.current) {
       animControls.current.stop();
@@ -248,6 +249,8 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
     return () => {
       controls.stop();
     };
+    // displayVolume 只作为动画起点读取：放进依赖会让动画每推进一帧就重启。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [volume]);
 
   const percentage = Math.round(displayVolume * 100);
