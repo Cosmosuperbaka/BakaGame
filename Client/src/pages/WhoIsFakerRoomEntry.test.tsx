@@ -65,6 +65,8 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
   });
   it("创建沿用加入signal，晚ACK释放席位", async () => {
     const ack = deferred<ReturnType<typeof receipt>>();
+    // 夹具复刻服务端 error 包的形状：被测代码读的是 code，不是 Error。
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约
     send.mockImplementation((type: string) => type === "room.join" ? Promise.reject({ code: "ROOM_NOT_FOUND" }) : type === "room.create" ? ack.promise : Promise.resolve());
     const join = vi.fn(initial.joinRoom), create = vi.fn(initial.createRoom);
     useWhoIsFakerStore.setState({ joinRoom: join, createRoom: create });

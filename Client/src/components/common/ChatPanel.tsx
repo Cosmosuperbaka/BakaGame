@@ -542,7 +542,7 @@ export function ChatPanel({
           open={pickerOpen}
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          onSelect={handleSendSticker}
+          onSelect={(path) => void handleSendSticker(path)}
           onClose={() => setPickerOpen(false)}
         />
 

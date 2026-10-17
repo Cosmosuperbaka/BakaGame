@@ -59,7 +59,7 @@ export function AssignQuestionerPhase() {
               <CandidateGrid
                 candidates={spectatorCandidates}
                 disabled={busy}
-                onPick={handleAssign}
+                onPick={(playerId) => void handleAssign(playerId)}
                 tone="recommended"
                 nameWrap="wrap"
               />
@@ -83,7 +83,7 @@ export function AssignQuestionerPhase() {
             <CandidateGrid
               candidates={activeCandidates}
               disabled={busy}
-              onPick={handleAssign}
+              onPick={(playerId) => void handleAssign(playerId)}
               tone="default"
               nameWrap="wrap"
             />

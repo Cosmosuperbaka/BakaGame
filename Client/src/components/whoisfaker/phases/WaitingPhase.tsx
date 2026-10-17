@@ -76,7 +76,7 @@ export function WaitingPhase() {
         nonHostTotal={nonHostActive.length}
         allReady={allReady}
         starting={starting}
-        onStart={handleStart}
+        onStart={() => void handleStart()}
         sendCommand={sendCommand}
         addToast={addToast}
       />
@@ -98,7 +98,7 @@ export function WaitingPhase() {
             size="lg"
             disabled={readying}
             loading={readying}
-            onClick={handleReady}
+            onClick={() => void handleReady()}
           >
             {/* 进行中只把图标换成转圈，文案不变，按钮宽度不跳 */}
             {me.isReady ? <>{readying ? null : <X className="h-4 w-4" />}取消准备</> : <>{readying ? null : <Check className="h-4 w-4" />}准备</>}

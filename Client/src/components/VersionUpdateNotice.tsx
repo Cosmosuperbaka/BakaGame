@@ -69,16 +69,20 @@ export function VersionUpdateNotice({
       if (document.visibilityState === "visible") void check();
     };
 
+    const handleFocus = () => {
+      void check();
+    };
+
     void check();
     const timer = window.setInterval(() => void check(), VERSION_CHECK_INTERVAL_MS);
-    window.addEventListener("focus", check);
+    window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       disposed = true;
       controller?.abort();
       window.clearInterval(timer);
-      window.removeEventListener("focus", check);
+      window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [active]);

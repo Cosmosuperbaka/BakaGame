@@ -178,7 +178,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                           size="sm"
                           variant="ghost"
                           className="text-muted-foreground"
-                          onClick={handleStopTimer}
+                          onClick={() => void handleStopTimer()}
                           loading={stopping}
                         >
                           {stopping ? null : <X className="h-3.5 w-3.5" />}
@@ -227,7 +227,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                     size="sm"
                     variant="outline"
                     className="w-full @md:w-auto"
-                    onClick={handleStartTimer}
+                    onClick={() => void handleStartTimer()}
                     loading={starting}
                   >
                     {starting ? null : <Play className="h-3 w-3 fill-current" />}

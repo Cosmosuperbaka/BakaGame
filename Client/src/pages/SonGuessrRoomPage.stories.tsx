@@ -84,6 +84,7 @@ export const PasswordDialog: Story = {
   beforeEach: () => {
     const restoreName = seedUsername(me.name);
     const restoreConnection = connectInstantly();
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
     stubSongActions({ joinRoom: () => Promise.reject({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }) });
     return () => {
       restoreConnection();

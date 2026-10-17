@@ -1,23 +1,10 @@
 {
-  "src/components/VersionUpdateNotice.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
-    }
-  },
-  "src/components/account/AccountEntry.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
   "src/components/admin/UserDetailDialog.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
   },
   "src/components/cee/CEEGameArea.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 3
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -37,43 +24,8 @@
       "count": 1
     }
   },
-  "src/components/common/ChatPanel.stories.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    }
-  },
-  "src/components/common/ChatPanel.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
   "src/components/common/PlayerRow.tsx": {
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/components/common/lobby/LobbyPage.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/components/common/room/RoomShell.test.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 4
-    }
-  },
-  "src/components/songuessr/PlayerList.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 4
-    }
-  },
-  "src/components/songuessr/SongAccountSettings.stories.tsx": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 1
-    }
-  },
-  "src/components/songuessr/SongAccountSettings.test.tsx": {
-    "@typescript-eslint/no-misused-promises": {
       "count": 1
     }
   },
@@ -93,26 +45,8 @@
     }
   },
   "src/components/whoisfaker/layout/PhaseTimerControl.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
-    }
-  },
-  "src/components/whoisfaker/layout/PlayerList.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 4
-    }
-  },
-  "src/components/whoisfaker/layout/TestController.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 7
-    }
-  },
-  "src/components/whoisfaker/phases/AssignQuestionerPhase.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
     }
   },
   "src/components/whoisfaker/phases/DescriptionPhase.tsx": {
@@ -125,43 +59,7 @@
       "count": 1
     }
   },
-  "src/components/whoisfaker/phases/WaitingPhase.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
-    }
-  },
-  "src/hooks/UseCEERoomLifecycle.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 2
-    }
-  },
-  "src/hooks/UseIdleSearch.ts": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/hooks/UseLobbySession.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 4
-    }
-  },
-  "src/hooks/UsePageTransition.test.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/hooks/UseSongRoomLifecycle.test.tsx": {
-    "@typescript-eslint/only-throw-error": {
-      "count": 3
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 3
-    }
-  },
   "src/hooks/UseSongRoomLifecycle.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 8
-    },
     "sonarjs/cognitive-complexity": {
       "count": 2
     }
@@ -171,71 +69,14 @@
       "count": 1
     }
   },
-  "src/lib/WebsocketClient.ts": {
-    "@typescript-eslint/only-throw-error": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 4
-    }
-  },
-  "src/pages/AdminPage.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/pages/CEERoomPage.stories.tsx": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 2
-    }
-  },
-  "src/pages/CreditsPage.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/pages/LandingPage.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    },
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/pages/SonGuessrRoomPage.stories.tsx": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 1
-    }
-  },
   "src/pages/SonGuessrRoomPage.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/pages/WhoIsFakerRoomEntry.test.tsx": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 1
-    }
-  },
-  "src/pages/WhoIsFakerRoomPage.stories.tsx": {
-    "@typescript-eslint/no-floating-promises": {
       "count": 1
     }
   },
   "src/pages/WhoIsFakerRoomPage.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 8
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
-    }
-  },
-  "src/stores/RoomEntryStores.test.ts": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 2
     }
   },
   "src/stores/UseSonGuessrStore.ts": {

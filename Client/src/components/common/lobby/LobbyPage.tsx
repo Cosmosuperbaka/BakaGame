@@ -96,7 +96,7 @@ export function LobbyPage({
       {/* 顶栏与正文同一种写法：外层只限宽居中，留边写在同一层，返回按钮与列表标题左缘对齐。 */}
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
-          <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground" onClick={() => navigate("/")}>
+          <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground" onClick={() => void navigate("/")}>
             <ArrowLeft className="h-4 w-4" />
             <span>返回主页</span>
           </Button>

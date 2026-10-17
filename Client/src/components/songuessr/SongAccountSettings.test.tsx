@@ -38,14 +38,14 @@ const initialStore = useSonGuessrStore.getState();
 const panel = () => within(document.getElementById(screen.getByRole("button", { name: /音乐账号配置/ }).getAttribute("aria-controls")!)!);
 
 describe("SongAccountSettings", () => {
-  let sendCommand: ReturnType<typeof vi.fn>;
+  let sendCommand: ReturnType<typeof vi.fn<SonGuessrStore["sendCommand"]>>;
   let setNotice: ReturnType<typeof vi.fn<SonGuessrStore["setNotice"]>>;
 
   beforeEach(() => {
     clearStoredSongMusicSession();
     // framer-motion退出动画会请求恢复滚动位置，jsdom没有实现该浏览器API。
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    sendCommand = vi.fn().mockResolvedValue(qrResponse("initial-qr"));
+    sendCommand = vi.fn<SonGuessrStore["sendCommand"]>().mockResolvedValue(qrResponse("initial-qr"));
     setNotice = vi.fn<SonGuessrStore["setNotice"]>();
     useSonGuessrStore.setState({
       sendCommand: sendCommand as unknown as SonGuessrStore["sendCommand"],

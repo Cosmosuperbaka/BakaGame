@@ -99,14 +99,14 @@ export default function WhoIsFakerRoomPage() {
     if (roomClosedAt && roomClosedAt >= mountTime) {
       entryRef.current?.abort();
       useWhoIsFakerStore.getState().clearRoomClosed();
-      navigate("/whoisfaker", { replace: true });
+      void navigate("/whoisfaker", { replace: true });
     }
   }, [mountTime, roomClosedAt, navigate]);
 
   // 主动离开等其它原因导致的脱离房间。等用户填名字的这段时间同样没有 snapshot，
   // 但那是正常状态，不能当成房间已关闭。
   useEffect(() => {
-    if (!joining && !needsName && !snapshot && !storeRoomId) navigate("/whoisfaker");
+    if (!joining && !needsName && !snapshot && !storeRoomId) void navigate("/whoisfaker");
   }, [joining, needsName, snapshot, storeRoomId, navigate]);
 
   /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
@@ -135,11 +135,11 @@ export default function WhoIsFakerRoomPage() {
           } catch (createErr) {
             if (signal.aborted) return;
             addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
-            navigate("/whoisfaker");
+            void navigate("/whoisfaker");
           }
         } else {
           addToast(err.message ?? "加入房间失败", "error");
-          navigate("/whoisfaker");
+          void navigate("/whoisfaker");
         }
       }
     },
@@ -159,7 +159,7 @@ export default function WhoIsFakerRoomPage() {
 
     if (!isValidRoomId(roomId)) {
       addToast("房间号无效，请检查链接", "error");
-      navigate("/whoisfaker", { replace: true });
+      void navigate("/whoisfaker", { replace: true });
       return cleanup;
     }
 
@@ -171,7 +171,7 @@ export default function WhoIsFakerRoomPage() {
       } catch {
         if (signal.aborted) return;
         addToast("连接服务器超时，请刷新重试", "error");
-        navigate("/whoisfaker");
+        void navigate("/whoisfaker");
         return;
       }
       if (signal.aborted) return;
@@ -182,7 +182,7 @@ export default function WhoIsFakerRoomPage() {
       } catch (error) {
         if (signal.aborted) return;
         addToast((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
-        navigate("/whoisfaker");
+        void navigate("/whoisfaker");
         return;
       }
       if (signal.aborted) return;
@@ -229,7 +229,7 @@ export default function WhoIsFakerRoomPage() {
   const handleLeave = useCallback(() => {
     entryRef.current?.abort();
     setExiting(true);
-    navigate("/whoisfaker");
+    void navigate("/whoisfaker");
   }, [navigate]);
 
   const roundId = snapshot?.status.roundId;

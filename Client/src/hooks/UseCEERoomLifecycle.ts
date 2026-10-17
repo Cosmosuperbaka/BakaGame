@@ -66,7 +66,7 @@ export function useCEERoomLifecycle() {
   };
 
   useEffect(() => {
-    if (!roomId || closed) { navigate("/cee", { replace: true }); return; }
+    if (!roomId || closed) { void navigate("/cee", { replace: true }); return; }
     if (!connected || !lobbyReady) return;
     if (attempted.current === roomId) return;
     attempted.current = roomId;
@@ -107,7 +107,7 @@ export function useCEERoomLifecycle() {
   // 只换页：大厅挂载时发现仍留着房间，会先退房再订阅大厅（CEEPage），失败提示也在那里。
   // 先退再走的话，跨页过渡拍下的旧页就成了清空快照后的「请加入房间」（Animation §2.4）。
   const leave = useCallback(() => {
-    navigate("/cee");
+    void navigate("/cee");
   }, [navigate]);
 
   return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, errorCode, join, leave };

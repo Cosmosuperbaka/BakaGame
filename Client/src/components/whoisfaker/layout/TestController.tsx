@@ -114,7 +114,7 @@ export function TestController() {
                           variant={currentPhase === p ? "default" : "outline"}
                           size="sm"
                           className="h-7 text-xs justify-start"
-                          onClick={() => handleJumpPhase(p)}
+                          onClick={() => void handleJumpPhase(p)}
                         >
                           {PHASE_LABELS[p]}
                         </Button>
@@ -128,7 +128,7 @@ export function TestController() {
                         variant={currentPerspective === "player" ? "default" : "outline"}
                         size="sm"
                         className="h-7 text-xs"
-                        onClick={() => handleSetPerspective("player")}
+                        onClick={() => void handleSetPerspective("player")}
                       >
                         玩家视角
                       </Button>
@@ -136,7 +136,7 @@ export function TestController() {
                         variant={currentPerspective === "questioner" ? "default" : "outline"}
                         size="sm"
                         className="h-7 text-xs gap-1"
-                        onClick={() => handleSetPerspective("questioner")}
+                        onClick={() => void handleSetPerspective("questioner")}
                       >
                         <Shield className="h-3 w-3 text-questioner" />
                         出题人
@@ -145,7 +145,7 @@ export function TestController() {
                         variant={currentPerspective === "spectator" ? "default" : "outline"}
                         size="sm"
                         className="h-7 text-xs"
-                        onClick={() => handleSetPerspective("spectator")}
+                        onClick={() => void handleSetPerspective("spectator")}
                       >
                         旁观视角
                       </Button>
@@ -161,7 +161,7 @@ export function TestController() {
                             variant={activeRole === r ? "default" : "outline"}
                             size="sm"
                             className="h-7 text-xs"
-                            onClick={() => handleSetRole(r)}
+                            onClick={() => void handleSetRole(r)}
                           >
                             {ROLE_LABELS[r]}
                           </Button>
@@ -181,7 +181,7 @@ export function TestController() {
                         className="h-7 flex-1 gap-1 text-xs"
                         aria-label="移除一个测试人机"
                         disabled={botCount === 0}
-                        onClick={() => run("test.removeBot", { count: 1 })}
+                        onClick={() => void run("test.removeBot", { count: 1 })}
                       >
                         <Minus className="h-3 w-3" />
                         减一个
@@ -194,7 +194,7 @@ export function TestController() {
                         size="sm"
                         className="h-7 flex-1 gap-1 text-xs"
                         aria-label="添加一个测试人机"
-                        onClick={() => run("test.addBot", { count: 1 })}
+                        onClick={() => void run("test.addBot", { count: 1 })}
                       >
                         <Plus className="h-3 w-3" />
                         加一个

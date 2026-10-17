@@ -223,7 +223,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         } else {
           setNotice(appError.message ?? "加入房间失败", "error");
         }
-        navigate(exitPath, { replace: true });
+        void navigate(exitPath, { replace: true });
       }
     },
     [createRoom, exitPath, joinRoom, navigate, roomId, setNotice],
@@ -258,7 +258,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         if (signal.aborted) return;
         if ((error as { code?: string }).code !== "ROOM_EXISTS") {
           setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-          navigate("/", { replace: true });
+          void navigate("/", { replace: true });
           return;
         }
       }
@@ -272,7 +272,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       } catch (error) {
         if (signal.aborted) return;
         setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
-        navigate("/", { replace: true });
+        void navigate("/", { replace: true });
       }
     },
     [createSoloRoom, navigate, setNotice],
@@ -298,7 +298,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     if (!roomId || alreadyInRoom) return cleanup;
     if (!isValidRoomId(roomId)) {
       setNotice("房间号无效，请检查链接", "error");
-      navigate(exitPath, { replace: true });
+      void navigate(exitPath, { replace: true });
       return cleanup;
     }
 
@@ -310,7 +310,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       } catch {
         if (signal.aborted) return;
         setNotice("连接服务器超时，请刷新重试", "error");
-        navigate(exitPath, { replace: true });
+        void navigate(exitPath, { replace: true });
         return;
       }
       if (signal.aborted) return;
@@ -321,7 +321,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         if (signal.aborted) return;
         // 临时恢复失败不是“没有可恢复会话”，不能继续自动创建。
         setNotice((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
-        navigate(exitPath, { replace: true });
+        void navigate(exitPath, { replace: true });
         return;
       }
       if (signal.aborted) return;
@@ -355,7 +355,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     entryRef.current?.abort();
     useSonGuessrStore.getState().clearRoomClosed();
     if (solo) clearSongSoloRoomId();
-    navigate(exitPath, { replace: true });
+    void navigate(exitPath, { replace: true });
   }, [exitPath, mountTime, navigate, roomClosedAt, solo]);
 
   useEffect(() => {
@@ -475,7 +475,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     leavingRef.current = true;
     if (solo) clearSongSoloRoomId();
     setExiting(true);
-    navigate(exitPath, { replace: true });
+    void navigate(exitPath, { replace: true });
   };
 
   return {

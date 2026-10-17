@@ -102,6 +102,7 @@ export const QrCreating: Story = {
 
 export const QrFailed: Story = {
   name: "扫码登录 · 二维码生成失败",
+  // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：命令失败按 code 取 message 呈现
   beforeEach: () => stubSongCommand(() => Promise.reject({ code: "MUSIC_LOGIN_FAILED", message: "无法生成登录二维码" })),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);

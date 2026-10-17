@@ -252,6 +252,7 @@ export const JoinPassword: Story = {
       connected: true, lobbyReady: true, originalAvailable: true,
       rooms: CEE_LOBBY_ROOMS.map((room) => room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
     });
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
     useCEEStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }) });
     return presetSavedUsername();
   },
@@ -270,6 +271,7 @@ export const JoinPasswordWrong: Story = {
       connected: true, lobbyReady: true, originalAvailable: true,
       rooms: CEE_LOBBY_ROOMS.map((room) => room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
     });
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
     useCEEStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_INCORRECT", message: "房间密码错误" }) });
     return presetSavedUsername();
   },

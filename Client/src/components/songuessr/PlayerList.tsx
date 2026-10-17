@@ -98,8 +98,8 @@ export function PlayerList({
       phase={phase}
       questionType={questionType}
       hideSpectatorStatus={hideSpectatorStatus}
-      onKick={handleKick}
-      onTransferHost={handleTransferHost}
+      onKick={(playerId) => void handleKick(playerId)}
+      onTransferHost={(playerId) => void handleTransferHost(playerId)}
     />
   );
 
@@ -140,7 +140,7 @@ export function PlayerList({
                 spectator={false}
                 queued={!waitingPhase}
                 selected={me?.nextRoundMembership === "active"}
-                onToggle={handleSetSpectator}
+                onToggle={(spectator) => void handleSetSpectator(spectator)}
               />
             ) : null}
 
@@ -162,7 +162,7 @@ export function PlayerList({
                     spectator
                     queued={!waitingPhase}
                     selected={me?.nextRoundMembership === "spectator"}
-                    onToggle={handleSetSpectator}
+                    onToggle={(spectator) => void handleSetSpectator(spectator)}
                   />
                 ) : null}
               </>

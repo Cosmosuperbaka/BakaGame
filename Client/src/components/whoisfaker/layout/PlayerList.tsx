@@ -215,8 +215,8 @@ export function PlayerList(props: PlayerListProps) {
       ),
       availableMarks,
       onMarkChange,
-      onKick: handleKick,
-      onTransferHost: handleTransferHost,
+      onKick: (playerId) => void handleKick(playerId),
+      onTransferHost: (playerId) => void handleTransferHost(playerId),
     };
 
     // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
@@ -338,7 +338,7 @@ export function PlayerList(props: PlayerListProps) {
       </motion.div>
 
       {showSpectatorToggle && isSpectator ? (
-        <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+        <SpectatorToggle spectator={false} onToggle={(spectator) => void handleSetSpectator(spectator)} />
       ) : null}
 
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
@@ -357,7 +357,7 @@ export function PlayerList(props: PlayerListProps) {
             </AnimatePresence>
           </motion.div>
           {showSpectatorToggle && !isSpectator ? (
-            <SpectatorToggle spectator onToggle={handleSetSpectator} />
+            <SpectatorToggle spectator onToggle={(spectator) => void handleSetSpectator(spectator)} />
           ) : null}
         </>
       ) : null}

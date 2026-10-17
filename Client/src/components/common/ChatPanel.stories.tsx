@@ -154,7 +154,7 @@ export const PickerOpen: Story = {
   args: { messages: storyChat() },
   play: async ({ canvas }) => {
     // 只派发 click：打开面板靠 onClick，脚本聚焦会在按钮上留下键盘焦点环。
-    fireEvent.click(canvas.getByRole("button", { name: "发送表情" }));
+    await fireEvent.click(canvas.getByRole("button", { name: "发送表情" }));
     await canvas.findByRole("tablist", { name: "表情包分类" }, { timeout: 10_000 });
   },
 };

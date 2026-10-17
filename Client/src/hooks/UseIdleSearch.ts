@@ -39,16 +39,18 @@ export function useIdleSearch<T>(
     let cancelled = false;
     const delay = immediate.current ? 0 : IDLE_SEARCH_MS;
     immediate.current = false;
-    const timer = window.setTimeout(async () => {
-      setInFlight(true);
-      try {
-        const items = await search(query);
-        if (!cancelled) { setResult({ scope, keyword: query, items }); setFailure(null); }
-      } catch (error) {
-        if (!cancelled) setFailure({ scope, keyword: query, message: describe(error) });
-      } finally {
-        if (!cancelled) setInFlight(false);
-      }
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setInFlight(true);
+        try {
+          const items = await search(query);
+          if (!cancelled) { setResult({ scope, keyword: query, items }); setFailure(null); }
+        } catch (error) {
+          if (!cancelled) setFailure({ scope, keyword: query, message: describe(error) });
+        } finally {
+          if (!cancelled) setInFlight(false);
+        }
+      })();
     }, delay);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [query, scope, search, describe, enabled, flushes]);

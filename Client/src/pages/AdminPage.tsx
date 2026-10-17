@@ -96,7 +96,7 @@ function AdminPage() {
       <Seo path="/admin" description="BakaGame 管理后台" indexable={false} />
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
-          <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground" onClick={() => navigate("/")}>
+          <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground" onClick={() => void navigate("/")}>
             <ArrowLeft className="h-4 w-4" />
             <span>返回主页</span>
           </Button>

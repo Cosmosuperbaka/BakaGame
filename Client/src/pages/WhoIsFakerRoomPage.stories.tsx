@@ -281,7 +281,7 @@ export const FeedbackNight: Story = {
   play: async () => {
     await screen.findByRole("heading", { name: "天亮了" });
     // 夜晚反馈不公开凶手
-    expect(screen.queryByText("刀了", { exact: false })).toBeNull();
+    await expect(screen.queryByText("刀了", { exact: false })).toBeNull();
   },
 };
 

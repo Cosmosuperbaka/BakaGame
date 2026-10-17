@@ -193,12 +193,14 @@ export class WebSocketClient {
     return new Promise<void>((resolve, reject) => {
       const waiter = {
         resolve: () => { clearTimeout(timer); resolve(); },
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 原样转发协议错误体：{ code, message } 是数据契约，调用方按 code 分支
         reject: (error: ProtocolError) => { clearTimeout(timer); reject(error); },
       };
       const timer = setTimeout(() => {
         this.connectWaiters = this.connectWaiters.filter(
           (candidate) => candidate !== waiter,
         );
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：客户端合成的超时也用协议错误体，避免出现第二种失败形状
         reject({ code: "CONNECT_TIMEOUT", message: "连接服务器超时" });
       }, timeoutMs);
       this.connectWaiters.push(waiter);
@@ -221,6 +223,7 @@ export class WebSocketClient {
         // 建连等待与请求超时语义不同：无超时请求只能在已建连的连接上等待。
         await this.waitForConnection(timeoutMs > 0 ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS);
       } else {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 抛的是协议错误体：调用方按 code 区分「未连接」与其它失败，包成 Error 会丢掉 code
         throw { code: "NOT_CONNECTED", message: "WebSocket 未连接" };
       }
     }
@@ -233,6 +236,7 @@ export class WebSocketClient {
         try {
           const result = await new Promise<T>((resolve, reject) => {
             if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：未连接拒绝保持协议错误体形状
               reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
               return;
             }
@@ -241,6 +245,7 @@ export class WebSocketClient {
             const timer = timeoutMs > 0
               ? setTimeout(() => {
                 this.pendingRequests.delete(id);
+                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：请求超时保持协议错误体形状，与服务端业务拒绝同一套 code 分支
                 reject({ code: "TIMEOUT", message: "请求超时" });
               }, timeoutMs)
               : undefined;

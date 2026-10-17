@@ -183,7 +183,7 @@ function GameRow({ game }: { game: GameEntry }) {
   const handleEnter = (targetPath?: string) => {
     if (!targetPath || enteringPath) return;
     setEnteringPath(targetPath);
-    navigate(targetPath);
+    void navigate(targetPath);
   };
 
   // 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给可用的卡片，读作「这一张能进」；未上线的卡片不响应悬停。
@@ -416,7 +416,7 @@ export default function LandingPage() {
           <motion.button
             type="button"
             {...pressable}
-            onClick={() => navigate(VERSION_PAGE_PATH)}
+            onClick={() => void navigate(VERSION_PAGE_PATH)}
             className="min-h-8 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             {versionLabel}

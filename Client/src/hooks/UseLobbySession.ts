@@ -130,7 +130,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
         const reconnected = await reconnectRoom(room.roomId, signal);
         if (!current()) return;
         if (reconnected) {
-          navigate(`${gamePath}/room/${encodeURIComponent(room.roomId)}`);
+          void navigate(`${gamePath}/room/${encodeURIComponent(room.roomId)}`);
           return;
         }
         if (room.hasPassword) {
@@ -140,7 +140,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
           return;
         }
         await joinRoom(room.roomId, userName.trim(), undefined, signal);
-        if (current()) navigate(`${gamePath}/room/${encodeURIComponent(room.roomId)}`);
+        if (current()) void navigate(`${gamePath}/room/${encodeURIComponent(room.roomId)}`);
       });
     },
     [userName, reconnectRoom, joinRoom, navigate, gamePath, showError, runEntry, joinOrigin],
@@ -153,7 +153,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
       await joinRoom(joinTarget.roomId, userName.trim(), joinPassword, signal);
       if (!current()) return;
       updateJoinTarget(null);
-      navigate(`${gamePath}/room/${encodeURIComponent(joinTarget.roomId)}`);
+      void navigate(`${gamePath}/room/${encodeURIComponent(joinTarget.roomId)}`);
     }, (error) => setJoinError({
       message: errorMessage(error, "加入房间失败，请重试"),
       // 只有密码本身不对才标红输入框；次数过多、房间已关闭等归不到这个字段，只给文案。
@@ -173,7 +173,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
         // 先记录再导航：等待页靠这份记录把上次的房间设置套进新房间。
         onRoomCreated?.(generatedRoomId, params);
         updateCreateOpen(false);
-        navigate(`${gamePath}/room/${generatedRoomId}`);
+        void navigate(`${gamePath}/room/${generatedRoomId}`);
       }, (error) => { outcome.failed = true; outcome.error = error; });
       if (outcome.failed) throw outcome.error;
     },

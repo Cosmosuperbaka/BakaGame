@@ -68,6 +68,8 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
   });
   it("ROOM_NOT_FOUND 创建使用同一 signal，晚 ACK 由 Store 释放", async () => {
     const ack = deferred<ReturnType<typeof receipt>>();
+    // 夹具复刻服务端 error 包的形状：被测代码读的是 code，不是 Error。
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约
     send.mockImplementation((type: string) => type === "song.room.join" ? Promise.reject({ code: "ROOM_NOT_FOUND" }) : type === "song.room.create" ? ack.promise : Promise.resolve());
     const join = vi.fn(initial.joinRoom); const create = vi.fn(initial.createRoom);
     useSonGuessrStore.setState({ joinRoom: join, createRoom: create });
@@ -106,6 +108,7 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
   });
   it("单人 ROOM_EXISTS 重试在 ACK 前不换 roomId 或取消自身", async () => {
     saveSongSoloRoomId("1234"); const ack = deferred<ReturnType<typeof receipt>>();
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：换房号重试按 code 判「房号已占用」
     send.mockImplementation((_type: string, payload: { roomId: string }) => payload.roomId === "1234" ? Promise.reject({ code: "ROOM_EXISTS" }) : ack.promise);
     const create = vi.fn(initial.createRoom); useSonGuessrStore.setState({ createRoom: create });
     const h = mount(true); await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
@@ -116,6 +119,7 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
   });
   it("单人重试晚 ACK 不保存 solo 房号或导航", async () => {
     saveSongSoloRoomId("1234"); const ack = deferred<ReturnType<typeof receipt>>();
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：换房号重试按 code 判「房号已占用」
     send.mockImplementation((type: string, payload: { roomId?: string } = {}) => type === "song.room.leave" ? Promise.resolve() : payload.roomId === "1234" ? Promise.reject({ code: "ROOM_EXISTS" }) : ack.promise);
     const h = mount(true); await waitFor(() => expect(send).toHaveBeenCalledTimes(2)); h.unmount(); await act(async () => ack.resolve(receipt("5678")));
     expect(getSongSoloRoomId()).toBe("1234"); expect(useSonGuessrStore.getState().roomId).toBeNull(); expect(navigate).not.toHaveBeenCalled();
@@ -158,6 +162,7 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
       if (type === "song.room.join") return hostReceipt();
       if (type === "song.auth.useCookie") {
         uploads += 1;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：装载重试按 code 分支，包成 Error 会让用例走错路径
         if (uploads === 1) throw { code: "MUSIC_API_RATE_LIMITED", message: "网易云接口触发限流退避" };
         return { account: SONG_ACCOUNTS.vip };
       }
@@ -184,6 +189,7 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
       if (type === "song.room.join") return hostReceipt();
       if (type === "song.auth.useCookie") {
         uploads += 1;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：清凭据这类确定性失败按 code 判别
         throw { code: "MUSIC_SESSION_INVALID", message: "网易云登录状态已失效" };
       }
       return undefined;
@@ -206,6 +212,7 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
       if (type === "song.room.join") return hostReceipt();
       if (type === "song.auth.useCookie") {
         uploads += 1;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：「非房主」这类拒绝必须留在不重试分支
         throw { code: "NOT_HOST", message: "只有房主可以操作" };
       }
       return undefined;

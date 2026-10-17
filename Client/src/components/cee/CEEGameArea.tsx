@@ -91,6 +91,9 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
   const origin = useOriginTracker();
   if (snapshot.source !== "native" || snapshot.hostPlayerId !== playerId || !["preparing", "answering"].includes(snapshot.phase)) return null;
   const cancelling = pending.has("cee.game.cancel");
+  const handleCancel = async () => {
+    if (await run("cee.game.cancel", {})) setOpen(false);
+  };
   return <>
     <Button variant="outline" loading={cancelling} onClick={(event) => { origin.capture(event); setOpen(true); }}>取消本局</Button>
     <Dialog open={open} onOpenChange={setOpen} origin={origin.origin}>
@@ -101,7 +104,7 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>继续本局</Button>
-          <Button variant="destructive" loading={cancelling} onClick={async () => { if (await run("cee.game.cancel", {})) setOpen(false); }}>确认取消</Button>
+          <Button variant="destructive" loading={cancelling} onClick={() => void handleCancel()}>确认取消</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -198,6 +201,9 @@ function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; pr
     <Button variant="outline" className="h-10 shrink-0 px-3" loading={surrendering} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { origin.capture(event); setSurrenderOpen(true); }}><Flag />放弃本局</Button>
   ) : null;
   const slot = privateState.canGuess ? "search" : waitingSync ? "done" : !watching ? "ended" : null;
+  const handleSurrender = async () => {
+    if (await run("cee.game.surrender", {})) setSurrenderOpen(false);
+  };
 
   return <div className="mx-auto w-full max-w-2xl space-y-5">
     {/* 标题随本轮是否已提交换字：新标题自下顶上，旧标题立即让位 */}
@@ -239,7 +245,7 @@ function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; pr
       </section>
     ) : null}
     <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
-    <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}><DialogContent><DialogHeader><DialogTitle>放弃本局</DialogTitle><DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setSurrenderOpen(false)}>继续猜测</Button><Button variant="destructive" loading={surrendering} onClick={async () => { if (await run("cee.game.surrender", {})) setSurrenderOpen(false); }}>确认放弃</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}><DialogContent><DialogHeader><DialogTitle>放弃本局</DialogTitle><DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setSurrenderOpen(false)}>继续猜测</Button><Button variant="destructive" loading={surrendering} onClick={() => void handleSurrender()}>确认放弃</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }
 
@@ -283,10 +289,14 @@ function CEEImageHint({ level }: { level: number }) {
   const [image, setImage] = useState<{ level: number; dataUrl: string } | null>(null);
   const { run, pending } = useCEEAction();
   const loading = pending.has("cee.game.imageHint");
+  const handleImageHint = async () => {
+    const result = await run("cee.game.imageHint", {});
+    if (result) setImage({ dataUrl: result.dataUrl, level });
+  };
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button variant="outline" loading={loading} onClick={async () => { const result = await run("cee.game.imageHint", {}); if (result) setImage({ dataUrl: result.dataUrl, level }); }}><Image />{image ? "更新图片提示" : "查看图片提示"}</Button>
+        <Button variant="outline" loading={loading} onClick={() => void handleImageHint()}><Image />{image ? "更新图片提示" : "查看图片提示"}</Button>
         <span className="text-xs text-muted-foreground">{image ? `当前第 ${image.level} 级` : null}</span>
       </div>
       <CollapsibleRegion open={image !== null || loading}>

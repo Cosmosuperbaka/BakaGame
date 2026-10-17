@@ -30,7 +30,7 @@ describe("RoomShell 进房编排", () => {
     vi.unstubAllGlobals();
   });
 
-  it("挂载后四栏按编排顺序标记，窗口从第一帧算起、过后撤掉", () => {
+  it("挂载后四栏按编排顺序标记，窗口从第一帧算起、过后撤掉", async () => {
     const { container } = render(shell(true));
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveAttribute("data-room-entering");
@@ -39,20 +39,20 @@ describe("RoomShell 进房编排", () => {
     expect(parts).toEqual([...roomEntrance.parts]);
 
     // 第一帧之前各栏动画都还没起播，窗口不能先走掉。
-    act(() => vi.advanceTimersByTime(roomEntranceMs * 2));
+    await act(() => vi.advanceTimersByTime(roomEntranceMs * 2));
     expect(root).toHaveAttribute("data-room-entering");
 
     nextFrame();
-    act(() => vi.advanceTimersByTime(roomEntranceMs - 1));
+    await act(() => vi.advanceTimersByTime(roomEntranceMs - 1));
     expect(root).toHaveAttribute("data-room-entering");
-    act(() => vi.advanceTimersByTime(1));
+    await act(() => vi.advanceTimersByTime(1));
     expect(root).not.toHaveAttribute("data-room-entering");
   });
 
-  it("窗口过后才出现的栏（断线重连后补上）直接出现，不重播编排", () => {
+  it("窗口过后才出现的栏（断线重连后补上）直接出现，不重播编排", async () => {
     const { container, rerender } = render(shell(false));
     nextFrame();
-    act(() => vi.advanceTimersByTime(roomEntranceMs));
+    await act(() => vi.advanceTimersByTime(roomEntranceMs));
 
     rerender(shell(true));
     const root = container.firstElementChild as HTMLElement;

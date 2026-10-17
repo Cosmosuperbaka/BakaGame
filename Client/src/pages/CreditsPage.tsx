@@ -45,7 +45,7 @@ function CreditsPage() {
       <CreditsView
         tab={tab}
         onTabChange={(next) => setParams(next === "credits" ? {} : { tab: next }, { replace: true })}
-        onBack={() => navigate("/")}
+        onBack={() => void navigate("/")}
         versionLabel={`V${version ?? "∞"}`}
         commitLabel={commitHistory.currentCommit}
         dependencies={creditsManifest.dependencies}

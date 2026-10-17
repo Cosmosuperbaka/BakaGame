@@ -140,7 +140,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         passwordDraft={passwordDraft}
         onPasswordDraftChange={setPasswordDraft}
         onConfirmPassword={() => void handleConfirmPassword()}
-        onExit={() => navigate("/songuessr", { replace: true })}
+        onExit={() => void navigate("/songuessr", { replace: true })}
       >
         {seoNode}
         {audioNode}

@@ -94,11 +94,13 @@ for (const h of harnesses) describe(`${h.name} 入房ACK所有权`, () => {
     h.save("1234", "previous-token");
     if (h.name === "Faker") useWhoIsFakerStore.setState({ roomId: "1234", sessionToken: "previous-token", snapshot: { ...wifSnapshot("waiting"), roomId: "1234" } });
     else useSonGuessrStore.setState({ roomId: "1234", sessionToken: "previous-token", snapshot: songSnapshot({ roomId: "1234" }) });
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：恢复流程按 code 判「永久失效」还是「临时失败」
     h.socket.send.mockImplementation((type: string) => type === `${h.prefix}room.reconnect` ? Promise.reject({ code: "DISCONNECTED" }) : Promise.resolve({}));
     h.socket.statuses.forEach(fn => fn(true)); await vi.advanceTimersByTimeAsync(0);
     expect(h.store.getState()).toMatchObject({ roomId: "1234", sessionToken: "previous-token", roomClosedAt: null });
     expect(h.read("1234")).toBe("previous-token");
     h.socket.statuses.forEach(fn => fn(false));
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：被踢出这类 code 才让房间落「已关闭」
     h.socket.send.mockImplementation((type: string) => type === `${h.prefix}room.reconnect` ? Promise.reject({ code: "PLAYER_KICKED" }) : Promise.resolve({}));
     h.socket.statuses.forEach(fn => fn(true)); await vi.advanceTimersByTimeAsync(0);
     expect(h.store.getState()).toMatchObject({ roomId: null, sessionToken: null, snapshot: null });

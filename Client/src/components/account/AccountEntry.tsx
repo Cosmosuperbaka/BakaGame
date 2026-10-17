@@ -105,7 +105,7 @@ export function AccountButton() {
                     onClick={() => openDialog("feedback", menuOrigin)}
                   />
                   {profile.role === "admin" ? (
-                    <PlayerActionButton icon={<ShieldCheck className="h-3.5 w-3.5" />} label="管理后台" onClick={() => navigate("/admin")} />
+                    <PlayerActionButton icon={<ShieldCheck className="h-3.5 w-3.5" />} label="管理后台" onClick={() => void navigate("/admin")} />
                   ) : null}
                   <PlayerActionButton
                     icon={<LogOut className="h-3.5 w-3.5" />}
