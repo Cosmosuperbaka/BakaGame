@@ -23,8 +23,10 @@
 | 谁是卧底规则、权限、断线或状态机 | [WhoIsFaker](Agents/WhoIsFaker.md) |
 | 猜歌的登录、歌曲请求、缓存或音频 | [NeteaseMusicApi](Agents/NeteaseMusicApi.md) 的对应链路 |
 | 歌词清洗、切片、AMLL 排版或歌词动效 | [SonGuessrLyrics](Agents/SonGuessrLyrics.md) |
-| Bangumi 请求、图片、曲目筛选、SQLite 数据构建或角色资料 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
-| CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiApi |
+| Bangumi 请求、图片、缓存或图床 | [BangumiApi](Agents/BangumiApi.md) 的对应章节 |
+| Bangumi 数据集构建、标签、声优或角色资料 | [BangumiDataset](Agents/BangumiDataset.md) 的对应章节 |
+| 番剧筛选、曲目匹配或出题预算 | [BangumiSongMatch](Agents/BangumiSongMatch.md) 的对应章节 |
+| CCB 玩法、房间、隐私、协议或原版互通 | [CCB](Agents/CCB.md)；数据口径另查 BangumiDataset |
 | 页面、样式、布局、公共控件 | [Design](Agents/Design.md)；歌词播放器另查 SonGuessrLyrics |
 | 按压反馈、浮层、过渡或动效令牌 | [Animation](Agents/Animation.md) |
 | 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |

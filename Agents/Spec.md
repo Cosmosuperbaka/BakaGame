@@ -37,7 +37,7 @@
   - **验证范围**：依赖替换与重构按 [Testing](Testing.md) 选择受影响包的类型、行为及集成检查；跨端契约与基础运行时变更扩大到两端。不要为局部改动重复运行无关套件。
 - 后端基于 Elysia 开发。涉及 Elysia 的实现方式、接口或行为时，应优先参考其中文官方文档：<https://elysia.zhcndoc.com/>。
 - 网易云请求、Cookie、播放地址与真实接口测试查 [NeteaseMusicApi](NeteaseMusicApi.md) 的相关章节；歌词清洗与播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)。
-- Bangumi 请求、番剧筛选、曲目解析或图床修改查 [BangumiApi](BangumiApi.md) 的对应链路，遵守服务端边界和答案隐私。
+- Bangumi 请求与图床查 [BangumiApi](BangumiApi.md)，数据集与角色资料查 [BangumiDataset](BangumiDataset.md)，番剧筛选与曲目解析查 [BangumiSongMatch](BangumiSongMatch.md)；遵守服务端边界和答案隐私。
 - 三款游戏 WebSocket 在 Elysia `.ws` 声明共享 TypeBox `body` 与统一封包 `response`。原生 validator 负责成功帧校验，业务 callback 不重复解析/校验；route-local 错误处理只在失败时诊断已有错误码并抢救有界 id/traceId，保留 ACK 关联和严格拒绝未知字段。JSON/二进制解码是校验前的非可信边界，不作为类型安全保证。
 - Origin 拒绝统一抛出专用 `FORBIDDEN_ORIGIN` 业务错误并由 HTTP 错误边界映射 403，不返回原生 Response 作为全局错误回调的混合类型；保持真实升级阻断和 trace/error 信封，并以实际 WS receive 推导回归防止锁定框架类型污染。
 - 动态 Schema 表的 union 通过 `schemaUnion` 保留同源 `Static` 与原生 Union 校验；不能仅以 `Static<typeof schema>` 正常就认定 Elysia App 推导正常。锁定版本的 `Module.Import` 对非 tuple union 会推导为 `never`，需同时以实际 `~Routes`/Eden 正负编译与 Value/TypeCompiler 运行验证，禁止用 `Any` 或手写第二份 DTO 掩盖。

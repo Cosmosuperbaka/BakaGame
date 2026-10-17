@@ -88,7 +88,9 @@ npm run dev   # http://localhost:5173
 | [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界与网关约束 |
 | [Agents/Testing.md](Agents/Testing.md) | 测试分层与验证流程 |
 | [Agents/NeteaseMusicApi.md](Agents/NeteaseMusicApi.md) | 网易云音乐接口接入规范 |
-| [Agents/BangumiApi.md](Agents/BangumiApi.md) | Bangumi 接口、番剧筛选与图床镜像规范 |
+| [Agents/BangumiApi.md](Agents/BangumiApi.md) | Bangumi 接口、图片缓存与图床镜像规范 |
+| [Agents/BangumiDataset.md](Agents/BangumiDataset.md) | SQLite 数据集构建、角色标签与声优 |
+| [Agents/BangumiSongMatch.md](Agents/BangumiSongMatch.md) | 番剧筛选、曲目匹配与出题预算 |
 
 ## 版本
 
