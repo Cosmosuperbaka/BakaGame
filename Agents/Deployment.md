@@ -32,12 +32,15 @@ WhoIsFaker、Songuessr 与 CEE 的实时业务分别通过 `/api/whoisfaker/ws`�
 具体数值应按部署平台容量和真实流量确定，并由平台监控验证。没有完成上述入口保护时，
 不得把 Bun 服务端口直接暴露到公网。
 
-公开遥测 `/api/monitoring/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的应用内单来源预算，
-只使用 Bun `server.requestIP(request)` 的传输 peer；不信任客户端自报的
-`X-Forwarded-For` / `X-Real-IP`。经反向代理时全体客户端共享代理 peer 桶，
-无 socket 的请求共享 unknown 桶；没有 authenticated-forwarding 时不得称为每玩家 IP 限流。
-独立总预算仍启用。若生产需要细分代理后来源，须先明确并验证受信代理身份与转发头覆盖规则；
-不能仅解析任意转发头。聚合桶容量须结合真实代理流量验收。
+公开遥测 `/api/monitoring/telemetry` 与 Sentry 隧道 `/api/monitoring/sentry` 的客户端身份，
+由 `Server/src/transport/ClientIp.ts` 统一解析：优先采信 ESA 托管转换在回源请求上写入的
+真实客户端 IP 标头（控制台 `RealClientIpHeaderName`，当前 `X-Real-IP`，`ali-real-client-ip` 兜底），
+且值必须能解析成 IP 字面量；否则退回 Bun `server.requestIP(request)` 的 peer。
+`X-Forwarded-For` 可被客户端任意伪造，任何场景都不参与分桶。限流是三层桶：
+单客户端 60/min、回源 peer 600/min（封顶伪造标头自造新桶）、全局 1000/min；
+无 socket 的请求共享 unknown 桶。**标头名是 ESA 控制台与代码的双侧契约**，
+任一侧改名必须同批发布，否则会静默退回 peer 桶、全体客户端重新挤回同一个桶。
+ESA 节点地址并非安全边界：源站端口若可被直连，转发头仍可伪造，因此 peer 桶与全局桶必须保留。
 
 ## 请求链路与同源化边界
 
