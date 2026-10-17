@@ -66,6 +66,8 @@ export const describeError = (error: unknown): Record<string, unknown> => {
 };
 
 let isInitialized = false;
+/** 当前遥测环境；未初始化时为空，供 check-in 判定是否属于生产实例。 */
+let activeEnvironment: string | null = null;
 
 export const SERVER_HEARTBEAT_MONITOR_SLUG = "bakagame-server-heartbeat";
 
@@ -75,10 +77,18 @@ export const SERVER_HEARTBEAT_MONITOR_SLUG = "bakagame-server-heartbeat";
 // 1 分钟间隔可为每个窗口预留 2 次重试余量，覆盖上游抖动与调度延迟。
 export const SERVER_HEARTBEAT_INTERVAL_MS = 60_000;
 
+// Monitor 的排程与判定参数与上报间隔同居本模块，随 check-in 一并 upsert：
+// Sentry 侧配置被改动或监控被删后由下一次上报纠正，不再依赖手工维护。
+export const SERVER_HEARTBEAT_MONITOR_SCHEDULE = "*/5 * * * *";
+export const SERVER_HEARTBEAT_MONITOR_TIMEZONE = "UTC";
+export const SERVER_HEARTBEAT_MONITOR_CHECKIN_MARGIN_MIN = 2;
+export const SERVER_HEARTBEAT_MONITOR_MAX_RUNTIME_MIN = 1;
+
 export const isServerSentryEnabled = (): boolean => isInitialized;
 
 export const _resetServerSentryForTest = (): void => {
   isInitialized = false;
+  activeEnvironment = null;
 };
 
 const resolveSampleRate = (value: string | undefined, fallback: number): number => {
@@ -94,9 +104,11 @@ export const initServerSentry = (env: AppEnv): void => {
   const release = resolveServerRelease();
   if (!release) console.warn("[Sentry] 发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog");
 
+  activeEnvironment = env.otelDeploymentEnvironment ?? "development";
+
   Sentry.init({
     dsn: env.sentryDsn,
-    environment: env.otelDeploymentEnvironment ?? "development",
+    environment: activeEnvironment,
     // SDK 对 undefined 会自动读取 SENTRY_RELEASE/CI 字符串；空值显式禁止伪造回退。
     release: release ?? "",
     tracesSampleRate: resolveSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
@@ -196,12 +208,28 @@ export const countServerMetric = (
 };
 
 /** 向 Sentry Cron Monitor 报告服务仍在运行。 */
+/**
+ * 上报服务端心跳（Cron Monitor）。
+ *
+ * 只由生产实例上报：Sentry 的 Cron Monitor 按环境分别判定，本地 dev 实例一旦在线
+ * 就会顶替生产心跳，把生产停机掩盖成「已按时」；dev 停跑后又按其环境持续误报
+ * missed check-in。两者方向相反但同样致命，因此这里只放行 production。
+ */
 export const captureServerCheckIn = (): void => {
   if (!isInitialized) return;
-  Sentry.captureCheckIn({
-    monitorSlug: SERVER_HEARTBEAT_MONITOR_SLUG,
-    status: "ok",
-  });
+  if (activeEnvironment !== "production") return;
+  Sentry.captureCheckIn(
+    {
+      monitorSlug: SERVER_HEARTBEAT_MONITOR_SLUG,
+      status: "ok",
+    },
+    {
+      schedule: { type: "crontab", value: SERVER_HEARTBEAT_MONITOR_SCHEDULE },
+      timezone: SERVER_HEARTBEAT_MONITOR_TIMEZONE,
+      checkinMargin: SERVER_HEARTBEAT_MONITOR_CHECKIN_MARGIN_MIN,
+      maxRuntime: SERVER_HEARTBEAT_MONITOR_MAX_RUNTIME_MIN,
+    },
+  );
 };
 
 export const captureServerOperation = ({

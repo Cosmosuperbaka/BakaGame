@@ -98,18 +98,38 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
   });
 
-  it("已初始化时发送服务心跳检查", () => {
+  it("生产环境已初始化时发送服务心跳检查", () => {
     const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
-    initServerSentry(createMockEnv());
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "production" }));
     initSpy.mockRestore();
     const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
 
     captureServerCheckIn();
 
-    expect(checkInSpy).toHaveBeenCalledWith({
-      monitorSlug: "bakagame-server-heartbeat",
-      status: "ok",
-    });
+    expect(checkInSpy).toHaveBeenCalledWith(
+      {
+        monitorSlug: "bakagame-server-heartbeat",
+        status: "ok",
+      },
+      expect.objectContaining({
+        schedule: { type: "crontab", value: "*/5 * * * *" },
+        checkinMargin: 2,
+        maxRuntime: 1,
+        timezone: "UTC",
+      }),
+    );
+    checkInSpy.mockRestore();
+  });
+
+  it("非生产环境不上报心跳：本地实例既不能顶替生产，也不该凭空制造误报", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "development" }));
+    initSpy.mockRestore();
+    const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
+
+    captureServerCheckIn();
+
+    expect(checkInSpy).not.toHaveBeenCalled();
     checkInSpy.mockRestore();
   });
 
