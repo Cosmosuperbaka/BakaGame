@@ -94,6 +94,10 @@ export const initClientSentry = (
       // 浏览器翻译插件等第三方扩展会直接改写 DOM，破坏 React 的父子节点不变量。
       // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。
       /Failed to execute 'removeChild' on 'Node'/i,
+      // Chromium 在标签页隐藏、导航打断或新旧过渡交叠时会中止 View Transition。
+      // 导航本身照常完成，属浏览器级良性中断，不是页面缺陷。
+      "Transition was aborted because of invalid state",
+      /Transition was skipped/i,
     ],
     beforeSend: (event) => (isModuleScriptParseFailure(event) ? null : event),
   });

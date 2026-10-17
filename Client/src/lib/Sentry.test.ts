@@ -74,6 +74,8 @@ describe("Client Sentry 客户端接入与异常转发", () => {
         "NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
       ),
     ).toBe(true);
+    expect(isFiltered("Error: InvalidStateError: Transition was aborted because of invalid state")).toBe(true);
+    expect(isFiltered("AbortError: Transition was skipped")).toBe(true);
   });
 
   it("模块脚本解析失败在事件组装阶段被丢弃，业务异常不受影响", () => {
