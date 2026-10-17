@@ -68,9 +68,9 @@ function GameDetail({ record }: { record: GameRecordDetail }) {
             {record.timeline.map((event, index) => {
               const { at, type, round, ...rest } = event;
               return (
-                <li key={index} className="grid grid-cols-[3rem_3.5rem_7rem_minmax(0,1fr)] gap-2">
+                <li key={index} className="grid grid-cols-[3rem_4.5rem_7rem_minmax(0,1fr)] gap-2">
                   <span className="tabular-nums text-muted-foreground">{offsetOf(at, record.startedAt)}</span>
-                  <span className="tabular-nums text-muted-foreground">第 {String(round)} 回合</span>
+                  <span className="tabular-nums text-muted-foreground">{typeof round === "number" ? `第 ${round} 回合` : "—"}</span>
                   <span className="truncate">{type}</span>
                   <span className="break-all text-muted-foreground">{Object.keys(rest).length ? JSON.stringify(rest) : ""}</span>
                 </li>
