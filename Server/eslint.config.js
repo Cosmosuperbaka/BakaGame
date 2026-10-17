@@ -54,7 +54,7 @@ export default defineConfig([
   {
     // 测试夹具大量是同步函数，历史写法里普遍加了 await；在生产代码里该规则才是缺陷信号。
     // 测试里的 any 多来自 mock 与部分实现的桩，同样不按生产代码的标准要求。
-    files: ["test/**/*.ts"],
+    files: ["test/**/*.ts", "scripts/**/*.test.ts"],
     rules: {
       "@typescript-eslint/await-thenable": "off",
       "@typescript-eslint/no-explicit-any": "off",

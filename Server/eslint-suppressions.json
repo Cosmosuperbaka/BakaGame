@@ -5,9 +5,6 @@
     }
   },
   "scripts/Delivery.test.ts": {
-    "@typescript-eslint/await-thenable": {
-      "count": 7
-    },
     "@typescript-eslint/no-floating-promises": {
       "count": 3
     }
