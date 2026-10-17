@@ -11,6 +11,7 @@
 //   其余     组件故事，亮/暗 × 桌面宽度，截取故事根元素
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
@@ -59,9 +60,16 @@ function killTree(child) {
 
 async function startStorybook() {
   const baseUrl = `http://127.0.0.1:${port}`;
+  // 通过 Node 模块解析定位 dispatcher：Client 本身没有 node_modules/storybook（pnpm 提升到仓库根），
+  // 写死 Client/node_modules 的路径在提升布局下必然失效。
+  const requireFromClient = createRequire(path.join(clientDir, "package.json"));
+  const dispatcher = path.join(
+    path.dirname(requireFromClient.resolve("storybook/package.json")),
+    "dist/bin/dispatcher.js",
+  );
   const child = spawn(
     process.execPath,
-    [path.join(clientDir, "node_modules/storybook/dist/bin/dispatcher.js"), "dev", "--ci", "--quiet",
+    [dispatcher, "dev", "--ci", "--quiet",
       "--no-version-updates", "--disable-telemetry", "--exact-port", "--host", "127.0.0.1", "--port", String(port)],
     { cwd: clientDir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
   );
