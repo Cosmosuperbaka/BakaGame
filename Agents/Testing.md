@@ -18,7 +18,7 @@
 | 改动类型 | 完成所需的验证 |
 |---|---|
 | 纯文档或注释 | 检查 diff、链接、引用路径、命令与规则一致性；运行 `node scripts/CheckDocs.mjs`；不运行无关业务套件 |
-| 局部服务端行为 | 相关 `bun test` 文件 + `bun run check`；新增行为或缺陷补有判别力的回归 |
+| 局部服务端行为 | 相关 `bun test` 文件 + `bun run check` + `bun run lint`；新增行为或缺陷补有判别力的回归 |
 | 局部客户端逻辑 | 相关 Vitest 文件 + `npm run lint` + `npm run build` |
 | 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测；受影响组件的故事同步更新，用 `storybook:shots --filter` 做改前改后截图对照 |
 | Storybook 故事、假数据或截图工具 | `npx tsc -p tsconfig.app.json --noEmit`、lint、`npm run build-storybook`，相关故事 `storybook:shots` 零失败、零控制台错误 |
@@ -31,6 +31,27 @@
 | CI、发布准备或明确要求完整回归 | 对应包 `verify`，发布另查 Deployment；服务启动/运维端点改动补 `test:production-smoke` |
 
 本地单测和隔离冒烟可直接运行、修复本次引入的失败并重跑。通过后不重复扩大检查；新改动、失败或未消除风险才增加验证。全量 CI 门禁继续执行，不要求每个局部编辑都先跑完整 CI。
+
+### Lint 基线与复杂度门禁
+
+两端使用同一套规则面：`@eslint/js` recommended + `typescript-eslint` recommended + `eslint-plugin-sonarjs`
+（`sonarjs/cognitive-complexity`，阈值 20）+ 七条缺陷类 type-aware 规则
+（`no-floating-promises`、`no-misused-promises`、`await-thenable`、`no-base-to-string`、
+`only-throw-error`、`prefer-promise-reject-errors`、`unbound-method`）。
+
+- **Client** 的类型感知只对 `src/**` 开启，`parserOptions.project` 必须显式指向 `./tsconfig.app.json`：
+  根 `tsconfig.json` 是 `files: []` + references，`projectService` 会撞上它并报 file not found。
+  e2e、`.storybook` 与构建配置不在该工程内，只走语法级检查。
+- **Server** 的类型感知用 `projectService`，覆盖 `src` / `scripts` / `test`；`integration` 与
+  `drizzle.config.ts` 不在 tsconfig 工程内，只走语法级检查。`test/**` 额外关闭
+  `await-thenable` 与 `no-explicit-any`：夹具多为同步函数、桩多为 `any`，按生产标准要求只会产生噪声。
+- **存量用基线文件记录，不用内联注释**：`Client/eslint-suppressions.json` 与
+  `Server/eslint-suppressions.json` 是 ESLint bulk suppressions 的按「文件 + 规则 + 计数」账本。
+  新增违规直接失败；重构导致计数下降后会报 unused suppressions，此时跑 `pnpm lint:prune` 递减基线并一并提交。
+- 只有**刻意的设计**才允许就地 `eslint-disable-next-line`，且必须写明理由（示例见
+  `Client/src/components/songuessr/layout/VolumeControl.tsx` 的静音收束）。
+- 改规则、改阈值或改 lint 覆盖范围时，必须同批重跑 `pnpm lint`、更新两端基线文件，并确认
+  `pnpm knip` 仍然零问题（新增 lint 依赖必须被 `eslint.config.js` 直接 import）。
 
 普通测试使用隔离夹具与 Mock 上游；真实网易云测试单独调用，会使用本地凭据。按已有授权和 [NeteaseMusicApi](NeteaseMusicApi.md#测试要求) 执行，不把它当普通单测。环境缺失时记录未验证范围，不用改低阈值或伪造通过来交付。
 
@@ -181,13 +202,13 @@ pnpm install --frozen-lockfile
 pnpm knip
 
 # Server：pnpm 只转发，运行时仍是 Bun
-pnpm --filter server verify          # = server check + test:coverage
+pnpm --filter server verify          # = lint + check + test:coverage
 
 # Client：Node 工具链
 pnpm --filter client verify          # = lint + test:coverage + build + test:e2e
 ```
 
-服务端验证失败时先修复类型或单元测试，再运行客户端；客户端 `verify` 依次执行 ESLint、Vitest 覆盖率、build、`test:e2e`（内部再次 build，再运行 Playwright 与歌词回归）。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。
+服务端验证失败时先修复类型或单元测试，再运行客户端；两端 `verify` 都先跑 ESLint（Server 为 lint → check → 覆盖率，Client 为 lint → 覆盖率 → build → `test:e2e`），再进入各自的构建与回归。这些是现有脚本行为；局部验证使用上表命令，不额外重复执行完整链路。
 
 网易云音乐 API 的缓存、频率限制、Cookie 隔离、真实请求测试和接口文档见
 [`Agents/NeteaseMusicApi.md`](NeteaseMusicApi.md)。

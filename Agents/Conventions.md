@@ -76,7 +76,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 
 - **Server 一律由 Bun 执行**：`Server/package.json` 的每个脚本都以 `bun` 开头，`pnpm --filter server <script>` 只是把这条命令转发出去；根级脚本不得把 Server 的目标换成 node/tsx。
 - **Client 一律由 Node 执行**：Vite/Vitest/Playwright 及 `Client/scripts/*.mjs` 都走 Node，根级脚本不得改用 Bun 跑。
-- 根目录的 `dev` / `build` / `check` / `test` / `lint` / `coverage` / `e2e` / `verify` 是**编排壳**，内部一律 `pnpm --filter <client|server> <script>`，逐个转发到上面两条链，不合并签名、不代跑。
+- 根目录的 `dev` / `build` / `check` / `test` / `lint` / `coverage` / `e2e` / `verify` 是**编排壳**，内部一律 `pnpm --filter <client|server> <script>`，逐个转发到上面两条链，不合并签名、不代跑。例外：`lint` 用 `pnpm -r lint` 递归两端（两端规则面一致，见 [Testing](Testing.md#lint-基线与复杂度门禁)），`lint:prune` 同源。
 
 ### 依赖安装与锁文件权威关系
 
@@ -124,6 +124,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `jsdom` | 30.1.1 | engines 为 `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`，卡得很紧。CI 的 `actions/setup-node@v4` 用 `node-version: 22` 取最新 22.x 恰好满足；`pnpm install` 在 engines 不满足时硬失败，因此 CI 的 Node 不得降到 22.22.2 以下（根 `package.json` 的 `engines.node` 同口径声明）。 |
 | `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
 | `@neteasecloudmusicapienhanced/api` | ≥ 4.41.0 | 设备名上报依赖该包的原生 `deviceinfo_center_upload` 模块，`4.40.x` 及更早没有它。低于此版本只能退回「直接导入包内 `util/request`/`util/option` 自拼 EAPI」，违反 [NeteaseMusicApi](NeteaseMusicApi.md) 的「只用公开接口」规则，因此下限不可回退。 |
+| `eslint-plugin-sonarjs` | 两端均 `4.2.2` | 提供 `sonarjs/cognitive-complexity`（阈值 20）。`4.2.2` 的 peer 为 `eslint: ^8 \|\| ^9 \|\| ^10`，是当前能覆盖 ESLint 10.11 的版本；它同时被 Ultracite 8 使用，规则实现与阈值口径一致。升级须先确认 peer 覆盖到项目 ESLint 版本，并重跑两端 `pnpm lint`（基线见 [Testing](Testing.md#lint-基线与复杂度门禁)）。 |
 
 补充约束：
 
@@ -158,13 +159,13 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | 构建 | `pnpm build`（先 server check 再 client build） | `pnpm --filter client build` |
 | 测试 | `pnpm test` | `pnpm --filter server test` / `pnpm --filter client test` |
 | 覆盖率 | `pnpm coverage` | 各包 `test:coverage` |
-| Lint | `pnpm lint` | `pnpm --filter client lint` |
+| Lint | `pnpm lint` | `pnpm --filter client lint` / `pnpm --filter server lint` |
 
 **也可以直接进入单包目录执行**（与根级转发等价）：
 
 | 包 | 开发 | 生产运行或预览 | 类型与构建 |
 |---|---|---|---|
-| `Server/` | `bun run dev` | `bun run start` | `bun run check` |
+| `Server/` | `bun run dev` | `bun run start` | `bun run check`、`bun run lint` |
 | `Client/` | `npm run dev` | `npm run preview` | `npm run build`、`npm run lint` |
 | `Client/` 组件工作台 | `npm run storybook` | `npm run build-storybook` | `npm run storybook:shots`（用法见 [Testing](Testing.md#组件截图storybook)） |
 
