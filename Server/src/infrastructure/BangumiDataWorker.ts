@@ -169,7 +169,7 @@ self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => 
       stopTagDiff = undefined;
       stopBackup?.();
       stopBackup = undefined;
-      await Promise.allSettled([cee?.close(), song?.close()]);
+      await Promise.allSettled([cee, song].map((database) => Promise.resolve(database?.close())));
       images?.close();
       images = undefined;
       song = undefined;

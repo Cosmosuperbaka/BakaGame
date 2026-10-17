@@ -91,7 +91,7 @@ describe("BangumiWorkerProvider", () => {
     const spy = spyOn(globalThis, "setTimeout");
     await withWorker(SilentWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      client.init({ method: "init", song: { dbPath: "unused.sqlite" }, cee: { dbPath: "unused.sqlite" } });
+      void client.init({ method: "init", song: { dbPath: "unused.sqlite" }, cee: { dbPath: "unused.sqlite" } });
       const delays = spy.mock.calls.map((call) => Number(call[1]));
       // 索引重建分钟级：init 必须是长窗口，否则 ready 被拒后所有查询永久失败。
       // 窗口取 CEE 那侧更长的口径（1 小时），猜歌与 CEE 现在共用一次 init。

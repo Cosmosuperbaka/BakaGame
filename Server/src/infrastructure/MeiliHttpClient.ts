@@ -63,6 +63,7 @@ export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promis
         aborted = true;
         // SDK 依据 Object.is(error, timeoutSymbol) 判别超时，signal.reason 必须
         // 原样抛出；先结算再销毁，销毁引发的 error 由 aborted 守卫屏蔽。
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- reason 可能是 SDK 写入的超时 Symbol，包成 Error 会丢掉判别依据
         reject(signal.reason ?? new Error("The operation was aborted"));
         request.destroy();
       };

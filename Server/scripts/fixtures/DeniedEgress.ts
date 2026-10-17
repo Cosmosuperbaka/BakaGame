@@ -23,7 +23,7 @@ const checks = [
   () => Bun.connect({ hostname: "fixture.invalid", port: 443, socket: {} }),
 ];
 for (const check of checks) {
-  try { await check(); throw new Error("出口未封闭"); }
+  try { await Promise.resolve(check()); throw new Error("出口未封闭"); }
   catch (error) {
     if (!(error instanceof Error) || error.message !== "隔离测试禁止主动网络出口") throw error;
   }

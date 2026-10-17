@@ -4,21 +4,11 @@
       "count": 1
     }
   },
-  "scripts/Delivery.test.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 3
-    }
-  },
   "scripts/SongRandomnessProbe.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
     },
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "scripts/fixtures/DeniedEgress.ts": {
-    "@typescript-eslint/await-thenable": {
       "count": 1
     }
   },
@@ -69,9 +59,6 @@
     }
   },
   "src/infrastructure/BangumiDataWorker.ts": {
-    "@typescript-eslint/await-thenable": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -88,11 +75,6 @@
   },
   "src/infrastructure/CEEOriginalProtocol.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/MeiliHttpClient.ts": {
-    "@typescript-eslint/prefer-promise-reject-errors": {
       "count": 1
     }
   },
@@ -122,11 +104,6 @@
       "count": 2
     }
   },
-  "src/infrastructure/TagDiffSync.ts": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
   "src/scripts/VerifyDualSearch.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -145,19 +122,9 @@
       "count": 1
     }
   },
-  "test/BangumiWorkerProvider.test.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    }
-  },
   "test/CEEOriginalPreparation.test.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 1
-    }
-  },
-  "test/SonGuessrService.test.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 2
     }
   },
   "test/WSLogPrivacy.test.ts": {

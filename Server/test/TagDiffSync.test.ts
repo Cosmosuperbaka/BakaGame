@@ -75,7 +75,10 @@ test("定时同步：首跑延后一分钟，之后每 6 小时一轮，stop 后
       });
       // 首跑延后：刚起来时索引在重建，别抢窗口。
       expect(Number(spy.mock.calls.at(-1)![1])).toBe(60_000);
-      await (spy.mock.calls.at(-1)![0] as () => Promise<void>)();
+      const ticksBeforeRun = spy.mock.calls.length;
+      (spy.mock.calls.at(-1)![0] as () => void)();
+      // 计时回调是同步外壳，本轮同步跑完才排下一次；等那条 6 小时排程出现再断言。
+      for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1) await Bun.sleep(1);
       expect(applied).toBe(1);
       expect(info[0]).toContain("角色标签增量已应用");
       expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);

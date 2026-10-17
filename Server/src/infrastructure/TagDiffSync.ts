@@ -68,7 +68,7 @@ export function scheduleTagDiffSync(options: {
   };
   const schedule = (delay: number): void => {
     if (stopped) return;
-    timer = setTimeout(async () => { await run(); schedule(SYNC_INTERVAL_MS); }, delay);
+    timer = setTimeout(() => { void run().then(() => schedule(SYNC_INTERVAL_MS)); }, delay);
   };
   schedule(FIRST_DELAY_MS);
   return () => { stopped = true; if (timer) clearTimeout(timer); };

@@ -4898,7 +4898,7 @@ describe("上线前 P0 修复回归", () => {
     });
 
     // 锚定玩家随即离场：本回合只剩「迟到玩家」一个有效猜题人，结算条件不再被它拖住。
-    service.unregisterConnection(anchor.record.id);
+    await service.unregisterConnection(anchor.record.id);
 
     // 自动选曲 / 音频加载再耗时 40s 后才真正就绪
     mockTime += 40_000;
@@ -4963,7 +4963,7 @@ describe("上线前 P0 修复回归", () => {
     });
 
     // 模拟重连玩家临时掉线
-    service.unregisterConnection(guest.record.id);
+    await service.unregisterConnection(guest.record.id);
 
     // 房主开局（回合安装时该玩家离线）
     await execute(service, host, {

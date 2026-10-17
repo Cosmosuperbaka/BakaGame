@@ -87,7 +87,7 @@ test("子进程退出时旧健康实例不能造成假绿", async () => {
   const unrelated = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => Response.json({ status: "ok" }) });
   const server = await startIsolatedServer(port, path.join(import.meta.dir, "fixtures/ExitServer.ts"));
   try { await expect(server.ready()).rejects.toThrow(/自有服务|并非自有/); }
-  finally { await server.stop(); unrelated.stop(true); }
+  finally { await server.stop(); await unrelated.stop(true); }
 });
 
 test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () => {
@@ -142,7 +142,7 @@ test("维护通知只向合成回环发送 Bearer，缺 token/拒绝均失败且
     await notifyDeployment("fixture-secret", url);
     await expect(notifyDeployment("wrong-fixture", url)).rejects.toThrow("维护通知被拒绝 (401)");
     expect(received).toEqual(["Bearer fixture-secret", "Bearer wrong-fixture"]);
-  } finally { fixture.stop(true); }
+  } finally { await fixture.stop(true); }
 });
 
 for (const valid of [true, false]) test(`三协议部署 ACK ${valid ? "成功" : "拒绝"}夹具`, async () => {
@@ -160,7 +160,7 @@ for (const valid of [true, false]) test(`三协议部署 ACK ${valid ? "成功" 
     const probe = probeDeployment(`http://127.0.0.1:${fixture.port}`, 100);
     if (valid) await probe;
     else await expect(probe).rejects.toThrow("订阅 ACK 无效");
-  } finally { fixture.stop(true); }
+  } finally { await fixture.stop(true); }
 });
 
 test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", async () => {
