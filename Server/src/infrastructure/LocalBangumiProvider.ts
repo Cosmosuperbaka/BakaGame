@@ -8,6 +8,7 @@ import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index"
 import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 export interface BangumiDataProvider {
   initialize?: () => Promise<void>;
@@ -217,7 +218,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (!this.apiBase) return undefined;
     try {
       const path = entity === "subject" ? "subjects" : "characters";
-      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT }, signal: AbortSignal.timeout(5000) });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json() as { images?: Record<string, unknown> };
       const images = body.images ?? {};

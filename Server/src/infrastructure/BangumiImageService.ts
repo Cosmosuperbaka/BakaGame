@@ -1,4 +1,5 @@
 import { BangumiImageStore, type StoredImage } from "./BangumiImageStore";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import { SlidingWindowRateLimiter } from "./RateLimiter";
 
 /**
@@ -77,7 +78,7 @@ export class BangumiImageService {
   private async fetchUpstream(path: string): Promise<StoredImage | undefined> {
     try {
       const response = await this.fetcher(`${this.sourceBase}${path}`, {
-        headers: { Accept: "image/avif", "User-Agent": "BakaGame/1.0" },
+        headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
         signal: AbortSignal.timeout(8_000),
       });
       if (!response.ok) return undefined;

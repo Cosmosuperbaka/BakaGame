@@ -7,6 +7,7 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { AppError } from "../domain/Errors";
 import { rewriteBangumiImageUrl } from "./BangumiProvider";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import type { CEEDirectoryResult, CEEImageSize } from "../shared/CEE";
 import type { CEEDataOptions } from "./CEEData";
 
@@ -244,7 +245,7 @@ export class CEEEnrichment {
       if (this.cooldownUntil > this.now()) throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
       let response: Response;
       try {
-        response = await this.fetcher(`${this.apiBase}${path}`, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" }, signal: AbortSignal.timeout(5000) });
+        response = await this.fetcher(`${this.apiBase}${path}`, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT }, signal: AbortSignal.timeout(5000) });
       } catch {
         throw new AppError("CEE_UPSTREAM_UNAVAILABLE", "暂时无法连接 Bangumi 资料服务");
       }

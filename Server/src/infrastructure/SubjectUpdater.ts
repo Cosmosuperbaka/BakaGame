@@ -3,6 +3,7 @@ import { bangumiImageCachePath } from "./BangumiImagePaths";
 import { hasAvifMagic } from "./BangumiImageService";
 import type { BangumiImageStore } from "./BangumiImageStore";
 import type { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 /**
  * 作品在线更新器：让数据集自己保持新鲜，不再依赖「下次构建」。
@@ -330,7 +331,7 @@ export class SubjectUpdater {
     let ok = false;
     try {
       const response = await this.fetcher(`${this.base}/v0/subjects/${subjectId}`, {
-        headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" },
+        headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
         signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -394,7 +395,7 @@ export class SubjectUpdater {
     await this.waitForSlot();
     try {
       const response = await this.fetcher(`${this.imageSource}${path}`, {
-        headers: { Accept: "image/avif", "User-Agent": "BakaGame/1.0" },
+        headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
         signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       });
       if (!response.ok) return;

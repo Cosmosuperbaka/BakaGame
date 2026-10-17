@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import type { CEECharacterRepository } from "./CEECharacterRepository";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 /** CCB-TagsCI 的增量产物（见其 `user_tag_processor._write_diff`）。 */
 export interface TagDiffPayload {
@@ -114,7 +115,7 @@ export async function syncTagDiff(options: {
   fetcher?: typeof fetch;
 }): Promise<TagDiffResult> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(options.diffUrl, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" } });
+  const response = await fetcher(options.diffUrl, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT } });
   if (!response.ok) throw new AppError("BANGUMI_DATA_UNAVAILABLE", `拉取标签增量失败：HTTP ${response.status}`);
   const payload = await response.json() as TagDiffPayload;
   if (!payload?.targetSha256) throw new AppError("BANGUMI_DATA_INVALID", "标签增量缺少 targetSha256");

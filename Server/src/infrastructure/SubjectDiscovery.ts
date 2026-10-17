@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 /**
  * 新条目发现：补上「两份 dump 之间新出的作品」。
@@ -104,7 +105,7 @@ async function searchSince(fetcher: typeof fetch, base: string, since: string, l
   for (let offset = 0; offset < limit; offset += 100) {
     const response = await fetcher(`${base}/v0/search/subjects`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "BakaGame/1.0" },
+      headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
       body: JSON.stringify({ keyword: "", filter: { air_date: [`>=${since}`], type: ALL_TYPES }, sort: "heat", limit: 100, offset }),
     });
     if (!response.ok) break;
@@ -202,7 +203,7 @@ async function importSubject(
 
 async function getJson<T>(fetcher: typeof fetch, url: string): Promise<T | null> {
   try {
-    const response = await fetcher(url, { headers: { Accept: "application/json", "User-Agent": "BakaGame/1.0" } });
+    const response = await fetcher(url, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT } });
     if (!response.ok) return null;
     return await response.json() as T;
   } catch {
