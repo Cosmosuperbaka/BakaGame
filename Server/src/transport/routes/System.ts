@@ -6,28 +6,41 @@ import type { SonGuessrService } from "../../application/SonGuessrService";
 import type { CEEService } from "../../application/CEEService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
+import { resolveClientIp } from "../ClientIp";
 
+/**
+ * 打点上报的三层桶，口径与 Sentry 隧道一致：单客户端 / 回源 peer / 全局。
+ * peer 桶只封顶伪造标头自造新桶的滥用路径，额度是单客户端的十倍。
+ */
 export class TelemetryRateLimiter {
   private readonly ipLimiter: SlidingWindowRateLimiter;
+  private readonly peerLimiter: SlidingWindowRateLimiter;
   private readonly globalLimiter: SlidingWindowRateLimiter;
 
   constructor(options: {
     ipMaxRequests?: number;
+    peerMaxRequests?: number;
     globalMaxRequests?: number;
     windowMs?: number;
   } = {}) {
-    this.ipLimiter = new SlidingWindowRateLimiter({
-      windowMs: options.windowMs ?? 60_000,
-      maxRequests: options.ipMaxRequests ?? 60,
+    const windowMs = options.windowMs ?? 60_000;
+    const ipMaxRequests = options.ipMaxRequests ?? 60;
+    this.ipLimiter = new SlidingWindowRateLimiter({ windowMs, maxRequests: ipMaxRequests });
+    this.peerLimiter = new SlidingWindowRateLimiter({
+      windowMs,
+      maxRequests: options.peerMaxRequests ?? ipMaxRequests * 10,
     });
     this.globalLimiter = new SlidingWindowRateLimiter({
-      windowMs: options.windowMs ?? 60_000,
+      windowMs,
       maxRequests: options.globalMaxRequests ?? 1000,
     });
   }
 
-  public allow(ip: string, now = Date.now()): boolean {
+  public allow(ip: string, peerIp = ip, now = Date.now()): boolean {
     if (!this.globalLimiter.allow("__global__", now)) {
+      return false;
+    }
+    if (!this.peerLimiter.allow(peerIp, now)) {
       return false;
     }
     return this.ipLimiter.allow(ip, now);
@@ -35,6 +48,7 @@ export class TelemetryRateLimiter {
 
   public reset(): void {
     this.ipLimiter.reset();
+    this.peerLimiter.reset();
     this.globalLimiter.reset();
   }
 }
@@ -81,10 +95,12 @@ export const systemRoutes = ({
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers, set, request, server }) => {
-        // 真实 peer 是来源预算的唯一身份；自报 XFF/X-Real-IP 只可作非授权展示。
-        const clientIp = server?.requestIP(request)?.address ?? "unknown";
+        // 客户端身份取 ESA 托管转换写入的真实 IP 标头；缺失或非 IP 字面量时退回 peer，
+        // peer 桶单独封顶，避免标头被伪造成无限个新桶。
+        const peerIp = server?.requestIP(request)?.address ?? "unknown";
+        const clientIp = resolveClientIp(request.headers, peerIp);
 
-        if (!limiter.allow(clientIp)) {
+        if (!limiter.allow(clientIp, peerIp)) {
           set.status = 429;
           return { error: "Too Many Requests" };
         }

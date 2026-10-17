@@ -1,23 +1,41 @@
 import { Elysia } from "elysia";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 import type { EventLogger } from "../../infrastructure/EventLogger";
+import { resolveClientIp } from "../ClientIp";
 
 export const MAX_ENVELOPE_BYTES = 256 * 1024; // 256KB
 
 const SENTRY_INGEST_REGEX =
   /^[a-z0-9-]+\.(ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io)$/i;
 
+/**
+ * 隧道限流的三层桶：单客户端、回源 peer、全局。
+ *
+ * 单客户端桶按真实客户端 IP 分（ESA 托管转换写入的标头），否则同一 ESA 节点后面
+ * 的所有玩家会共享一个桶，按用户计的上报预算就退化成按节点计。
+ * peer 桶只封顶「伪造标头自造新桶」这一条滥用路径，因此给到单客户端预算的十倍：
+ * 一个节点服务的用户量远大于单个用户的请求量，但也不该无限放大。
+ */
 export class SentryTunnelRateLimiter {
   private readonly ip: SlidingWindowRateLimiter;
+  private readonly peer: SlidingWindowRateLimiter;
   private readonly total: SlidingWindowRateLimiter;
-  constructor(options: { windowMs?: number; maxRequests?: number; globalMaxRequests?: number } = {}) {
-    this.ip = new SlidingWindowRateLimiter({ windowMs: options.windowMs ?? 60_000, maxRequests: options.maxRequests ?? 60 });
-    this.total = new SlidingWindowRateLimiter({ windowMs: options.windowMs ?? 60_000, maxRequests: options.globalMaxRequests ?? 1000 });
+  constructor(options: {
+    windowMs?: number;
+    maxRequests?: number;
+    peerMaxRequests?: number;
+    globalMaxRequests?: number;
+  } = {}) {
+    const windowMs = options.windowMs ?? 60_000;
+    const maxRequests = options.maxRequests ?? 60;
+    this.ip = new SlidingWindowRateLimiter({ windowMs, maxRequests });
+    this.peer = new SlidingWindowRateLimiter({ windowMs, maxRequests: options.peerMaxRequests ?? maxRequests * 10 });
+    this.total = new SlidingWindowRateLimiter({ windowMs, maxRequests: options.globalMaxRequests ?? 1000 });
   }
-  allow(key: string, now = Date.now()): boolean {
-    return this.total.allow("global", now) && this.ip.allow(key, now);
+  allow(key: string, peerKey = key, now = Date.now()): boolean {
+    return this.total.allow("global", now) && this.peer.allow(peerKey, now) && this.ip.allow(key, now);
   }
-  reset(): void { this.ip.reset(); this.total.reset(); }
+  reset(): void { this.ip.reset(); this.peer.reset(); this.total.reset(); }
 }
 
 export interface SentryTunnelOptions {
@@ -119,11 +137,12 @@ export const sentryTunnelRoutes = ({
     "/api/monitoring/sentry",
     async ({ request, set, server }) => {
       try {
-        // 只信任框架 transport peer；未经认证的转发头不能建立新的限流身份。
-        // 代理后的请求共享 peer 桶；无 socket 的 app.handle 请求共享 unknown 桶。
-        const clientIp = server?.requestIP(request)?.address ?? "unknown";
+        // 客户端身份取 ESA 托管转换写入的真实 IP 标头（无法被客户端伪造），
+        // 缺失或不是 IP 字面量时退回 transport peer；peer 桶另行封顶，防止标头被伪造成新桶。
+        const peerIp = server?.requestIP(request)?.address ?? "unknown";
+        const clientIp = resolveClientIp(request.headers, peerIp);
 
-        if (!limiter.allow(clientIp)) {
+        if (!limiter.allow(clientIp, peerIp)) {
           set.status = 429;
           return { error: "Too Many Requests" };
         }

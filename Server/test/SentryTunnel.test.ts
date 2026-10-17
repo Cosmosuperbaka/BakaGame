@@ -436,7 +436,7 @@ describe("信封读取边界", () => {
 });
 
 for (const realTransport of [false, true]) {
-  it(`轮换自报来源不能突破同 peer 单来源预算（真实传输${realTransport}）`, async () => {
+  it(`真实客户端 IP 按标头分桶，伪造 X-Forwarded-For 不扩预算（真实传输${realTransport}）`, async () => {
     let upstreamCalls = 0;
     const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
     const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
@@ -447,7 +447,26 @@ for (const realTransport of [false, true]) {
     try {
       for (let i = 0; i < 4; i++) {
         const request = new Request(`${base}/api/monitoring/sentry`, { method: "POST", body: envelope,
-          headers: { "x-forwarded-for": `203.0.113.${i}, 127.0.0.1`, "x-real-ip": `198.51.100.${i}` } });
+          headers: { "x-forwarded-for": `203.0.113.${i}, 127.0.0.1`, "x-real-ip": "198.51.100.7" } });
+        const response = realTransport ? await fetch(request) : await app.handle(request);
+        expect(response.status).toBe(i < 2 ? 200 : 429);
+      }
+      expect(upstreamCalls).toBe(2);
+    } finally { await started?.stop(true); }
+  });
+
+  it(`轮换真实客户端 IP 标头仍受 peer 桶封顶（真实传输${realTransport}）`, async () => {
+    let upstreamCalls = 0;
+    const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
+    const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
+      rateLimiter: new SentryTunnelRateLimiter({ maxRequests: 2, peerMaxRequests: 2, globalMaxRequests: 100 }) });
+    const started = realTransport ? app.listen({ hostname: "127.0.0.1", port: 0 }) : undefined;
+    const base = started ? `http://127.0.0.1:${started.server!.port}` : "http://localhost";
+    const envelope = JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
+    try {
+      for (let i = 0; i < 4; i++) {
+        const request = new Request(`${base}/api/monitoring/sentry`, { method: "POST", body: envelope,
+          headers: { "x-real-ip": `198.51.100.${i}` } });
         const response = realTransport ? await fetch(request) : await app.handle(request);
         expect(response.status).toBe(i < 2 ? 200 : 429);
       }
@@ -455,3 +474,17 @@ for (const realTransport of [false, true]) {
     } finally { await started?.stop(true); }
   });
 }
+
+it("非法真实 IP 标头退回 peer 桶，不给随机字符串发新桶", async () => {
+  let upstreamCalls = 0;
+  const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
+  const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
+    rateLimiter: new SentryTunnelRateLimiter({ maxRequests: 2, globalMaxRequests: 100 }) });
+  const envelope = JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
+  for (let i = 0; i < 3; i++) {
+    const response = await app.handle(new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: envelope,
+      headers: { "x-real-ip": `not-an-ip-${i}` } }));
+    expect(response.status).toBe(i < 2 ? 200 : 429);
+  }
+  expect(upstreamCalls).toBe(2);
+});

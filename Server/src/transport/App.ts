@@ -11,6 +11,7 @@ import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/E
 import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
+import { resolveClientIp } from "./ClientIp";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
@@ -465,7 +466,7 @@ export const createApp = ({
   const characterService = ceeService;
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
-  const requests = new WeakMap<Request, { traceId: string; startedAt: number }>();
+  const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   const app = new Elysia({
     normalize: false,
     websocket: {
@@ -477,9 +478,12 @@ export const createApp = ({
     },
   })
     .onStop(() => { void dispose().catch((error: unknown) => logger.error("服务资源释放失败", describeError(error))); })
-    .onRequest(({ request, set }) => {
+    .onRequest(({ request, set, server }) => {
       const traceId = sanitizeLogText(request.headers.get("x-trace-id") ?? request.headers.get("x-request-id") ?? crypto.randomUUID(), 128);
-      requests.set(request, { traceId, startedAt: performance.now() });
+      // ESA 反代后 socket peer 恒为边缘节点地址：日志里的来源身份必须取真实 IP 标头，
+      // 否则每条 HTTP 操作日志都记成同一个节点地址，按来源排查就失效了。
+      const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
+      requests.set(request, { traceId, startedAt: performance.now(), clientIp });
       set.headers["x-trace-id"] = traceId;
     })
     // ==================== WebSocket 升级的 Origin 白名单（防跨站 WebSocket 劫持） ====================
@@ -518,7 +522,7 @@ export const createApp = ({
       logger.logOperation({
         status: statusCode,
         durationMs: performance.now() - context.startedAt,
-        identifier: request.headers.get("x-forwarded-for") ?? "127.0.0.1",
+        identifier: context.clientIp,
         action: `HTTP ${request.method} ${new URL(request.url).pathname}`,
         traceId: context.traceId,
         level: statusCode >= 500 ? "ERROR" : statusCode >= 400 ? "WARN" : "INFO",
