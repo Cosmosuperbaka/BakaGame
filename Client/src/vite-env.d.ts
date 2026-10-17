@@ -37,3 +37,35 @@ declare module "virtual:sticker-manifest" {
   const manifest: { generatedAt: string; packs: unknown[] };
   export default manifest;
 }
+
+/**
+ * 构建期扫描 Client 安装的依赖闭包生成的开源致谢清单，
+ * 由 vite.config.ts 的 credits-manifest 插件提供。
+ * 只有元数据：许可证原文按包名首字母分桶懒加载，见下面的两个模块。
+ *
+ * 形状与 `src/lib/Credits.ts` 的 `CreditsManifest` 必须一致。
+ */
+declare module "virtual:credits" {
+  const manifest: import("./lib/Credits").CreditsManifest;
+  export default manifest;
+}
+
+/**
+ * 许可证原文的桶加载映射：桶键 → `() => import("virtual:credits-licenses-<桶>")`。
+ * 页面静态 import 这个映射，体积可以忽略；打开某个包的抽屉时才下载它所在的那一桶。
+ *
+ * 形状与 `src/lib/Credits.ts` 的 `CreditLicenseLoaders` 必须一致。
+ */
+declare module "virtual:credits-licenses" {
+  const loaders: import("./lib/Credits").CreditLicenseLoaders;
+  export default loaders;
+}
+
+/**
+ * 单个许可证桶：包名 → 该包附带的许可证原文文件列表。
+ * 形状与 `src/lib/Credits.ts` 的 `CreditLicenseBucket` 必须一致。
+ */
+declare module "virtual:credits-licenses-*" {
+  const bucket: import("./lib/Credits").CreditLicenseBucket;
+  export default bucket;
+}

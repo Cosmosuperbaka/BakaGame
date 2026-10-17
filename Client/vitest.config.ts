@@ -11,6 +11,9 @@ export default defineConfig({
       resolveId(id) {
         if (id === "virtual:commit-history") return "\0virtual:commit-history";
         if (id === "virtual:sticker-manifest") return "\0virtual:sticker-manifest";
+        if (id === "virtual:credits") return "\0virtual:credits";
+        if (id === "virtual:credits-licenses") return "\0virtual:credits-licenses";
+        if (id.startsWith("virtual:credits-licenses-")) return "\0" + id;
         return null;
       },
       load(id) {
@@ -20,6 +23,10 @@ export default defineConfig({
         if (id === "\0virtual:sticker-manifest") {
           return 'export default { generatedAt: "", packs: [] }';
         }
+        // 依赖清单与桶都只给空桩：单测断言页面行为，不依赖本机安装树。
+        if (id === "\0virtual:credits") return 'export default { generatedAt: "", dependencies: [] }';
+        if (id === "\0virtual:credits-licenses") return "export default {}";
+        if (id.startsWith("\0virtual:credits-licenses-")) return "export default {}";
         return null;
       },
     },
