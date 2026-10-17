@@ -76,9 +76,9 @@ it("点读数原地换成输入框，回车提交百分比、越界夹住，Esc 
   expect(screen.queryByRole("textbox", { name: "输入音量百分比" })).not.toBeInTheDocument();
 });
 
-it("读数只给读屏一份真实数值，滚轮字形不进文本", () => {
+it("读数按钮展示真实数值，无多余占位与字符", () => {
   stubMatchMedia(true);
   render(<VolumeControl volume={0.07} onVolumeChange={vi.fn()} />);
   const readout = screen.getByRole("button", { name: "音量 7%，点击输入" });
-  expect(readout).toHaveTextContent(/^7%$/);
+  expect(readout).toHaveTextContent(/^7$/);
 });

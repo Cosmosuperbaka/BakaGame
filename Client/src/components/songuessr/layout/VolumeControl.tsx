@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { FollowNumber } from "@/components/ui/FollowNumber";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
@@ -115,7 +114,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
   return (
     <div
       data-expanded={expanded || undefined}
-      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel pr-2 pl-1 shadow-sm", className)}
+      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel px-1 shadow-sm", className)}
     >
       <motion.button
         type="button"
@@ -155,8 +154,9 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
 }
 
 /**
- * 右端的百分比读数：衬线加粗，与步进器的数值同一种字；三位滚轮定宽，一位数与三位数之间胶囊不伸缩。
- * 读数本身是按钮，点一下原地换成输入框，直接键入 0–100 的百分比：回车或失焦提交，Esc 放弃。
+ * 右端的音量数值与输入框：与左侧静音开关保持对称的圆形大小（h-7 w-7 rounded-full）。
+ * 常态下居中显示自然宽度的数值（不带多余前导占位与 %）；
+ * 点击原地切换为同尺寸同圆角的圆形输入框，居中直接键入 0–100 的数值：回车或失焦提交，Esc 放弃。
  */
 function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; muted: boolean; onCommit: (value: number) => void }) {
   const [editing, setEditing] = useState(false);
@@ -184,27 +184,31 @@ function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; mu
   };
 
   return editing ? (
-    <span className={cn("ml-1 flex w-12 items-baseline justify-end text-sm font-semibold tabular-nums", tone)}>
-      <input
-        ref={input}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        inputMode="numeric"
-        aria-label="输入音量百分比"
-        className="w-full min-w-0 rounded-sm bg-accent/60 px-0.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
-      />
-      %
-    </span>
+    <input
+      ref={input}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+      onBlur={commit}
+      onKeyDown={handleKeyDown}
+      inputMode="numeric"
+      aria-label="输入音量百分比"
+      className={cn(
+        "h-7 w-7 shrink-0 rounded-full bg-accent/80 p-0 text-center text-xs font-semibold tabular-nums leading-7 outline-none ring-1 ring-primary/50 focus:ring-1 focus:ring-primary",
+        tone,
+      )}
+    />
   ) : (
-    <button
+    <motion.button
       type="button"
+      {...iconTappable}
       onClick={() => { setDraft(String(percentage)); setEditing(true); }}
       aria-label={`音量 ${percentage}%，点击输入`}
-      className={cn("ml-1 flex w-12 items-baseline justify-end rounded-sm text-sm font-semibold tabular-nums transition-colors hover:bg-accent/60", tone)}
+      className={cn(
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums transition-colors hover:bg-accent",
+        tone,
+      )}
     >
-      <FollowNumber value={percentage} places={3} />%
-    </button>
+      {percentage}
+    </motion.button>
   );
 }
