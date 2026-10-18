@@ -92,38 +92,77 @@ export class InMemoryClientChannelStore implements ClientChannelStore {
 
 /**
  * 硬失败：完整性已被破坏，或有证据表明检测本身被动过手脚（检测跑不动 = 有人让它在跑不动）。
- * 软失败：可疑但不构成结论（父进程异常、devtools 打开）。
- * `platform_unsupported` 与 DPAPI 不可用都不计分：那是能力不足，不是作弊。
+ * 软失败：可疑但不构成结论（父进程异常、devtools 打开、未知无障碍服务、分身工作资料）。
+ * `mark`：既不是作弊证据也不能当成「检测跑过且干净」，放行但标 `suspect`。
+ * `keyProtection = "software"`（DPAPI 不可用）不在这里，它是环境探测、不进清单。
+ *
+ * 词表必须两边都收：移动端报的 id 在服务端查不到就会撞上面那条失败关闭，
+ * 结果是**每一个开了读屏或分身的正常安卓用户都被拒进反作弊房**。
+ * 移动端不少 id 带 `:<细节>` 后缀（命中的包名、su 的路径），判定只认冒号前的稳定前缀，
+ * 后缀原样留在 reason 里供日志与人工复核。
  */
-const HARD_FAIL_IDS = new Set([
-  "debugger_attached",
-  "debug_port",
-  "debug_object_handle",
-  "debug_query_unavailable",
-  "module_not_allowed",
-  "module_enumeration_failed",
-  "ldr_list_mismatch",
-  "ldr_enumeration_failed",
-]);
-const SOFT_FAIL_IDS = new Set(["parent_process", "devtools"]);
+type SelfCheckWeight = "hard" | "soft" | "mark";
+
+const SELF_CHECK_WEIGHTS: Record<string, SelfCheckWeight> = {
+  // —— 桌面：Desktop/src-tauri/src/selfcheck.rs ——
+  debugger_attached: "hard",
+  debug_port: "hard",
+  debug_object_handle: "hard",
+  debug_query_unavailable: "hard",
+  module_not_allowed: "hard",
+  module_enumeration_failed: "hard",
+  ldr_list_mismatch: "hard",
+  ldr_enumeration_failed: "hard",
+  parent_process: "soft",
+  devtools: "soft",
+  platform_unsupported: "mark",
+  // —— 移动：Mobile/android/app/src/main/java/website/baka/game/channel/SelfCheck.kt ——
+  accessibility_automation: "hard",
+  root_su: "hard",
+  root_test_keys: "hard",
+  root_debuggable: "hard",
+  root_magisk: "hard",
+  root_magisk_mount: "hard",
+  emulator_build: "hard",
+  emulator_qemu: "hard",
+  emulator_no_accelerometer: "hard",
+  clone_source_path: "hard",
+  clone_user_data: "hard",
+  keystore_unavailable: "hard",
+  accessibility_unknown: "soft",
+  accessibility_check_failed: "soft",
+  emulator_no_gyroscope: "soft",
+  abi_x86: "soft",
+  media_projection_active: "soft",
+  media_projection_allowed: "soft",
+  clone_user_id: "soft",
+  clone_data_dir: "soft",
+};
+
+function weightOf(id: string): SelfCheckWeight | undefined {
+  const colon = id.indexOf(":");
+  return SELF_CHECK_WEIGHTS[colon === -1 ? id : id.slice(0, colon)];
+}
 
 export function judgeSelfCheck(report: ClientSelfCheckReport): {
   trusted: boolean;
   integrity: "clean" | "suspect";
   reason?: string;
 } {
-  const hard = report.hardFail.filter((id) => HARD_FAIL_IDS.has(id));
+  const reported = [...report.hardFail, ...report.softFail];
+  const known = reported.filter((id) => weightOf(id) !== undefined);
+  // 按权重判，不按壳把它放进哪一格判：壳把硬失败塞进 softFail 一样是拒。
+  const hard = known.filter((id) => weightOf(id) === "hard");
   if (hard.length > 0) return { trusted: false, integrity: "clean", reason: hard[0] };
   // 未登记的 id 不能当软失败放过：词表新增一项而服务端没跟上时，失败关闭比沉默放行安全。
-  const unknown = [...report.hardFail, ...report.softFail].filter(
-    (id) => !HARD_FAIL_IDS.has(id) && !SOFT_FAIL_IDS.has(id) && id !== "platform_unsupported"
-  );
+  const unknown = reported.filter((id) => weightOf(id) === undefined);
   if (unknown.length > 0) return { trusted: false, integrity: "clean", reason: unknown[0] };
   if (report.attestationLevel === "rejected")
     return { trusted: false, integrity: "clean", reason: "attestation_rejected" };
-  const soft = report.softFail.length;
-  if (soft >= 2) return { trusted: false, integrity: "clean", reason: report.softFail[1] };
-  return { trusted: true, integrity: soft === 1 ? "suspect" : "clean" };
+  const soft = known.filter((id) => weightOf(id) === "soft");
+  if (soft.length >= 2) return { trusted: false, integrity: "clean", reason: soft[1] };
+  const marked = known.some((id) => weightOf(id) === "mark");
+  return { trusted: true, integrity: soft.length === 1 || marked ? "suspect" : "clean" };
 }
 
 /** 版本号比较：`a < b` 为负、相等为 0、`a > b` 为正；缺省段按 0 补齐。 */

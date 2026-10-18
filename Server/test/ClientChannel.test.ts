@@ -76,7 +76,40 @@ describe("客户端通道判定", () => {
   });
   test("词表外的 id 失败关闭，不让服务端漏跟一项检测就变成放行", () => {
     expect(judgeSelfCheck({ ...clean, softFail: ["brand_new_check"] }).trusted).toBe(false);
-    expect(judgeSelfCheck({ ...clean, hardFail: ["platform_unsupported"] }).trusted).toBe(true);
+    expect(judgeSelfCheck({ ...clean, hardFail: ["root_new_probe"] }).trusted).toBe(false);
+  });
+  test("检测跑不动的平台：放行但标可疑，不当成「跑过且干净」", () => {
+    expect(judgeSelfCheck({ ...clean, hardFail: ["platform_unsupported"] })).toEqual({
+      trusted: true,
+      integrity: "suspect",
+    });
+  });
+  test("移动端硬失败认冒号前的前缀：带包名/路径后缀一样拒", () => {
+    for (const id of [
+      "accessibility_automation:org.autojs.autojs/ScriptService",
+      "root_su:/sbin/su",
+      "root_magisk:/data/adb/modules",
+      "emulator_build",
+      "emulator_no_accelerometer",
+      "clone_source_path",
+      "keystore_unavailable",
+    ])
+      expect(judgeSelfCheck({ ...clean, hardFail: [id] }).trusted).toBe(false);
+  });
+  test("读屏用户不该被误伤：未知无障碍服务只是一条软失败", () => {
+    expect(
+      judgeSelfCheck({
+        ...clean,
+        softFail: ["accessibility_unknown:com.vendor.accessibility/.VoiceService"],
+      })
+    ).toEqual({ trusted: true, integrity: "suspect" });
+    // 两条软失败才拒：x86 架构 + 缺陀螺仪的低端真机还在放行范围内，第三条撞线。
+    expect(
+      judgeSelfCheck({ ...clean, softFail: ["accessibility_unknown:a/b", "abi_x86"] }).trusted
+    ).toBe(false);
+  });
+  test("按权重判不按壳填的格子：硬失败塞进 softFail 一样拒", () => {
+    expect(judgeSelfCheck({ ...clean, softFail: ["root_test_keys"] }).trusted).toBe(false);
   });
   test("软失败按数量分级：一条放行并标记可疑，两条拒", () => {
     expect(judgeSelfCheck({ ...clean, softFail: ["devtools"] })).toEqual({
@@ -453,6 +486,42 @@ describe("密钥口径", () => {
       clientType: "mobile",
       keyProtection: "hardware",
     });
+  });
+});
+
+describe("移动端自检词表接入", () => {
+  const mobileRegister = (selfCheck: ClientSelfCheckReport): ClientRegisterInput => ({
+    clientType: "mobile",
+    platform: "android",
+    clientVersion: "1.0.0",
+    keyAlgorithm: "ec-p256",
+    publicKey: Buffer.from("spki-of-an-android-device").toString("base64"),
+    selfCheck,
+  });
+
+  test("开了读屏的真机注册得进来：未知无障碍服务不算是作弊证据", async () => {
+    const { channel, warnings } = harness();
+    const { clientId } = await channel.register(
+      mobileRegister({
+        ...clean,
+        softFail: ["accessibility_unknown:com.vendor.voiceread/.Service"],
+      })
+    );
+    expect(clientId).toMatch(/^ccd_/);
+    expect(warnings).toContain("客户端以可疑状态注册");
+  });
+  test("自动化外挂与模拟器在注册这一关就拒：不等到握手才发现", async () => {
+    for (const id of [
+      "accessibility_automation:org.autojs.autojspro/ScriptService",
+      "emulator_build",
+      "root_magisk:/data/adb/magisk",
+    ]) {
+      const { channel, store, warnings } = harness();
+      const input = mobileRegister({ ...clean, hardFail: [id] });
+      await expect(channel.register(input)).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
+      await expect(store.find(clientIdOfPublicKey(input.publicKey))).resolves.toBeUndefined();
+      expect(warnings).toContain("客户端完整性校验未通过");
+    }
   });
 });
 

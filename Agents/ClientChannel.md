@@ -81,23 +81,46 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 ## 4. 自检项 id 词表
 
-桌面（`Desktop/src-tauri/src/selfcheck.rs`）：
+判定表只有一份代码：`Server/src/infrastructure/ClientChannel.ts` 的 `SELF_CHECK_WEIGHTS`。
+**壳新增检测项必须同步在这里加一行并抬最低版本**——服务端查不到的 id 失败关闭（拒），
+漏跟一项检测不会变成放行，但会变成误伤正常设备。
+
+桌面（`Desktop/src-tauri/src/selfcheck.rs`）报的 id 不带后缀：
 `debugger_attached`、`debug_port`、`debug_object_handle`、`debug_query_unavailable`、
 `module_not_allowed`、`module_enumeration_failed`、`ldr_list_mismatch`、
 `ldr_enumeration_failed`、`parent_process`、`devtools`、`platform_unsupported`。
 
+移动（`Mobile/android/app/src/main/java/website/baka/game/channel/SelfCheck.kt`）的 id
+可以带 `:<细节>` 后缀（命中的包名、su 的路径），判定只认冒号前的前缀，后缀留给日志与人工复核：
+
+| id 前缀 | 归类 | 触发条件 |
+|---|---|---|
+| `accessibility_automation` | 硬 | 已启用的无障碍服务命中自动化外挂名单（Auto.js / AutoX / 按键精灵 / 触动精灵…） |
+| `root_su` `root_magisk` | 硬 | su 或 Magisk 目录存在（后缀是命中的路径） |
+| `root_test_keys` `root_debuggable` | 硬 | `Build.TAGS` 含 test-keys，或 `ro.debuggable=1` |
+| `root_magisk_mount` | 硬 | `/proc/mounts` 里出现 magisk |
+| `emulator_build` `emulator_qemu` `emulator_no_accelerometer` | 硬 | 指纹/机型串含模拟器标记、`ro.kernel.qemu=1`、缺加速度计（真机必有） |
+| `clone_source_path` `clone_user_data` | 硬 | 安装路径指向宿主包，或落在非 `/data/user/0/` 的用户目录（多开分身） |
+| `keystore_unavailable` | 硬 | `AndroidKeyStore` 打不开，签名根本没法做 |
+| `accessibility_unknown` | 软 | 已启用的无障碍服务既不在白名单也不在黑名单 |
+| `accessibility_check_failed` | 软 | 读无障碍服务列表抛异常 |
+| `emulator_no_gyroscope` | 软 | 缺陀螺仪（低端真机也有） |
+| `abi_x86` | 软 | 主 ABI 含 x86（极少数真 x86 手机） |
+| `media_projection_active` `media_projection_allowed` | 软 | 进程侧探测到录屏服务 / 本 app 被授了投影权限 |
+| `clone_user_id` `clone_data_dir` | 软 | 工作资料用户（uid/100000 ≠ 0）或 dataDir 不含自身包名 |
+
 分类（服务端判定的依据，壳只负责报 id）：
 
-| id | 归类 |
+| 桌面 id | 归类 |
 |---|---|
 | `debugger_attached` `debug_port` `debug_object_handle` `module_not_allowed` `ldr_list_mismatch` | 硬失败 |
 | `debug_query_unavailable` `module_enumeration_failed` `ldr_enumeration_failed` | 硬失败（检测跑不动 = 有人让它在跑不动） |
 | `parent_process` `devtools` | 软失败 |
-| `platform_unsupported` | 不计分，仅标记 |
+| `platform_unsupported` | 不计分，但标 `suspect`（非 Windows 构建：没跑成检测，也不能当成「跑过且干净」） |
 | DPAPI 不可用（`keyProtection = "software"`） | 环境降级，不计分 |
 
-移动（`Mobile/android/.../SelfCheck.kt`）id 另列，按同一套硬/软口径归类，
-`attestationLevel` 单独走 §5 的三档。
+按**权重**判，不按壳填进了哪一格判：硬失败 id 出现在 `softFail` 里一样是拒。
+`attestationLevel` 不在这张表里，走 §5 的三档。
 
 ## 5. 判定：按「完整性是否被破坏」，不按「证明强度够不够」
 
