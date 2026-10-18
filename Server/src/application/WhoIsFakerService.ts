@@ -495,6 +495,8 @@ export class WhoIsFakerService implements AdminRoomControl {
     const room = this.getRoom(roomId);
 
     await this.ensurePasswordMatch(room, message.payload.password, connection);
+    // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
+    if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
