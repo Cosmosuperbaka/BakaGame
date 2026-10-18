@@ -103,7 +103,7 @@ export function CreditsView({
             <span>返回主页</span>
           </Button>
           <div aria-hidden="true" className="hidden h-4 w-px shrink-0 bg-border sm:block" />
-          <h1 className="text-lg font-bold sm:text-xl">开源致谢</h1>
+          <h1 className="text-lg font-bold sm:text-xl">关于项目</h1>
           <div className="ml-auto flex min-w-0 items-center gap-2">
             <span className="shrink-0 font-mono text-xs text-muted-foreground">{versionLabel}</span>
             {commitLabel ? (
