@@ -694,10 +694,29 @@ const BARE_ORG_SUFFIX_PATTERN =
 const ZH_STUDIO_EN_ORG_PATTERN =
   /^[\u4e00-\u9fff]{2,20}(?:录音棚|录音室|工作室)[\s\u3000]*[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+Studios?$/u;
 
-/** 判断标签头部是否「完全由署名标签构成」。 */
+/**
+ * 判断标签头部是否「完全由署名标签构成」。
+ *
+ * 判定按制作名单的书写形态分组，**规则次序即原优先级**，任一命中即判为署名行；
+ * 全部落空后回到「连接符分段」兜底。各子判定只读 `value`，无副作用。
+ */
 const isCreditLabelOnly = (value: string): boolean => {
   if (!value) return false;
+  if (isSpacedBilingualLabel(value) || isGluedBilingualLabel(value) || isReversedBilingualLabel(value)) return true;
+  if (isEnglishLabelVocabularyMatch(value)) return true;
+  if (isCreditOrgLabel(value)) return true;
+  if (isNumberedSlotLabel(value) || isBracketQualifiedLabel(value)) return true;
+  if (isGluedChineseLabelPair(value) || isOpSpCopyrightPersonLabel(value)) return true;
+  if (isAffixStrippedLabel(value)) return true;
+  if (isLocationQualifiedActionLabel(value)) return true;
+  // `Violin 1st` 这类序数尾缀，以及 `Arranged & Conducted by` 这类并列动作短语。
+  if (isOrdinalSuffixStrippedLabel(value) || isCreditActionPhrase(value)) return true;
+  if (isDotOrHeSegmentedLabel(value)) return true;
+  return areAllCreditLabelSegments(value);
+};
 
+/** 带空格的中英对照署名：`制作人 Producer`、`混音师 Mixing Engineer`、`制谱 Music Copyist`。 */
+const isSpacedBilingualLabel = (value: string): boolean => {
   // 中英混排：中文标签拼接英文标签，如 `曲Composer`、`词Lyricist`、`翻唱Cover`；
   // 网易云大量使用**带空格**的写法：`制作人 Producer`、`混音师 Mixing Engineer`、
   // `母带制作 Mastering Engineer`、`木吉他 Acoustic Guitar`。
@@ -706,50 +725,51 @@ const isCreditLabelOnly = (value: string): boolean => {
   // 首字符必须是中日文字符，否则 `Special Thanks` 会被误拆成 `S` + `pecial Thanks`。
   // 英文段允许数字开头（`第一小提琴 1st Violin : X` 的双语序数形态）。
   const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z0-9][A-Za-z0-9\s]*)$/u.exec(value);
-  if (composite) {
-    if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
-    // 中文标签 + 英文对照翻译（TitleCase）：`制谱 Music Copyist`、`企划 Creative Planning`、
-    // `古琴 Guqin`。对照词永远追不完词表（copyist/planning/guqin…），而 TitleCase 是
-    // 双语署名的强特征：句中歌词的英文短语几乎必含小写虚词，逐词首字母大写的
-    // 短语只会出现在对照署名里。每词 ≥2 字母排除 `设计 A Story` 这类歌词，词数 ≤4。
-    if (
-      isCreditLabelOnly(composite[1]) &&
-      /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(composite[2].trim())
-    ) {
-      return true;
-    }
-  }
+  if (!composite) return false;
+  if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
+  // 中文标签 + 英文对照翻译（TitleCase）：`制谱 Music Copyist`、`企划 Creative Planning`、
+  // `古琴 Guqin`。对照词永远追不完词表（copyist/planning/guqin…），而 TitleCase 是
+  // 双语署名的强特征：句中歌词的英文短语几乎必含小写虚词，逐词首字母大写的
+  // 短语只会出现在对照署名里。每词 ≥2 字母排除 `设计 A Story` 这类歌词，词数 ≤4。
+  return (
+    isCreditLabelOnly(composite[1]) &&
+    /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(composite[2].trim())
+  );
+};
+
+/** 无空格粘连的中英对照署名：`曲Composer`、`二创效果Edit`、`音频编辑Audio Edited by`。 */
+const isGluedBilingualLabel = (value: string): boolean => {
   // 无空格粘连形态：`曲Composer`、`词Lyricist`（英文字母紧贴中文）。
   const glued = /^([\u4e00-\u9fff\u3040-\u30ff]+)([A-Za-z][A-Za-z\s]*)$/u.exec(value);
-  if (glued) {
-    if (isCreditLabelOnly(glued[1]) && isCreditLabelOnly(glued[2].trim())) return true;
-    // 英文侧是普通英文单词后缀：`二创效果Edit`。与 joiner 段级的
-    // 「已知标签 + 英文单后缀」同语义；中文侧必须是完整标签，
-    // `Love音乐` 这类非标签中文侧不会命中。
-    if (isCreditLabelOnly(glued[1]) && CREDIT_LABEL_SUFFIX_PATTERN.test(glued[2].trim())) {
-      return true;
-    }
-    // 英文侧是 TitleCase 对照翻译：`统筹制作人Coordinating Producer : X`。
-    // 与 composite（带空格）的 TitleCase 分支同语义，覆盖无空格粘连形态。
-    if (
-      isCreditLabelOnly(glued[1]) &&
-      /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(glued[2].trim())
-    ) {
-      return true;
-    }
-    // 英文侧是动作短语：`音频编辑Audio Edited by : X`。
-    if (isCreditLabelOnly(glued[1]) && isCreditActionPhrase(glued[2].trim())) {
-      return true;
-    }
+  if (!glued) return false;
+  if (isCreditLabelOnly(glued[1]) && isCreditLabelOnly(glued[2].trim())) return true;
+  // 英文侧是普通英文单词后缀：`二创效果Edit`。与 joiner 段级的
+  // 「已知标签 + 英文单后缀」同语义；中文侧必须是完整标签，
+  // `Love音乐` 这类非标签中文侧不会命中。
+  if (isCreditLabelOnly(glued[1]) && CREDIT_LABEL_SUFFIX_PATTERN.test(glued[2].trim())) return true;
+  // 英文侧是 TitleCase 对照翻译：`统筹制作人Coordinating Producer : X`。
+  // 与 composite（带空格）的 TitleCase 分支同语义，覆盖无空格粘连形态。
+  if (
+    isCreditLabelOnly(glued[1]) &&
+    /^(?:[A-Z][A-Za-z]{1,19})(?:\s+[A-Z][A-Za-z]{1,19}){0,3}$/u.test(glued[2].trim())
+  ) {
+    return true;
   }
-  // 反向粘连：英文标签在前 + 中文标签紧贴，如 `Vocal录音室`、`Vocal制作助理`。
+  // 英文侧是动作短语：`音频编辑Audio Edited by : X`。
+  return isCreditLabelOnly(glued[1]) && isCreditActionPhrase(glued[2].trim());
+};
+
+/** 反向粘连：英文标签在前 + 中文标签紧贴，如 `Vocal录音室`、`Vocal制作助理`。 */
+const isReversedBilingualLabel = (value: string): boolean => {
   // 正向（中文在前）由上面的 glued 覆盖；两侧都必须各自是完整标签，
   // `Love音乐` 这类（Love 非标签）不会命中。
   const reversed = /^([A-Za-z][A-Za-z\s]*?)([\u4e00-\u9fff\u3040-\u30ff]+)$/u.exec(value);
-  if (reversed) {
-    if (isCreditLabelOnly(reversed[1].trim()) && isCreditLabelOnly(reversed[2])) return true;
-  }
+  if (!reversed) return false;
+  return isCreditLabelOnly(reversed[1].trim()) && isCreditLabelOnly(reversed[2]);
+};
 
+/** 纯英文署名：整体命中词表、「限定词 + 角色」复合标签、短标签集合。 */
+const isEnglishLabelVocabularyMatch = (value: string): boolean => {
   // 多词英文标签：`Special Thanks`、`Mixed By`、`Production Coordination`。
   // 匹配前压掉空格，兼容 `specialthanks` 这类上游已去掉空格的形式。
   const compact = value.replace(/[\s\u3000]+/g, "");
@@ -791,8 +811,11 @@ const isCreditLabelOnly = (value: string): boolean => {
     .trim()
     .replace(/[\s\u3000]+/g, " ")
     .toLowerCase();
-  if (EN_CREDIT_SHORT_LABELS.includes(normalizedForSet)) return true;
+  return EN_CREDIT_SHORT_LABELS.includes(normalizedForSet);
+};
 
+/** 设施词技术标签与机构名页脚：`弦乐线上录音系统…`、`升赫录音棚Soundhub Studio`、`太合音乐集团`。 */
+const isCreditOrgLabel = (value: string): boolean => {
   // 长复合技术标签：`弦乐线上录音系统及弦乐档案编辑 : Leonard Fong`。
   // 结构判定限头 6 字、词表追不全这类展开写法；用「纯中文 + 强技术词」判定：
   // 只有含**录音/混音/母带的具体设施词**（系统/棚/室/工作室）才算，
@@ -812,20 +835,21 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `主题歌音乐专辑工作团队`。以**强机构后缀**收尾的短行是制作名单页脚。
   // 刻意不收录 `唱片`/`娱乐`/`音乐` 等弱词 —— `发霉的旧唱片` 这类歌词结尾
   // 必须保留；主体至少 3 字也排除 `某某公司` 式的两字巧合。
-  if (BARE_ORG_SUFFIX_PATTERN.test(value)) {
-    return true;
-  }
+  return BARE_ORG_SUFFIX_PATTERN.test(value);
+};
 
-  // 编号/字母槽位：`键盘2`、`吉他1`、`人声录音棚A`、`人声录音棚B`。
+/** 编号/字母槽位：`键盘2`、`吉他1`、`人声录音棚A`。 */
+const isNumberedSlotLabel = (value: string): boolean => {
   // 大编制制作名单会把同类乐器/录音棚按编号排布，词表里的 `键盘` 覆盖不到 `键盘2`。
   // 只允许在**已登记标签**后追加 1~2 位数字或单个大写字母，
   // 小写字母不放宽（`词a` 这类更像打字残渣以外的正常内容）。
+  const compact = value.replace(/[\s\u3000]+/g, "");
   const slot = /^(.+?)(?:\d{1,2}|[A-Z])$/u.exec(compact);
-  if (slot && CREDIT_LABEL_PATTERN.exec(slot[1])?.[0].replace(/[\s\u3000]+/g, "") === slot[1]) {
-    return true;
-  }
+  return !!slot && CREDIT_LABEL_PATTERN.exec(slot[1])?.[0].replace(/[\s\u3000]+/g, "") === slot[1];
+};
 
-  // 括号限定词：`Assistant Engineer (香港)`、`主唱录音（北京）`、`混音师(Studio A)`。
+/** 括号限定词：`Assistant Engineer (香港)`、`人声&吉他&鼓（打击乐）录音棚`。 */
+const isBracketQualifiedLabel = (value: string): boolean => {
   // 制作名单常用括号标注地区/棚号等限定信息，剥离后若剩余部分是纯标签即命中。
   const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
   if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
@@ -833,26 +857,32 @@ const isCreditLabelOnly = (value: string): boolean => {
   // 剥离后各段仍是标签（`鼓录音棚` 走粘连拆分）即命中；歌词 `爱（真的）你`
   // 剥出 `爱你` 非标签，不受影响。
   const withoutMiddleQualifier = value.replace(/[（(][^（()）]{1,20}[)）]/u, "").trim();
-  if (withoutMiddleQualifier && withoutMiddleQualifier !== value && isCreditLabelOnly(withoutMiddleQualifier)) return true;
+  return (
+    !!withoutMiddleQualifier && withoutMiddleQualifier !== value && isCreditLabelOnly(withoutMiddleQualifier)
+  );
+};
 
-  // 纯中文标签粘连：`小提琴演奏`、`制作统筹`、`音乐出品发行公司`。
+/** 纯中文标签粘连：`小提琴演奏`、`制作统筹`、`音乐出品发行公司`。 */
+const isGluedChineseLabelPair = (value: string): boolean => {
   // 这类头由**两个已知标签直接拼接**而成（中间无连接符），逐段拆分接不住。
   // 枚举全部切分点，任一侧组合都命中词表才算；两侧都必须是完整登记标签，
   // 因此 `曲终人散`（曲|终人散，右侧非标签）、`说唱脸谱`（说唱|脸谱）等歌词头不受影响。
-  if (/^[\u4e00-\u9fff]{2,12}$/u.test(value)) {
-    for (let cut = 1; cut < value.length; cut += 1) {
-      if (isCreditLabelOnly(value.slice(0, cut)) && isCreditLabelOnly(value.slice(cut))) {
-        return true;
-      }
-    }
+  if (!/^[\u4e00-\u9fff]{2,12}$/u.test(value)) return false;
+  for (let cut = 1; cut < value.length; cut += 1) {
+    if (isCreditLabelOnly(value.slice(0, cut)) && isCreditLabelOnly(value.slice(cut))) return true;
   }
+  return false;
+};
 
-  // 人名 + OP/SP 粘连：`梁翘柏OP : OP of Kubert Leung Musichic LTD.`、
-  // `AlbertOP : OP of Lin Xi ...`。这是版权代理行的固定写法
-  // （「词曲版权人 + OP/SP 缩写」），人名不可能进词表，
+/** 版权代理行「人名 + OP/SP」固定写法：`梁翘柏OP`、`AlbertSP`。 */
+const isOpSpCopyrightPersonLabel = (value: string): boolean => {
+  // 这是版权代理行的固定写法（「词曲版权人 + OP/SP 缩写」），人名不可能进词表，
   // 只能按「中文人名或首字母大写英文名 + OP/SP 结尾」这一版权特有结构判定。
-  if (/^(?:[\u4e00-\u9fff]{2,6}|[A-Z][a-z]{1,11})(?:OP|SP)$/u.test(value)) return true;
+  return /^(?:[\u4e00-\u9fff]{2,6}|[A-Z][a-z]{1,11})(?:OP|SP)$/u.test(value);
+};
 
+/** 剥离首尾限定词后递归判定：`Chorus by`、`1st Violins`、`原制作人`。 */
+const isAffixStrippedLabel = (value: string): boolean => {
   // 尾缀署名介词：`Chorus by : 陈奕迅`。剥离 ` by` 后按纯标签判定；
   // 递归兜底保证 `Kiss by` 这类剥出的词不是标签时不会误判。
   const withoutBy = value.replace(/\s+by$/i, "").trim();
@@ -872,29 +902,29 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `原` 单字不是标签，粘连切分点枚举接不住；剥离后剩余部分是完整标签组合即判。
   // `原` 开头的歌词（`原来如此`）剥出 `来如此` 非标签，递归自然否决。
   const withoutOrigin = value.replace(/^原(?=[\u4e00-\u9fff]{2,})/u, "").trim();
-  if (withoutOrigin && withoutOrigin !== value && isCreditLabelOnly(withoutOrigin)) return true;
+  return !!withoutOrigin && withoutOrigin !== value && isCreditLabelOnly(withoutOrigin);
+};
 
-  // 限定语 + 制作动作词的复合 head：`上海录音 : X`、`北京录音 : X`。
+/** 地名限定 + 制作动作词收尾：`上海录音`、`北京混音`。 */
+const isLocationQualifiedActionLabel = (value: string): boolean => {
   // 「上海」这类地名限定永远不进词表（枚举不完），但「`录音` 收尾的 2~4 字限定
   // + 冒号取值」形态只出现在制作名单 —— 歌词整行（`留下爱的录音`）无分隔符，
   // 走不进 head 路径，不受影响。
-  if (/^[\u4e00-\u9fff]{2,4}(?:录音|混音|录制|母带|剪辑)$/u.test(value)) {
-    return true;
-  }
+  return /^[\u4e00-\u9fff]{2,4}(?:录音|混音|录制|母带|剪辑)$/u.test(value);
+};
 
-  // 序数尾缀：`Violin 1st : X`、`Violin 2nd：X`（分谱编号后置写法）。
+/** 序数尾缀写法：`Violin 1st`、`Violin 2nd`。 */
+const isOrdinalSuffixStrippedLabel = (value: string): boolean => {
   const withoutOrdinalSuffix = value.replace(/\s+\d{1,2}(?:st|nd|rd|th)$/i, "").trim();
-  if (
-    withoutOrdinalSuffix &&
+  return (
+    !!withoutOrdinalSuffix &&
     withoutOrdinalSuffix !== value &&
     isCreditLabelOnly(withoutOrdinalSuffix)
-  ) {
-    return true;
-  }
+  );
+};
 
-  // `Arranged & Conducted by` 这类并列动作短语。
-  if (isCreditActionPhrase(value)) return true;
-
+/** `.` 分段与 `和` 连接：`作曲.监制`、`词和曲`。 */
+const isDotOrHeSegmentedLabel = (value: string): boolean => {
   // 中文标签以 `.` 分隔的形态：`作曲.监制 : X`、`词.曲 : X`、`编.混.母 : X`。
   // `.` 不进通用 joiner（英文缩写 `C. Y. Kong` 依赖它），单独按「每段都是
   // 完整标签」判定 —— `谁.在.唱` 这类歌词拆出的段不是标签，自然否决。
@@ -909,14 +939,13 @@ const isCreditLabelOnly = (value: string): boolean => {
   // `和` 同时是 `和声`/`和音`/`和编` 等标签的首字，单字符切分会把
   // `吉他、贝司、和声` 切出孤立 `声` 段而整条漏网。按 `和` 切开的
   // 每段都必须递归命中完整标签，`我和你`、`早餐和午餐` 自然否决。
-  if (value.includes("和")) {
-    const andSegments = value.split("和").filter(Boolean);
-    if (andSegments.length > 1 && andSegments.every((segment) => isCreditLabelOnly(segment))) {
-      return true;
-    }
-  }
+  if (!value.includes("和")) return false;
+  const andSegments = value.split("和").filter(Boolean);
+  return andSegments.length > 1 && andSegments.every((segment) => isCreditLabelOnly(segment));
+};
 
-  // 逐段拆分连接符，任一段是「已知标签 或 接在已知标签后的英文单后缀」即可。
+/** 连接符分段兜底：每段都是「已知标签 或 接在已知标签后的英文单后缀」。 */
+const areAllCreditLabelSegments = (value: string): boolean => {
   const segments = value.split(CREDIT_LABEL_JOINER_PATTERN).filter(Boolean);
   if (segments.length === 0) return false;
   let previousWasLabel = false;

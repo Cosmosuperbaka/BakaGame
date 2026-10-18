@@ -8,10 +8,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 2
     }
-  },
-  "src/infrastructure/NeteaseMusicProvider.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }
