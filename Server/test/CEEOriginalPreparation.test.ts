@@ -67,6 +67,69 @@ async function setup(options: Partial<ConstructorParameters<typeof CEEOriginalSe
   return { service, room, request, connection, entry, target, snapshot };
 }
 
+/** 准备事务挂起期间可注入的房间变化：每一种都对应一条真实的打断路径。 */
+const ROOM_CHANGES = ['leave', 'detach', 'resume', 'disconnect', 'closed', 'kicked', 'host-return', 'setter-return', 'cancel-return', 'new-round', 'peer-new-round', 'settings', 'unready-return'] as const;
+
+type RoomChange = (typeof ROOM_CHANGES)[number];
+type PreparationCommand = 'cee.game.start' | 'cee.game.setAnswer';
+type Fixture = Awaited<ReturnType<typeof setup>>;
+
+/** 注入点需要的上下文：挂起中的事务属于哪个命令。 */
+interface ChangeContext { fixture: Fixture; command: PreparationCommand }
+
+/**
+ * 每种变化各自成函数：只做「怎么打断」，不判断结果。
+ * `leave` 返回的应答由用例在收尾前 await，其余变化立即完成。
+ */
+const ROOM_CHANGE_APPLIERS: Record<RoomChange, (context: ChangeContext) => Promise<unknown> | undefined> = {
+  leave: ({ fixture }) => fixture.request('cee.room.leave'),
+  detach: ({ fixture }) => { fixture.service.unregisterConnection('first'); },
+  resume: ({ fixture }) => {
+    fixture.service.unregisterConnection('first');
+    fixture.service.registerConnection(fixture.connection('replacement'));
+    fixture.service.reconnect('replacement', fixture.target, fixture.entry.sessionToken);
+  },
+  disconnect: ({ fixture }) => { fixture.room.sockets[0].disconnect(); },
+  closed: ({ fixture }) => { fixture.room.broadcast('roomClosed', {}); },
+  kicked: ({ fixture }) => { fixture.room.broadcast('playerKicked', { playerId: fixture.room.sockets[0].id }); },
+  // 房主两度易主：事务归属要按最终状态判定，而不是看中途的广播。
+  'host-return': ({ fixture }) => {
+    fixture.room.players[0].isHost = false; fixture.room.players[1].isHost = true;
+    fixture.room.broadcast('updatePlayers', { players: fixture.room.players });
+    fixture.room.players[0].isHost = true; fixture.room.players[1].isHost = false;
+    fixture.room.broadcast('updatePlayers', { players: fixture.room.players });
+  },
+  'setter-return': ({ fixture }) => {
+    const [first, second] = fixture.room.sockets;
+    fixture.room.broadcast('waitForAnswer', { answerSetterId: second.id });
+    fixture.room.broadcast('waitForAnswer', { answerSetterId: first.id });
+  },
+  'cancel-return': ({ fixture, command }) => {
+    fixture.room.broadcast('waitForAnswerCanceled', {});
+    if (command === 'cee.game.setAnswer') fixture.room.broadcast('waitForAnswer', { answerSetterId: fixture.room.sockets[0].id });
+  },
+  'new-round': ({ fixture }) => {
+    fixture.room.broadcast('gameStart', {
+      character: encodeOriginalCharacter(character(901), 'fixture-key'),
+      settings: createDefaultCEESettings(), players: fixture.room.players,
+    });
+  },
+  // 本连接尚未收到广播时，也必须以另一连接已推进的共享局为准。
+  'peer-new-round': ({ fixture }) => {
+    fixture.room.sockets[1].receive('gameStart', {
+      character: encodeOriginalCharacter(character(901), 'fixture-key'),
+      settings: createDefaultCEESettings(), players: fixture.room.players,
+    });
+  },
+  settings: ({ fixture }) => {
+    fixture.room.broadcast('updateGameSettings', { settings: { ...createDefaultCEESettings(), maxAttempts: 20 } });
+  },
+  'unready-return': ({ fixture }) => {
+    fixture.room.players[1].ready = false; fixture.room.broadcast('updatePlayers', { players: fixture.room.players });
+    fixture.room.players[1].ready = true; fixture.room.broadcast('updatePlayers', { players: fixture.room.players });
+  },
+};
+
 describe('原版准备事务的异步归属', () => {
   test('FixtureSocket 明确拒绝错误房主、未准备、进行中对局和错误出题人', async () => {
     const h = await setup(); const socket = h.room.sockets[0];
@@ -115,10 +178,9 @@ describe('原版准备事务的异步归属', () => {
     expect(h.snapshot().phase).toBe('guessing'); expect(h.snapshot().roundNumber).toBe(2);
   });
 
-  const changes = ['leave', 'detach', 'resume', 'disconnect', 'closed', 'kicked', 'host-return', 'setter-return', 'cancel-return', 'new-round', 'peer-new-round', 'settings', 'unready-return'] as const;
   for (const command of ['cee.game.start', 'cee.game.setAnswer'] as const) {
     const event = command === 'cee.game.start' ? 'gameStart' : 'setAnswer';
-    for (const stage of ['character', 'image'] as const) for (const change of changes) {
+    for (const stage of ['character', 'image'] as const) for (const change of ROOM_CHANGES) {
       test(`${command} 等待${stage}后遇到${change}${change === 'unready-return' && command === 'cee.game.setAnswer' ? '不影响出题权' : '不转发上游'}`, async () => {
         const loading = deferred<ReturnType<typeof character>>(); const image = deferred<string>(); const entered = deferred<void>();
         const waitCharacter = async () => {
@@ -127,50 +189,17 @@ describe('原版准备事务的异步归属', () => {
         };
         const h = await setup({ data: { ...data, chooseRandomCharacter: waitCharacter, getCharacter: waitCharacter,
           async resolveCharacterImage() { entered.resolve(); return image.promise; } } });
-        const first = h.room.sockets[0]; const second = h.room.sockets[1];
+        const first = h.room.sockets[0];
         if (command === 'cee.game.setAnswer') h.room.broadcast('waitForAnswer', { answerSetterId: first.id });
         const pending = h.request(command);
         await Promise.race([entered.promise, pending.then(() => { throw new Error('未经过资料查询'); })]);
-        let leave: Promise<unknown> | undefined;
-        if (change === 'leave') leave = h.request('cee.room.leave');
-        if (change === 'detach' || change === 'resume') h.service.unregisterConnection('first');
-        if (change === 'resume') {
-          h.service.registerConnection(h.connection('replacement'));
-          h.service.reconnect('replacement', h.target, h.entry.sessionToken);
-        }
-        if (change === 'disconnect') first.disconnect();
-        if (change === 'closed') h.room.broadcast('roomClosed', {});
-        if (change === 'kicked') h.room.broadcast('playerKicked', { playerId: first.id });
-        if (change === 'host-return') {
-          h.room.players[0].isHost = false; h.room.players[1].isHost = true;
-          h.room.broadcast('updatePlayers', { players: h.room.players });
-          h.room.players[0].isHost = true; h.room.players[1].isHost = false;
-          h.room.broadcast('updatePlayers', { players: h.room.players });
-        }
-        if (change === 'setter-return') {
-          h.room.broadcast('waitForAnswer', { answerSetterId: second.id });
-          h.room.broadcast('waitForAnswer', { answerSetterId: first.id });
-        }
-        if (change === 'cancel-return') {
-          h.room.broadcast('waitForAnswerCanceled', {});
-          if (command === 'cee.game.setAnswer') h.room.broadcast('waitForAnswer', { answerSetterId: first.id });
-        }
-        if (change === 'new-round') h.room.broadcast('gameStart', {
-          character: encodeOriginalCharacter(character(901), 'fixture-key'), settings: createDefaultCEESettings(), players: h.room.players });
-        // 本连接尚未收到广播时，也必须以另一连接已推进的共享局为准。
-        if (change === 'peer-new-round') second.receive('gameStart', {
-          character: encodeOriginalCharacter(character(901), 'fixture-key'), settings: createDefaultCEESettings(), players: h.room.players });
-        if (change === 'settings') h.room.broadcast('updateGameSettings', { settings: { ...createDefaultCEESettings(), maxAttempts: 20 } });
-        if (change === 'unready-return') {
-          h.room.players[1].ready = false; h.room.broadcast('updatePlayers', { players: h.room.players });
-          h.room.players[1].ready = true; h.room.broadcast('updatePlayers', { players: h.room.players });
-        }
+        const leave = ROOM_CHANGE_APPLIERS[change]({ fixture: h, command });
         const allowed = change === 'unready-return' && command === 'cee.game.setAnswer';
         loading.resolve(character()); image.resolve('https://images.example/900.jpg');
         // 手动出题不要求猜题玩家准备，准备状态变化不会取消有效出题权。
         if (allowed) await pending; else await expect(pending).rejects.toMatchObject({ code: 'CEE_ROUND_CHANGED' });
         if (leave) await leave;
-        expect(first.sent.filter(item => item.event === event)).toHaveLength(change === 'unready-return' && command === 'cee.game.setAnswer' ? 1 : 0);
+        expect(first.sent.filter(item => item.event === event)).toHaveLength(allowed ? 1 : 0);
         if (change === 'new-round') { expect(h.snapshot().phase).toBe('guessing'); expect(h.snapshot().roundNumber).toBe(1); }
         if (change === 'setter-return' || (change === 'cancel-return' && command === 'cee.game.setAnswer')) expect(h.snapshot().phase).toBe('answering');
       });

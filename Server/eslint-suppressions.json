@@ -33,10 +33,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
-  },
-  "test/CEEOriginalPreparation.test.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }
