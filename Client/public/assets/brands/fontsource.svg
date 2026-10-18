@@ -1,0 +1,4 @@
+<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+<path fill="currentColor" fill-rule="evenodd" d="M4 .5h22a4 4 0 0 1 4 4v22a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4v-22a4 4 0 0 1 4-4z M11.7 7.7H20.1L22.5 7.7V13.1H20.1V10.1L11.7 10.1V14.3L17.1 14.3V16.7H11.7V20.9H13.5V23.3H11.7H9.3L7.5 23.3V20.9H9.3V16.7H7.5V14.3H9.3V10.1H7.5V7.7L9.3 7.7H11.7Z"/>
+</svg>
+<!-- Source: https://github.com/fontsource/fontsource/blob/main/website/public/logo.svg | License: MIT (Fontsource) | Modified for a single-color CSS mask: wordmark dropped, rounded tile kept with the F knocked out, fixed size removed. -->

@@ -83,6 +83,8 @@ function installPackage(
  *   alpha  → gamma, server-located, upper-only, long-description, [optional] missing-platform-binary
  *   gamma  → delta-optional, shared-runtime-dev, unknown-license, [optional] optional-installed
  *   beta   → epsilon-dev-transitive, shared-runtime-dev
+ *   epsilon → 五个链接归一化用例（shorthand-owner-repo、shorthand-hosted、hosted-gitlab-path、
+ *             relative-homepage、unusable-url）
  *
  * shared-runtime-dev 同时可达两条链（runtime 优先）；peer-fake 已安装但不是闭包成员；
  * server-located 只装在 Server/node_modules；upper-only 只装在仓库上层 node_modules。
@@ -197,9 +199,47 @@ function createCreditsFixture(): CreditsFixture {
   installPackage(
     fixture.rootNodeModules,
     "epsilon-dev-transitive",
-    { version: "5.5.5", license: "MIT" },
+    {
+      version: "5.5.5",
+      license: "MIT",
+      // 链接归一化的输入：裸 owner/repo、宿主简写、gitlab 多级路径、相对 homepage 与认不出的写法。
+      dependencies: {
+        "hosted-gitlab-path": "^1.0.0",
+        "relative-homepage": "^1.0.0",
+        "shorthand-hosted": "^1.0.0",
+        "shorthand-owner-repo": "^1.0.0",
+        "unusable-url": "^1.0.0",
+      },
+    },
     { LICENSE: "x".repeat(2 * 1024 * 1024) },
   );
+  installPackage(fixture.rootNodeModules, "shorthand-owner-repo", {
+    version: "1.0.0",
+    license: "MIT",
+    repository: "sindresorhus/globals",
+  });
+  installPackage(fixture.rootNodeModules, "shorthand-hosted", {
+    version: "1.0.0",
+    license: "MIT",
+    repository: "github:example/hosted-pkg",
+  });
+  installPackage(fixture.rootNodeModules, "hosted-gitlab-path", {
+    version: "1.0.0",
+    license: "MIT",
+    repository: "gitlab:example/sub/pkg",
+  });
+  installPackage(fixture.rootNodeModules, "relative-homepage", {
+    version: "1.0.0",
+    license: "MIT",
+    homepage: "docs/readme",
+    repository: { type: "git", url: "https://github.com/example/relative-homepage" },
+  });
+  installPackage(fixture.rootNodeModules, "unusable-url", {
+    version: "1.0.0",
+    license: "MIT",
+    homepage: "see the readme",
+    repository: "not a repo ref",
+  });
   installPackage(fixture.rootNodeModules, "peer-fake", { version: "1.0.0", license: "MIT" });
   installPackage(fixture.rootNodeModules, "unrelated-package", { version: "1.0.0", license: "MIT" });
 
@@ -405,6 +445,24 @@ describe("creditsManifestPlugin", () => {
       expect(dependencyOf(manifest, "delta-optional").url).toBe("https://github.com/example/delta");
       // 都没有时为空串。
       expect(dependencyOf(manifest, "unknown-license").url).toBe("");
+    });
+
+    it("repository 简写归一成绝对地址，认不出的写法给空串", async () => {
+      const manifest = await loadCreditsManifest(plugin);
+      // 裸 owner/repo（sindresorhus/globals 这类）：不能原样输出，否则 href 是站内相对路径。
+      expect(dependencyOf(manifest, "shorthand-owner-repo").url).toBe("https://github.com/sindresorhus/globals");
+      // github:owner/repo 宿主简写。
+      expect(dependencyOf(manifest, "shorthand-hosted").url).toBe("https://github.com/example/hosted-pkg");
+      // gitlab: 的多级路径（group/sub/repo）原样保留在 host 之后。
+      expect(dependencyOf(manifest, "hosted-gitlab-path").url).toBe("https://gitlab.com/example/sub/pkg");
+      // homepage 不是绝对地址时忽略，退回 repository。
+      expect(dependencyOf(manifest, "relative-homepage").url).toBe("https://github.com/example/relative-homepage");
+      // 两种写法都认不出：空串，页面据此不渲染「项目主页」，也不生成死链。
+      expect(dependencyOf(manifest, "unusable-url").url).toBe("");
+      // 清单里任何 url 都必须是绝对 http(s)，页面直接当 href 用。
+      for (const dependency of manifest.dependencies) {
+        expect(dependency.url === "" || /^https?:\/\//.test(dependency.url), dependency.name).toBe(true);
+      }
     });
   });
 

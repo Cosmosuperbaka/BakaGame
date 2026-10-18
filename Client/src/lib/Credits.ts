@@ -212,7 +212,16 @@ export type CreditBrandId =
   | "lucide"
   | "zod"
   | "socketdotio"
-  | "meilisearch";
+  | "meilisearch"
+  | "jsdom"
+  | "orpc"
+  | "fontsource"
+  | "sharp"
+  | "lobehub"
+  | "sonar"
+  | "babel"
+  | "esbuild"
+  | "postcss";
 
 /** 为本项目做出过实际改动的模型。`releasedAt` ISO 日期只用于排序，不在页面上展示。 */
 export interface ContributingModel {

@@ -10,6 +10,7 @@ import deepseekIconUrl from "@lobehub/icons-static-svg/icons/deepseek.svg?url";
 import geminiIconUrl from "@lobehub/icons-static-svg/icons/gemini.svg?url";
 import googleIconUrl from "@lobehub/icons-static-svg/icons/google.svg?url";
 import hunyuanIconUrl from "@lobehub/icons-static-svg/icons/hunyuan.svg?url";
+import lobehubIconUrl from "@lobehub/icons-static-svg/icons/lobehub.svg?url";
 import openaiIconUrl from "@lobehub/icons-static-svg/icons/openai.svg?url";
 import qwenIconUrl from "@lobehub/icons-static-svg/icons/qwen.svg?url";
 import tencentIconUrl from "@lobehub/icons-static-svg/icons/tencent.svg?url";
@@ -64,6 +65,15 @@ const ALL_BRANDS = Object.keys({
   zod: true,
   socketdotio: true,
   meilisearch: true,
+  jsdom: true,
+  orpc: true,
+  fontsource: true,
+  sharp: true,
+  lobehub: true,
+  sonar: true,
+  babel: true,
+  esbuild: true,
+  postcss: true,
 } satisfies Record<CreditBrandId, true>) as CreditBrandId[];
 
 /**
@@ -84,24 +94,33 @@ const LOBEHUB_BRAND_ICONS: Readonly<Partial<Record<CreditBrandId, string>>> = {
   claude: claudeIconUrl,
   hunyuan: hunyuanIconUrl,
   qwen: qwenIconUrl,
+  lobehub: lobehubIconUrl,
 };
 
 /**
  * 自备 SVG 的品牌 → `Client/public/assets/brands/` 下的文件名。
- * 只保留 simple-icons 与 LobeHub 都没有可用字形的 Elysia / Playwright / Zustand。
+ * 只保留 simple-icons 与 LobeHub 都没有可用字形的品牌：三个技术栈图标，
+ * 以及官方 logo 只在自家仓库里发布的 jsdom / oRPC / sharp / Fontsource。
  */
 const PUBLIC_MASK_ASSETS: Readonly<Partial<Record<CreditBrandId, string>>> = {
   elysia: "elysia.svg",
   playwright: "playwright.svg",
   zustand: "zustand.svg",
+  jsdom: "jsdom.svg",
+  orpc: "orpc.svg",
+  sharp: "sharp.svg",
+  fontsource: "fontsource.svg",
 };
+
+/** 自备资产的 mask 地址：`public/` 下的固定路径，不经 Vite 资源管线。 */
+const PUBLIC_MASK_URLS = Object.fromEntries(
+  Object.entries(PUBLIC_MASK_ASSETS).map(([brand, file]) => [brand, `/assets/brands/${file}`]),
+) as Readonly<Partial<Record<CreditBrandId, string>>>;
 
 /** 全部走 CSS mask 的品牌 → 预期 `mask-image` 里的资源地址。 */
 const MASK_BRANDS: Readonly<Partial<Record<CreditBrandId, string>>> = {
   ...LOBEHUB_BRAND_ICONS,
-  elysia: "/assets/brands/elysia.svg",
-  playwright: "/assets/brands/playwright.svg",
-  zustand: "/assets/brands/zustand.svg",
+  ...PUBLIC_MASK_URLS,
 };
 
 /** 单测 cwd 是 `Client/`，自备资产按 public 目录定位。 */
@@ -263,6 +282,36 @@ describe("DependencyGlyph", () => {
     expect(style.maskImage).toBe('url("/assets/brands/playwright.svg")');
   });
 
+  it("官方 logo 只在自家仓库的包命中自备字形（jsdom / oRPC / sharp / Fontsource）", () => {
+    const cases: Array<readonly [string, CreditBrandId]> = [
+      ["jsdom", "jsdom"],
+      ["@orpc/client", "orpc"],
+      ["@orpc/contract", "orpc"],
+      ["sharp", "sharp"],
+      // `@fontsource` 前缀同时覆盖 @fontsource 与 @fontsource-variable 两组字体包。
+      ["@fontsource-variable/noto-sans-sc", "fontsource"],
+      ["@fontsource/libre-baskerville", "fontsource"],
+    ];
+    for (const [packageName, brand] of cases) {
+      const { container, unmount } = render(<DependencyGlyph packageName={packageName} />);
+      const style = (container.querySelector("span") as HTMLElement).style;
+      expect(style.maskImage, packageName).toBe(`url("${PUBLIC_MASK_URLS[brand]}")`);
+      unmount();
+    }
+  });
+
+  it("图标包里已有字形的包不再回退通用图标（@lobehub / sonarjs / @babel / esbuild / postcss）", () => {
+    const lobehub = render(<DependencyGlyph packageName="@lobehub/icons-static-svg" />);
+    expect((lobehub.container.querySelector("span") as HTMLElement).style.maskImage).toBe(`url("${lobehubIconUrl}")`);
+
+    for (const packageName of ["eslint-plugin-sonarjs", "@babel/core", "@babel/runtime", "esbuild", "postcss"]) {
+      const { container, unmount } = render(<DependencyGlyph packageName={packageName} />);
+      expect(container.querySelector("svg"), packageName).not.toBeNull();
+      expect(container.querySelector("svg.lucide-package"), packageName).toBeNull();
+      unmount();
+    }
+  });
+
   it("client 直接依赖里有品牌字形的包都不回退通用图标", () => {
     const brandedDirectDependencies = [
       "react",
@@ -294,6 +343,15 @@ describe("DependencyGlyph", () => {
       "@testing-library/react",
       "@radix-ui/react-dialog",
       "zustand",
+      "jsdom",
+      "sharp",
+      "@fontsource-variable/noto-sans-sc",
+      "@fontsource/libre-baskerville",
+      "@orpc/client",
+      "@orpc/contract",
+      "@lobehub/icons-static-svg",
+      "eslint-plugin-sonarjs",
+      "typescript7",
     ];
     for (const packageName of brandedDirectDependencies) {
       const { container, unmount } = render(<DependencyGlyph packageName={packageName} />);

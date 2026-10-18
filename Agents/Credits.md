@@ -32,6 +32,7 @@
 依赖清单与许可证原文的契约在 `Client/src/lib/Credits.ts`，虚拟模块声明在 `Client/src/vite-env.d.ts`。依赖范围是 Client `package.json` 的 dependencies + devDependencies 及其传递依赖（运行时与开发依赖都收，传递依赖沿依赖链归类）；构建环境里装不到的 optional/平台包不会出现在清单中。
 
 - 清单按包名排序，每个包带 `dependencies: string[]`：只收本次构建确实安装、且能在页面里点开的子依赖；依赖图用于二级抽屉逐级下钻，页面一级只渲染 `direct === true` 的主包。
+- 包链接 `url` 只放行绝对 http(s)：`homepage` 优先，其次把 `repository` 的常见写法（`git+https://…`、`git@host:owner/repo.git`、`git://…`、`ssh://…`、`github:owner/repo`、裸 `owner/repo`）归一成仓库页；认不出的写法给空串，页面据此不渲染「项目主页」。不要把简写原样输出——`sindresorhus/globals` 这类值当 `href` 会解析成站内相对路径（`/credits/sindresorhus/globals`），点开是死链。
 - 许可证原文按 `licenseBucket(name)` 分桶，展开某个包的许可证区时只下载它所在的一桶；原文不在页面上常驻渲染。
 - 依赖或版本变化不需要手工改清单：重新构建即从当前安装树重新生成；新增包或新许可证类型时，分桶与筛选项都由数据自动派生。
 
@@ -57,6 +58,12 @@
 | `elysia.svg` | Elysia 技术栈 | <https://elysiajs.com/assets/elysia.svg> | 官方站点资源，Elysia 项目 MIT |
 | `playwright.svg` | Playwright 技术栈 | `devicon-plain/playwright`（Iconify） | Devicon MIT |
 | `zustand.svg` | Zustand 技术栈 | `devicon-plain/zustand`（Iconify） | Devicon MIT |
+| `jsdom.svg` | jsdom 依赖 | <https://github.com/jsdom/jsdom/blob/main/logo.svg> | jsdom 仓库 MIT |
+| `orpc.svg` | `@orpc/*` 依赖 | <https://orpc.dev/icon.svg> | oRPC 项目 MIT |
+| `sharp.svg` | sharp 依赖 | <https://github.com/lovell/sharp/blob/main/docs/public/sharp-logo-mono.svg> | logo 资源 CC0 1.0（sharp 本体 Apache-2.0） |
+| `fontsource.svg` | `@fontsource*` 字体包 | <https://github.com/fontsource/fontsource/blob/main/website/public/logo.svg> | Fontsource MIT |
+
+每个文件末尾用 HTML 注释登记来源 URL、许可证与改法；资产校验测试（`CreditsIcons.test.tsx`）会核对文件清单、SVG 形状、无脚本/外链与来源注释。npm 别名包（如 `typescript7`，实为 `npm:typescript@7`）与被别名的包共用同一品牌键。
 
 - 品牌图标只标注依赖、技术栈或模型/厂商本身；指向站外平台的链接图标仍按 [Design §2](Design.md#2-技术基线) 走 FontAwesome。没有品牌字形的包/技术用 `lucide-react` 的通用图标回退，不用近似品牌顶替。
 - 新增品牌的最小路径：在 `lib/Credits.ts` 的 `CreditBrandId` 加键 → 在 `CreditsIcons.tsx` 的映射里给出图标来源（simple-icons 子路径、图标包子路径或 `public/assets/brands` 资产）→ 在数据文件里引用。优先复用已引入的图标包，只有确实没有时才新增自备资产。

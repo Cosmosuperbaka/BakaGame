@@ -385,28 +385,55 @@ function readRepositoryUrl(repository: InstalledPackageManifest['repository']): 
   return typeof repository?.url === 'string' ? repository.url.trim() : ''
 }
 
+/** npm 的宿主简写前缀 → 站点根。npm 只认 github / gitlab / bitbucket 三种简写。 */
+const HOSTED_REPOSITORY_ROOTS = new Map([
+  ['github', 'https://github.com'],
+  ['gitlab', 'https://gitlab.com'],
+  ['bitbucket', 'https://bitbucket.org'],
+])
+
 /**
  * 把 npm 清单里常见的 git 写法归一成能直接点开的 https 地址：
- * `git+https://…`、`git://…`、`git@github.com:owner/repo.git`、`ssh://git@…` 都落到
- * 浏览器可访问的仓库页；`.git` 后缀与尾部斜杠一并去掉。
+ * `git+https://…`、`git://…`、`git@github.com:owner/repo.git`、`ssh://git@…`、
+ * `github:owner/repo` 与裸 `owner/repo` 简写都落到浏览器可访问的仓库页；
+ * `.git` 后缀与尾部斜杠一并去掉。
+ *
+ * 认不出的形式一律返回空串：这类值直接当 `href` 输出会变成站内相对路径
+ * （`sindresorhus/globals` → `/credits/sindresorhus/globals`），点开就是 404。
  */
 function normalizeCreditRepositoryUrl(rawUrl: string): string {
   let url = rawUrl.trim().replace(/^git\+/, '')
   if (!url) return ''
 
+  const hosted = /^(github|gitlab|bitbucket):(.+)$/i.exec(url)
+  if (hosted) {
+    const [, host = '', ownerAndRepo = ''] = hosted
+    const root = HOSTED_REPOSITORY_ROOTS.get(host.toLowerCase()) ?? 'https://github.com'
+    url = `${root}/${ownerAndRepo}`
+  } else if (/^[\w.-]+\/[\w.-]+$/.test(url)) {
+    // 裸 `owner/repo`（sindresorhus/globals 这类）：npm 生态默认指 GitHub。
+    url = `https://github.com/${url}`
+  }
+
   // scp 风格（git@host:path / git@host/path）：平台复制出来的仓库地址就是这种。
-  const scpLike = url.match(/^git@([^:/]+)[:/](.+)$/)
+  const scpLike = /^git@([^:/]+)[:/](.+)$/.exec(url)
   if (scpLike) url = `https://${scpLike[1]}/${scpLike[2]}`
   else if (url.startsWith('git://')) url = `https://${url.slice('git://'.length)}`
   else if (url.startsWith('ssh://')) url = url.replace(/^ssh:\/\/(?:git@)?/, 'https://')
 
-  return url.replace(/\.git$/i, '').replace(/\/+$/, '')
+  const cleaned = url.replace(/\.git$/i, '').replace(/\/+$/, '')
+  // 只放行绝对 http(s)：相对值留在页面上就是死链或站内跳转。
+  return /^https?:\/\//i.test(cleaned) ? cleaned : ''
 }
 
-/** 包链接：homepage 优先，没有再退回 repository（不少包只写后者）。 */
+/**
+ * 包链接：homepage 优先（只认绝对 http(s)），没有再退回 repository 归一化结果。
+ * `homepage: "."`、`"docs/readme"` 这类相对值直接忽略。
+ */
 function readCreditUrl(manifest: InstalledPackageManifest): string {
   const homepage = typeof manifest.homepage === 'string' ? manifest.homepage.trim() : ''
-  return homepage || normalizeCreditRepositoryUrl(readRepositoryUrl(manifest.repository))
+  if (/^https?:\/\//i.test(homepage)) return homepage
+  return normalizeCreditRepositoryUrl(readRepositoryUrl(manifest.repository))
 }
 
 /**
