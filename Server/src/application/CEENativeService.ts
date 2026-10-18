@@ -87,18 +87,7 @@ export class CEENativeService {
   }
   runHousekeeping() {
     for (const room of this.state.rooms.values()) {
-      const before = JSON.stringify([
-        room.phase,
-        room.round?.syncRound,
-        [...room.players.values()].map((player) => [player.attempts, player.status]),
-      ]);
-      tickCEERound(room, this.now());
-      const after = JSON.stringify([
-        room.phase,
-        room.round?.syncRound,
-        [...room.players.values()].map((player) => [player.attempts, player.status]),
-      ]);
-      if (before !== after) this.state.publish(room);
+      if (tickCEERound(room, this.now())) this.state.publish(room);
     }
     this.state.housekeeping();
     this.rescheduleAll();

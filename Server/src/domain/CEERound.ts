@@ -272,9 +272,11 @@ export function surrenderCEE(room: CEERoom, player: CEEPlayerRecord, now: number
   finishUnit(room, unit, "surrendered", "🏳️");
   advanceCEERound(room, now);
 }
-export function tickCEERound(room: CEERoom, now: number): void {
+/** 超时到点：按在线队员数计次并推进回合，返回是否改动了房间可见状态。 */
+export function tickCEERound(room: CEERoom, now: number): boolean {
   const round = room.round;
-  if (room.phase !== "guessing" || !round) return;
+  if (room.phase !== "guessing" || !round) return false;
+  let changed = false;
   for (const unit of round.units.values()) {
     if (unit.ended || unit.deadlineAt === null || now < unit.deadlineAt) continue;
     const online = unit.memberIds.filter(
@@ -282,6 +284,7 @@ export function tickCEERound(room: CEERoom, now: number): void {
     ).length;
     if (!online) {
       unit.deadlineAt = null;
+      changed = true;
       continue;
     }
     // 队伍超时按在线队员数扣除，计数最多达到本局上限。
@@ -292,12 +295,13 @@ export function tickCEERound(room: CEERoom, now: number): void {
     unit.deadlineAt = round.settings.syncMode ? null : now + round.settings.timeLimit * 1000;
     if (unit.attempts >= round.settings.maxAttempts) finishUnit(room, unit, "exhausted", "💀");
     copyUnit(room, unit);
+    changed = true;
   }
-  advanceCEERound(room, now);
+  return advanceCEERound(room, now) || changed;
 }
-export function advanceCEERound(room: CEERoom, now: number): void {
+export function advanceCEERound(room: CEERoom, now: number): boolean {
   const round = room.round;
-  if (room.phase !== "guessing" || !round) return;
+  if (room.phase !== "guessing" || !round) return false;
   const unfinished = [...round.units.values()].filter((unit) => !unit.ended);
   const active = unfinished.filter((unit) =>
     unit.memberIds.some((id) => room.players.get(id)?.online)
@@ -309,12 +313,11 @@ export function advanceCEERound(room: CEERoom, now: number): void {
       round.winners.length &&
       (!round.settings.syncMode || syncComplete))
   ) {
-    settleCEERound(room);
-    return;
+    return settleCEERound(room);
   }
   // 临时断线保留未结束席位，等待重连或房间离线清理；刷新页面不能直接判负。
-  if (!active.length) return;
-  if (!round.settings.syncMode || !syncComplete) return;
+  if (!active.length) return false;
+  if (!round.settings.syncMode || !syncComplete) return false;
   for (const [tag, owners] of round.pendingTagOwners) {
     for (const unit of active) unit.memberIds.forEach((id) => owners.add(id));
     round.tagOwners.set(tag, owners);
@@ -328,10 +331,11 @@ export function advanceCEERound(room: CEERoom, now: number): void {
     unit.deadlineAt = round.settings.timeLimit ? now + round.settings.timeLimit * 1000 : null;
     copyUnit(room, unit);
   }
+  return true;
 }
-export function settleCEERound(room: CEERoom): void {
+export function settleCEERound(room: CEERoom): boolean {
   const round = room.round;
-  if (!round || room.phase !== "guessing") return;
+  if (!round || room.phase !== "guessing") return false;
   const scores = new Map<string, CEEScoreDetail>();
   for (const id of round.participants) {
     const player = room.players.get(id);
@@ -407,4 +411,5 @@ export function settleCEERound(room: CEERoom): void {
   room.phase = "settled";
   room.phaseDeadlineAt = null;
   for (const unit of round.units.values()) unit.deadlineAt = null;
+  return true;
 }
